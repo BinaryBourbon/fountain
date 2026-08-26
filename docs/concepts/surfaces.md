@@ -9,7 +9,7 @@ and where that happens instead. To connect your own client, read
 | Surface | What it is | Where it runs |
 |---|---|---|
 | The console | Fountain's own browser UI. | The Fountain server. |
-| The apps | Conversations and Team. | Their own origins, on `/api`. |
+| The apps | Conversations, Team and Workbench. | Their own origins, on `/api`. |
 | The API | REST and SSE, with the CLI and the SDK over it. | Anywhere. |
 
 ## The console is an operator console
@@ -22,15 +22,20 @@ You do not watch an agent work in it.
 
 ## To watch an agent work, use a different application
 
-Two single-page apps sit on `/api`. Each one has its own origin and its own
+Three single-page apps sit on `/api`. Each one has its own origin and its own
 OAuth client.
 
 | App | What it does |
 |---|---|
 | [Conversations](https://github.com/jhgaylor/fountain-conversations) | Start a run, watch it, steer it, read the raw log. |
 | [Team](https://github.com/jhgaylor/fountain-team) | Agents as teammates, one thread for each. |
+| [Workbench](https://github.com/jhgaylor/fountain-workbench) | Projects over an environment and a vault, work items in them, teammates on the work items. |
 
-They replaced in-app LiveViews. Six paths now redirect, and they do not 404.
+The first two replaced in-app LiveViews, and the console links to them.
+Workbench replaced no page, so the console does not link it. All three take
+your server URL as input.
+
+Six paths now redirect, and they do not 404.
 They are `/conversations`, `/conversations/new`, `/conversations/:id`,
 `/conversations/:id/logs`, `/team` and `/team/:agent_id`.
 

@@ -352,6 +352,103 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ ~p"/privacy"
     end
   end
+
+  # The three apps this project builds itself lead every page that shows the
+  # roster (#1219). Each is one entry in built_apps/0 carrying a :flagship
+  # key, so these tests are what stops a page naming them by hand and drifting.
+  describe "the flagship three" do
+    test "the roster holds exactly three, each with the lines a featured card needs" do
+      flagship = FountainWeb.MarketingHTML.flagship_apps()
+
+      assert Enum.map(flagship, & &1.id) ==
+               ~w(fountain-conversations fountain-team fountain-workbench)
+
+      for app <- flagship do
+        assert app.flagship.like != ""
+        assert app.flagship.who != ""
+        assert app in FountainWeb.MarketingHTML.built_apps_flat(), "#{app.name} left the roster"
+      end
+
+      # They are their own group, and it is the one the pages lift out.
+      group = FountainWeb.MarketingHTML.flagship_group()
+      assert group.apps == flagship
+      assert group.id not in Enum.map(FountainWeb.MarketingHTML.other_app_groups(), & &1.id)
+
+      rest = Enum.flat_map(FountainWeb.MarketingHTML.other_app_groups(), & &1.apps)
+
+      assert length(rest) == length(FountainWeb.MarketingHTML.built_apps_flat()) - 3,
+             "an app fell out of the roster when the three were lifted from it"
+
+      assert rest -- flagship == rest, "a flagship app is in two groups"
+    end
+
+    test "the homepage opens each one and links its source", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      assert body =~ "Or use the apps we built on it."
+
+      for app <- FountainWeb.MarketingHTML.flagship_apps() do
+        assert body =~ app.name, "the homepage does not name #{app.name}"
+        assert body =~ app.url, "the homepage does not open #{app.name}"
+        assert body =~ app.source, "the homepage does not link #{app.name}'s source"
+        assert body =~ app.flagship.like, "the homepage drops #{app.name}'s framing"
+      end
+    end
+
+    test "/built-with features them above the rest of the roster", %{conn: conn} do
+      body = conn |> get(~p"/built-with") |> html_response(200)
+
+      assert body =~ FountainWeb.MarketingHTML.flagship_group().title
+
+      for app <- FountainWeb.MarketingHTML.flagship_apps() do
+        assert body =~ app.flagship.like, "no featured framing for #{app.name}"
+        assert body =~ app.flagship.who, "no audience line for #{app.name}"
+      end
+
+      # Featured means once, not twice: the group is lifted out of the loop
+      # that renders every other group, so its cards must not render again.
+      assert body |> String.split(~s(data-role="app")) |> length() ==
+               length(FountainWeb.MarketingHTML.built_apps_flat()) -
+                 length(FountainWeb.MarketingHTML.flagship_apps()) + 1
+
+      # The three lead the page: their section is the first group anchor in the
+      # document, whatever order built_apps/0 happens to be read in.
+      order =
+        for group <- FountainWeb.MarketingHTML.built_apps() do
+          {pos, _len} = :binary.match(body, ~s(id="#{group.id}"))
+          {pos, group.id}
+        end
+
+      assert order |> Enum.sort() |> hd() |> elem(1) == "flagship"
+    end
+
+    test "/self-hosted shows them as the front ends an instance gets", %{conn: conn} do
+      body = conn |> get(~p"/self-hosted") |> html_response(200)
+
+      assert body =~ "The apps come with it."
+      assert body =~ "API_CORS_ORIGINS"
+      assert body =~ "CONVERSATIONS_APP_URL"
+      assert body =~ "TEAM_APP_URL"
+
+      for app <- FountainWeb.MarketingHTML.flagship_apps() do
+        assert body =~ app.url, "self-hosted does not open #{app.name}"
+        assert body =~ app.source, "self-hosted does not link #{app.name}'s source"
+      end
+
+      # The showcase above the bring-up argues that other people build on this,
+      # so it must not spend one of its four cards on an app of ours.
+      showcase = FountainWeb.MarketingHTML.self_host_showcase()
+      assert showcase -- FountainWeb.MarketingHTML.flagship_apps() == showcase
+    end
+
+    test "/integrations names them under its own API", %{conn: conn} do
+      body = conn |> get(~p"/integrations") |> html_response(200)
+
+      for app <- FountainWeb.MarketingHTML.flagship_apps() do
+        assert body =~ app.name, "/integrations does not name #{app.name}"
+      end
+    end
+  end
 end
 
 defmodule FountainWeb.OpenGraphTest do

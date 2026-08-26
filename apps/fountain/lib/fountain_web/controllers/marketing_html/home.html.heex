@@ -265,6 +265,51 @@
   </div>
 </section>
 
+<%!-- The flagship three: the apps this project builds itself, and the fastest
+      answer to "what does using it look like". Cards come from built_apps/0,
+      so the homepage cannot name an app /built-with has renamed or retired. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    Or use the apps we built on it.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    {Fountain.Brand.name()}'s own UI is a console for accounts, keys and agents. The apps you work in are these three. Each is static files in a browser talking to the same API you get, so each one runs against your account the moment you sign in.
+  </p>
+  <div class="grid md:grid-cols-3 gap-6">
+    <article
+      :for={app <- flagship_apps()}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+      data-role="flagship"
+    >
+      <div class="text-3xl leading-none" aria-hidden="true">{app.glyph}</div>
+      <h3 class="mt-3 text-lg font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+      <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">{app.flagship.like}</p>
+      <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed flex-1">
+        {app.blurb}
+      </p>
+      <div class="mt-5 flex flex-wrap items-center gap-4">
+        <a
+          href={app.url}
+          rel="noopener"
+          class="inline-flex items-center px-4 py-2 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+        >
+          Open it
+        </a>
+        <a
+          href={app.source}
+          rel="noopener"
+          class="text-sm text-[var(--color-text-secondary)] underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+        >
+          Source
+        </a>
+      </div>
+    </article>
+  </div>
+  <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
+    All three are open source, and none of them holds anything of yours. Point one at your own instance instead and it works the same.
+  </p>
+</section>
+
 <%!-- Built with: proof that the API carries whole products, not just calls. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16 text-center">
@@ -272,11 +317,11 @@
       People build whole products on it.
     </h2>
     <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-8">
-      {length(built_apps_flat())} of them are open source and running right now: a researcher that returns cited briefs, an analyst that runs Python on your CSV, an SRE on a cron, a DNS desk with an approval gate. Most have no backend of their own.
+      {length(built_apps_flat())} are open source and running right now. Beside the three above: a researcher that returns cited briefs, an analyst that runs Python on your CSV, an SRE on a cron, a DNS desk with an approval gate. Most have no backend of their own.
     </p>
     <ul class="flex flex-wrap justify-center gap-2 mb-8">
       <li
-        :for={app <- built_apps_flat()}
+        :for={app <- other_apps_flat()}
         class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
       >
         <span aria-hidden="true">{app.glyph}</span>
