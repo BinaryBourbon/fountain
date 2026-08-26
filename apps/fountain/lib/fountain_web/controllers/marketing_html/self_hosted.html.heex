@@ -111,6 +111,63 @@
   </div>
 </section>
 
+<%!-- The front ends. A self-hoster's next question after the bring-up is what
+      they open, and the answer is three static builds that take a server URL.
+      Cards come from built_apps/0, so this cannot name a retired app. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    The apps come with it.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    What you just brought up serves a console: accounts, keys, agents, environments, audit. The apps your team works in are these three, and each is static files that take a server URL as input. Admit the origin once and all three answer to your instance, with your agents, your sandboxes and your keys. Host your own copies instead if you would rather; they are open source too.
+  </p>
+  <div class="grid md:grid-cols-3 gap-6">
+    <article
+      :for={app <- flagship_apps()}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 flex flex-col"
+      data-role="flagship"
+    >
+      <div class="text-2xl leading-none" aria-hidden="true">{app.glyph}</div>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+      <p class="mt-1 text-sm text-[var(--color-text-secondary)]">{app.flagship.like}</p>
+      <div class="mt-4 flex flex-wrap items-center gap-4 text-sm">
+        <a
+          href={app.url}
+          rel="noopener"
+          class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+        >
+          Open it
+        </a>
+        <a
+          href={app.source}
+          rel="noopener"
+          class="text-[var(--color-text-secondary)] underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+        >
+          Source
+        </a>
+      </div>
+    </article>
+  </div>
+  <div class="mt-10 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+    <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      A browser app on another origin calling your API is a CORS request, so name the origin it is served from:
+    </p>
+    <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-4 text-xs text-[var(--color-code-text)]"><code phx-no-format>API_CORS_ORIGINS=https://jakegaylor.com</code></pre>
+    <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      Conversations and Team are also what the console's own links point at, so <code
+        class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+        phx-no-format
+      >CONVERSATIONS_APP_URL</code> and <code
+        class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+        phx-no-format
+      >TEAM_APP_URL</code> swing them to copies you host, and an empty string says this deployment has none. Both are in the <a
+        href={~p"/docs/configuration"}
+        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+      >configuration reference</a>.
+    </p>
+  </div>
+</section>
+
 <%!-- The inversion: what is rationed on the hosted platform is an env var on
       your own. The rows track docs/reference/feature-status.md. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">

@@ -16,6 +16,23 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **The three apps we build ourselves lead the marketing pages.**
+  Conversations, Team and Workbench were scattered through `/built-with`, one
+  of them filed under "For engineers" and the other two last on the page. They
+  are now a tier of their own: a featured band straight under the hero on
+  `/built-with`, a section of their own on `/`, and a band on `/self-hosted`
+  answering what a fresh instance serves, with the `API_CORS_ORIGINS`,
+  `CONVERSATIONS_APP_URL` and `TEAM_APP_URL` lines that point them at it. Each
+  card says what the app is like (a chat client where the model has a real
+  computer, a group chat whose contacts are agents, multiplayer engineering)
+  and who it is for. The tier is a key on the roster entry rather than a
+  second list, so a featured card cannot drift from `/built-with`, and the
+  suite checks the three lead the page and render exactly once. The README and
+  the manual's `The console, the apps, and the API` name all three as well;
+  that page counted two.
+
 ### Added
 
 - **Search over the manual, at `/docs` (#1009).** A field at the top of the

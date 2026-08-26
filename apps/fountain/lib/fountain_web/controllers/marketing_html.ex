@@ -239,10 +239,19 @@ defmodule FountainWeb.MarketingHTML do
           "Everything above is a translation of this. Create a conversation, send a " <>
             "prompt, stream the turn as blocks the server has already parsed, or take a " <>
             "signed webhook when it ends. Sign in with Fountain gives a browser app of " <>
-            "your own an OAuth flow whose tokens are ordinary API keys.",
+            "your own an OAuth flow whose tokens are ordinary API keys. The three apps " <>
+            "this project ships are built on exactly this and nothing private: static " <>
+            "files, the SDK, your key.",
         docs: "/docs/api",
         docs_label: "The API reference",
         works_with: [
+          %{
+            name: "Conversations",
+            slug: nil,
+            note: "the chat app we ship, static files on the SDK"
+          },
+          %{name: "Team", slug: nil, note: "the team messenger, on the same public API"},
+          %{name: "Workbench", slug: nil, note: "the shared engineering workbench"},
           %{name: "TypeScript", slug: "typescript", note: "@agentshit/fountain-sdk on npm"},
           %{name: "Go", slug: "go", note: "the fountain CLI, and its source"},
           %{
@@ -467,15 +476,77 @@ defmodule FountainWeb.MarketingHTML do
 
   ## /built-with
   #
-  # The apps people have built on the API, grouped by who they are for. Every
-  # one is a real deployment against the hosted instance, and every one is
-  # open source, so a card carries two links and the page carries no claim
-  # that cannot be clicked. The controller test asserts both are absolute and
-  # that no app is listed twice.
+  # The apps built on the API, grouped by who they are for. Every one is a
+  # real deployment against the hosted instance, and every one is open source,
+  # so a card carries two links and the page carries no claim that cannot be
+  # clicked. The controller test asserts both are absolute and that no app is
+  # listed twice.
+  #
+  # The first group is the three this project builds itself, and they lead
+  # every page that shows the roster. An app in it carries a `:flagship` key
+  # holding the two lines the featured cards add: what it is like, and who it
+  # is for. That key is what `flagship_apps/0` selects on, so the tier is a
+  # property of the entry rather than a second list to keep in step.
 
   @doc "The applications built on the API, in the order and grouping the page shows."
   def built_apps do
     [
+      %{
+        id: "flagship",
+        title: "The three we build ourselves",
+        blurb:
+          "Fountain's own UI is a console: accounts, keys, agents, environments, audit. The apps you actually work in are these, on their own origins, built on the same public API as everything below. Open one, point it at your instance, sign in.",
+        apps: [
+          %{
+            id: "fountain-conversations",
+            glyph: "\u{1F9F5}",
+            name: "Conversations",
+            host: "jakegaylor.com/fountain-conversations",
+            url: "https://jakegaylor.com/fountain-conversations/",
+            source: "https://github.com/jhgaylor/fountain-conversations",
+            blurb:
+              "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
+            shows: "the event stream as blocks, and one sandbox behind many conversations",
+            flagship: %{
+              like: "ChatGPT, except the model has a real computer and you can watch it use one.",
+              who: "Open this one first. It is the whole platform with a face on it."
+            }
+          },
+          %{
+            id: "fountain-team",
+            glyph: "\u{1F465}",
+            name: "Team",
+            host: "jakegaylor.com/fountain-team",
+            url: "https://jakegaylor.com/fountain-team/",
+            source: "https://github.com/jhgaylor/fountain-team",
+            blurb:
+              "Your agents as teammates in a messaging app. Roster on the left, thread on the right, routines on a schedule, images and search. Enter to send.",
+            shows: "the team API, SSE streaming, schedules, usage",
+            flagship: %{
+              like:
+                "A group chat whose contacts are bots you made, one click each, faces and all.",
+              who: "For anyone who would rather text a teammate than fill in a form."
+            }
+          },
+          %{
+            id: "fountain-workbench",
+            glyph: "\u{1F9F0}",
+            name: "Workbench",
+            host: "workbench.inevitable.fyi",
+            url: "https://workbench.inevitable.fyi",
+            source: "https://github.com/jhgaylor/fountain-workbench",
+            blurb:
+              "A dev workstation the team shares. A project is an environment and a vault, work items live in it, and putting a teammate on one is a first prompt rather than four steps of setup.",
+            shows: "projects over environments and vaults, agents as staff",
+            flagship: %{
+              like:
+                "Multiplayer engineering: one board of work items, and staff you put on them by typing.",
+              who:
+                "For a team that wants the same projects, the same agents and one place to watch."
+            }
+          }
+        ]
+      },
       %{
         id: "everyone",
         title: "For everyone",
@@ -544,17 +615,6 @@ defmodule FountainWeb.MarketingHTML do
             blurb:
               "Describe a mission. A coordinator plans it, you approve the plan, and the app starts one sandboxed agent per task. Watch the fleet work and take one report.",
             shows: "plan, approve, fan out, multiplex the streams, synthesize"
-          },
-          %{
-            id: "fountain-workbench",
-            glyph: "\u{1F9F0}",
-            name: "Workbench",
-            host: "workbench.inevitable.fyi",
-            url: "https://workbench.inevitable.fyi",
-            source: "https://github.com/jhgaylor/fountain-workbench",
-            blurb:
-              "A dev workstation the team shares. A project is an environment and a vault, work items live in it, and putting a teammate on one is a first prompt rather than four steps of setup.",
-            shows: "projects over environments and vaults, agents as staff"
           },
           %{
             id: "dns-desk",
@@ -628,42 +688,28 @@ defmodule FountainWeb.MarketingHTML do
             shows: "parallel conversations, the model catalog, per-turn usage"
           }
         ]
-      },
-      %{
-        id: "clients",
-        title: "The clients",
-        blurb:
-          "The two apps this project ships itself. The console stays a console; watching an agent work and messaging a teammate are these, on their own origins, built on the same public API as everything above.",
-        apps: [
-          %{
-            id: "fountain-team",
-            glyph: "\u{1F465}",
-            name: "Team",
-            host: "jakegaylor.com/fountain-team",
-            url: "https://jakegaylor.com/fountain-team/",
-            source: "https://github.com/jhgaylor/fountain-team",
-            blurb:
-              "Your agents as teammates in a messaging app. Roster on the left, thread on the right, routines on a schedule, images and search. Enter to send.",
-            shows: "the team API, SSE streaming, schedules, usage"
-          },
-          %{
-            id: "fountain-conversations",
-            glyph: "\u{1F9F5}",
-            name: "Conversations",
-            host: "jakegaylor.com/fountain-conversations",
-            url: "https://jakegaylor.com/fountain-conversations/",
-            source: "https://github.com/jhgaylor/fountain-conversations",
-            blurb:
-              "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
-            shows: "the event stream as blocks, and one sandbox behind many conversations"
-          }
-        ]
       }
     ]
   end
 
   @doc "Every app on /built-with, flattened. The count the page quotes comes from here."
   def built_apps_flat, do: Enum.flat_map(built_apps(), & &1.apps)
+
+  @doc """
+  The three applications this project builds itself, in the order every page
+  shows them. Selected out of `built_apps/0` rather than restated, so a
+  flagship card cannot drift from its roster entry.
+  """
+  def flagship_apps, do: Enum.filter(built_apps_flat(), &Map.has_key?(&1, :flagship))
+
+  @doc "The group the flagship apps sit in, for the heading above their cards."
+  def flagship_group, do: Enum.find(built_apps(), &(&1.id == "flagship"))
+
+  @doc "The rest of the roster, which /built-with lists under the featured three."
+  def other_app_groups, do: Enum.reject(built_apps(), &(&1.id == "flagship"))
+
+  @doc "The rest of the roster, flattened, for the homepage's chip row."
+  def other_apps_flat, do: Enum.flat_map(other_app_groups(), & &1.apps)
 
   ## /self-hosted
 
@@ -673,11 +719,14 @@ defmodule FountainWeb.MarketingHTML do
   def repo_url, do: @repo_url
 
   # The four apps /self-hosted leads with, chosen for four different shapes of
-  # front door: an assistant you text, a shared workstation, an unattended
-  # repair loop, and a fan-out. Selected from `built_apps/0` by id rather than
-  # restated, so a card here cannot drift from /built-with, and an app that is
-  # renamed or retired there raises at render instead of linking nowhere.
-  @showcase_ids ~w(reflex fountain-workbench rounds mission-control)
+  # front door: an assistant you text, an analyst behind a file upload, an
+  # unattended repair loop, and a fan-out. Selected from `built_apps/0` by id
+  # rather than restated, so a card here cannot drift from /built-with, and an
+  # app that is renamed or retired there raises at render instead of linking
+  # nowhere. The flagship three are deliberately not here: the same page shows
+  # them below the bring-up, as the front ends the reader gets rather than as
+  # evidence that other people build on this.
+  @showcase_ids ~w(reflex table-talk rounds mission-control)
 
   @doc """
   The applications /self-hosted shows above the bring-up. The page's claim is

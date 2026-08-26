@@ -26,17 +26,6 @@ defmodule Fountain.Workers.CreditPricerTest do
     insert_conversation(user_id: user.id, sandbox: sandbox)
   end
 
-  test "no-ops with billing off" do
-    user = insert_empty_user()
-    conv = setup_conv(user)
-    closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
-
-    Application.put_env(:fountain, :credits_enabled, false)
-    on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
-    assert %{turns: 0, messages: 0} = CreditPricer.run(since: @since, now: @now)
-    assert Credits.balance(user.id) == 0
-  end
-
   test "a closed hour on sprites burns 25 cents, once, with the turn as the resource" do
     user = insert_empty_user()
     conv = setup_conv(user)
@@ -166,5 +155,38 @@ defmodule Fountain.Workers.CreditPricerTest do
 
     assert :ok = CreditPricer.perform(%Oban.Job{args: %{}})
     assert Credits.balance(user.id) == -25
+  end
+end
+
+# Billing off is a global switch (`:credits_enabled` in the application env),
+# so a test that flips it cannot share a scheduler with tests that read it.
+# ExUnit runs `async: false` modules alone, after the async ones, which is the
+# isolation this needs. Left async, this test turned a concurrent credits
+# assertion red on the wrong seed.
+
+defmodule Fountain.Workers.CreditPricerBillingOffTest do
+  use Fountain.DataCase, async: false
+
+  alias Fountain.Credits
+  alias Fountain.Workers.CreditPricer
+
+  test "no-ops with billing off" do
+    user = insert_empty_user()
+    sandbox = insert_sandbox(user_id: user.id, provider: "sprites", status: "ready")
+    conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+
+    insert_turn(conv, %{
+      status: "completed",
+      started_at: ~U[2026-08-02 10:00:00Z],
+      ended_at: ~U[2026-08-02 11:00:00Z]
+    })
+
+    Application.put_env(:fountain, :credits_enabled, false)
+    on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
+
+    assert %{turns: 0, messages: 0} =
+             CreditPricer.run(since: ~U[2026-08-01 00:00:00Z], now: ~U[2026-08-03 12:00:00Z])
+
+    assert Credits.balance(user.id) == 0
   end
 end

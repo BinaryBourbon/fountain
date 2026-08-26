@@ -7,7 +7,7 @@
     {length(built_apps_flat())} products. One API behind all of them.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Every app below is a small product built almost entirely on the {Fountain.Brand.name()} API. Most have no backend of their own at all: static files in a browser, the API, and an agent with a real computer. That is the whole stack. All of them are open source, and all of them are running right now.
+    Three of them we build ourselves: a chat app, a team messenger and a shared engineering workbench. The rest were built the same way, on the same public API. Most have no backend of their own at all: static files in a browser, the API, and an agent with a real computer. That is the whole stack. All of them are open source, and all of them are running right now.
   </p>
   <div class="flex flex-wrap gap-2 justify-center" data-role="group-chips">
     <a
@@ -21,8 +21,65 @@
   </div>
 </section>
 
+<%!-- The flagship three. They are the group `built_apps/0` puts first, lifted
+      out of the loop below so they lead the page rather than sitting in it.
+      The anchor id matches the group's, so the hero chip still lands here. --%>
+<section
+  id="flagship"
+  class="scroll-mt-6 border-t border-[var(--color-border)] bg-[var(--color-bg-1)]"
+>
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <p class="text-sm font-medium uppercase tracking-wide text-[var(--color-brand)] text-center">
+      Start here
+    </p>
+    <h2 class="mt-2 text-2xl font-semibold text-[var(--color-text-primary)] text-center">
+      {flagship_group().title}
+    </h2>
+    <p class="mt-3 text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto">
+      {flagship_group().blurb}
+    </p>
+    <div class="mt-10 grid md:grid-cols-3 gap-6">
+      <article
+        :for={app <- flagship_apps()}
+        id={app.id}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col scroll-mt-6 shadow-sm"
+        data-role="flagship"
+      >
+        <div class="text-3xl leading-none" aria-hidden="true">{app.glyph}</div>
+        <h3 class="mt-3 text-lg font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+        <p class="mt-0.5 text-xs text-[var(--color-text-muted)] break-all">{app.host}</p>
+        <p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
+          {app.flagship.like}
+        </p>
+        <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed flex-1">
+          {app.blurb}
+        </p>
+        <p class="mt-4 text-xs text-[var(--color-text-muted)] leading-relaxed">
+          {app.flagship.who}
+        </p>
+        <div class="mt-5 flex flex-wrap gap-3">
+          <a
+            href={app.url}
+            rel="noopener"
+            class="inline-flex items-center px-4 py-2 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+          >
+            Open it
+          </a>
+          <a
+            href={app.source}
+            rel="noopener"
+            class="inline-flex items-center px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+          >
+            Source
+          </a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
 <%!-- How they all connect --%>
-<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+<section class="border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
       They all connect the same way.
@@ -31,7 +88,7 @@
       Open one, give it the address of a {Fountain.Brand.name()} server, then sign in with your account or paste an API key. The app runs in your browser against your own agents, your own sandboxes and your own credit. Nothing of yours reaches whoever wrote it.
     </p>
     <div class="grid sm:grid-cols-3 gap-6">
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
         <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
           Step one
         </p>
@@ -40,7 +97,7 @@
           The hosted instance, or the one you self-host. The app asks for the URL on first load.
         </p>
       </div>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
         <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
           Step two
         </p>
@@ -51,7 +108,7 @@
           OAuth with PKCE. The token it gets is an ordinary API key, so it lists and revokes under Account.
         </p>
       </div>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
         <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
           Step three
         </p>
@@ -64,10 +121,18 @@
   </div>
 </section>
 
-<%!-- The apps --%>
+<%!-- The rest of the roster --%>
 <section class="max-w-5xl mx-auto px-6 py-16 space-y-16">
+  <div class="text-center">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)]">
+      And what the API carries beyond them.
+    </h2>
+    <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl mx-auto">
+      Same API, same sign-in, no backend of their own. Each one was written to prove a different thing an agent with a computer can do.
+    </p>
+  </div>
   <div
-    :for={group <- built_apps()}
+    :for={group <- other_app_groups()}
     id={group.id}
     class="scroll-mt-6"
     data-role="group"
