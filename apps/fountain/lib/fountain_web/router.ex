@@ -453,6 +453,9 @@ defmodule FountainWeb.Router do
     end
 
     resources "/agents", AgentController, except: [:new, :edit]
+    # Config history (ADR 0029, #1051): read-only. Rollback stays a console action.
+    get "/agents/:id/versions", AgentVersionController, :index
+    get "/agents/:id/versions/:version", AgentVersionController, :show
     # The form vocabulary and the avatar generator, for clients that build
     # the agent/environment forms elsewhere (#815).
     get "/catalog", CatalogController, :show

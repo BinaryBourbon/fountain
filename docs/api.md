@@ -229,6 +229,16 @@ DELETE /api/agents/:id
 ```
 
 ```
+GET    /api/agents/:id/versions            # config history, newest first
+GET    /api/agents/:id/versions/:version   # one version, with its full config
+```
+
+Fountain writes a version each time an agent's config changes. Version 1 is
+the config at create time. Each version carries the full config
+and a `version` number. The API serves versions as read-only data. A rollback
+is a console action.
+
+```
 GET    /api/agents/:id/avatar   # image bytes (bearer token)
 PUT    /api/agents/:id/avatar   # raw bytes with an image content-type, or {"data": base64, "media_type": ...}
 DELETE /api/agents/:id/avatar
@@ -467,6 +477,12 @@ none. On a turn older than the field.
 Fountain records it once for each turn. It never sums the `usage_update`
 notifications that stream while a turn runs. Those report how full the context
 window is, and each runtime means something different by that.
+
+Each conversation carries `agent_version_id` and `agent_version`. They name
+the agent config version that the conversation started with. Both are null
+for a conversation that predates config versions. The list and get endpoints
+resolve `agent_version`; other endpoints that embed a conversation return
+null for it. Read the version at `/api/agents/:id/versions/:version`.
 
 Each conversation carries `usage_total: {input, output}`, a sum over its
 turns. A `/api/team` roster entry carries `usage_total` summed over each
