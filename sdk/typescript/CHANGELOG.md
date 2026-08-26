@@ -10,6 +10,50 @@ server releases.
 
 ---
 
+## [1.11.0] — 2026-08-25
+
+### Added
+
+- Generated types for the tool bridge on the OpenAI-compatible endpoint
+  (fountain #1202): `tools` and `tool_choice` on the chat-completions
+  request, `tool_calls` on the reply and `finish_reason: "tool_calls"`. The
+  SDK still does not wrap `/v1`; the types follow the spec.
+
+## [1.10.0] — 2026-08-25
+
+### Added
+
+- Generated types for the server's OpenAI-compatible endpoints (fountain
+  ADR 0035, #1198): `POST /v1/chat/completions`, `GET /v1/models` and
+  `GET /v1/models/{model}`, where the `model` is a Fountain agent. The SDK
+  does not wrap them. It is for the real API, and any `openai` client
+  already speaks these, but their request and response shapes now ship in
+  `paths` for callers that want them typed.
+
+---
+
+## [1.9.0] — 2026-08-25
+
+### Added
+
+- Agent config versions, generated from the server's OpenAPI spec (fountain
+  ADR 0029, #1051). `GET /api/agents/{id}/versions` lists an agent's config
+  history newest first and `GET /api/agents/{id}/versions/{version}` returns
+  one version with its full `config`; both are read-only. `Conversation`
+  gains `agent_version_id` and `agent_version`, the version the conversation
+  launched under (null for conversations that predate versioning; the number
+  is resolved on the conversation list and get endpoints). Types only: the
+  hand-written client does not yet wrap the new endpoints.
+
+## [1.8.0] — 2026-08-25
+
+### Changed
+
+- `DEFAULT_BASE_URL` is `https://managoat.com`, the hosted Fountain's new
+  domain (fountain#1177). The old host redirects, so an SDK pinned before
+  this release keeps working; set `baseUrl` explicitly for a self-hosted
+  instance either way.
+
 ## [1.7.0] — 2026-08-25
 
 ### Added

@@ -38,6 +38,7 @@ nav:
   - Setup: setup.md
   - Run an instance:
       - Self-host Fountain: self-hosting.md
+      - Open source: open-source.md
       - Deploy an instance: guides/operate/deploy.md
       - Put it on the internet: guides/operate/put-it-on-the-internet.md
       - Connect a database: guides/operate/database.md
@@ -112,6 +113,8 @@ nav:
       - OpenClaw (ACP): integrations/openclaw.md
       - Hermes Agent (plugin): integrations/hermes.md
       - OpenBot (AG-UI): integrations/openbot.md
+      - OpenAI-compatible API: integrations/openai-compatible.md
+      - LangChain and Deep Agents: integrations/langchain.md
       - Buzz (Nostr): integrations/buzz.md
       - LLM integration: llm-integration.md
   - Changelog: changelog.md

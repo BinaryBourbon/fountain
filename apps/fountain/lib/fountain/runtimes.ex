@@ -96,7 +96,8 @@ defmodule Fountain.Runtimes do
   provision time (e.g. claude's `~/.claude.json` for MCP servers).
   No-op by default.
   """
-  @callback write_config(handle :: Fountain.Sandbox.Handle.t(), agent :: %Agent{} | nil) :: :ok
+  @callback write_config(handle :: Fountain.Sandbox.Handle.t(), agent :: %Agent{} | nil) ::
+              :ok | {:error, term()}
 
   @doc """
   Optionally run any sprite-side bootstrap that has to happen *before*

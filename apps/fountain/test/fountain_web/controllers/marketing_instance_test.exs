@@ -28,10 +28,16 @@ defmodule FountainWeb.MarketingInstanceTest do
       assert body =~ ~p"/auth/login"
       assert body =~ "/docs"
 
-      refute body =~ "Have the conversation. Skip the infrastructure."
+      refute body =~ "Give your app a coding agent. Skip the machine it needs."
       refute body =~ "What you stop building."
       refute body =~ "14-day trial"
       refute body =~ "Managed agent infrastructure"
+
+      # The Open Graph card follows the same rule: no pitch, only what it is.
+      assert body =~
+               ~s(<meta property="og:description" content="Fountain runs agents on sandboxes)
+
+      assert body =~ ~s(<meta property="og:image:alt" content="Fountain")
     end
 
     test "keeps the price off the page even with a price configured", %{conn: conn} do
@@ -68,12 +74,24 @@ defmodule FountainWeb.MarketingInstanceTest do
     end
   end
 
+  describe "GET /integrations where the deployment is not the marketing site" do
+    test "sends the visitor to the manual's own list rather than the pitch", %{conn: conn} do
+      Application.put_env(:fountain, :marketing_site, false)
+
+      conn = get(conn, ~p"/integrations")
+      assert redirected_to(conn) == ~p"/docs/integrations/clients"
+
+      # The layout drops the link too: a nav entry to a redirect is a dead end.
+      refute conn |> get(~p"/") |> html_response(200) =~ ~p"/integrations"
+    end
+  end
+
   describe "GET / on the marketing site" do
     test "still serves the pitch", %{conn: conn} do
       Application.put_env(:fountain, :marketing_site, true)
 
       body = conn |> get(~p"/") |> html_response(200)
-      assert body =~ "Have the conversation. Skip the infrastructure."
+      assert body =~ "Give your app a coding agent. Skip the machine it needs."
       assert body =~ "Managed agent infrastructure"
       refute body =~ "This instance runs agents on sandboxes"
     end

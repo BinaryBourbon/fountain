@@ -12,10 +12,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
     <title>{assigns[:page_title] || Fountain.Brand.name()}</title>
-    <link rel="icon" href="/favicon.ico" sizes="any" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png" />
+    <%!--
+      Open Graph / Twitter card, on every page. `FountainWeb.OpenGraph` holds
+      the defaults and builds the absolute URLs from :public_url, not from the
+      request host (see its moduledoc for why).
+    --%>
+    <meta name="description" content={FountainWeb.OpenGraph.description(assigns)} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={Fountain.Brand.name()} />
+    <meta property="og:title" content={FountainWeb.OpenGraph.title(assigns)} />
+    <meta property="og:description" content={FountainWeb.OpenGraph.description(assigns)} />
+    <meta property="og:url" content={FountainWeb.OpenGraph.url(assigns[:conn])} />
+    <meta property="og:image" content={FountainWeb.OpenGraph.image()} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={FountainWeb.OpenGraph.image_alt()} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={FountainWeb.OpenGraph.title(assigns)} />
+    <meta name="twitter:description" content={FountainWeb.OpenGraph.description(assigns)} />
+    <meta name="twitter:image" content={FountainWeb.OpenGraph.image()} />
+    <link rel="icon" href={Fountain.Brand.asset("favicon.ico")} sizes="any" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href={Fountain.Brand.asset("favicon-32x32.png")}
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href={Fountain.Brand.asset("favicon-16x16.png")}
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href={Fountain.Brand.asset("apple-touch-icon.png")}
+    />
     <%!--
       PostHog, on the public surface only — the landing and legal pages, the
       manual and the auth flow. `FountainWeb.Plugs.WebAnalytics` sets this

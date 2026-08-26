@@ -37,7 +37,10 @@ defmodule Fountain.FeatureFlags do
   @flags %{
     # A teammate can be given an email address and a phone number, and gets
     # MCP tools to use them (AgentMail + AgentPhone, keys held by Fountain).
-    team_comms: "team_comms"
+    team_comms: "team_comms",
+    # The OpenAI-compatible `/v1` endpoints (ADR 0035). Alpha: the dialect's
+    # edges (thread key, reasoning_content, error codes) may still move.
+    openai_compat: "openai_compat"
   }
 
   @doc "The PostHog key for a known flag atom."

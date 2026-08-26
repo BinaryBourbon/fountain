@@ -18,6 +18,90 @@ upgrade, is in
 
 ### Added
 
+- **An integrations page on the marketing site, `/integrations`.** The
+  protocols Fountain answers (AG-UI, the Agent Client Protocol, OpenAI chat
+  completions, MCP, its own REST API and webhooks, and Buzz over Nostr), what
+  already speaks each one, a snippet for each shape of builder, and the
+  runtimes, models, sandboxes and brokered services behind the door. Data
+  first: every link into the manual is checked by the suite, and the broker
+  presets are read from the same catalog the console offers. Off the marketing
+  site it redirects to the manual's own list, as `/` serves a plain front
+  door there.
+
+- **Tool bridge on `/v1/chat/completions` and AG-UI (#1202).** A request's
+  `tools` are offered to the agent beside its own, through one more
+  Fountain-served MCP server (`POST /api/mcp/caller/:conversation_id`). When
+  the agent calls one, the completion ends with `finish_reason: "tool_calls"`
+  (AG-UI: `TOOL_CALL_*` then `RUN_FINISHED` with `stopReason: "tool_calls"`)
+  while the turn stays open; the next request's `role: "tool"` messages
+  answer it and the turn resumes. A `user` message while calls are pending
+  is 409 `tool_calls_pending`; an unanswered call expires on the permission
+  deadline. The sandbox's own tools still never come back as tool calls.
+  ADR 0035 decision 4 amended. `examples/deepagents-contractor` gains
+  `FountainAgent.as_model()` for `create_agent`.
+
+- **LangChain and Deep Agents example.** `examples/deepagents-contractor`:
+  a Deep Agent orchestrator whose subagents are Fountain agents, over the
+  OpenAI-compatible API. `fountain_langchain.py` makes one agent a
+  `CompiledSubAgent`, a LangChain tool or a bare runnable, keyed to the
+  LangGraph `thread_id` so one thread keeps one sandbox per agent. Docs page
+  `docs/integrations/langchain.md`.
+- **OpenAI-compatible chat completions (alpha, flag `openai_compat`).**
+  `POST /v1/chat/completions` and
+  `GET /v1/models`, where the `model` is one of the tenant's agents (by name
+  or id), so any gateway (LiteLLM, Portkey, Kong, Cloudflare AI Gateway) or
+  base-URL chat client (Open WebUI, LibreChat, the `openai` SDK, `curl`)
+  drives a Fountain agent with no plugin. The thread is the conversation:
+  `X-Fountain-Thread`, else the request's `user` field, binds to channel
+  `openai:<key>`; only the newest user message is sent as the prompt, the
+  system prompt rides along with the first one, and a request with neither
+  key is a 400. `stream: true` streams `chat.completion.chunk` deltas
+  (`content` for the reply, `reasoning_content` for thinking, tool use and
+  provisioning stages) ending with `[DONE]`; `stream: false` blocks for the
+  turn. Tool calls are never emitted, `usage` is zeros, a busy thread is 409
+  with `Retry-After`. ADR 0035; `docs/integrations/openai-compatible.md`.
+  Off by default on the hosted platform: 404 `openai_compat_not_enabled`
+  until the flag is on (`FEATURE_FLAGS_ON=openai_compat` self-hosted). A
+  runnable client on the stock `openai` package is in `examples/openai-chat`.
+  The TypeScript SDK's generated types follow. #1198
+- **Agent config versions over the API.** `GET /api/agents/:id/versions`
+  lists an agent's config history newest first and
+  `GET /api/agents/:id/versions/:version` returns one version with its full
+  config; both are read-only (rollback stays a console action). Every
+  conversation now reports the version it launched under as
+  `agent_version_id` plus the resolved `agent_version` number (null for
+  conversations that predate versioning; the number is resolved on the
+  conversation list and get endpoints). The account export fetches version
+  history in one query instead of one per agent. The TypeScript SDK's
+  generated types follow (SDK 1.9.0). #1051
+- **`BRAND_ASSETS_URL`.** A deployment can serve its own app icon, favicons
+  and Open Graph card from any static host instead of the files in the
+  release image: point the variable at a directory holding the six files
+  `Fountain.Brand.assets/0` names and the chrome links them, the card
+  unfurls with them and the CSP admits the origin on `img-src`. Unset,
+  nothing changes. Changing a brand's pixels no longer means rebuilding the
+  engine.
+
+## [0.14.0] — 2026-08-25
+
+### Upgrade notes
+
+- **The hosted instance is `managoat.com`.** Self-hosters are unaffected:
+  `PUBLIC_URL` is yours, and a CLI or SDK pointed at your instance
+  (`FOUNTAIN_BASE_URL`, `fountain auth login`, `baseUrl`) keeps pointing
+  there. Only the compile-time fallback changed.
+- Connections are opt-in: without `GOOGLE_OAUTH_CLIENT_ID` /
+  `GOOGLE_OAUTH_CLIENT_SECRET` the *Connections* page lists no provider and
+  nothing else changes. One migration adds the `connections` table.
+
+### Added
+
+- **An *Open source* page at `/docs/open-source`, and ADR 0034 on why the
+  project has no site of its own.** With the hosted instance branded
+  Managoat (#1177), the page states the licence split, the two names and
+  where everything lives; the README licence section links it. The decision
+  is the PostHog/Sentry shape: the product site is the project site, `/docs`
+  is the manual, the repo README is the front page, no second domain.
 - **Connections: sign in to Google once, and agents get Gmail without ever
   holding the credential** (#1178). For accounts the egress broker is on for,
   the console's new *Account → Connections* page runs Google's
@@ -44,7 +128,26 @@ upgrade, is in
     OpenAPI spec and the TypeScript SDK (`client.connections`). Configured
     by `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`.
 
+### Changed
+
+- **The hosted Fountain is `managoat.com`** (#1177). The CLI's and the
+  TypeScript SDK's compile-time default base URL, the docs, the sample
+  compose and k8s files and the hermes plugin now name the new host; the
+  old `fountain.inevitable.fyi` keeps answering and redirects. Self-hosters
+  who set `FOUNTAIN_BASE_URL` are unaffected. SDK 1.8.0 carries the change.
+
 ### Fixed
+
+- **A transient Sprites timeout while writing the runtime's config no longer
+  fails the conversation.** The first filesystem call into a freshly created
+  sprite timed out once in prod (`Req.TransportError{reason: :timeout}`) and
+  `Claude.write_config/2` crashed on it, marking the sandbox and conversation
+  `failed` at the very step the provision `with` had marked best-effort. The
+  `.mcp.json` and settings writes (and gemini's) are idempotent and now retry
+  through `Fountain.Retry` like every other sandbox write; a write that still
+  fails returns `{:error, {:runtime_config, path, reason}}`, which the fresh
+  provision treats as a real failure (an agent must not run without its MCP
+  servers under a `provision/done`) and the wake path logs and continues.
 
 - **Brokered sandboxes now trust the egress broker's MITM certificate across
   the Python and Rust toolchains, not only Node.** A brokered `uv sync`,
@@ -56,6 +159,18 @@ upgrade, is in
   to the full system CA bundle (real roots plus the broker CA — never the
   broker CA alone, which would break non-brokered hosts like PyPI), and
   `UV_NATIVE_TLS=1` so uv reads that store instead of its bundled webpki roots.
+- **The environment edit page no longer 500s when a `packages` value is a
+  string instead of a list.** `packages` is a free map, and manifests had
+  stored a version string under a manager the provisioner does not read
+  (`"node" => "24"`), which `Enum.join/2` refused. A non-list value now
+  renders as-is and round-trips as a one-item list.
+- **A refused Agent Vault create is checked against the vault list before
+  it fails a prepare** (#1184). The vault answered 500 for a duplicate name
+  where the contract says 409, which failed every reattach of a brokered
+  conversation after its first idle; `ensure_vault` now consults the list
+  on a refused create and proceeds when the vault is there.
+- **`gmail_search` no longer 500s** (#1183): Gmail's multi-valued query
+  params (`metadataHeaders`, `labelIds`) are encoded as repeated keys.
 
 ## [0.13.0] — 2026-08-25
 

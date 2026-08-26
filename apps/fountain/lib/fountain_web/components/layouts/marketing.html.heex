@@ -3,12 +3,19 @@
   <header class="border-b border-[var(--color-border)] bg-[var(--color-bg-0)]">
     <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
       <a href="/" class="flex items-center gap-2">
-        <img src="/images/app-icon.png" alt="" class="size-7 rounded-md" />
+        <img src={Fountain.Brand.asset("app-icon.png")} alt="" class="size-7 rounded-md" />
         <span class="font-semibold text-sm text-[var(--color-text-primary)]">
           {Fountain.Brand.name()}
         </span>
       </a>
       <nav class="flex items-center gap-3">
+        <a
+          :if={Fountain.Marketing.site?()}
+          href={~p"/integrations"}
+          class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
+        >
+          Integrations
+        </a>
         <a
           href="/docs"
           class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
@@ -60,6 +67,13 @@
       </span>
       <span :if={!Fountain.Marketing.site?()}>Powered by Fountain.</span>
       <div class="flex items-center gap-4">
+        <a
+          :if={Fountain.Marketing.site?()}
+          href={~p"/integrations"}
+          class="hover:text-[var(--color-text-secondary)] transition-colors"
+        >
+          Integrations
+        </a>
         <a href="/docs" class="hover:text-[var(--color-text-secondary)] transition-colors">
           Docs
         </a>

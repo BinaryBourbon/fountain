@@ -1,0 +1,4 @@
+deepagents>=0.7
+langchain-anthropic>=1.0
+openai>=1.0
+langchain-openai>=1.0

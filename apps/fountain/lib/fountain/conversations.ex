@@ -431,7 +431,7 @@ defmodule Fountain.Conversations do
               )
         }
     )
-    |> Repo.preload([:agent, turns: first_turn_query()])
+    |> Repo.preload([:agent, :agent_version, turns: first_turn_query()])
   end
 
   @doc """
@@ -539,7 +539,7 @@ defmodule Fountain.Conversations do
   def _unsafe_get_conversation(id) do
     Conversation
     |> Repo.get(id)
-    |> Repo.preload([:sandbox, :agent, :vault])
+    |> Repo.preload([:sandbox, :agent, :vault, :agent_version])
   end
 
   @doc """
@@ -548,14 +548,14 @@ defmodule Fountain.Conversations do
   def _unsafe_get_conversation!(id) do
     Conversation
     |> Repo.get!(id)
-    |> Repo.preload([:sandbox, :agent, :vault])
+    |> Repo.preload([:sandbox, :agent, :vault, :agent_version])
   end
 
   @doc "Get conversation scoped to user. Returns nil on wrong owner or missing id."
   def get_conversation(id, user_id) when is_binary(user_id) do
     case Repo.get_by(Conversation, id: id, user_id: user_id) do
       nil -> nil
-      conv -> Repo.preload(conv, [:sandbox, :agent, :vault])
+      conv -> Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version])
     end
   end
 
@@ -563,7 +563,7 @@ defmodule Fountain.Conversations do
   def get_conversation!(id, user_id) when is_binary(user_id) do
     Conversation
     |> Repo.get_by!(id: id, user_id: user_id)
-    |> Repo.preload([:sandbox, :agent, :vault])
+    |> Repo.preload([:sandbox, :agent, :vault, :agent_version])
   end
 
   @typedoc """
@@ -734,7 +734,7 @@ defmodule Fountain.Conversations do
       end)
 
     Repo.all(query)
-    |> Repo.preload([:agent, turns: first_turn_query()])
+    |> Repo.preload([:agent, :agent_version, turns: first_turn_query()])
   end
 
   @doc """
@@ -769,10 +769,13 @@ defmodule Fountain.Conversations do
   """
   def get_conversation_with_activity(id, user_id) when is_binary(user_id) do
     case Repo.one(from(c in annotated_query(user_id), where: c.id == ^id)) do
-      nil -> nil
+      nil ->
+        nil
+
       # The first turn rides along, as it does on the list: `first_prompt` in
       # the JSON is what a client titles an untitled conversation with.
-      conv -> Repo.preload(conv, [:sandbox, :agent, :vault, turns: first_turn_query()])
+      conv ->
+        Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version, turns: first_turn_query()])
     end
   end
 
@@ -833,6 +836,46 @@ defmodule Fountain.Conversations do
     %Conversation{}
     |> Conversation.changeset(attrs)
     |> Repo.insert()
+  end
+
+  @doc """
+  Register the caller-defined tools of the bridge (#1202) on a conversation
+  the caller already owns: the normalised list `Fountain.CallerTools`
+  produced, last write wins. An unchanged list writes and records nothing —
+  a framework loop re-sends the same list on every request.
+
+  Ownership is the caller's job: `conv` must have come from a tenant-scoped
+  fetch. Audited as `conversation.caller_tools_set` with the count and the
+  names, never the schemas.
+  """
+  @spec set_caller_tools(Conversation.t(), [map()], keyword()) ::
+          {:ok, Conversation.t()} | {:error, Ecto.Changeset.t()}
+  def set_caller_tools(%Conversation{} = conv, tools, opts \\ []) when is_list(tools) do
+    if conv.caller_tools == tools do
+      {:ok, conv}
+    else
+      conv
+      |> Conversation.changeset(%{caller_tools: tools})
+      |> Repo.update()
+      |> tap(fn
+        {:ok, updated} ->
+          Audit.record(%{
+            user_id: updated.user_id,
+            action: "conversation.caller_tools_set",
+            resource_type: "conversation",
+            resource_id: updated.id,
+            actor: Keyword.get(opts, :actor, "self"),
+            request_ip: Keyword.get(opts, :request_ip),
+            metadata: %{
+              "tool_count" => length(tools),
+              "tool_names" => Enum.map(tools, & &1["name"])
+            }
+          })
+
+        _ ->
+          :ok
+      end)
+    end
   end
 
   def update_conversation(%Conversation{} = conv, attrs) do
@@ -1657,6 +1700,30 @@ defmodule Fountain.Conversations do
   # the binding follows the machine, not just the conversation row.
   # `suspended` is not in the list: that sandbox is parked, not gone, and its
   # disk wakes back up with the workspace on it.
+  @doc """
+  The conversation a channel binding resumes, resolved exactly as
+  `start_or_resume_conversation/2` resolves it (same vault/environment key),
+  without opening one when there is none. For a request that must land on an
+  existing conversation or fail — a tool answer on the bridge (#1202) — where
+  opening a sandbox for a thread that has no parked call would be the wrong
+  side effect. Tenant-scoped through `attrs["user_id"]`.
+  """
+  @spec channel_conversation(map()) :: Conversation.t() | nil
+  def channel_conversation(
+        %{"channel_id" => channel_id, "agent_id" => agent_id, "user_id" => user_id} = attrs
+      )
+      when is_binary(channel_id) and channel_id != "" do
+    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id),
+         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
+      find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id)
+    else
+      _ -> nil
+    end
+  end
+
+  def channel_conversation(_attrs), do: nil
+
   defp find_channel_conversation(user_id, agent_id, vault_id, env_id, channel_id) do
     from(c in Conversation,
       join: s in assoc(c, :sandbox),
@@ -1757,7 +1824,8 @@ defmodule Fountain.Conversations do
              parent_conversation_id: parent_id,
              channel_id: attrs["channel_id"],
              title: attrs["title"],
-             permission_policy: perm_policy
+             permission_policy: perm_policy,
+             caller_tools: attrs["caller_tools"] || []
            }) do
       # Recorded here rather than in either branch below: both of them return
       # {:ok, conv}. The row exists and the sandbox reservation is spent even
@@ -2240,7 +2308,10 @@ defmodule Fountain.Conversations do
              parent_conversation_id: parent_id,
              channel_id: attrs["channel_id"],
              title: attrs["title"],
-             permission_policy: perm_policy
+             permission_policy: perm_policy,
+             # The bridge's tools (#1202) ride on both create paths: this
+             # one is what a home sandbox's second conversation takes.
+             caller_tools: attrs["caller_tools"] || []
            }) do
       Audit.record(%{
         user_id: user_id,

@@ -175,7 +175,8 @@ Your deployment is not the Fountain project, so the front door is the default.
 | Variable | Default | Required | Effect |
 |---|---|---|---|
 | `PRODUCT_NAME` | `Fountain` | — | The name the console, the sign-in page, the OAuth consent screen and each email subject use for this deployment. Set it when you sell a hosted deployment under a different brand. The CLI, the API and this manual keep the name Fountain, because that is the name of the engine. When the two differ, each manual page opens with one line that says so. |
-| `MARKETING_SITE` | `false` | — | A `true` serves the Fountain project's product page at `/`. It also puts the project's copyright line in the footer. Turn it on only if you operate the project's own site. |
+| `BRAND_ASSETS_URL` | unset | — | The URL of the directory with the brand's image files. The directory must contain six files. They are `app-icon.png`, `apple-touch-icon.png`, `favicon-32x32.png`, `favicon-16x16.png`, `favicon.ico` and `og-card.png` (1200 by 630 pixels). Unset, the pages use the files in the release image. Set, the pages link the files in this directory, and the CSP permits images from its origin. The value must be an absolute URL. |
+| `MARKETING_SITE` | `false` | — | A `true` serves the Fountain project's product page at `/` and its integrations page at `/integrations`. It also puts the project's copyright line in the footer. Turn it on only if you operate the project's own site. |
 
 ## Legal pages
 
@@ -273,7 +274,7 @@ Without PostHog you can force a flag on for each user.
 |---|---|---|---|
 | `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key. That is the public `phc_…` token, and not a personal key. Unset, Fountain looks up no flag remotely. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
-| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms`. It wins over PostHog. |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms` or `openai_compat`. It wins over PostHog. |
 
 ## Product analytics
 

@@ -73,6 +73,9 @@ defmodule FountainWeb.Router do
     plug :put_root_layout, html: {FountainWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers, %{"content-security-policy" => @csp}
+    # After the policy is set: widens img-src with the brand bundle's origin
+    # (BRAND_ASSETS_URL), which is read at runtime and so cannot be in @csp.
+    plug FountainWeb.Plugs.BrandAssets
     # After :fetch_session — it reads the session on both sides of the
     # request to spot a sign-in. On every browser route on purpose: the merge
     # has to happen wherever a session is established, and five controllers do
@@ -152,6 +155,7 @@ defmodule FountainWeb.Router do
   scope "/", FountainWeb do
     pipe_through [:browser, :browser_optional_auth, :public_analytics]
     get "/", MarketingController, :home
+    get "/integrations", MarketingController, :integrations
     get "/terms", MarketingController, :terms
     get "/privacy", MarketingController, :privacy
     # The public manual, and since #1008 the only place it is published —
@@ -441,6 +445,11 @@ defmodule FountainWeb.Router do
     # (#1178). Same transport; the Google token stays server-side.
     post "/mcp/gmail/:conversation_id/:connection_id", GmailMcpController, :handle
 
+    # The tools a chat-completions / AG-UI client defined on its request,
+    # served back to that conversation's sandbox (#1202). A call parks until
+    # the client answers it with a `role: "tool"` message.
+    post "/mcp/caller/:conversation_id", CallerMcpController, :handle
+
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end
@@ -450,6 +459,9 @@ defmodule FountainWeb.Router do
     end
 
     resources "/agents", AgentController, except: [:new, :edit]
+    # Config history (ADR 0029, #1051): read-only. Rollback stays a console action.
+    get "/agents/:id/versions", AgentVersionController, :index
+    get "/agents/:id/versions/:version", AgentVersionController, :show
     # The form vocabulary and the avatar generator, for clients that build
     # the agent/environment forms elsewhere (#815).
     get "/catalog", CatalogController, :show
@@ -558,6 +570,19 @@ defmodule FountainWeb.Router do
     # AG-UI client sends `Accept: text/event-stream`, which `:accepts_json`
     # would refuse with 406 before the action ran.
     post "/agui/:agent_id", AguiController, :run, as: :agui_run
+  end
+
+  # OpenAI-compatible (ADR 0035). At `/v1`, not `/api/v1`, because every
+  # base-URL client and gateway appends `/chat/completions` and `/models` to
+  # whatever it is given, and `https://host/v1` is the shape they all expect.
+  # Same auth chain as `/api`, no content negotiation for the same reason as
+  # the stream above: `stream: true` answers as an event stream.
+  scope "/v1", FountainWeb do
+    pipe_through :api
+
+    post "/chat/completions", OpenAIController, :create_chat_completion
+    get "/models", OpenAIController, :list_models
+    get "/models/:model", OpenAIController, :show_model
   end
 
   # Operator surface (#527). Three gates in order: :api authenticates the key,

@@ -7,7 +7,7 @@
 // Base URL precedence:
 //  1. FOUNTAIN_BASE_URL env var
 //  2. base_url from ~/.fountain/credentials (active profile)
-//  3. compile-time default (https://fountain.inevitable.fyi)
+//  3. compile-time default (https://managoat.com)
 package config
 
 import (
@@ -23,7 +23,7 @@ import (
 // the CLI at their own instance (FOUNTAIN_BASE_URL, recorded by `auth login`)
 // before exporting FOUNTAIN_API_KEY — docs/cli.md and docs/self-hosting.md
 // call the footgun out.
-const DefaultBaseURL = "https://fountain.inevitable.fyi"
+const DefaultBaseURL = "https://managoat.com"
 
 // ErrNoAPIKey signals that no API key is configured.
 var ErrNoAPIKey = errors.New("FOUNTAIN_API_KEY is not set. Run `fountain auth login` or export the FOUNTAIN_API_KEY environment variable.")

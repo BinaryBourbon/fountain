@@ -43,6 +43,14 @@ defmodule Fountain.Conversations.AttachTest do
     assert Conversations._unsafe_list_cotenant_ids(ctx.sandbox.id, conv.id) == [ctx.first.id]
   end
 
+  test "the caller's tools ride on this create path too (#1202)", ctx do
+    # A home sandbox's second conversation takes this path, not the
+    # provisioning one; the prod smoke found the bridge's list dropped here.
+    tools = [%{"name" => "lookup", "description" => "", "parameters" => %{"type" => "object"}}]
+    assert {:ok, conv} = attach(ctx, %{"caller_tools" => tools})
+    assert Conversations._unsafe_get_conversation!(conv.id).caller_tools == tools
+  end
+
   test "a foreign or malformed sandbox reads as not found", ctx do
     foreign = insert_sandbox(user_id: insert_active_user().id, status: "ready")
 

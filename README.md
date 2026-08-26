@@ -56,7 +56,7 @@ console.log(run.text, run.url);
 
 The sandbox is still there afterwards: `fountain.resume(run.conversationId).send("...")`
 continues on the same machine, with the same checkout and the same session.
-See [`sdk/typescript/`](sdk/typescript/) or the [SDK docs](https://fountain.inevitable.fyi/docs/sdk).
+See [`sdk/typescript/`](sdk/typescript/) or the [SDK docs](https://managoat.com/docs/sdk).
 
 ## Get started with the CLI
 
@@ -191,9 +191,15 @@ it as a service owes those improvements back to everyone else running it. It
 does not stop anyone hosting Fountain commercially, including in competition
 with the hosted product. It stops them doing it in private.
 
-Fountain was MIT licensed through v0.12.0 (2026-08-17) and those releases stay
-MIT. See [`NOTICE`](NOTICE) for the relicensing record and third-party
-attribution, [`CONTRIBUTING.md`](CONTRIBUTING.md) for how this applies to
+The hosted instance at [managoat.com](https://managoat.com) is one
+instance of this code under the name Managoat; the project keeps the name
+Fountain. The long form of the split, and where everything lives, is
+[docs/open-source.md](docs/open-source.md), published at `/docs/open-source`
+(`decisions/0034-project-site-is-the-product-site.md` says why there is no
+separate project site).
+
+See [`NOTICE`](NOTICE) for third-party attribution,
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for how the licences apply to
 contributions, and
 [`decisions/0027-agpl-relicensing.md`](decisions/0027-agpl-relicensing.md) for
 the reasoning.

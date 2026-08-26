@@ -139,14 +139,42 @@ whatever must hold on each surface.
 
 `?activity=off` on the endpoint drops everything except the reply text.
 
-**Fountain never emits an AG-UI tool call**, and that is deliberate. On this
-protocol a tool call means *host, run this and send me the result*. The run
-ends, the host executes it, and a second run carries the result back.
+**The agent's own tools never come back as an AG-UI tool call**, and that is
+deliberate. On this protocol a tool call means *host, run this and send me the
+result*. The run ends, the host executes it, and a second run carries the
+result back.
 
 A Fountain agent ran its own tool, in its own sandbox, and it already has the
 result. To report that as a call would ask the host to execute something
 twice. It would also leave the run to wait for a result that never comes. So Fountain
-reports tool activity as reasoning, which no host tries to execute. <!-- vale disable-line STE.IngForms -->
+reports that activity as reasoning, which no host tries to execute. <!-- vale disable-line STE.IngForms -->
+
+The host's own tools are the other half, and they do come back as calls. Read
+[Your tools](#your-tools).
+
+## Your tools
+
+Send `tools` on the `RunAgentInput`, in AG-UI's shape, and the agent gets them
+beside its own. The agent does not know that they are remote. When it calls
+one, the run ends with `TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END`
+and a `RUN_FINISHED` whose `stopReason` is `tool_calls`. The turn stays open.
+Run the tool, then start the next run on the same thread with a `role: "tool"`
+message for each call. The turn continues, and the run ends with the reply or
+with the next call.
+
+```
+  1. POST /api/agui/:agent_id   tools: [lookup_order]                 ──▶  the agent calls lookup_order
+     ◀── TOOL_CALL_START / TOOL_CALL_ARGS / TOOL_CALL_END, RUN_FINISHED {stopReason: "tool_calls"}
+  2. POST /api/agui/:agent_id   messages: [..., {role: "tool", toolCallId: "call_1", content: "..."}]
+     ◀── the rest of the turn, RUN_FINISHED
+```
+
+That is the loop every AG-UI host already runs. OpenBot's own tools are its
+computer, its components and its MCP grants. Whether it sends them on the run
+is a question for OpenBot's release notes. Fountain answers whatever arrives in
+`tools`. The same bridge serves the
+[OpenAI-compatible API](openai-compatible.md#your-tools), where the calls come
+back as `tool_calls`.
 
 Here is the other side of that coin. **OpenBot's governance does not reach
 inside a Fountain sandbox.** Its boundary is the gateway that each browser,
@@ -158,9 +186,9 @@ Fountain governs a Fountain agent, with its own audit trail, its environment,
 its vault and its sandbox provider. Register one as a coworker in the
 knowledge that you trust Fountain's boundary, and not OpenBot's.
 
-The other half of this integration would bridge OpenBot's tools *into* the
-sandbox. Its computer, its components and its MCP grants would become things a
-Fountain agent can call and OpenBot can refuse. Nobody built that.
+The other half of this integration bridges the host's tools *into* the
+sandbox, as above. A tool the host sends on the run is one the agent can call
+and the host can refuse. A tool the host keeps to itself stays out of reach.
 
 ## Timing, and a watchdog to know about
 
@@ -199,7 +227,8 @@ Fountain has no platform-level model key, on purpose
 
 ## What it does not do yet
 
-- **No tool bridge**, as above.
+- **The bridge is one way.** The host's `tools` reach the agent. The agent's
+  own tool use reaches the host as a thought, and never as a call, as above.
 - **One key, one tenant.** The bot's stored key is a Fountain API key, so each
   OpenBot user in a deployment reaches Fountain as the account that owns it.
   OpenBot's own `actor.id` does not travel.

@@ -84,8 +84,17 @@ defmodule Fountain.Runtimes.Gemini do
 
   def write_config(handle, %{mcp_servers: mcp_servers}) do
     payload = Jason.encode!(%{"mcpServers" => mcp_servers}, pretty: true)
-    Fountain.Sandbox.write_file(handle, @settings, payload)
-    :ok
+
+    # Idempotent, so a transport blip on a fresh sprite is retried; a write
+    # that still fails is reported, not swallowed — the agent would otherwise
+    # start with none of its servers and no record of why.
+    case Fountain.Retry.with_backoff(
+           fn -> Fountain.Sandbox.write_file(handle, @settings, payload) end,
+           label: "gemini config write"
+         ) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:runtime_config, @settings, reason}}
+    end
   end
 
   # Make sure the workspace exists and is a git repo; gemini's

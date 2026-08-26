@@ -25,7 +25,7 @@
 # truncated one looking valid.
 #
 # A backup nobody has restored is a hypothesis. The restore drill:
-# https://fountain.inevitable.fyi/docs/guides/operate/back-up-and-restore
+# https://managoat.com/docs/guides/operate/back-up-and-restore
 #
 # And the standing rule: a database backup alone cannot decrypt itself.
 # MASTER_SECRETS_KEY is backed up separately, and a restore needs the same

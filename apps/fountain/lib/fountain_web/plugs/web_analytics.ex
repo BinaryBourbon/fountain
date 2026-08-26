@@ -93,36 +93,6 @@ defmodule FountainWeb.Plugs.WebAnalytics do
     end
   end
 
-  defp allow_posthog(conn, []), do: conn
-
-  defp allow_posthog(conn, origins) do
-    case Plug.Conn.get_resp_header(conn, "content-security-policy") do
-      [csp | _] ->
-        Plug.Conn.put_resp_header(conn, "content-security-policy", widen(csp, origins))
-
-      # No policy to widen. Adding one here would be inventing a second source
-      # of truth for a header the :browser pipeline owns.
-      [] ->
-        conn
-    end
-  end
-
-  defp widen(csp, origins) do
-    csp
-    |> String.split(";")
-    |> Enum.map_join("; ", &widen_directive(String.trim(&1), origins))
-  end
-
-  defp widen_directive(directive, origins) do
-    case String.split(directive, " ") do
-      [name | sources] when name in @widened ->
-        # `--` rather than a blind append: the header is rewritten on every
-        # public response, and a proxy or a future plug that has already added
-        # one of these origins must not make the directive grow each time.
-        Enum.join([directive | origins -- sources], " ")
-
-      _ ->
-        directive
-    end
-  end
+  defp allow_posthog(conn, origins),
+    do: FountainWeb.CSP.widen(conn, @widened, origins)
 end

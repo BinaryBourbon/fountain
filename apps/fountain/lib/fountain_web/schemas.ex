@@ -199,6 +199,24 @@ defmodule FountainWeb.Schemas do
         sandbox_id: %Schema{type: :string, format: :uuid, nullable: true},
         sandbox: %Schema{oneOf: [Sandbox], nullable: true},
         agent_id: %Schema{type: :string, format: :uuid, nullable: true},
+        agent_version_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "The agent config version this conversation launched under (ADR 0029): " <>
+              "provenance only, the live agent still drives the sandbox. Null for a " <>
+              "conversation that predates versioning. Resolve it at " <>
+              "GET /api/agents/{agent_id}/versions/{agent_version}."
+        },
+        agent_version: %Schema{
+          type: :integer,
+          nullable: true,
+          readOnly: true,
+          description:
+            "The version number behind agent_version_id, resolved on the list and get " <>
+              "endpoints; null elsewhere and wherever agent_version_id is null."
+        },
         vault_id: %Schema{type: :string, format: :uuid, nullable: true},
         permission_policy: %Schema{
           type: :object,
@@ -696,6 +714,33 @@ defmodule FountainWeb.Schemas do
   item_response(AgentResponse, of: Agent)
 
   list_response(AgentListResponse, of: Agent)
+
+  defmodule AgentVersion do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AgentVersion",
+      description:
+        "One immutable snapshot of an agent's config (ADR 0029), written on create and on " <>
+          "every update that changes a config field. `config` holds the full values, keyed " <>
+          "by the agent fields `Agent.changeset/2` casts (everything but ownership and the " <>
+          "avatar). Versions are read-only over the API; rollback is a console action.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        agent_id: %Schema{type: :string, format: :uuid},
+        version: %Schema{type: :integer, description: "1-based, monotonic per agent."},
+        config: %Schema{type: :object, additionalProperties: true},
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :agent_id, :version, :config, :inserted_at]
+    })
+  end
+
+  item_response(AgentVersionResponse, of: AgentVersion)
+
+  list_response(AgentVersionListResponse, of: AgentVersion)
 
   defmodule BuzzIdentity do
     @moduledoc false

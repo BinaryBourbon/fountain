@@ -22,7 +22,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-DEFAULT_BASE_URL = "https://fountain.inevitable.fyi"
+DEFAULT_BASE_URL = "https://managoat.com"
 USER_AGENT = "hermes-fountain-plugin/0.1.0"
 
 

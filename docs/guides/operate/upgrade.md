@@ -61,7 +61,7 @@ The CLI and the server come from the same tag. The two versions that match are
 the pair we test.
 
 The CLI's built-in default `base_url` is the hosted instance,
-`https://fountain.inevitable.fyi`, and not yours. Point it at your instance
+`https://managoat.com`, and not yours. Point it at your instance
 before you export an API key. Otherwise the first command you run without a
 config sends that key to the hosted domain.
 
