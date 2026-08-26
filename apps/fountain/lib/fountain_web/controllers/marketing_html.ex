@@ -464,6 +464,7 @@ defmodule FountainWeb.MarketingHTML do
       }
     ]
   end
+
   ## /built-with
   #
   # The apps people have built on the API, grouped by who they are for. Every
@@ -594,7 +595,8 @@ defmodule FountainWeb.MarketingHTML do
             source: "https://github.com/jhgaylor/mend",
             blurb:
               "What an audit finds across a repository's CI, manifests, Dockerfiles and cloud templates, and what an agent does once you hand it that tool. Mechanical fixes applied, judgement calls argued, one patch back.",
-            shows: "a real CLI in the sandbox, and the restraint to leave the ambiguous ones alone"
+            shows:
+              "a real CLI in the sandbox, and the restraint to leave the ambiguous ones alone"
           },
           %{
             id: "rounds",
@@ -612,8 +614,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         id: "ai-engineers",
         title: "For AI engineers",
-        blurb:
-          "Several agents at once, side by side, with the numbers underneath.",
+        blurb: "Several agents at once, side by side, with the numbers underneath.",
         apps: [
           %{
             id: "arena",
