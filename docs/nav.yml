@@ -114,6 +114,7 @@ nav:
       - Hermes Agent (plugin): integrations/hermes.md
       - OpenBot (AG-UI): integrations/openbot.md
       - OpenAI-compatible API: integrations/openai-compatible.md
+      - LangChain and Deep Agents: integrations/langchain.md
       - Buzz (Nostr): integrations/buzz.md
       - LLM integration: llm-integration.md
   - Changelog: changelog.md

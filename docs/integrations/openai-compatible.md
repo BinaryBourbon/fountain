@@ -88,6 +88,8 @@ curl https://your-fountain/v1/chat/completions \
 A complete terminal chat on the `openai` package, with the model picker and
 the thread header in place, is in the repository at
 [`examples/openai-chat`](https://github.com/BinaryBourbon/fountain/tree/main/examples/openai-chat).
+For LangChain and Deep Agents, where a Fountain agent is a subagent, read
+[LangChain and Deep Agents](langchain.md).
 
 ## One thread is one conversation is one sandbox
 
