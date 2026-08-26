@@ -181,7 +181,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "makes the case and shows the whole bring-up", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
 
-      assert body =~ "Give your app a coding agent. Own every machine it touches."
+      assert body =~ "Define your agents once. Let every app you build hire them."
       assert body =~ "Six commands and a token."
       assert body =~ "The features we ration, you switch on."
       assert body =~ "What it costs you instead."
@@ -214,10 +214,33 @@ defmodule FountainWeb.MarketingControllerTest do
       end
     end
 
+    test "shows apps that already hire from the roster, and links every one", %{conn: conn} do
+      body = conn |> get(~p"/self-hosted") |> html_response(200)
+
+      # The hero's claim is that an agent defined once gets hired by anything.
+      # The cards are the evidence, so each has to be a working pair of links
+      # into the same roster /built-with renders.
+      showcase = FountainWeb.MarketingHTML.self_host_showcase()
+      assert length(showcase) == 4
+
+      for app <- showcase do
+        assert body =~ app.name, "missing app #{app.name}"
+        assert body =~ app.url, "missing live link for #{app.name}"
+        assert app in FountainWeb.MarketingHTML.built_apps_flat(), "#{app.name} left the roster"
+      end
+
+      count = to_string(FountainWeb.MarketingHTML.built_app_count())
+      assert body =~ "#{count} applications already hire from one roster."
+      assert body =~ ~p"/built-with"
+    end
+
     test "carries its own card", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
       assert body =~ ~s(<meta property="og:title" content="Self-host Fountain · Fountain")
-      assert body =~ ~s(<meta name="description" content="Fountain is open source)
+
+      assert body =~
+               ~s(<meta name="description" content="Define an agent once and every app)
+
       assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/self-hosted")
     end
 

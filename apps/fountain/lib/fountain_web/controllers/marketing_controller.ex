@@ -68,10 +68,11 @@ defmodule FountainWeb.MarketingController do
         layout: {FountainWeb.Layouts, :marketing},
         page_title: "Self-host #{Fountain.Brand.engine()} · #{Fountain.Brand.name()}",
         meta_description:
-          "#{Fountain.Brand.engine()} is open source and the whole product is in the " <>
-            "repo: the server, the console, the API, the CLI and the SDK. Bring an " <>
-            "instance up with Docker Compose or plain Kubernetes manifests, on your " <>
-            "hardware, under your own keys, with no licence key and no seat count."
+          "Define an agent once and every app you build can hire it over one API. " <>
+            "#{Fountain.Brand.engine()} is open source and the whole platform is in " <>
+            "the repo. Bring an instance up with Docker Compose or plain Kubernetes " <>
+            "manifests, on your hardware, under your own keys, with no licence key " <>
+            "and no seat count."
       )
     else
       redirect(conn, to: ~p"/docs/self-hosting")
