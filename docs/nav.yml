@@ -113,6 +113,7 @@ nav:
       - OpenClaw (ACP): integrations/openclaw.md
       - Hermes Agent (plugin): integrations/hermes.md
       - OpenBot (AG-UI): integrations/openbot.md
+      - OpenAI-compatible API: integrations/openai-compatible.md
       - Buzz (Nostr): integrations/buzz.md
       - LLM integration: llm-integration.md
   - Changelog: changelog.md

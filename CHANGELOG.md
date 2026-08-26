@@ -18,6 +18,24 @@ upgrade, is in
 
 ### Added
 
+- **OpenAI-compatible chat completions (alpha, flag `openai_compat`).**
+  `POST /v1/chat/completions` and
+  `GET /v1/models`, where the `model` is one of the tenant's agents (by name
+  or id), so any gateway (LiteLLM, Portkey, Kong, Cloudflare AI Gateway) or
+  base-URL chat client (Open WebUI, LibreChat, the `openai` SDK, `curl`)
+  drives a Fountain agent with no plugin. The thread is the conversation:
+  `X-Fountain-Thread`, else the request's `user` field, binds to channel
+  `openai:<key>`; only the newest user message is sent as the prompt, the
+  system prompt rides along with the first one, and a request with neither
+  key is a 400. `stream: true` streams `chat.completion.chunk` deltas
+  (`content` for the reply, `reasoning_content` for thinking, tool use and
+  provisioning stages) ending with `[DONE]`; `stream: false` blocks for the
+  turn. Tool calls are never emitted, `usage` is zeros, a busy thread is 409
+  with `Retry-After`. ADR 0035; `docs/integrations/openai-compatible.md`.
+  Off by default on the hosted platform: 404 `openai_compat_not_enabled`
+  until the flag is on (`FEATURE_FLAGS_ON=openai_compat` self-hosted). A
+  runnable client on the stock `openai` package is in `examples/openai-chat`.
+  The TypeScript SDK's generated types follow. #1198
 - **Agent config versions over the API.** `GET /api/agents/:id/versions`
   lists an agent's config history newest first and
   `GET /api/agents/:id/versions/:version` returns one version with its full

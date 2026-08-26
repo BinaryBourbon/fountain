@@ -20,6 +20,7 @@ mail, OAuth, billing and error reports, read <!-- vale disable-line STE.IngForms
 | [OpenClaw](openclaw.md) | [`fountain acp`](acp.md) | The OpenClaw host. |
 | [Hermes Agent](hermes.md) | The HTTP API, through a plugin. | The Hermes host. |
 | [OpenBot](openbot.md) | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) over HTTP. | The OpenBot host. |
+| [OpenAI-compatible API](openai-compatible.md) (alpha) | OpenAI chat completions over HTTP. | The client or the gateway. |
 | [Buzz](buzz.md) | A Nostr relay, hosted by Fountain. | The Buzz desktop, or `POST /api/buzz/agents`. |
 | [Agentic IDEs](../llm-integration.md) | `/skill` and the discovery endpoints. | The IDE. |
 | Your own code | The [HTTP API](../api.md), the [TypeScript SDK](../sdk.md), the [CLI](../cli.md). | Wherever you want. |
@@ -53,6 +54,13 @@ answers [AG-UI](https://github.com/ag-ui-protocol/ag-ui) at
 registers a Fountain agent as a coworker with a channel of its own. One
 channel binds to one conversation, so the sandbox is the memory, and not a
 transcript that somebody replays. The coworker holds an API key.
+
+[**Any OpenAI-compatible client or gateway**](openai-compatible.md) needs
+only a base URL too. This one is alpha, behind the `openai_compat` flag. Fountain answers `POST /v1/chat/completions` and
+`GET /v1/models`, where the model is one of your agents. Open WebUI,
+LibreChat, LiteLLM and the `openai` SDK all speak that shape. A header, or the
+request's `user` field, binds each chat to one conversation, so the sandbox is
+the memory here as well.
 
 Everything that plugin does is available to you directly. Read the
 [API reference](../api.md), the [TypeScript SDK](../sdk.md) and the

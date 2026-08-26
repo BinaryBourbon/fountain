@@ -10,6 +10,19 @@ server releases.
 
 ---
 
+## [1.10.0] — 2026-08-25
+
+### Added
+
+- Generated types for the server's OpenAI-compatible endpoints (fountain
+  ADR 0035, #1198): `POST /v1/chat/completions`, `GET /v1/models` and
+  `GET /v1/models/{model}`, where the `model` is a Fountain agent. The SDK
+  does not wrap them. It is for the real API, and any `openai` client
+  already speaks these, but their request and response shapes now ship in
+  `paths` for callers that want them typed.
+
+---
+
 ## [1.9.0] — 2026-08-25
 
 ### Added
