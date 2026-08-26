@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Added
 
+- **An integrations page on the marketing site, `/integrations`.** The
+  protocols Fountain answers (AG-UI, the Agent Client Protocol, OpenAI chat
+  completions, MCP, its own REST API and webhooks, and Buzz over Nostr), what
+  already speaks each one, a snippet for each shape of builder, and the
+  runtimes, models, sandboxes and brokered services behind the door. Data
+  first: every link into the manual is checked by the suite, and the broker
+  presets are read from the same catalog the console offers. Off the marketing
+  site it redirects to the manual's own list, as `/` serves a plain front
+  door there.
+
 - **Tool bridge on `/v1/chat/completions` and AG-UI (#1202).** A request's
   `tools` are offered to the agent beside its own, through one more
   Fountain-served MCP server (`POST /api/mcp/caller/:conversation_id`). When

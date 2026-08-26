@@ -1,0 +1,205 @@
+<%!-- Hero --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center">
+  <p class="mb-4 text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+    Integrations
+  </p>
+  <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
+    It speaks what your stack already speaks.
+  </h1>
+  <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    {Fountain.Brand.name()} answers AG-UI, the Agent Client Protocol, OpenAI chat completions and MCP, on top of its own REST API. So the editor, the chat app, the gateway or the framework you use today can hire an agent on a sandbox with a URL and a key, and nothing to install on our side.
+  </p>
+  <div class="flex flex-wrap gap-2 justify-center" data-role="protocol-chips">
+    <a
+      :for={protocol <- protocols()}
+      href={"##{protocol.id}"}
+      class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      <span class="size-1.5 rounded-full bg-[var(--color-brand)]"></span>
+      {protocol.name}
+    </a>
+  </div>
+</section>
+
+<%!-- Protocols --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      Six ways in, one agent behind them.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
+      Each protocol is a translation of the same conversation. Whichever door a prompt comes through, the agent runs on a sandbox that parks between messages and wakes with its work intact.
+    </p>
+    <div class="space-y-6">
+      <article
+        :for={protocol <- protocols()}
+        id={protocol.id}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 sm:p-8 scroll-mt-6"
+        data-role="protocol"
+      >
+        <div class="grid md:grid-cols-5 gap-8">
+          <div class="md:col-span-3">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+              <h3 class="text-xl font-semibold text-[var(--color-text-primary)]">
+                {protocol.name}
+              </h3>
+              <span class="text-sm text-[var(--color-text-muted)]">{protocol.long}</span>
+            </div>
+            <code
+              class="inline-block mt-1 mb-4 text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
+              phx-no-format
+            >{protocol.surface}</code>
+            <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+              {protocol.pitch}
+            </p>
+            <p class="mt-3 text-xs text-[var(--color-text-muted)]">
+              {protocol.direction}
+            </p>
+            <a
+              href={protocol.docs}
+              class="inline-block mt-4 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+            >
+              {protocol.docs_label} →
+            </a>
+          </div>
+          <div class="md:col-span-2">
+            <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-3">
+              Speaks it
+            </p>
+            <ul class="space-y-2">
+              <li
+                :for={item <- protocol.works_with}
+                class="flex items-start gap-2.5 text-sm"
+                data-role="works-with"
+              >
+                <span class="mt-0.5 flex-shrink-0 text-[var(--color-text-primary)]">
+                  <.mark name={item.name} slug={item.slug} class="size-4" />
+                </span>
+                <span>
+                  <span class="font-medium text-[var(--color-text-primary)]">{item.name}</span>
+                  <span class="text-[var(--color-text-muted)]">· {item.note}</span>
+                </span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<%!-- Scenarios --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    Start from what you have.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
+    Six shapes of builder, and the few lines each one needs. Every snippet runs against the hosted instance or your own.
+  </p>
+  <div class="grid md:grid-cols-2 gap-6">
+    <div
+      :for={scenario <- scenarios()}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+      data-role="scenario"
+    >
+      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+        You have
+      </p>
+      <h3 class="mt-1 font-semibold text-[var(--color-text-primary)]">{scenario.have}</h3>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        <span class="font-medium text-[var(--color-text-primary)]">You want</span> {scenario.want}
+      </p>
+      <p class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        <span class="font-medium text-[var(--color-text-primary)]">How</span> {scenario.how}
+      </p>
+      <pre
+        class="mt-4 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-4 text-xs leading-relaxed overflow-x-auto"
+        phx-no-format
+      ><code>{scenario.code}</code></pre>
+      <a
+        href={scenario.docs}
+        class="mt-4 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+      >
+        Read the guide →
+      </a>
+    </div>
+  </div>
+</section>
+
+<%!-- Inside --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      What runs behind the door.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
+      The agent, its model, its machine, and the people it talks to. Pick each one; none of them changes the protocols above.
+    </p>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div
+        :for={group <- inside()}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6"
+        data-role="inside"
+      >
+        <h3 class="font-semibold text-[var(--color-text-primary)]">{group.title}</h3>
+        <p class="mt-2 text-xs text-[var(--color-text-muted)] leading-relaxed">{group.blurb}</p>
+        <ul class="mt-4 space-y-2">
+          <li
+            :for={item <- group.items}
+            class="flex items-center gap-2.5 text-sm text-[var(--color-text-primary)]"
+          >
+            <.mark name={item.name} slug={item.slug} class="size-4" />
+            <span>{item.name}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <%!-- The broker presets: names read from the catalog the console offers,
+          so the page never claims a service the broker cannot bind. --%>
+    <div class="mt-12 max-w-3xl mx-auto text-center" data-role="brokered">
+      <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">
+        Credentials the agent uses and never holds.
+      </h3>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)]">
+        The egress broker attaches a real credential to a request on its way out, so the sandbox, the prompt and the transcript see a placeholder. A preset for each of these, and a custom binding for anything else.
+      </p>
+      <ul class="mt-6 flex flex-wrap justify-center gap-2">
+        <li
+          :for={svc <- brokered_services()}
+          class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text-secondary)]"
+        >
+          <.mark name={svc.name} slug={svc.slug} class="size-3.5" />
+          {svc.name}
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<%!-- Footer CTA --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center">
+  <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
+    Something of yours not on the list?
+  </h2>
+  <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
+    If it takes a base URL, spawns a command, or renders AG-UI, it already works. If it does neither, the REST API is the whole product and the SDK is one import away.
+  </p>
+  <div class="flex flex-col sm:flex-row gap-3 justify-center">
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+    >
+      Run your first agent free
+    </a>
+    <a
+      href={~p"/docs/integrations/clients"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      Every client, in the manual
+    </a>
+  </div>
+  <p class="mt-8 text-xs text-[var(--color-text-muted)] max-w-xl mx-auto">
+    Product names and marks belong to their owners and name what the protocol reaches; none of them endorses {Fountain.Brand.name()}. Marked "verified" where we ran it end to end; the rest speak the protocol by their own documentation.
+  </p>
+</section>
