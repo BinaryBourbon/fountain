@@ -702,7 +702,8 @@ defmodule FountainWeb.MarketingHTML do
         name: "Teammate email and phone",
         blurb: "An agent with its own inbox and its own number, that answers what arrives.",
         hosted: "Behind a flag. Ask us to turn it on for your account.",
-        yours: "Set the AgentMail and AgentPhone keys, add team_comms to FEATURE_FLAGS_ON.",
+        yours:
+          "Set AGENTMAIL_API_KEY and AGENTPHONE_API_KEY, then add team_comms to FEATURE_FLAGS_ON.",
         docs: "/docs/catalog/mcp-servers/fountain-comms"
       },
       %{
@@ -718,7 +719,7 @@ defmodule FountainWeb.MarketingHTML do
         blurb:
           "The real token never enters the sandbox. The broker attaches it on the way out, and the transcript keeps a placeholder.",
         hosted: "Limited access. We enrol an account by hand.",
-        yours: "Set BROKER_URL and its siblings, and list the tenants you want brokered.",
+        yours: "Set BROKER_URL and BROKER_TOKEN, and list the tenants in BROKER_TENANTS.",
         docs: "/docs/concepts/secrets"
       }
     ]

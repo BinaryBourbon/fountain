@@ -14,7 +14,7 @@
     <span :if={!Fountain.Brand.hosted?()}>
       This site is one instance of it, the one we happen to run.
     </span>
-    Clone the same repository, set two secrets, and yours answers the same API in five commands, on your hardware, under your own keys.
+    Clone the same repository, set two secrets, and yours answers the same API in six commands, on your hardware, under your own keys.
   </p>
   <p class="text-lg sm:text-xl font-medium text-[var(--color-text-primary)] max-w-2xl mx-auto mb-10">
     There are no tiers to buy. The features we ration on this site are a line of config on yours.
@@ -34,7 +34,7 @@
     </a>
   </div>
   <p class="text-xs text-[var(--color-text-muted)]">
-    AGPL-3.0. No licence key, no seat count, no call with us.
+    AGPL-3.0-or-later. No licence key, no seat count, no call with us.
   </p>
 </section>
 
@@ -42,7 +42,7 @@
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      Five commands and a token.
+      Six commands and a token.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
       The compose file brings its own Postgres. Back the master key up before you have data, because it is not in the database.
@@ -63,7 +63,7 @@
         <p
           class="text-sm text-[var(--color-text-secondary)] leading-relaxed"
           phx-no-format
-        >Plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>, with no operators and no CRDs. Every merge publishes them as an OCI artifact, and the hosted instance deploys from it. You apply what we apply.</p>
+        >Plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>, with no operators and no CRDs. Every merge publishes them as an OCI artifact, and the hosted instance deploys from it. Same manifests, one pin apart: the artifact carries a sha tag, and the committed release pin is the one you apply.</p>
         <a
           href={~p"/docs/guides/operate/kubernetes"}
           class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
