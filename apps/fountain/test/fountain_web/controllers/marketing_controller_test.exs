@@ -266,6 +266,79 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /case-studies/self-healing-infrastructure" do
+    test "renders the loop, the guardrails and the incident", %{conn: conn} do
+      body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
+
+      assert body =~ "The alert stopped waking him up."
+
+      # Every step of the loop, and the human gate among them.
+      for step <- FountainWeb.MarketingHTML.case_loop() do
+        assert body =~ step.title, "missing loop step #{step.title}"
+      end
+
+      assert body =~ "422 on self-approval"
+      assert body =~ "The sandbox has no kubectl and no kubeconfig."
+      assert body =~ "install_members()"
+
+      # The incident is told with its own timestamps, not rounded prose.
+      for event <- FountainWeb.MarketingHTML.case_timeline() do
+        assert body =~ event.time, "missing timeline entry #{event.time}"
+      end
+
+      # The snippet is kept out of the template so its braces are not HEEx.
+      assert body =~ "POST"
+      assert body =~ "/api/conversations"
+    end
+
+    test "every number names the window it was counted over", %{conn: conn} do
+      body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
+
+      for stat <- FountainWeb.MarketingHTML.case_stats() do
+        assert body =~ stat.value, "missing headline number #{stat.value}"
+      end
+
+      assert body =~ FountainWeb.MarketingHTML.case_window()
+    end
+
+    test "carries its own card", %{conn: conn} do
+      body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
+
+      assert body =~
+               ~s(<meta property="og:title" content="Self-healing infrastructure · Fountain")
+
+      assert body =~
+               ~s(<meta property="og:url" content="http://localhost:4000/case-studies/self-healing-infrastructure")
+    end
+
+    test "every link into the manual resolves to a page", %{conn: conn} do
+      body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
+
+      links =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert links != []
+
+      for slug <- links do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+
+    test "the bare path is a shortcut to the one study", %{conn: conn} do
+      assert redirected_to(get(conn, ~p"/case-studies")) ==
+               ~p"/case-studies/self-healing-infrastructure"
+    end
+
+    test "the homepage and the marketing footer link to it", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      assert body =~ ~p"/case-studies/self-healing-infrastructure"
+      assert body =~ "An estate that answers its own alerts."
+    end
+  end
+
   describe "legal links" do
     test "registration form links to terms and privacy", %{conn: conn} do
       body = conn |> get(~p"/auth/register") |> html_response(200)

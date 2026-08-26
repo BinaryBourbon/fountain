@@ -873,4 +873,298 @@ defmodule FountainWeb.MarketingHTML do
       }
     ]
   end
+
+  ## /case-studies/self-healing-infrastructure
+
+  # The case study is data first, like /integrations above. Every number here
+  # was counted once, by hand, over the window `case_window/0` names: the
+  # dispatch counts and turn durations from this deployment's own database,
+  # the pull requests and their timestamps from the estate's repository. They
+  # are literals on purpose. A figure that recomputed at request time would
+  # quietly widen its own window and end up claiming something nobody checked.
+
+  @doc "The window every number on the case study covers."
+  def case_window, do: "11 to 25 August 2026"
+
+  @doc "The four headline numbers, counted over `case_window/0`."
+  def case_stats do
+    [
+      %{
+        value: "78",
+        label: "incidents handled by an agent",
+        note: "Fifteen days, one estate, one agent, no rota."
+      },
+      %{
+        value: "4m 27s",
+        label: "from alert to open pull request",
+        note: "Measured on the incident below. The second one took 4m 08s."
+      },
+      %{
+        value: "7.5 min",
+        label: "median incident, start to verdict",
+        note: "Half finish faster. The longest ran 50 minutes."
+      },
+      %{
+        value: "0",
+        label: "cluster credentials the agent holds",
+        note: "No kubectl, no kubeconfig, no write anywhere."
+      }
+    ]
+  end
+
+  @doc "The loop, in the order it runs."
+  def case_loop do
+    [
+      %{
+        step: "1",
+        title: "Prometheus notices",
+        mono: "KubePodCrashLooping · PodOOMKilled · CPUThrottlingHigh · PodRestartChurn",
+        body:
+          "The same alert rules the estate already had. Nothing was written to make " <>
+            "an agent happy, and nothing about the agent is wired into Prometheus."
+      },
+      %{
+        step: "2",
+        title: "Alertmanager forks the page",
+        mono: "continue: true",
+        body:
+          "One copy goes to the operator's phone, exactly as before. A sibling copy " <>
+            "goes to a webhook. The human is added to, never replaced."
+      },
+      %{
+        step: "3",
+        title: "A webhook hires an agent",
+        mono: "POST /api/conversations",
+        body:
+          "Two hundred lines of Node with an API key, an agent id, a vault id and the " <>
+            "alert text. It has no cluster access of its own, and needs none. Hiring the " <>
+            "agent is one call."
+      },
+      %{
+        step: "4",
+        title: "The agent reads the estate",
+        mono: "Authorization: Bearer … (GET only)",
+        body:
+          "A read-only service answers with each node's health verdict, its drift " <>
+            "against source, and the controller's own conditions. Every other method " <>
+            "returns 405, so the token cannot be turned into a write."
+      },
+      %{
+        step: "5",
+        title: "It finds the wrong fact in git",
+        mono: "gh api · git log -S",
+        body:
+          "The cluster is a repository, so a bad cluster is a bad commit. The agent " <>
+            "reads the source and its history and names the change that introduced the " <>
+            "fault, before it edits anything."
+      },
+      %{
+        step: "6",
+        title: "It opens one minimal pull request",
+        mono: "symptom · root cause · why this diff is the whole fix",
+        body:
+          "Source and regenerated manifests in one commit, under a separate GitHub " <>
+            "identity with push rights and nothing more. If no change to the repository " <>
+            "can fix the alert, it writes that instead and opens nothing."
+      },
+      %{
+        step: "7",
+        title: "A human approves",
+        mono: "422 on self-approval · 405 on self-merge",
+        body:
+          "The one gate. The agent pushes as an identity that GitHub refuses to let " <>
+            "approve its own work, and the branch requires a review from somebody else. " <>
+            "The gate is not a policy the agent is asked to respect. It cannot reach it."
+      },
+      %{
+        step: "8",
+        title: "Flux applies the merge",
+        mono: "reconcile on webhook",
+        body:
+          "Git was always the apply path, so there is no apply button for the agent to " <>
+            "be trusted with. The merge is the deploy."
+      },
+      %{
+        step: "9",
+        title: "The agent verifies and reports",
+        mono: "poll until healthy",
+        body:
+          "It watches the degraded node come back, checks that nothing else regressed, " <>
+            "and posts the incident summary. Then it stops."
+      }
+    ]
+  end
+
+  @doc "What the agent may do, and the mechanism that stops the rest."
+  def case_guardrails do
+    [
+      %{
+        can: "Read the whole estate graph, including every controller's conditions.",
+        cannot: "Change anything in the cluster. The token is refused on any method but GET."
+      },
+      %{
+        can: "Clone the infrastructure repository and push a branch.",
+        cannot: "Push to the default branch. It is protected, and a pull request is required."
+      },
+      %{
+        can: "Open a pull request and answer review comments on it.",
+        cannot:
+          "Approve or merge that pull request. GitHub blocks self-approval, " <>
+            "and the branch needs one review from another account."
+      },
+      %{
+        can: "Reference a secret by name, so the fix restores the reference.",
+        cannot:
+          "Read a secret value. The material never leaves the cluster, " <>
+            "and no diff it writes contains one."
+      },
+      %{
+        can: "Say that no change to the repository can fix this, and stop.",
+        cannot: "Reach the cluster directly. The sandbox has no kubectl and no kubeconfig."
+      }
+    ]
+  end
+
+  @doc """
+  One real incident, in the order it happened. All times UTC, 25 August 2026.
+  """
+  def case_timeline do
+    [
+      %{
+        time: "06:58:15",
+        title: "A sidecar is killed for memory",
+        body:
+          "Alertmanager posts PodOOMKilled on a container that keeps a checkout in " <>
+            "sync. The operator's phone buzzes. So does a webhook, which opens a " <>
+            "conversation with the agent."
+      },
+      %{
+        time: "06:59:34",
+        title: "A second alert, same container",
+        body:
+          "CPUThrottlingHigh, at 94.44%. It opens its own incident, and a second agent " <>
+            "starts work on it."
+      },
+      %{
+        time: "07:02:42",
+        title: "The first pull request opens",
+        body:
+          "Two files, nine lines added and four removed. The agent had traced the kill " <>
+            "to a code path the container's limit was never sized for, and to the commit " <>
+            "that first made the estate take it."
+      },
+      %{
+        time: "07:03:42",
+        title: "The second pull request opens",
+        body:
+          "Six lines added, two removed. The throttling had the same cause seen from " <>
+            "the other side, and the agent said so rather than repeating the diagnosis."
+      },
+      %{
+        time: "08:50:27",
+        title: "A human wakes up and reads two pull requests",
+        body:
+          "The throttling fix is approved and merged. Flux reconciles on the merge " <>
+            "webhook, and the agent watches the container come back."
+      },
+      %{
+        time: "23:46:01",
+        title: "The memory fix follows",
+        body:
+          "Nothing was on fire, so it waited for a proper read. That is what the gate " <>
+            "is for."
+      }
+    ]
+  end
+
+  @doc """
+  The agent's own words, quoted from the pull request it opened at 07:02.
+
+  Segmented rather than one string, because the source is a Markdown pull
+  request body and rendering its backticks as literal characters in a
+  blockquote reads as a mistake. `{:code, _}` becomes a code span, so the
+  quote stays word for word.
+  """
+  def case_quote do
+    [
+      {:text, "Both modes call "},
+      {:code, "install_members()"},
+      {:text, " ("},
+      {:code, "make install"},
+      {:text, " → "},
+      {:code, "npm ci"},
+      {:text, " across every member) whenever a fetched commit touches a "},
+      {:code, "package-lock.json"},
+      {:text, ". The "},
+      {:code, "repo-sync"},
+      {:text,
+       " sidecar's limit was sized only for its cheap steady-state git-fetch loop and " <>
+         "never accounted for this shared, memory-heavy reinstall path — a gap latent " <>
+         "since the container was authored and invisible until a commit actually moved " <>
+         "a lockfile."}
+    ]
+  end
+
+  @doc "What each Fountain primitive did in this loop."
+  def case_primitives do
+    [
+      %{
+        title: "Agent",
+        body:
+          "The runtime, the model, the runbook and the tools, written once as a file in " <>
+            "a public repository and applied to Fountain. The runbook is the whole " <>
+            "product: diagnose, fix by pull request, wait for the human, verify, report."
+      },
+      %{
+        title: "Environment",
+        body:
+          "The machine the agent wakes up on, with the repository, the CLI it needs, and " <>
+            "the address of the read-only estate service. Described once, rebuilt per " <>
+            "incident, never patched by hand."
+      },
+      %{
+        title: "Vault",
+        body:
+          "The bot identity, kept apart from the environment on purpose. Swap the vault " <>
+            "and the same agent acts as a different GitHub account. The token arrives as " <>
+            "an environment variable and stays out of the prompt, the model's context and " <>
+            "the stored transcript."
+      },
+      %{
+        title: "Conversation",
+        body:
+          "One incident, one sandbox, one transcript, addressable by the alert it came " <>
+            "from. It survives a diagnosis that runs for an hour, and it is a link a " <>
+            "human can open at 08:50 to see everything the agent did at 07:02."
+      }
+    ]
+  end
+
+  @doc "The dispatcher, reduced to the part that matters. Kept out of the template."
+  def case_dispatch_example do
+    """
+    // Alertmanager POSTs here.
+    // This is the entire integration.
+    await fetch(`${FOUNTAIN_URL}/api/conversations`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${FOUNTAIN_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        agent_id: agentId,  // estate-medic
+        vault_id: vaultId,  // the identity it acts as
+        prompt: [
+          `The estate is alerting.`,
+          alertLines,
+          `Diagnose it. If a change to the repo can`,
+          `fix it, open one minimal PR, wait for the`,
+          `human merge, verify healthy, and report.`,
+          `If nothing in the repo can fix it, do not`,
+          `open a PR. Say so and stop.`,
+        ].join("\\n\\n"),
+      }),
+    });\
+    """
+  end
 end

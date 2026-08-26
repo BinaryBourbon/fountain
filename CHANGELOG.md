@@ -25,6 +25,18 @@ upgrade, is in
   no asset pipeline behind it. Since #1008 `/docs` is the only place the
   manual is published, which left it as the one copy with no way to search.
 
+- **A case study, `/case-studies/self-healing-infrastructure`.** A Kubernetes
+  estate that answers its own alerts. Prometheus fires, a webhook opens a
+  Fountain conversation, and the agent reads the cluster through a read-only
+  API, names the commit that broke it, and opens one minimal pull request. It
+  cannot merge that pull request, and the page is mostly about why: the
+  identity it pushes as is one GitHub refuses to let approve its own work. The
+  numbers are counted from one production estate over a stated window, 78
+  incidents in fifteen days, and the page quotes the agent's own root-cause
+  paragraph rather than a summary of it. Like `/integrations`, `/built-with`
+  and `/self-hosted`, it is sales copy, so an instance that is not the
+  marketing site redirects into the manual.
+
 - **A landing page for running it yourself, `/self-hosted`.** The case for
   an instance of your own, next to the case for ours: the bring-up in five
   commands, the three licences and what each one asks of you, four rungs of
