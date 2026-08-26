@@ -216,6 +216,47 @@ defmodule Fountain.ConfigReferenceTest do
            """
   end
 
+  test "every variable /self-hosted tells a reader to set is passed to the app" do
+    # The sibling above starts from the docs. This one starts from a marketing
+    # page, which no linter here reads: /self-hosted sells the inversion that
+    # what the hosted platform rations is a line of config on your own
+    # instance, and `rationed_features/0` spells out which line, per feature,
+    # in its `yours` column.
+    #
+    # That promise lives in Elixir data rather than in a file compose or the
+    # docs own, and the page sits outside docs/, so neither docs-style.py nor
+    # vale reaches it. FEATURE_FLAGS_ON, the AgentMail and AgentPhone keys and
+    # every BROKER_* variable were named on the page and forwarded by nothing:
+    # an operator set them, restarted, and got no feature and no error.
+    compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
+
+    promised =
+      FountainWeb.MarketingHTML.rationed_features()
+      |> Enum.flat_map(fn feature ->
+        ~r/\b([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\b/
+        |> Regex.scan(feature.yours, capture: :all_but_first)
+        |> List.flatten()
+        |> Enum.map(&{&1, feature.name})
+      end)
+      |> Enum.uniq()
+
+    assert promised != [],
+           "no environment variables found in rationed_features/0 — the `yours` column " <>
+             "no longer names them, so this guard is blind"
+
+    unpassed = Enum.reject(promised, fn {var, _} -> passed_through?(compose, var) end)
+
+    assert unpassed == [],
+           """
+           /self-hosted tells a reader to set variables that compose never passes to the app,
+           so the feature never turns on and nothing says why:
+
+             #{Enum.map_join(unpassed, "\n  ", fn {var, feature} -> "#{var} (#{feature})" end)}
+
+           Add the key to the app service's environment block in docker-compose.yml.
+           """
+  end
+
   # Two legitimate pass-through forms in the app service's environment block:
   # `VAR: ${VAR...}` with any default, and a bare `VAR:` with no value at all.
   # The second one forwards the variable only when .env sets it, which is the

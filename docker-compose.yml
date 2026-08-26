@@ -158,6 +158,44 @@ services:
       # instance, or set this to false and use Fountain.Release.promote_admin/1.
       FIRST_USER_ADMIN: ${FIRST_USER_ADMIN:-true}
 
+      # ── The three features the hosted platform rations ──────────────────
+      #
+      # /self-hosted sells this inversion: what is behind a flag or an enrolment
+      # on the hosted platform is a line of config on your own. That promise was
+      # unkeepable on the compose path, because none of these reached the
+      # container — an operator set them, restarted, and got no feature and no
+      # error. `rationed_features/0` names them and a test now holds this list
+      # against it.
+      #
+      # FEATURE_FLAGS_ON is the no-PostHog path: a comma-separated list of flag
+      # keys forced on for every user. team_comms and openai_compat are two of
+      # the three; the third is the broker below.
+      FEATURE_FLAGS_ON: ${FEATURE_FLAGS_ON:-}
+
+      # Teammate email and phone. A teammate contact is rented from the credit
+      # balance (ADR 0030), so the _CENTS knobs matter only with CREDITS_ENABLED.
+      AGENTMAIL_API_KEY: ${AGENTMAIL_API_KEY:-}
+      AGENTMAIL_BASE_URL: ${AGENTMAIL_BASE_URL:-}
+      AGENTMAIL_DOMAIN: ${AGENTMAIL_DOMAIN:-}
+      AGENTMAIL_INBOX_CENTS: ${AGENTMAIL_INBOX_CENTS:-}
+      AGENTMAIL_MESSAGE_CENTS: ${AGENTMAIL_MESSAGE_CENTS:-}
+      AGENTPHONE_API_KEY: ${AGENTPHONE_API_KEY:-}
+      AGENTPHONE_BASE_URL: ${AGENTPHONE_BASE_URL:-}
+      AGENTPHONE_WEBHOOK_SECRET: ${AGENTPHONE_WEBHOOK_SECRET:-}
+      AGENTPHONE_MESSAGE_CENTS: ${AGENTPHONE_MESSAGE_CENTS:-}
+      AGENTPHONE_NUMBER_CENTS: ${AGENTPHONE_NUMBER_CENTS:-}
+
+      # Brokered credentials (ADR 0019): the real token never enters the
+      # sandbox. BROKER_ALLOW_UNENFORCED is a development escape hatch and
+      # belongs off on anything that matters.
+      BROKER_URL: ${BROKER_URL:-}
+      BROKER_TOKEN: ${BROKER_TOKEN:-}
+      BROKER_TENANTS: ${BROKER_TENANTS:-}
+      BROKER_PROXY_URL: ${BROKER_PROXY_URL:-}
+      BROKER_SESSION_TTL_SECONDS: ${BROKER_SESSION_TTL_SECONDS:-}
+      BROKER_LOG_RETENTION_HOURS: ${BROKER_LOG_RETENTION_HOURS:-}
+      BROKER_ALLOW_UNENFORCED: ${BROKER_ALLOW_UNENFORCED:-}
+
       # There is no OTLP collector in a default compose setup, and without this
       # the exporter retries per span and floods the logs.
       OTEL_TRACES_EXPORTER: "none"
