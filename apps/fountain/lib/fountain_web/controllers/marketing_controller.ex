@@ -1,13 +1,13 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
-  The public pages: `/`, `/integrations`, `/built-with`, `/self-hosted`, `/terms`
-  and `/privacy`.
+  The public pages: `/`, `/integrations`, `/built-with`, `/self-hosted`,
+  `/case-studies/*`, `/terms` and `/privacy`.
 
-  None of the four is the same page on every deployment. `/` serves the
+  None of them is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
-  (`Fountain.Marketing`); `/integrations`, `/built-with` and `/self-hosted` are
-  the pitch's other three pages and redirect into the manual on any other
-  instance;
+  (`Fountain.Marketing`); `/integrations`, `/built-with`, `/self-hosted` and
+  the case studies are the pitch's other pages and redirect into the manual on
+  any other instance;
   the legal pages render the operator's identity, or nothing at all
   (`Fountain.Legal`). A deployment is not the Fountain project, and these
   pages are the ones that would claim otherwise.
@@ -76,6 +76,35 @@ defmodule FountainWeb.MarketingController do
       )
     else
       redirect(conn, to: ~p"/docs/self-hosting")
+    end
+  end
+
+  # There is one case study, so `/case-studies` is a shortcut to it rather
+  # than an index of one. It becomes a real index when there is a second.
+  def case_studies(conn, _params) do
+    if Fountain.Marketing.site?() do
+      redirect(conn, to: ~p"/case-studies/self-healing-infrastructure")
+    else
+      redirect(conn, to: ~p"/docs")
+    end
+  end
+
+  # An estate that pages an agent instead of a person, and what stops the
+  # agent from merging its own work. Sales copy, so it follows `/`: another
+  # deployment gets the manual's tour of the same shape.
+  def case_study(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :case_study_self_healing,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Self-healing infrastructure · #{Fountain.Brand.name()}",
+        meta_description:
+          "A Kubernetes estate that answers its own alerts. Prometheus fires, " <>
+            "#{Fountain.Brand.name()} hires an agent, the agent finds the commit that " <>
+            "broke the cluster and opens one pull request. A human still approves every " <>
+            "merge, because the agent is built so that it cannot."
+      )
+    else
+      redirect(conn, to: ~p"/docs/tour")
     end
   end
 

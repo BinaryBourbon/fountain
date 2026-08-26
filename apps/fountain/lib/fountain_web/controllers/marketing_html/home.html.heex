@@ -235,6 +235,36 @@
   </div>
 </section>
 
+<%!-- Proof. One deployment, in production, with its own numbers. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <div
+    class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-8 sm:p-10"
+    data-role="case-study-callout"
+  >
+    <p class="text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+      Case study
+    </p>
+    <h2 class="mt-2 text-2xl font-semibold text-[var(--color-text-primary)]">
+      An estate that answers its own alerts.
+    </h2>
+    <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
+      A Kubernetes cluster used to page a person when a workload broke. Now it pages a person and hires an agent. The agent reads the cluster, finds the commit that broke it, and opens one small pull request. It cannot merge that pull request, and the mechanism that stops it is not a system prompt.
+    </p>
+    <dl class="mt-6 flex flex-wrap gap-x-10 gap-y-4">
+      <div :for={stat <- case_stats()}>
+        <dt class="text-2xl font-semibold text-[var(--color-text-primary)]">{stat.value}</dt>
+        <dd class="text-xs text-[var(--color-text-muted)]">{stat.label}</dd>
+      </div>
+    </dl>
+    <a
+      href={~p"/case-studies/self-healing-infrastructure"}
+      class="mt-8 inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      Read the case study →
+    </a>
+  </div>
+</section>
+
 <%!-- Built with: proof that the API carries whole products, not just calls. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16 text-center">

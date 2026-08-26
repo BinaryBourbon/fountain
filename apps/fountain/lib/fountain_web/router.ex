@@ -158,6 +158,10 @@ defmodule FountainWeb.Router do
     get "/integrations", MarketingController, :integrations
     get "/built-with", MarketingController, :built_with
     get "/self-hosted", MarketingController, :self_hosted
+    # One study today, so the bare path redirects to it rather than 404ing on
+    # the segment a reader will inevitably chop off the URL.
+    get "/case-studies", MarketingController, :case_studies
+    get "/case-studies/self-healing-infrastructure", MarketingController, :case_study
     get "/terms", MarketingController, :terms
     get "/privacy", MarketingController, :privacy
     # The public manual, and since #1008 the only place it is published —

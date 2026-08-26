@@ -1,0 +1,310 @@
+<%!-- Hero --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center">
+  <p class="mb-4 text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+    Case study · Self-healing infrastructure
+  </p>
+  <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
+    The alert stopped waking him up. It opens a pull request instead.
+  </h1>
+  <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    A Kubernetes estate pages a person when a workload breaks. This one pages a person and hires an agent. The agent reads the cluster, finds the commit that broke it, and opens one small pull request. A human still approves every merge, because the agent is built so that it cannot.
+  </p>
+  <div class="flex flex-col sm:flex-row gap-3 justify-center">
+    <a
+      href="#loop"
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+    >
+      See the loop
+    </a>
+    <a
+      href="#build"
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      Build the same thing
+    </a>
+  </div>
+</section>
+
+<%!-- The numbers, counted once over a stated window (see case_window/0). --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-14">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div :for={stat <- case_stats()} data-role="case-stat">
+        <p class="text-3xl font-semibold text-[var(--color-text-primary)]">{stat.value}</p>
+        <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">{stat.label}</p>
+        <p class="mt-2 text-xs text-[var(--color-text-muted)] leading-relaxed">{stat.note}</p>
+      </div>
+    </div>
+    <p class="mt-8 text-center text-xs text-[var(--color-text-muted)]">
+      Counted on one production estate over {case_window()}.
+    </p>
+  </div>
+</section>
+
+<%!-- The failure class --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    Some breakage reconciliation cannot fix.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+    GitOps promises that the cluster matches the repository. It keeps that promise even when the repository is wrong. Drop an environment variable, lose a secret reference, pin a bad image, and the controller reports perfect agreement with a broken source.
+  </p>
+  <div class="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
+        Drift
+      </p>
+      <p class="text-lg font-semibold text-[var(--color-text-primary)]">Green</p>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The cluster is exactly what the repository says. Reconciliation has nothing left to do, and reports success every time it runs.
+      </p>
+    </div>
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
+        Health
+      </p>
+      <p class="text-lg font-semibold text-[var(--color-text-primary)]">Red</p>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The workload is crashing anyway, because the thing the repository says is false. The fix is not another apply. The fix is knowledge.
+      </p>
+    </div>
+  </div>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-12">
+    That gap is where the pager lives. It is also, exactly, the shape of work a coding agent is good at. Read the evidence, find the commit, write the smallest correct diff. The reason nobody automated it before is not the diagnosis. It is that shipping the diff needs a machine, a checkout, a credential that can push, and a human who is still allowed to say no.
+  </p>
+</section>
+
+<%!-- The loop --%>
+<section
+  id="loop"
+  class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)] scroll-mt-6"
+>
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      Nine steps, one of them a person.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
+      Every piece except the agent was already in the estate. The integration is one webhook and one API call.
+    </p>
+    <ol class="max-w-3xl mx-auto space-y-4">
+      <li
+        :for={step <- case_loop()}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-5 sm:p-6 flex items-start gap-4"
+        data-role="loop-step"
+      >
+        <span class={[
+          "flex-shrink-0 size-7 rounded-full text-sm font-semibold flex items-center justify-center",
+          if(step.step == "7",
+            do: "bg-[var(--color-text-primary)] text-[var(--color-bg-0)]",
+            else: "bg-[var(--color-brand)] text-white"
+          )
+        ]}>
+          {step.step}
+        </span>
+        <div class="min-w-0">
+          <h3 class="font-semibold text-[var(--color-text-primary)]">{step.title}</h3>
+          <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+            {step.body}
+          </p>
+          <div class="mt-3 overflow-x-auto">
+            <code
+              class="inline-block whitespace-nowrap text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
+              phx-no-format
+            >{step.mono}</code>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<%!-- The guardrails --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    The gate is a mechanism, not a promise.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+    An agent that opens infrastructure pull requests is only as safe as the smallest thing it is able to do. Nothing here rests on the agent choosing well, on a system prompt holding, or on a model behaving. Each refusal below is somebody else's 405.
+  </p>
+  <div class="max-w-3xl mx-auto space-y-4">
+    <div
+      :for={rule <- case_guardrails()}
+      class="grid sm:grid-cols-2 gap-4 sm:gap-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-5"
+      data-role="guardrail"
+    >
+      <div>
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-1.5">
+          It can
+        </p>
+        <p class="text-sm text-[var(--color-text-primary)] leading-relaxed">{rule.can}</p>
+      </div>
+      <div class="sm:border-l sm:border-[var(--color-border)] sm:pl-6">
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-1.5">
+          It cannot
+        </p>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">{rule.cannot}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%!-- One real incident --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      One morning, end to end.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
+      25 August 2026, all times UTC. Nobody was awake for the first half of this.
+    </p>
+    <ol class="max-w-3xl mx-auto">
+      <li
+        :for={event <- case_timeline()}
+        class="grid sm:grid-cols-[6.5rem_1fr] gap-x-6 gap-y-1 border-l border-[var(--color-border)] pl-6 pb-8 relative"
+        data-role="timeline-event"
+      >
+        <span
+          class="absolute -left-[5px] top-1.5 size-2.5 rounded-full bg-[var(--color-brand)]"
+          aria-hidden="true"
+        >
+        </span>
+        <span
+          class="text-sm font-medium text-[var(--color-text-muted)] tabular-nums"
+          phx-no-format
+        >{event.time}</span>
+        <div>
+          <h3 class="font-semibold text-[var(--color-text-primary)]">{event.title}</h3>
+          <p class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+            {event.body}
+          </p>
+        </div>
+      </li>
+    </ol>
+
+    <%!-- The agent's own words. Quoted verbatim from the pull request body,
+          so the reader judges the diagnosis rather than our summary of it. --%>
+    <figure class="max-w-3xl mx-auto mt-4" data-role="case-quote">
+      <blockquote class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        <span :for={part <- case_quote()}>
+          <%= case part do %>
+            <% {:code, text} -> %>
+              <code
+                class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5"
+                phx-no-format
+              >{text}</code>
+            <% {:text, text} -> %>
+              {text}
+          <% end %>
+        </span>
+      </blockquote>
+      <figcaption class="mt-3 text-xs text-[var(--color-text-muted)]">
+        The agent's root-cause paragraph, quoted from the pull request it opened at 07:02. The gap it names had been in the repository for months. No alert had ever reached it, because no commit had moved a lockfile until that week.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<%!-- What Fountain supplied --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    What {Fountain.Brand.name()} was for.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+    The alerting, the repository and the reconciler were already there. The missing piece was somewhere for an agent to live between alerts. Four things, and the fourth is the API call.
+  </p>
+  <div class="grid sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
+    <div
+      :for={item <- case_primitives()}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6"
+      data-role="case-primitive"
+    >
+      <h3 class="font-semibold text-[var(--color-text-primary)]">{item.title}</h3>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">{item.body}</p>
+    </div>
+  </div>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-12">
+    The operator never provisions a machine for an incident, and never pays for one between incidents. A sandbox exists for as long as the incident does. <a
+      href={~p"/docs/primitives"}
+      class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+    >Read about the four primitives</a>.
+  </p>
+</section>
+
+<%!-- Build it --%>
+<section
+  id="build"
+  class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)] scroll-mt-6"
+>
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      Point your own alerts at an agent.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
+      Whatever pages you today can post a webhook. This is the whole handoff.
+    </p>
+    <div class="grid md:grid-cols-2 gap-8 items-start max-w-4xl mx-auto">
+      <pre
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-xs leading-relaxed overflow-x-auto"
+        phx-no-format
+      ><code>{case_dispatch_example()}</code></pre>
+      <div class="space-y-5 text-sm text-[var(--color-text-secondary)]">
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Write the agent down first.
+          </span>
+          The runbook, the tools and the model belong in a file you review, not in a webhook handler. Apply it once and the dispatcher only needs its id.
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Put the identity in a Vault.
+          </span>
+          The token that pushes should be a separate account with the least rights that still work. Swapping which account an agent acts as is then a field, not a redeploy.
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Make the last step refuse you.
+          </span>
+          Find the place in your pipeline where a human already signs off and let the agent stop there. A gate the agent is unable to pass beats a gate it is asked not to.
+        </p>
+        <p class="pt-1">
+          <a
+            href={~p"/docs/tour"}
+            class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+          >
+            Read the tour, an agent that opens a pull request →
+          </a>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%!-- Footer CTA --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center">
+  <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
+    Your on-call has a queue of small, obvious fixes.
+  </h2>
+  <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
+    They all start with reading the evidence and end with a diff somebody has to approve. Hire an agent for the middle.
+  </p>
+  <div class="flex flex-col sm:flex-row gap-3 justify-center">
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+    >
+      Run your first agent free
+    </a>
+    <a
+      href={~p"/docs/concepts/teammates"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      Agents as teammates
+    </a>
+  </div>
+  <p class="mt-10 text-xs text-[var(--color-text-muted)] max-w-2xl mx-auto leading-relaxed">
+    The estate is a private Kubernetes cluster run by one person, and the numbers are its own. Twelve fix pull requests were opened over the window and eight were merged, four of them the same rehearsal fault raised on purpose. Most incidents end with no pull request at all, because the agent decides the repository cannot fix them and says so. The agent's definition is public at <a
+      href="https://github.com/jhgaylor/agent-specs/blob/main/src/agents/specialists/engineering/estate-medic.ts"
+      class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+    >jhgaylor/agent-specs</a>.
+  </p>
+</section>

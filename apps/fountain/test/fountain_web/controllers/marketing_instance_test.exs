@@ -110,6 +110,21 @@ defmodule FountainWeb.MarketingInstanceTest do
     end
   end
 
+  describe "GET /case-studies where the deployment is not the marketing site" do
+    test "sends the visitor to the manual rather than somebody else's sales copy", %{conn: conn} do
+      Application.put_env(:fountain, :marketing_site, false)
+
+      assert redirected_to(get(conn, ~p"/case-studies/self-healing-infrastructure")) ==
+               ~p"/docs/tour"
+
+      assert redirected_to(get(conn, ~p"/case-studies")) == "/docs"
+
+      # The layout drops the footer link too, for the same reason as
+      # /integrations above.
+      refute conn |> get(~p"/") |> html_response(200) =~ ~p"/case-studies"
+    end
+  end
+
   describe "GET / on the marketing site" do
     test "still serves the pitch", %{conn: conn} do
       Application.put_env(:fountain, :marketing_site, true)
