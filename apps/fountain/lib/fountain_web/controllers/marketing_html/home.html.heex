@@ -297,10 +297,10 @@
         <span :if={Fountain.Brand.hosted?()}>
           {Fountain.Brand.name()} is the hosted edition of {Fountain.Brand.engine()}, an open-source server
         </span>
-        <span :if={!Fountain.Brand.hosted?()}>{Fountain.Brand.engine()} is open source</span>, and you can run it on your own hardware, with your own sandboxes. <a
-          href={~p"/docs/open-source"}
+        <span :if={!Fountain.Brand.hosted?()}>{Fountain.Brand.engine()} is open source</span>, and you can run it on your own hardware, with your own sandboxes. Nothing is held back for the people who pay. <a
+          href={~p"/self-hosted"}
           class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-        >Read about the open-source engine</a>.
+        >See the case for running it yourself</a>.
       </dd>
     </div>
   </dl>

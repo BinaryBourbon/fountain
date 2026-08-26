@@ -1,0 +1,271 @@
+<%!-- Hero --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center">
+  <p class="mb-4 text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+    Self-hosted
+  </p>
+  <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
+    There is no Enterprise edition. There is the repo.
+  </h1>
+  <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-4">
+    {Fountain.Brand.engine()} runs Claude Code, Codex, Gemini and OpenCode on sandboxes it builds for you, behind one API.
+    <span :if={Fountain.Brand.hosted?()}>
+      {Fountain.Brand.name()} is one instance of it, the one we happen to run.
+    </span>
+    <span :if={!Fountain.Brand.hosted?()}>
+      This site is one instance of it, the one we happen to run.
+    </span>
+    Clone the same code, set two secrets, and yours is up in five commands, on your hardware, under your keys.
+  </p>
+  <p class="text-lg sm:text-xl font-medium text-[var(--color-text-primary)] max-w-2xl mx-auto mb-10">
+    Nothing is held back for the people who pay.
+  </p>
+  <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
+    <a
+      href={~p"/docs/guides/operate/deploy"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+    >
+      Bring up an instance
+    </a>
+    <a
+      href={repo_url()}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      Read the source
+    </a>
+  </div>
+  <p class="text-xs text-[var(--color-text-muted)]">
+    AGPL-3.0. No licence key, no seat count, no call with us.
+  </p>
+</section>
+
+<%!-- Bring-up: the whole install, shown rather than described. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      Five commands and a token.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
+      The compose file brings its own Postgres. Back the master key up before you have data, because it is not in the database.
+    </p>
+    <pre
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+      phx-no-format
+    ><code>{compose_example()}</code></pre>
+    <div class="grid md:grid-cols-2 gap-6 mt-8">
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Then register.</h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Open the instance and sign up. The first account verifies itself and takes the admin role, so there is no bootstrap ritual and no console of ours in the path. Close registration behind you when you are done.
+        </p>
+      </div>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Kubernetes instead?</h3>
+        <p
+          class="text-sm text-[var(--color-text-secondary)] leading-relaxed"
+          phx-no-format
+        >Plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>, with no operators and no CRDs. Every merge publishes them as an OCI artifact, and the hosted instance deploys from it. You apply what we apply.</p>
+        <a
+          href={~p"/docs/guides/operate/kubernetes"}
+          class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+        >
+          Deploy on Kubernetes →
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%!-- The inversion: what is rationed on the hosted platform is an env var on
+      your own. The rows track docs/reference/feature-status.md. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    The features we ration, you switch on.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+    Three things are not on for everyone here. Two are alpha and one changes what a sandbox can reach, so on the hosted platform each of them means an email to us and a wait. On an instance of your own they are a line in a config file, and nobody has to approve you.
+  </p>
+  <div class="space-y-4">
+    <article
+      :for={feature <- rationed_features()}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 sm:p-8"
+      data-role="rationed"
+    >
+      <div class="grid md:grid-cols-3 gap-6">
+        <div>
+          <h3 class="font-semibold text-[var(--color-text-primary)]">{feature.name}</h3>
+          <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+            {feature.blurb}
+          </p>
+          <a
+            href={feature.docs}
+            class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+          >
+            Read the page →
+          </a>
+        </div>
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
+            Here
+          </p>
+          <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+            {feature.hosted}
+          </p>
+        </div>
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-brand)] mb-2">
+            On yours
+          </p>
+          <p class="text-sm text-[var(--color-text-primary)] leading-relaxed font-medium">
+            {feature.yours}
+          </p>
+        </div>
+      </div>
+    </article>
+  </div>
+  <p class="text-center text-sm text-[var(--color-text-muted)] max-w-2xl mx-auto mt-8">
+    The rest of the product has no flag on it. The hosted instance adds nothing that is not in the repo. It runs the release image with switches set, and the
+    <a
+      href={~p"/docs/configuration"}
+      class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+    >
+      configuration reference
+    </a>
+    lists every one of them.
+  </p>
+</section>
+
+<%!-- Licences --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      Three licences, and what each one asks of you.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+      The parts your code touches are permissive on purpose. A connection to {Fountain.Brand.engine()} must never put an obligation on your application.
+    </p>
+    <div class="grid md:grid-cols-3 gap-6">
+      <div
+        :for={part <- licence_parts()}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+        data-role="licence"
+      >
+        <h3 class="font-semibold text-[var(--color-text-primary)]">{part.part}</h3>
+        <code
+          class="inline-block self-start mt-1 text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
+          phx-no-format
+        >{part.scope}</code>
+        <p class="mt-3 text-sm font-medium text-[var(--color-brand)]">{part.licence}</p>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          {part.means}
+        </p>
+      </div>
+    </div>
+    <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
+      <a
+        href={~p"/docs/open-source"}
+        class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+      >
+        What is open, what is not, and where each thing lives
+      </a>
+    </p>
+  </div>
+</section>
+
+<%!-- The ownership ladder --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    How far down do you want to own it?
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+    Most people stop at the first rung and are happy there. The point is that the next three exist, and that none of them is a sales conversation.
+  </p>
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div
+      :for={rung <- ownership_rungs()}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6"
+      data-role="rung"
+    >
+      <p class="text-xs font-semibold text-[var(--color-brand)] tracking-wide">{rung.step}</p>
+      <h3 class="mt-2 font-semibold text-[var(--color-text-primary)]">{rung.title}</h3>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">{rung.body}</p>
+    </div>
+  </div>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-10">
+    A model key is the one thing you still bring, and you always did. The agent bills your own provider account for tokens, so nothing in the middle takes a cut of inference. <a
+      href={~p"/docs/integrations/runners"}
+      class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+    >Read how a machine of yours becomes a sandbox</a>.
+  </p>
+</section>
+
+<%!-- The bill, said out loud. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      What it costs you instead.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+      Self-hosting is not free, it is paid in a different currency. Better you know the four line items now than in week three.
+    </p>
+    <div class="grid md:grid-cols-2 gap-6">
+      <div
+        :for={cost <- self_host_costs()}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+        data-role="cost"
+      >
+        <h3 class="font-semibold text-[var(--color-text-primary)]">{cost.title}</h3>
+        <p class="mt-2 flex-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          {cost.body}
+        </p>
+        <a
+          href={cost.docs}
+          class="mt-4 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+        >
+          {cost.docs_label} →
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%!-- Objections --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+    Things you would ask before the clone.
+  </h2>
+  <dl class="max-w-2xl mx-auto space-y-6 text-[var(--color-text-secondary)]">
+    <div :for={item <- self_host_faq()} data-role="faq">
+      <dt class="font-medium text-[var(--color-text-primary)]">{item.q}</dt>
+      <dd class="mt-1 text-sm leading-relaxed">{item.a}</dd>
+    </div>
+  </dl>
+</section>
+
+<%!-- Footer CTA --%>
+<section class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
+    <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
+      Clone it tonight.
+    </h2>
+    <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
+      A container, a Postgres and a sandbox token. The manual has the whole path, the repo has the issues, and neither of them has a sales form in it.
+    </p>
+    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+      <a
+        href={~p"/docs/guides/operate/deploy"}
+        class="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors"
+      >
+        Bring up an instance
+      </a>
+      <a
+        href={~p"/docs/self-hosting"}
+        class="inline-flex items-center justify-center px-8 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+      >
+        Read the operator's manual
+      </a>
+    </div>
+    <p class="mt-8 text-xs text-[var(--color-text-muted)] max-w-xl mx-auto">
+      Prefer that somebody else runs it? That is what this site is for, and the two are the same product.
+    </p>
+  </div>
+</section>

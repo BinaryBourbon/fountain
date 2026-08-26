@@ -177,6 +177,72 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /self-hosted" do
+    test "makes the case and shows the whole bring-up", %{conn: conn} do
+      body = conn |> get(~p"/self-hosted") |> html_response(200)
+
+      assert body =~ "There is no Enterprise edition. There is the repo."
+      assert body =~ "Five commands and a token."
+      assert body =~ "The features we ration, you switch on."
+      assert body =~ "What it costs you instead."
+
+      # The bring-up is kept out of the template so its $(...) is not HEEx.
+      assert body =~ "docker compose up -d"
+      assert body =~ "MASTER_SECRETS_KEY"
+
+      for licence <- ["AGPL-3.0-or-later", "Elastic 2.0", "Apache-2.0"] do
+        assert body =~ licence, "missing licence #{licence}"
+      end
+
+      assert body =~ FountainWeb.MarketingHTML.repo_url()
+    end
+
+    test "names every feature the manual says is rationed", %{conn: conn} do
+      body = conn |> get(~p"/self-hosted") |> html_response(200)
+
+      # The page's whole argument is that these three are an env var on an
+      # instance of your own. A feature that comes off the manual's status
+      # page has to come off this one, or the argument quotes a gate that no
+      # longer exists.
+      {:ok, status} = Fountain.Docs.get("reference/feature-status")
+
+      for %{name: name} <- FountainWeb.MarketingHTML.rationed_features() do
+        assert body =~ name, "missing feature #{name}"
+
+        assert status.body =~ name,
+               "#{name} is not on the manual's feature-status page any more"
+      end
+    end
+
+    test "carries its own card", %{conn: conn} do
+      body = conn |> get(~p"/self-hosted") |> html_response(200)
+      assert body =~ ~s(<meta property="og:title" content="Self-host Fountain · Fountain")
+      assert body =~ ~s(<meta name="description" content="Fountain is open source)
+      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/self-hosted")
+    end
+
+    test "every link into the manual resolves to a page", %{conn: conn} do
+      body = conn |> get(~p"/self-hosted") |> html_response(200)
+
+      links =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert links != []
+
+      for slug <- links do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+
+    test "the marketing nav and the homepage link to it", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      assert body =~ ~p"/self-hosted"
+    end
+  end
+
   describe "legal links" do
     test "registration form links to terms and privacy", %{conn: conn} do
       body = conn |> get(~p"/auth/register") |> html_response(200)
