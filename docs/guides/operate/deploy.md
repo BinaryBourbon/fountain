@@ -10,9 +10,18 @@ instance that stays up.
 
 ## Before you start
 
-You must have Postgres 16 or newer, which the compose file runs for you. You
-must also have a sandbox provider token. Read
-[Self-host Fountain](../../self-hosting.md) for what each provider needs.
+You must have Docker Engine with Compose v2, and `openssl` for the two key
+lines below. The compose file runs Postgres 16 for you, so you do not install
+a database yourself.
+
+Your machine must also reach `ghcr.io`, the registry that holds the published
+image. Does your network block it? Then comment the `image:` line in
+`docker-compose.yml`, uncomment the `build: .` line under it, and compose
+builds the image from this checkout.
+
+You must also have a sandbox provider token. Read
+[Self-host Fountain](../../self-hosting.md) for what each provider needs, and
+for where a token comes from.
 
 ## Bring it up
 
@@ -27,6 +36,12 @@ echo "MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n'
 
 docker compose up -d
 ```
+
+Do you reach this instance by a host other than `localhost`? Then set
+`PUBLIC_URL` in `.env` as well. It defaults to `http://localhost:4000`, it
+builds the links in verification emails, and every sandbox reads it as
+`FOUNTAIN_BASE_URL`. [Put it on the internet](put-it-on-the-internet.md)
+covers the rest of a public deployment.
 
 Back `MASTER_SECRETS_KEY` up now, before you have data. It is not in the
 database, so a database backup alone does not protect you. Read
@@ -98,14 +113,35 @@ internet that has registration open.
 
 ## Verify it worked
 
+The app applies database migrations before it opens a listener, so a cold
+start takes up to a minute. Wait for the app container to report `healthy`,
+then probe it.
+
 ```bash
+docker compose ps
+# wait for the app to report healthy, then:
 curl -sS localhost:4000/health/ready
 # {"checks":{"database":"ok"},"status":"ok"}
 ```
 
+A refused connection means the app has not opened its listener yet. That is
+the normal state during a cold start, and not a failed install. Read
+`docker compose logs -f app` if it stays refused.
+
 Then sign in and create a conversation. A run that reaches its first turn
 proves that the database, the secrets key and the sandbox provider are all
 wired up.
+
+## Start over
+
+```bash
+docker compose down -v
+```
+
+The `-v` flag deletes the database volume, and every account and conversation
+in it. Keep the same `MASTER_SECRETS_KEY` when you keep the volume. A new key
+cannot unwrap what the old key wrapped. Every stored environment and vault
+value then becomes unreadable.
 
 ## If it did not work
 
