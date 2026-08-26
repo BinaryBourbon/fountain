@@ -1,11 +1,11 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
-  The public pages: `/`, `/integrations`, `/terms` and `/privacy`.
+  The public pages: `/`, `/integrations`, `/built-with`, `/terms` and `/privacy`.
 
   None of the four is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
-  (`Fountain.Marketing`); `/integrations` is the pitch's second page and
-  redirects to the manual's own integrations section on any other instance;
+  (`Fountain.Marketing`); `/integrations` and `/built-with` are the pitch's other two
+  pages and redirect into the manual on any other instance;
   the legal pages render the operator's identity, or nothing at all
   (`Fountain.Legal`). A deployment is not the Fountain project, and these
   pages are the ones that would claim otherwise.
@@ -33,6 +33,26 @@ defmodule FountainWeb.MarketingController do
       )
     else
       redirect(conn, to: ~p"/docs/integrations/clients")
+    end
+  end
+
+  # The applications people have built on the API. Sales copy again, so a
+  # self-hosted instance gets the manual's build guide rather than a page
+  # selling somebody else's hosted product with somebody else's apps.
+  def built_with(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :built_with,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Built with #{Fountain.Brand.name()} · #{Fountain.Brand.name()}",
+        meta_description:
+          "#{length(FountainWeb.MarketingHTML.built_apps_flat())} open-source " <>
+            "applications built on the #{Fountain.Brand.name()} API: research briefs, " <>
+            "CSV analysis, repository Q&A, agent fleets, DNS and infrastructure " <>
+            "patrols, model bake-offs and the team clients. Most have no backend " <>
+            "of their own."
+      )
+    else
+      redirect(conn, to: ~p"/docs/build")
     end
   end
 

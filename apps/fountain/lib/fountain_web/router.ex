@@ -156,6 +156,7 @@ defmodule FountainWeb.Router do
     pipe_through [:browser, :browser_optional_auth, :public_analytics]
     get "/", MarketingController, :home
     get "/integrations", MarketingController, :integrations
+    get "/built-with", MarketingController, :built_with
     get "/terms", MarketingController, :terms
     get "/privacy", MarketingController, :privacy
     # The public manual, and since #1008 the only place it is published —
