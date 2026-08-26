@@ -1,0 +1,47 @@
+# async: false — the one test here rewrites the global `:sandboxes` config,
+# and `Quotas.check_fleet_ceiling/1` reads it on every sandbox reservation in
+# the suite.
+#
+# It used to sit in `quotas_test.exs`, which is `async: true`. While it held
+# the ceiling at 2, every async test running beside it saw a ceiling of 2, and
+# any of them that reserved a sandbox with two already live got
+# `{:error, :fleet_full}` instead of what it asserted. That surfaced as
+# `conversations_start_test.exs` failing on the tenant-cap assertions — a
+# different one each time, on some seeds and not others, and never locally,
+# because CI runs the partition under `--cover` and the timing decides who is
+# in the window.
+#
+# ExUnit runs every async module first and the sync ones one at a time
+# afterwards, so a sync module cannot overlap an async one. That is the whole
+# fix. Keep this module sync, and keep global-config tests out of
+# `quotas_test.exs`.
+defmodule Fountain.QuotasFleetCeilingTest do
+  use Fountain.DataCase, async: false
+
+  alias Fountain.Quotas
+
+  describe "the fleet ceiling" do
+    test "refuses the reservation once every slot is live, whoever holds them" do
+      cfg = Application.get_env(:fountain, :sandboxes)
+      on_exit(fn -> Application.put_env(:fountain, :sandboxes, cfg) end)
+      Application.put_env(:fountain, :sandboxes, Keyword.put(cfg, :fleet_ceiling, 2))
+
+      other = insert_active_user()
+      insert_sandbox(user_id: other.id, status: "ready")
+      insert_sandbox(user_id: other.id, status: "starting")
+
+      user = insert_active_user()
+      {:ok, _} = Fountain.Credits.grant(user.id, 1_000, "purchase", idempotency_key: "fleet")
+
+      assert {:error, :fleet_full} = Quotas.check_fleet_ceiling()
+
+      assert {:error, :fleet_full} =
+               Quotas.with_sandbox_reservation(user.id, [], fn -> {:ok, :never} end)
+
+      # A suspended sandbox is not compute and does not hold a slot.
+      Fountain.Repo.update_all(Fountain.Conversations.Sandbox, set: [status: "suspended"])
+      assert :ok = Quotas.check_fleet_ceiling()
+      assert {:ok, :ran} = Quotas.with_sandbox_reservation(user.id, [], fn -> {:ok, :ran} end)
+    end
+  end
+end
