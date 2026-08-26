@@ -4,20 +4,20 @@
     Self-hosted
   </p>
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    Give your app a coding agent. Own every machine it touches.
+    Define your agents once. Let every app you build hire them.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-4">
-    {Fountain.Brand.engine()} runs Claude Code, Codex, Gemini and OpenCode on sandboxes it builds for you, behind one API.
+    An agent is a row you write once. The model, the skills, the MCP servers, the repository it wakes up in, the secrets it may use. After that anything you build hires it over one API, and it arrives on a machine {Fountain.Brand.engine()} builds, warms and reclaims.
     <span :if={Fountain.Brand.hosted?()}>
-      {Fountain.Brand.name()} is one instance of it, the one we happen to run.
+      {Fountain.Brand.name()} is one instance of that platform, the one we happen to run.
     </span>
     <span :if={!Fountain.Brand.hosted?()}>
-      This site is one instance of it, the one we happen to run.
+      This site is one instance of that platform, the one we happen to run.
     </span>
-    Clone the same repository, set two secrets, and yours answers the same API in six commands, on your hardware, under your own keys.
+    Yours answers the same API in six commands.
   </p>
   <p class="text-lg sm:text-xl font-medium text-[var(--color-text-primary)] max-w-2xl mx-auto mb-10">
-    There are no tiers to buy. The features we ration on this site are a line of config on yours.
+    Run it yourself and the whole platform is yours. Your roster, your machines, your keys, and the features we ration on this site are a line of config on yours.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
@@ -35,6 +35,42 @@
   </div>
   <p class="text-xs text-[var(--color-text-muted)]">
     AGPL-3.0-or-later. No licence key, no seat count, no call with us.
+  </p>
+</section>
+
+<%!-- The apps are the argument. The claim above the fold is that an agent
+      defined once gets hired by anything, and these are the anything. Cards
+      come from built_apps/0 so the page cannot drift from /built-with. --%>
+<section class="max-w-5xl mx-auto px-6 pb-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    {built_app_count()} applications already hire from one roster.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    Here are four of them, and they are four different front doors onto the same idea. Nobody wrote an agent into any of these apps. The teammate was defined once and the app is the part somebody built on top of it. All of them are open source, and each one points at whichever instance you configure.
+  </p>
+  <div class="grid sm:grid-cols-2 gap-6">
+    <a
+      :for={app <- self_host_showcase()}
+      href={app.url}
+      rel="noopener"
+      data-role="showcase"
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 hover:border-[var(--color-brand)] transition-colors"
+    >
+      <span class="text-2xl" aria-hidden="true">{app.glyph}</span>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+      <p class="mt-0.5 text-xs text-[var(--color-text-muted)]">{app.host}</p>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        {app.blurb}
+      </p>
+    </a>
+  </div>
+  <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
+    <a
+      href={~p"/built-with"}
+      class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+    >
+      All {built_app_count()} of them, and what each one proves
+    </a>
   </p>
 </section>
 

@@ -672,6 +672,25 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The project's repository. The self-hosted page links it from four places."
   def repo_url, do: @repo_url
 
+  # The four apps /self-hosted leads with, chosen for four different shapes of
+  # front door: an assistant you text, a shared workstation, an unattended
+  # repair loop, and a fan-out. Selected from `built_apps/0` by id rather than
+  # restated, so a card here cannot drift from /built-with, and an app that is
+  # renamed or retired there raises at render instead of linking nowhere.
+  @showcase_ids ~w(reflex fountain-workbench rounds mission-control)
+
+  @doc """
+  The applications /self-hosted shows above the bring-up. The page's claim is
+  that an agent defined once gets hired by anything, and these are the anything.
+  """
+  def self_host_showcase do
+    by_id = Map.new(built_apps_flat(), &{&1.id, &1})
+    Enum.map(@showcase_ids, &Map.fetch!(by_id, &1))
+  end
+
+  @doc "How many applications the roster holds. Both marketing pages quote it."
+  def built_app_count, do: length(built_apps_flat())
+
   @doc """
   The bring-up, verbatim from the deploy guide, so the page cannot drift into
   showing commands the manual does not. Kept out of the template because
