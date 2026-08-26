@@ -898,9 +898,11 @@ jobs:
 
       # The exact commands the quick start documents (cp, the two openssl
       # lines, up) rather than a synthetic env — the job exists to run what
-      # a fresh user runs, so any divergence here would defeat it. The
-      # appended keys shadow the blank ones from the example file; that
-      # last-value-wins reliance is part of the documented flow under test.
+      # a fresh user runs, so any divergence here would defeat it. The two
+      # appended keys are now the only definition of each: the example file
+      # ships them commented out, so a followed quick start no longer leaves
+      # two copies of every secret in .env, shadowing each other and relying
+      # on last-value-wins to pick the real one (#1215).
       - name: Run the documented quick start
         run: |
           set -euo pipefail
