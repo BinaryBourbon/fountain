@@ -25,6 +25,16 @@ upgrade, is in
   no asset pipeline behind it. Since #1008 `/docs` is the only place the
   manual is published, which left it as the one copy with no way to search.
 
+- **A landing page for running it yourself, `/self-hosted`.** The case for
+  an instance of your own, next to the case for ours: the bring-up in five
+  commands, the three licences and what each one asks of you, four rungs of
+  ownership down to the case where no third-party account is left in the loop,
+  and the four costs that land on the operator instead. The middle of it is
+  the inversion worth a page: the three features the hosted platform rations
+  are an env var on an instance of your own. Like `/integrations` and
+  `/built-with`, it is sales copy, so an instance that is not the marketing
+  site redirects to the manual's own `Self-host Fountain`.
+
 - **A gallery of the applications built on the API, `/built-with`.**
   Thirteen products, grouped by who they are for: a researcher that returns
   cited briefs, an analyst that runs Python on a CSV, a personal assistant you

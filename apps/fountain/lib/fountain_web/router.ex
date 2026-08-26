@@ -157,6 +157,7 @@ defmodule FountainWeb.Router do
     get "/", MarketingController, :home
     get "/integrations", MarketingController, :integrations
     get "/built-with", MarketingController, :built_with
+    get "/self-hosted", MarketingController, :self_hosted
     get "/terms", MarketingController, :terms
     get "/privacy", MarketingController, :privacy
     # The public manual, and since #1008 the only place it is published —

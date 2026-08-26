@@ -1,11 +1,13 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
-  The public pages: `/`, `/integrations`, `/built-with`, `/terms` and `/privacy`.
+  The public pages: `/`, `/integrations`, `/built-with`, `/self-hosted`, `/terms`
+  and `/privacy`.
 
   None of the four is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
-  (`Fountain.Marketing`); `/integrations` and `/built-with` are the pitch's other two
-  pages and redirect into the manual on any other instance;
+  (`Fountain.Marketing`); `/integrations`, `/built-with` and `/self-hosted` are
+  the pitch's other three pages and redirect into the manual on any other
+  instance;
   the legal pages render the operator's identity, or nothing at all
   (`Fountain.Legal`). A deployment is not the Fountain project, and these
   pages are the ones that would claim otherwise.
@@ -53,6 +55,26 @@ defmodule FountainWeb.MarketingController do
       )
     else
       redirect(conn, to: ~p"/docs/build")
+    end
+  end
+
+  # The case for running it yourself. Sales copy for the other choice, which
+  # is still sales copy, so it follows the same rule: an instance that is not
+  # the marketing site sends the reader to the manual, where the operator's
+  # own answer lives.
+  def self_hosted(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :self_hosted,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Self-host #{Fountain.Brand.engine()} · #{Fountain.Brand.name()}",
+        meta_description:
+          "#{Fountain.Brand.engine()} is open source and the whole product is in the " <>
+            "repo: the server, the console, the API, the CLI and the SDK. Bring an " <>
+            "instance up with Docker Compose or plain Kubernetes manifests, on your " <>
+            "hardware, under your own keys, with no licence key and no seat count."
+      )
+    else
+      redirect(conn, to: ~p"/docs/self-hosting")
     end
   end
 

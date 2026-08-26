@@ -664,4 +664,193 @@ defmodule FountainWeb.MarketingHTML do
 
   @doc "Every app on /built-with, flattened. The count the page quotes comes from here."
   def built_apps_flat, do: Enum.flat_map(built_apps(), & &1.apps)
+
+  ## /self-hosted
+
+  @repo_url "https://github.com/BinaryBourbon/fountain"
+
+  @doc "The project's repository. The self-hosted page links it from four places."
+  def repo_url, do: @repo_url
+
+  @doc """
+  The bring-up, verbatim from the deploy guide, so the page cannot drift into
+  showing commands the manual does not. Kept out of the template because
+  `$(...)` and `${...}` are not HEEx.
+  """
+  def compose_example do
+    """
+    git clone https://github.com/BinaryBourbon/fountain
+    cd fountain
+
+    cp .env.compose.example .env
+    echo "SECRET_KEY_BASE=$(openssl rand -base64 48 | tr -d '\\n')" >> .env
+    echo "MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\\n')" >> .env
+    # ... and your sandbox provider token
+
+    docker compose up -d\
+    """
+  end
+
+  @doc """
+  The three features the hosted platform rations, and what they cost on an
+  instance of your own. The rows track `docs/reference/feature-status.md`; a
+  feature that comes off that page comes off this one.
+  """
+  def rationed_features do
+    [
+      %{
+        name: "Teammate email and phone",
+        blurb: "An agent with its own inbox and its own number, that answers what arrives.",
+        hosted: "Behind a flag. Ask us to turn it on for your account.",
+        yours: "Set the AgentMail and AgentPhone keys, add team_comms to FEATURE_FLAGS_ON.",
+        docs: "/docs/catalog/mcp-servers/fountain-comms"
+      },
+      %{
+        name: "OpenAI-compatible API",
+        blurb:
+          "Point anything that speaks chat completions at your instance, where the model is an agent.",
+        hosted: "Behind a flag. Ask us to turn it on for your account.",
+        yours: "Add openai_compat to FEATURE_FLAGS_ON.",
+        docs: "/docs/integrations/openai-compatible"
+      },
+      %{
+        name: "Brokered credentials",
+        blurb:
+          "The real token never enters the sandbox. The broker attaches it on the way out, and the transcript keeps a placeholder.",
+        hosted: "Limited access. We enrol an account by hand.",
+        yours: "Set BROKER_URL and its siblings, and list the tenants you want brokered.",
+        docs: "/docs/concepts/secrets"
+      }
+    ]
+  end
+
+  @doc "What each licence lets you do, in the order that matters to somebody deciding."
+  def licence_parts do
+    [
+      %{
+        part: "The server",
+        scope: "apps/fountain",
+        licence: "AGPL-3.0-or-later",
+        means:
+          "Run it, change it, host it, charge for it. Offer a changed server to other people over a network and they have a right to your source."
+      },
+      %{
+        part: "Credits and Stripe",
+        scope: "ee/",
+        licence: "Elastic 2.0",
+        means:
+          "Free to run in your own instance, and your changes stay yours. The one thing it forbids is selling this code to third parties as a hosted service."
+      },
+      %{
+        part: "The CLI and the SDK",
+        scope: "cli/, sdk/typescript",
+        licence: "Apache-2.0",
+        means:
+          "Ship them inside a closed product. An application that calls your instance takes on no obligation at all."
+      }
+    ]
+  end
+
+  @doc "The four rungs of ownership, from the app down to the last vendor."
+  def ownership_rungs do
+    [
+      %{
+        step: "01",
+        title: "The app",
+        body:
+          "Your container, your Postgres, your domain. Conversations, transcripts, audit rows and API keys live in a database you can open with psql."
+      },
+      %{
+        step: "02",
+        title: "The secrets",
+        body:
+          "Every tenant's env vars are encrypted with a key derived from a master key you generate. It is not in the database, which is also why a database backup on its own does not save you."
+      },
+      %{
+        step: "03",
+        title: "The machines",
+        body:
+          "A Mac mini, a home server or a GPU box becomes a sandbox backend with one daemon. It dials out, holds one connection, wants no inbound port and no credential."
+      },
+      %{
+        step: "04",
+        title: "The last vendor",
+        body:
+          "Server on your hardware, sandboxes on your machines, and no third-party account is left in the loop. Not a sandbox host's, and not ours."
+      }
+    ]
+  end
+
+  @doc """
+  What self-hosting costs, said plainly. A page that sells an instance and
+  hides the bill for it gets found out in week three.
+  """
+  def self_host_costs do
+    [
+      %{
+        title: "A sandbox backend is somebody's service, unless you bring machines",
+        body:
+          "Sprites, E2B and Daytona are all hosted. Daytona you can run yourself, and your own runners need no vendor at all. Pick one before your first conversation, because without one every conversation fails.",
+        docs: "/docs/integrations/runners",
+        docs_label: "Runners on your own hardware"
+      },
+      %{
+        title: "Email is a decision, not an optional extra",
+        body:
+          "Verification, password resets and anything a teammate sends go through Resend or an SMTP server of yours. The compose defaults skip delivery so the first account can register, and that default is for day one only.",
+        docs: "/docs/guides/operate/email",
+        docs_label: "Configure email"
+      },
+      %{
+        title: "The master key is yours to lose",
+        body:
+          "Back it up before you have data. Lose it and every encrypted secret in the instance is gone, and no database restore brings them back.",
+        docs: "/docs/guides/operate/back-up-and-restore",
+        docs_label: "Back up and restore"
+      },
+      %{
+        title: "Upgrades are yours to run",
+        body:
+          "Pull the tag, run the migrations, read the note. There is no window where somebody else does it for you, and no window where somebody else does it to you.",
+        docs: "/docs/guides/operate/upgrade",
+        docs_label: "Upgrade an instance"
+      }
+    ]
+  end
+
+  @doc "The questions somebody asks between reading this page and running the clone."
+  def self_host_faq do
+    [
+      %{
+        q: "Is it really the same code?",
+        a:
+          "The same image and the same manifests. Every merge publishes deploy/ as an OCI artifact, and the hosted instance deploys from that artifact. There is no private overlay, and no patch that only we have."
+      },
+      %{
+        q: "Does the AGPL reach my application?",
+        a:
+          "No. Your application talks to your instance over HTTP, and the CLI and the SDK are Apache-2.0 for exactly that reason. The copyleft has one target: somebody who changes the server and then offers the changed server to other people as a service."
+      },
+      %{
+        q: "What do I pay for the software?",
+        a:
+          "Nothing. There is no licence key, no seat count and no call with us. Leave credits off and the instance prices nothing, gates nothing and shows nobody a bill. Turn credits on and it bills your users, not you."
+      },
+      %{
+        q: "Do I still bring a model key?",
+        a:
+          "Yes, and you always did. The agent bills your Anthropic, OpenAI or Google account for tokens. Nothing in the middle takes a cut of inference, hosted or not."
+      },
+      %{
+        q: "Can I try the hosted one first?",
+        a:
+          "Yes, and none of it is wasted. The console, the CLI, the API, the SDK and the manual are the same on both. What changes is whose machine it runs on."
+      },
+      %{
+        q: "How much of an instance is one person?",
+        a:
+          "A container, a Postgres and a sandbox token. It ships with a compose file that brings the database with it, and plain Kubernetes manifests for when it outgrows that."
+      }
+    ]
+  end
 end
