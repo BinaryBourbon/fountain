@@ -29,6 +29,75 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /integrations" do
+    test "renders every protocol and what speaks it", %{conn: conn} do
+      body = conn |> get(~p"/integrations") |> html_response(200)
+
+      assert body =~ "It speaks what your stack already speaks."
+
+      for name <- ~w(AG-UI ACP OpenAI-compatible MCP Nostr) do
+        assert body =~ name, "missing protocol #{name}"
+      end
+
+      for name <- ["OpenBot", "Zed", "OpenClaw", "Hermes Agent", "LiteLLM", "LangChain", "Buzz"] do
+        assert body =~ name, "missing integration #{name}"
+      end
+
+      # The snippets are kept out of the template so their braces are not HEEx.
+      assert body =~ "@ag-ui/client"
+      assert body =~ "fountain acp"
+      assert body =~ "/v1/chat/completions"
+      assert body =~ "@agentshit/fountain-sdk"
+    end
+
+    test "carries its own card", %{conn: conn} do
+      body = conn |> get(~p"/integrations") |> html_response(200)
+      assert body =~ ~s(<meta property="og:title" content="Integrations · Fountain")
+      assert body =~ ~s(<meta name="description" content="Fountain speaks AG-UI)
+      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/integrations")
+    end
+
+    test "every link into the manual resolves to a page", %{conn: conn} do
+      body = conn |> get(~p"/integrations") |> html_response(200)
+
+      links =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert links != []
+
+      for slug <- links do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+
+    test "names a service only when the broker has a preset for it", %{conn: conn} do
+      body = conn |> get(~p"/integrations") |> html_response(200)
+      assert body =~ "Linear"
+      assert body =~ "Notion"
+      # Twilio is in the catalog but not usable as a binding, so it stays off.
+      refute body =~ "Twilio"
+    end
+
+    test "every mark the page asks for exists", _ do
+      slugs =
+        (FountainWeb.MarketingHTML.protocols() |> Enum.flat_map(& &1.works_with)) ++
+          (FountainWeb.MarketingHTML.inside() |> Enum.flat_map(& &1.items)) ++
+          FountainWeb.MarketingHTML.brokered_services()
+
+      for %{slug: slug, name: name} <- slugs, slug != nil do
+        assert FountainWeb.MarketingIcons.has?(slug), "#{name} names a missing mark #{slug}"
+      end
+    end
+
+    test "the marketing nav and the homepage link to it", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      assert body =~ ~p"/integrations"
+    end
+  end
+
   describe "legal links" do
     test "registration form links to terms and privacy", %{conn: conn} do
       body = conn |> get(~p"/auth/register") |> html_response(200)

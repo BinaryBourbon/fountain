@@ -1,18 +1,39 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
-  The public pages: `/`, `/terms` and `/privacy`.
+  The public pages: `/`, `/integrations`, `/terms` and `/privacy`.
 
-  None of the three is the same page on every deployment. `/` serves the
+  None of the four is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
-  (`Fountain.Marketing`); the legal pages render the operator's identity, or
-  nothing at all (`Fountain.Legal`). A deployment is not the Fountain project,
-  and these pages are the three that would claim otherwise.
+  (`Fountain.Marketing`); `/integrations` is the pitch's second page and
+  redirects to the manual's own integrations section on any other instance;
+  the legal pages render the operator's identity, or nothing at all
+  (`Fountain.Legal`). A deployment is not the Fountain project, and these
+  pages are the ones that would claim otherwise.
   """
   use FountainWeb, :controller
 
   def home(conn, _params) do
     page = if Fountain.Marketing.site?(), do: :home, else: :instance
     render(conn, page, layout: {FountainWeb.Layouts, :marketing})
+  end
+
+  # The protocols Fountain speaks and what already speaks them. Sales copy,
+  # so it follows `/`: a self-hosted instance gets the manual's version of
+  # the same list rather than a page selling the hosted product.
+  def integrations(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :integrations,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Integrations · #{Fountain.Brand.name()}",
+        meta_description:
+          "#{Fountain.Brand.name()} speaks AG-UI, the Agent Client Protocol, " <>
+            "OpenAI chat completions, MCP and its own REST API, so the editor, " <>
+            "chat app, gateway or framework you already use can hire an agent " <>
+            "on a sandbox."
+      )
+    else
+      redirect(conn, to: ~p"/docs/integrations/clients")
+    end
   end
 
   def terms(conn, _params) do
