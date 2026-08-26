@@ -18,6 +18,13 @@ upgrade, is in
 
 ### Added
 
+- **Search over the manual, at `/docs` (#1009).** A field at the top of the
+  sidebar filters every page title and every heading as you type, with arrow
+  keys and Enter to jump. The index is the manual's structure, not its prose,
+  and is built at compile time, so there is no search service, no request and
+  no asset pipeline behind it. Since #1008 `/docs` is the only place the
+  manual is published, which left it as the one copy with no way to search.
+
 - **An integrations page on the marketing site, `/integrations`.** The
   protocols Fountain answers (AG-UI, the Agent Client Protocol, OpenAI chat
   completions, MCP, its own REST API and webhooks, and Buzz over Nostr), what

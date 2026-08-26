@@ -234,4 +234,56 @@ defmodule Fountain.Docs.Compiler do
   @spec path_for_slug(String.t()) :: String.t()
   def path_for_slug(""), do: "/docs"
   def path_for_slug(slug), do: "/docs/" <> slug
+
+  @doc """
+  Pulls `{id, text}` for every `<h2>`–`<h6>` out of a page's **rendered**
+  HTML, in document order — the input is `FountainWeb.Markdown.to_trusted_html/1`
+  output, not markdown. `<h1>` is skipped; every page has exactly one, and it
+  duplicates the nav title a search result already shows next to it.
+
+  Reads the id comrak already assigned rather than re-deriving one from the
+  heading text. Slugging headings a second time is the exact trap #1008 names
+  a reason for: the old MkDocs build and comrak's `header_id_prefix`
+  extension picked different ids for *duplicate* headings on the same page
+  (`-1` vs `_1`), and a search result is only useful if its anchor is the one
+  the page actually renders. `docs_test.exs` leans on the same rendered
+  output to check anchor links, for the same reason.
+  """
+  @spec extract_headings(String.t()) :: [%{id: String.t(), text: String.t()}]
+  def extract_headings(html) do
+    ~r/<h[2-6]([^>]*)>(.*?)<\/h[2-6]>/s
+    |> Regex.scan(html)
+    |> Enum.map(fn [_, attrs, inner] -> %{id: heading_id(attrs), text: heading_text(inner)} end)
+    |> Enum.reject(&(&1.id == nil or &1.text == ""))
+  end
+
+  defp heading_id(attrs) do
+    case Regex.run(~r/\sid="([^"]*)"/, attrs) do
+      [_, id] -> id
+      nil -> nil
+    end
+  end
+
+  # Strips the inner markup a heading can carry (`## \`fountain apply\``
+  # renders as `<code>` inside the `<h2>`) and unescapes the handful of
+  # entities comrak emits in text content. Not a general HTML-entity decoder
+  # — docs headings are plain prose plus inline code, and nothing in the
+  # corpus needs more than this (see the "small dialect" note in
+  # `Fountain.Docs`).
+  #
+  # `&amp;` is decoded **last**, and the order is load-bearing: a heading
+  # holding a literal `&lt;` renders as `&amp;lt;`, so decoding the ampersand
+  # first would leave `&lt;` for the next pass to turn into `<` — the one
+  # thing the escaping was there to prevent. Nothing in the corpus does this
+  # today; the order is what keeps it that way.
+  defp heading_text(inner) do
+    inner
+    |> String.replace(~r/<[^>]*>/s, "")
+    |> String.replace("&lt;", "<")
+    |> String.replace("&gt;", ">")
+    |> String.replace("&quot;", "\"")
+    |> String.replace("&#39;", "'")
+    |> String.replace("&amp;", "&")
+    |> String.trim()
+  end
 end
