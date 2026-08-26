@@ -18,6 +18,12 @@ upgrade, is in
 
 ### Added
 
+- **LangChain and Deep Agents example.** `examples/deepagents-contractor`:
+  a Deep Agent orchestrator whose subagents are Fountain agents, over the
+  OpenAI-compatible API. `fountain_langchain.py` makes one agent a
+  `CompiledSubAgent`, a LangChain tool or a bare runnable, keyed to the
+  LangGraph `thread_id` so one thread keeps one sandbox per agent. Docs page
+  `docs/integrations/langchain.md`.
 - **OpenAI-compatible chat completions (alpha, flag `openai_compat`).**
   `POST /v1/chat/completions` and
   `GET /v1/models`, where the `model` is one of the tenant's agents (by name
