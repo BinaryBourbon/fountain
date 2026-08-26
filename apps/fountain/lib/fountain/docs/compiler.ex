@@ -270,14 +270,20 @@ defmodule Fountain.Docs.Compiler do
   # — docs headings are plain prose plus inline code, and nothing in the
   # corpus needs more than this (see the "small dialect" note in
   # `Fountain.Docs`).
+  #
+  # `&amp;` is decoded **last**, and the order is load-bearing: a heading
+  # holding a literal `&lt;` renders as `&amp;lt;`, so decoding the ampersand
+  # first would leave `&lt;` for the next pass to turn into `<` — the one
+  # thing the escaping was there to prevent. Nothing in the corpus does this
+  # today; the order is what keeps it that way.
   defp heading_text(inner) do
     inner
     |> String.replace(~r/<[^>]*>/s, "")
-    |> String.replace("&amp;", "&")
     |> String.replace("&lt;", "<")
     |> String.replace("&gt;", ">")
     |> String.replace("&quot;", "\"")
     |> String.replace("&#39;", "'")
+    |> String.replace("&amp;", "&")
     |> String.trim()
   end
 end

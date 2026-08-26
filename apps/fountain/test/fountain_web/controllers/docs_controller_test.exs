@@ -6,6 +6,16 @@ defmodule FountainWeb.DocsControllerTest do
   # only place that manual is published, which makes the anonymous case the
   # one that matters most — nobody reading setup.md has an account yet.
 
+  defp search_index_json(body) do
+    [_, json] =
+      Regex.run(
+        ~r{<script type="application/json" id="docs-search-index">(.*?)</script>}s,
+        body
+      )
+
+    json
+  end
+
   describe "GET /docs" do
     test "serves the home page with the sidebar nav", %{conn: conn} do
       body = conn |> get(~p"/docs") |> html_response(200)
@@ -50,6 +60,41 @@ defmodule FountainWeb.DocsControllerTest do
 
       assert conn |> get("/docs/integrations/nope/deeper") |> html_response(404) =~
                "Page not found"
+    end
+  end
+
+  # The search index (#1009) is served as a `<script type="application/json">`
+  # block the page's own JS reads with `JSON.parse`. HEEx treats a `<script>`
+  # body as raw text and does not interpolate `{...}` inside one, so the
+  # difference between the curly form and `<%= %>` is the difference between a
+  # working index and a literal expression that throws on the first parse —
+  # invisibly, since the input still renders. The unit tests in
+  # `Fountain.Docs` cannot see this; only rendering the page can.
+  describe "the search index in the rendered page" do
+    test "is emitted as JSON the browser can parse", %{conn: conn} do
+      body = conn |> get(~p"/docs") |> html_response(200)
+
+      json = search_index_json(body)
+      refute json =~ "search_index_json", "the expression rendered verbatim instead of its value"
+
+      decoded = Jason.decode!(json)
+      assert length(decoded) == length(Fountain.Docs.search_index())
+
+      home = Enum.find(decoded, &(&1["slug"] == ""))
+      assert home["title"] != ""
+      assert is_list(home["headings"])
+    end
+
+    test "is served on a nested page too, with the same content", %{conn: conn} do
+      home = conn |> get(~p"/docs") |> html_response(200) |> search_index_json()
+
+      nested =
+        conn
+        |> get(~p"/docs/integrations/sprites-contract")
+        |> html_response(200)
+        |> search_index_json()
+
+      assert Jason.decode!(nested) == Jason.decode!(home)
     end
   end
 end

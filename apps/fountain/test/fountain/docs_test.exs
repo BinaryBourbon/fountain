@@ -494,6 +494,17 @@ defmodule Fountain.DocsTest do
              ]
     end
 
+    test "extract_headings decodes an escaped entity once, not twice" do
+      # A heading whose source holds a literal `&lt;` renders as `&amp;lt;`.
+      # Decoding `&amp;` before `&lt;` would hand the second pass a live
+      # `&lt;` and produce `<` — the escaping undone.
+      html = ~s(<h2 id="entity">Write &amp;lt; to mean &amp;amp;</h2>)
+
+      assert Compiler.extract_headings(html) == [
+               %{id: "entity", text: "Write &lt; to mean &amp;"}
+             ]
+    end
+
     test "extract_headings ignores a heading with no id" do
       html = "<h2>No id here</h2>"
       assert Compiler.extract_headings(html) == []

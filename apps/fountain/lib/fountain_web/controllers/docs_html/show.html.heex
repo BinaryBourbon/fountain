@@ -169,11 +169,14 @@ pick up the word "Copy". --%>
 once at compile time. `</` is escaped to `<\/` so a heading whose text
 happens to contain a literal `</script` (there is none today, but nothing
 enforces that) cannot end the element early — the HTML tokenizer looks for
-that sequence regardless of `type`. `application/json` keeps it inert;
+that sequence regardless of `type`. The `<%= %>` is load-bearing: HEEx
+treats a `<script>` body as raw text and does not interpolate `{...}`
+inside one, so the curly form would render the expression verbatim and
+`JSON.parse` would throw. `application/json` keeps it inert;
 nothing parses or renders it until the script below reads `textContent`
 and calls `JSON.parse`. --%>
 <script type="application/json" id="docs-search-index">
-  {Phoenix.HTML.raw(@search_index_json)}
+  <%= Phoenix.HTML.raw(@search_index_json) %>
 </script>
 
 <%!-- Search over the index above: titles and headings, filtered as you
@@ -275,6 +278,33 @@ false sense of relevance over 83 pages. --%>
       }
     }
 
+    function close() {
+      matches = [];
+      active = -1;
+      render();
+    }
+
+    // A result on the page you are already reading only changes the fragment:
+    // no navigation, no unload, and the document click handler never fires for
+    // a keyboard Enter — so nothing else would ever close the list. Close it
+    // first, then jump.
+    function go(href) {
+      close();
+      window.location.href = href;
+    }
+
+    results.addEventListener("click", (event) => {
+      const link = event.target.closest("a");
+      if (!link) return;
+      // Let a modified click do what the browser does with it (new tab, new
+      // window) and leave the list alone. A plain one navigates through `go`
+      // rather than the anchor's own default, so the list is emptied before
+      // the jump instead of during the click's own dispatch.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      go(link.href);
+    });
+
     input.addEventListener("input", () => {
       matches = search(input.value);
       active = matches.length > 0 ? 0 : -1;
@@ -282,6 +312,24 @@ false sense of relevance over 83 pages. --%>
     });
 
     input.addEventListener("keydown", (event) => {
+      // Escape is unconditional: with the list already closed it still has to
+      // blur the field. ArrowDown reopens the last results, so it runs on an
+      // empty `matches` too — only the wrap-around arithmetic below needs a
+      // non-empty list.
+      if (event.key === "Escape") {
+        close();
+        input.blur();
+        return;
+      }
+
+      if (event.key === "ArrowDown" && matches.length === 0) {
+        matches = search(input.value);
+        active = matches.length > 0 ? 0 : -1;
+        if (matches.length > 0) event.preventDefault();
+        render();
+        return;
+      }
+
       if (matches.length === 0) return;
 
       if (event.key === "ArrowDown") {
@@ -296,22 +344,13 @@ false sense of relevance over 83 pages. --%>
         const target = matches[active] || matches[0];
         if (target) {
           event.preventDefault();
-          window.location.href = target.href;
+          go(target.href);
         }
-      } else if (event.key === "Escape") {
-        matches = [];
-        active = -1;
-        render();
-        input.blur();
       }
     });
 
     document.addEventListener("click", (event) => {
-      if (!event.target.closest('[data-role="docs-search"]')) {
-        matches = [];
-        active = -1;
-        render();
-      }
+      if (!event.target.closest('[data-role="docs-search"]')) close();
     });
   })();
 </script>
