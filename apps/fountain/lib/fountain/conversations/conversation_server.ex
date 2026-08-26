@@ -823,7 +823,10 @@ defmodule Fountain.Conversations.ConversationServer do
         # because nothing dials out without it (ADR 0019 gate 1a).
         with {:ok, state} <- broker_prepare(state),
              sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url),
-             _ =
+             # A real step, not best effort: an agent whose MCP servers could
+             # not be written would otherwise run without them and report
+             # `provision/done`. The runtimes retry the write themselves.
+             :ok <-
                write_runtime_config(
                  handle,
                  state.runtime_module,
@@ -1066,8 +1069,16 @@ defmodule Fountain.Conversations.ConversationServer do
       # The callback token just rotated, and for claude the connection MCP
       # servers carry it in `.mcp.json` (#1178): rewrite the file so the
       # next turn's tools authenticate. Idempotent for an agent without one.
-      _ =
-        write_runtime_config(handle, state.runtime_module, with_connection_servers(agent, state))
+      # Best effort here, like the CA below: the turn's own failure says more
+      # than a refused wake would.
+      case write_runtime_config(
+             handle,
+             state.runtime_module,
+             with_connection_servers(agent, state)
+           ) do
+        :ok -> :ok
+        {:error, reason} -> Logger.warning("runtime config write on wake: #{inspect(reason)}")
+      end
 
       # A machine provisioned before its tenant was brokered has no CA yet;
       # on one that has it this is an idempotent rewrite. Best effort here:
@@ -1805,6 +1816,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
     if function_exported?(runtime_module, :write_config, 2) do
       runtime_module.write_config(handle, agent)
+    else
+      :ok
     end
   end
 

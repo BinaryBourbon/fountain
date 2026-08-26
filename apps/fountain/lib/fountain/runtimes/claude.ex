@@ -84,28 +84,34 @@ defmodule Fountain.Runtimes.Claude do
     # Project-scope config the CLI reads via settingSources; `mcp_servers` is
     # already the Claude-Code shape (`%{name => %{"command"/"args"/"env"...}}`)
     # with `${VAR}` refs resolved by the caller.
-    :ok =
-      Fountain.Sandbox.write_file(
-        handle,
-        @mcp_config,
-        Jason.encode!(%{"mcpServers" => mcp_servers}, pretty: true)
-      )
+    #
+    # Both writes are idempotent, so a transport blip on a sprite that has
+    # only just booted is retried rather than failing the provision: the
+    # first filesystem call into a fresh sprite timed out once in prod and
+    # took the whole conversation with it.
+    mcp_json = Jason.encode!(%{"mcpServers" => mcp_servers}, pretty: true)
 
-    # Pre-approve the project's servers so the first turn does not stall on an
-    # approval the sandbox has no human to answer. (Fountain's ACP peer also
-    # auto-allows `session/request_permission`, but that only fires mid-turn;
-    # pre-approval keeps the server connected from session start.)
-    :ok =
-      Fountain.Sandbox.write_file(
-        handle,
-        @settings,
-        Jason.encode!(%{"enableAllProjectMcpServers" => true}, pretty: true)
-      )
+    # Pre-approve the project's servers so the first turn does not stall on
+    # an approval the sandbox has no human to answer. (Fountain's ACP peer
+    # also auto-allows `session/request_permission`, but that only fires
+    # mid-turn; pre-approval keeps the server connected from session start.)
+    settings = Jason.encode!(%{"enableAllProjectMcpServers" => true}, pretty: true)
 
-    :ok
+    with :ok <- write_retrying(handle, @mcp_config, mcp_json) do
+      write_retrying(handle, @settings, settings)
+    end
   end
 
   def write_config(_handle, _agent), do: :ok
+
+  defp write_retrying(handle, path, body) do
+    case Fountain.Retry.with_backoff(fn -> Fountain.Sandbox.write_file(handle, path, body) end,
+           label: "claude config write #{path}"
+         ) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:runtime_config, path, reason}}
+    end
+  end
 
   @doc """
   Swaps `CLAUDE_CODE_OAUTH_TOKEN` for `ANTHROPIC_API_KEY` in an already-built

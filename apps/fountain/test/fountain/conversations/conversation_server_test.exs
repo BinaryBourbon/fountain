@@ -489,6 +489,23 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
     end
 
+    test "a runtime whose config cannot be written marks the sandbox failed", %{
+      conv: conv,
+      sandbox: sandbox
+    } do
+      # Used to be `_ =` in the provision `with`: a config-write error was
+      # meant to be non-fatal, but the runtime crashed on it instead, and had
+      # it not, the agent would have run without its MCP servers under a
+      # `provision/done`. Now it is a step like any other.
+      stub_happy_sprite()
+
+      {_pid, ref, _} = start_server(conv, runtime: Fountain.Test.ConfigFailingRuntime)
+      assert_stopped(ref)
+
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
+    end
+
     test "an unexpected exception is caught and does not leave the sandbox pending", %{
       conv: conv,
       sandbox: sandbox
