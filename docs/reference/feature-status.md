@@ -1,6 +1,6 @@
 # Feature status
 
-Most of Fountain is on for every account. Two features are not. This page
+Most of Fountain is on for every account. Three features are not. This page
 lists them, says who has them on the hosted platform, and says how to get
 them.
 
@@ -10,6 +10,7 @@ describes one of these features.
 | Feature | Status | On the hosted platform | On your own instance |
 |---|---|---|---|
 | [Teammate email and phone](../catalog/mcp-servers/fountain-comms.md) | Alpha | Off by default. Behind the `team_comms` flag. [Ask us](../api.md#support) to turn it on for your account. | Set the AgentMail and AgentPhone keys, and add `team_comms` to `FEATURE_FLAGS_ON`. Read the [configuration reference](../configuration.md#teammate-email-and-phone). |
+| [OpenAI-compatible API](../integrations/openai-compatible.md) | Alpha | Off by default. Behind the `openai_compat` flag. [Ask us](../api.md#support) to turn it on for your account. | Add `openai_compat` to `FEATURE_FLAGS_ON`. Read the [configuration reference](../configuration.md). |
 | [Brokered credentials](../concepts/secrets.md#bindings-when-the-broker-is-on) | Limited access | Off by default. We enrol an account by hand. [Ask us](../api.md#support) to enrol yours. | Set `BROKER_URL` and its siblings, and list the user ids in `BROKER_TENANTS`. Read the [configuration reference](../configuration.md). |
 
 ## What each status means
@@ -29,3 +30,5 @@ and the pages and routes that manage bindings are absent.
   changes.
 - [fountain-comms](../catalog/mcp-servers/fountain-comms.md), for the tools a
   contact adds.
+- [OpenAI-compatible API](../integrations/openai-compatible.md), for the
+  chat-completions endpoint where the model is an agent.

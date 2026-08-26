@@ -30,6 +30,16 @@ defmodule FountainWeb.OpenAIControllerTest do
         else: Application.delete_env(:fountain, :openai_quiet_timeout_ms)
     end)
 
+    # Alpha, behind a flag: on for the whole module, off again in one test.
+    previous_flags = Application.get_env(:fountain, :feature_flag_overrides)
+    Application.put_env(:fountain, :feature_flag_overrides, %{"openai_compat" => true})
+
+    on_exit(fn ->
+      if previous_flags,
+        do: Application.put_env(:fountain, :feature_flag_overrides, previous_flags),
+        else: Application.delete_env(:fountain, :feature_flag_overrides)
+    end)
+
     Ecto.Adapters.SQL.Sandbox.mode(Fountain.Repo, {:shared, self()})
 
     stub(ConversationServer, :whereis, fn _id -> nil end)
@@ -564,6 +574,20 @@ defmodule FountainWeb.OpenAIControllerTest do
   ## ─── Refusals ─────────────────────────────────────────────────────────────
 
   describe "refusals" do
+    test "the flag off is a 404 on every route, in the envelope", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      Application.put_env(:fountain, :feature_flag_overrides, %{})
+      reject(&ConversationServer.send_prompt/4)
+
+      chat = chat(conn, raw_key, request("pr-reviewer", "hi"), [{"x-fountain-thread", "t1"}])
+      assert json_response(chat, 404)["error"]["code"] == "openai_compat_not_enabled"
+
+      models = build_conn() |> authed_with_key(raw_key) |> get("/v1/models")
+      assert json_response(models, 404)["error"]["code"] == "openai_compat_not_enabled"
+    end
+
     test "an unknown model is a 404 in OpenAI's envelope", %{conn: conn, raw_key: raw_key} do
       conn = chat(conn, raw_key, request("gpt-4o", "hi"), [{"x-fountain-thread", "t1"}])
 

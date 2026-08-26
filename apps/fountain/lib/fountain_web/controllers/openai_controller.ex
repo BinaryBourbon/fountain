@@ -10,6 +10,13 @@ defmodule FountainWeb.OpenAIController do
   itself. The `model` is an agent, named by its name or its id. See
   `docs/integrations/openai-compatible.md` and ADR 0035.
 
+  **Alpha, behind the `openai_compat` flag** (`Fountain.FeatureFlags`), off
+  by default on the hosted platform: every route here is 404 for an account
+  without it, in the same envelope as an unknown model, so a client cannot
+  tell a closed door from a missing agent. The dialect's edges — the thread
+  key rule, `reasoning_content`, the error codes — may move between releases
+  while it is alpha.
+
   The AG-UI endpoint (`FountainWeb.AguiController`) is the template: same
   channel binding, same "only the newest user message is the prompt", same
   translation of the turn's block events. What differs is the dialect on the
@@ -58,6 +65,25 @@ defmodule FountainWeb.OpenAIController do
   alias FountainWeb.{Audited, FallbackController}
 
   tags(["Integrations"])
+
+  plug :require_flag
+
+  # 404, not 403: the feature is absent for this account, exactly as
+  # `team_comms` reports itself (docs/reference/feature-status.md).
+  defp require_flag(conn, _opts) do
+    if Fountain.FeatureFlags.enabled?(:openai_compat, conn.assigns.current_user) do
+      conn
+    else
+      conn
+      |> openai_error(
+        404,
+        "the OpenAI-compatible API is not enabled for this account (flag `openai_compat`)",
+        "invalid_request_error",
+        "openai_compat_not_enabled"
+      )
+      |> halt()
+    end
+  end
 
   @thread_header "x-fountain-thread"
   @owned_by "fountain"
@@ -185,9 +211,11 @@ defmodule FountainWeb.OpenAIController do
   }
 
   operation(:create_chat_completion,
-    summary: "Chat completions, where the model is an agent",
+    summary: "Chat completions, where the model is an agent (alpha)",
     description:
-      "OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any " <>
+      "**Alpha, behind the `openai_compat` flag** — 404 with code " <>
+        "`openai_compat_not_enabled` when it is off for the account.\n\n" <>
+        "OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any " <>
         "gateway or base-URL chat client at `/v1` with an API key as the bearer token.\n\n" <>
         "The thread is the conversation: `X-Fountain-Thread` (else the `user` field) binds " <>
         "to channel `openai:<key>`. The first request on a key opens a conversation, later " <>
@@ -220,7 +248,7 @@ defmodule FountainWeb.OpenAIController do
   )
 
   operation(:list_models,
-    summary: "The tenant's agents, as models",
+    summary: "The tenant's agents, as models (alpha)",
     description:
       "OpenAI's `GET /v1/models`, so a base-URL client's model picker fills itself. Each " <>
         "agent is a model whose `id` is the agent's name.",
@@ -238,7 +266,7 @@ defmodule FountainWeb.OpenAIController do
   )
 
   operation(:show_model,
-    summary: "One agent, as a model",
+    summary: "One agent, as a model (alpha)",
     parameters: [
       model: [in: :path, type: :string, required: true, description: "Agent name or id."]
     ],

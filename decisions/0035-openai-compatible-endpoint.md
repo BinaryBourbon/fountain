@@ -14,7 +14,10 @@ verified: { by: human:jhgaylor, at: 2026-08-25T23:30:00-04:00 }
 # 0035 — An OpenAI-compatible `/v1/chat/completions` where the model is an agent
 
 **Status:** Accepted, built in the PR that adds this file (#1198). Nothing
-described here is unbuilt.
+described here is unbuilt. Shipped as **alpha behind the `openai_compat`
+feature flag** (off by default on the hosted platform, 404 when off), the
+same way `team_comms` shipped: the dialect's edges may move until the
+gateway and client smokes below have run.
 
 ## Context
 

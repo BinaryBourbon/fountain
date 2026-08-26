@@ -28,6 +28,14 @@ header are the whole integration.
 | Plugin | None. A URL is the whole integration. |
 | Credential | A Fountain API key, as the bearer token. |
 | Scope | One thread key is one conversation is one sandbox. |
+| Status | Alpha. Behind the `openai_compat` flag, off by default on the hosted platform. Read [Feature status](../reference/feature-status.md). |
+
+!!! note "Alpha"
+    On the hosted platform the flag is off by default.
+    [Ask us](../api.md#support) to turn it on for your account. Fountain
+    answers `404` with code `openai_compat_not_enabled` while it is off. The
+    thread-key rule, `reasoning_content` and the error codes can change
+    between releases.
 
 ## Set it up
 
@@ -76,6 +84,10 @@ curl https://your-fountain/v1/chat/completions \
   -d '{"model": "pr-reviewer", "stream": true,
        "messages": [{"role": "user", "content": "Review the open PRs on fountain."}]}'
 ```
+
+A complete terminal chat on the `openai` package, with the model picker and
+the thread header in place, is in the repository at
+[`examples/openai-chat`](https://github.com/BinaryBourbon/fountain/tree/main/examples/openai-chat).
 
 ## One thread is one conversation is one sandbox
 

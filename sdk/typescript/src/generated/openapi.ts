@@ -167,7 +167,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The tenant's agents, as models
+         * The tenant's agents, as models (alpha)
          * @description OpenAI's `GET /v1/models`, so a base-URL client's model picker fills itself. Each agent is a model whose `id` is the agent's name.
          */
         get: operations["FountainWeb.OpenAIController.list_models"];
@@ -1048,7 +1048,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One agent, as a model */
+        /** One agent, as a model (alpha) */
         get: operations["FountainWeb.OpenAIController.show_model"];
         put?: never;
         post?: never;
@@ -1679,8 +1679,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Chat completions, where the model is an agent
-         * @description OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any gateway or base-URL chat client at `/v1` with an API key as the bearer token.
+         * Chat completions, where the model is an agent (alpha)
+         * @description **Alpha, behind the `openai_compat` flag** — 404 with code `openai_compat_not_enabled` when it is off for the account.
+         *
+         *     OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any gateway or base-URL chat client at `/v1` with an API key as the bearer token.
          *
          *     The thread is the conversation: `X-Fountain-Thread` (else the `user` field) binds to channel `openai:<key>`. The first request on a key opens a conversation, later ones prompt it, and only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript. A request with neither is refused with 400.
          *
