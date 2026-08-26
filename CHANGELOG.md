@@ -110,6 +110,17 @@ upgrade, is in
 
 ### Fixed
 
+- **A transient Sprites timeout while writing the runtime's config no longer
+  fails the conversation.** The first filesystem call into a freshly created
+  sprite timed out once in prod (`Req.TransportError{reason: :timeout}`) and
+  `Claude.write_config/2` crashed on it, marking the sandbox and conversation
+  `failed` at the very step the provision `with` had marked best-effort. The
+  `.mcp.json` and settings writes (and gemini's) are idempotent and now retry
+  through `Fountain.Retry` like every other sandbox write; a write that still
+  fails returns `{:error, {:runtime_config, path, reason}}`, which the fresh
+  provision treats as a real failure (an agent must not run without its MCP
+  servers under a `provision/done`) and the wake path logs and continues.
+
 - **Brokered sandboxes now trust the egress broker's MITM certificate across
   the Python and Rust toolchains, not only Node.** A brokered `uv sync`,
   `uv python install`, `pip install` or `cargo fetch` failed with

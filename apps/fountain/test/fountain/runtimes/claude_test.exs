@@ -52,6 +52,32 @@ defmodule Fountain.Runtimes.ClaudeTest do
     assert %{"enableAllProjectMcpServers" => true} = Jason.decode!(settings)
   end
 
+  test "a transient write error is retried, then the config lands", %{handle: handle} do
+    # The first filesystem call into a freshly created sprite timed out once
+    # in prod and, with no retry, failed the whole provision. Both writes are
+    # idempotent, so they go through Fountain.Retry.
+    {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+    Mimic.stub(Fountain.Sandbox, :write_file, fn _h, _path, _body ->
+      case Agent.get_and_update(calls, &{&1, &1 + 1}) do
+        0 -> {:error, {:unavailable, %Req.TransportError{reason: :timeout}}}
+        _ -> :ok
+      end
+    end)
+
+    assert Claude.write_config(handle, %{mcp_servers: %{"fs" => %{"command" => "npx"}}}) == :ok
+    assert Agent.get(calls, & &1) == 3
+  end
+
+  test "a write that keeps failing is a tagged error, not a crash", %{handle: handle} do
+    Mimic.stub(Fountain.Sandbox, :write_file, fn _h, _path, _body ->
+      {:error, {:unavailable, %Req.TransportError{reason: :timeout}}}
+    end)
+
+    assert {:error, {:runtime_config, "/home/sprite/.mcp.json", {:unavailable, _}}} =
+             Claude.write_config(handle, %{mcp_servers: %{"fs" => %{"command" => "npx"}}})
+  end
+
   describe "default_env/2" do
     test "prefers the oauth token over the api key" do
       env =

@@ -71,3 +71,31 @@ defmodule Fountain.Test.FailingRuntime do
   @impl true
   def skills_sh_agent, do: "fake"
 end
+
+defmodule Fountain.Test.ConfigFailingRuntime do
+  @moduledoc """
+  A runtime whose `write_config/2` fails: the sandbox never took the runtime's
+  config file. Provisioning must treat that as a failure rather than run the
+  agent without its MCP servers.
+  """
+
+  @behaviour Fountain.Runtimes
+
+  @impl true
+  def build_command(_agent, prompt, _mode, _session_id, _opts), do: {"echo", [prompt], []}
+
+  @impl true
+  def default_env(_agent, _credentials), do: []
+
+  @impl true
+  def write_config(_sprite, _agent), do: {:error, {:runtime_config, "/x/.mcp.json", :timeout}}
+
+  @impl true
+  def prepare_sandbox(_sprite, _agent, _sprite_env), do: :ok
+
+  @impl true
+  def skills_root, do: "/home/sprite/.fake/skills"
+
+  @impl true
+  def skills_sh_agent, do: "fake"
+end
