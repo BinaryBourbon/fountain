@@ -372,6 +372,53 @@ defmodule Fountain.DocsTest do
     end
   end
 
+  describe "search index (#1009)" do
+    test "has one entry per page, matching Docs.slugs/0" do
+      slugs = Docs.search_index() |> Enum.map(& &1.slug) |> Enum.sort()
+      assert slugs == Enum.sort(Docs.slugs())
+    end
+
+    test "every heading id resolves on its own page" do
+      # Same ground truth `docs_test.exs` uses for anchor links above: the
+      # rendered HTML is what an id has to match, not a re-derivation of it.
+      rendered =
+        Map.new(Docs.slugs(), fn slug ->
+          {:ok, %{body: body}} = Docs.get(slug)
+          {slug, FountainWeb.Markdown.to_trusted_html(body)}
+        end)
+
+      for %{slug: slug, headings: headings} <- Docs.search_index(),
+          %{id: id, text: text} <- headings do
+        assert text != "", "#{inspect(slug)} has a heading with empty text"
+
+        assert Map.fetch!(rendered, slug) =~ ~s( id="#{id}"),
+               "#{inspect(slug)}'s search index has heading #{inspect(id)}, but the page has no such id"
+      end
+    end
+
+    test "skips the page's own <h1>" do
+      {:ok, %{body: body}} = Docs.get("setup")
+      headings = Docs.search_index() |> Enum.find(&(&1.slug == "setup")) |> Map.fetch!(:headings)
+
+      refute Enum.any?(headings, &(&1.text == "Local setup")),
+             "the page title (h1) should not also appear as a heading"
+
+      assert body =~ "# Local setup"
+    end
+
+    test "search_index_json/0 round-trips through JSON and matches search_index/0" do
+      decoded = Jason.decode!(Docs.search_index_json())
+
+      assert length(decoded) == length(Docs.search_index())
+
+      assert Enum.find(decoded, &(&1["slug"] == "setup"))["title"] == "Setup"
+    end
+
+    test "search_index_json/0 has no unescaped </ that could close a <script> tag early" do
+      refute Docs.search_index_json() =~ "</"
+    end
+  end
+
   describe "Compiler" do
     test "slug_for strips .md and index" do
       assert Compiler.slug_for("index.md") == ""
@@ -422,6 +469,39 @@ defmodule Fountain.DocsTest do
     test "absolute and anchor-only links are untouched" do
       md = "[a](https://example.com/x.md) [b](#section) [c](mailto:x@y.z)"
       assert Compiler.rewrite_links(md, "setup.md") == md
+    end
+
+    test "extract_headings reads h2-h6 ids and text, skipping h1" do
+      html = """
+      <h1 id="page-title">Page title</h1>
+      <p>intro</p>
+      <h2 id="first-section">First section</h2>
+      <p>body</p>
+      <h3 id="a-sub-point">A sub-point</h3>
+      """
+
+      assert Compiler.extract_headings(html) == [
+               %{id: "first-section", text: "First section"},
+               %{id: "a-sub-point", text: "A sub-point"}
+             ]
+    end
+
+    test "extract_headings strips inline markup and decodes entities" do
+      html = ~s(<h2 id="fountain-apply">Run <code>fountain apply</code> &amp; wait</h2>)
+
+      assert Compiler.extract_headings(html) == [
+               %{id: "fountain-apply", text: "Run fountain apply & wait"}
+             ]
+    end
+
+    test "extract_headings ignores a heading with no id" do
+      html = "<h2>No id here</h2>"
+      assert Compiler.extract_headings(html) == []
+    end
+
+    test "extract_headings tolerates extra attributes on the heading tag" do
+      html = ~s(<h2 class="foo" id="bar" data-x="1">Text</h2>)
+      assert Compiler.extract_headings(html) == [%{id: "bar", text: "Text"}]
     end
   end
 

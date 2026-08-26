@@ -13,7 +13,9 @@ defmodule Fountain.Docs do
   dev), preprocessed to plain markdown by `Fountain.Docs.Compiler`, and served
   through the same `FountainWeb.Markdown` pipeline as `/help`. Compile-time
   embedding is also what ships the content — the release image never contains
-  `docs/` itself, only these ~230 KB of strings in the beam file.
+  `docs/` itself, only these strings in the beam file — ~525 KB of markdown,
+  ~737 KB once snippet includes (the changelog pulls in the repo-root
+  `CHANGELOG.md`) are expanded.
 
   This is distinct from `Fountain.Help`, the curated in-app help under
   `priv/help/` — that stays as it is; `/docs` is the full public manual.
@@ -64,6 +66,32 @@ defmodule Fountain.Docs do
            {Compiler.slug_for(file), %{title: title, body: body}}
          end)
 
+  # The client-side search index for `/docs` (#1009): one pass over `@pages`,
+  # done at compile time like the rest of this module. Headings only, not
+  # full text — the description settled that as the safer starting point,
+  # since the embedded bodies run ~737 KB after snippet expansion and this
+  # index has to be small enough to inline.
+  #
+  # Reuses `FountainWeb.Markdown.to_trusted_html/1` — the same rendering
+  # `docs_test.exs` already treats as ground truth for anchor ids — so a
+  # heading's id here is guaranteed to be the id its own page renders, with
+  # no second slugging pass to drift from it.
+  @search_index (for {slug, %{title: title, body: body}} <- @pages do
+                   headings =
+                     body
+                     |> FountainWeb.Markdown.to_trusted_html()
+                     |> Compiler.extract_headings()
+
+                   %{title: title, slug: slug, headings: headings}
+                 end)
+
+  # `</` → `<\/` so a heading that ever contains a literal `</script` cannot
+  # close the `<script>` tag this gets inlined into early — the HTML
+  # tokenizer looks for that byte sequence regardless of the tag's `type`.
+  # Valid inside a JSON string either way; `\/` and `/` decode to the same
+  # character.
+  @search_index_json Jason.encode!(@search_index) |> String.replace("</", "<\\/")
+
   @doc """
   Sidebar structure, in nav.yml order: `{title, slug}` for pages,
   `{section_title, [{title, slug}, ...]}` for sections.
@@ -95,4 +123,22 @@ defmodule Fountain.Docs do
   @doc "Fetch a page by slug: `{:ok, %{title: ..., body: markdown}}` or `:error`."
   @spec get(String.t()) :: {:ok, %{title: String.t(), body: String.t()}} | :error
   def get(slug) when is_binary(slug), do: Map.fetch(@pages, slug)
+
+  @doc """
+  The `/docs` search index: one entry per page, each with the headings found
+  on it. A heading's `id` is a fragment on that page's own path
+  (`Compiler.path_for_slug/1` + `"#" <> id`), which is how a search result
+  deep-links to it.
+  """
+  @spec search_index() :: [
+          %{title: String.t(), slug: String.t(), headings: [%{id: String.t(), text: String.t()}]}
+        ]
+  def search_index, do: @search_index
+
+  @doc """
+  `search_index/0`, pre-encoded as JSON at compile time so the docs layout
+  can inline it without paying to encode it on every request.
+  """
+  @spec search_index_json() :: String.t()
+  def search_index_json, do: @search_index_json
 end
