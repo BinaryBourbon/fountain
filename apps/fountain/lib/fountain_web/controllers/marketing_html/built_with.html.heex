@@ -1,0 +1,146 @@
+<%!-- Hero --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center">
+  <p class="mb-4 text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+    Built with {Fountain.Brand.name()}
+  </p>
+  <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
+    {length(built_apps_flat())} products. One API behind all of them.
+  </h1>
+  <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    Every app below is a small product built almost entirely on the {Fountain.Brand.name()} API. Most have no backend of their own at all: static files in a browser, the API, and an agent with a real computer. That is the whole stack. All of them are open source, and all of them are running right now.
+  </p>
+  <div class="flex flex-wrap gap-2 justify-center" data-role="group-chips">
+    <a
+      :for={group <- built_apps()}
+      href={"##{group.id}"}
+      class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      <span class="size-1.5 rounded-full bg-[var(--color-brand)]"></span>
+      {group.title}
+    </a>
+  </div>
+</section>
+
+<%!-- How they all connect --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      They all connect the same way.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
+      Open one, give it the address of a {Fountain.Brand.name()} server, then sign in with your account or paste an API key. The app runs in your browser against your own agents, your own sandboxes and your own credit. Nothing of yours reaches whoever wrote it.
+    </p>
+    <div class="grid sm:grid-cols-3 gap-6">
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+          Step one
+        </p>
+        <h3 class="mt-1 font-semibold text-[var(--color-text-primary)]">Point it at a server</h3>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          The hosted instance, or the one you self-host. The app asks for the URL on first load.
+        </p>
+      </div>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+          Step two
+        </p>
+        <h3 class="mt-1 font-semibold text-[var(--color-text-primary)]">
+          Sign in with {Fountain.Brand.name()}
+        </h3>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          OAuth with PKCE. The token it gets is an ordinary API key, so it lists and revokes under Account.
+        </p>
+      </div>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+          Step three
+        </p>
+        <h3 class="mt-1 font-semibold text-[var(--color-text-primary)]">Your agents show up</h3>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Whatever the app hires runs on a sandbox on your account, and every run is a conversation you already own.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%!-- The apps --%>
+<section class="max-w-5xl mx-auto px-6 py-16 space-y-16">
+  <div
+    :for={group <- built_apps()}
+    id={group.id}
+    class="scroll-mt-6"
+    data-role="group"
+  >
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)]">{group.title}</h2>
+    <p class="mt-2 text-[var(--color-text-secondary)] max-w-2xl">{group.blurb}</p>
+    <div class="mt-8 grid md:grid-cols-2 gap-6">
+      <article
+        :for={app <- group.apps}
+        id={app.id}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col scroll-mt-6"
+        data-role="app"
+      >
+        <div class="text-3xl leading-none" aria-hidden="true">{app.glyph}</div>
+        <div class="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+          <code
+            class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
+            phx-no-format
+          >{app.host}</code>
+        </div>
+        <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed flex-1">
+          {app.blurb}
+        </p>
+        <p class="mt-4 text-xs text-[var(--color-text-muted)]">
+          <span class="font-medium text-[var(--color-text-secondary)]">Shows</span> {app.shows}
+        </p>
+        <div class="mt-5 flex flex-wrap gap-3">
+          <a
+            href={app.url}
+            rel="noopener"
+            class="inline-flex items-center px-4 py-2 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+          >
+            Open it
+          </a>
+          <a
+            href={app.source}
+            rel="noopener"
+            class="inline-flex items-center px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+          >
+            Source
+          </a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<%!-- Footer CTA --%>
+<section class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
+    <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
+      Build the next one.
+    </h2>
+    <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
+      A static page, the TypeScript SDK and Sign in with {Fountain.Brand.name()} is the whole recipe. The manual walks a team chat end to end, and the apps above are the working copies to read.
+    </p>
+    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+      <a
+        href={~p"/docs/build"}
+        class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+      >
+        Build a chat app
+      </a>
+      <a
+        href={~p"/integrations"}
+        class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+      >
+        Or plug in what you already run
+      </a>
+    </div>
+    <p class="mt-8 text-xs text-[var(--color-text-muted)] max-w-xl mx-auto">
+      Each app is MIT licensed and hosted by its author, not by {Fountain.Brand.name()}. Signing in hands it a key scoped to your account, which you can revoke at any time under Account and API keys.
+    </p>
+  </div>
+</section>

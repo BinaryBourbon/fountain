@@ -86,6 +86,18 @@ defmodule FountainWeb.MarketingInstanceTest do
     end
   end
 
+  describe "GET /built-with where the deployment is not the marketing site" do
+    test "sends the visitor to the build guide rather than somebody else's apps", %{conn: conn} do
+      Application.put_env(:fountain, :marketing_site, false)
+
+      conn = get(conn, ~p"/built-with")
+      assert redirected_to(conn) == ~p"/docs/build"
+
+      # The layout drops the link too: a nav entry to a redirect is a dead end.
+      refute conn |> get(~p"/") |> html_response(200) =~ ~p"/built-with"
+    end
+  end
+
   describe "GET / on the marketing site" do
     test "still serves the pitch", %{conn: conn} do
       Application.put_env(:fountain, :marketing_site, true)

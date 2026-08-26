@@ -464,4 +464,204 @@ defmodule FountainWeb.MarketingHTML do
       }
     ]
   end
+
+  ## /built-with
+  #
+  # The apps people have built on the API, grouped by who they are for. Every
+  # one is a real deployment against the hosted instance, and every one is
+  # open source, so a card carries two links and the page carries no claim
+  # that cannot be clicked. The controller test asserts both are absolute and
+  # that no app is listed twice.
+
+  @doc "The applications built on the API, in the order and grouping the page shows."
+  def built_apps do
+    [
+      %{
+        id: "everyone",
+        title: "For everyone",
+        blurb:
+          "No agent, no sandbox and no prompt box on screen. The product is the document, the chart or the text message.",
+        apps: [
+          %{
+            id: "briefing-room",
+            glyph: "\u{1F4F0}",
+            name: "Briefing Room",
+            host: "briefs.inevitable.fyi",
+            url: "https://briefs.inevitable.fyi",
+            source: "https://github.com/jhgaylor/briefing-room",
+            blurb:
+              "Say what you need to understand and why. A researcher with its own computer reads real sources and hands back a clean, cited brief. A document, not a chat.",
+            shows: "web research behind a UI with none of the AI-chat furniture"
+          },
+          %{
+            id: "table-talk",
+            glyph: "\u{1F4CA}",
+            name: "Table Talk",
+            host: "tables.inevitable.fyi",
+            url: "https://tables.inevitable.fyi",
+            source: "https://github.com/jhgaylor/table-talk",
+            blurb:
+              "Drop a CSV in. An analyst runs Python on its sandbox and comes back with charts and plain-English findings. Then keep asking questions of your data.",
+            shows: "a real computer as the engine under a zero-jargon UI"
+          },
+          %{
+            id: "reflex",
+            glyph: "\u{1F4AC}",
+            name: "Reflex",
+            host: "reflex.inevitable.fyi",
+            url: "https://reflex.inevitable.fyi",
+            source: "https://github.com/jhgaylor/reflex",
+            blurb:
+              "A personal assistant you text. It keeps a computer, your accounts and a memory, and it works while you do something else: books the dentist, sweeps the inbox at two, texts you when the tickets come back.",
+            shows: "a persistent teammate, its own phone number, and routines on a schedule"
+          }
+        ]
+      },
+      %{
+        id: "engineers",
+        title: "For engineers",
+        blurb:
+          "The sandbox is the point. Each of these hands an agent a checkout, a shell and a task list, then shows you the work.",
+        apps: [
+          %{
+            id: "repo-sage",
+            glyph: "\u{1F33F}",
+            name: "Repo Sage",
+            host: "reposage.inevitable.fyi",
+            url: "https://reposage.inevitable.fyi",
+            source: "https://github.com/jhgaylor/repo-sage",
+            blurb:
+              "Name any public GitHub repository. An agent clones it on its own machine and answers with file-and-line citations that link back to the source.",
+            shows: "the sandbox as a workstation: clone, grep, read, cite"
+          },
+          %{
+            id: "mission-control",
+            glyph: "\u{1F680}",
+            name: "Mission Control",
+            host: "mission.inevitable.fyi",
+            url: "https://mission.inevitable.fyi",
+            source: "https://github.com/jhgaylor/mission-control",
+            blurb:
+              "Describe a mission. A coordinator plans it, you approve the plan, and the app starts one sandboxed agent per task. Watch the fleet work and take one report.",
+            shows: "plan, approve, fan out, multiplex the streams, synthesize"
+          },
+          %{
+            id: "fountain-workbench",
+            glyph: "\u{1F9F0}",
+            name: "Workbench",
+            host: "workbench.inevitable.fyi",
+            url: "https://workbench.inevitable.fyi",
+            source: "https://github.com/jhgaylor/fountain-workbench",
+            blurb:
+              "A dev workstation the team shares. A project is an environment and a vault, work items live in it, and putting a teammate on one is a first prompt rather than four steps of setup.",
+            shows: "projects over environments and vaults, agents as staff"
+          },
+          %{
+            id: "dns-desk",
+            glyph: "\u{1F5C2}\u{FE0F}",
+            name: "DNS Desk",
+            host: "jakegaylor.com/dns-desk",
+            url: "https://jakegaylor.com/dns-desk/",
+            source: "https://github.com/jhgaylor/dns-desk",
+            blurb:
+              "A DNS operator for your Cloudflare zones. Ask in plain words, read the plan as a diff, approve. The zone tables stay on screen while the agent does the work.",
+            shows: "plan, approve, apply on a live system, with a vault as the blast radius"
+          }
+        ]
+      },
+      %{
+        id: "infrastructure",
+        title: "For infrastructure",
+        blurb:
+          "Nobody is watching these. A schedule wakes the agent, it decides whether anything needs doing, and most of the time the answer is no.",
+        apps: [
+          %{
+            id: "watchtower",
+            glyph: "\u{1F5FC}",
+            name: "Watchtower",
+            host: "watchtower.inevitable.fyi",
+            url: "https://watchtower.inevitable.fyi",
+            source: "https://github.com/jhgaylor/watchtower",
+            blurb:
+              "An SRE teammate on a cron: uptime, latency, TLS expiry and DNS for every site you name. When a tile turns red, ask it to investigate. It has real tools.",
+            shows: "schedules as a product heartbeat, the conversation as the store"
+          },
+          %{
+            id: "mend",
+            glyph: "\u{1F526}",
+            name: "Mend",
+            host: "mend.inevitable.fyi",
+            url: "https://mend.inevitable.fyi",
+            source: "https://github.com/jhgaylor/mend",
+            blurb:
+              "What an audit finds across a repository's CI, manifests, Dockerfiles and cloud templates, and what an agent does once you hand it that tool. Mechanical fixes applied, judgement calls argued, one patch back.",
+            shows:
+              "a real CLI in the sandbox, and the restraint to leave the ambiguous ones alone"
+          },
+          %{
+            id: "rounds",
+            glyph: "\u{1F501}",
+            name: "Rounds",
+            host: "rounds.inevitable.fyi",
+            url: "https://rounds.inevitable.fyi",
+            source: "https://github.com/jhgaylor/rounds",
+            blurb:
+              "Dependabot for infrastructure config. Enrol a repository and it gets audited on a schedule; an agent fixes what it can verify and opens the pull request. Never twice for the same finding, never again for one you closed.",
+            shows: "an unattended product, and an agent that knows when to do nothing"
+          }
+        ]
+      },
+      %{
+        id: "ai-engineers",
+        title: "For AI engineers",
+        blurb: "Several agents at once, side by side, with the numbers underneath.",
+        apps: [
+          %{
+            id: "arena",
+            glyph: "\u{1F94A}",
+            name: "Arena",
+            host: "arena.inevitable.fyi",
+            url: "https://arena.inevitable.fyi",
+            source: "https://github.com/jhgaylor/arena",
+            blurb:
+              "One prompt, several brains, side by side. Blind columns, live streams, latency and token counts, and your vote on the scoreboard.",
+            shows: "parallel conversations, the model catalog, per-turn usage"
+          }
+        ]
+      },
+      %{
+        id: "clients",
+        title: "The clients",
+        blurb:
+          "The two apps this project ships itself. The console stays a console; watching an agent work and messaging a teammate are these, on their own origins, built on the same public API as everything above.",
+        apps: [
+          %{
+            id: "fountain-team",
+            glyph: "\u{1F465}",
+            name: "Team",
+            host: "jakegaylor.com/fountain-team",
+            url: "https://jakegaylor.com/fountain-team/",
+            source: "https://github.com/jhgaylor/fountain-team",
+            blurb:
+              "Your agents as teammates in a messaging app. Roster on the left, thread on the right, routines on a schedule, images and search. Enter to send.",
+            shows: "the team API, SSE streaming, schedules, usage"
+          },
+          %{
+            id: "fountain-conversations",
+            glyph: "\u{1F9F5}",
+            name: "Conversations",
+            host: "jakegaylor.com/fountain-conversations",
+            url: "https://jakegaylor.com/fountain-conversations/",
+            source: "https://github.com/jhgaylor/fountain-conversations",
+            blurb:
+              "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
+            shows: "the event stream as blocks, and one sandbox behind many conversations"
+          }
+        ]
+      }
+    ]
+  end
+
+  @doc "Every app on /built-with, flattened. The count the page quotes comes from here."
+  def built_apps_flat, do: Enum.flat_map(built_apps(), & &1.apps)
 end

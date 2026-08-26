@@ -17,6 +17,13 @@
           Integrations
         </a>
         <a
+          :if={Fountain.Marketing.site?()}
+          href={~p"/built-with"}
+          class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
+        >
+          Built with
+        </a>
+        <a
           href="/docs"
           class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
         >
@@ -73,6 +80,13 @@
           class="hover:text-[var(--color-text-secondary)] transition-colors"
         >
           Integrations
+        </a>
+        <a
+          :if={Fountain.Marketing.site?()}
+          href={~p"/built-with"}
+          class="hover:text-[var(--color-text-secondary)] transition-colors"
+        >
+          Built with
         </a>
         <a href="/docs" class="hover:text-[var(--color-text-secondary)] transition-colors">
           Docs

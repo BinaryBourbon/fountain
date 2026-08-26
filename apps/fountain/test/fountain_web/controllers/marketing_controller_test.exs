@@ -98,6 +98,85 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /built-with" do
+    test "renders every app, grouped", %{conn: conn} do
+      body = conn |> get(~p"/built-with") |> html_response(200)
+
+      assert body =~ "One API behind all of them."
+
+      for group <- FountainWeb.MarketingHTML.built_apps() do
+        assert body =~ group.title, "missing group #{group.title}"
+      end
+
+      for app <- FountainWeb.MarketingHTML.built_apps_flat() do
+        assert body =~ app.name, "missing app #{app.name}"
+        assert body =~ app.host, "missing host for #{app.name}"
+        assert body =~ app.url, "missing live link for #{app.name}"
+        assert body =~ app.source, "missing source link for #{app.name}"
+      end
+    end
+
+    test "every app is live somewhere and open somewhere, exactly once", _ do
+      apps = FountainWeb.MarketingHTML.built_apps_flat()
+
+      # The page's whole claim is that each card is two working links, so an
+      # entry with a relative or placeholder URL would sell something nobody
+      # can click.
+      for app <- apps do
+        assert String.starts_with?(app.url, "https://"), "#{app.name} has no absolute URL"
+
+        assert String.starts_with?(app.source, "https://github.com/"),
+               "#{app.name} does not name a repository"
+
+        assert app.shows != "" and app.blurb != ""
+      end
+
+      ids = Enum.map(apps, & &1.id)
+      assert ids == Enum.uniq(ids), "an app is listed twice"
+
+      group_ids = Enum.map(FountainWeb.MarketingHTML.built_apps(), & &1.id)
+      assert group_ids == Enum.uniq(group_ids), "a group anchor is used twice"
+    end
+
+    test "every chip in the hero reaches a group on the page", %{conn: conn} do
+      body = conn |> get(~p"/built-with") |> html_response(200)
+
+      for group <- FountainWeb.MarketingHTML.built_apps() do
+        assert body =~ ~s(href="##{group.id}"), "no chip for #{group.title}"
+        assert body =~ ~s(id="#{group.id}"), "no anchor for #{group.title}"
+      end
+    end
+
+    test "carries its own card", %{conn: conn} do
+      body = conn |> get(~p"/built-with") |> html_response(200)
+      assert body =~ ~s(<meta property="og:title" content="Built with Fountain · Fountain")
+      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/built-with")
+      assert body =~ ~s(<meta name="description" content="13 open-source applications)
+    end
+
+    test "every link into the manual resolves to a page", %{conn: conn} do
+      body = conn |> get(~p"/built-with") |> html_response(200)
+
+      links =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert links != []
+
+      for slug <- links do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+
+    test "the marketing nav and the homepage link to it", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      assert body =~ ~p"/built-with"
+      assert body =~ "People build whole products on it."
+    end
+  end
+
   describe "legal links" do
     test "registration form links to terms and privacy", %{conn: conn} do
       body = conn |> get(~p"/auth/register") |> html_response(200)

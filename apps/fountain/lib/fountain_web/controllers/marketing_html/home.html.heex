@@ -235,6 +235,33 @@
   </div>
 </section>
 
+<%!-- Built with: proof that the API carries whole products, not just calls. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16 text-center">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3">
+      People build whole products on it.
+    </h2>
+    <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-8">
+      {length(built_apps_flat())} of them are open source and running right now: a researcher that returns cited briefs, an analyst that runs Python on your CSV, an SRE on a cron, a DNS desk with an approval gate. Most have no backend of their own.
+    </p>
+    <ul class="flex flex-wrap justify-center gap-2 mb-8">
+      <li
+        :for={app <- built_apps_flat()}
+        class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
+      >
+        <span aria-hidden="true">{app.glyph}</span>
+        {app.name}
+      </li>
+    </ul>
+    <a
+      href={~p"/built-with"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      See what people built
+    </a>
+  </div>
+</section>
+
 <%!-- Objections --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">

@@ -25,6 +25,18 @@ upgrade, is in
   no asset pipeline behind it. Since #1008 `/docs` is the only place the
   manual is published, which left it as the one copy with no way to search.
 
+- **A gallery of the applications built on the API, `/built-with`.**
+  Thirteen products, grouped by who they are for: a researcher that returns
+  cited briefs, an analyst that runs Python on a CSV, a personal assistant you
+  text, repository question-answering with file-and-line citations, a fleet
+  coordinator, a shared dev workbench, a DNS desk behind an approval gate, an
+  SRE on a cron, two config-audit products, a blind model bake-off, and the
+  team and conversation clients. Each card carries a live link and a source
+  link, and the suite checks that every entry names an absolute URL and a
+  repository, so no card can sell something nobody can open. The homepage
+  carries a band naming them all. Off the marketing site the page redirects
+  to the manual's build guide.
+
 - **An integrations page on the marketing site, `/integrations`.** The
   protocols Fountain answers (AG-UI, the Agent Client Protocol, OpenAI chat
   completions, MCP, its own REST API and webhooks, and Buzz over Nostr), what
