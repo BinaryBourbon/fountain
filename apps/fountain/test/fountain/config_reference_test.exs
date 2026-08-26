@@ -166,10 +166,7 @@ defmodule Fountain.ConfigReferenceTest do
 
     unpassed =
       Enum.reject(advertised, fn var ->
-        # Passed through as `VAR: ${VAR...}` (any default), or interpolated
-        # directly by compose.
-        Regex.match?(~r/#{var}:\s*.*\$\{#{var}[:}]/, compose) or
-          var in @interpolation_only
+        passed_through?(compose, var) or var in @interpolation_only
       end)
 
     assert unpassed == [],
@@ -181,5 +178,51 @@ defmodule Fountain.ConfigReferenceTest do
            Add the key to the app service's environment block, or to
            @interpolation_only with a reason.
            """
+  end
+
+  test "every variable a guide tells the reader to append to .env is passed to the app" do
+    # The two tests above both run "declared, therefore it must be real": they
+    # start from what compose sets or what the example file advertises. Neither
+    # starts from what a *guide* tells an operator to do, which is how
+    # API_CORS_ORIGINS came to be documented, read by runtime.exs, instructed
+    # by the deploy guide — and never forwarded by compose, so following the
+    # guide changed nothing and logged nothing (#1215).
+    compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
+
+    instructed =
+      Path.join(@repo_root, "docs/**/*.md")
+      |> Path.wildcard()
+      |> Enum.flat_map(fn path ->
+        path
+        |> File.read!()
+        |> then(&Regex.scan(~r/^echo\s+"([A-Z][A-Z0-9_]*)=.*>>\s*\.env\s*$/m, &1))
+        |> Enum.map(fn [_, var] -> {var, Path.relative_to(path, @repo_root)} end)
+      end)
+      |> Enum.uniq()
+
+    assert instructed != [],
+           "found no `>> .env` lines in docs/ — the guides changed shape, so this guard is blind"
+
+    unpassed = Enum.reject(instructed, fn {var, _} -> passed_through?(compose, var) end)
+
+    assert unpassed == [],
+           """
+           A guide tells the reader to append variables that compose never passes to the app,
+           so following it silently does nothing:
+
+             #{Enum.map_join(unpassed, "\n  ", fn {var, path} -> "#{var} (#{path})" end)}
+
+           Add the key to the app service's environment block in docker-compose.yml.
+           """
+  end
+
+  # Two legitimate pass-through forms in the app service's environment block:
+  # `VAR: ${VAR...}` with any default, and a bare `VAR:` with no value at all.
+  # The second one forwards the variable only when .env sets it, which is the
+  # only way to distinguish "unset, use the app's default" from "set to empty
+  # on purpose" — see the app-URL block in docker-compose.yml.
+  defp passed_through?(compose, var) do
+    Regex.match?(~r/^\s*#{var}:\s*.*\$\{#{var}[:}-]/m, compose) or
+      Regex.match?(~r/^\s*#{var}:\s*$/m, compose)
   end
 end
