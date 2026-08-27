@@ -44,9 +44,9 @@ defmodule FountainWeb.BrandChromeTest do
     assert home =~ "Managoat scrubs them from every line of output"
     assert home =~ ">fountain</code> CLI"
     assert home =~ "© 2026 Managoat."
-    assert home =~ ~s(data-role="hosted-enterprise")
+    assert home =~ ~s(data-role="hosted-brand")
     assert home =~ "Managoat is the hosted Fountain. The engine is open source"
-    assert home =~ "The hosted enterprise edition of Fountain, which is open source."
+    assert home =~ "It runs Fountain, which is open source."
 
     for path <- [~p"/terms", ~p"/privacy"] do
       html = conn |> get(path) |> html_response(200)
@@ -61,7 +61,7 @@ defmodule FountainWeb.BrandChromeTest do
     Application.delete_env(:fountain, :product_name)
     home = conn |> get(~p"/") |> html_response(200)
     assert home =~ "© 2026 Fountain."
-    refute home =~ "hosted enterprise edition"
+    refute home =~ "It runs Fountain, which is open source."
   end
 
   test "without the brand the docs show no note", %{conn: conn} do
