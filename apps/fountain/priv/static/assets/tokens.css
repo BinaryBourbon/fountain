@@ -4,8 +4,8 @@
  */
 
 :root {
-  --color-brand:       #6366f1;
-  --color-brand-hover: #4f46e5;
+  --color-brand:       #0b5acc;
+  --color-brand-hover: #094cb2;
   --color-brand-text:  #ffffff;
 
   --color-bg-0: #f9fafb;
@@ -50,12 +50,12 @@
   --status-failed-bg:       #fef2f2;
   --status-failed-text:     #b91c1c;
 
-  --color-focus-ring: #6366f1;
+  --color-focus-ring: #0b5acc;
 }
 
 [data-theme="dark"] {
-  --color-brand:       #818cf8;
-  --color-brand-hover: #6366f1;
+  --color-brand:       #5796f4;
+  --color-brand-hover: #0b5acc;
 
   --color-bg-0: #09090b;
   --color-bg-1: #18181b;
@@ -99,7 +99,7 @@
   --status-failed-bg:       #2d0a0a;
   --status-failed-text:     #fca5a5;
 
-  --color-focus-ring: #818cf8;
+  --color-focus-ring: #5796f4;
 }
 
 *:focus-visible {
