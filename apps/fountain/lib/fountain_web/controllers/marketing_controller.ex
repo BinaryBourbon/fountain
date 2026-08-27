@@ -61,6 +61,13 @@ defmodule FountainWeb.MarketingController do
   # The shortest useful program anybody writes on this API, shown whole. Sales
   # copy like the rest, so another deployment gets the manual's longer version
   # of the same job rather than a page selling the hosted product.
+  #
+  # UNLISTED. Nothing on the site links here, and that is deliberate rather
+  # than an oversight: the handler the page shows has never been run against a
+  # live webhook. The page says so and claims no measurement, but an unrun
+  # program is not something to put in the footer. Relink it once somebody has
+  # smoked it end to end. `marketing_controller_test.exs` asserts the absence,
+  # so a link cannot creep back beside an unrelated edit.
   def code_review_bot(conn, _params) do
     if Fountain.Marketing.site?() do
       render(conn, :code_review_bot,

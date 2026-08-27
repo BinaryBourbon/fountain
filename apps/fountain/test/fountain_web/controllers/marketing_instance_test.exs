@@ -117,8 +117,9 @@ defmodule FountainWeb.MarketingInstanceTest do
       conn = get(conn, ~p"/code-review-bot")
       assert redirected_to(conn) == ~p"/docs/tour"
 
-      # The layout drops the link too: a nav entry to a redirect is a dead end.
-      refute conn |> get(~p"/") |> html_response(200) =~ ~p"/code-review-bot"
+      # No "the layout drops the link" assertion here, unlike its neighbours:
+      # the page is unlisted on the marketing site too, so there is no link for
+      # a non-marketing deployment to drop. The marketing-site test owns that.
     end
   end
 

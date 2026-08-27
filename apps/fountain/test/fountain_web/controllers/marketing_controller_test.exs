@@ -360,10 +360,23 @@ defmodule FountainWeb.MarketingControllerTest do
       end
     end
 
-    test "the homepage and the marketing footer link to it", %{conn: conn} do
-      body = conn |> get(~p"/") |> html_response(200)
-      assert body =~ ~p"/code-review-bot"
-      assert body =~ "a code review bot in one file"
+    # Unlisted on purpose: the page is reachable at its URL and nothing on the
+    # site points at it, because the program it shows has never been run. The
+    # assertion is the absence, so restoring a link is a deliberate edit here
+    # rather than something that creeps back in beside an unrelated change.
+    test "nothing on the marketing site links to it", %{conn: conn} do
+      home = conn |> get(~p"/") |> html_response(200)
+      refute home =~ ~p"/code-review-bot"
+      refute home =~ "a code review bot in one file"
+
+      # The footer and nav are the shared marketing layout, so any page that
+      # renders it would relink the page. Check one that is not the homepage.
+      refute conn |> get(~p"/built-with") |> html_response(200) =~ ~p"/code-review-bot"
+    end
+
+    test "the page itself still answers, for anyone holding the link", %{conn: conn} do
+      assert conn |> get(~p"/code-review-bot") |> html_response(200) =~
+               "A code review bot, whole, on one screen."
     end
   end
 
