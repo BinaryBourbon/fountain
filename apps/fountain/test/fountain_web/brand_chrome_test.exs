@@ -42,7 +42,9 @@ defmodule FountainWeb.BrandChromeTest do
     home = conn |> get(~p"/") |> html_response(200)
     assert home =~ "Every agent gets a brief, a budget, and a boundary."
     assert home =~ "Managoat scrubs them from every line of output"
-    assert home =~ ">fountain</code> CLI"
+    # The CLI keeps the engine's name on a branded deployment. The anchor moved
+    # to the protocols section when the surfaces card was replaced.
+    assert home =~ ">fountain acp</code>"
     assert home =~ "© 2026 Managoat."
     assert home =~ ~s(data-role="hosted-brand")
     assert home =~ "Managoat is the hosted Fountain. The engine is open source"

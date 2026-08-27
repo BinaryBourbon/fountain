@@ -286,7 +286,7 @@
 <%!-- How it works --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-    Three rows and one call.
+    Everything above is three rows and one call.
   </h2>
   <div class="grid md:grid-cols-2 gap-10 items-start">
     <ol class="space-y-6 text-[var(--color-text-secondary)]">
@@ -298,7 +298,7 @@
           <span class="font-medium text-[var(--color-text-primary)]">
             Describe the machine once.
           </span>
-          An Environment names the repositories, packages, setup scripts and env vars an agent wakes up with. Write it in the console, the CLI, or a YAML manifest.
+          An Environment describes the machine an agent wakes up on. It names repositories, packages and env vars, and the scripts that run first. Write it in the console, or apply it as YAML from the CLI.
         </span>
       </li>
       <li class="flex items-start gap-4">
@@ -316,7 +316,7 @@
         </span>
         <span>
           <span class="font-medium text-[var(--color-text-primary)]">Send a prompt.</span>
-          A sandbox spawns, the agent works, the reply streams back. Send another and it picks up where it left off. That is the whole integration.
+          A sandbox spawns and the agent works. The reply streams back as it goes. Send another prompt and the same machine is still there, with its work on it.
         </span>
       </li>
     </ol>
@@ -333,6 +333,9 @@
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
       What you stop building.
     </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10 -mt-6">
+      The roster above runs on four things you would otherwise have written yourself.
+    </p>
     <div class="grid sm:grid-cols-2 gap-6">
       <%!-- Per-user threads --%>
       <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
@@ -405,11 +408,11 @@
           Output and lifecycle events stream over SSE. Ask for <code
             class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
             phx-no-format
-          >?blocks=true</code> and the server parses each runtime's dialect for you, so your client renders one shape whether the agent is Claude Code or Codex.
+          >?blocks=true</code> and the server parses each runtime's dialect for you. Your client renders one shape whether the agent is Claude Code or Codex.
         </p>
       </div>
 
-      <%!-- Surfaces --%>
+      <%!-- Audit trail --%>
       <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
         <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
           <svg
@@ -418,23 +421,14 @@
             fill="currentColor"
             aria-hidden="true"
           >
-            <path d="M3.25 4A2.25 2.25 0 0 0 1 6.25v7.5A2.25 2.25 0 0 0 3.25 16h7.5A2.25 2.25 0 0 0 13 13.75v-7.5A2.25 2.25 0 0 0 10.75 4h-7.5ZM19 4.75a.75.75 0 0 0-1.28-.53l-3 3a.75.75 0 0 0-.22.53v4.5c0 .199.079.39.22.53l3 3a.75.75 0 0 0 1.28-.53V4.75Z" />
+            <path d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" />
           </svg>
         </div>
         <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          Reach it from wherever you already are
+          Every change leaves a record
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          REST and SSE for your own code, a TypeScript SDK, a <code
-            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-            phx-no-format
-          >fountain</code> CLI, ACP for your editor, AG-UI for a coworker platform. Everything the SDK does, <code
-            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-            phx-no-format
-          >curl</code> can do. <a
-            href={~p"/integrations"}
-            class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-          >See every protocol and what speaks it</a>.
+          The event is written where the change happens rather than where the request arrived, so the console, the API and a background worker are all covered by the same rule. An update names the fields that moved and never their values. Filter the trail by action, resource or time.
         </p>
       </div>
     </div>
