@@ -1,0 +1,278 @@
+# Product Marketing Context
+
+**Document version:** v1
+**Last updated:** 2026-08-27
+
+This file is the positioning, the ICP and the vocabulary that marketing work in
+this repo starts from. It is drafted from the repo itself: `README.md`,
+`docs/primitives.md`, `docs/tour.md`, `CLAUDE.md`, `standards/voice-and-style.md`,
+and the marketing templates under
+`apps/fountain/lib/fountain_web/controllers/marketing_html/`.
+
+Sections that the repo cannot source are marked **GAP** and left empty on
+purpose. Fountain's audience checks claims, so an invented competitor quote or a
+made-up metric costs more than a blank line. Fill a GAP from a primary source
+and bump the version.
+
+## Product Overview
+
+**One-liner:** A multi-tenant API and UI for running sandboxed coding agents.
+
+**What it does:** Agent, Environment and Vault are templates you write once. A
+Conversation runs one of them on a machine Fountain builds, warms, meters and
+reclaims. You send a prompt over the API and read the reply; the sandbox parks
+between messages and wakes with its work intact, so there is no box to
+provision, lock down, or pay for while nobody is talking.
+
+**Product category:** The shelf is "managed sandboxes for coding agents", or
+what the repo calls a managed agent control plane. Buyers arrive from "how do I
+run Claude Code / Codex on a server", not from a category they already have a
+name for. `standards/voice-and-style.md` is explicit that the audience has **no
+prior model for this category**, which is the single most important fact about
+every page.
+
+**Product type:** Multi-tenant hosted API plus a self-hostable server. Web UI is
+an operator console, not an application.
+
+**Business model:** Prepaid credit. No plans, no seats, no subscription
+(ADR 0031). Agent time bills out of a balance at the rate on the price card
+(`CREDIT_TURN_HOUR_CENTS`, default 25 cents an hour); an hour means an hour with
+a prompt in flight, so a parked agent, an idle one and one on your own runner all
+cost nothing. New accounts get an opening credit (`CREDIT_OPENING_CENTS`,
+default $5) that expires in `CREDIT_OPENING_DAYS` (14); bought credit never
+expires. Customers bring their own model keys, so Fountain never bills for
+inference. Licence split: the server is AGPL-3.0, `ee/` is Elastic 2.0.
+
+**Never quote a price from this file.** The templates read the live price card
+(`turn_hour_price/0`, `opening_credit/0`) precisely so a page cannot quote a
+number the meter does not charge. Copy should do the same.
+
+## Target Audience
+
+**Target companies:** Small technical teams and solo builders shipping products
+that embed coding agents. Not enterprise. Org and team features are explicitly
+out of scope until the traction goal lands, so copy must not imply seats, roles
+or SSO.
+
+**Decision-makers:** The developer is the buyer. There is no committee, no
+procurement, and no separate economic buyer at this stage. One person reads the
+docs, runs the tour, and puts a card in.
+
+**Primary use case:** Running a coding agent somewhere that is not your laptop,
+with the machine, the credentials and the agent config kept as separate,
+reusable rows.
+
+**Jobs to be done:**
+- "Give my app a coding agent without building the machine it needs."
+- "Stop hand-shuffling worktrees, MCP configs and skill setups on my laptop."
+- "Let something that is not a person start an agent run, and follow it."
+
+**Use cases:**
+- An API or webhook starts an agent run (the case study's alert-to-pull-request
+  loop is the worked example).
+- Agents as teammates: a Conversation bound to the `fountain:team` channel.
+- Batch and CI work where a run needs a real checkout and a real credential.
+
+## Personas
+
+Single-persona at this stage. The developer is user, champion and buyer at once.
+Do not write multi-stakeholder copy until org features exist.
+
+| Persona | Cares about | Challenge | Value we promise |
+|---|---|---|---|
+| Infrastructure-literate developer | Whether the primitives compose, what the credential actually touches, what a run costs | Has run agents locally and hit the machine, secret and concurrency problems | Four objects that divide the problem, and a run you can start from code |
+
+## Problems & Pain Points
+
+**Core problem:** Running Claude instances with worktrees locally, and shuffling
+MCP configurations and skill setups by hand, is painful. That sentence is
+`README.md`'s own, and it is the most load-bearing problem statement in the repo.
+
+**Why alternatives fall short:**
+- A raw sandbox provider gives you a machine, not a template that outlives the
+  run. There is no row to list, diff, share or launch from code.
+- Rolling your own means the machine image, the credentials and the agent config
+  end up in one object, so every credential rotation edits the image and every
+  prompt edits the credentials. `docs/primitives.md` argues exactly this, and the
+  four-way split is the answer.
+- Running locally does not give a run an id, a status, a transcript or an event
+  stream, so a webhook or a cron job cannot start one and follow it.
+
+**What it costs them:** Time on undifferentiated plumbing, and a machine you pay
+for while nobody is talking to it.
+
+**Emotional tension:** Handing a real credential to a model. The honest version
+of this fear is the product's best material, and the guardrail vocabulary
+("a gate the agent is unable to pass beats a gate it is asked not to") is how the
+repo answers it.
+
+## Competitive Landscape
+
+**GAP — no competitor claim in this file is sourced yet.**
+
+The competitive set to profile, in the order it matters:
+- **Sandbox and code-execution platforms** the buyer might use directly instead
+  of Fountain. E2B, Daytona, Modal, Fly.io. Note that E2B and Daytona are also
+  *providers Fountain runs on*, so the framing is a layer argument, not a
+  head-to-head one, and copy must not blur that.
+- **Agent-hosting products** that run a coding agent for you as a finished
+  service.
+- **Roll your own** on a VM or in CI, which is the real incumbent and probably
+  the most common thing a reader is doing today.
+
+Before any comparison copy ships, read each competitor's own live page, quote
+their own words, and record the URL and the date read. Their pricing pages change
+without telling us.
+
+## Differentiation
+
+**Key differentiators:**
+- **Four primitives, split by rate of change.** What the machine holds changes
+  rarely; which credentials a run uses changes constantly; how the agent behaves
+  changes sometimes; what it does now changes continuously. Fountain gives each
+  its own object. That division is the product.
+- **The Vault wins on key collision.** One rule that makes the split usable
+  rather than merely tidy, and the reason one Environment can run as you, as a
+  bot, or as a customer.
+- **A run is an addressable thing.** Id, status, transcript, event stream. A
+  webhook, a cron job or another agent can start one and follow it.
+- **The machine is Fountain's problem.** Built, warmed, metered, reclaimed.
+  Parks between messages and wakes with its work intact.
+- **The secret does not have to enter the sandbox.** On a hosted account with the
+  egress broker on, a bound secret goes to the broker and the sandbox gets a
+  placeholder such as `__github_token__`.
+- **You pay for machine time, never for tokens.** Bring your own model key.
+
+**Why customers choose us:** The templates outlive the run.
+
+## Objections
+
+| Objection | Response |
+|---|---|
+| "I can run an agent in a sandbox myself." | You can. The templates are the part you would end up building: rows you list, diff, share and launch from code, and a run with an id something else can follow. |
+| "I am not giving a model a token that can push." | Then do not. Scope it to one repository, put the identity in a Vault so swapping it is a field and not a redeploy, and on a hosted account with the broker on the value never enters the sandbox at all. |
+| "What happens when it does something wrong?" | Build the last gate so the agent cannot pass it. The case study's agent cannot approve or merge its own pull request, and cannot reach the cluster at all. |
+| "What does this actually cost me?" | Agent time out of a prepaid balance, charged only while a prompt is in flight, with your own model key for inference. Quote the live price card, never a number from this file. |
+
+**Anti-persona:** An enterprise buyer who needs orgs, seats, roles or SSO.
+Those features are deliberately out of scope until the traction goal lands, so
+selling to that buyer now costs a roadmap we have chosen not to have.
+
+## Switching Dynamics
+
+**Push:** The laptop stopped being enough. Worktrees, MCP config drift, and a
+machine that has to be awake for the agent to work.
+
+**Pull:** A run you can start with one API call, and templates that survive it.
+
+**Habit:** The local setup already works, and the scripts around it are theirs.
+
+**Anxiety:** The credential. Also: what a runaway agent costs, and whether a
+sandbox that "parks" really comes back with the work intact.
+
+## Customer Language
+
+**GAP — no verbatim customer language yet.** There are no interviews, support
+transcripts, reviews or quotes in this repo to mine. Until there are, copy draws
+on the repo's own problem statement rather than pretending to quote a user.
+
+**Words to use:** Agent, Environment, Vault, Conversation, sandbox, runtime,
+template, run, transcript, credit, primitive, estate, gate, guardrail.
+
+**Words to avoid:** "computer" for a sandbox (banned in docs, and defined
+nowhere); "simply", "just", "easy", "obviously", "coming soon" (the docs style
+gate fails on these); "plans", "tiers", "seats", "subscription" (there are none);
+em dashes anywhere in `docs/`.
+
+**Glossary:**
+
+| Term | Means | Never means |
+|---|---|---|
+| Environment | the primitive | a deployment tier, or a map of env vars |
+| Vault | the primitive: a small, plural, static override layer | HashiCorp's central authoritative credential store |
+| Agent | the primitive, the stored config | the running process |
+| Conversation | the primitive, one run | the transcript |
+| runtime | the coding-agent CLI (`claude`, `codex`, `gemini`, `opencode`) | |
+| sandbox | the isolated machine a run happens on | |
+| Fountain | the product | the CLI binary, or the injected skill |
+| `fountain` | the CLI binary, always in code font | |
+
+**The Vault rule.** Because of HashiCorp, "vault" carries a prior that inverts
+Fountain's meaning. Every page that introduces a Fountain Vault for the first
+time states the collision before it states the feature, and never uses "Vault"
+unqualified in a heading where a newcomer meets it first.
+
+## Brand Voice
+
+**Tone:** Modal's calibration and Tailscale's honesty. Explicitly **not** Fly's
+register: the jokes cost reading budget the reader needs for the model.
+
+**Style:** Voice lives in explanation only. Reference gets none. Four modes:
+tutorial (first person plural, warm), how-to (second person, imperative, no
+adjectives), reference (no person, declarative), explanation (first person
+plural, allowed opinion, signed and dated).
+
+**Personality:** Precise, candid, unshowy, technical, load-bearing.
+
+**The three named rules**, enforced by `python3 scripts/docs-style.py` and
+`vale lint docs`:
+1. No em dashes.
+2. Colons do not introduce lists.
+3. A sentence states a claim and stops.
+
+Plus: concede the failure case in the same breath as the feature; paste real
+output including ids; state defaults with their override in the same place;
+never describe unbuilt behavior as existing.
+
+**Where persuasion is allowed.** `docs/` is held to ASD-STE100 Simplified
+Technical English and the linter wins there. The marketing templates under
+`marketing_html/` are the surface that is allowed rhetoric, and the case study
+is the most rhetorical page in the repo. Copy that reads punchy in a hero would
+fail the gate in a manual, and that is by design.
+
+## Proof Points
+
+**Metrics:** The only sourced numbers are the case study's, counted on one
+production estate over a stated window (11 to 25 August 2026) and held as
+literals in `marketing_html.ex` so they cannot quietly widen their own window.
+78 incidents handled by an agent; 4m 27s from alert to open pull request on the
+worked incident; 7.5 minute median incident to verdict; 0 cluster credentials
+the agent holds. Twelve fix pull requests opened, eight merged, four of those a
+rehearsal fault raised on purpose.
+
+The estate is a private Kubernetes cluster run by one person and the numbers are
+its own. **Say that whenever the numbers appear.** The agent's definition is
+public at `jhgaylor/agent-specs`.
+
+**Customers:** GAP. No named customers or logos.
+
+**Testimonials:** GAP. None. The case study's only quote is the agent's own
+pull-request text, not a person's.
+
+**Value themes:**
+
+| Theme | Proof |
+|---|---|
+| The templates outlive the run | `docs/primitives.md`; three templates, one machine |
+| The machine is not your problem | Built, warmed, metered, reclaimed; parks and wakes with work intact |
+| The credential is separable from the machine | Vault wins on collision; egress broker placeholders |
+| A run is addressable | Id, status, transcript, event stream; the case study's webhook |
+| Guardrails are mechanisms, not promises | "Each refusal is somebody else's 405" |
+| You pay for machine time, never tokens | Live price card; bring your own model key |
+
+## Goals
+
+**Business goal:** 100 weekly active users by November 2026. It is the one
+number the roadmap hangs on, and org/team features stay out of scope until it
+lands. Every piece of marketing work is answerable to it. If a piece of work is
+not, say so.
+
+**Conversion action:** Register and run a first agent. The secondary action for
+readers not ready to sign up is the tour, which is the page that turns a curious
+reader into someone who has seen the primitives compose.
+
+**Current metrics:** GAP. Current WAU is not recorded in this repo.
+
+## Changelog
+*Newest first. One line per revision: what changed and why.*
+- v1 (2026-08-27) — Initial context, drafted from the repo while working the case study headline. Competitive landscape, customer language, customers, testimonials and current WAU left as explicit GAPs rather than invented.

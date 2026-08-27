@@ -270,7 +270,16 @@ defmodule FountainWeb.MarketingControllerTest do
     test "renders the loop, the guardrails and the incident", %{conn: conn} do
       body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
 
-      assert body =~ "The alert stopped waking him up."
+      assert body =~ "The pager still goes off at 06:58."
+
+      # The headline quotes the incident's own clock. Assert it against the
+      # timeline so editing one cannot leave the other behind: the hero would
+      # otherwise keep advertising times the page below no longer tells.
+      [alert | _] = timeline = FountainWeb.MarketingHTML.case_timeline()
+      first_pr = Enum.find(timeline, &(&1.title == "The first pull request opens"))
+
+      assert body =~ "goes off at #{String.slice(alert.time, 0, 5)}"
+      assert body =~ "open by #{String.slice(first_pr.time, 0, 5)}"
 
       # Every step of the loop, and the human gate among them.
       for step <- FountainWeb.MarketingHTML.case_loop() do

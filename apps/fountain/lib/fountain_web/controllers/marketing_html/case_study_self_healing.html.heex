@@ -3,8 +3,12 @@
   <p class="mb-4 text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
     Case study · Self-healing infrastructure
   </p>
+  <%!-- The two clock times are the incident below, 06:58:15 and 07:02:42, which
+        is the same 4m 27s the stats quote. The headline concedes the pager on
+        purpose: the loop forks the page rather than swallowing it, so a
+        headline that retired the pager would contradict step 2 and 08:50. --%>
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    The alert stopped waking him up. It opens a pull request instead.
+    The pager still goes off at 06:58. The pull request is open by 07:02.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
     A Kubernetes estate pages a person when a workload breaks. This one pages a person and hires an agent. The agent reads the cluster, finds the commit that broke it, and opens one small pull request. A human still approves every merge, because the agent is built so that it cannot.
