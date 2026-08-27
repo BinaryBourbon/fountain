@@ -839,7 +839,7 @@ defmodule FountainWeb.MarketingHTML do
         step: "03",
         title: "The machines",
         body:
-          "A Mac mini, a home server or a GPU box becomes a sandbox backend with one daemon. It dials out, holds one connection, wants no inbound port and no credential."
+          "A Mac mini, a home server or a GPU box becomes a sandbox backend with one daemon. It dials out and holds one connection. There is no inbound port to open and no credential to hand it."
       },
       %{
         step: "04",
@@ -866,7 +866,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         title: "Email is a decision, not an optional extra",
         body:
-          "Verification, password resets and anything a teammate sends go through Resend or an SMTP server of yours. The compose defaults skip delivery so the first account can register, and that default is for day one only.",
+          "Verification and password resets go through Resend, or an SMTP server of yours. So does anything a teammate sends. The compose defaults skip delivery so the first account can register, and that default is for day one only.",
         docs: "/docs/guides/operate/email",
         docs_label: "Configure email"
       },
@@ -903,7 +903,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         q: "What do I pay for the software?",
         a:
-          "Nothing. There is no licence key, no seat count and no call with us. Leave credits off and the instance prices nothing, gates nothing and shows nobody a bill. Turn credits on and it bills your users, not you."
+          "Nothing. There is no licence key and no seat count, and nobody has to talk to us first. Leave credits off and the instance prices nothing and shows nobody a bill. Turn credits on and it bills your users rather than you."
       },
       %{
         q: "Do I still bring a model key?",
@@ -913,7 +913,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         q: "Can I try the hosted one first?",
         a:
-          "Yes, and none of it is wasted. The console, the CLI, the API, the SDK and the manual are the same on both. What changes is whose machine it runs on."
+          "Yes, and none of it is wasted. The console, the CLI and the API are the same on both, and so are the SDK and the manual. What changes is whose machine it runs on."
       },
       %{
         q: "How much of an instance is one person?",

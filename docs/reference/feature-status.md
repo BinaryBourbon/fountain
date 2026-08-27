@@ -1,8 +1,8 @@
 # Feature status
 
 Most of Fountain is on for every account. Three features are not. This page
-lists them, says who has them on the hosted platform, and says how to get
-them.
+lists them. Each row says who has the feature on the hosted platform, and
+how to turn it on.
 
 A note with the same title as the row sits at the top of each page that
 describes one of these features.

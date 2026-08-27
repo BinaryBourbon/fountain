@@ -32,7 +32,9 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "agents at once, at most"
     assert body =~ "One more for every $2.00 you hold, from 2"
     assert body =~ "Start with $5.00 free"
-    refute body =~ "/mo"
+    # A monthly price renders as a number attached to "/mo". The bare string
+    # would now match GET /v1/models in the protocols section.
+    refute body =~ ~r"\$[\d,.]+\s*/\s*mo"
   end
 
   # Scale-to-zero (0017) is the strongest claim the rest of the page makes. A
