@@ -1251,7 +1251,14 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       insert_conversation(user_id: user.id, agent: acp_agent(user), caller_tools: @caller_tools)
     end
 
-    defp caller_stages(conv_id, state) do
+    # `resolve_caller_tool/4` answers the waiter first and writes the stage row
+    # second, so a result message in hand does not mean the row has landed —
+    # the timeout and turn-ended paths resolve from a handler nobody waits on.
+    # One call through the server's mailbox is the barrier: it is served only
+    # after the handler that sent that message has returned.
+    defp caller_stages(pid, conv_id, state) do
+      _ = :sys.get_state(pid)
+
       conv_id
       |> Conversations._unsafe_list_log_events()
       |> Enum.filter(&(&1.kind == "stage" and &1.stage == "caller_tool" and &1.state == state))
@@ -1289,7 +1296,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
                GenServer.call(pid, {:park_caller_tool, "lookup_order", %{"id" => "A-17"}, self()})
 
       assert [%{"call_id" => ^id, "name" => "lookup_order", "arguments" => %{"id" => "A-17"}}] =
-               caller_stages(conv.id, "started")
+               caller_stages(pid, conv.id, "started")
 
       assert [%{id: ^id, name: "lookup_order"}] = GenServer.call(pid, :pending_caller_calls)
       assert :pending = GenServer.call(pid, {:await_caller_tool, id, self()})
@@ -1300,7 +1307,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert turn_id == :sys.get_state(pid).current_turn.id
       assert_receive {:caller_tool_result, ^id, {:ok, "shipped"}}
 
-      assert [%{"call_id" => ^id, "outcome" => "answered"}] = caller_stages(conv.id, "done")
+      assert [%{"call_id" => ^id, "outcome" => "answered"}] = caller_stages(pid, conv.id, "done")
       assert [] = GenServer.call(pid, :pending_caller_calls)
 
       # Kept for a waiter that asks after the fact.
@@ -1331,7 +1338,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {:ok, id} = GenServer.call(pid, {:park_caller_tool, "lookup_order", %{}, self()})
       assert_receive {:caller_tool_result, ^id, {:error, reason}}, 3_000
       assert reason =~ "did not answer"
-      assert [%{"call_id" => ^id, "outcome" => "timeout"}] = caller_stages(conv.id, "done")
+      assert [%{"call_id" => ^id, "outcome" => "timeout"}] = caller_stages(pid, conv.id, "done")
 
       # The turn is still running: the agent carries on.
       assert :sys.get_state(pid).current_turn.status == "running"
@@ -1347,7 +1354,10 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
 
       assert_receive {:caller_tool_result, ^id, {:error, _}}
-      assert [%{"call_id" => ^id, "outcome" => "turn_ended"}] = caller_stages(conv.id, "done")
+
+      assert [%{"call_id" => ^id, "outcome" => "turn_ended"}] =
+               caller_stages(pid, conv.id, "done")
+
       assert :sys.get_state(pid).caller_calls == %{}
     end
 
