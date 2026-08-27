@@ -266,6 +266,107 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /code-review-bot" do
+    test "shows the whole program and every line it annotates", %{conn: conn} do
+      body = conn |> get(~p"/code-review-bot") |> html_response(200)
+
+      assert body =~ "A code review bot, whole, on one screen."
+
+      # The page's claim is that the program is all there, so assert the
+      # snippets themselves rather than a sentence about them. Both are kept
+      # out of the template because HEEx would read their braces.
+      webhook = FountainWeb.MarketingHTML.review_bot_webhook()
+      assert body =~ "x-hub-signature-256"
+      assert body =~ "/api/apply"
+      assert body =~ "await run.conversationId"
+
+      # The length is counted off the snippet, never typed. An edit that adds
+      # a line and leaves the prose behind fails here.
+      assert body =~ "#{FountainWeb.MarketingHTML.review_bot_length(webhook)} lines"
+
+      for line <- FountainWeb.MarketingHTML.review_bot_anatomy() do
+        assert body =~ line.title, "missing anatomy line #{line.title}"
+      end
+
+      # Every annotated line is a line of the file above it. A card that
+      # explains code the page does not show is worse than no card.
+      assert String.contains?(webhook, "ensureReviewer(fountain, repo)")
+      assert String.contains?(webhook, ~s(vault: "github-bot"))
+      assert String.contains?(webhook, "await run.conversationId")
+    end
+
+    test "keeps setup, the absent half and the one-field changes on the page", %{conn: conn} do
+      body = conn |> get(~p"/code-review-bot") |> html_response(200)
+
+      for step <- FountainWeb.MarketingHTML.review_bot_setup() do
+        assert body =~ step.title, "missing setup step #{step.title}"
+      end
+
+      for row <- FountainWeb.MarketingHTML.review_bot_absent() do
+        assert body =~ row.here, "missing absent row #{row.here}"
+      end
+
+      for row <- FountainWeb.MarketingHTML.review_bot_variations() do
+        assert body =~ row.want, "missing variation #{row.want}"
+      end
+    end
+
+    test "the reviewer it applies is one the API would accept", %{conn: conn} do
+      body = conn |> get(~p"/code-review-bot") |> html_response(200)
+      reviewer = FountainWeb.MarketingHTML.review_bot_reviewer()
+
+      # The kinds the manifest endpoint reconciles, and the field names it
+      # actually reads. `system`, not `system_prompt`; `environment`, which
+      # Fountain.Manifest resolves to an environment_id by name.
+      for kind <- ~w(Environment Agent) do
+        assert kind in Fountain.Manifest.kinds()
+        assert String.contains?(reviewer, ~s(kind: "#{kind}"))
+      end
+
+      assert String.contains?(reviewer, "system:")
+      assert String.contains?(reviewer, "environment:")
+      assert String.contains?(reviewer, "secret_key:")
+
+      # The model has to satisfy the provider/model format the agent
+      # changeset enforces, or the first pull request applies nothing.
+      assert [[model]] = Regex.scan(~r/model: "([^"]+)"/, reviewer, capture: :all_but_first)
+      assert model =~ ~r{^[a-z0-9_-]+/[a-z0-9._-]+$}
+
+      assert body =~ "The reviewer, written down."
+    end
+
+    test "carries its own card", %{conn: conn} do
+      body = conn |> get(~p"/code-review-bot") |> html_response(200)
+
+      assert body =~ ~s(<meta property="og:title" content="A code review bot · Fountain")
+
+      assert body =~
+               ~s(<meta property="og:url" content="http://localhost:4000/code-review-bot")
+    end
+
+    test "every link into the manual resolves to a page", %{conn: conn} do
+      body = conn |> get(~p"/code-review-bot") |> html_response(200)
+
+      links =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert links != []
+
+      for slug <- links do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+
+    test "the homepage and the marketing footer link to it", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      assert body =~ ~p"/code-review-bot"
+      assert body =~ "a code review bot in one file"
+    end
+  end
+
   describe "GET /case-studies/self-healing-infrastructure" do
     test "renders the loop, the guardrails and the incident", %{conn: conn} do
       body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)

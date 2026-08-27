@@ -1216,4 +1216,253 @@ defmodule FountainWeb.MarketingHTML do
     });\
     """
   end
+
+  ## ─── /code-review-bot ──────────────────────────────────────────────────────
+  #
+  # The shortest useful thing anybody builds on this API, shown whole. Both
+  # snippets live here rather than in the template, because HEEx would read
+  # their braces, and the lengths the page quotes are counted off these
+  # strings so an edit cannot leave the prose claiming the old one.
+
+  @doc "The webhook handler. The page shows every line of it."
+  def review_bot_webhook do
+    """
+    // api/github/webhook.ts
+    import { Fountain } from "@agentshit/fountain-sdk";
+    import { verify } from "@octokit/webhooks-methods";
+
+    export async function POST(req: Request) {
+      const body = await req.text();
+      const signature = req.headers.get("x-hub-signature-256") ?? "";
+      const secret = process.env.GITHUB_WEBHOOK_SECRET!;
+      if (!(await verify(secret, body, signature))) {
+        return new Response("bad signature", { status: 401 });
+      }
+
+      const { action, pull_request: pr, repository: repo } = JSON.parse(body);
+      if (action !== "opened" && action !== "synchronize") {
+        return new Response("skipped");
+      }
+
+      // One client per request. It memoises name lookups, and the reviewer
+      // on the next line may be one line old.
+      const fountain = new Fountain();          // FOUNTAIN_API_KEY
+      await ensureReviewer(fountain, repo);
+
+      const run = fountain.run(
+        `Review pull request #${pr.number}. The checkout is at /work/repo. ` +
+          `Read the diff against origin/${pr.base.ref}, then leave one ` +
+          `review with inline comments on the lines you mean.`,
+        {
+          agent: `reviewer/${repo.full_name}`,  // model, machine, house rules
+          vault: "github-bot",                  // the identity it reviews as
+          channelId: `pr/${repo.full_name}/${pr.number}`,
+        },
+      );
+
+      await run.conversationId;   // booked, not finished
+      return new Response("reviewing");
+    }\
+    """
+  end
+
+  @doc "The reviewer itself, upserted by name on every event."
+  def review_bot_reviewer do
+    """
+    // Reconciled by name, so this is safe to run on every event: the first
+    // pull request out of a repository builds the reviewer, and every pull
+    // request after it changes nothing.
+    type Repo = { full_name: string; clone_url: string };
+
+    const ensureReviewer = (fountain: Fountain, repo: Repo) =>
+      fountain.api.request("POST", "/api/apply", {
+        body: {
+          resources: [
+            {
+              kind: "Environment",
+              name: `reviewer/${repo.full_name}`,
+              spec: {
+                repositories: [
+                  {
+                    url: repo.clone_url,
+                    mount_path: "/work/repo",
+                    secret_key: "GITHUB_TOKEN",
+                  },
+                ],
+              },
+            },
+            {
+              kind: "Agent",
+              name: `reviewer/${repo.full_name}`,
+              spec: {
+                runtime: "claude",
+                model: "anthropic/claude-opus-5",
+                environment: `reviewer/${repo.full_name}`,
+                system:
+                  "You review pull requests, and you post the review with " +
+                  "`gh`. Read the diff, not the whole repository. Name the " +
+                  "specific thing that is wrong and the line it is on. One " +
+                  "review per turn. Never approve.",
+              },
+            },
+          ],
+        },
+      });\
+    """
+  end
+
+  @doc "How long a snippet on this page is, counted rather than typed."
+  def review_bot_length(snippet) when is_binary(snippet),
+    do: snippet |> String.split("\n") |> length()
+
+  @doc "The five lines that are the product, with what each one buys."
+  def review_bot_anatomy do
+    [
+      %{
+        code: "ensureReviewer(fountain, repo)",
+        title: "The reviewer is a record, not a deployment.",
+        body:
+          "One POST to /api/apply, reconciled by name. The first pull request " <>
+            "out of a repository writes an Environment holding that checkout and " <>
+            "an Agent pointed at it. Every pull request after it is a no-op. " <>
+            "Point the webhook at a second repository and there is no second step."
+      },
+      %{
+        code: ~s(agent: "reviewer/<owner>/<repo>"),
+        title: "One name carries the whole configuration.",
+        body:
+          "Which model reads the diff, which machine it wakes up on, which " <>
+            "repository is already cloned on that machine, and the house rules " <>
+            "it reviews by. Change any of them and no handler is redeployed."
+      },
+      %{
+        code: ~s(vault: "github-bot"),
+        title: "The credential goes to the machine, not to the model.",
+        body:
+          "Fountain decrypts the vault into the sandbox as the sandbox spawns. " <>
+            "The token never enters the prompt, the model's context or the stored " <>
+            "transcript. Put a read-only token in that vault and the same bot can " <>
+            "comment and nothing else."
+      },
+      %{
+        code: "channelId: `pr/<repo>/<number>`",
+        title: "The second push lands on the first machine.",
+        body:
+          "A channel id resumes the live conversation bound to it instead of " <>
+            "opening a new one. The checkout is still there, on the branch, and " <>
+            "the reviewer still holds what it said about the last commit and why."
+      },
+      %{
+        code: "await run.conversationId",
+        title: "It returns once the work is booked.",
+        body:
+          "Not once the review is written. GitHub allows a webhook ten seconds " <>
+            "and this answers in the time of one API call. The turn carries on in " <>
+            "the sandbox after the handler has returned."
+      }
+    ]
+  end
+
+  @doc "What a review bot usually needs, against what this one needed."
+  def review_bot_absent do
+    [
+      %{
+        normally: "A machine, and something that decides how many to keep warm.",
+        here: "A sandbox lasts as long as the review does. Nothing is warm between pull requests."
+      },
+      %{
+        normally: "A container image per repository, rebuilt when the toolchain moves.",
+        here:
+          "An Environment names the repository and the packages. The bot writes it the first time it sees the repo."
+      },
+      %{
+        normally: "A checkout on that machine, and a token that is allowed to fetch it.",
+        here:
+          "repositories[] clones before the agent wakes. secret_key names the secret the clone authenticates with."
+      },
+      %{
+        normally: "Somewhere for the GitHub token to sit that the worker can read.",
+        here:
+          "A Vault, decrypted into the sandbox at spawn and redacted out of anything the run prints."
+      },
+      %{
+        normally: "A queue, so a busy morning drops no pull request.",
+        here:
+          "One HTTP call per pull request. Concurrency is funded by the balance, and a full fleet answers 503."
+      },
+      %{
+        normally:
+          "Per-pull-request state, so a second push reviews the branch rather than the world.",
+        here: "channel_id. The same pull request resumes the same conversation on the same disk."
+      },
+      %{
+        normally: "A reaper, because what you forget to clean up is what you pay for.",
+        here: "Idle sandboxes park themselves, and the reaper destroys what the ceiling says to."
+      }
+    ]
+  end
+
+  @doc "Everything between reading this page and the first review."
+  def review_bot_setup do
+    [
+      %{
+        step: "1",
+        title: "Give it a token.",
+        body:
+          "One fine-grained GitHub token, scoped to the repositories you want " <>
+            "reviewed. Set it under two keys, because two things read it: the " <>
+            "clone reads GITHUB_TOKEN and gh reads GH_TOKEN.",
+        mono: "fountain vault create github-bot"
+      },
+      %{
+        step: "2",
+        title: "Deploy the handler.",
+        body:
+          "Anywhere that serves one HTTP POST. It holds no state, so one instance " <>
+            "and fifty behave the same. Two environment variables, and neither of " <>
+            "them is a GitHub credential.",
+        mono: "FOUNTAIN_API_KEY=...  GITHUB_WEBHOOK_SECRET=..."
+      },
+      %{
+        step: "3",
+        title: "Add the webhook.",
+        body:
+          "Repository settings, Webhooks, Add webhook. Pull request events, " <>
+            "content type application/json, the same secret. The next pull " <>
+            "request opened is the first one reviewed.",
+        mono: "Settings → Webhooks → Pull requests"
+      }
+    ]
+  end
+
+  @doc "The variations that are one field rather than one rewrite."
+  def review_bot_variations do
+    [
+      %{
+        want: "It comments, and can never push.",
+        change:
+          "A read-only token in the vault. The sandbox holds the rights the credential holds."
+      },
+      %{
+        want: "A harder reader on the risky directories.",
+        change: "model on the Agent. Nothing else in the program knows which model it was."
+      },
+      %{
+        want: "Two opinions on one diff.",
+        change: "Call run() twice with two agent names. Each opinion gets its own sandbox."
+      },
+      %{
+        want: "It runs the suite before it comments.",
+        change: "setup_script on the Environment, and one more sentence in system."
+      },
+      %{
+        want: "A clean reviewer for one pull request.",
+        change: "fresh: true beside the channel id. The conversation it skips stays where it is."
+      },
+      %{
+        want: "A review on a schedule rather than on a push.",
+        change: "The same call, from cron. A conversation does not care what opened it."
+      }
+    ]
+  end
 end
