@@ -6,18 +6,8 @@
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
     Define your agents once. Let every app you build hire them.
   </h1>
-  <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-4">
-    An agent is a row you write once. The model, the skills, the MCP servers, the repository it wakes up in, the secrets it may use. After that anything you build hires it over one API. It arrives on a machine {Fountain.Brand.engine()} builds, warms and takes back.
-    <span :if={Fountain.Brand.hosted?()}>
-      {Fountain.Brand.name()} is one instance of that platform, the one we happen to run.
-    </span>
-    <span :if={!Fountain.Brand.hosted?()}>
-      This site is one instance of that platform, the one we happen to run.
-    </span>
-    Yours answers the same API in six commands.
-  </p>
-  <p class="text-lg sm:text-xl font-medium text-[var(--color-text-primary)] max-w-2xl mx-auto mb-10">
-    Run it yourself and the whole platform is yours. Your roster runs on your machines with your keys, and the features we ration on this site are a line of config on yours.
+  <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    Run it yourself and the whole platform is yours. Your machines, your keys, nothing rationed.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
