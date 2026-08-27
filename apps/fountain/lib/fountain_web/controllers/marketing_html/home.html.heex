@@ -15,7 +15,7 @@
     Every agent gets a brief, a budget, and a boundary.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Hire an agent by role. It remembers the last time. It can hand work to the others on your roster, and it runs on our infrastructure or on hardware inside your own network.
+    Hire an agent by role. It picks up where it left off, and it can hand work to the others on your roster. Run it on our infrastructure, or on hardware inside your own network.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
@@ -162,6 +162,125 @@
       </p>
     </div>
   </section>
+</section>
+
+<%!-- Bring your own stack. Four protocols, one of which is behind a flag, so
+      this is where the badge legend lives: it is the first badge a reader
+      meets, and everything above it is generally available. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    Bring the stack you already have.
+  </h2>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-3">
+    Fountain answers four protocols on top of its own REST API. The editor, chat surface, gateway or framework you use today can hire an agent with a URL and a key, and there is nothing to install on our side.
+  </p>
+  <p class="text-center text-xs text-[var(--color-text-muted)] max-w-xl mx-auto mb-10">
+    Anything without a badge is on for every account. Alpha means it works end to end and its shape can still change between releases.
+  </p>
+
+  <dl class="max-w-2xl mx-auto space-y-6">
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Agent Client Protocol
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        For an editor or a chat surface.
+        <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">fountain acp</code>
+        makes any agent on your roster the one the client is talking to.
+      </dd>
+    </div>
+
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        AG-UI
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The Agent-User Interaction Protocol, for a coworker platform. One endpoint per agent, and the steps stream as the agent takes them.
+      </dd>
+    </div>
+
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        MCP, both directions
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Your agents reach the servers you declare on them. Fountain injects its own on top. A teammate can read the roster and message the others without you wiring anything.
+      </dd>
+    </div>
+
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        OpenAI chat completions
+        <span class="ml-1 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-bg-2)] text-[var(--color-text-muted)]">
+          Alpha
+        </span>
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The request shape every gateway already speaks, where the model is an agent.
+        <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">GET /v1/models</code>
+        fills a client's picker with your roster, and your own tools come back as tool calls. A Fountain agent can therefore sit inside a LangChain loop or a Deep Agents plan as a subagent.
+      </dd>
+      <dd class="mt-2 text-xs text-[var(--color-text-muted)] leading-relaxed">
+        We turn it on for your account here when you ask. On your own instance, add
+        <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">openai_compat</code>
+        to <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">FEATURE_FLAGS_ON</code>.
+      </dd>
+    </div>
+  </dl>
+
+  <p class="mt-8 text-center text-sm text-[var(--color-text-secondary)]">
+    Under all four is the REST API. A TypeScript SDK and a CLI sit over it. <a
+      href={~p"/integrations"}
+      class="text-[var(--color-brand)] hover:underline"
+    >
+      See what already speaks them
+    </a>.
+  </p>
+</section>
+
+<%!-- The limits, stated before the price rather than discovered after it. Every
+      number here reads from the same settings the quota enforces. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+      The limits, before you build on them.
+    </h2>
+
+    <dl class="max-w-2xl mx-auto space-y-6">
+      <div :if={pricing?()}>
+        <dt class="font-medium text-[var(--color-text-primary)]">How many can run at once</dt>
+        <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Your balance sets it. One more agent for every {elem(cap_rule(), 0)} you hold, from {elem(
+            cap_rule(),
+            1
+          )}, up to {elem(cap_rule(), 2)}. A separate ceiling bounds how many sandboxes run across the whole platform, and when it is reached you get a plain refusal rather than a charge.
+        </dd>
+      </div>
+
+      <div>
+        <dt class="font-medium text-[var(--color-text-primary)]">Recursion is yours to bound</dt>
+        <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          An agent that can hire agents can do it again from inside the one it hired. Nothing caps the depth on our side. The skill instructs each agent to cap its own, and the balance is the backstop under that.
+        </dd>
+      </div>
+
+      <div>
+        <dt class="font-medium text-[var(--color-text-primary)]">
+          A teammate is not a shared inbox
+        </dt>
+        <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          One agent has one thread on one computer. Two people who message the same teammate are talking to the same thread and the same machine.
+        </dd>
+      </div>
+
+      <div>
+        <dt class="font-medium text-[var(--color-text-primary)]">An account is one person</dt>
+        <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          There are no organisations and no seats. Sign-in is an email address or GitHub, and there is no single sign-on. A team shares an account, or runs an instance of its own.
+        </dd>
+      </div>
+    </dl>
+  </div>
 </section>
 
 <%!-- How it works --%>
@@ -349,6 +468,41 @@
   </div>
 </section>
 
+<%!-- Lane three's section on the homepage. One question sorts the reader, and
+      the runner concession sits beside the runner claim rather than a page
+      away, because the hero promises a boundary and a runner has none. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      Or run the whole thing yourself.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
+      One question decides it. If your code and your secrets cannot leave your own infrastructure, this platform was never the answer for you.
+    </p>
+
+    <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
+      <p>
+        {Fountain.Brand.engine()} is open source, and nothing is held back from the copy you run. The server this platform runs on is the one you would run, and so are the CLI and the SDK. A compose file brings an instance up, and a portable Kubernetes baseline is in the repo for anyone who already lives there.
+      </p>
+      <p>
+        Your own hardware can serve the sandboxes too. A runner is a machine you own that dials out to {Fountain.Brand.name()} and holds one connection. There is no inbound port, and it works behind NAT. It burns no credit at all.
+      </p>
+      <p class="text-sm text-[var(--color-text-muted)]">
+        A runner runs in trusted mode. The agent's processes run as you. They get your network and your tools, and no container or VM stands between them. Run one on a machine where you would hand a capable colleague a shell.
+      </p>
+    </div>
+
+    <p class="mt-8 text-center">
+      <a
+        href={~p"/self-hosted"}
+        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+      >
+        What it takes to run it yourself
+      </a>
+    </p>
+  </div>
+</section>
+
 <%!-- Objections --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
@@ -359,6 +513,15 @@
       <dt class="font-medium text-[var(--color-text-primary)]">Do I need a model key?</dt>
       <dd class="mt-1 text-sm leading-relaxed">
         Yes. Bring an Anthropic, OpenAI or Google key and the agent bills your own account for tokens. {Fountain.Brand.name()} charges for the sandbox hours, never for inference, so there is no markup on the model.
+      </dd>
+    </div>
+
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        I have no API key. I pay for Claude.
+      </dt>
+      <dd class="mt-1 text-sm leading-relaxed">
+        That is a credential {Fountain.Brand.name()} accepts. A Claude Pro or Team subscription works in place of a metered API key, and when you hold both, the subscription is the one your agents spend. It is usually the one you want spent.
       </dd>
     </div>
     <div>
