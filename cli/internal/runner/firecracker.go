@@ -157,6 +157,16 @@ func (f *Firecracker) Create(req Request) (map[string]any, func(), error) {
 // from anything the daemon remembers, and a sandbox whose disk is present
 // with no VM behind it is parked, not missing — reporting not_found there
 // would tell Fountain to give up a disk that is sitting on this machine.
+//
+// `path` is what a process *inside* this sandbox calls its home, which is
+// the one thing Fountain uses it for: `Fountain.Sandbox.Runner.host_path/2`
+// rewrites the ACP `cwd` through it, and an agent CLI validates that path in
+// band before it will start a session. On the process backend the two
+// coincide, because the sandbox is a directory and /home/sprite is an alias
+// for it. In a microVM they do not: /home/sprite is literal, and handing
+// over the host's state directory names something that exists on the wrong
+// side of the machine boundary. The host directory rides along under
+// `host_dir` for an operator reading a log; nothing consumes it.
 func (f *Firecracker) Get(req Request) (map[string]any, func(), error) {
 	dir, err := f.dir(req.Name)
 	if err != nil {
@@ -180,7 +190,7 @@ func (f *Firecracker) Get(req Request) (map[string]any, func(), error) {
 			status = "running"
 		}
 	}
-	return map[string]any{"status": status, "path": dir}, nil, nil
+	return map[string]any{"status": status, "path": spriteHome, "host_dir": dir}, nil, nil
 }
 
 // Destroy implements Backend. Already-gone is success.

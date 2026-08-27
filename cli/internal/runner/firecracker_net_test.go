@@ -269,3 +269,27 @@ func TestBootGateIsOnePerSandbox(t *testing.T) {
 		t.Fatal("two sandboxes share one boot gate")
 	}
 }
+
+// `path` is the path a process inside the sandbox sees as its home, not the
+// host directory holding the disk. Fountain rewrites the ACP `cwd` through
+// it (Fountain.Sandbox.Runner.host_path/2), and an agent CLI validates that
+// path in band before it starts a session — so naming the host's state
+// directory fails the turn with an invalid-cwd error, after a microVM has
+// booted and provisioned perfectly. Found on hardware, not in a test.
+func TestGetReportsTheInGuestHomeAsThePath(t *testing.T) {
+	f := newTestFirecracker(t)
+	dir := filepath.Join(f.cfg.Root, "runner-a-1")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	result, _, err := f.Get(Request{Name: "runner-a-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["path"] != spriteHome {
+		t.Fatalf("path = %v, want %s — the ACP cwd is rewritten through this", result["path"], spriteHome)
+	}
+	if result["host_dir"] != dir {
+		t.Fatalf("host_dir = %v, want %s", result["host_dir"], dir)
+	}
+}
