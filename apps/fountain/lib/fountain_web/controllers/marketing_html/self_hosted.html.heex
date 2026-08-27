@@ -1,215 +1,369 @@
-<%!-- Hero --%>
-<section class="max-w-5xl mx-auto px-6 py-20 text-center">
-  <p class="mb-4 text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-    Self-hosted
-  </p>
-  <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    Define your agents once. Let every app you build hire them.
-  </h1>
-  <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Run it yourself and the whole platform is yours. Your machines, your keys, nothing rationed.
-  </p>
-  <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
-    <a
-      href={~p"/docs/guides/operate/deploy"}
-      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
-    >
-      Bring up an instance
-    </a>
-    <a
-      href={repo_url()}
-      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
-    >
-      Read the source
-    </a>
-  </div>
-  <p class="text-xs text-[var(--color-text-muted)]">
-    AGPL-3.0-or-later. No licence key, no seat count, no call with us.
-  </p>
-</section>
+<%!-- Hero. Left-aligned and asymmetric: the argument on the left, the whole
+      bring-up on the right, so the commands are on the first screen rather
+      than three sections down.
 
-<%!-- The apps are the argument. The claim above the fold is that an agent
-      defined once gets hired by anything, and these are the anything. Cards
-      come from built_apps/0 so the page cannot drift from /built-with. --%>
-<section class="max-w-5xl mx-auto px-6 pb-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-    {built_app_count()} applications already hire from one roster.
-  </h2>
-  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Here are four of them, and they are four different front doors onto the same idea. Nobody wrote an agent into any of these apps. The teammate was defined once and the app is the part somebody built on top of it. All of them are open source, and each one points at whichever instance you configure.
-  </p>
-  <div class="grid sm:grid-cols-2 gap-6">
-    <a
-      :for={app <- self_host_showcase()}
-      href={app.url}
-      rel="noopener"
-      data-role="showcase"
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 hover:border-[var(--color-brand)] transition-colors"
-    >
-      <span class="text-2xl" aria-hidden="true">{app.glyph}</span>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
-      <p class="mt-0.5 text-xs text-[var(--color-text-muted)]">{app.host}</p>
-      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        {app.blurb}
-      </p>
-    </a>
-  </div>
-  <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
-    <a
-      href={~p"/built-with"}
-      class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
-    >
-      All {built_app_count()} of them, and what each one proves
-    </a>
-  </p>
-</section>
-
-<%!-- Bring-up: the whole install, shown rather than described. --%>
-<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      Six commands and a token.
-    </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
-      The compose file brings its own Postgres. Back the master key up before you have data, because it is not in the database.
+      Two strings here are pinned by MarketingControllerTest and must stay in
+      the rendered body: "Define your agents once. Let every app you build
+      hire them." (now the deck under the h1) and "Six commands and a token."
+      (now the label over the terminal). --%>
+<section class="max-w-6xl mx-auto px-6 pt-12 pb-20 grid lg:grid-cols-2 gap-14 items-start">
+  <div>
+    <p class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-[var(--color-text-secondary)]">
+      <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-brand)]" aria-hidden="true"></span>
+      Self-hosted
     </p>
+    <h1 class="mt-6 text-4xl sm:text-5xl font-bold tracking-tight leading-[1.05] text-[var(--color-text-primary)]">
+      There are no tiers to buy.
+    </h1>
+    <p class="mt-5 text-xl sm:text-2xl font-medium leading-snug text-[var(--color-text-primary)] max-w-[34ch]">
+      Define your agents once. Let every app you build hire them.
+    </p>
+    <p class="mt-5 text-lg text-[var(--color-text-secondary)] leading-relaxed max-w-[54ch]">
+      Run it yourself and the whole platform is yours. Your machines, your keys, nothing rationed.
+    </p>
+    <div class="mt-8 flex flex-col sm:flex-row gap-3">
+      <a
+        href={~p"/docs/guides/operate/deploy"}
+        class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-text)] font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
+      >
+        Bring up an instance
+      </a>
+      <a
+        href={repo_url()}
+        class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+      >
+        Read the source
+      </a>
+    </div>
+    <p class="mt-6 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-[var(--color-text-secondary)]">
+      <span>AGPL-3.0-or-later</span>
+      <span aria-hidden="true">·</span>
+      <span>no licence key</span>
+      <span aria-hidden="true">·</span>
+      <span>no seat count</span>
+      <span aria-hidden="true">·</span>
+      <span>no call with us</span>
+    </p>
+  </div>
+
+  <div
+    data-role="bringup"
+    class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] overflow-hidden"
+  >
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-2)]">
+      <h2 class="text-sm font-semibold text-[var(--color-text-primary)]">
+        Six commands and a token.
+      </h2>
+      <button
+        type="button"
+        class="ml-auto rounded-full border border-[var(--color-border-strong)] px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+        onclick="navigator.clipboard.writeText(this.closest('[data-role=bringup]').querySelector('pre').innerText); this.textContent='Copied'"
+      >
+        Copy
+      </button>
+    </div>
     <pre
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+      class="bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-xs leading-relaxed whitespace-pre-wrap break-words"
       phx-no-format
     ><code>{compose_example()}</code></pre>
-    <div class="grid md:grid-cols-2 gap-6 mt-8">
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Then register.</h3>
-        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Open the instance and sign up. The first account verifies itself and takes the admin role, so there is no bootstrap ritual and no console of ours in the path. Close registration behind you when you are done.
+    <p class="px-5 py-4 border-t border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      The compose file brings its own Postgres. Back the master key up before you have data, because it is not in the database.
+    </p>
+    <p class="px-5 py-4 border-t border-[var(--color-border)] bg-[var(--color-info-bg)] text-sm text-[var(--color-info-text)] leading-relaxed">
+      <strong class="font-semibold">First:</strong>
+      pick a sandbox provider before you run any of this. Without a token every conversation fails.
+      <a href={~p"/docs/self-hosting"} class="underline underline-offset-2">
+        What each provider needs →
+      </a>
+    </p>
+  </div>
+</section>
+
+<%!-- The preconditions, ahead of the install and behind the headline. Every
+      line is the deploy guide's "Before you start", so the page cannot
+      promise a bring-up the manual contradicts. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-6xl mx-auto px-6 py-8">
+    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
+      Before you start
+    </p>
+    <div class="mt-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div :for={item <- prerequisites()} data-role="prerequisite">
+        <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+          {item.label}
         </p>
-      </div>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Kubernetes instead?</h3>
-        <p
-          class="text-sm text-[var(--color-text-secondary)] leading-relaxed"
-          phx-no-format
-        >Plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>, with no operators and no CRDs. Every merge publishes them as an OCI artifact, and the hosted instance deploys from it. Same manifests, one pin apart: the artifact carries a sha tag, and the committed release pin is the one you apply.</p>
-        <a
-          href={~p"/docs/guides/operate/kubernetes"}
-          class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
-        >
-          Deploy on Kubernetes →
-        </a>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">{item.body}</p>
       </div>
     </div>
   </div>
 </section>
 
-<%!-- The front ends. A self-hoster's next question after the bring-up is what
-      they open, and the answer is three static builds that take a server URL.
-      Cards come from built_apps/0, so this cannot name a retired app. --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-    The apps come with it.
-  </h2>
-  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    What you just brought up serves a console: accounts, keys, agents, environments, audit. The apps your team works in are these three, and each is static files that take a server URL as input. Admit the origin once and all three answer to your instance, with your agents, your sandboxes and your keys. Host your own copies instead if you would rather; they are open source too.
+<%!-- 01. What happens after the commands, including how you know it worked.
+      A first-time operator otherwise reads a refused connection during the
+      cold start as a failed install. --%>
+<section class="max-w-6xl mx-auto px-6 py-16">
+  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+    01 · Install
   </p>
-  <div class="grid md:grid-cols-3 gap-6">
-    <article
-      :for={app <- flagship_apps()}
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 flex flex-col"
-      data-role="flagship"
-    >
-      <div class="text-2xl leading-none" aria-hidden="true">{app.glyph}</div>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
-      <p class="mt-1 text-sm text-[var(--color-text-secondary)]">{app.flagship.like}</p>
-      <div class="mt-4 flex flex-wrap items-center gap-4 text-sm">
-        <a
-          href={app.url}
-          rel="noopener"
-          class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
-        >
-          Open it
-        </a>
-        <a
-          href={app.source}
-          rel="noopener"
-          class="text-[var(--color-text-secondary)] underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-        >
-          Source
-        </a>
-      </div>
-    </article>
+  <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+    After the six commands.
+  </h2>
+  <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[60ch]">
+    Migrations run before the app opens a listener, so a cold start takes up to a minute. A refused connection in that window is normal.
+  </p>
+  <div class="grid md:grid-cols-3 gap-6 mt-8">
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+      <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+        Then
+      </p>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Register</h3>
+      <p
+        class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed"
+        phx-no-format
+      >Open <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">http://localhost:4000</code> and sign up. The first account verifies itself and takes the admin role, so there is no bootstrap ritual and no console of ours in the path. Close registration behind you when you are done.</p>
+    </div>
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+      <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+        Check
+      </p>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Know it worked</h3>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Wait for the app container to report healthy, then probe it.
+      </p>
+      <pre class="mt-3 rounded-lg bg-[var(--color-code-bg)] p-4 text-xs text-[var(--color-code-text)] whitespace-pre-wrap break-all"><code phx-no-format>{health_probe()}</code></pre>
+    </div>
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+      <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
+        Instead
+      </p>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Kubernetes</h3>
+      <p
+        class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed"
+        phx-no-format
+      >Plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>, with no operators and no CRDs. Every merge publishes them as an OCI artifact, and the hosted instance deploys from it. Same manifests, one pin apart: the artifact carries a sha tag, and the committed release pin is the one you apply.</p>
+      <a
+        href={~p"/docs/guides/operate/kubernetes"}
+        class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+      >
+        Deploy on Kubernetes →
+      </a>
+    </div>
   </div>
-  <div class="mt-10 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-    <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-      A browser app on another origin calling your API is a CORS request, so name the origin it is served from:
+</section>
+
+<%!-- 02. The front ends the instance gets. Cards come from built_apps/0 via
+      flagship_apps/0, so this cannot name a retired app. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-6xl mx-auto px-6 py-16">
+    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+      02 · What you open
     </p>
-    <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-4 text-xs text-[var(--color-code-text)]"><code phx-no-format>API_CORS_ORIGINS=https://jakegaylor.com</code></pre>
-    <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-      Conversations and Team are also what the console's own links point at, so <code
-        class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-        phx-no-format
-      >CONVERSATIONS_APP_URL</code> and <code
-        class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-        phx-no-format
-      >TEAM_APP_URL</code> swing them to copies you host, and an empty string says this deployment has none. Both are in the <a
-        href={~p"/docs/configuration"}
+    <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+      The apps come with it.
+    </h2>
+    <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[68ch]">
+      What you just brought up serves a console: accounts, keys, agents, environments, audit. The apps your team works in are these three, and each is static files that take a server URL as input. Admit the origin once and all three answer to your instance, with your agents, your sandboxes and your keys. Host your own copies instead if you would rather; they are open source too.
+    </p>
+    <div class="grid md:grid-cols-3 gap-6 mt-8">
+      <article
+        :for={app <- flagship_apps()}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+        data-role="flagship"
+      >
+        <div class="text-2xl leading-none" aria-hidden="true">{app.glyph}</div>
+        <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          {app.flagship.like}
+        </p>
+        <p class="mt-2 text-sm text-[var(--color-text-muted)] leading-relaxed">
+          {app.flagship.who}
+        </p>
+        <div class="mt-auto pt-4 flex flex-wrap items-center gap-4 text-sm">
+          <a
+            href={app.url}
+            rel="noopener"
+            class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+          >
+            Open it
+          </a>
+          <a
+            href={app.source}
+            rel="noopener"
+            class="text-[var(--color-text-secondary)] underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+          >
+            Source
+          </a>
+        </div>
+      </article>
+    </div>
+    <div class="mt-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+      <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        A browser app on another origin calling your API is a CORS request, so name the origin it is served from:
+      </p>
+      <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-4 text-xs text-[var(--color-code-text)]"><code phx-no-format>API_CORS_ORIGINS=https://jakegaylor.com</code></pre>
+      <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Conversations and Team are also what the console's own links point at, so <code
+          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+          phx-no-format
+        >CONVERSATIONS_APP_URL</code> and <code
+          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+          phx-no-format
+        >TEAM_APP_URL</code> swing them to copies you host, and an empty string says this deployment has none. Both are in the <a
+          href={~p"/docs/configuration"}
+          class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+        >configuration reference</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<%!-- 03. Evidence that other people build on this. Selected from
+      built_apps/0 by id, so a card cannot drift from /built-with. --%>
+<section class="max-w-6xl mx-auto px-6 py-16">
+  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+    03 · Built on it
+  </p>
+  <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+    {built_app_count()} applications already hire from one roster.
+  </h2>
+  <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[68ch]">
+    Here are four of them, and they are four different front doors onto the same idea. Nobody wrote an agent into any of these apps. The teammate was defined once and the app is the part somebody built on top of it. All of them are open source, and each one points at whichever instance you configure.
+  </p>
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
+    <a
+      :for={app <- self_host_showcase()}
+      href={app.url}
+      rel="noopener"
+      data-role="showcase"
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 hover:border-[var(--color-brand)] transition-colors"
+    >
+      <span class="text-2xl" aria-hidden="true">{app.glyph}</span>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+      <p class="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)] break-all">
+        {app.host}
+      </p>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        {app.blurb}
+      </p>
+    </a>
+  </div>
+  <p class="mt-8 text-sm">
+    <a
+      href={~p"/built-with"}
+      class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+    >
+      All {built_app_count()} of them, and what each one proves →
+    </a>
+  </p>
+</section>
+
+<%!-- 04. The ownership ladder, ahead of the rationed features and the
+      licences. For somebody deciding hosted against self-hosted this is the
+      argument, and it used to arrive seventh. Drawn as a connected ladder
+      rather than four loose cards, because the rungs are an order. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-6xl mx-auto px-6 py-16">
+    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+      04 · Ownership
+    </p>
+    <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+      How far down do you want to own it?
+    </h2>
+    <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
+      Most people stop at the first rung and are happy there. The point is that the next three exist, and that none of them is a sales conversation.
+    </p>
+    <ol class="mt-10 ml-3 border-l-2 border-[var(--color-border-strong)]">
+      <li
+        :for={rung <- ownership_rungs()}
+        class="grid grid-cols-[auto_1fr] gap-6 pb-8"
+        data-role="rung"
+      >
+        <div class="-ml-[13px] flex items-start gap-3">
+          <span
+            class="mt-1.5 h-6 w-6 shrink-0 rounded-full bg-[var(--color-brand)] ring-4 ring-[var(--color-bg-1)]"
+            aria-hidden="true"
+          >
+          </span>
+          <span class="text-2xl font-bold leading-none text-[var(--color-border-strong)]">
+            {rung.step}
+          </span>
+        </div>
+        <div class="max-w-[68ch]">
+          <h3 class="text-xl font-semibold text-[var(--color-text-primary)]">{rung.title}</h3>
+          <p class="mt-2 text-[var(--color-text-secondary)] leading-relaxed">{rung.body}</p>
+        </div>
+      </li>
+    </ol>
+    <p class="ml-6 border-l-2 border-[var(--color-brand)] pl-6 text-[var(--color-text-secondary)] leading-relaxed max-w-[74ch]">
+      A model key is the one thing you still bring, and you always did. The agent bills your own provider account for tokens, so nothing in the middle takes a cut of inference. <a
+        href={~p"/docs/integrations/runners"}
         class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-      >configuration reference</a>.
+      >Read how a machine of yours becomes a sandbox</a>.
     </p>
   </div>
 </section>
 
-<%!-- The inversion: what is rationed on the hosted platform is an env var on
-      your own. The rows track docs/reference/feature-status.md. --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+<%!-- 05. The inversion, as a table rather than three stacked panels: the
+      config column is the page's point, so it gets a column of its own and a
+      tint. The rows track docs/reference/feature-status.md. --%>
+<section class="max-w-6xl mx-auto px-6 py-16">
+  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+    05 · Feature flags
+  </p>
+  <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
     The features we ration, you switch on.
   </h2>
-  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+  <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[64ch]">
     Three things are not on for everyone here. Two are alpha and one changes what a sandbox can reach, so on the hosted platform each of them means an email to us and a wait. On an instance of your own they are a line in a config file, and nobody has to approve you.
   </p>
-  <div class="space-y-4">
-    <article
+  <div class="mt-8 overflow-hidden rounded-xl border border-[var(--color-border)]">
+    <div class="hidden md:grid md:grid-cols-[1.5fr_1fr_1.25fr] bg-[var(--color-bg-2)] border-b border-[var(--color-border)] font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
+      <p class="px-6 py-3">Capability</p>
+      <p class="px-6 py-3 border-l border-[var(--color-border)]">On this site</p>
+      <p class="px-6 py-3 border-l border-[var(--color-border)] text-[var(--color-brand)]">
+        On yours
+      </p>
+    </div>
+    <div
       :for={feature <- rationed_features()}
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 sm:p-8"
+      class="grid md:grid-cols-[1.5fr_1fr_1.25fr] border-b border-[var(--color-border)] last:border-b-0"
       data-role="rationed"
     >
-      <div class="grid md:grid-cols-3 gap-6">
-        <div>
-          <h3 class="font-semibold text-[var(--color-text-primary)]">{feature.name}</h3>
-          <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            {feature.blurb}
-          </p>
-          <a
-            href={feature.docs}
-            class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
-          >
-            Read the page →
-          </a>
-        </div>
-        <div>
-          <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-2">
-            Here
-          </p>
-          <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            {feature.hosted}
-          </p>
-        </div>
-        <div>
-          <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-brand)] mb-2">
-            On yours
-          </p>
-          <p class="text-sm text-[var(--color-text-primary)] leading-relaxed font-medium">
-            {feature.yours}
-          </p>
-        </div>
+      <div class="p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)]">{feature.name}</h3>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          {feature.blurb}
+        </p>
+        <a
+          href={feature.docs}
+          class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+        >
+          Read the page →
+        </a>
       </div>
-    </article>
+      <div class="p-6 border-t md:border-t-0 md:border-l border-[var(--color-border)]">
+        <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-muted)] md:hidden">
+          On this site
+        </p>
+        <p class="mt-2 md:mt-0 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          {feature.hosted}
+        </p>
+      </div>
+      <div class="p-6 border-t md:border-t-0 md:border-l border-[var(--color-border)] bg-[var(--color-info-bg)]">
+        <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+          Config
+        </p>
+        <p class="mt-2 font-mono text-xs text-[var(--color-text-primary)] leading-relaxed">
+          {feature.yours}
+        </p>
+      </div>
+    </div>
   </div>
-  <p class="text-center text-sm text-[var(--color-text-muted)] max-w-2xl mx-auto mt-8">
+  <p class="mt-6 text-sm text-[var(--color-text-secondary)] leading-relaxed max-w-[72ch]">
     The rest of the product has no flag on it. The hosted instance adds nothing that is not in the repo. It runs the release image with switches set, and the
     <a
       href={~p"/docs/configuration"}
-      class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+      class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
     >
       configuration reference
     </a>
@@ -217,137 +371,140 @@
   </p>
 </section>
 
-<%!-- Licences --%>
+<%!-- 06. Licences --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+  <div class="max-w-6xl mx-auto px-6 py-16">
+    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+      06 · Licences
+    </p>
+    <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
       Three licences, and what each one asks of you.
     </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
+    <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
       The parts your code touches are permissive on purpose. A connection to {Fountain.Brand.engine()} must never put an obligation on your application.
     </p>
-    <div class="grid md:grid-cols-3 gap-6">
+    <div class="grid md:grid-cols-3 gap-6 mt-8">
       <div
         :for={part <- licence_parts()}
         class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
         data-role="licence"
       >
-        <h3 class="font-semibold text-[var(--color-text-primary)]">{part.part}</h3>
-        <code
-          class="inline-block self-start mt-1 text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
-          phx-no-format
-        >{part.scope}</code>
-        <p class="mt-3 text-sm font-medium text-[var(--color-brand)]">{part.licence}</p>
+        <div class="flex items-center justify-between gap-3">
+          <code
+            class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
+            phx-no-format
+          >{part.scope}</code>
+          <span class="shrink-0 rounded-full border border-[var(--color-border-strong)] px-2.5 py-0.5 font-mono text-[10px] text-[var(--color-text-secondary)]">
+            {part.licence}
+          </span>
+        </div>
+        <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{part.part}</h3>
         <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
           {part.means}
         </p>
       </div>
     </div>
-    <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
+    <p class="mt-6 text-sm">
       <a
         href={~p"/docs/open-source"}
-        class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
+        class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
       >
-        What is open, what is not, and where each thing lives
+        What is open, what is not, and where each thing lives →
       </a>
     </p>
   </div>
 </section>
 
-<%!-- The ownership ladder --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-    How far down do you want to own it?
-  </h2>
-  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
-    Most people stop at the first rung and are happy there. The point is that the next three exist, and that none of them is a sales conversation.
+<%!-- 07. The bill, said out loud. --%>
+<section class="max-w-6xl mx-auto px-6 py-16">
+  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+    07 · Trade-offs
   </p>
-  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+  <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+    What it costs you instead.
+  </h2>
+  <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
+    Self-hosting is not free, it is paid in a different currency. Better you know the four line items now than in week three.
+  </p>
+  <div class="grid md:grid-cols-2 gap-6 mt-8">
     <div
-      :for={rung <- ownership_rungs()}
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6"
-      data-role="rung"
+      :for={cost <- self_host_costs()}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 flex flex-col"
+      data-role="cost"
     >
-      <p class="text-xs font-semibold text-[var(--color-brand)] tracking-wide">{rung.step}</p>
-      <h3 class="mt-2 font-semibold text-[var(--color-text-primary)]">{rung.title}</h3>
-      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">{rung.body}</p>
-    </div>
-  </div>
-  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-10">
-    A model key is the one thing you still bring, and you always did. The agent bills your own provider account for tokens, so nothing in the middle takes a cut of inference. <a
-      href={~p"/docs/integrations/runners"}
-      class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-    >Read how a machine of yours becomes a sandbox</a>.
-  </p>
-</section>
-
-<%!-- The bill, said out loud. --%>
-<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      What it costs you instead.
-    </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
-      Self-hosting is not free, it is paid in a different currency. Better you know the four line items now than in week three.
-    </p>
-    <div class="grid md:grid-cols-2 gap-6">
-      <div
-        :for={cost <- self_host_costs()}
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
-        data-role="cost"
+      <h3 class="font-semibold text-[var(--color-text-primary)]">{cost.title}</h3>
+      <p class="mt-2 flex-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        {cost.body}
+      </p>
+      <a
+        href={cost.docs}
+        class="mt-4 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
       >
-        <h3 class="font-semibold text-[var(--color-text-primary)]">{cost.title}</h3>
-        <p class="mt-2 flex-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          {cost.body}
-        </p>
-        <a
-          href={cost.docs}
-          class="mt-4 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
-        >
-          {cost.docs_label} →
-        </a>
-      </div>
+        {cost.docs_label} →
+      </a>
     </div>
   </div>
 </section>
 
-<%!-- Objections --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-    Things you would ask before the clone.
-  </h2>
-  <dl class="max-w-2xl mx-auto space-y-6 text-[var(--color-text-secondary)]">
-    <div :for={item <- self_host_faq()} data-role="faq">
-      <dt class="font-medium text-[var(--color-text-primary)]">{item.q}</dt>
-      <dd class="mt-1 text-sm leading-relaxed">{item.a}</dd>
+<%!-- 08. Objections. Collapsed, because seven answers as open prose is a
+      wall nobody reads, and the questions themselves are scannable. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-6xl mx-auto px-6 py-16">
+    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+      08 · Before the clone
+    </p>
+    <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+      Things you would ask before the clone.
+    </h2>
+    <div class="mt-8 max-w-3xl border-t border-[var(--color-border)]">
+      <details
+        :for={item <- self_host_faq()}
+        class="group border-b border-[var(--color-border)]"
+        data-role="faq"
+      >
+        <summary class="flex cursor-pointer items-center gap-4 py-5 list-none marker:content-none">
+          <h3 class="flex-1 font-semibold text-[var(--color-text-primary)] group-open:text-[var(--color-brand)] transition-colors">
+            {item.q}
+          </h3>
+          <span
+            class="text-lg leading-none text-[var(--color-text-muted)] transition-transform group-open:rotate-45"
+            aria-hidden="true"
+          >
+            +
+          </span>
+        </summary>
+        <p class="pb-6 pr-12 text-[var(--color-text-secondary)] leading-relaxed max-w-[76ch]">
+          {item.a}
+        </p>
+      </details>
     </div>
-  </dl>
+  </div>
 </section>
 
 <%!-- Footer CTA --%>
-<section class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
-    <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
+<section class="bg-[var(--color-bg-2)] border-t border-[var(--color-border)]">
+  <div class="max-w-6xl mx-auto px-6 py-20">
+    <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
       Clone it tonight.
     </h2>
-    <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
+    <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[58ch]">
       A container, a Postgres and a sandbox token. The manual has the whole path, the repo has the issues, and neither of them has a sales form in it.
     </p>
-    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+    <div class="mt-8 flex flex-col sm:flex-row gap-3">
       <a
         href={~p"/docs/guides/operate/deploy"}
-        class="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors"
+        class="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-text)] font-medium hover:bg-[var(--color-brand-hover)] transition-colors"
       >
         Bring up an instance
       </a>
       <a
         href={~p"/docs/self-hosting"}
-        class="inline-flex items-center justify-center px-8 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+        class="inline-flex items-center justify-center px-8 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-3)] transition-colors"
       >
         Read the operator's manual
       </a>
     </div>
-    <p class="mt-8 text-xs text-[var(--color-text-muted)] max-w-xl mx-auto">
+    <p class="mt-8 text-sm text-[var(--color-text-muted)] max-w-xl">
       Prefer that somebody else runs it? That is what this site is for, and the two are the same product.
     </p>
   </div>
