@@ -1,13 +1,13 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
   The public pages: `/`, `/integrations`, `/built-with`, `/self-hosted`,
-  `/case-studies/*`, `/terms` and `/privacy`.
+  `/code-review-bot`, `/case-studies/*`, `/terms` and `/privacy`.
 
   None of them is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
-  (`Fountain.Marketing`); `/integrations`, `/built-with`, `/self-hosted` and
-  the case studies are the pitch's other pages and redirect into the manual on
-  any other instance;
+  (`Fountain.Marketing`); `/integrations`, `/built-with`, `/self-hosted`,
+  `/code-review-bot` and the case studies are the pitch's other pages and
+  redirect into the manual on any other instance;
   the legal pages render the operator's identity, or nothing at all
   (`Fountain.Legal`). A deployment is not the Fountain project, and these
   pages are the ones that would claim otherwise.
@@ -55,6 +55,24 @@ defmodule FountainWeb.MarketingController do
       )
     else
       redirect(conn, to: ~p"/docs/build")
+    end
+  end
+
+  # The shortest useful program anybody writes on this API, shown whole. Sales
+  # copy like the rest, so another deployment gets the manual's longer version
+  # of the same job rather than a page selling the hosted product.
+  def code_review_bot(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :code_review_bot,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "A code review bot · #{Fountain.Brand.name()}",
+        meta_description:
+          "A pull request opens, GitHub posts a webhook, and one API call hires " <>
+            "an agent that already has the checkout. The whole program is on the " <>
+            "page: no runner pool, no queue, no container image per repository."
+      )
+    else
+      redirect(conn, to: ~p"/docs/tour")
     end
   end
 

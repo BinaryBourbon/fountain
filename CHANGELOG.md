@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Added
 
+- **A code review bot, whole, at `/code-review-bot`.** The shortest useful
+  program anybody writes on this API, shown unabridged rather than described:
+  a GitHub webhook handler that upserts the reviewer for the repository it
+  just heard from and hires it. Two snippets, one 36 lines and one 39, and
+  the argument the page makes is the absent half. No runner pool, no queue,
+  no container image per repository and no per-pull-request state, because
+  an Environment carries the checkout, a Vault carries the credential and a
+  channel id carries the pull request. Both lengths are counted off the
+  snippets rather than typed, and the controller test pins every annotated
+  line to a line of the file above it. Like the other pitch pages, an
+  instance that is not the marketing site is sent to the manual's tour.
+
 - **A self-hosted runner can put each sandbox in its own Firecracker microVM.**
   `fountain runner --backend firecracker` replaces the sandbox directory with
   a microVM booted from a private copy of a base image, on a tap device

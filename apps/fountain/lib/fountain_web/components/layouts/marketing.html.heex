@@ -97,6 +97,13 @@
         </a>
         <a
           :if={Fountain.Marketing.site?()}
+          href={~p"/code-review-bot"}
+          class="hover:text-[var(--color-text-secondary)] transition-colors"
+        >
+          Review bot
+        </a>
+        <a
+          :if={Fountain.Marketing.site?()}
           href={~p"/case-studies/self-healing-infrastructure"}
           class="hover:text-[var(--color-text-secondary)] transition-colors"
         >
