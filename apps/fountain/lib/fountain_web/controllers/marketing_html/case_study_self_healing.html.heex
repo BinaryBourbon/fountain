@@ -11,7 +11,7 @@
     The pager still goes off at 06:58. The pull request is open by 07:02.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    A Kubernetes estate pages a person when a workload breaks. This one pages a person and hires an agent. The agent reads the cluster, finds the commit that broke it, and opens one small pull request. A human still approves every merge, because the agent is built so that it cannot.
+    This Kubernetes estate pages a person and hires an agent. The agent reads the cluster, finds the commit at fault, and opens one small pull request it is unable to merge.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center">
     <a
@@ -51,7 +51,7 @@
     Some breakage reconciliation cannot fix.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
-    GitOps promises that the cluster matches the repository. It keeps that promise even when the repository is wrong. Drop an environment variable, lose a secret reference, pin a bad image, and the controller reports perfect agreement with a broken source.
+    GitOps makes the cluster match the repository, and keeps doing it when the repository is wrong.
   </p>
   <div class="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
@@ -60,7 +60,7 @@
       </p>
       <p class="text-lg font-semibold text-[var(--color-text-primary)]">Green</p>
       <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The cluster is exactly what the repository says. Reconciliation has nothing left to do, and reports success every time it runs.
+        The cluster is exactly what the repository says. Reconciliation has nothing left to do, and reports success.
       </p>
     </div>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
@@ -69,12 +69,12 @@
       </p>
       <p class="text-lg font-semibold text-[var(--color-text-primary)]">Red</p>
       <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The workload is crashing anyway, because the thing the repository says is false. The fix is not another apply. The fix is knowledge.
+        The workload crashes anyway, because what the repository says is false: a dropped variable, a lost secret reference, a bad image pin. No apply fixes that. Knowledge does.
       </p>
     </div>
   </div>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-12">
-    That gap is where the pager lives. It is also, exactly, the shape of work a coding agent is good at. Read the evidence, find the commit, write the smallest correct diff. The reason nobody automated it before is not the diagnosis. It is that shipping the diff needs a machine, a checkout, a credential that can push, and a human who is still allowed to say no.
+    That gap is where the pager lives, and it is the shape of work a coding agent is good at. What was missing was never the diagnosis. It was a machine, a checkout, a push credential, and a human still allowed to say no.
   </p>
 </section>
 
@@ -88,7 +88,7 @@
       Nine steps, one of them a person.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
-      Every piece except the agent was already in the estate. The integration is one webhook and one API call.
+      Everything but the agent was already in the estate. One webhook, one API call.
     </p>
     <ol class="max-w-3xl mx-auto space-y-4">
       <li
@@ -128,7 +128,7 @@
     The gate is a mechanism, not a promise.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
-    An agent that opens infrastructure pull requests is only as safe as the smallest thing it is able to do. Nothing here rests on the agent choosing well, on a system prompt holding, or on a model behaving. Each refusal below is somebody else's 405.
+    Such an agent is only as safe as the least it can do. Nothing rests on a good choice, a prompt holding, or a model behaving. Each refusal below is somebody else's 405.
   </p>
   <div class="max-w-3xl mx-auto space-y-4">
     <div
@@ -159,7 +159,7 @@
       One morning, end to end.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
-      25 August 2026, all times UTC. Nobody was awake for the first half of this.
+      25 August 2026, UTC. Nobody was awake for the first half.
     </p>
     <ol class="max-w-3xl mx-auto">
       <li
@@ -202,7 +202,7 @@
         </span>
       </blockquote>
       <figcaption class="mt-3 text-xs text-[var(--color-text-muted)]">
-        The agent's root-cause paragraph, quoted from the pull request it opened at 07:02. The gap it names had been in the repository for months. No alert had ever reached it, because no commit had moved a lockfile until that week.
+        Its root-cause paragraph, quoted from the 07:02 pull request. The gap had sat there for months unalerted, because no commit had moved a lockfile until that week.
       </figcaption>
     </figure>
   </div>
@@ -214,7 +214,7 @@
     What {Fountain.Brand.name()} was for.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
-    The alerting, the repository and the reconciler were already there. The missing piece was somewhere for an agent to live between alerts. Four things, and the fourth is the API call.
+    The alerting, the repository and the reconciler were already there. Missing was somewhere for an agent to live between alerts.
   </p>
   <div class="grid sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
     <div
@@ -227,7 +227,7 @@
     </div>
   </div>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-12">
-    The operator never provisions a machine for an incident, and never pays for one between incidents. A sandbox exists for as long as the incident does. <a
+    Nobody provisions a machine for an incident, or pays for one between them. A sandbox lasts as long as the incident. <a
       href={~p"/docs/primitives"}
       class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
     >Read about the four primitives</a>.
@@ -244,7 +244,7 @@
       Point your own alerts at an agent.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
-      Whatever pages you today can post a webhook. This is the whole handoff.
+      Whatever pages you today can post a webhook. That is the whole handoff.
     </p>
     <div class="grid md:grid-cols-2 gap-8 items-start max-w-4xl mx-auto">
       <pre
@@ -256,19 +256,19 @@
           <span class="font-medium text-[var(--color-text-primary)]">
             Write the agent down first.
           </span>
-          The runbook, the tools and the model belong in a file you review, not in a webhook handler. Apply it once and the dispatcher only needs its id.
+          Runbook, tools and model belong in a file you review, not a webhook handler. Apply it once and the dispatcher needs only its id.
         </p>
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
             Put the identity in a Vault.
           </span>
-          The token that pushes should be a separate account with the least rights that still work. Swapping which account an agent acts as is then a field, not a redeploy.
+          The token that pushes should be its own account with the least rights that work, so changing identity is a field, not a redeploy.
         </p>
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
             Make the last step refuse you.
           </span>
-          Find the place in your pipeline where a human already signs off and let the agent stop there. A gate the agent is unable to pass beats a gate it is asked not to.
+          Let the agent stop where a human already signs off. A gate it is unable to pass beats one it is asked not to.
         </p>
         <p class="pt-1">
           <a
@@ -289,7 +289,7 @@
     Your on-call has a queue of small, obvious fixes.
   </h2>
   <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
-    They all start with reading the evidence and end with a diff somebody has to approve. Hire an agent for the middle.
+    Each starts with reading the evidence and ends with a diff somebody approves. Hire an agent for the middle.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center">
     <a
@@ -306,7 +306,7 @@
     </a>
   </div>
   <p class="mt-10 text-xs text-[var(--color-text-muted)] max-w-2xl mx-auto leading-relaxed">
-    The estate is a private Kubernetes cluster run by one person, and the numbers are its own. Twelve fix pull requests were opened over the window and eight were merged, four of them the same rehearsal fault raised on purpose. Most incidents end with no pull request at all, because the agent decides the repository cannot fix them and says so. The agent's definition is public at <a
+    A private Kubernetes cluster run by one person, and the numbers are its own. Twelve fix pull requests opened in the window and eight merged, four of them the same rehearsal fault raised on purpose. Most incidents end with no pull request, because the agent decides the repository cannot fix them. Its definition is public at <a
       href="https://github.com/jhgaylor/agent-specs/blob/main/src/agents/specialists/engineering/estate-medic.ts"
       class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
     >jhgaylor/agent-specs</a>.
