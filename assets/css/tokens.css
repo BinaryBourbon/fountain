@@ -7,9 +7,9 @@
  */
 
 :root {
-  /* Brand */
-  --color-brand:       #6366f1;
-  --color-brand-hover: #4f46e5;
+  /* Brand — matches the blue in the managoat logo */
+  --color-brand:       #0b5acc;
+  --color-brand-hover: #094cb2;
   --color-brand-text:  #ffffff;
 
   /* Surfaces */
@@ -64,14 +64,14 @@
   --status-failed-text:     #b91c1c;
 
   /* Focus ring */
-  --color-focus-ring: #6366f1;
+  --color-focus-ring: #0b5acc;
 }
 
 /* Dark mode — activated by data-theme="dark" on <html> */
 [data-theme="dark"] {
-  /* Brand */
-  --color-brand:       #818cf8;
-  --color-brand-hover: #6366f1;
+  /* Brand — matches the blue in the managoat logo */
+  --color-brand:       #5796f4;
+  --color-brand-hover: #0b5acc;
 
   /* Surfaces */
   --color-bg-0: #09090b;
@@ -125,7 +125,7 @@
   --status-failed-text:     #fca5a5;
 
   /* Focus ring */
-  --color-focus-ring: #818cf8;
+  --color-focus-ring: #5796f4;
 }
 
 /* Accessible focus ring for all interactive elements */
