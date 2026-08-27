@@ -51,6 +51,17 @@ upgrade, is in
 
 ### Changed
 
+- **`/self-hosted` leads with the bring-up.** The compose block is on the
+  first screen beside the argument rather than three sections down, the
+  headline is the reason to run it yourself, and the four things a bring-up
+  needs — Docker with Compose v2, the registry it pulls from, the Postgres it
+  brings with it, and `PUBLIC_URL` — are stated before the commands instead of
+  discovered during them. A "know it worked" card carries the health probe and
+  says that a refused connection during the cold start is the normal state.
+  The ownership ladder moves ahead of the rationed features, because for
+  anybody weighing hosted against self-hosted it is the argument rather than
+  the appendix. The page also answers how to tear an instance down.
+
 - **The three apps we build ourselves lead the marketing pages.**
   Conversations, Team and Workbench were scattered through `/built-with`, one
   of them filed under "For engineers" and the other two last on the page. They
