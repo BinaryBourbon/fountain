@@ -335,20 +335,10 @@
         </span>
       </li>
     </ol>
-    <div>
-      <pre
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
-        phx-no-format
-      ><code>{sdk_example()}</code></pre>
-      <%!-- The shortest finished program on the API, for the reader who wants
-            to see the call in a job rather than on its own. --%>
-      <a
-        href={~p"/code-review-bot"}
-        class="mt-4 inline-block text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
-      >
-        See it finished: a code review bot in one file →
-      </a>
-    </div>
+    <pre
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+      phx-no-format
+    ><code>{sdk_example()}</code></pre>
   </div>
 </section>
 

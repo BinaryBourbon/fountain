@@ -29,6 +29,9 @@ upgrade, is in
   snippets rather than typed, and the controller test pins every annotated
   line to a line of the file above it. Like the other pitch pages, an
   instance that is not the marketing site is sent to the manual's tour.
+  The page is **unlisted**: it answers at its URL and nothing on the site
+  links to it, because the handler it shows has never been run against a live
+  webhook.
 
 - **A self-hosted runner can put each sandbox in its own Firecracker microVM.**
   `fountain runner --backend firecracker` replaces the sandbox directory with
