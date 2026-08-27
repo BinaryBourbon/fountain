@@ -11,7 +11,7 @@
     The pager still goes off at 06:58. The pull request is open by 07:02.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    This Kubernetes estate pages a person and hires an agent. The agent reads the cluster, finds the commit at fault, and opens one small pull request it is unable to merge.
+    A Kubernetes estate pages a person when a workload breaks. This one also hires an agent. It reads the cluster, finds the commit at fault, and opens one small pull request it is unable to merge.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center">
     <a
@@ -69,12 +69,12 @@
       </p>
       <p class="text-lg font-semibold text-[var(--color-text-primary)]">Red</p>
       <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The workload crashes anyway, because what the repository says is false: a dropped variable, a lost secret reference, a bad image pin. No apply fixes that. Knowledge does.
+        The workload crashes anyway, because what the repository says is false: a dropped variable, a lost secret reference, a bad image pin. No apply fixes that. Somebody has to read the evidence and change the source.
       </p>
     </div>
   </div>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-12">
-    That gap is where the pager lives, and it is the shape of work a coding agent is good at. What was missing was never the diagnosis. It was a machine, a checkout, a push credential, and a human still allowed to say no.
+    That gap is where the pager lives, and reading evidence to write a small diff is exactly what a coding agent is good at. What was missing was never the diagnosis. It was a machine, a checkout, a push credential, and a human still allowed to say no.
   </p>
 </section>
 
@@ -128,7 +128,7 @@
     The gate is a mechanism, not a promise.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
-    Such an agent is only as safe as the least it can do. Nothing rests on a good choice, a prompt holding, or a model behaving. Each refusal below is somebody else's 405.
+    An agent that opens infrastructure pull requests is only as safe as the least it can do. Nothing rests on a good choice, a prompt holding, or a model behaving. Each refusal below is somebody else's 405.
   </p>
   <div class="max-w-3xl mx-auto space-y-4">
     <div
@@ -202,7 +202,7 @@
         </span>
       </blockquote>
       <figcaption class="mt-3 text-xs text-[var(--color-text-muted)]">
-        Its root-cause paragraph, quoted from the 07:02 pull request. The gap had sat there for months unalerted, because no commit had moved a lockfile until that week.
+        The agent's root-cause paragraph, quoted from the pull request it opened at 07:02. The gap had sat there for months unalerted, because no commit had moved a lockfile until that week.
       </figcaption>
     </figure>
   </div>
@@ -214,7 +214,7 @@
     What {Fountain.Brand.name()} was for.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-12">
-    The alerting, the repository and the reconciler were already there. Missing was somewhere for an agent to live between alerts.
+    The alerting, the repository and the reconciler were already there. What was missing was somewhere for an agent to live between alerts.
   </p>
   <div class="grid sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
     <div
@@ -306,7 +306,7 @@
     </a>
   </div>
   <p class="mt-10 text-xs text-[var(--color-text-muted)] max-w-2xl mx-auto leading-relaxed">
-    A private Kubernetes cluster run by one person, and the numbers are its own. Twelve fix pull requests opened in the window and eight merged, four of them the same rehearsal fault raised on purpose. Most incidents end with no pull request, because the agent decides the repository cannot fix them. Its definition is public at <a
+    The estate is a private Kubernetes cluster run by one person, and the numbers are its own. Twelve fix pull requests opened in the window and eight merged, four of them the same rehearsal fault raised on purpose. Most incidents end with no pull request, because the agent decides the repository cannot fix them. The agent's definition is public at <a
       href="https://github.com/jhgaylor/agent-specs/blob/main/src/agents/specialists/engineering/estate-medic.ts"
       class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
     >jhgaylor/agent-specs</a>.

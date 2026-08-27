@@ -941,7 +941,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         value: "78",
         label: "incidents handled by an agent",
-        note: "Fifteen days, one estate, one agent, no rota."
+        note: "Fifteen days, one estate, one runbook, no rota."
       },
       %{
         value: "4m 27s",
@@ -956,7 +956,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         value: "0",
         label: "cluster credentials the agent holds",
-        note: "No kubectl, no kubeconfig, no write anywhere."
+        note: "No kubectl, no kubeconfig, no write path of its own."
       }
     ]
   end
@@ -975,7 +975,7 @@ defmodule FountainWeb.MarketingHTML do
         title: "Alertmanager forks the page",
         mono: "continue: true",
         body:
-          "One copy to the phone, as before. One to a webhook. " <>
+          "One copy to the operator's phone, as before. One to a webhook. " <>
             "The human is added to, not replaced."
       },
       %{
@@ -991,8 +991,8 @@ defmodule FountainWeb.MarketingHTML do
         title: "The agent reads the estate",
         mono: "Authorization: Bearer … (GET only)",
         body:
-          "A read-only service answers with node health, drift from source, and " <>
-            "controller conditions. Every other method returns 405."
+          "A read-only estate service answers with node health, drift from " <>
+            "source, and controller conditions. Every other method returns 405."
       },
       %{
         step: "5",
@@ -1008,8 +1008,8 @@ defmodule FountainWeb.MarketingHTML do
         mono: "symptom · root cause · why this diff is the whole fix",
         body:
           "Source and regenerated manifests in one commit, from an identity " <>
-            "with push rights and nothing else. If the repository cannot fix the " <>
-            "alert, it opens nothing."
+            "with push rights and nothing else. If no change to the repository " <>
+            "can fix the alert, it opens nothing."
       },
       %{
         step: "7",
@@ -1058,8 +1058,10 @@ defmodule FountainWeb.MarketingHTML do
         cannot: "Read a secret value. The material never leaves the cluster."
       },
       %{
-        can: "Say the repository cannot fix this, and stop.",
-        cannot: "Reach the cluster. The sandbox has no kubectl and no kubeconfig."
+        can: "Decide the repository cannot fix this, and stop.",
+        cannot:
+          "Reach past the repository and fix it anyway. " <>
+            "The sandbox has no kubectl and no kubeconfig."
       }
     ]
   end
@@ -1093,8 +1095,8 @@ defmodule FountainWeb.MarketingHTML do
         time: "07:03:42",
         title: "The second pull request opens",
         body:
-          "Six lines added, two removed. The same cause from the other side, " <>
-            "said rather than diagnosed again."
+          "Six lines added, two removed. The same root cause seen from the " <>
+            "other side, and the second agent said so rather than diagnose it again."
       },
       %{
         time: "08:50:27",
@@ -1152,9 +1154,9 @@ defmodule FountainWeb.MarketingHTML do
       %{
         title: "Environment",
         body:
-          "The machine it wakes up on, with the repository, the CLI and the " <>
-            "read-only estate service's address. Described once, rebuilt per " <>
-            "incident, never patched by hand."
+          "The machine the agent wakes up on, with the repository, the CLI and " <>
+            "the read-only estate service's address. Described once, rebuilt " <>
+            "per incident, never patched by hand."
       },
       %{
         title: "Vault",
