@@ -1,13 +1,14 @@
 ---
 type: ADR
 title: "A Firecracker microVM backend for the self-hosted runner"
-description: "`fountain runner --backend firecracker` gives each sandbox its own microVM instead of a directory; the in-VM agent serves the same protocol with the same Process backend over vsock, so the isolation is the machine boundary rather than a second implementation of exec. Built, but not yet exercised on real hardware, and egress policy is still not advertised."
+description: "`fountain runner --backend firecracker` gives each sandbox its own microVM instead of a directory; the in-VM agent serves the same protocol with the same Process backend over vsock, so the isolation is the machine boundary rather than a second implementation of exec. Built and running on hardware. Egress policy is still not advertised, which currently makes every runner unusable for a broker tenant."
 tags: [sandbox, architecture, self-hosting, cli, security]
 status: stable
 adr: "0036"
 adr_status: "Accepted"
 date: 2026-08-27
-generated: { by: human:jhgaylor, at: 2026-08-27T00:00:00-04:00 }
+generated: { by: human:jhgaylor, at: 2026-08-27T04:00:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-27T04:00:00-04:00 }
 stale_after: 2026-11-27
 ---
 
@@ -17,11 +18,14 @@ stale_after: 2026-11-27
 `cli/internal/runner`, `Firecracker` (the microVM backend), `guestLink` (the
 host's vsock end) and `fountain runner-guest` (the in-VM agent).
 
-**Not yet verified against hardware.** Every part of the path is covered by
-tests, including a host-to-guest round trip over a socket that performs
-Firecracker's real vsock handshake. Nothing in this ADR has run against an
-actual `firecracker` process on an actual KVM host. The `verified` frontmatter
-field is deliberately absent until it has.
+**Verified on hardware** on 2026-08-27, against `fireball` (Ryzen 5 PRO
+6650H, Firecracker v1.16.1, Ubuntu 24.04, guest kernel 6.1.155), provisioned
+by `jhgaylor/home-cloud` `playbooks/fountain-runner.yml`. A microVM's guest
+agent answered a vsock ping **1.8s after `InstanceStart`**;
+`systemd-detect-virt` in the guest reported `kvm`; an exec through the
+forwarding path returned exit 0 with the guest's static address configured
+from the kernel command line and egress through the host bridge returning
+HTTP 200. The daemon registers and stays connected as a runner.
 
 Extends [0022](0022-self-hosted-runner-provider.md), which named this mode and
 did not build it. Inherits the contract from
@@ -145,13 +149,24 @@ that invited the daemon to run sandboxes and not to reconfigure networking.
 - **A park frees CPU, not RAM.** A paused microVM keeps its memory resident.
   Snapshotting it to disk would free that, at the cost of a restore path and
   the vsock reconnection that a snapshot breaks. Not built.
-- **Egress policy is still not advertised.** A microVM makes a real one
-  possible for the first time on this provider, since each sandbox owns a tap
-  device. `Fountain.Sandbox.capabilities/0` is a property of the *adapter*,
-  not of one runner, so a runner that could enforce a policy cannot say so
-  without a Fountain-side change to negotiate capabilities per runner. Until
-  that exists, `networking_type: limited` is refused on every runner, which is
-  the honest answer rather than a policy that does not enforce.
+- **Egress policy is still not advertised, and that now blocks more than
+  `limited`.** A microVM makes a real policy possible for the first time on
+  this provider, since each sandbox owns a tap device.
+  `Fountain.Sandbox.capabilities/0` is a property of the *adapter*, not of one
+  runner, so a runner that could enforce one cannot say so without a
+  Fountain-side change to negotiate capabilities per runner.
+
+  Running this on hardware surfaced the cost. `Provisioning.check_broker_support/4`
+  ([0019](0019-egress-credential-brokerage.md) gate 1a) refuses a brokered
+  conversation on any provider without `:network_policy` unless
+  `BROKER_ALLOW_UNENFORCED` is set. So for a tenant in `BROKER_TENANTS`, *no*
+  runner can host a conversation at all — process or microVM — and the launch
+  fails with `backend_lacks_network_policy` before a sandbox exists. That is
+  correct behaviour by 0019 and it makes the capability gap a blocker rather
+  than a missing feature. Closing it needs two pieces: the runner advertises
+  its backend's capabilities in the `/api/runners/ws` handshake and Fountain
+  resolves them per runner at launch, and the Firecracker backend implements
+  `apply_network_policy` as nftables rules on the sandbox's tap.
 - **The base image is the operator's to build.** Fountain ships no rootfs and
   no kernel. The image must carry the sandbox packages, the `fountain` binary
   for the guest architecture, and an init that starts `fountain runner-guest`.
