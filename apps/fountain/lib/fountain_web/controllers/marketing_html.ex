@@ -760,6 +760,44 @@ defmodule FountainWeb.MarketingHTML do
   end
 
   @doc """
+  What a bring-up needs before the first command, from the deploy guide's
+  "Before you start". A reader who finds this out at command four has already
+  spent the goodwill this page was for.
+  """
+  def prerequisites do
+    [
+      %{
+        label: "You need",
+        body: "Docker Engine with Compose v2, and openssl for the two key lines."
+      },
+      %{
+        label: "No database",
+        body: "The compose file runs Postgres 16 for you. You install nothing."
+      },
+      %{
+        label: "Network",
+        body:
+          "Your machine reaches ghcr.io, the registry that holds the image. " <>
+            "Blocked? Compose builds it from the checkout instead."
+      },
+      %{
+        label: "One address",
+        body:
+          "Reaching it by anything but localhost? Set PUBLIC_URL too. It builds " <>
+            "the links in verification emails, and every sandbox reads it."
+      }
+    ]
+  end
+
+  @doc "How an operator knows the bring-up worked, verbatim from the deploy guide."
+  def health_probe do
+    """
+    curl -sS localhost:4000/health/ready
+    {"checks":{"database":"ok"},"status":"ok"}\
+    """
+  end
+
+  @doc """
   The three features the hosted platform rations, and what they cost on an
   instance of your own. The rows track `docs/reference/feature-status.md`; a
   feature that comes off that page comes off this one.
@@ -914,6 +952,14 @@ defmodule FountainWeb.MarketingHTML do
         q: "Can I try the hosted one first?",
         a:
           "Yes, and none of it is wasted. The console, the CLI and the API are the same on both, and so are the SDK and the manual. What changes is whose machine it runs on."
+      },
+      %{
+        q: "How do I get rid of it?",
+        a:
+          "docker compose down -v. The -v flag deletes the database volume and " <>
+            "every account and conversation in it. If you keep the volume instead, " <>
+            "keep the same MASTER_SECRETS_KEY with it, because a new key cannot " <>
+            "unwrap what the old one wrapped."
       },
       %{
         q: "How much of an instance is one person?",
