@@ -83,6 +83,10 @@ func newDaemon(t *testing.T) *Daemon {
 	return d
 }
 
+// sandboxRoot is the process backend's root — the tests reach through the
+// Backend seam because they are testing that backend, not the routing.
+func sandboxRoot(d *Daemon) string { return d.Backend.(*Process).Root }
+
 func do(t *testing.T, d *Daemon, req Request, emit Emitter) map[string]any {
 	t.Helper()
 	result, _, err := d.Handle(req, emit)
@@ -143,7 +147,7 @@ func TestWriteFileMapsSpriteHome(t *testing.T) {
 		Op: "write_file", Name: "sb", Path: "/home/sprite/.env",
 		Data: base64.StdEncoding.EncodeToString([]byte("A=1\n")), Mode: &mode,
 	}, rec)
-	target := filepath.Join(d.Root, "sb", ".env")
+	target := filepath.Join(sandboxRoot(d), "sb", ".env")
 	body, err := os.ReadFile(target)
 	if err != nil || string(body) != "A=1\n" {
 		t.Fatalf("file not written inside the sandbox: %v %q", err, body)
@@ -154,7 +158,7 @@ func TestWriteFileMapsSpriteHome(t *testing.T) {
 	// Parent directories are created; relative paths are sandbox-relative.
 	do(t, d, Request{Op: "write_file", Name: "sb", Path: ".claude/skills/x/SKILL.md",
 		Data: base64.StdEncoding.EncodeToString([]byte("# x"))}, rec)
-	if _, err := os.Stat(filepath.Join(d.Root, "sb", ".claude", "skills", "x", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(sandboxRoot(d), "sb", ".claude", "skills", "x", "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -179,7 +183,7 @@ func TestExec(t *testing.T) {
 	// HOME is the sandbox and /home/sprite maps into it, in args too.
 	got = do(t, d, Request{Op: "exec", Name: "sb", Cmd: "sh", Args: []string{"-c", "echo $HOME; echo /home/sprite/x; pwd -P"}}, rec)
 	out, _ = base64.StdEncoding.DecodeString(got["output"].(string))
-	sb := filepath.Join(d.Root, "sb")
+	sb := filepath.Join(sandboxRoot(d), "sb")
 	realSb, _ := filepath.EvalSymlinks(sb) // macOS: /var → /private/var
 	want := sb + "\n" + sb + "/x\n" + realSb + "\n"
 	if string(out) != want {
@@ -314,7 +318,7 @@ func TestSpawnResolvesCommandOnSandboxPath(t *testing.T) {
 	d := newDaemon(t)
 	rec := newRecorder()
 	do(t, d, Request{Op: "create", Name: "sb"}, rec)
-	bin := filepath.Join(d.Root, "sb", ".local", "bin")
+	bin := filepath.Join(sandboxRoot(d), "sb", ".local", "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
