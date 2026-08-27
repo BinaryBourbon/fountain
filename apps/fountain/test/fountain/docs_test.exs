@@ -419,6 +419,84 @@ defmodule Fountain.DocsTest do
     end
   end
 
+  # The primitives diagram exists twice: as a file for the README, which GitHub
+  # renders on a page whose theme an <img> cannot read, and inline in
+  # docs/primitives.md, where `currentColor` follows the manual's theme. Two
+  # copies of one drawing drift, and the drift is invisible until somebody
+  # opens the other one. These pin the copies to each other and to the exact
+  # three differences that are allowed.
+  describe "the primitives diagram, in both its copies" do
+    @svg_file Path.join(@repo_root, "docs/images/primitives.svg")
+    @svg_page Path.join(@repo_root, "docs/primitives.md")
+
+    test "the inline copy is the file, minus the background and in currentColor" do
+      file = File.read!(@svg_file)
+      inline = inline_svg()
+
+      expected =
+        file
+        |> String.replace(~r/\A<svg\b[^>]*>/, "")
+        |> String.replace(~r|\n\s*<rect width="740" height="336" fill="#ffffff"/>|, "",
+          global: false
+        )
+        |> String.replace("#1b2530", "currentColor")
+        |> String.trim()
+
+      actual = inline |> String.replace(~r/\A<svg\b[^>]*>/, "") |> String.trim()
+
+      assert actual == expected,
+             "docs/primitives.md's inline SVG has drifted from docs/images/primitives.svg"
+    end
+
+    test "the file paints its own background, and the inline copy does not" do
+      # An <img> on github.com cannot inherit a theme, so the file carries a
+      # white ground rather than turning into invisible dark-on-dark.
+      assert File.read!(@svg_file) =~ ~s(<rect width="740" height="336" fill="#ffffff"/>)
+      refute inline_svg() =~ ~s(fill="#ffffff")
+      refute inline_svg() =~ "#1b2530"
+    end
+
+    test "one description serves the file, the inline copy and the README" do
+      label = aria_label(File.read!(@svg_file))
+
+      assert String.length(label) > 200,
+             "the description is the whole picture for a screen reader"
+
+      assert label == aria_label(inline_svg())
+
+      readme = File.read!(Path.join(@repo_root, "README.md"))
+      assert readme =~ ~s(alt="#{label}"), "README.md's alt text has drifted from the drawing"
+    end
+
+    test "the drawing names every stage the caption and the page describe" do
+      file = File.read!(@svg_file)
+
+      for stage <- ["1 · WRITE ONCE", "2 · AT LAUNCH", "3 · THE MACHINE"] do
+        assert file =~ stage, "the diagram lost stage #{stage}"
+      end
+
+      # The four primitives this page exists to explain, plus the one rule the
+      # prose below the figure calls the reason the division works.
+      for primitive <- ~w(Agent Environment Vault Conversation Sandbox) do
+        assert file =~ ">#{primitive}<", "the diagram lost #{primitive}"
+      end
+
+      assert file =~ "vault wins"
+    end
+
+    defp inline_svg do
+      page = File.read!(@svg_page)
+      start = :binary.match(page, "<svg") |> elem(0)
+      {stop, len} = :binary.match(page, "</svg>")
+      binary_part(page, start, stop + len - start)
+    end
+
+    defp aria_label(svg) do
+      [_, label] = Regex.run(~r/aria-label="([^"]*)"/, svg)
+      label
+    end
+  end
+
   describe "Compiler" do
     test "slug_for strips .md and index" do
       assert Compiler.slug_for("index.md") == ""
