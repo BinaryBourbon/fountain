@@ -225,6 +225,13 @@ resumed still answers, as a Sprites sandbox does on its next exec.
   because each sandbox has a tap device of its own. The capability is a
   property of the adapter and not of one runner, so a Fountain change must
   come first. Nobody built it.
+- **A brokered tenant cannot use a runner.** With
+  [credential brokerage](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0019-egress-credential-brokerage.md)
+  on for an account, Fountain refuses a conversation on any provider that does
+  not advertise an egress policy. Every runner is such a provider, microVM or
+  not. The launch fails with `backend_lacks_network_policy` before a sandbox
+  exists. `BROKER_ALLOW_UNENFORCED=true` lifts the refusal on a development
+  instance, and the real fix is the row above.
 - **A park keeps the RAM.** See the suspend row above.
 - **The base image is yours to build.** Fountain ships no image.
 - **One host.** The daemon puts each microVM on the machine it runs on.
