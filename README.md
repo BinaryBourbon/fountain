@@ -4,7 +4,7 @@ A multi-tenant API and UI for managing agents, repos, secrets, and conversations
 
 ## In one picture
 
-<img src="docs/images/primitives.svg" alt="Three templates and one machine: Agent, Environment and Vault are rows written once; a Conversation runs the Agent on a sandbox that Fountain builds from the Environment; secrets merge, the Vault winning; on a hosted account with the egress broker on, a bound secret goes to the broker and the sandbox gets a placeholder." width="740">
+<img src="docs/images/primitives.svg" alt="Three templates, one machine, in three stages. Stage one, write once: Agent, Environment and Vault are rows a tenant writes and reuses. Stage two, at launch: Fountain builds the machine, merges the Environment's secrets with the Vault's and the Vault wins, and starts the agent's runtime. Stage three, the machine: a sandbox holds the merged secrets as environment variables and runs one or more Conversations, each with its own transcript, on that one machine. The next turn lands on the same machine, an idle machine parks, and the concurrency ceiling reclaims it. On a hosted account with the egress broker on, the real values go to the broker instead, the sandbox gets a placeholder, and the sandbox reaches the internet only through the broker." width="740">
 
 Agent, Environment and Vault are templates: rows you write once and use many
 times. A Conversation is a run of an Agent on a machine that Fountain builds,
