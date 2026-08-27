@@ -77,91 +77,106 @@
       {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the conversation.
     </p>
   </div>
+</section>
 
-  <%!-- One teammate. Lane one's whole promise, and every claim in it is
+<%!-- One teammate. Lane one's whole promise, and every claim in it is
       generally available, so nothing here carries a status badge. --%>
-  <section class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-8 text-center">
-      Close the laptop. The work is still there.
-    </h2>
-    <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
-      <p>
-        A teammate is an agent with a thread that keeps going. Give it a name and a one-line brief.
-      </p>
-      <p>
-        It parks when you stop typing, and a parked teammate costs nothing. The next message wakes it with its files and its checkout intact. The second message costs a sentence, not a re-explanation of the first.
-      </p>
-      <p>
-        Give it a schedule and it works while you are not there. "Each weekday at nine" is a cron, and the reply lands in the thread when it is done.
-      </p>
-      <p>
-        Its memory is the disk it runs on. End the conversation and the memory goes with it, and the thread survives without it.
-      </p>
-    </div>
-  </section>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-8 text-center">
+    Close the laptop. The work is still there.
+  </h2>
+  <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
+    <p>
+      A teammate is an agent with a thread that keeps going. Give it a name and a one-line brief.
+    </p>
+    <p>
+      It parks when you stop typing, and a parked teammate costs nothing. The next message wakes it with its files and its checkout intact. The second message costs a sentence, not a re-explanation of the first.
+    </p>
+    <p>
+      Give it a schedule and it works while you are not there. "Each weekday at nine" is a cron, and the reply lands in the thread when it is done.
+    </p>
+    <p>
+      Its memory is the disk it runs on. End the conversation and the memory goes with it, and the thread survives without it.
+    </p>
+  </div>
+  <p class="mt-8 text-center">
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      Hire your first teammate
+    </a>
+  </p>
+</section>
 
-  <%!-- The roster. Every mechanism named here ships unflagged, which is why none
+<%!-- The roster. Every mechanism named here ships unflagged, which is why none
       of it carries a badge. The closing concession is the hero's "budget"
       doing its work: recursion has no server-side cap, and the balance is what
       bounds it. --%>
-  <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-    <div class="max-w-5xl mx-auto px-6 py-16">
-      <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-        Agents that cooperate contractually.
-      </h2>
-      <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
-        A roster is not a list of bots. Each agent is hired for a role, and it can hand work to the others.
-      </p>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      Agents that cooperate contractually.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
+      A roster is not a list of bots. Each agent is hired for a role, and it can hand work to the others.
+    </p>
 
-      <div class="grid sm:grid-cols-2 gap-6">
-        <%!-- create-team --%>
-        <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-          <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-            Five questions, then a roster
-          </h3>
-          <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            Say
-            <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">/create-team</code>
-            to any teammate. It asks five questions about the work and the repos in scope. The model keys you hold decide which brains it can offer. It proposes nothing you cannot run, and creates nothing until you say yes.
-          </p>
-        </div>
-
-        <%!-- fountain-team MCP --%>
-        <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-          <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-            They reach each other by role
-          </h3>
-          <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            A teammate resolves another by description. "The engineer" or "whoever handles support" returns a match, and the message lands in that teammate's thread with the sender named in front. A lead routes work, and nobody has to relay it.
-          </p>
-        </div>
-
-        <%!-- the fountain skill --%>
-        <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-          <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-            Any agent can fan out
-          </h3>
-          <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            Every sandbox carries the skill that starts more conversations. An agent runs a batch of them in parallel and collects the answers. Each child takes its own computer, or shares the one its parent is on.
-          </p>
-        </div>
-
-        <%!-- allowlists, versions, provenance --%>
-        <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-          <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-            What makes it contractual
-          </h3>
-          <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            An agent may only launch with the environments and vaults on its allowlist. Every shape it has had is kept as a version, and each conversation records the version it ran under. A spawned conversation carries its parent's id, so the whole chain can be rebuilt afterwards.
-          </p>
-        </div>
+    <div class="grid sm:grid-cols-2 gap-6">
+      <%!-- create-team --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          Five questions, then a roster
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Say <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">/create-team</code>
+          to any teammate. It asks five questions about the work and the repos in scope. The model keys you hold decide which brains it can offer. It proposes nothing you cannot run, and creates nothing until you say yes.
+        </p>
       </div>
 
-      <p class="mt-10 max-w-2xl mx-auto text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Nothing stops recursion on our side. The skill tells the agent to cap its own depth, and a runaway fan-out is a real way to spend money. What bounds it is the budget. Your balance sets how many agents can run at once, and an agent cannot spend past it.
-      </p>
+      <%!-- fountain-team MCP --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          They reach each other by role
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          A teammate resolves another by description. "The engineer" or "whoever handles support" returns a match, and the message lands in that teammate's thread with the sender named in front. A lead routes work, and nobody has to relay it.
+        </p>
+      </div>
+
+      <%!-- the fountain skill --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          Any agent can fan out
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Every sandbox carries the skill that starts more conversations. An agent runs a batch of them in parallel and collects the answers. Each child takes its own computer, or shares the one its parent is on.
+        </p>
+      </div>
+
+      <%!-- allowlists, versions, provenance --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          What makes it contractual
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          An agent may only launch with the environments and vaults on its allowlist. Every shape it has had is kept as a version, and each conversation records the version it ran under. A spawned conversation carries its parent's id, so the whole chain can be rebuilt afterwards.
+        </p>
+      </div>
     </div>
-  </section>
+
+    <p class="mt-10 max-w-2xl mx-auto text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      Nothing stops recursion on our side. The skill tells the agent to cap its own depth, and a runaway fan-out is a real way to spend money. What bounds it is the budget. Your balance sets how many agents can run at once, and an agent cannot spend past it.
+    </p>
+    <p class="mt-8 text-center">
+      <a
+        href={~p"/auth/register"}
+        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+      >
+        Build a roster
+      </a>
+    </p>
+  </div>
 </section>
 
 <%!-- Bring your own stack. Four protocols, one of which is behind a flag, so
@@ -459,6 +474,34 @@
     >
       See what people built
     </a>
+  </div>
+</section>
+
+<%!-- The teammate contact. Deep on the page on purpose. It is the most
+      quotable thing here and the only one gated on asking us, so down here it
+      reads as a bonus rather than a barrier on the way in. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-6 text-center">
+    Give one a phone number.
+    <span class="ml-1 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-bg-2)] text-[var(--color-text-muted)]">
+      Alpha
+    </span>
+  </h2>
+  <div class="max-w-2xl mx-auto space-y-4 text-center text-[var(--color-text-secondary)]">
+    <p>
+      A teammate can hold an email address and a number of its own. Text it and it answers in its thread, on the same computer it has been working on all week.
+    </p>
+    <p>
+      {Fountain.Brand.name()} holds the keys to that inbox and that number. The sandbox is handed tools, and never a credential.
+    </p>
+    <p :if={pricing?() and rent_line()} class="text-sm text-[var(--color-text-muted)]">
+      A contact rents from your balance. {String.capitalize(rent_line())}, a month up front.
+    </p>
+    <p class="text-xs text-[var(--color-text-muted)]">
+      Ask us and we turn it on for your account. On your own instance, set the AgentMail and AgentPhone keys. Then add
+      <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">team_comms</code>
+      to <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">FEATURE_FLAGS_ON</code>.
+    </p>
   </div>
 </section>
 
