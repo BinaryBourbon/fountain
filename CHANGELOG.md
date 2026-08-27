@@ -16,6 +16,24 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **A self-hosted runner can put each sandbox in its own Firecracker microVM.**
+  `fountain runner --backend firecracker` replaces the sandbox directory with
+  a microVM booted from a private copy of a base image, on a tap device
+  attached to a bridge you name. ADR 0022 shipped the runner in trusted mode
+  and recorded the VM mode as compatible with the protocol and unbuilt; this
+  builds it. The in-VM agent, `fountain runner-guest`, serves the same
+  protocol with the same backend a trusted-mode runner uses, so exec, streams,
+  stdin, sessions and replay are not reimplemented for microVMs and the
+  isolation is the machine boundary rather than a second code path. An idle
+  sandbox parks by pausing its microVM, which keeps the guest's processes
+  rather than stopping them. `--backend process` stays the default and is
+  unchanged. Needs Linux, `/dev/kvm` and `CAP_NET_ADMIN`; the base image is
+  yours to build, and the runners guide has the recipe. Egress policy is
+  still not advertised on runners, because capabilities belong to the adapter
+  rather than to one runner. See ADR 0036.
+
 ### Changed
 
 - **The three apps we build ourselves lead the marketing pages.**

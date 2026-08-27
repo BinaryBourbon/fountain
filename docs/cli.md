@@ -241,6 +241,31 @@ A name is unique for each account, and it defaults to the hostname. It
 reconnects with backoff. Read the
 [runners guide](integrations/runners.md).
 
+### A microVM for each sandbox
+
+```bash
+fountain runner --backend firecracker \
+  --bridge fcbr0 --subnet 10.61.0.0/24 \
+  --fc-kernel /var/lib/fountain/vmlinux \
+  --fc-rootfs /var/lib/fountain/rootfs.ext4
+```
+
+`--backend firecracker` gives each sandbox its own Firecracker microVM. The
+disk of a microVM is a private copy of `--fc-rootfs`, and it is the sandbox's
+memory between turns. Commands run in the guest. An idle sandbox parks when
+the daemon pauses its microVM, and the guest keeps its processes.
+
+This backend needs Linux, `/dev/kvm`, and the `CAP_NET_ADMIN` capability. You
+must attach the bridge to your own network, and give it the first host address
+of `--subnet`. The base image must start the guest agent at boot.
+
+```bash
+fountain runner-guest                    # the in-VM agent. The guest init starts it
+```
+
+The [runners guide](integrations/runners.md) has the full recipe for the base
+image and the bridge.
+
 ## Apply manifests
 
 ```bash

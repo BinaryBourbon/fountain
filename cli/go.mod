@@ -6,6 +6,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -35,5 +36,4 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 )

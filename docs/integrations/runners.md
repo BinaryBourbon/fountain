@@ -9,6 +9,11 @@ Fountain, holds one connection, and serves sandboxes for an agent whose
 `sandbox_provider` is `runner`. There is no inbound port, it works behind NAT,
 and nothing bills you by the minute.
 
+A backend decides the substance of a sandbox. The default backend makes it a
+directory, and the agent's processes belong to the machine. On Linux with KVM,
+`--backend firecracker` makes it a microVM instead. Read
+[a microVM for each sandbox](#a-microvm-for-each-sandbox) for that one.
+
 Three reasons to want one.
 
 - **Hardware Fountain cannot rent.** A Mac, for Xcode, a macOS-only toolchain
@@ -29,12 +34,14 @@ holds the design.
 | Role | Sandbox provider, on a machine **you** own. |
 | Turned on by | Nothing. It is on unless you set `SANDBOX_RUNNERS_ENABLED=false`. |
 | Credential | None on the platform side. Each daemon uses the user's own full-scope API key. |
-| Suspend | Stops the sandbox's processes. The directory stays. |
+| Suspend | The process backend stops the sandbox's processes. The firecracker backend pauses the microVM. The disk stays either way. |
 | Capabilities advertised | `:suspend`, `:attach` |
 | Not advertised | Network policy, TTY, checkpoints, public URL. |
-| Isolation | **None.** Trusted mode, and the agent's processes run as you. |
+| Isolation | **None on the process backend.** Trusted mode, and the agent's processes run as you. The firecracker backend gives each sandbox a microVM. |
 
 ## Read this first: trusted mode
+
+This section is about the default backend, which is `--backend process`.
 
 A runner sandbox is a **directory** on the machine. The agent's processes run
 **as you**, with your network, your `PATH` and your tools. There is no VM, no
@@ -45,8 +52,8 @@ Fountain points `HOME` at the sandbox directory. Dotfiles, skills and `.env`
 land there and stay with that one conversation. That is the whole of the
 isolation.
 
-Run it on a machine where you would hand a capable colleague a shell. The
-protocol suits a container or VM mode, and nobody built one.
+Run it on a machine where you would hand a capable colleague a shell. If that
+is more trust than you want to give, put the sandboxes in microVMs instead.
 
 ## Start one
 
@@ -99,6 +106,128 @@ Two things translate, and two do not.
 
 `/tmp` is the machine's `/tmp`. The gemini and opencode workspaces live there,
 and each sandbox sees the same ones, as it does inside one Linux sandbox.
+
+## A microVM for each sandbox
+
+`--backend firecracker` replaces the directory with a
+[Firecracker](https://firecracker-microvm.github.io/) microVM. The sandbox
+gets a kernel, an init and a root filesystem of its own. Its processes cannot
+reach the host.
+
+This is the VM mode that
+[ADR 0022](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0022-self-hosted-runner-provider.md)
+named and did not build.
+[ADR 0036](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0036-firecracker-runner-backend.md)
+holds the design.
+
+```bash
+fountain runner --backend firecracker \
+  --bridge fcbr0 --subnet 10.61.0.0/24 \
+  --fc-kernel /var/lib/fountain/vmlinux \
+  --fc-rootfs /var/lib/fountain/rootfs.ext4
+```
+
+| | Process backend | Firecracker backend |
+|---|---|---|
+| A sandbox is | A directory under `--root`. | A microVM, on a private copy of the base image. |
+| Isolation | None. The agent runs as you. | A guest, with hardware virtualization. |
+| `packages.apt` | Fails on a Mac. | Works, because the guest is Linux. |
+| An idle park | Stops the processes. | Pauses the microVM. The guest keeps its processes. |
+| `/tmp` | The machine's own, shared. | The guest's own. |
+| Host platform | macOS or Linux. | Linux, with `/dev/kvm`. |
+
+### What the host needs
+
+Four things.
+
+- **Linux with KVM.** The daemon reads `/dev/kvm` at startup and refuses to
+  start without it.
+- **The `firecracker` executable**, on the `PATH` or at `--fc-bin`.
+- **`CAP_NET_ADMIN`**, because the daemon makes a tap device for each microVM.
+- **A bridge**, which you make. Give it the first host address of `--subnet`,
+  which is `10.61.0.1` for the default.
+
+The daemon writes no firewall rule and no NAT rule. Your network is yours, and
+a daemon that changed it would go past its invitation. Attach the bridge to
+whatever the sandboxes must reach, and put the rules you want in front of it.
+
+### The base image
+
+`--fc-rootfs` is an ext4 image. Each sandbox starts as a private copy of it.
+That copy is the agent's memory between turns, and the daemon never replaces
+it. `cp --reflink=auto` makes the copy. On XFS or Btrfs it costs almost
+nothing. Elsewhere it costs a full copy.
+
+The image must hold three things.
+
+- The packages a sandbox needs, which are `bash`, `git`, `node`, `npm`, `npx`
+  and `bun` for opencode.
+- The `fountain` binary, built for the guest architecture.
+- An init that starts `fountain runner-guest` at boot.
+
+A systemd unit is enough.
+
+```ini
+[Unit]
+Description=Fountain runner guest agent
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/fountain runner-guest
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`fountain runner-guest` serves one sandbox, `/home/sprite`, over vsock. It
+serves it with the same backend that a trusted-mode runner uses. A command in
+a microVM therefore behaves as a command on the machine does. The isolation is
+the boundary around the guest, and not a second way to run a command.
+
+The daemon refuses a microVM that boots but never answers, and says which part
+is absent. A sandbox that accepted a create and then hung on every turn would
+be worse.
+
+### How a request reaches the guest
+
+Firecracker publishes a guest's vsock ports on the host as a unix socket. The
+daemon opens it, asks for port 1024, and gets a stream to the agent. Over that
+stream runs the same protocol that Fountain speaks to the daemon.
+
+Two things the daemon must get right, and both are about order.
+
+- A spawn's replay must not pass the spawn's own reply. The daemon holds the
+  guest's frames until the reply is on the wire to Fountain.
+- A microVM that dies in the middle of a turn must not read as success.
+  Fountain reads a stream that stops with no exit frame as exit 0, so a
+  dropped link ends each live session with exit 137.
+
+### What is different
+
+The [contract table](#how-the-contract-maps) below describes the process
+backend. Four rows change.
+
+| Fountain operation | Firecracker mechanics |
+|---|---|
+| Create or adopt by name | The sandbox directory holds the disk, the sockets and the log. A create adopts a disk that is there and boots a microVM onto it. A daemon restart therefore rebuilds the same VM, on the same address, with the agent's memory intact. |
+| `get` | Firecracker reports the state, and not the daemon's memory of it. A disk with no microVM behind it is `suspended`, and never `not_found`. A control socket that will not answer is `unavailable`, which is transient. |
+| Suspend and resume | A suspend pauses the microVM. The guest stops, and its processes keep their state, so a turn that an idle sweep interrupts continues where it stopped. The memory stays resident, so a park frees CPU and not RAM. A snapshot to disk would free the RAM, and nobody built one. |
+| Exec, streams, stdin | The guest answers each of these, with the backend a trusted-mode runner uses. The daemon forwards and adds nothing. |
+
+A wake is automatic. The daemon boots a microVM that is down, and resumes a
+paused one, before it forwards a request. A sandbox that Fountain never
+resumed still answers, as a Sprites sandbox does on its next exec.
+
+### Limits
+
+- **Egress policy is still not advertised.** A microVM makes one possible,
+  because each sandbox has a tap device of its own. The capability is a
+  property of the adapter and not of one runner, so a Fountain change must
+  come first. Nobody built it.
+- **A park keeps the RAM.** See the suspend row above.
+- **The base image is yours to build.** Fountain ships no image.
+- **One host.** The daemon puts each microVM on the machine it runs on.
 
 ## How the contract maps
 
