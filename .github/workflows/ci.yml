@@ -851,6 +851,21 @@ jobs:
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: vale lint docs
 
+      # AI-writing tells, the third prose gate beside the style sheet and STE.
+      # The engine is vendored from lex00/sentences (MIT) under
+      # scripts/destink/vendor; scripts/destink/sync.mjs re-copies it and
+      # scripts/destink/destink.mjs holds the rule set, with the count each
+      # enabled and disabled rule produced over docs/. Node, because the engine
+      # is TypeScript and runs on Node's own type stripping, which needs >=23.
+      # No setup-node here: this job already installed Node 24 for the SDK
+      # steps above, unconditionally. A second setup-node would re-point the
+      # npm cache at a different lockfile for the rest of the job.
+      - name: Docs de-stink
+        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
+        run: |
+          npm ci --prefix scripts/destink
+          node scripts/destink/destink.mjs
+
   compose-fresh-clone:
     name: Compose fresh-clone check
     runs-on: ubuntu-24.04
@@ -1099,6 +1114,24 @@ jobs:
 
       - name: Docs Simplified Technical English
         run: vale lint docs
+
+      # AI-writing tells, the third prose gate beside the style sheet and STE.
+      # The engine is vendored from lex00/sentences (MIT) under
+      # scripts/destink/vendor; scripts/destink/sync.mjs re-copies it and
+      # scripts/destink/destink.mjs holds the rule set, with the count each
+      # enabled and disabled rule produced over docs/. Node, because the engine
+      # is TypeScript and runs on Node's own type stripping, which needs >=23.
+      - name: Set up Node for the de-stink gate
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/destink/package-lock.json
+
+      - name: Docs de-stink
+        run: |
+          npm ci --prefix scripts/destink
+          node scripts/destink/destink.mjs
 
       - name: Set up Go
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}
