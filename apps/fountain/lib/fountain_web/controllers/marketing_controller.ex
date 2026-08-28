@@ -116,7 +116,7 @@ defmodule FountainWeb.MarketingController do
           "Define an agent once and every app you build can hire it over one API. " <>
             "#{Fountain.Brand.engine()} is open source and the whole platform is in " <>
             "the repo. Bring an instance up with Docker Compose or plain Kubernetes " <>
-            "manifests, on your hardware, under your own keys, with no licence key " <>
+            "manifests, on your hardware, under your own keys, with no license key " <>
             "and no seat count."
       )
     else
