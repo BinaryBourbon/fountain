@@ -18,6 +18,42 @@ upgrade, is in
 
 ### Added
 
+- **A Fly blueprint, and a name for the hosts that do not work.** `fly.toml`
+  declares one machine on the published image, defaulted the way compose and
+  `render.yaml` are, and the guide at `/docs/guides/operate/fly` attaches a
+  managed Postgres in a second command. What the file mostly does is hold off
+  two Fly defaults that are right for a web app and wrong for this one:
+  `auto_stop_machines` parks an idle machine, and every scheduler runs inside
+  the app process, so a parked instance quietly stops reaping sandboxes and
+  stops pricing turns; `canary` and `bluegreen` bring a second machine up
+  before retiring the first, and two machines are two schedulers racing over
+  the same sandboxes. `auto_stop_machines`, `auto_start_machines`,
+  `min_machines_running` and `strategy = "rolling"` are each pinned by a guard
+  test for that reason. `PUBLIC_URL` is absent here too, for a different
+  reason than on Render: the hostname is knowable, but the file ships with an
+  app name `fly launch` replaces, so `config/runtime.exs` derives
+  `https://$FLY_APP_NAME.fly.dev` behind an operator's own `PUBLIC_URL`.
+  `FLY_APP_NAME` was already read for an OTel attribute and sat on
+  `config_reference_test`'s exemption list; it builds an operator-visible URL
+  now, so it has a row in the configuration reference and that exemption list
+  is empty and gone.
+
+- **Coolify and Dokploy, on the compose file that already exists.** No new
+  file. `/docs/guides/operate/coolify` names the five values to set in the
+  interface and the two compose defaults a public server must not keep, which
+  are the published Postgres port with its default password and a `PUBLIC_URL`
+  that stays at `http://localhost:4000` and quietly puts localhost in every
+  verification email.
+
+- **What a host must give you, and which popular ones do not.**
+  `/docs/self-hosting` now states the three properties a host needs (one
+  instance and only one, a process that never parks, long-lived connections)
+  and names Cloud Run, App Runner, Lambda, Vercel, Netlify and Cloudflare
+  Workers as hosts that fail one of them. They fail quietly: an instance that
+  scales to zero looks healthy while it stops reaping sandboxes and pricing
+  turns. The README says the same thing in three lines, and now points at
+  `render.yaml` and `fly.toml`, which it never mentioned.
+
 - **A Render blueprint, for an instance that is not ours.** `render.yaml`
   declares one web service on the published image and one managed Postgres,
   so somebody who wants Fountain on Render applies a blueprint instead of

@@ -407,7 +407,8 @@ defmodule Fountain.ConfigReferenceTest do
 
     for {pattern, why} <- [
           {~r/^\s*auto_stop_machines = "off"$/m, "a parked machine stops reaping and pricing"},
-          {~r/^\s*auto_start_machines = false$/m, "a machine Fly starts on demand is a parked one"},
+          {~r/^\s*auto_start_machines = false$/m,
+           "a machine Fly starts on demand is a parked one"},
           {~r/^\s*min_machines_running = 1$/m, "the instance has to stay up between requests"},
           {~r/^\s*strategy = "rolling"$/m, "canary and bluegreen run two machines at once"}
         ] do

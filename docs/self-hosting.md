@@ -31,6 +31,28 @@ provider. A sandbox that already exists always stays where Fountain made it.
 [Architecture](architecture.md) says what each piece of the system does, and
 what breaks when a dependency is down.
 
+## What a host must give you
+
+Fountain is one long-lived Erlang process with a database beside it. Three
+properties decide whether a host suits it.
+
+| | |
+|---|---|
+| **One instance, and only one** | Fountain clusters over Erlang distribution, and most platforms give a service no way to discover its own peers. A second replica is not a second node. Two schedulers then race over the same sandboxes. |
+| **A process that never parks** | The sandbox reaper, the credit pricer and every scheduled teammate run inside the app process. A host that stops an idle instance stops all three, and nothing reports the loss. |
+| **Long-lived connections** | The event streams are Server-Sent Events, and one turn runs for minutes. A host with a short request limit cuts them. |
+
+Some popular hosts fail one of these, and they fail it quietly.
+
+- **Cloud Run, AWS App Runner and Lambda.** Each one scales to zero between
+  requests, and each one adds instances under load. Both behaviours break the
+  table above. An instance looks healthy and stops its own background work.
+- **Vercel, Netlify and Cloudflare Workers.** Each one runs a function per
+  request. Fountain needs a process that outlives the request.
+
+Any host that runs one container, keeps it awake and offers a Postgres works.
+Five have a guide below.
+
 ## The guides
 
 **How to stand it up.**
@@ -39,6 +61,8 @@ what breaks when a dependency is down.
 - [Put it on the internet](guides/operate/put-it-on-the-internet.md)
 - [Connect a database](guides/operate/database.md)
 - [Deploy on Render](guides/operate/render.md)
+- [Deploy on Fly.io](guides/operate/fly.md)
+- [Deploy on Coolify](guides/operate/coolify.md)
 - [Deploy on Kubernetes](guides/operate/kubernetes.md)
 
 **The decisions it forces.**

@@ -53,8 +53,10 @@ defmodule FountainWeb.Markdown do
   # `python` and `javascript` joined the list with the webhooks reference
   # (#700), which carries a signature verifier in each. A receiver author
   # reading an unhighlighted wall of HMAC code is the case this guard exists
-  # for.
-  @languages ~w(bash typescript javascript python json json5 yaml elixir ini)
+  # for. `toml` joined with the Fly guide, which is the first page here to
+  # quote a `fly.toml`; `ini` is a near miss for it and highlights the wrong
+  # things, so the fence names the real language and this list grew instead.
+  @languages ~w(bash typescript javascript python json json5 yaml toml elixir ini)
 
   @doc """
   The languages whose parsers are baked into the image — see `@languages`.
