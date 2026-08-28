@@ -74,12 +74,12 @@ vale lint docs
 npm ci --prefix scripts/destink && node scripts/destink/destink.mjs
 ```
 
-The third one looks for AI-writing tells. Its engine is vendored under
-`scripts/destink/vendor`, so the `npm ci` installs one package and is only
-needed the first time. If it reports something that is not prose — a table
-cell, a CLI flag, anything inside a code fence — the fix belongs in
-`scripts/destink/extract-prose.mjs`, not in the page. The rule set, and why
-each rule is on or off, is in `scripts/destink/destink.mjs`.
+The third one looks for AI-writing tells. Its engine is the published
+`sentences` package, so the `npm ci` installs it (~5M) and is only needed the
+first time. If it reports something that is not prose — a table cell, a CLI
+flag, anything inside a code fence — the fix belongs upstream in the
+package's `lint/markdown-prose`, not in the page. The rule set, and why each
+rule is on or off, is in `scripts/destink/destink.mjs`.
 
 The structural half — every page named in `docs/nav.yml`, every page on disk
 named there, and every internal `/docs` link and anchor — is in the test suite,

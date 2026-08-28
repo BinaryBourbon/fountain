@@ -8,22 +8,25 @@
 //
 // Exits 1 if any enabled rule fires on a page that is not on the allow list.
 //
-// THE ENGINE IS VENDORED, NOT WRITTEN HERE. vendor/ is a verbatim copy of the lint subtree of
-// github.com/lex00/sentences (MIT), pinned by the SHA in vendor/UPSTREAM. scripts/destink/sync.mjs
-// re-copies it. Nothing in vendor/ is edited: a local fix there would be silently reverted by the
-// next sync, so it belongs upstream.
+// THE ENGINE IS AN NPM DEPENDENCY, NOT WRITTEN HERE. `sentences` (github.com/lex00/sentences,
+// MIT) publishes its lint surface at `./lint/*`, pinned by the version range in
+// scripts/destink/package.json. Bump that to pull in an upstream change; run `npm install --prefix
+// scripts/destink` after.
 //
 // WHY ONLY SOME RULES ARE ON. The linter ships 40-odd rules aimed at prose in general. Run whole
 // over docs/ it reported 2,721 findings, and most were markdown or ordinary technical writing
 // rather than AI tells. ENABLED below is an explicit opt-in list with the measured count beside
 // each entry, and DISABLED records what was left off and why, so the next person does not have to
 // re-derive it. Opt-IN rather than opt-out is the safety property: a rule added upstream between
-// syncs arrives off, and turning it on is a deliberate edit with a number attached.
+// versions arrives off, and turning it on is a deliberate edit with a number attached.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { register } from "node:module";
+import { extractProse } from "sentences/lint/markdown-prose";
+import { buildDocAnalysis } from "sentences/lint/build-doc";
+import { RULES } from "sentences/lint/registry";
+import { runRules } from "sentences/lint/engine";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = resolve(HERE, "../..");
@@ -144,12 +147,6 @@ async function main() {
   const json = args.includes("--json");
   const paths = args.filter((a) => !a.startsWith("--"));
 
-  register(new URL("./ts-loader.mjs", import.meta.url));
-  const { extractProse } = await import("./extract-prose.mjs");
-  const { buildDocAnalysis } = await import("./vendor/lint/build-doc.js");
-  const { RULES } = await import("./vendor/lint/registry.js");
-  const { runRules } = await import("./vendor/lint/engine.js");
-
   // An id in ENABLED or DISABLED that the registry no longer has means upstream renamed or
   // deleted a rule. Fail loudly: the alternative is a gate that silently stops checking
   // something, which is the failure this whole file is arranged to avoid. `demo/intensifier` in
@@ -158,18 +155,18 @@ async function main() {
   const stale = [...ENABLED, ...DISABLED.keys()].filter((id) => !known.has(id));
   if (stale.length) {
     console.error(
-      `destink: these rule ids are named here but are not in the vendored registry:\n` +
+      `destink: these rule ids are named here but are not in the sentences package's registry:\n` +
         stale.map((id) => `  ${id}`).join("\n") +
         `\nUpstream renamed or removed them. Reconcile ENABLED/DISABLED in scripts/destink/destink.mjs\n` +
-        `against vendor/lint/registry.ts, then re-run.`,
+        `against the sentences package's lint/registry, then re-run.`,
     );
     process.exit(2);
   }
   // The other direction: a rule the registry has that this file does not mention at all. It
-  // arrived in a sync and nobody decided about it. Off is the safe default, but say so.
+  // arrived in a version bump and nobody decided about it. Off is the safe default, but say so.
   const undecided = RULES.filter((r) => !ENABLED.has(r.id) && !DISABLED.has(r.id)).map((r) => r.id);
   if (undecided.length && !json) {
-    console.error(`destink: note — ${undecided.length} vendored rule(s) not yet triaged, left off:`);
+    console.error(`destink: note — ${undecided.length} rule(s) not yet triaged, left off:`);
     for (const id of undecided) console.error(`  ${id}`);
     console.error("");
   }
