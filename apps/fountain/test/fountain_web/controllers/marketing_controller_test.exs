@@ -476,6 +476,33 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  # The footer used to be one row of ten links, which went cramped as pages
+  # were added. It is groups now, so the test is that every destination the
+  # single row carried is still reachable from one of them.
+  describe "the marketing footer" do
+    test "groups every link it used to carry in one row", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      for group <- ~w(product learn account) do
+        assert body =~ ~s(data-role="footer-#{group}")
+      end
+
+      for path <- [
+            ~p"/integrations",
+            ~p"/built-with",
+            ~p"/case-studies/self-healing-infrastructure",
+            ~p"/self-hosted",
+            "/docs",
+            "/docs/open-source",
+            ~p"/terms",
+            ~p"/privacy",
+            ~p"/auth/login"
+          ] do
+        assert body =~ path
+      end
+    end
+  end
+
   # The three apps this project builds itself lead every page that shows the
   # roster (#1219). Each is one entry in built_apps/0 carrying a :flagship
   # key, so these tests are what stops a page naming them by hand and drifting.

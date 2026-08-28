@@ -67,84 +67,142 @@
     {@inner_content}
   </main>
 
-  <%!-- Footer --%>
-  <footer class="border-t border-[var(--color-border)] bg-[var(--color-bg-1)]">
-    <div class="max-w-5xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
+  <%!-- Footer. One row of ten links had gone cramped, so the links wrap into
+    groups by meaning rather than by whatever the viewport allows. A deployment
+    that is not the marketing site keeps only the two groups it can honour. --%>
+  <footer class="border-t border-[var(--color-border)] bg-[var(--color-bg-1)] text-sm">
+    <div class="max-w-5xl mx-auto px-6 py-10">
+      <div class="grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-4">
+        <div class="col-span-2 md:col-span-1">
+          <a href="/" class="flex items-center gap-2">
+            <img src={Fountain.Brand.asset("app-icon.png")} alt="" class="size-6 rounded-md" />
+            <span class="font-semibold text-[var(--color-text-primary)]">
+              {Fountain.Brand.name()}
+            </span>
+          </a>
+          <p class="mt-3 max-w-xs text-[var(--color-text-muted)]">
+            <span :if={Fountain.Marketing.site?()}>
+              Managed agent infrastructure for teams who'd rather build than configure.
+            </span>
+            <span :if={!Fountain.Marketing.site?()}>Powered by Fountain.</span>
+          </p>
+        </div>
+
+        <div :if={Fountain.Marketing.site?()} data-role="footer-product">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+            Product
+          </h2>
+          <ul class="mt-4 space-y-2.5 text-[var(--color-text-muted)]">
+            <li>
+              <a
+                href={~p"/integrations"}
+                class="hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Integrations
+              </a>
+            </li>
+            <li>
+              <a
+                href={~p"/built-with"}
+                class="hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Built with
+              </a>
+            </li>
+            <li>
+              <a
+                href={~p"/case-studies/self-healing-infrastructure"}
+                class="hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Case study
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div data-role="footer-learn">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+            Learn
+          </h2>
+          <ul class="mt-4 space-y-2.5 text-[var(--color-text-muted)]">
+            <li>
+              <a href="/docs" class="hover:text-[var(--color-text-primary)] transition-colors">
+                Docs
+              </a>
+            </li>
+            <li :if={Fountain.Marketing.site?()}>
+              <a
+                href={~p"/self-hosted"}
+                class="hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Self-host
+              </a>
+            </li>
+            <li :if={Fountain.Marketing.site?()}>
+              <a
+                href="/docs/open-source"
+                class="hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Open source
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div data-role="footer-account">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+            Account
+          </h2>
+          <ul class="mt-4 space-y-2.5 text-[var(--color-text-muted)]">
+            <%= if @current_user do %>
+              <li>
+                <a
+                  href={~p"/dashboard"}
+                  class="hover:text-[var(--color-text-primary)] transition-colors"
+                >
+                  Go to app
+                </a>
+              </li>
+            <% else %>
+              <li>
+                <a
+                  href={~p"/auth/login"}
+                  class="hover:text-[var(--color-text-primary)] transition-colors"
+                >
+                  Sign in
+                </a>
+              </li>
+              <li :if={Fountain.Accounts.registration_enabled?()}>
+                <a
+                  href={~p"/auth/register"}
+                  class="hover:text-[var(--color-text-primary)] transition-colors"
+                >
+                  Register
+                </a>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      </div>
+
       <%!-- The hosted site's copyright line names the brand, and credits the
         engine, which is open source. Somebody else's deployment gets an
         attribution. --%>
-      <span :if={Fountain.Marketing.site?()}>
-        © 2026 {Fountain.Brand.name()}. Managed agent infrastructure for teams who'd rather build than configure.
-        <span :if={Fountain.Brand.hosted?()}>
-          It runs {Fountain.Brand.engine()}, which is open source.
+      <div class="mt-10 pt-6 border-t border-[var(--color-border)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-[var(--color-text-muted)]">
+        <span>
+          © 2026 {Fountain.Brand.name()}.
+          <span :if={Fountain.Brand.hosted?()}>
+            It runs {Fountain.Brand.engine()}, which is open source.
+          </span>
         </span>
-      </span>
-      <span :if={!Fountain.Marketing.site?()}>Powered by Fountain.</span>
-      <div class="flex items-center gap-4">
-        <a
-          :if={Fountain.Marketing.site?()}
-          href={~p"/integrations"}
-          class="hover:text-[var(--color-text-secondary)] transition-colors"
-        >
-          Integrations
-        </a>
-        <a
-          :if={Fountain.Marketing.site?()}
-          href={~p"/built-with"}
-          class="hover:text-[var(--color-text-secondary)] transition-colors"
-        >
-          Built with
-        </a>
-        <a
-          :if={Fountain.Marketing.site?()}
-          href={~p"/case-studies/self-healing-infrastructure"}
-          class="hover:text-[var(--color-text-secondary)] transition-colors"
-        >
-          Case study
-        </a>
-        <a
-          :if={Fountain.Marketing.site?()}
-          href={~p"/self-hosted"}
-          class="hover:text-[var(--color-text-secondary)] transition-colors"
-        >
-          Self-host
-        </a>
-        <a href="/docs" class="hover:text-[var(--color-text-secondary)] transition-colors">
-          Docs
-        </a>
-        <%= if Fountain.Legal.published?() do %>
-          <a href={~p"/terms"} class="hover:text-[var(--color-text-secondary)] transition-colors">
+        <div :if={Fountain.Legal.published?()} class="flex items-center gap-6">
+          <a href={~p"/terms"} class="hover:text-[var(--color-text-primary)] transition-colors">
             Terms
           </a>
-          <a
-            href={~p"/privacy"}
-            class="hover:text-[var(--color-text-secondary)] transition-colors"
-          >
+          <a href={~p"/privacy"} class="hover:text-[var(--color-text-primary)] transition-colors">
             Privacy
           </a>
-        <% end %>
-        <%= if @current_user do %>
-          <a
-            href={~p"/dashboard"}
-            class="hover:text-[var(--color-text-secondary)] transition-colors"
-          >
-            Go to app
-          </a>
-        <% else %>
-          <a
-            href={~p"/auth/login"}
-            class="hover:text-[var(--color-text-secondary)] transition-colors"
-          >
-            Sign in
-          </a>
-          <a
-            :if={Fountain.Accounts.registration_enabled?()}
-            href={~p"/auth/register"}
-            class="hover:text-[var(--color-text-secondary)] transition-colors"
-          >
-            Register
-          </a>
-        <% end %>
+        </div>
       </div>
     </div>
   </footer>

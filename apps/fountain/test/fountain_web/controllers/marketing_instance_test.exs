@@ -40,6 +40,22 @@ defmodule FountainWeb.MarketingInstanceTest do
       assert body =~ ~s(<meta property="og:image:alt" content="Fountain")
     end
 
+    # The footer groups its links now. A deployment that is not the marketing
+    # site has nothing to put under Product, so the whole group goes rather
+    # than leaving a heading over an empty column.
+    test "keeps only the footer groups it can fill", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      refute body =~ ~s(data-role="footer-product")
+      assert body =~ ~s(data-role="footer-learn")
+      assert body =~ ~s(data-role="footer-account")
+
+      refute body =~ ~p"/integrations"
+      refute body =~ ~p"/built-with"
+      refute body =~ ~p"/self-hosted"
+      refute body =~ ~p"/case-studies/self-healing-infrastructure"
+    end
+
     test "keeps the price off the page even with a price configured", %{conn: conn} do
       Application.put_env(:fountain, :stripe_price_monthly_cents, 2900)
       on_exit(fn -> Application.delete_env(:fountain, :stripe_price_monthly_cents) end)
