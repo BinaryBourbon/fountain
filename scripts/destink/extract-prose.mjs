@@ -64,6 +64,11 @@ const PATTERNS = [
   // Inline code spans. docs-style.py exempts these too, and for the reason its docstring
   // gives: they quote the world rather than describe it.
   { name: "inline code", re: /(`+)[^\n]*?\1/g },
+  // A list item that is nothing but a link is navigation, not a sentence. These are what the
+  // anaphora and near-duplicate rules kept finding: a "Related" section of six links reads as
+  // six sentences with the same opening. This runs BEFORE "link target" and matches the whole
+  // item, because that pattern consumes the closing `]` and would leave nothing to recognise.
+  { name: "nav list item", re: /^ {0,3}[-*+] +\[[^\]]*\]\([^)\s]*(?:\s+"[^"]*")?\)[.,]?[ \t]*$/gm },
   // A link's target, not its text: `[Deploy an instance](guides/operate/deploy.md)` keeps
   // "Deploy an instance" and loses the path. This is what stopped `guides` and `operate`
   // being read as prose words.
@@ -71,10 +76,6 @@ const PATTERNS = [
   // Reference-style link definitions and bare URLs.
   { name: "link definition", re: /^ {0,3}\[[^\]]+\]:\s*\S+.*$/gm },
   { name: "bare url", re: /<https?:\/\/[^>\s]+>|https?:\/\/\S+/g },
-  // A list item that is nothing but a link is navigation, not a sentence. These are what the
-  // anaphora and near-duplicate rules kept finding: a "Related" section of six links reads as
-  // six sentences with the same opening.
-  { name: "nav list item", re: /^ {0,3}[-*+] +\[[^\]]*\][.,]?\s*$/gm },
   // Image tags carry alt text that is not prose in the flow of the page.
   { name: "image", re: /!\[[^\]]*\]/g },
   // The admonition directive line of the MkDocs dialect the renderer inherited
