@@ -262,6 +262,17 @@ upgrade, is in
   nothing changes. Changing a brand's pixels no longer means rebuilding the
   engine.
 
+### Removed
+
+- **`.sops.public-key`.** ADR 0032 deleted `.sops.yaml` because the only
+  SOPS-encrypted file in the repo had stopped existing; the age public key it
+  paired with was missed in that sweep. SOPS itself was retired across the
+  operator's cluster in 2026-07 for two-tier Infisical, whose bootstrap
+  credential its manifests describe as the replacement for the SOPS age key.
+  Nothing in this repo or in home-cloud read the file or the key. A public key
+  leaks nothing by sitting there, but a live-looking secrets artifact in the
+  repo root implies a workflow that does not exist.
+
 ## [0.14.0] — 2026-08-25
 
 ### Upgrade notes
