@@ -51,6 +51,57 @@ upgrade, is in
 
 ### Changed
 
+- **The homepage sells infrastructure to builders, not an agent to a
+  consumer.** The pitch read as a coworker product ("hire an agent by role",
+  "close the laptop", "build a roster"), which is the wrong reader. The one
+  who arrives is building something whose users will meet the agent, and the
+  cost they are weighing is not how long the machine takes to build but that
+  they would own it afterwards. The headline says so, and the subheadline
+  names the maintaining. The problem section is the six questions between a
+  working demo and a shipped feature, each answered with the mechanism that
+  settles it: where it runs, how it gets a token that can push, how the work
+  gets out, how you get an answer instead of a transcript, who turns the
+  machines off, and what starts one when nobody is at a keyboard. The SDK call
+  moves up to sit directly under them. The teammate section becomes the
+  durable thread a builder maps onto ids they already hold, the roster section
+  becomes how a hundred tickets get worked at once, and both new objections
+  are the ones a builder asks first: whether their own users need accounts
+  here, and whether any of this works outside writing code. The apps are
+  reframed as reference implementations of the thing the reader is about to
+  write. The scale section states the hosted ceiling out loud and sends
+  anybody who needs more to `/self-hosted`, which now names that as the second
+  reason to go there.
+
+- **The homepage answers the security review.** A builder cannot ship an agent
+  without somebody asking where the customer data goes and what the model can
+  see, and the material for that answer was three feature bullets scattered
+  across the page. `/` now carries a section written to be forwarded whole.
+  Seven questions, each answered with the mechanism rather than the intention,
+  and each answer that has a limit carrying it in the same breath: the
+  per-account AES-256-GCM key and the write-only rule, the fact that a secret
+  reaches the process environment and never the model's context, the 8-byte
+  literal match that redacts a log row before it is written and what that match
+  misses, the `_unsafe_` convention and the cross-tenant suite that enforces
+  it, what the audit trail records and for how long, `ask` and the runtimes
+  that cannot enforce it, and the two ways to keep everything inside your own
+  perimeter with the runner's trusted-mode caveat beside them.
+
+  It ends with **What we do not have**, on the page rather than in week three
+  of somebody's review. No SOC 2, no ISO 27001, no HIPAA posture, no DPA, no
+  sub-processor list, no penetration test, no single sign-on, and an egress
+  broker that runs for one account and is not yet a thing you can turn on. Each
+  row was verified absent from the repository. The suite pins every question,
+  every limit and all five absences, so a row cannot quietly go missing and the
+  broker cannot be upgraded to a general claim by accident.
+
+- **Two snippets on the marketing site were not runnable.** The homepage's SDK
+  call printed `run.output`, which is not a field on `RunResult`; a reader who
+  pasted it got `undefined`. It now prints `run.text` and passes a
+  `channelId`, which is the option that binds a conversation to an id the
+  caller already has. The `/integrations` pipeline scenario ran
+  `fountain conversations create --external-id`; neither the command nor the
+  flag exists, and the real one is `fountain run <agent> --prompt`.
+
 - **The marketing footer wraps into groups instead of one long row.** Ten
   links on one line had gone cramped as pages were added, and the row was
   ordered by nothing. They sit under Product, Learn and Account now, with the
