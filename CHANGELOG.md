@@ -55,8 +55,9 @@ upgrade, is in
   consumer.** The pitch read as a coworker product ("hire an agent by role",
   "close the laptop", "build a roster"), which is the wrong reader. The one
   who arrives is building something whose users will meet the agent, and the
-  agent is the afternoon while the machine under it is the quarter. That line
-  is now the headline. The problem section is the six questions between a
+  cost they are weighing is not how long the machine takes to build but that
+  they would own it afterwards. The headline says so, and the subheadline
+  names the maintaining. The problem section is the six questions between a
   working demo and a shipped feature, each answered with the mechanism that
   settles it: where it runs, how it gets a token that can push, how the work
   gets out, how you get an answer instead of a transcript, who turns the

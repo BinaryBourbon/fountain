@@ -28,7 +28,7 @@ defmodule FountainWeb.MarketingInstanceTest do
       assert body =~ ~p"/auth/login"
       assert body =~ "/docs"
 
-      refute body =~ "Every agent gets a brief, a budget, and a boundary."
+      refute body =~ "You did not set out to run a sandbox platform."
       refute body =~ "What you stop building."
       refute body =~ "14-day trial"
       refute body =~ "Managed agent infrastructure"
@@ -159,7 +159,7 @@ defmodule FountainWeb.MarketingInstanceTest do
       Application.put_env(:fountain, :marketing_site, true)
 
       body = conn |> get(~p"/") |> html_response(200)
-      assert body =~ "The agent took an afternoon. The machine under it takes a quarter."
+      assert body =~ "You did not set out to run a sandbox platform."
       assert body =~ "Managed agent infrastructure"
       refute body =~ "This instance runs agents on sandboxes"
     end
