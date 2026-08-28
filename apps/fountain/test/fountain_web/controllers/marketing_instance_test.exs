@@ -114,6 +114,18 @@ defmodule FountainWeb.MarketingInstanceTest do
     end
   end
 
+  describe "GET /faq where the deployment is not the marketing site" do
+    test "sends the visitor to the manual rather than the pitch's answers", %{conn: conn} do
+      Application.put_env(:fountain, :marketing_site, false)
+
+      conn = get(conn, ~p"/faq")
+      assert redirected_to(conn) == "/docs"
+
+      # The layout drops the link too: a nav entry to a redirect is a dead end.
+      refute conn |> get(~p"/") |> html_response(200) =~ ~p"/faq"
+    end
+  end
+
   describe "GET /self-hosted where the deployment is not the marketing site" do
     test "sends the visitor to the operator's manual rather than the pitch", %{conn: conn} do
       Application.put_env(:fountain, :marketing_site, false)

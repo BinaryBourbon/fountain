@@ -524,70 +524,24 @@
   </div>
 </section>
 
-<%!-- The security review, answered on the page rather than in a questionnaire.
-      A builder cannot ship an agent without somebody asking where the customer
-      data went, and the material for that answer was scattered across three
-      feature bullets before this section existed.
-
-      Two rules hold this section together. Every answer names the mechanism
-      rather than the intention, which is the case study's "the mechanism that
-      stops it is not a system prompt" applied to the platform. And every
-      answer that has a limit states it in the same breath, because a security
-      reader who finds the limit themselves stops believing the rest.
-
-      `security_answers/0` and `security_absent/0` carry the copy. The second
-      is the list of things this platform does not have, and it is on the page
-      on purpose: a reviewer asks for a SOC 2 report in week one, and finding
-      out then is cheaper for both sides than finding out in a questionnaire.
-      Do not soften it into "coming soon", and do not add a row to it that is
-      not verified absent. --%>
+<%!-- The security review moved to /faq whole. What stays here is the promise
+      and the link, because a reader who is going to forward an answer wants
+      one URL to forward rather than a homepage anchor. `security_answers/0`
+      and `security_absent/0` render there now. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+  <div class="max-w-5xl mx-auto px-6 py-16 text-center">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3">
       The part you forward to your security reviewer.
     </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-      Putting an agent in front of your users means somebody asks where the credentials sit, what the model can see and what lands in the logs. Here are the answers, each one a mechanism rather than an intention, and each limit stated beside the thing it limits.
+    <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-8">
+      Putting an agent in front of your users means somebody asks where the credentials sit, what the model can see and what lands in the logs. Those answers are written down, each one a mechanism rather than an intention, each limit stated beside the thing it limits, and the things this platform does not have listed with them.
     </p>
-    <dl class="max-w-3xl mx-auto space-y-6" data-role="security-answers">
-      <div :for={item <- security_answers()}>
-        <dt class="font-medium text-[var(--color-text-primary)]">{item.question}</dt>
-        <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          {item.answer}
-        </dd>
-        <dd :if={item.limit} class="mt-1 text-sm text-[var(--color-text-muted)] leading-relaxed">
-          {item.limit}
-        </dd>
-      </div>
-    </dl>
-    <div class="max-w-3xl mx-auto mt-10 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        What we do not have.
-      </h3>
-      <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
-        Here rather than in week three of your review.
-      </p>
-      <ul class="space-y-3 text-sm text-[var(--color-text-secondary)]">
-        <li :for={item <- security_absent()} class="flex items-start gap-3">
-          <span class="mt-1.5 size-1.5 rounded-full bg-[var(--color-text-muted)] flex-shrink-0">
-          </span>
-          <span>{item}</span>
-        </li>
-      </ul>
-    </div>
-    <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
-      The manual goes further on
-      <a
-        href={~p"/docs/concepts/secrets"}
-        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-      >
-        where a secret comes from
-      </a>
-      and on <a
-        href={~p"/docs/concepts/permissions"}
-        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-      >what happens before a tool runs</a>.
-    </p>
+    <a
+      href={~p"/faq#security"}
+      class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      Read the security answers
+    </a>
   </div>
 </section>
 
@@ -698,77 +652,23 @@
   </div>
 </section>
 
-<%!-- Objections --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+<%!-- The objections moved to /faq as `build_faq/0`. A single link replaces
+      the list, so the page runs from the pitch to the call to action without
+      a seven-row detour, and the answers live where the buying and security
+      questions are. --%>
+<section class="max-w-5xl mx-auto px-6 py-16 text-center">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3">
     Things you would ask before building on it.
   </h2>
-  <dl class="max-w-2xl mx-auto space-y-6 text-[var(--color-text-secondary)]">
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">Do I need a model key?</dt>
-      <dd class="mt-1 text-sm leading-relaxed">
-        Yes. Bring an Anthropic, OpenAI or Google key and the agent bills your own account for tokens. {Fountain.Brand.name()} charges for the sandbox hours, never for inference, so there is no markup on the model.
-      </dd>
-    </div>
-
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
-        I have no API key. I pay for Claude.
-      </dt>
-      <dd class="mt-1 text-sm leading-relaxed">
-        That is a credential {Fountain.Brand.name()} accepts. A Claude Pro or Team subscription works in place of a metered API key, and when you hold both, the subscription is the one your agents spend. It is usually the one you want spent.
-      </dd>
-    </div>
-    <%!-- The one a builder asks first and the page owes an honest answer to.
-          There are no organisations and no seats (see the limits section), so
-          say plainly which of the two shapes they get rather than implying a
-          multi-tenant model that does not exist. --%>
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
-        My product has users. Do they each need an account here?
-      </dt>
-      <dd class="mt-1 text-sm leading-relaxed">
-        Usually not. Your account holds the agents and the key, and each of your users gets their own conversation on their own machine, keyed by an id you already have for them. When you would rather they held their own account and their own model key, Sign in with {Fountain.Brand.name()} is OAuth with PKCE and the token it hands back is an ordinary API key.
-      </dd>
-    </div>
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
-        Is this only good for writing code?
-      </dt>
-      <dd class="mt-1 text-sm leading-relaxed">
-        The runtimes are coding agents, which is to say a shell, a filesystem and a network. One of the apps above runs Python over a CSV you drop in. Another reads real sources and hands back a cited brief. If you would do the job at a terminal, it fits here.
-      </dd>
-    </div>
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
-        What happens to the sandbox between messages?
-      </dt>
-      <dd class="mt-1 text-sm leading-relaxed">
-        It parks. The filesystem, the checkout and the agent's memory survive, a parked sandbox costs nothing, and it takes none of your concurrency. The next message wakes it in seconds instead of minutes.
-      </dd>
-    </div>
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
-        Is my work separate from everyone else's?
-      </dt>
-      <dd class="mt-1 text-sm leading-relaxed">
-        Every query is scoped to your account, every sandbox belongs to one conversation unless you put another on it, and your secrets are encrypted with a key derived for your tenant alone.
-      </dd>
-    </div>
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">Can I run it myself?</dt>
-      <dd class="mt-1 text-sm leading-relaxed">
-        Yes.
-        <span :if={Fountain.Brand.hosted?()}>
-          {Fountain.Brand.name()} is the hosted edition of {Fountain.Brand.engine()}, an open-source server
-        </span>
-        <span :if={!Fountain.Brand.hosted?()}>{Fountain.Brand.engine()} is open source</span>, and you can run it on your own hardware, with your own sandboxes. Nothing is held back for the people who pay. <a
-          href={~p"/self-hosted"}
-          class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-        >See the case for running it yourself</a>.
-      </dd>
-    </div>
-  </dl>
+  <p class="text-[var(--color-text-secondary)] max-w-xl mx-auto mb-8">
+    Whether you need a model key, whether your own users need accounts here, what happens to a machine between messages, and what it costs. Answered in one place.
+  </p>
+  <a
+    href={~p"/faq"}
+    class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+  >
+    Read the questions
+  </a>
 </section>
 
 <%!-- Footer CTA --%>

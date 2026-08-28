@@ -1102,6 +1102,207 @@ defmodule FountainWeb.MarketingHTML do
     ]
   end
 
+  ## ─── /faq ─────────────────────────────────────────────────────────────────
+  #
+  # One page for the questions that used to sit at the bottom of three others.
+  # The homepage kept its six-question grid, because that grid is the problem
+  # statement rather than an FAQ, and every other question-shaped block on the
+  # site now lives here.
+  #
+  # The sections are data so the page cannot drift from the blocks it
+  # replaced: `security_answers/0` and `self_host_faq/0` are the same
+  # functions those pages rendered, and `build_faq/0` is the homepage's
+  # objection list moved rather than rewritten. Edit an answer once and both
+  # the page and the tests that assert on it follow.
+
+  @doc """
+  The questions a builder asks before committing, moved off the homepage.
+
+  Was `<dl>` markup inline in `home.html.heex` under "Things you would ask
+  before building on it". It is data now because two pages want it and
+  because the test suite can walk it.
+  """
+  def build_faq do
+    [
+      %{
+        q: "Do I need a model key?",
+        a:
+          "Yes. Bring an Anthropic, OpenAI or Google key and the agent bills your own " <>
+            "account for tokens. #{Fountain.Brand.name()} charges for the sandbox hours, " <>
+            "never for inference, so there is no markup on the model.",
+        docs: "concepts/vault",
+        docs_label: "Where a key lives"
+      },
+      %{
+        q: "I have no API key. I pay for Claude.",
+        a:
+          "That is a credential #{Fountain.Brand.name()} accepts. A Claude Pro or Team " <>
+            "subscription works in place of a metered API key, and when you hold both, " <>
+            "the subscription is the one your agents spend. It is usually the one you " <>
+            "want spent."
+      },
+      %{
+        q: "My product has users. Do they each need an account here?",
+        a:
+          "Usually not. Your account holds the agents and the key, and each of your " <>
+            "users gets their own conversation on their own machine, keyed by an id you " <>
+            "already have for them. When you would rather they held their own account " <>
+            "and their own model key, Sign in with #{Fountain.Brand.name()} is OAuth " <>
+            "with PKCE and the token it hands back is an ordinary API key.",
+        docs: "build",
+        docs_label: "Build a chat app"
+      },
+      %{
+        q: "Is this only good for writing code?",
+        a:
+          "The runtimes are coding agents, which is to say a shell, a filesystem and a " <>
+            "network. One of the applications we built on it runs Python over a CSV you " <>
+            "drop in. Another reads real sources and hands back a cited brief. If you " <>
+            "would do the job at a terminal, it fits here."
+      },
+      %{
+        q: "What happens to the sandbox between messages?",
+        a:
+          "It parks. The filesystem, the checkout and the agent's memory survive, a " <>
+            "parked sandbox costs nothing, and it takes none of your concurrency. The " <>
+            "next message wakes it in seconds instead of minutes.",
+        docs: "concepts/sandboxes",
+        docs_label: "About sandboxes"
+      },
+      %{
+        q: "Is my work separate from everyone else's?",
+        a:
+          "Every query is scoped to your account, every sandbox belongs to one " <>
+            "conversation unless you put another on it, and your secrets are encrypted " <>
+            "with a key derived for your tenant alone.",
+        docs: "architecture",
+        docs_label: "Architecture"
+      },
+      %{
+        q: "Can I run it myself?",
+        a: run_it_yourself_answer(),
+        docs: "self-hosting",
+        docs_label: "Self-host it"
+      }
+    ]
+  end
+
+  # The one answer that changes with the deployment. A branded hosted site
+  # says which of the two things it is; an unbranded install just says the
+  # engine is open source.
+  defp run_it_yourself_answer do
+    lead =
+      if Fountain.Brand.hosted?() do
+        "#{Fountain.Brand.name()} is the hosted edition of #{Fountain.Brand.engine()}, " <>
+          "an open-source server"
+      else
+        "#{Fountain.Brand.engine()} is open source"
+      end
+
+    "Yes. #{lead}, and you can run it on your own hardware, with your own sandboxes. " <>
+      "Nothing is held back for the people who pay."
+  end
+
+  @doc """
+  The billing questions, on a deployment that bills.
+
+  Every number comes from the price card the ledger burns at, so the page
+  cannot quote a rate the meter does not charge (ADR 0030).
+  """
+  def billing_faq do
+    {opening, days} = opening_credit()
+
+    [
+      %{
+        q: "What am I actually charged for?",
+        a:
+          "Agent time, at #{turn_hour_price()} an hour. An hour means an hour with a " <>
+            "prompt in flight, so a parked agent, an idle one and one running on your " <>
+            "own machine cost nothing. Two agents working for an hour on the same " <>
+            "machine are two hours."
+      },
+      %{
+        q: "Is there a plan, a seat or a subscription?",
+        a:
+          "None of the three. You hold a balance, work spends it, and you buy more " <>
+            "when you want more. New accounts start with #{opening} that expires in " <>
+            "#{days} days; credit you buy never expires."
+      },
+      %{
+        q: "What happens when the balance runs out?",
+        a:
+          "New work pauses and nothing dies. A new conversation or a new prompt is " <>
+            "refused until there is credit again, a turn already in flight finishes, " <>
+            "and your agents, environments and vaults are all still there.",
+        docs: "guides/operate/billing",
+        docs_label: "How billing works"
+      },
+      %{
+        q: "Do you take a cut of what the model costs?",
+        a:
+          "No. The key is yours and the model bills you directly. #{Fountain.Brand.name()} " <>
+            "never sees that invoice and never adds to it."
+      }
+    ]
+  end
+
+  @doc """
+  The FAQ page, grouped into sections.
+
+  Sections carry an `:id` because the pages that used to hold these blocks now
+  link to them by anchor. Renaming one breaks an inbound link, so the suite
+  asserts the anchors the other pages point at.
+  """
+  def faq_sections do
+    building = [
+      %{
+        id: "building",
+        title: "Building on it",
+        blurb: "What a developer asks between reading the tour and writing the first call.",
+        items: build_faq()
+      }
+    ]
+
+    billing =
+      if pricing?() do
+        [
+          %{
+            id: "billing",
+            title: "What it costs",
+            blurb: "Read from the same price card the ledger burns at.",
+            items: billing_faq()
+          }
+        ]
+      else
+        []
+      end
+
+    security = [
+      %{
+        id: "security",
+        title: "Security and data",
+        blurb:
+          "Each answer names a mechanism rather than an intention, and each limit is " <>
+            "stated beside the thing it limits.",
+        items:
+          Enum.map(security_answers(), fn item ->
+            %{q: item.question, a: item.answer, note: item.limit}
+          end)
+      }
+    ]
+
+    self_hosting = [
+      %{
+        id: "self-hosting",
+        title: "Running it yourself",
+        blurb: "The questions somebody asks between reading the page and running the clone.",
+        items: self_host_faq()
+      }
+    ]
+
+    building ++ billing ++ security ++ self_hosting
+  end
+
   ## /case-studies/self-healing-infrastructure
 
   # The case study is data first, like /integrations above. Every number here

@@ -158,6 +158,7 @@ defmodule FountainWeb.Router do
     get "/integrations", MarketingController, :integrations
     get "/built-with", MarketingController, :built_with
     get "/self-hosted", MarketingController, :self_hosted
+    get "/faq", MarketingController, :faq
     get "/code-review-bot", MarketingController, :code_review_bot
     # One study today, so the bare path redirects to it rather than 404ing on
     # the segment a reader will inevitably chop off the URL.
