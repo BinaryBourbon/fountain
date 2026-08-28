@@ -27,6 +27,7 @@ message.
 | `PHX_HOST` | The host of `PUBLIC_URL`. | — | The bare host for the endpoint URL and for the LiveView origin check. Set it only when it differs from the host in `PUBLIC_URL`. |
 | `FOUNTAIN_DOMAIN` | — | deprecated | The old combined variable. Fountain still honours it as a fallback for both of the two above. Prefer `PUBLIC_URL` and `PHX_HOST`. |
 | `RENDER_EXTERNAL_URL` | — | — | Render sets this on each web service. Fountain reads it as the last fallback for `PUBLIC_URL`, after the deprecated `FOUNTAIN_DOMAIN`. The first deploy from `render.yaml` needs it, because the hostname does not exist before that deploy. An explicit `PUBLIC_URL` has precedence. Set `PUBLIC_URL` when you add a custom domain. |
+| `FLY_APP_NAME` | — | — | Fly sets this on each machine. Fountain builds `https://<app>.fly.dev` from it, and reads that as the last fallback for `PUBLIC_URL`. A deploy from `fly.toml` needs it, because that file ships with an app name that `fly launch` replaces. An explicit `PUBLIC_URL` has precedence. Set `PUBLIC_URL` when you add a custom domain. |
 | `PHX_SERVER` | `true` in the shipped image. | — | A `1`, `true` or `yes` starts the web listener. A release task runs with `PHX_SERVER=false … eval '…'`. That boots the app, and binds no port. |
 | `PORT` | `4000` | — | The HTTP port to listen on. |
 

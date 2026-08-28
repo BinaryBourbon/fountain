@@ -40,8 +40,19 @@ cp .env.compose.example .env   # then fill in the generated keys
 docker compose up -d
 ```
 
-Prefer Kubernetes? A portable baseline — plain manifests, `kubectl apply -k`,
-no operators assumed — lives in [`deploy/k8s/`](deploy/k8s/).
+Prefer a platform? [`render.yaml`](render.yaml) declares one service and a
+managed Postgres; [`fly.toml`](fly.toml) declares one machine, and you attach
+a database in a second command. Both pin a release image and one instance —
+Fountain clusters over Erlang distribution, so a second replica is two
+schedulers racing over the same sandboxes. Coolify and Dokploy run the compose
+file above straight from this repo. Prefer Kubernetes? A portable baseline —
+plain manifests, `kubectl apply -k`, no operators assumed — lives in
+[`deploy/k8s/`](deploy/k8s/).
+
+Scale-to-zero hosts (Cloud Run, App Runner, Vercel) do not work: the sandbox
+reaper and the credit pricer run inside the app process, so a parked instance
+quietly stops both. [docs/self-hosting.md](docs/self-hosting.md) has the three
+properties a host must have.
 
 ## The apps
 
