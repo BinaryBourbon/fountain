@@ -63,3 +63,18 @@ and
 [CLAUDE.md](https://github.com/BinaryBourbon/fountain/blob/main/CLAUDE.md)
 in the repo. The second file is the contributor guide, and coding agents read
 it too.
+
+Three prose checks run on every change to a page under `docs/`. Read
+[the style sheet](https://github.com/BinaryBourbon/fountain/blob/main/standards/voice-and-style.md)
+and
+[the English standard](https://github.com/BinaryBourbon/fountain/blob/main/standards/simplified-technical-english.md)
+before you write a page.
+
+| Check | What it holds you to |
+|---|---|
+| `scripts/docs-style.py` | The house style sheet. |
+| `vale lint docs` | ASD-STE100 Simplified Technical English. |
+| `scripts/destink/destink.mjs` | The tells that make a page read as machine written. |
+
+Each check has a backlog file, and each backlog file is empty. A new page
+gets all three checks from its first commit.
