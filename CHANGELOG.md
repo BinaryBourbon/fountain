@@ -121,6 +121,22 @@ upgrade, is in
   rather than to one runner. See ADR 0036.
 
 ### Changed
+- **The homepage says each thing once.** The page had grown to about 2,630
+  rendered words across sixteen sections, and roughly half of that was the
+  same claims restated. The concurrency rule was interpolated in four places,
+  parked time cost nothing in five, and three sections were three passes over
+  the same six mechanisms: a "you did not set out to run a sandbox platform"
+  grid that previewed each one, the sections that explained them, and a "what
+  you stop building" grid that recapped them. It is one pass now. Each of the
+  six question cards carries the question and the clause that closes it, and
+  the feature grid is gone. The ceiling rule is stated once, on the price
+  card. The two `/faq` buttons that sat four hundred words apart are one
+  block, and the two adjacent sections about apps built on the API are one
+  section. Nothing was dropped that is not said somewhere else on the page or
+  on the page it links to: about 1,363 words, down 48%, thirteen sections.
+  Also fixes `organisations` on the homepage and `/faq`, which the license and
+  enroll pass missed.
+
 - **`/self-hosted` reads on a phone, and the site spells license the American
   way.** The page was built at desktop widths: fixed `px-6` gutters, `py-16`
   section rhythm and `p-6` cards at every size, two code blocks that wrapped

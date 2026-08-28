@@ -15,16 +15,16 @@
     A conversational API to a computer.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Send a prompt over HTTP. A machine wakes up with your repositories cloned, your packages installed and credentials the model never sees, a coding agent does the work, and the answer comes back.
+    Send a prompt over HTTP. A machine wakes with your repositories cloned, your packages installed and credentials the model never sees. An agent works, and the answer comes back.
     <%!-- The meter is the differentiator, so it belongs in the hero. It is
           also a claim only a billing deployment can make, and the same
           `pricing?()` guard the price card uses keeps a free install from
           making it. --%>
     <span :if={pricing?()}>
-      It parks between messages, and you pay for the minutes it works rather than for the machine sitting there.
+      It parks between messages, and you pay for the minutes it works.
     </span>
     <span :if={!pricing?()}>
-      It parks between messages and wakes on the next one with its files intact, so nothing is running while nobody is talking.
+      It parks between messages and wakes on the next one with its files intact.
     </span>
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
@@ -42,23 +42,25 @@
     </a>
   </div>
   <p :if={pricing?()} class="text-xs text-[var(--color-text-muted)]">
-    {elem(opening_credit(), 0)} of credit to start, no card. Bring your own model key. You pay for agent time, never for tokens.
+    {elem(opening_credit(), 0)} of credit to start, no card. Bring your own model key: you pay for agent time, never tokens.
   </p>
   <p :if={!pricing?()} class="text-xs text-[var(--color-text-muted)]">
     Free to use on this install.
   </p>
 </section>
 
-<%!-- The problem, stated as the questions a builder hits between a working
-      demo and a shipped feature. Every answer names the mechanism that
-      settles it, and every mechanism has its own section further down. --%>
+<%!-- The problem and the answer, in one pass. Each card is a question a
+      builder hits between a working demo and a shipped feature, and the
+      clause that closes it. This used to be two sections 800 words apart: six
+      questions here, then four "what you stop building" cards restating the
+      same mechanisms. One card per mechanism, and nothing below repeats it. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
       You did not set out to run a sandbox platform.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-      The agent was the easy part. Under it sits a machine to build, a credential that must never reach the prompt, and a lifecycle somebody has to own. Six questions stand between a demo on your laptop and a feature in front of your users, and not one of them is what your users came for.
+      The agent was the easy part. Six questions sit between a demo and a feature, and none of them is your product.
     </p>
     <div class="grid sm:grid-cols-2 gap-6">
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
@@ -66,7 +68,7 @@
           Where does it run?
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          An agent needs a filesystem, a shell, a package manager, a checkout and a network. That is a machine, and somebody has to build the thing that builds machines. Here an Environment describes one, and a conversation spawns it.
+          A filesystem, a shell, a package manager, a checkout, a network. An Environment describes that machine and a conversation spawns it. Every runtime sits behind one API.
         </p>
       </div>
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
@@ -74,7 +76,7 @@
           How does it get a token that can push?
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          A GitHub token that can open a pull request, an API key that can charge. None of it may reach the prompt, the model's context or the transcript you keep. Here they are held encrypted under a key derived for your account, and handed to the machine rather than to the model.
+          Vaults are encrypted under a key derived for your account and arrive as environment variables. They reach the machine, never the prompt, and {Fountain.Brand.name()} scrubs them from every line of output it stores.
         </p>
       </div>
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
@@ -82,7 +84,7 @@
           How does the work get out?
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          It does not have to. The agent already holds the checkout and the credential, so it opens the pull request itself. Nothing of yours copies a diff out of somebody else's cloud.
+          It does not. The agent holds the checkout and the credential, so it opens the pull request itself.
         </p>
       </div>
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
@@ -90,7 +92,10 @@
           How do I get an answer instead of a transcript?
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          Your users want the reply, not a harness dumping tool calls at them. Await the run and read one field. When you do want the stream, the server parses each runtime's dialect first, so you render one shape whether the agent is Claude Code or Codex.
+          Await the run and read one field. Or stream with <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+            phx-no-format
+          >?blocks=true</code>: the server parses each runtime's dialect, so you render one shape.
         </p>
       </div>
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
@@ -98,15 +103,15 @@
           Who turns the machines off?
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          Something has to start a sandbox, park it when the talk stops, wake it on the next message, keep every thread's work apart and stop it before the bill notices. That owner is the platform, and you do not write it.
+          The platform. It starts a sandbox, parks it when the talk stops, wakes it on the next message, and stops it before the bill notices.
         </p>
       </div>
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
         <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
-          What starts one when nobody is at a keyboard?
+          Who can say what it did?
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          An alert fires, a ticket opens, a cron comes round. Each of those is one HTTP call that hires an agent, and a signed webhook tells your system when the turn is done.
+          Every change is recorded where it happens, not where the request arrived. Agents are versioned, and each conversation records the version it ran under.
         </p>
       </div>
     </div>
@@ -131,7 +136,7 @@
           <span class="font-medium text-[var(--color-text-primary)]">
             Describe the machine once.
           </span>
-          An Environment describes the machine an agent wakes up on. It names repositories, packages and env vars, and the scripts that run first. Write it in the console, or apply it as YAML from the CLI.
+          Repositories, packages, env vars, setup scripts. Write it in the console, or apply YAML from the CLI.
         </span>
       </li>
       <li class="flex items-start gap-4">
@@ -140,7 +145,7 @@
         </span>
         <span>
           <span class="font-medium text-[var(--color-text-primary)]">Name the agent.</span>
-          Pick the runtime and the model, add skills and MCP servers, attach the Environment. Or start from a ready-made one and change what you need.
+          Pick the runtime and model, add skills and MCP servers, attach the Environment. Or start from a ready-made one.
         </span>
       </li>
       <li class="flex items-start gap-4">
@@ -149,7 +154,7 @@
         </span>
         <span>
           <span class="font-medium text-[var(--color-text-primary)]">Send a prompt.</span>
-          A sandbox spawns and the agent works. The reply streams back as it goes. Send another prompt and the same machine is still there, with its work on it.
+          A sandbox spawns and the agent works, streaming as it goes. Send another and the machine is still there with its work on it.
         </span>
       </li>
     </ol>
@@ -161,27 +166,24 @@
 </section>
 
 <%!-- The durable thread, told as the thing a builder maps onto their own ids
-      rather than as a coworker they message. Every claim here is generally
-      available, so nothing carries a status badge. The key is `channel_id`
+      rather than as a coworker they message. The key is `channel_id`
       (`Conversations.create/2`); it resumes a conversation for the same agent,
       vault and environment, so the copy says "the same agent" rather than
-      claiming a global unique key. --%>
+      claiming a global unique key. What parking *costs* belongs to the pricing
+      section, not here. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-8 text-center">
     One user, one machine, one thread that survives.
   </h2>
   <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
     <p>
-      Bind a conversation to an id you already have. A customer, a ticket, a Slack channel, a row in your database. The next prompt you send for the same id and the same agent continues that conversation, so there is no lookup table and nothing to carry between messages.
+      Bind a conversation to an id you already have: a customer, a ticket, a Slack channel, a database row. The next prompt for that id and that agent continues it, so there is no lookup table to keep.
     </p>
     <p>
-      It parks when nobody is typing, and a parked sandbox costs nothing and takes none of your concurrency. The next message wakes it with its files and its checkout intact. The second prompt costs a sentence, not a re-explanation of the first.
+      It parks when nobody is typing and wakes with its files intact. Put one on a schedule and it runs with nobody there at all.
     </p>
     <p>
-      Put one on a schedule and it runs when nobody is there. "Each weekday at nine" is a cron, and the reply lands in the thread when it is done.
-    </p>
-    <p>
-      Its memory is the disk it runs on. End the conversation and the memory goes with it, and the thread survives without it.
+      Its memory is the disk it runs on. End the conversation and the memory goes with it.
     </p>
   </div>
   <p class="mt-8 text-center">
@@ -194,20 +196,19 @@
   </p>
 </section>
 
-<%!-- Scale, which is the question a builder asks third and which this platform
-      answers with a real ceiling rather than a promise. Every mechanism named
-      here ships unflagged, so none of it carries a badge. The concession at
-      the end is the honest half: the hosted ceiling is low today, and a
-      hundred at once is the self-hosted lane. Do not put a number on the
-      fleet ceiling here; the limits section already refuses to, because it is
-      an operator setting rather than a published product promise. --%>
+<%!-- Scale. Two cards, both about fan-out. The published-ceiling card and the
+      provenance card that used to sit here moved to the limits and the
+      "what you stop building" sections, which already owned those subjects;
+      the closing "two honest limits" paragraph restated both and is gone.
+      Do not put a number on the fleet ceiling here, or in the limits section:
+      it is an operator setting rather than a published product promise. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
       A hundred tickets is a hundred calls, not an architecture.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
-      There is no queue for you to run, no worker pool to size and no image to bake per repository. There is a ceiling, and we would rather you read it here than find it in production.
+      No queue to run, no worker pool to size, no image to bake per repository.
     </p>
 
     <div class="grid sm:grid-cols-2 gap-6">
@@ -217,7 +218,7 @@
           Fan out from your code, or from inside an agent
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          One call starts one conversation, so a batch is a loop. Every sandbox also carries the skill that starts more conversations, so an agent can split its own work, run the pieces in parallel and collect the answers. Each child takes its own machine, or shares the one its parent is on.
+          One call starts one conversation, so a batch is a loop. Every sandbox carries the skill that starts more, so an agent splits its own work and collects the answers.
         </p>
       </div>
 
@@ -227,121 +228,76 @@
           Or put many conversations on one machine
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Several conversations can share one sandbox and take turns at the same time, with a separate transcript each. Claude Code and Codex run as many as you send. opencode and gemini run one at a time, and a turn past that is refused rather than queued.
-        </p>
-      </div>
-
-      <%!-- The cap, said out loud. --%>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          The ceiling is published, not discovered
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          On this platform your balance sets how many run at once, up to a stated maximum, under a ceiling for the whole fleet. Both refuse in plain words rather than charging you or silently queueing. Need a higher one? Ask, and we raise it on your account.
-        </p>
-      </div>
-
-      <%!-- allowlists, versions, provenance --%>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          Every run can be reconstructed afterwards
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          An agent may only launch with the environments and vaults on its allowlist. Every shape it has had is kept as a version, and each conversation records the version it ran under. A conversation an agent spawned carries its parent's id, so the whole chain can be rebuilt.
+          Several conversations share one sandbox and take turns at once, each with its own transcript. Capacity depends on the runtime; a turn past it is refused, not queued.
         </p>
       </div>
     </div>
-
-    <p class="mt-10 max-w-2xl mx-auto text-sm text-[var(--color-text-secondary)] leading-relaxed">
-      Two honest limits. Nothing stops recursion on our side, so the skill tells each agent to cap its own depth and your balance is the backstop under a runaway fan-out. And the hosted ceiling is set for a platform this size, so a hundred machines at once means asking us to raise it, or running the sandboxes on hardware you own.
-    </p>
-    <p class="mt-8 text-center">
-      <a
-        href={~p"/self-hosted"}
-        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-      >
-        Run the sandboxes yourself
-      </a>
-    </p>
   </div>
 </section>
 
 <%!-- Bring your own stack. Four protocols, one of which is behind a flag, so
       this is where the badge legend lives: it is the first badge a reader
-      meets, and everything above it is generally available. --%>
+      meets, and everything above it is generally available. How to turn the
+      flag on is a docs question, not a homepage one. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
     Bring the stack you already have.
   </h2>
-  <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-3">
-    Fountain answers four protocols on top of its own REST API. The editor, chat surface, gateway or framework you use today can hire an agent with a URL and a key, and there is nothing to install on our side.
-  </p>
-  <p class="text-center text-xs text-[var(--color-text-muted)] max-w-xl mx-auto mb-10">
-    Anything without a badge is on for every account. Alpha means it works end to end and its shape can still change between releases.
+  <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
+    Four protocols sit on the REST API, with a TypeScript SDK and a CLI over it. Whatever you use hires an agent with a URL and a key.
   </p>
 
-  <dl class="max-w-2xl mx-auto space-y-6">
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
+  <dl class="max-w-2xl mx-auto space-y-4">
+    <div class="sm:flex sm:gap-4">
+      <dt class="font-medium text-[var(--color-text-primary)] sm:w-52 sm:shrink-0">
         Agent Client Protocol
       </dt>
-      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      <dd class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
         For an editor or a chat surface.
         <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">fountain acp</code>
-        makes any agent on your roster the one the client is talking to.
+        points one at any agent on your roster.
       </dd>
     </div>
 
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
-        AG-UI
-      </dt>
-      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The Agent-User Interaction Protocol, for a coworker platform. One endpoint per agent, and the steps stream as the agent takes them.
+    <div class="sm:flex sm:gap-4">
+      <dt class="font-medium text-[var(--color-text-primary)] sm:w-52 sm:shrink-0">AG-UI</dt>
+      <dd class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        For a coworker platform. One endpoint per agent, streaming each step.
       </dd>
     </div>
 
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
+    <div class="sm:flex sm:gap-4">
+      <dt class="font-medium text-[var(--color-text-primary)] sm:w-52 sm:shrink-0">
         MCP, both directions
       </dt>
-      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Your agents reach the servers you declare on them. {Fountain.Brand.name()} injects its own on top, so one of your agents can read the roster and message the others without you wiring anything.
+      <dd class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Your agents reach the servers you declare, and read the roster to message each other.
       </dd>
     </div>
 
-    <div>
-      <dt class="font-medium text-[var(--color-text-primary)]">
+    <div class="sm:flex sm:gap-4">
+      <dt class="font-medium text-[var(--color-text-primary)] sm:w-52 sm:shrink-0">
         OpenAI chat completions
         <span class="ml-1 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-bg-2)] text-[var(--color-text-muted)]">
           Alpha
         </span>
       </dt>
-      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The request shape every gateway already speaks, where the model is an agent.
-        <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">GET /v1/models</code>
-        fills a client's picker with your roster, and your own tools come back as tool calls. A Fountain agent can therefore sit inside a LangChain loop or a Deep Agents plan as a subagent.
-      </dd>
-      <dd class="mt-2 text-xs text-[var(--color-text-muted)] leading-relaxed">
-        We turn it on for your account here when you ask. On your own instance, add
-        <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">openai_compat</code>
-        to <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">FEATURE_FLAGS_ON</code>.
+      <dd class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The shape every gateway speaks, where the model is an agent. Drops one into a LangChain loop as a subagent. It works; the shape can change. Ask and we turn it on.
       </dd>
     </div>
   </dl>
 
   <p class="mt-8 text-center text-sm text-[var(--color-text-secondary)]">
-    Under all four is the REST API. A TypeScript SDK and a CLI sit over it. <a
-      href={~p"/integrations"}
-      class="text-[var(--color-brand)] hover:underline"
-    >
+    <a href={~p"/integrations"} class="text-[var(--color-brand)] hover:underline">
       See what already speaks them
-    </a>.
+    </a>
   </p>
 </section>
 
 <%!-- The limits, stated before the price rather than discovered after it. Every
-      number here reads from the same settings the quota enforces. --%>
+      number here reads from the same settings the quota enforces. This is the
+      only place the concurrency rule is explained outside the price card. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
@@ -349,20 +305,10 @@
     </h2>
 
     <dl class="max-w-2xl mx-auto space-y-6">
-      <div :if={pricing?()}>
-        <dt class="font-medium text-[var(--color-text-primary)]">How many can run at once</dt>
-        <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Your balance sets it. One more agent for every {elem(cap_rule(), 0)} you hold, from {elem(
-            cap_rule(),
-            1
-          )}, up to {elem(cap_rule(), 2)}. A separate ceiling bounds how many sandboxes run across the whole platform, and when it is reached you get a plain refusal rather than a charge.
-        </dd>
-      </div>
-
       <div>
         <dt class="font-medium text-[var(--color-text-primary)]">Recursion is yours to bound</dt>
         <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          An agent that can hire agents can do it again from inside the one it hired. Nothing caps the depth on our side. The skill instructs each agent to cap its own, and the balance is the backstop under that.
+          An agent that hires agents can do it again from inside the one it hired. Nothing caps the depth on our side; your balance is the backstop.
         </dd>
       </div>
 
@@ -371,126 +317,17 @@
           A conversation is not a shared inbox
         </dt>
         <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          One conversation is one thread on one machine. Two of your users pointed at the same conversation share both, and see each other's work. Give each of them an id of their own.
+          One conversation is one thread on one machine. Two users pointed at the same one see each other's work. Give each an id of their own.
         </dd>
       </div>
 
       <div>
         <dt class="font-medium text-[var(--color-text-primary)]">An account is one person</dt>
         <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          There are no organisations and no seats. Sign-in is an email address or GitHub, and there is no single sign-on. A team shares an account, or runs an instance of its own.
+          No organizations, no seats, no single sign-on. A team shares an account, or runs its own instance.
         </dd>
       </div>
     </dl>
-  </div>
-</section>
-
-<%!-- Feature cards --%>
-<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-      What you stop building.
-    </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10 -mt-6">
-      Four things you would otherwise have written yourself, and then owned.
-    </p>
-    <div class="grid sm:grid-cols-2 gap-6">
-      <%!-- One seam over the runtimes and the sandbox providers. The card the
-            durable-thread section used to duplicate. --%>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-          <svg
-            class="size-5 text-[var(--color-brand)]"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"
-              clip-rule="evenodd"
-            />
-          </svg>
-        </div>
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          One integration, not eight
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Claude Code, Codex, opencode and Gemini sit behind one API, and so do the sandbox platforms under them. Change the runtime an agent runs, or the platform its machine comes from, and your code does not move.
-        </p>
-      </div>
-
-      <%!-- Vaults --%>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-          <svg
-            class="size-5 text-[var(--color-brand)]"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
-              clip-rule="evenodd"
-            />
-          </svg>
-        </div>
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          Secrets the model never sees
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Environments and Vaults are encrypted at rest and merge when the sandbox spawns, arriving as plain environment variables. They stay out of the prompt and the model's context, and {Fountain.Brand.name()} scrubs them from every line of output it stores.
-        </p>
-      </div>
-
-      <%!-- Live stream --%>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-          <svg
-            class="size-5 text-[var(--color-brand)]"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.501 3.501 0 0 0 1.1 1.677A.75.75 0 0 1 13.26 18H6.74a.75.75 0 0 1-.484-1.323A3.501 3.501 0 0 0 7.355 15H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Zm1.5 0a.75.75 0 0 1 .75-.75h11.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-.75.75H4.25a.75.75 0 0 1-.75-.75v-7.5Z"
-              clip-rule="evenodd"
-            />
-          </svg>
-        </div>
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          Watch every turn as it happens
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Output and lifecycle events stream over SSE. Ask for <code
-            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-            phx-no-format
-          >?blocks=true</code> and the server parses each runtime's dialect for you. Your client renders one shape whether the agent is Claude Code or Codex.
-        </p>
-      </div>
-
-      <%!-- Audit trail --%>
-      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
-        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-          <svg
-            class="size-5 text-[var(--color-brand)]"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" />
-          </svg>
-        </div>
-        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          Every change leaves a record
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          The event is written where the change happens rather than where the request arrived, so the console, the API and a background worker are all covered by the same rule. An update names the fields that moved and never their values. Filter the trail by action, resource or time.
-        </p>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -507,7 +344,7 @@
       An estate that answers its own alerts.
     </h2>
     <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-      A Kubernetes cluster used to page a person when a workload broke. Now it pages a person and hires an agent. The agent reads the cluster, finds the commit that broke it, and opens one small pull request. It cannot merge that pull request, and the mechanism that stops it is not a system prompt.
+      A Kubernetes cluster used to page a person when a workload broke. Now it also hires an agent, which finds the commit that broke it and opens one small pull request. It cannot merge that request, and the mechanism stopping it is not a system prompt.
     </p>
     <dl class="mt-6 flex flex-wrap gap-x-10 gap-y-4">
       <div :for={stat <- case_stats()}>
@@ -524,36 +361,48 @@
   </div>
 </section>
 
-<%!-- The security review moved to /faq whole. What stays here is the promise
-      and the link, because a reader who is going to forward an answer wants
-      one URL to forward rather than a homepage anchor. `security_answers/0`
-      and `security_absent/0` render there now. --%>
+<%!-- The questions. Both blocks that used to sit here linked at /faq forty
+      words apart: one for the security review, one for the build objections.
+      They are one section now, with a button each, because the answers are on
+      one page. `security_answers/0`, `security_absent/0` and `build_faq/0`
+      render there. Keep the `/faq#security` link: a reader forwarding an
+      answer wants one URL to forward, and a test pins it. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16 text-center">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3">
-      The part you forward to your security reviewer.
+      The questions you would ask before building on it.
     </h2>
     <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-8">
-      Putting an agent in front of your users means somebody asks where the credentials sit, what the model can see and what lands in the logs. Those answers are written down, each one a mechanism rather than an intention, each limit stated beside the thing it limits, and the things this platform does not have listed with them.
+      Whether you need a model key, whether your users need accounts here, what a machine does between messages. Beside them, what a security reviewer asks, each answer a mechanism rather than an intention.
     </p>
-    <a
-      href={~p"/faq#security"}
-      class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-    >
-      Read the security answers
-    </a>
+    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+      <a
+        href={~p"/faq"}
+        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+      >
+        Read the questions
+      </a>
+      <a
+        href={~p"/faq#security"}
+        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+      >
+        The security answers
+      </a>
+    </div>
   </div>
 </section>
 
-<%!-- The flagship three: the apps this project builds itself, and the fastest
-      answer to "what does using it look like". Cards come from built_apps/0,
-      so the homepage cannot name an app /built-with has renamed or retired. --%>
+<%!-- The apps, in one section. The flagship three as cards, the rest of the
+      roster as chips under them. These used to be two adjacent sections with
+      two intros and two buttons saying the same thing. Cards come from
+      built_apps/0, so the homepage cannot name an app /built-with has renamed
+      or retired. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
     Or use the apps we built on it.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    {Fountain.Brand.name()}'s own UI is a console for accounts, keys and agents, and it is not the app your users meet. These three are. Each is static files in a browser calling the same public API your key opens, with no backend of its own, so each is a worked example of the thing you are about to write. Open one, read its source, take the parts you need.
+    Each is static files in a browser on the same public API your key opens, with no backend of its own. Read the source, take what you need, or point it at your own instance.
   </p>
   <div class="grid md:grid-cols-3 gap-6">
     <article
@@ -585,59 +434,50 @@
       </div>
     </article>
   </div>
-  <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
-    All three are open source, and none of them holds anything of yours. Point one at your own instance instead and it works the same.
-  </p>
-</section>
 
-<%!-- Built with: proof that the API carries whole products, not just calls. --%>
-<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-16 text-center">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3">
+  <p class="mt-12 text-center text-[var(--color-text-secondary)]">
+    <span class="font-medium text-[var(--color-text-primary)]">
       People build whole products on it.
-    </h2>
-    <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-8">
-      {length(built_apps_flat())} are open source and running right now. A researcher that returns cited briefs, an analyst that runs Python on your CSV, an SRE on a cron, a DNS desk with an approval gate. Most have no backend of their own, and in several of them nothing on screen says the word agent. The product is the document, the chart or the text message.
-    </p>
-    <ul class="flex flex-wrap justify-center gap-2 mb-8">
-      <li
-        :for={app <- other_apps_flat()}
-        class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
-      >
-        <span aria-hidden="true">{app.glyph}</span>
-        {app.name}
-      </li>
-    </ul>
+    </span>
+    {length(built_apps_flat())} are open source and running now, and in several nothing on screen says the word agent.
+  </p>
+  <ul class="mt-6 flex flex-wrap justify-center gap-2">
+    <li
+      :for={app <- other_apps_flat()}
+      class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
+    >
+      <span aria-hidden="true">{app.glyph}</span>
+      {app.name}
+    </li>
+  </ul>
+  <p class="mt-8 text-center">
     <a
       href={~p"/built-with"}
-      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+      class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
     >
       See what people built
     </a>
-  </div>
+  </p>
 </section>
 
-<%!-- Lane three's section on the homepage. One question sorts the reader, and
-      the runner concession sits beside the runner claim rather than a page
-      away, because the hero promises a boundary and a runner has none. --%>
+<%!-- Lane three's section on the homepage. The runner concession sits beside
+      the runner claim rather than a page away, because the hero promises a
+      boundary and a runner has none. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
       Or run the whole thing yourself.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
-      Two questions send you here. If your customers' code and secrets cannot leave your own infrastructure, this platform was never the answer for you. And if you need more machines at once than the ceiling above allows, the ceiling is a setting in a config file you own.
+      Two reasons to go: your customers' code cannot leave your infrastructure, or you need more machines than the ceiling allows.
     </p>
 
     <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
       <p>
-        {Fountain.Brand.engine()} is open source, and nothing is held back from the copy you run. The server this platform runs on is the one you would run, and so are the CLI and the SDK. A compose file brings an instance up, and a portable Kubernetes baseline is in the repo for anyone who already lives there.
-      </p>
-      <p>
-        Your own hardware can serve the sandboxes too. A runner is a machine you own that dials out to {Fountain.Brand.name()} and holds one connection. There is no inbound port, and it works behind NAT. It burns no credit at all.
+        {Fountain.Brand.engine()} is open source and nothing is held back from the copy you run; a compose file brings an instance up. Or keep this platform and serve only the sandboxes: a runner dials out, needs no inbound port and burns no credit.
       </p>
       <p class="text-sm text-[var(--color-text-muted)]">
-        A runner runs in trusted mode. The agent's processes run as you. They get your network and your tools, and no container or VM stands between them. Run one on a machine where you would hand a capable colleague a shell.
+        A runner runs in trusted mode: the agent's processes run as you, with your network and tools and no container between. Run one where you would hand a colleague a shell.
       </p>
     </div>
 
@@ -652,25 +492,6 @@
   </div>
 </section>
 
-<%!-- The objections moved to /faq as `build_faq/0`. A single link replaces
-      the list, so the page runs from the pitch to the call to action without
-      a seven-row detour, and the answers live where the buying and security
-      questions are. --%>
-<section class="max-w-5xl mx-auto px-6 py-16 text-center">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3">
-    Things you would ask before building on it.
-  </h2>
-  <p class="text-[var(--color-text-secondary)] max-w-xl mx-auto mb-8">
-    Whether you need a model key, whether your own users need accounts here, what happens to a machine between messages, and what it costs. Answered in one place.
-  </p>
-  <a
-    href={~p"/faq"}
-    class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-  >
-    Read the questions
-  </a>
-</section>
-
 <%!-- Footer CTA --%>
 <section class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-20 text-center">
@@ -678,7 +499,7 @@
       A key, a call, and a machine you did not build.
     </h2>
     <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
-      Sign up, paste a model key, send a prompt. No machine to provision, no card to enter, nothing that renews. Then go back to the part that is actually your product.
+      Sign up, paste a model key, send a prompt. No machine to provision, no card, nothing that renews. Then go back to the part that is your product.
     </p>
     <a
       href={~p"/auth/register"}
@@ -696,7 +517,9 @@
 </section>
 
 <%!-- Pricing (ADR 0031): credits are the product. Rendered only where the
-      deployment bills, so a self-hosted instance shows nothing. --%>
+      deployment bills, so a self-hosted instance shows nothing. The three
+      cards state the hour price, the grant and the cap; "How billing works"
+      adds only what a card cannot hold. Do not restate a card there. --%>
 <section
   :if={pricing?()}
   id="pricing"
@@ -707,9 +530,8 @@
       Pay for what your agents do
     </h2>
     <p class="mt-3 mb-12 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto">
-      No plans, no seats, no monthly fee. Buy credit, and every hour an agent
-      works comes out of it. Bring your own model keys. {Fountain.Brand.name()} never bills
-      you for inference.
+      No plans, no seats, no monthly fee. Buy credit, and every hour an agent works
+      comes out of it.
     </p>
 
     <div class="grid gap-6 md:grid-cols-3">
@@ -738,7 +560,8 @@
           agents at once, at most
         </p>
         <p class="mt-2 text-xs text-[var(--color-text-muted)]">
-          One more for every {elem(cap_rule(), 0)} you hold, from {elem(cap_rule(), 1)}. Need more? Ask.
+          One more for every {elem(cap_rule(), 0)} you hold, from {elem(cap_rule(), 1)}. A start beyond
+          it is refused rather than queued. Need more? Ask.
         </p>
       </div>
     </div>
@@ -763,19 +586,14 @@
           <span class="font-medium text-[var(--color-text-primary)]">
             Credit is the whole product.
           </span>
-          You start with {elem(opening_credit(), 0)}, which expires after {elem(
-            opening_credit(),
-            1
-          )} days.
-          Credit you buy never expires.
+          The opening grant expires; credit you buy never expires and is spent after
+          it, in packs of {credit_packs()}.
         </p>
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
             Agent time costs {turn_hour_price()} an hour, out of that balance.
           </span>
-          An hour means an hour with a prompt in flight. A parked agent, an idle
-          one, and one running on your own machine cost nothing. Two agents
-          working for an hour on the same machine are two hours.
+          Two agents working an hour on the same machine are two hours.
         </p>
         <p :if={rent_line() || message_line()}>
           <span class="font-medium text-[var(--color-text-primary)]">
@@ -786,36 +604,10 @@
         </p>
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
-            Need more? Buy credit in packs of {credit_packs()}.
-          </span>
-          One-time payments, no expiry, spent after your opening credit.
-        </p>
-        <p>
-          <span class="font-medium text-[var(--color-text-primary)]">
             At zero, new work pauses; nothing dies.
           </span>
-          A new conversation or a new prompt is refused until the balance is
-          positive again. Anything already running finishes, even if that takes
-          the balance below zero. The next refill or purchase brings it back.
-        </p>
-        <p>
-          <span class="font-medium text-[var(--color-text-primary)]">
-            Your balance sets how many agents run at once.
-          </span>
-          One sandbox for every {elem(cap_rule(), 0)} you hold, from {elem(cap_rule(), 1)} up to {elem(
-            cap_rule(),
-            2
-          )}.
-          A start beyond that is refused rather than queued; terminate a conversation, or top up.
-        </p>
-        <p>
-          <span class="font-medium text-[var(--color-text-primary)]">
-            Inference is never on our bill.
-          </span>
-          Bring your own model keys; {Fountain.Brand.name()} does not charge for tokens.
-        </p>
-        <p class="text-xs text-[var(--color-text-muted)]">
-          No card to start. Buy credit when the opening grant runs out, and only then.
+          A new conversation or prompt is refused until the balance is positive again.
+          Anything already running finishes, even below zero.
         </p>
       </div>
     </div>
