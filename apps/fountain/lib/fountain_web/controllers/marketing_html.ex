@@ -152,7 +152,7 @@ defmodule FountainWeb.MarketingHTML do
         "None of that work has been done. A review that requires one of them is a " <>
         "review this platform cannot pass.",
       "No data processing agreement on file and no published sub-processor list.",
-      "No single sign-on, no organisations and no seats. An account is one person, " <>
+      "No single sign-on, no organizations and no seats. An account is one person, " <>
         "and a team shares one or runs an instance of its own.",
       "No independent penetration test. The security work in the repo is the " <>
         "security work there is, and it is open source, so you can read all of it.",

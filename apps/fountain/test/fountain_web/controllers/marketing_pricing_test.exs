@@ -53,10 +53,12 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "How billing works"
     assert body =~ "Credit is the whole product"
     assert body =~ "Agent time costs $0.25 an hour"
-    assert body =~ "Buy credit in packs of $10.00, $25.00, $100.00"
+    assert body =~ "in packs of $10.00, $25.00, $100.00"
     assert body =~ "At zero, new work pauses; nothing dies"
     assert body =~ "Anything already running finishes"
-    assert body =~ "Your balance sets how many agents run at once"
+    # The cap rule is stated once now, on the price card, rather than restated
+    # under "How billing works" and again in the limits section.
+    assert body =~ "One more for every $2.00 you hold, from 2"
     assert body =~ "is refused rather than queued"
     # No rent or message price in test config, so the page says nothing about
     # contacts rather than quoting $0.
