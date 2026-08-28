@@ -1,4 +1,4 @@
-# Wire up observability
+# Configure observability
 
 This guide shows you how to scrape metrics. It also shows you how to import
 the dashboard and alerts that ship with the repo, and where to point your
@@ -19,7 +19,7 @@ observability pack, built from a real run of the hosted instance.
   says what it means and what to do. It needs the PrometheusRule CRD, and it
   sits commented out of the kustomization until you turn it on.
 - **A starter dashboard**, in `deploy/grafana/fountain-dashboard.json`. It is
-  built from metrics the app truly exports, and from nothing else. Import it
+  built from metrics the app exports, and from nothing else. Import it
   into Grafana, then choose your Prometheus datasource. On compose, point any
   Prometheus at the metrics port and import the same file.
 - **Three team dashboards**, in `deploy/grafana/`, one each for ops, product

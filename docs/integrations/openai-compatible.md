@@ -18,7 +18,7 @@ needs to in a sandbox of its own.
 There is no plugin and no code on the client. The base URL, a key, and one
 header are the whole integration.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

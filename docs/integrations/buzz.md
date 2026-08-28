@@ -59,7 +59,7 @@ stays inside Fountain, which signs with it. The sandbox never holds it.
 <figcaption><b>Four parties, and Fountain in the middle.</b> The owner provisions once; then Fountain speaks Nostr to the relay <em>as the agent</em>, drives the coding agent in a sandbox over ACP, and the sandbox asks Fountain to publish through an MCP tool, so it never touches the relay or the key itself.</figcaption>
 </figure>
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
@@ -379,7 +379,7 @@ different parties**, govern those two things.
 | kind **30177** | The **owner**, from Buzz Desktop at deploy. | The policy that Desktop builds its own agent directory from. |
 
 The harness publishes its 10100 at startup, and at each change of channel
-membership. It builds the event from the channels it truly subscribes to, and
+membership. It builds the event from the channels it subscribes to, and
 from its real `respond_to`. That entry is accurate about the harness.
 
 **Buzz Desktop 0.5.17 and newer ignores it when a 30177 exists.** It builds

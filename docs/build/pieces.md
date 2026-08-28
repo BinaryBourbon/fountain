@@ -74,7 +74,7 @@ thread.
 
 **The 202 is not the answer.** `POST /messages` queues a turn and returns the
 conversation id. Everything after that arrives on the stream. So an app that
-awaits a reply really awaits stream events. The SDK's `Run` handle does that
+awaits a reply must await stream events. The SDK's `Run` handle does that
 wait for you.
 
 **Secrets arrive at spawn, and not at the prompt.** Fountain merges the

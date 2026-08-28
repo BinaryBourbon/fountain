@@ -97,7 +97,7 @@ account tag, because one time series per account would grow without a bound.
 Per-account numbers belong in the admin panel and the API, where they are a
 column.
 
-See [Wire up observability](observability.md) for how to scrape the endpoint.
+See [Configure observability](observability.md) for how to scrape the endpoint.
 
 ## When to distrust the parked figures
 
@@ -125,4 +125,4 @@ credentials and never reaches a Fountain invoice.
 - [Start billing](billing.md), to charge for what you measure here. <!-- vale disable-line STE.IngForms -->
 - [Change sandbox lifetimes](sandbox-lifetime.md), the main lever on the total.
 - [About sandboxes](../../concepts/sandboxes.md), for what a sandbox is.
-- [Wire up observability](observability.md), for the metrics endpoint.
+- [Configure observability](observability.md), for the metrics endpoint.

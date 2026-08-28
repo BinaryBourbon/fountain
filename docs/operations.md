@@ -25,7 +25,7 @@ Start from the symptom in [Troubleshoot a problem](troubleshooting/index.md).
   restore drill
 - [Upgrade an instance](guides/operate/upgrade.md), and what to do when one
   goes wrong
-- [Wire up observability](guides/operate/observability.md), which covers
+- [Configure observability](guides/operate/observability.md), which covers
   metrics, alerts, logs and the health endpoints
 
 ## How to stand one up

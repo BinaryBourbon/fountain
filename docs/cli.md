@@ -162,8 +162,8 @@ wins on a collision. `--environment` provisions from that environment, and not
 from the agent's own.
 
 The `--sandbox` flag attaches the conversation to a sandbox you already have,
-by id. Two conversations then share one disk. A conversation's `sandbox_id`
-names its sandbox.
+by id. Two conversations then share one disk. The `sandbox_id` field names
+that disk.
 
 The `--sandbox-mode` flag is `ephemeral` or `persistent`. It replaces the
 agent's default for this conversation. A persistent conversation lands on the

@@ -3,7 +3,7 @@
 > An agent that contributes to Fountain itself, configured to work the way a
 > maintainer's laptop session does.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
@@ -55,7 +55,7 @@ test, so the suite runs without it.
       -p "Read issue #NNN and fix it"
     ```
 
-The `--vault` flag is not optional in practice. The repo clone, `gh`, and the
+The `--vault` flag is not optional. The repo clone, `gh`, and the
 DCO identity all come from the vault.
 
 ## Verify

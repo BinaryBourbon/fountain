@@ -27,7 +27,7 @@ Three reasons to want one.
 [ADR 0022](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0022-self-hosted-runner-provider.md)
 holds the design.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
@@ -70,14 +70,14 @@ processes belong to the daemon. It reconnects with backoff on any drop. It
 gives up only when Fountain refuses the key, rejects the name, or has runners
 switched off.
 
-Then pin an agent to it. Use **Agents → edit → Sandbox provider → runner**,
+Then pin an agent to it. Use **Agents**, then **edit**, then **Sandbox provider**, then **runner**,
 or send `sandbox_provider: "runner"` to `POST /api/agents`.
 
 Fountain places a new conversation for that agent on your **most recently
 connected online runner**. Start one while no runner is online and it fails
 plainly, with `no_runner_online` and HTTP 409. It does not queue.
 
-Account → Runners, or `GET /api/runners`, lists each machine that has
+Account, then Runners, or `GET /api/runners`, lists each machine that has
 connected, with live online status. `DELETE /api/runners/:id` forgets one. A
 daemon that you left up reconnects and registers itself again.
 

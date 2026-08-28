@@ -210,7 +210,7 @@ above, so the repo stays the description of record.
 
 ## Related
 
-- [Wire up observability](observability.md), for the scrape, the alerts and the
+- [Configure observability](observability.md), for the scrape, the alerts and the
   health endpoints.
 - [See what sandboxes cost](sandbox-spend.md), for the per-account view.
 - [Operations overview](../../operations.md).

@@ -15,7 +15,7 @@ DAYTONA_SNAPSHOT=fountain          # a snapshot built from images/daytona/ (unse
 # SANDBOX_PROVIDER=daytona
 ```
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

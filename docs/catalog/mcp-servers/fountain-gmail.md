@@ -3,7 +3,7 @@
 > Gives an agent a Gmail mailbox that the account owner connected once, and
 > gives it no Google token.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

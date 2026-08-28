@@ -90,8 +90,8 @@ in full.
   an agent somewhere else
 - [Architecture](architecture.md), what runs, what it talks to, and what breaks
   when a dependency is down
-- [Why a bot needs more than a chat UI](build/index.md), the case for the API
-  below it
+- [Why a bot needs more than a chat UI](build/index.md), and why the API below
+  it exists
 
 ## Build with it
 

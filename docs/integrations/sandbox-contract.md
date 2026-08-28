@@ -48,7 +48,7 @@ conversation fails at provision time.
 
 ## What the contract guarantees
 
-- **Capabilities are honest.** An adapter advertises what it can truly do,
+- **Capabilities are honest.** An adapter advertises only what it can do,
   from `:suspend`, `:network_policy`, `:attach`, `:tty`, `:checkpoint` and
   `:public_url`. The lifecycle then degrades to match. A provider without
   `:suspend` destroys on idle, and does not fake a park. The agent's memory

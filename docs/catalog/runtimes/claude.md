@@ -2,7 +2,7 @@
 
 > Anthropic's Claude Code CLI, headless in the sandbox.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

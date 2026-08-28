@@ -3,7 +3,7 @@
 > Lets an agent start more Fountain conversations from inside its own sandbox,
 > and stream them.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

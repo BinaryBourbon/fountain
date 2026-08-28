@@ -2,7 +2,7 @@
 
 > The opencode CLI. The only runtime that can reach more than one provider.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

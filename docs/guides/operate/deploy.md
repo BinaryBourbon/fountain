@@ -64,8 +64,7 @@ any other role change (ADR 0011).
 Register **before** you expose the instance to a network you do not trust.
 While no admin exists, the first verified account takes the role.
 
-Do you want the manual path instead? Set `FIRST_USER_ADMIN=false` and use a
-release task. Read [Run a release task](run-a-release-task.md).
+For the manual path, set `FIRST_USER_ADMIN=false` and use a release task. Read [Run a release task](run-a-release-task.md).
 
 ```bash
 docker compose exec app bin/fountain_server eval \
@@ -148,7 +147,7 @@ value then becomes unreadable.
 Does the app serve while a sandbox fails to start? The sandbox provider is the
 usual cause. Read [Sandbox errors](../../troubleshooting/sandbox-errors.md).
 
-Does the container never open a listener? Migrations cannot reach the
+If the container never opens a listener, migrations cannot reach the
 database. Read
 [Pods restart or never go ready](../../troubleshooting/pods-restarting.md).
 

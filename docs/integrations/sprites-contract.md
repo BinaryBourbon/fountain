@@ -2,14 +2,14 @@
 
 This page documents the **Sprites adapter's** transport contract. It covers
 each endpoint that `Fountain.Sandbox.Sprites` calls, the semantics it depends
-on, and the operational assumptions baked into it.
+on, and the operational assumptions it makes.
 
 [The sandbox contract](sandbox-contract.md) is the provider-neutral contract
 that each backend must meet. That is the `Fountain.Sandbox` behaviour and its
 conformance suite, `Fountain.SandboxConformanceCase`, which the
 [E2B](e2b.md) and [Daytona](daytona.md) adapters also satisfy. To evaluate a
 new backend, start there. This page is the reference for what the first
-backend truly provides.
+backend provides.
 
 The [Sprites integration guide](sprites.md) holds the setup and the cost
 model.
@@ -155,7 +155,7 @@ One that ignores a deny rule fails the whole `limited` feature open.
   unique for each token, as `fountain-<tenant-prefix>-<8 hex>`. A 409 on
   create means the sprite already exists. Fountain then adopts it, and raises
   no error. Destroy tolerates a 404. The hourly reaper converges
-  whatever the happy path leaked. A replacement needs stable name-keyed create
+  whatever the successful path leaked. A replacement needs stable name-keyed create
   and destroy semantics, and no more.
 - **Errors.** Any non-2xx surfaces as a status plus the decoded body. A
   rate-limit response carries a structured body, with
@@ -185,7 +185,7 @@ Here is the checklist. It needs the twelve operations above and bearer auth.
 It needs name-keyed idempotent create and destroy, with a 409 on a duplicate
 and a delete that tolerates a 404. It needs the stream-id frame protocol with
 a real exit frame, and detachable sessions that replay from the start. It
-needs NDJSON checkpoints that truly restore filesystem state, a network policy
+needs NDJSON checkpoints that restore filesystem state, a network policy
 that can deny, and `has_more` and `next_continuation_token` pagination.
 
 Get those semantics right, and the four subtle ones above with them.
