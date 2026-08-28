@@ -121,6 +121,19 @@ upgrade, is in
   rather than to one runner. See ADR 0036.
 
 ### Changed
+- **`/self-hosted` reads on a phone, and the site spells license the American
+  way.** The page was built at desktop widths: fixed `px-6` gutters, `py-16`
+  section rhythm and `p-6` cards at every size, two code blocks that wrapped
+  mid-token rather than scrolling, and a numbered ladder whose left margin
+  pushed its own text off a narrow screen. Every one of those is a breakpoint
+  now, the code blocks scroll in their own box, and the two call-to-action
+  rows go full width before they go side by side. No copy moved. Separately,
+  the site mixed British and American forms; `licence` and `enrol` are the
+  British ones, and the visible text now uses `license` and `enroll`
+  throughout. `licence_parts/0`, the `:licence` key and `data-role="licence"`
+  keep their spelling, because they are identifiers and one is a test
+  selector, and the license names (`AGPL-3.0-or-later`, `Elastic 2.0`,
+  `Apache-2.0`) were never in question.
 
 - **The homepage sells infrastructure to builders, not an agent to a
   consumer.** The pitch read as a coworker product ("hire an agent by role",

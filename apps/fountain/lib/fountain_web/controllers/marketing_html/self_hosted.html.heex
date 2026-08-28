@@ -6,7 +6,7 @@
       the rendered body: "Define your agents once. Let every app you build
       hire them." (now the deck under the h1) and "Six commands and a token."
       (now the label over the terminal). --%>
-<section class="max-w-6xl mx-auto px-6 pt-12 pb-20 grid lg:grid-cols-2 gap-14 items-start">
+<section class="max-w-6xl mx-auto px-5 sm:px-6 pt-8 pb-14 sm:pt-12 sm:pb-20 grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
   <div>
     <p class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-[var(--color-text-secondary)]">
       <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-brand)]" aria-hidden="true"></span>
@@ -21,7 +21,7 @@
     <p class="mt-5 text-lg text-[var(--color-text-secondary)] leading-relaxed max-w-[54ch]">
       Run it yourself and the whole platform is yours. Your machines, your keys, nothing rationed.
     </p>
-    <div class="mt-8 flex flex-col sm:flex-row gap-3">
+    <div class="mt-8 flex flex-col sm:flex-row gap-3 [&>a]:w-full sm:[&>a]:w-auto">
       <a
         href={~p"/docs/guides/operate/deploy"}
         class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-text)] font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
@@ -38,7 +38,7 @@
     <p class="mt-6 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-[var(--color-text-secondary)]">
       <span>AGPL-3.0-or-later</span>
       <span aria-hidden="true">·</span>
-      <span>no licence key</span>
+      <span>no license key</span>
       <span aria-hidden="true">·</span>
       <span>no seat count</span>
       <span aria-hidden="true">·</span>
@@ -63,7 +63,7 @@
       </button>
     </div>
     <pre
-      class="bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-xs leading-relaxed whitespace-pre-wrap break-words"
+      class="bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-4 sm:p-5 text-xs sm:text-sm leading-relaxed overflow-x-auto"
       phx-no-format
     ><code>{compose_example()}</code></pre>
     <p class="px-5 py-4 border-t border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] leading-relaxed">
@@ -83,7 +83,7 @@
       line is the deploy guide's "Before you start", so the page cannot
       promise a bring-up the manual contradicts. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-6xl mx-auto px-6 py-8">
+  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-7 sm:py-8">
     <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
       Before you start
     </p>
@@ -101,7 +101,7 @@
 <%!-- 01. What happens after the commands, including how you know it worked.
       A first-time operator otherwise reads a refused connection during the
       cold start as a failed install. --%>
-<section class="max-w-6xl mx-auto px-6 py-16">
+<section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
   <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
     01 · Install
   </p>
@@ -130,7 +130,7 @@
       <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
         Wait for the app container to report healthy, then probe it.
       </p>
-      <pre class="mt-3 rounded-lg bg-[var(--color-code-bg)] p-4 text-xs text-[var(--color-code-text)] whitespace-pre-wrap break-all"><code phx-no-format>{health_probe()}</code></pre>
+      <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-3 sm:p-4 text-[11px] sm:text-xs text-[var(--color-code-text)]"><code phx-no-format>{health_probe()}</code></pre>
     </div>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
       <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
@@ -154,7 +154,7 @@
 <%!-- 02. The front ends the instance gets. Cards come from built_apps/0 via
       flagship_apps/0, so this cannot name a retired app. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-6xl mx-auto px-6 py-16">
+  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
     <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
       02 · What you open
     </p>
@@ -167,7 +167,7 @@
     <div class="grid md:grid-cols-3 gap-6 mt-8">
       <article
         :for={app <- flagship_apps()}
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-5 sm:p-6 flex flex-col"
         data-role="flagship"
       >
         <div class="text-2xl leading-none" aria-hidden="true">{app.glyph}</div>
@@ -200,7 +200,7 @@
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
         A browser app on another origin calling your API is a CORS request, so name the origin it is served from:
       </p>
-      <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-4 text-xs text-[var(--color-code-text)]"><code phx-no-format>API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com</code></pre>
+      <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-3 sm:p-4 text-[11px] sm:text-xs text-[var(--color-code-text)]"><code phx-no-format>API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com</code></pre>
       <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
         Conversations and Team are also what the console's own links point at, so <code
           class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
@@ -219,7 +219,7 @@
 
 <%!-- 03. Evidence that other people build on this. Selected from
       built_apps/0 by id, so a card cannot drift from /built-with. --%>
-<section class="max-w-6xl mx-auto px-6 py-16">
+<section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
   <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
     03 · Built on it
   </p>
@@ -258,11 +258,11 @@
 </section>
 
 <%!-- 04. The ownership ladder, ahead of the rationed features and the
-      licences. For somebody deciding hosted against self-hosted this is the
+      licenses. For somebody deciding hosted against self-hosted this is the
       argument, and it used to arrive seventh. Drawn as a connected ladder
       rather than four loose cards, because the rungs are an order. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-6xl mx-auto px-6 py-16">
+  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
     <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
       04 · Ownership
     </p>
@@ -272,10 +272,10 @@
     <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
       Most people stop at the first rung and are happy there. The point is that the next three exist, and that none of them is a sales conversation.
     </p>
-    <ol class="mt-10 ml-3 border-l-2 border-[var(--color-border-strong)]">
+    <ol class="mt-8 sm:mt-10 ml-3 border-l-2 border-[var(--color-border-strong)]">
       <li
         :for={rung <- ownership_rungs()}
-        class="grid grid-cols-[auto_1fr] gap-6 pb-8"
+        class="grid grid-cols-[auto_1fr] gap-4 sm:gap-6 pb-6 sm:pb-8"
         data-role="rung"
       >
         <div class="-ml-[13px] flex items-start gap-3">
@@ -294,7 +294,7 @@
         </div>
       </li>
     </ol>
-    <p class="ml-6 border-l-2 border-[var(--color-brand)] pl-6 text-[var(--color-text-secondary)] leading-relaxed max-w-[74ch]">
+    <p class="ml-0 sm:ml-6 border-l-2 border-[var(--color-brand)] pl-5 sm:pl-6 text-[var(--color-text-secondary)] leading-relaxed max-w-[74ch]">
       A model key is the one thing you still bring, and you always did. The agent bills your own provider account for tokens, so nothing in the middle takes a cut of inference. <a
         href={~p"/docs/integrations/runners"}
         class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
@@ -306,7 +306,7 @@
 <%!-- 05. The inversion, as a table rather than three stacked panels: the
       config column is the page's point, so it gets a column of its own and a
       tint. The rows track docs/reference/feature-status.md. --%>
-<section class="max-w-6xl mx-auto px-6 py-16">
+<section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
   <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
     05 · Feature flags
   </p>
@@ -371,14 +371,14 @@
   </p>
 </section>
 
-<%!-- 06. Licences --%>
+<%!-- 06. Licenses --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-6xl mx-auto px-6 py-16">
+  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
     <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-      06 · Licences
+      06 · Licenses
     </p>
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
-      Three licences, and what each one asks of you.
+      Three licenses, and what each one asks of you.
     </h2>
     <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
       The parts your code touches are permissive on purpose. A connection to {Fountain.Brand.engine()} must never put an obligation on your application.
@@ -386,7 +386,7 @@
     <div class="grid md:grid-cols-3 gap-6 mt-8">
       <div
         :for={part <- licence_parts()}
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-5 sm:p-6 flex flex-col"
         data-role="licence"
       >
         <div class="flex items-center justify-between gap-3">
@@ -416,7 +416,7 @@
 </section>
 
 <%!-- 07. The bill, said out loud. --%>
-<section class="max-w-6xl mx-auto px-6 py-16">
+<section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
   <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
     07 · Trade-offs
   </p>
@@ -429,7 +429,7 @@
   <div class="grid md:grid-cols-2 gap-6 mt-8">
     <div
       :for={cost <- self_host_costs()}
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 flex flex-col"
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 sm:p-6 flex flex-col"
       data-role="cost"
     >
       <h3 class="font-semibold text-[var(--color-text-primary)]">{cost.title}</h3>
@@ -450,7 +450,7 @@
       `self_host_faq/0`, so the objection list is written once and this page
       links to its section by anchor. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-6xl mx-auto px-6 py-16">
+  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
     <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
       08 · Before the clone
     </p>
@@ -471,14 +471,14 @@
 
 <%!-- Footer CTA --%>
 <section class="bg-[var(--color-bg-2)] border-t border-[var(--color-border)]">
-  <div class="max-w-6xl mx-auto px-6 py-20">
+  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-14 sm:py-20">
     <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
       Clone it tonight.
     </h2>
     <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[58ch]">
       A container, a Postgres and a sandbox token. The manual has the whole path, the repo has the issues, and neither of them has a sales form in it.
     </p>
-    <div class="mt-8 flex flex-col sm:flex-row gap-3">
+    <div class="mt-8 flex flex-col sm:flex-row gap-3 [&>a]:w-full sm:[&>a]:w-auto">
       <a
         href={~p"/docs/guides/operate/deploy"}
         class="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[var(--color-brand)] text-[var(--color-brand-text)] font-medium hover:bg-[var(--color-brand-hover)] transition-colors"

@@ -797,7 +797,7 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://rounds.demo.managoat.com",
             source: "https://github.com/managoat/rounds",
             blurb:
-              "Dependabot for infrastructure config. Enrol a repository and it gets audited on a schedule; an agent fixes what it can verify and opens the pull request. Never twice for the same finding, never again for one you closed.",
+              "Dependabot for infrastructure config. Enroll a repository and it gets audited on a schedule; an agent fixes what it can verify and opens the pull request. Never twice for the same finding, never again for one you closed.",
             shows: "an unattended product, and an agent that knows when to do nothing"
           }
         ]
@@ -957,14 +957,14 @@ defmodule FountainWeb.MarketingHTML do
         name: "Brokered credentials",
         blurb:
           "The real token never enters the sandbox. The broker attaches it on the way out, and the transcript keeps a placeholder.",
-        hosted: "Limited access. We enrol an account by hand.",
+        hosted: "Limited access. We enroll an account by hand.",
         yours: "Set BROKER_URL and BROKER_TOKEN, and list the tenants in BROKER_TENANTS.",
         docs: "/docs/concepts/secrets"
       }
     ]
   end
 
-  @doc "What each licence lets you do, in the order that matters to somebody deciding."
+  @doc "What each license lets you do, in the order that matters to somebody deciding."
   def licence_parts do
     [
       %{
@@ -1074,7 +1074,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         q: "What do I pay for the software?",
         a:
-          "Nothing. There is no licence key and no seat count, and nobody has to talk to us first. Leave credits off and the instance prices nothing and shows nobody a bill. Turn credits on and it bills your users rather than you."
+          "Nothing. There is no license key and no seat count, and nobody has to talk to us first. Leave credits off and the instance prices nothing and shows nobody a bill. Turn credits on and it bills your users rather than you."
       },
       %{
         q: "Do I still bring a model key?",
