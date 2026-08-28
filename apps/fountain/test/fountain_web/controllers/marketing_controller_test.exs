@@ -151,7 +151,10 @@ defmodule FountainWeb.MarketingControllerTest do
       body = conn |> get(~p"/built-with") |> html_response(200)
       assert body =~ ~s(<meta property="og:title" content="Built with Fountain · Fountain")
       assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/built-with")
-      assert body =~ ~s(<meta name="description" content="13 open-source applications)
+      # Derived, not restated: the roster's length is the number in the card, and
+      # a literal here goes stale the next time an app joins or leaves it.
+      count = FountainWeb.MarketingHTML.built_app_count()
+      assert body =~ ~s(<meta name="description" content="#{count} open-source applications)
     end
 
     test "every link into the manual resolves to a page", %{conn: conn} do
