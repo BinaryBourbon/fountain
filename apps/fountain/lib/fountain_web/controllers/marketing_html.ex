@@ -693,7 +693,7 @@ defmodule FountainWeb.MarketingHTML do
         id: "everyone",
         title: "For everyone",
         blurb:
-          "No agent, no sandbox and no prompt box on screen. The product is the document, the chart or the text message.",
+          "No agent, no sandbox and no prompt box on screen. The product is the document or the chart.",
         apps: [
           %{
             id: "briefing-room",
@@ -716,17 +716,6 @@ defmodule FountainWeb.MarketingHTML do
             blurb:
               "Drop a CSV in. An analyst runs Python on its sandbox and comes back with charts and plain-English findings. Then keep asking questions of your data.",
             shows: "a real computer as the engine under a zero-jargon UI"
-          },
-          %{
-            id: "reflex",
-            glyph: "\u{1F4AC}",
-            name: "Reflex",
-            host: "reflex.inevitable.fyi",
-            url: "https://reflex.inevitable.fyi",
-            source: "https://github.com/jhgaylor/reflex",
-            blurb:
-              "A personal assistant you text. It keeps a computer, your accounts and a memory, and it works while you do something else: books the dentist, sweeps the inbox at two, texts you when the tickets come back.",
-            shows: "a persistent teammate, its own phone number, and routines on a schedule"
           }
         ]
       },
@@ -861,14 +850,16 @@ defmodule FountainWeb.MarketingHTML do
   def repo_url, do: @repo_url
 
   # The four apps /self-hosted leads with, chosen for four different shapes of
-  # front door: an assistant you text, an analyst behind a file upload, an
-  # unattended repair loop, and a fan-out. Selected from `built_apps/0` by id
-  # rather than restated, so a card here cannot drift from /built-with, and an
-  # app that is renamed or retired there raises at render instead of linking
-  # nowhere. The flagship three are deliberately not here: the same page shows
-  # them below the bring-up, as the front ends the reader gets rather than as
+  # front door: a commission that comes back as a document, an analyst behind a
+  # file upload, an unattended repair loop, and a fan-out. Selected from
+  # `built_apps/0` by id rather than restated, so a card here cannot drift from
+  # /built-with, and an app that is renamed or retired there raises at render
+  # instead of linking nowhere — which is exactly what dropping Reflex from the
+  # roster did to this list, and why briefing-room now holds the first slot.
+  # The flagship three are deliberately not here: the same page shows them
+  # below the bring-up, as the front ends the reader gets rather than as
   # evidence that other people build on this.
-  @showcase_ids ~w(reflex table-talk rounds mission-control)
+  @showcase_ids ~w(briefing-room table-talk rounds mission-control)
 
   @doc """
   The applications /self-hosted shows above the bring-up. The page's claim is

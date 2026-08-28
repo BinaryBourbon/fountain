@@ -24,7 +24,7 @@ from typing import Any, Callable
 from .client import FountainClient, FountainError
 
 # The standalone conversations app Fountain sends people to for a transcript.
-DEFAULT_APP_URL = "https://jakegaylor.com/fountain-conversations/"
+DEFAULT_APP_URL = "https://fountain-conversations.demo.managoat.com/"
 
 TERMINAL_TURN_STATES = ("done", "failed", "interrupted")
 TERMINAL_CONVERSATION_STATUSES = ("failed", "terminated")

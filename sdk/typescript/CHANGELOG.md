@@ -10,6 +10,17 @@ server releases.
 
 ---
 
+## [1.11.1] — 2026-08-28
+
+### Changed
+
+- `DEFAULT_APP_URL` is now
+  `https://fountain-conversations.demo.managoat.com/`. The conversations app
+  moved there when the demo suite left `jakegaylor.com` for
+  `*.demo.managoat.com`, and the old address stopped answering, so every deep
+  link `conversationUrl()` built against the default pointed nowhere. Callers
+  that pass `appUrl` or set `FOUNTAIN_APP_URL` are unaffected.
+
 ## [1.11.0] — 2026-08-25
 
 ### Added

@@ -80,15 +80,15 @@ separate single-page apps that talk to your `/api`.
 
 | | |
 |---|---|
-| [Conversations](https://jakegaylor.com/fountain-conversations/) | Start a run, watch it, steer it, read the raw log. |
-| [Team](https://jakegaylor.com/fountain-team/) | Your agents as teammates, one thread for each. |
+| [Conversations](https://fountain-conversations.demo.managoat.com/) | Start a run, watch it, steer it, read the raw log. |
+| [Team](https://fountain-team.demo.managoat.com/) | Your agents as teammates, one thread for each. |
 
 They are static builds with no server of their own. You type your Fountain's
 URL in, so the hosted copies above work against your deployment as soon as it
 admits the origin.
 
 ```bash
-echo "API_CORS_ORIGINS=https://jakegaylor.com" >> .env
+echo "API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com" >> .env
 ```
 
 To click "Sign in with Fountain" instead of a paste of an API key, register

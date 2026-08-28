@@ -27,9 +27,9 @@ OAuth client.
 
 | App | What it does |
 |---|---|
-| [Conversations](https://github.com/jhgaylor/fountain-conversations) | Start a run, watch it, steer it, read the raw log. |
-| [Team](https://github.com/jhgaylor/fountain-team) | Agents as teammates, one thread for each. |
-| [Workbench](https://github.com/jhgaylor/fountain-workbench) | Projects over an environment and a vault, work items in them, teammates on the work items. |
+| [Conversations](https://github.com/managoat/fountain-conversations) | Start a run, watch it, steer it, read the raw log. |
+| [Team](https://github.com/managoat/fountain-team) | Agents as teammates, one thread for each. |
+| [Workbench](https://github.com/managoat/fountain-workbench) | Projects over an environment and a vault, work items in them, teammates on the work items. |
 
 The first two replaced in-app LiveViews, and the console links to them.
 Workbench replaced no page, so the console does not link it. All three take
@@ -59,7 +59,7 @@ in. So one hosted build works against each deployment, yours as well, as soon
 as the server admits the origin.
 
 ```
-API_CORS_ORIGINS=https://jakegaylor.com
+API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com
 ```
 
 **It forces the API to be complete.** Make `/api` the only way to watch a
