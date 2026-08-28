@@ -1,0 +1,18 @@
+# The de-stink backlog. IT IS EMPTY.
+#
+# A page listed here is SKIPPED by scripts/destink/destink.mjs. Every page
+# under docs/ passes, so nothing is listed and every page is checked.
+#
+# Keep this file. Its emptiness is the point: adding a line is how you park a
+# page you have not cleaned yet, and an empty list says there are none. This
+# mirrors scripts/docs-style-allow.txt and .valeignore, which are empty for
+# the same reason.
+#
+# One line per path, relative to the repo root:
+#
+#   docs/guides/operate/deploy.md
+#
+# Prefer fixing the page. A whole page skipped is 33 rules off, not one, so a
+# line here is a big hammer. If a RULE rather than a page is the problem, the
+# right move is a DISABLED entry in scripts/destink/destink.mjs with the count
+# and the reason, so the decision is recorded once instead of per page.
