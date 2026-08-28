@@ -74,7 +74,7 @@ before you write a page.
 |---|---|
 | `scripts/docs-style.py` | The house style sheet. |
 | `vale lint docs` | ASD-STE100 Simplified Technical English. |
-| `scripts/destink/destink.mjs` | The tells that make a page read as machine written. |
+| `scripts/destink/destink.mjs` | The tells that make a page read as machine written, via the [`sentences`](https://github.com/lex00/sentences) package (MIT). |
 
 Each check has a backlog file, and each backlog file is empty. A new page
 gets all three checks from its first commit.
