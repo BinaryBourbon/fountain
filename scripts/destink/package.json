@@ -2,8 +2,8 @@
   "name": "fountain-destink",
   "private": true,
   "type": "module",
-  "description": "Docs de-stink gate. Engine vendored from lex00/sentences; see vendor/UPSTREAM.",
+  "description": "Docs de-stink gate. Engine is the published lex00/sentences package's lint surface.",
   "dependencies": {
-    "compromise": "^14.15.1"
+    "sentences": "^0.1.1"
   }
 }
