@@ -50,13 +50,13 @@ not watch an agent work in it. The three apps we build for that are separate
 single-page apps on their own origins, talking to `/api` with a key you paste
 in or an OAuth sign-in. Each is static files, so a hosted build works against
 your instance as soon as it admits the origin
-(`API_CORS_ORIGINS=https://jakegaylor.com`).
+(`API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com`).
 
 | App | What it is | |
 |---|---|---|
-| [**Conversations**](https://github.com/jhgaylor/fountain-conversations) | ChatGPT, except the model has a real computer and you can watch it use one: start a run, follow it turn by turn, steer it, read the raw log. | [Open it](https://jakegaylor.com/fountain-conversations/) |
-| [**Team**](https://github.com/jhgaylor/fountain-team) | A group chat whose contacts are agents you made, one click each: roster on the left, thread on the right, routines on a schedule. | [Open it](https://jakegaylor.com/fountain-team/) |
-| [**Workbench**](https://github.com/jhgaylor/fountain-workbench) | Multiplayer engineering: projects over an environment and a vault, work items in them, and teammates you put on a work item by typing. | [Open it](https://workbench.inevitable.fyi) |
+| [**Conversations**](https://github.com/managoat/fountain-conversations) | ChatGPT, except the model has a real computer and you can watch it use one: start a run, follow it turn by turn, steer it, read the raw log. | [Open it](https://fountain-conversations.demo.managoat.com/) |
+| [**Team**](https://github.com/managoat/fountain-team) | A group chat whose contacts are agents you made, one click each: roster on the left, thread on the right, routines on a schedule. | [Open it](https://fountain-team.demo.managoat.com/) |
+| [**Workbench**](https://github.com/managoat/fountain-workbench) | Multiplayer engineering: projects over an environment and a vault, work items in them, and teammates you put on a work item by typing. | [Open it](https://fountain-workbench.demo.managoat.com) |
 
 `CONVERSATIONS_APP_URL` and `TEAM_APP_URL` point the console's own links at
 copies you host. [The console, the apps, and the API](docs/concepts/surfaces.md)
