@@ -36,8 +36,8 @@ defmodule Fountain.AppsTest do
     Application.delete_env(:fountain, :conversations_app_url)
     Application.delete_env(:fountain, :team_app_url)
 
-    assert Apps.conversations() == "https://jakegaylor.com/fountain-conversations/"
-    assert Apps.team() == "https://jakegaylor.com/fountain-team/"
+    assert Apps.conversations() == "https://fountain-conversations.demo.managoat.com/"
+    assert Apps.team() == "https://fountain-team.demo.managoat.com/"
   end
 
   test "a configured URL wins, with exactly one trailing slash either way" do

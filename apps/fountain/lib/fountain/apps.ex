@@ -9,12 +9,12 @@ defmodule Fountain.Apps do
   one place that knows their URLs, so the console's links, an email's
   "open it" and a forwarded support report all agree.
 
-  Both default to the apps hosted at jakegaylor.com. They are ordinary static
+  Both default to the apps hosted on demo.managoat.com. They are ordinary static
   builds with **no server of their own**: the reader types their Fountain's
   URL in, so the hosted build works against a self-hosted Fountain as soon as
   that server admits the origin:
 
-      API_CORS_ORIGINS=https://jakegaylor.com
+      API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com
 
   A deployment that would rather host its own copy points `CONVERSATIONS_APP_URL`
   and `TEAM_APP_URL` at it (and admits *that* origin instead). Setting either
@@ -23,8 +23,8 @@ defmodule Fountain.Apps do
   rather than off-site.
   """
 
-  @conversations "https://jakegaylor.com/fountain-conversations/"
-  @team "https://jakegaylor.com/fountain-team/"
+  @conversations "https://fountain-conversations.demo.managoat.com/"
+  @team "https://fountain-team.demo.managoat.com/"
 
   @doc "The conversations app's base URL, or nil where the deployment has none."
   @spec conversations() :: String.t() | nil
@@ -41,7 +41,7 @@ defmodule Fountain.Apps do
   log `#/c/<id>/logs`.
 
       iex> Fountain.Apps.conversation_url("abc")
-      "https://jakegaylor.com/fountain-conversations/#/c/abc"
+      "https://fountain-conversations.demo.managoat.com/#/c/abc"
   """
   @spec conversation_url(String.t(), keyword()) :: String.t() | nil
   def conversation_url(id, opts \\ []) when is_binary(id) do
