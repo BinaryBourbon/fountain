@@ -1,13 +1,13 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
   The public pages: `/`, `/integrations`, `/built-with`, `/self-hosted`,
-  `/code-review-bot`, `/case-studies/*`, `/terms` and `/privacy`.
+  `/faq`, `/code-review-bot`, `/case-studies/*`, `/terms` and `/privacy`.
 
   None of them is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
   (`Fountain.Marketing`); `/integrations`, `/built-with`, `/self-hosted`,
-  `/code-review-bot` and the case studies are the pitch's other pages and
-  redirect into the manual on any other instance;
+  `/faq`, `/code-review-bot` and the case studies are the pitch's other pages
+  and redirect into the manual on any other instance;
   the legal pages render the operator's identity, or nothing at all
   (`Fountain.Legal`). A deployment is not the Fountain project, and these
   pages are the ones that would claim otherwise.
@@ -35,6 +35,26 @@ defmodule FountainWeb.MarketingController do
       )
     else
       redirect(conn, to: ~p"/docs/integrations/clients")
+    end
+  end
+
+  # Every question-shaped block on the site, in one place. The homepage keeps
+  # its six-question grid, which is the problem statement rather than an FAQ;
+  # the security answers and the self-hosting objections moved here whole and
+  # those pages link in by anchor. Sales copy, so it follows `/`.
+  def faq(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :faq,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Questions · #{Fountain.Brand.name()}",
+        meta_description:
+          "What a developer, a buyer and a security reviewer ask before building " <>
+            "on #{Fountain.Brand.name()}: model keys, what a sandbox does between " <>
+            "messages, tenant isolation, what it costs, what we do not have, and " <>
+            "what it takes to run the whole thing yourself."
+      )
+    else
+      redirect(conn, to: ~p"/docs")
     end
   end
 

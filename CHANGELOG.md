@@ -18,6 +18,22 @@ upgrade, is in
 
 ### Added
 
+- **One page for the questions, at `/faq`.** Three marketing pages carried a
+  question-shaped block at the bottom, and a reader with a question had to
+  guess which page it sat on. They are one page now, grouped into building on
+  it, what it costs, security and data, and running it yourself, linked from
+  the footer. The homepage keeps its six-question grid, which is the problem
+  statement rather than an FAQ, and its two other blocks moved whole: the
+  security answers (`security_answers/0`, with every limit still stated beside
+  the answer it limits, and the "what we do not have" list still with them)
+  and the objections, now `build_faq/0`. `/self-hosted` section 08 moved the
+  same way, still `self_host_faq/0`. Both pages link back to their section by
+  anchor rather than repeating the copy, and the suite asserts those anchors
+  exist. On a deployment that bills, a billing section reads the same price
+  card the ledger burns at, so the page cannot quote a rate the meter does not
+  charge. Off the marketing site `/faq` redirects into the manual, like the
+  other sales pages.
+
 - **A Fly blueprint, and a name for the hosts that do not work.** `fly.toml`
   declares one machine on the published image, defaulted the way compose and
   `render.yaml` are, and the guide at `/docs/guides/operate/fly` attaches a

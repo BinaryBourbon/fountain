@@ -130,6 +130,16 @@
                 Docs
               </a>
             </li>
+            <%!-- The FAQ redirects into the manual off the marketing site, so
+                  the link is gated the same way its neighbours are. --%>
+            <li :if={Fountain.Marketing.site?()}>
+              <a
+                href={~p"/faq"}
+                class="hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Questions
+              </a>
+            </li>
             <li :if={Fountain.Marketing.site?()}>
               <a
                 href={~p"/self-hosted"}

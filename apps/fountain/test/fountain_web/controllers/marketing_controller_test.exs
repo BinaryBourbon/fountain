@@ -269,6 +269,86 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  # One page for every question-shaped block the site used to scatter across
+  # three. The point of the page is that it does not drift from the data the
+  # old blocks rendered, so the tests walk `faq_sections/0` rather than
+  # asserting sentences by hand.
+  describe "GET /faq" do
+    test "renders every section and every question in it", %{conn: conn} do
+      body = conn |> get(~p"/faq") |> html_response(200)
+
+      assert body =~ "Answers, with the limits attached."
+
+      # No emptiness assertion: faq_sections/0 is a literal list, so Elixir's
+      # type checker reads `!= []` as always true and warns.
+      for section <- FountainWeb.MarketingHTML.faq_sections() do
+        assert body =~ ~s(id="#{section.id}"), "the page drops section #{section.id}"
+        assert body =~ escape(section.title)
+
+        for item <- section.items do
+          assert body =~ escape(item.q), "the page drops #{inspect(item.q)}"
+          assert body =~ escape(item.a), "the page drops the answer to #{inspect(item.q)}"
+        end
+      end
+    end
+
+    test "carries the blocks it took off the other pages", %{conn: conn} do
+      body = conn |> get(~p"/faq") |> html_response(200)
+
+      # The homepage objections, now build_faq/0.
+      for item <- FountainWeb.MarketingHTML.build_faq() do
+        assert body =~ escape(item.q), "the page drops #{inspect(item.q)}"
+      end
+
+      # /self-hosted section 08, unchanged as a function.
+      for item <- FountainWeb.MarketingHTML.self_host_faq() do
+        assert body =~ escape(item.q), "the page drops #{inspect(item.q)}"
+      end
+
+      # The security block, questions and limits both.
+      for item <- FountainWeb.MarketingHTML.security_answers() do
+        assert body =~ escape(item.question)
+        if item.limit, do: assert(body =~ escape(item.limit), "the page drops its limit")
+      end
+    end
+
+    # The three pages that gave up their questions link back by anchor. A
+    # renamed section id would leave those links pointing at nothing, and
+    # nothing else in the suite would notice.
+    test "the anchors the other pages link at all exist", %{conn: conn} do
+      body = conn |> get(~p"/faq") |> html_response(200)
+      ids = Enum.map(FountainWeb.MarketingHTML.faq_sections(), & &1.id)
+
+      for anchor <- ~w(security self-hosting) do
+        assert anchor in ids, "/faq has no ##{anchor} section to link at"
+        assert body =~ ~s(id="#{anchor}")
+      end
+
+      home = conn |> get(~p"/") |> html_response(200)
+      assert home =~ "/faq#security"
+
+      self_hosted = conn |> get(~p"/self-hosted") |> html_response(200)
+      assert self_hosted =~ "/faq#self-hosting"
+    end
+
+    test "carries its own card", %{conn: conn} do
+      body = conn |> get(~p"/faq") |> html_response(200)
+      assert body =~ ~s(<meta property="og:title" content="Questions · Fountain")
+
+      assert body =~
+               ~s(<meta name="description" content="What a developer, a buyer and a security reviewer ask)
+
+      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/faq")
+    end
+
+    test "the footer and both pages that shed questions link to it", %{conn: conn} do
+      for path <- [~p"/", ~p"/self-hosted"] do
+        body = conn |> get(path) |> html_response(200)
+        assert body =~ ~p"/faq", "#{path} does not link to the FAQ"
+      end
+    end
+  end
+
   describe "GET /code-review-bot" do
     test "shows the whole program and every line it annotates", %{conn: conn} do
       body = conn |> get(~p"/code-review-bot") |> html_response(200)
@@ -495,6 +575,7 @@ defmodule FountainWeb.MarketingControllerTest do
             ~p"/built-with",
             ~p"/case-studies/self-healing-infrastructure",
             ~p"/self-hosted",
+            ~p"/faq",
             "/docs",
             "/docs/open-source",
             ~p"/terms",
@@ -509,12 +590,12 @@ defmodule FountainWeb.MarketingControllerTest do
   # The three apps this project builds itself lead every page that shows the
   # roster (#1219). Each is one entry in built_apps/0 carrying a :flagship
   # key, so these tests are what stops a page naming them by hand and drifting.
-  describe "the security section on /" do
+  describe "the security answers on /faq" do
     test "renders every answer and every limit", %{conn: conn} do
-      body = conn |> get(~p"/") |> html_response(200)
+      body = conn |> get(~p"/faq") |> html_response(200)
 
-      assert body =~ "The part you forward to your security reviewer."
-      assert body =~ ~s(data-role="security-answers")
+      assert body =~ "Security and data"
+      assert body =~ ~s(id="security")
 
       for item <- FountainWeb.MarketingHTML.security_answers() do
         assert body =~ escape(item.question), "the page drops #{inspect(item.question)}"
@@ -526,7 +607,7 @@ defmodule FountainWeb.MarketingControllerTest do
     end
 
     test "says out loud what the platform does not have", %{conn: conn} do
-      body = conn |> get(~p"/") |> html_response(200)
+      body = conn |> get(~p"/faq") |> html_response(200)
 
       assert body =~ "What we do not have."
 
@@ -544,7 +625,7 @@ defmodule FountainWeb.MarketingControllerTest do
     end
 
     test "claims nothing for the egress broker, which runs for one account", %{conn: conn} do
-      body = conn |> get(~p"/") |> html_response(200)
+      body = conn |> get(~p"/faq") |> html_response(200)
 
       # ADR 0019 is Proposed and live for the maintainer alone. The page may
       # only name it among the things you cannot turn on.
@@ -553,18 +634,20 @@ defmodule FountainWeb.MarketingControllerTest do
     end
 
     test "every link into the manual resolves to a page", %{conn: conn} do
-      body = conn |> get(~p"/") |> html_response(200)
+      for path <- [~p"/", ~p"/faq"] do
+        body = conn |> get(path) |> html_response(200)
 
-      links =
-        ~r/href="\/docs\/([^"#]+)/
-        |> Regex.scan(body)
-        |> Enum.map(fn [_, slug] -> slug end)
-        |> Enum.uniq()
+        links =
+          ~r/href="\/docs\/([^"#]+)/
+          |> Regex.scan(body)
+          |> Enum.map(fn [_, slug] -> slug end)
+          |> Enum.uniq()
 
-      assert links != []
+        assert links != [], "#{path} links into the manual nowhere"
 
-      for slug <- links do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        for slug <- links do
+          assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        end
       end
     end
   end
