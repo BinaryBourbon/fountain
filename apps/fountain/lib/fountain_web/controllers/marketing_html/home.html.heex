@@ -58,7 +58,7 @@
       You did not set out to run a sandbox platform.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-      Harnesses are not the scarce part. There are dozens, and {Fountain.Brand.name()} runs four of them behind one API. The scarce part is everything under the harness, and it arrives as six questions between a demo on your laptop and a feature in front of your users.
+      The agent was the easy part. Under it sits a machine to build, a credential that must never reach the prompt, and a lifecycle somebody has to own. Six questions stand between a demo on your laptop and a feature in front of your users, and not one of them is what your users came for.
     </p>
     <div class="grid sm:grid-cols-2 gap-6">
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
@@ -660,34 +660,6 @@
     >
       See what people built
     </a>
-  </div>
-</section>
-
-<%!-- The teammate contact. Deep on the page on purpose. It is the most
-      quotable thing here and the only one gated on asking us, so down here it
-      reads as a bonus rather than a barrier on the way in. --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-6 text-center">
-    Give one a phone number.
-    <span class="ml-1 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-bg-2)] text-[var(--color-text-muted)]">
-      Alpha
-    </span>
-  </h2>
-  <div class="max-w-2xl mx-auto space-y-4 text-center text-[var(--color-text-secondary)]">
-    <p>
-      An agent can hold an email address and a number of its own. A message to either arrives as a prompt in its thread, on the same machine it has been working on all week, and the reply goes back the same way. Your product gets an inbound channel, and you do not run an inbox.
-    </p>
-    <p>
-      {Fountain.Brand.name()} holds the keys to that inbox and that number. The sandbox is handed tools, and never a credential.
-    </p>
-    <p :if={pricing?() and rent_line()} class="text-sm text-[var(--color-text-muted)]">
-      A contact rents from your balance. {String.capitalize(rent_line())}, a month up front.
-    </p>
-    <p class="text-xs text-[var(--color-text-muted)]">
-      Ask us and we turn it on for your account. On your own instance, set the AgentMail and AgentPhone keys. Then add
-      <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">team_comms</code>
-      to <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">FEATURE_FLAGS_ON</code>.
-    </p>
   </div>
 </section>
 
