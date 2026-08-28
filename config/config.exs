@@ -25,6 +25,13 @@ config :fountain, Oban,
        # matters. Each run is one paginated list plus at most a handful of
        # deletes.
        {"7 * * * *", Fountain.Workers.SandboxReaper},
+       # Every 5 minutes: a turn stuck `running` with no live server sits
+       # at `presence: working`, refusing every message, until someone
+       # notices (#1197, #1179 hit 4+ hours in production). terminate/2
+       # already closes the common case (a graceful exit); this is the
+       # backstop for a crash or a departed node that terminate/2 never
+       # saw. One indexed query, usually empty.
+       {"*/5 * * * *", Fountain.Workers.AutonomousTurnReaper},
        # 05:41 UTC — after the 03:17 backup and the 04:23 retention prune, so
        # a backup always captures the accounts before the sweep removes them.
        {"41 5 * * *", Fountain.Workers.UnverifiedAccountPruner},

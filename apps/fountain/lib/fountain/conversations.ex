@@ -1227,6 +1227,42 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Closes a turn stuck `running` with no live process behind it (#1197):
+  marks it `interrupted`, flips its conversation back to `idle` so the UI
+  and quota both read correctly, and publishes the same `reattach` /
+  `interrupted` stage event `ConversationServer` has always used for this
+  outcome.
+
+  Three call sites, one ending: `ConversationServer`'s own reattach path
+  (a turn found running with no session behind it), `terminate/2` (the
+  process exiting gracefully — a deploy, a Horde rebalance, any
+  `{:stop, :normal, _}` — with the watchdog timer, which lives only in
+  that process's memory, going with it), and `AutonomousTurnReaper` (the
+  backstop for everything `terminate/2` cannot reach: a hard crash, a
+  SIGKILL, a node that leaves the cluster without ever running
+  `terminate/2` at all).
+  """
+  def orphan_turn(%Turn{} = turn, why) do
+    {:ok, _} =
+      _unsafe_update_turn(turn, %{
+        status: "interrupted",
+        ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    conv = _unsafe_get_conversation!(turn.conversation_id)
+    {:ok, _} = update_conversation(conv, %{status: "idle"})
+
+    publish_stage(turn.conversation_id, "reattach", "interrupted", %{
+      outcome: "turn_orphaned",
+      turn_id: turn.id,
+      turn_number: turn.turn_number,
+      reason: why
+    })
+
+    :ok
+  end
+
+  @doc """
   Record a turn's end-of-turn token usage (#827): stamp `usage` on the turn
   and add its `input` / `output` to the conversation's running sums, in one
   transaction. `usage` is the normalised map `Fountain.Runtimes.ACP.Usage`

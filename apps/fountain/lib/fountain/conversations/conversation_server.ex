@@ -1449,26 +1449,12 @@ defmodule Fountain.Conversations.ConversationServer do
     }
   end
 
-  defp mark_orphan(state, running_turn, why) do
-    {:ok, _} =
-      Conversations._unsafe_update_turn(running_turn, %{
-        status: "interrupted",
-        ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
-      })
-
-    # The orphaned turn was the only thing keeping the conversation in
-    # `running`. Flip it back to `idle` so the UI accurately reflects
-    # state and the user can prompt without going through wake.
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
-
-    publish_stage(state.conversation_id, "reattach", "interrupted", %{
-      outcome: "turn_orphaned",
-      turn_id: running_turn.id,
-      turn_number: running_turn.turn_number,
-      reason: why
-    })
-  end
+  # Thin wrapper kept at every reattach call site for the same reason
+  # `publish_stage/4` is: `Conversations.orphan_turn/2` is the shared
+  # definition (also used by `terminate/2` below and by
+  # `AutonomousTurnReaper`, #1197), this just saves each call site from
+  # threading `running_turn.conversation_id` through by hand.
+  defp mark_orphan(_state, running_turn, why), do: Conversations.orphan_turn(running_turn, why)
 
   defp find_running_turn(conv_id) do
     import Ecto.Query
@@ -3069,7 +3055,9 @@ defmodule Fountain.Conversations.ConversationServer do
   # own, and RetentionPruner deletes long-expired rows. See SandboxReaper
   # for the sprite half, which does not self-heal.
   @impl true
-  def terminate(_reason, state) do
+  def terminate(reason, state) do
+    close_current_turn_if_graceful(state, reason)
+
     Fountain.Conversations.Redaction.delete(state.conversation_id)
 
     if state.conversation_id && state.callback_api_key_id do
@@ -3088,6 +3076,38 @@ defmodule Fountain.Conversations.ConversationServer do
 
     :ok
   end
+
+  # A turn's `autonomous_quiet` watchdog (`arm_autonomous_quiet/1`) lives
+  # only in this process's memory, so it is gone the moment the process
+  # is. On a graceful exit — this server choosing to stop (`:normal`), or
+  # its supervisor stopping it on purpose (`:shutdown` / `{:shutdown,
+  # _}`, the reason a deploy or the losing side of a Horde rebalance
+  # gets) — nothing else will ever close a turn left `running`, so this
+  # closes it here instead of leaving it for a human to notice (#1197,
+  # follow-up to #1179).
+  #
+  # A genuine crash is deliberately NOT handled here: `restart: :transient`
+  # means the supervisor restarts a server that exits any other way, and
+  # the successor's own `reattach_running_turn/1` already closes what it
+  # cannot recover (`mark_orphan/3` above) — doing it twice here would race
+  # that write. What a crash *without* a restart leaves behind — a node
+  # that left the cluster before rejoining, a SIGKILL — is
+  # `AutonomousTurnReaper`'s job, not this callback's; this only ever
+  # catches the exits this process saw coming.
+  defp close_current_turn_if_graceful(%{current_turn: nil}, _reason), do: :ok
+
+  defp close_current_turn_if_graceful(%{current_turn: turn}, reason)
+       when reason == :normal or reason == :shutdown do
+    _ = Conversations.orphan_turn(turn, "server_terminated_gracefully")
+    :ok
+  end
+
+  defp close_current_turn_if_graceful(%{current_turn: turn}, {:shutdown, _}) do
+    _ = Conversations.orphan_turn(turn, "server_terminated_gracefully")
+    :ok
+  end
+
+  defp close_current_turn_if_graceful(_state, _reason), do: :ok
 
   # Redacts secrets from crash reports and :sys.get_status output (#315). An
   # unhandled raise in any callback logs `State:` via inspect — without this,
