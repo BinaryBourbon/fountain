@@ -66,12 +66,20 @@ the alias still exits 0. Confirm you reached `N tests, 0 failures`.
 
 CI additionally runs `hex.audit`, the Go CLI checks (`go test ./...`,
 `go vet ./...` in `cli/`), a release boot check, OpenAPI validation, and the
-docs gates. If you touched `docs/`, run the two prose gates too:
+docs gates. If you touched `docs/`, run the three prose gates too:
 
 ```bash
 python3 scripts/docs-style.py
 vale lint docs
+npm ci --prefix scripts/destink && node scripts/destink/destink.mjs
 ```
+
+The third one looks for AI-writing tells. Its engine is vendored under
+`scripts/destink/vendor`, so the `npm ci` installs one package and is only
+needed the first time. If it reports something that is not prose — a table
+cell, a CLI flag, anything inside a code fence — the fix belongs in
+`scripts/destink/extract-prose.mjs`, not in the page. The rule set, and why
+each rule is on or off, is in `scripts/destink/destink.mjs`.
 
 The structural half — every page named in `docs/nav.yml`, every page on disk
 named there, and every internal `/docs` link and anchor — is in the test suite,
