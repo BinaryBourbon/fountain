@@ -487,6 +487,28 @@ Guardrails that trip people who only edit markdown:
   the standard before you fight the linter — it lists the three traps (joined
   table cells, a code span opening a sentence, `anything` matching the -ing
   rule) and where a suppression comment is legitimate.
+- **`node scripts/destink/destink.mjs` looks for AI-writing tells.** The third
+  prose gate. The engine is vendored from
+  [lex00/sentences](https://github.com/lex00/sentences) (MIT) under
+  `scripts/destink/vendor`, pinned by the SHA in `vendor/UPSTREAM` and re-copied
+  by `scripts/destink/sync.mjs`. **Nothing in `vendor/` is edited** — the sync
+  overwrites it wholesale, so a local fix there is reverted silently.
+  `scripts/destink/allow.txt` is the backlog and is **empty**, like the other
+  two. Two things to know before fighting it:
+  - **It lints prose, not markdown.** `extract-prose.mjs` blanks code fences,
+    tables, inline code, link targets, HTML blocks and admonition directives,
+    replacing each character with a space so every offset still indexes the
+    real file. Run whole over raw markdown the linter reported 2,721 findings,
+    of which ~1,750 were markdown mistaken for writing: `--` in a CLI flag read
+    as an em dash, table rows read as sentence fragments, and `guides` and
+    `operate` read as words because they sat in a URL. If a finding points at
+    something that is not prose, the fix is in the extractor, not the page.
+  - **The rule set is opt-in, and each entry carries its count.** `ENABLED` and
+    `DISABLED` in `scripts/destink/destink.mjs` list all 46 vendored rules with
+    the number each produced over `docs/` and, for the disabled ones, why. Opt-in
+    is the safety property: a rule added upstream between syncs arrives off. The
+    gate refuses to run if an id named there is missing from the vendored
+    registry, which is what a rename upstream looks like from here.
 - **`docs/cli.md` is diffed against the CLI.** `cli/internal/cmd/docs_test.go`
   fails if a command exists that the page does not mention, or the page
   mentions one that does not exist. Add a CLI command → add it to `docs/cli.md`
