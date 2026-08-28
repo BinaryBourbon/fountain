@@ -681,7 +681,7 @@ defmodule FountainWeb.OpenGraphTest do
 
     assert body =~ ~s(<meta property="og:image:width" content="1200")
     assert body =~ ~s(<meta name="twitter:card" content="summary_large_image")
-    assert body =~ ~s(<meta name="description" content="Fountain runs a coding agent)
+    assert body =~ ~s(<meta name="description" content="Fountain is a conversational API)
   end
 
   test "a docs page describes itself and names its own URL", %{conn: conn} do
