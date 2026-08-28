@@ -1,0 +1,128 @@
+# Fountain on Fly.io — https://fly.io/docs/reference/configuration/
+#
+# This file is for somebody who wants an instance of their own on Fly. It is
+# not how the hosted service runs (that is Kubernetes, ADR 0032), so treat it
+# the way you would treat docker-compose.yml: a starting point that comes up,
+# not a description of production.
+#
+#   fly launch --no-deploy --copy-config    # keeps this file, names the app
+#   fly mpg create                          # managed Postgres
+#   fly mpg attach <cluster>                # sets DATABASE_URL
+#   fly secrets set SECRET_KEY_BASE=... MASTER_SECRETS_KEY=... SPRITES_TOKEN=...
+#   fly deploy
+#
+# Generate the two keys before you start:
+#
+#   openssl rand -base64 48 | tr -d '\n'                    # SECRET_KEY_BASE
+#   openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n'   # MASTER_SECRETS_KEY
+#
+# The full list of what you can set afterwards is docs/configuration.md, and
+# docs/guides/operate/fly.md is the guide this file belongs to.
+
+# `fly launch` replaces this with the name you give it. Nothing else in this
+# file names the app, and Fountain reads FLY_APP_NAME for its own base URL.
+app = "fountain"
+primary_region = "iad"
+
+[build]
+  # A pinned release, deliberately not `latest`: `latest` moves on every merge
+  # to main, across breaking minors, with migrations applied at boot and
+  # downgrade unsupported. Upgrade by editing this tag. Releases publish
+  # vX.Y.Z (immutable) and vX.Y (newest patch in the line).
+  #
+  # To run your own build of a fork instead of the published image, delete the
+  # `image` line and let Fly build the Dockerfile in this checkout. The build
+  # compiles the umbrella, the Go CLI and fetches the pinned Buzz binaries, so
+  # prefer the image unless you have changes to run.
+  image = "ghcr.io/binarybourbon/fountain:v0.14.0"
+
+# Migrations run at boot, inside the app's own start sequence, and the
+# endpoint does not listen until they finish. There is deliberately no
+# `[deploy] release_command`: a release machine would run the same migrations
+# a few seconds earlier, against the same database, for no gain.
+[deploy]
+  # Rolling, and not the two strategies that read as safer. `canary` and
+  # `bluegreen` both bring a second machine up before taking the first one
+  # down, and for those seconds two schedulers hold the same sandboxes (see
+  # the machine count below). Rolling stops a machine, replaces it, and waits
+  # for the health check, so one instance stays one instance across a deploy.
+  strategy = "rolling"
+
+[env]
+  PHX_SERVER = "true"
+
+  # Fly's proxy sends to whatever `internal_port` says. The image defaults to
+  # 4000, so this has to be explicit rather than inherited.
+  PORT = "8080"
+
+  # Fly terminates TLS at its edge and forwards over the private network, so
+  # the app sees the proxy rather than the caller. Left unset, the built-in
+  # defaults are cluster CIDRs that match nothing here, every per-IP
+  # rate-limit bucket collapses into one, and every audit row records the
+  # proxy's address. fdaa::/16 is the 6PN range Fly gives an organization;
+  # the IPv4 range covers a proxy that reaches the machine over the host.
+  TRUSTED_PROXIES = "fdaa::/16,172.16.0.0/12"
+
+  # Credits (ADR 0031) price the hosted service. On your own instance they are
+  # a lock with no key.
+  CREDITS_ENABLED = "false"
+
+  # No mail, so a first deploy needs nothing external. Accounts self-verify at
+  # registration in this mode (ADR 0011). For real mail set RESEND_API_KEY or
+  # SMTP_HOST, and EMAIL_FROM, with `fly secrets set`.
+  EMAIL_DELIVERY = "none"
+
+  # Open so the first account can be created, and the first verified account
+  # becomes admin. Register before you hand the URL to anybody, then set this
+  # to false and deploy again.
+  REGISTRATION_ENABLED = "true"
+  FIRST_USER_ADMIN = "true"
+
+  # There is no OTLP collector in a default Fly setup, and without this the
+  # exporter retries per span and floods the logs.
+  OTEL_TRACES_EXPORTER = "none"
+
+  # PUBLIC_URL is deliberately absent, and unlike Render this is not a
+  # chicken-and-egg problem — `<app>.fly.dev` is known the moment you pick the
+  # name. It is absent because this file ships with a name you are about to
+  # change, and a stale base URL is silently wrong rather than broken: it
+  # builds the links in verification emails and every sandbox reads it as
+  # FOUNTAIN_BASE_URL. config/runtime.exs derives https://$FLY_APP_NAME.fly.dev
+  # instead. Set PUBLIC_URL here when you add a custom domain, and it wins.
+
+  # Fly's managed Postgres serves TLS, which the app expects by default. The
+  # older unmanaged `fly pg create` app does not serve TLS at all, and against
+  # one of those the app cannot connect until you uncomment this:
+  #   DATABASE_SSL = "false"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # One machine, on purpose. Fountain clusters over Erlang distribution and
+  # nothing here discovers peers, so a second machine is not a second node —
+  # it is a split brain, with two schedulers racing over the same sandboxes.
+  # Scale the VM below, not the count, and do not run `fly scale count`.
+  #
+  # These two lines are the whole reason this file exists. Fly's defaults stop
+  # an idle machine and start it again on a request, which is right for a web
+  # app and wrong here: the sandbox reaper, the credit pricer and every
+  # scheduled teammate run inside this process, so a parked machine is an
+  # instance that quietly stops reaping and stops pricing.
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    # Fly gates traffic on this, which is a readiness question. /health is
+    # static and would pass with an unreachable database.
+    path = "/health/ready"
+    interval = "15s"
+    timeout = "5s"
+    # Boot runs migrations before the endpoint listens. Do not count failures
+    # against the machine while that is still happening.
+    grace_period = "60s"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

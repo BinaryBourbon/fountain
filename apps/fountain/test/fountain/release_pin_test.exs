@@ -1,5 +1,5 @@
 defmodule Fountain.ReleasePinTest do
-  # The self-host quick start pins a release image in five places. Those pins
+  # The self-host quick start pins a release image in six places. Those pins
   # sat at v0.3.0 through two releases, handing newcomers an image from before
   # the in-app first-login flow (#478), where EMAIL_DELIVERY=none dead-ends
   # signup. release-bump.yml now bumps the pins inside the release commit;
@@ -13,6 +13,7 @@ defmodule Fountain.ReleasePinTest do
     {"docker-compose.yml", ~r/fountain:\$\{FOUNTAIN_IMAGE_TAG:-(v[\d.]+)\}/},
     {".env.compose.example", ~r/^FOUNTAIN_IMAGE_TAG=(v[\d.]+)$/m},
     {"render.yaml", ~r/url: ghcr\.io\/binarybourbon\/fountain:(v[\d.]+)/},
+    {"fly.toml", ~r/image = "ghcr\.io\/binarybourbon\/fountain:(v[\d.]+)"/},
     {"deploy/k8s/kustomization.yaml", ~r/newTag: (v[\d.]+)/},
     {"deploy/k8s/deployment.yaml", ~r/image: ghcr\.io\/binarybourbon\/fountain:(v[\d.]+)/}
   ]

@@ -297,27 +297,43 @@ config :fountain, :sandbox_default_provider, sandbox_default_provider
 # deployments keep booting and get correct links without an env change.
 default_scheme = if env == :prod, do: "https", else: "http"
 
-# RENDER_EXTERNAL_URL is last, and is the only entry here nobody sets by hand:
-# Render injects it into every web service as the absolute URL that service is
-# reachable at. Without it, render.yaml has a chicken-and-egg problem — the
-# hostname does not exist until the first deploy, and the raise below means
-# that first deploy is the one that cannot come up. An operator's own
-# PUBLIC_URL still wins, which is what a custom domain sets.
+# RENDER_EXTERNAL_URL and FLY_APP_NAME are the two entries nobody sets by
+# hand. Render injects the former into every web service as the absolute URL
+# that service is reachable at. Without it, render.yaml has a chicken-and-egg
+# problem — the hostname does not exist until the first deploy, and the raise
+# below means that first deploy is the one that cannot come up. An operator's
+# own PUBLIC_URL still wins, which is what a custom domain sets.
 #
 # Each candidate is trimmed and tested on its own rather than chained with
 # `||`: "" is truthy in Elixir, so a present-but-empty PUBLIC_URL — the shape
 # every `${VAR:-}` and every dashboard field left blank delivers — would win
 # the chain and take the fallbacks out of reach.
 #
-# Spelled as three separate quoted literals because `config_reference_test`
-# extracts the variables this file reads by scanning for exactly that shape.
-# Folded into a `~w` sigil they become invisible to it, and PUBLIC_URL reads
-# as documentation for a variable nothing consumes.
+# Spelled as separate quoted literals because `config_reference_test` extracts
+# the variables this file reads by scanning for exactly that shape. Folded
+# into a `~w` sigil they become invisible to it, and PUBLIC_URL reads as
+# documentation for a variable nothing consumes.
+#
+# FLY_APP_NAME is the same problem in a different shape, and it is last
+# because it is the only candidate that is derived rather than read: Fly
+# injects the app's name, and `<app>.fly.dev` is the hostname its proxy
+# answers on. fly.toml therefore ships with no PUBLIC_URL. It carries an app
+# name that `fly launch` is about to replace, and a base URL still naming the
+# old one is silently wrong rather than broken — it builds the links in
+# verification emails and every sandbox reads it as FOUNTAIN_BASE_URL. An
+# operator's own PUBLIC_URL wins here too, which is what a custom domain sets.
+fly_public_url =
+  case System.get_env("FLY_APP_NAME") do
+    blank when blank in [nil, ""] -> nil
+    app -> "https://#{app}.fly.dev"
+  end
+
 public_url_env =
   [
     System.get_env("PUBLIC_URL"),
     System.get_env("FOUNTAIN_DOMAIN"),
-    System.get_env("RENDER_EXTERNAL_URL")
+    System.get_env("RENDER_EXTERNAL_URL"),
+    fly_public_url
   ]
   |> Enum.map(&String.trim(&1 || ""))
   |> Enum.find(&(&1 != ""))
