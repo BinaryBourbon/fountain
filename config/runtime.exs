@@ -297,11 +297,30 @@ config :fountain, :sandbox_default_provider, sandbox_default_provider
 # deployments keep booting and get correct links without an env change.
 default_scheme = if env == :prod, do: "https", else: "http"
 
+# RENDER_EXTERNAL_URL is last, and is the only entry here nobody sets by hand:
+# Render injects it into every web service as the absolute URL that service is
+# reachable at. Without it, render.yaml has a chicken-and-egg problem — the
+# hostname does not exist until the first deploy, and the raise below means
+# that first deploy is the one that cannot come up. An operator's own
+# PUBLIC_URL still wins, which is what a custom domain sets.
+#
+# Each candidate is trimmed and tested on its own rather than chained with
+# `||`: "" is truthy in Elixir, so a present-but-empty PUBLIC_URL — the shape
+# every `${VAR:-}` and every dashboard field left blank delivers — would win
+# the chain and take the fallbacks out of reach.
+#
+# Spelled as three separate quoted literals because `config_reference_test`
+# extracts the variables this file reads by scanning for exactly that shape.
+# Folded into a `~w` sigil they become invisible to it, and PUBLIC_URL reads
+# as documentation for a variable nothing consumes.
 public_url_env =
-  case String.trim(System.get_env("PUBLIC_URL") || System.get_env("FOUNTAIN_DOMAIN") || "") do
-    "" -> nil
-    value -> value
-  end
+  [
+    System.get_env("PUBLIC_URL"),
+    System.get_env("FOUNTAIN_DOMAIN"),
+    System.get_env("RENDER_EXTERNAL_URL")
+  ]
+  |> Enum.map(&String.trim(&1 || ""))
+  |> Enum.find(&(&1 != ""))
 
 # In prod the fallback would be http://localhost:4000 — and unlike a missing
 # secret, nothing crashes: the instance runs, and every verification/reset

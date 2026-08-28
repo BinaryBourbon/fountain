@@ -32,7 +32,8 @@ defmodule Fountain.RuntimeConfigTest do
     on_exit(fn ->
       System.put_env(previous)
 
-      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RESEND_API_KEY SMTP_HOST EMAIL_DELIVERY),
+      for k <-
+            ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RENDER_EXTERNAL_URL RESEND_API_KEY SMTP_HOST EMAIL_DELIVERY),
           not Map.has_key?(previous, k),
           do: System.delete_env(k)
     end)
@@ -41,7 +42,7 @@ defmodule Fountain.RuntimeConfigTest do
   end
 
   defp read_prod_config(env) do
-    for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+    for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RENDER_EXTERNAL_URL SMTP_HOST EMAIL_DELIVERY),
         do: System.delete_env(k)
 
     System.put_env(env)
@@ -82,6 +83,64 @@ defmodule Fountain.RuntimeConfigTest do
     assert cfg[:public_url] == "https://new.example.com"
   end
 
+  describe "RENDER_EXTERNAL_URL" do
+    # Render injects it into every web service. It is in the fallback chain so
+    # that render.yaml has something to boot on: PUBLIC_URL is required in
+    # prod, and on Render the hostname does not exist until the first deploy
+    # has already happened, so a blueprint that asked for it up front could
+    # never complete its own first deploy.
+    test "stands in for an unset PUBLIC_URL", %{base: base} do
+      cfg =
+        read_prod_config(
+          Map.put(base, "RENDER_EXTERNAL_URL", "https://fountain-ab12.onrender.com")
+        )
+
+      assert cfg[:public_url] == "https://fountain-ab12.onrender.com"
+      assert cfg[:phx_host] == "fountain-ab12.onrender.com"
+    end
+
+    test "loses to an operator's own PUBLIC_URL", %{base: base} do
+      # What adding a custom domain looks like. The injected value does not go
+      # away when the operator sets one, so the order is the whole feature.
+      cfg =
+        base
+        |> Map.merge(%{
+          "PUBLIC_URL" => "https://fountain.example.com",
+          "RENDER_EXTERNAL_URL" => "https://fountain-ab12.onrender.com"
+        })
+        |> read_prod_config()
+
+      assert cfg[:public_url] == "https://fountain.example.com"
+    end
+
+    test "a blank PUBLIC_URL falls through to it rather than winning", %{base: base} do
+      # "" is truthy in Elixir, so the `||` chain this replaced would have
+      # taken the empty string and raised. Every `${VAR:-}` and every
+      # dashboard field left blank delivers exactly this shape.
+      cfg =
+        base
+        |> Map.merge(%{
+          "PUBLIC_URL" => "",
+          "RENDER_EXTERNAL_URL" => "https://fountain-ab12.onrender.com"
+        })
+        |> read_prod_config()
+
+      assert cfg[:public_url] == "https://fountain-ab12.onrender.com"
+    end
+
+    test "a blank one still raises rather than passing the check", %{base: base} do
+      for k <-
+            ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RENDER_EXTERNAL_URL SMTP_HOST EMAIL_DELIVERY),
+          do: System.delete_env(k)
+
+      System.put_env(Map.put(base, "RENDER_EXTERNAL_URL", ""))
+
+      assert_raise RuntimeError, ~r/PUBLIC_URL/, fn ->
+        Config.Reader.read!(@runtime_exs, env: :prod)
+      end
+    end
+  end
+
   test "endpoint scheme and port follow PUBLIC_URL for plain-HTTP self-hosts", %{base: base} do
     cfg = read_prod_config(Map.put(base, "PUBLIC_URL", "http://fountain.internal:4000"))
 
@@ -110,7 +169,8 @@ defmodule Fountain.RuntimeConfigTest do
     # secret, nothing crashed: the instance ran and silently put localhost
     # links in every verification email and every sprite's FOUNTAIN_BASE_URL.
     test "prod refuses to boot with neither PUBLIC_URL nor FOUNTAIN_DOMAIN", %{base: base} do
-      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+      for k <-
+            ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RENDER_EXTERNAL_URL SMTP_HOST EMAIL_DELIVERY),
           do: System.delete_env(k)
 
       System.put_env(base)
@@ -128,7 +188,8 @@ defmodule Fountain.RuntimeConfigTest do
 
     test "a blank PUBLIC_URL counts as unset", %{base: base} do
       # Compose-style `${VAR:-}` interpolation delivers "", not absence.
-      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+      for k <-
+            ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RENDER_EXTERNAL_URL SMTP_HOST EMAIL_DELIVERY),
           do: System.delete_env(k)
 
       System.put_env(Map.put(base, "PUBLIC_URL", ""))
@@ -139,7 +200,8 @@ defmodule Fountain.RuntimeConfigTest do
     end
 
     test "dev keeps the localhost default", %{base: base} do
-      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+      for k <-
+            ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RENDER_EXTERNAL_URL SMTP_HOST EMAIL_DELIVERY),
           do: System.delete_env(k)
 
       System.put_env(base)
