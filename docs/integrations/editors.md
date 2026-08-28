@@ -13,7 +13,7 @@ the pipe. That process talks HTTP and SSE to your Fountain instance.
    (ACP over stdio)                                                  (the agent)
 ```
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

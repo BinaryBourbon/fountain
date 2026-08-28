@@ -10,7 +10,7 @@ real run.
 
 ## What you must have
 
-- A Fountain API key (Account → API keys, or `fountain auth login`).
+- A Fountain API key (Account, then API keys, or `fountain auth login`).
 - A repository that you let an agent push a branch to.
 - A GitHub token that can push to it. Use a
   [fine-grained token](https://github.com/settings/personal-access-tokens)

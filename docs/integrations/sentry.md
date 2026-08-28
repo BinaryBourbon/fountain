@@ -3,7 +3,7 @@
 **Optional, and inert until you opt in.** With no DSN set, the SDK sits there
 and does nothing. No account, no events, and nothing leaves your instance.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
@@ -69,7 +69,7 @@ report carries less context than a stock Sentry integration would.
 
 ## Related
 
-- [Wire up observability](../guides/operate/observability.md), and the alert
+- [Configure observability](../guides/operate/observability.md), and the alert
   pack.
 - [Back up and restore](../guides/operate/back-up-and-restore.md), which uses
   the Crons pattern above.

@@ -35,7 +35,7 @@ Four reasons to reach for it.
   conversation is open in the Fountain conversations app while it runs.
 - **Fan-out is a loop of tool calls**, and not orchestration code.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

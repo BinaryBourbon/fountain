@@ -28,8 +28,8 @@ Fountain does **not** retry these, and that is deliberate.
 
 ## During a provider outage
 
-A new conversation fails, and so does a wake. A fresh provision marks the
-conversation `failed`. A wake leaves it resumable for later.
+A new conversation fails, and so does a wake. A fresh provision sets the
+conversation to `failed`. A wake leaves it resumable for later.
 
 Sign-in, dashboards, configuration and past logs all still work.
 
@@ -56,5 +56,5 @@ with `POST /api/admin/users/:id/sandbox-limit`. Read
 - [A conversation is stuck or failed](conversation-stuck-or-failed.md).
 - [The sandbox contract](../integrations/sandbox-contract.md), for the shared
   error taxonomy.
-- [Wire up observability](../guides/operate/observability.md), for the alert
+- [Configure observability](../guides/operate/observability.md), for the alert
   on a failure to provision.

@@ -3,7 +3,7 @@
 > A five-question conversation that proposes a roster of teammates, creates
 > them, and hands them over.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
@@ -19,14 +19,14 @@ Say `/create-team` to any teammate. Or ask it what the team must look like.
 **It asks at most five questions**, one at a time. It offers a default with
 each one, so "yes" is a complete answer.
 
-1. What must the team get done?
-2. Which repos or services are in scope, and which need a token?
-3. How many teammates, roughly? Two to five is usual. Past three, a lead
-   earns its place.
-4. Any brain preference? It reads `GET /api/catalog` for the models, and your
+1. The work the team must get done.
+2. The repos or services in scope, and which of them need a token.
+3. How many teammates. Two to five is usual. Past three, a lead earns its
+   place.
+4. Any brain preference. It reads `GET /api/catalog` for the models, and your
    inference credentials for the providers you hold a key for. It proposes
    nothing you cannot run.
-5. What names? Role names such as `repo-maintainer`, or a themed set.
+5. The names. Role names such as `repo-maintainer`, or a themed set.
 
 **Then it proposes.** You get a table of name, brain, a one-line role, and the
 first thing it would send each teammate.

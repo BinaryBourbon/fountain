@@ -2,7 +2,7 @@
 
 > OpenAI's Codex CLI, headless in the sandbox.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

@@ -29,7 +29,7 @@ that somebody remembered to document.
 
 **An API key. Use this for a script and for CI.**
 
-Create a key under Account → API Keys. Or exchange your credentials at
+Create a key under Account, then API Keys. Or exchange your credentials at
 `POST /api/auth/token`, which is what `fountain auth login` does. Then pass
 the key as a Bearer token.
 
@@ -115,7 +115,7 @@ URIs. A client or a redirect that nobody registered renders an error page, and
 Fountain redirects nowhere.
 
 A code lives five minutes, and it works once. The key is full-scope, it
-expires in 30 days, and it lists under Account → API keys as
+expires in 30 days, and it lists under Account, then API keys, as
 `oauth:<client_id>`.
 
 ## Account state
@@ -278,7 +278,7 @@ somewhere else can read it, and hard-code nothing.
 A model list is a set of suggestions, and not an allowlist. Fountain accepts
 any `provider/model` under a provider it knows.
 
-`package_managers` names what Fountain truly installs from an environment's
+`package_managers` names what Fountain installs from an environment's
 `packages`, which is `apt` and `npm`. It stores another key and ignores it.
 
 To draw an avatar, Fountain uses the tenant's own OpenAI credential. Without

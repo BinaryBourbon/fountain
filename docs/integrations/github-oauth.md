@@ -3,7 +3,7 @@
 **Optional.** It adds "Continue with GitHub" to the login and registration
 pages. Email and password auth works without it.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

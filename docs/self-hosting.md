@@ -50,7 +50,7 @@ what breaks when a dependency is down.
 
 - [Back up and restore](guides/operate/back-up-and-restore.md)
 - [Upgrade an instance](guides/operate/upgrade.md)
-- [Wire up observability](guides/operate/observability.md)
+- [Configure observability](guides/operate/observability.md)
 - [Run a release task](guides/operate/run-a-release-task.md)
 
 When something is wrong, start from

@@ -11,7 +11,7 @@ tells Fountain about refunds and disputes. Nothing else. Billing is off by
 default (`CREDITS_ENABLED=false`), and that is the right setting for most
 self-hosted instances. Set this up only if you run Fountain commercially.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
@@ -23,7 +23,7 @@ self-hosted instances. Set this up only if you run Fountain commercially.
 
 ## The provider side
 
-1. **An API key**, from Developers → API keys, as `STRIPE_SECRET_KEY`.
+1. **An API key**, from Developers, then API keys, as `STRIPE_SECRET_KEY`.
 2. **A webhook endpoint** pointed at `<PUBLIC_URL>/api/stripe/webhook`,
    subscribed to these three events.
     - `checkout.session.completed`, which adds the credit a pack paid for.

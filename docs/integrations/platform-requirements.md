@@ -255,7 +255,7 @@ desirable.
 
 !!! note "Advertise or refuse, never pretend"
 
-    An orchestrator can degrade gracefully around a capability that is absent.
+    An orchestrator can degrade around a capability that is absent.
     It cannot degrade around a capability that you claim and that then quietly
     does nothing.
 
@@ -286,14 +286,14 @@ list.
   platforms can differ. Three honest platforms with three shapes beat three
   identical ones.
 
-## Where this list leans
+## The bias in this list
 
 One consumer with one workload wrote it, and it shows.
 
 We over-specify sessions and streams, because an agent turn is a long
 conversation with a process. We under-specify scheduling, burst behaviour,
 cold-start latency, and everything else that a hundred-thousand-short-jobs
-workload cares about. A truly neutral contract needs another kind of customer
+workload cares about. A neutral contract needs another kind of customer
 in the room.
 
 The capability vocabulary also does more work than it should. `:suspend` today

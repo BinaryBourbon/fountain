@@ -2,7 +2,7 @@
 
 > Lets a teammate see who else is on the team, and message them.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

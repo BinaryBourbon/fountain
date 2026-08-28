@@ -97,7 +97,7 @@ deny-all.
 
 ## Capabilities are honest, and that has consequences
 
-An adapter advertises what it can truly do, from `:suspend`,
+An adapter advertises only what it can do, from `:suspend`,
 `:network_policy`, `:attach`, `:tty`, `:checkpoint` and `:public_url`. The
 lifecycle then degrades to match, and it pretends nothing.
 

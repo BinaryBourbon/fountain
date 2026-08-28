@@ -10,7 +10,7 @@ conversation fails at provision time.
 API surface Fountain consumes. It also says what a compatible replacement
 behind `SPRITES_BASE_URL` would have to provide.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

@@ -392,7 +392,7 @@ instance.
 
 [Sign in with Fountain](../api.md#sign-in-with-fountain-oauth-20-for-browser-apps)
 is OAuth 2.0 authorization code with PKCE. The token it returns *is* an API
-key. It lists and revokes under Account → API keys, and a sign-out revokes it.
+key. It lists and revokes under Account, then API keys, and a sign-out revokes it.
 For an app with no backend, that is the whole authentication story.
 
 ## The whole thing, runnable

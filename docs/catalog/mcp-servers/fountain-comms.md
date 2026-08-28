@@ -3,7 +3,7 @@
 > Gives a teammate its own email address and phone number, and gives it no
 > keys.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

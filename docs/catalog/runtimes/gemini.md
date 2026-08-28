@@ -3,7 +3,7 @@
 > Google's Gemini CLI. The last runtime to reach ACP, and it reached it on
 > 2026-08-22.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

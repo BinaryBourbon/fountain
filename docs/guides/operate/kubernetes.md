@@ -86,6 +86,6 @@ work.
 
 ## Related
 
-- [Wire up observability](observability.md), for the PrometheusRule.
+- [Configure observability](observability.md), for the PrometheusRule.
 - [Back up and restore](back-up-and-restore.md).
 - [Architecture](../../architecture.md), for the cluster picture.

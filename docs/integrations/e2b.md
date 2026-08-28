@@ -13,7 +13,7 @@ E2B_TEMPLATE=fountain        # a template built from images/e2b/ (see below)
 # SANDBOX_PROVIDER=e2b       # make it the instance default
 ```
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

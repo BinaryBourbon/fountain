@@ -104,6 +104,6 @@ that it can move and break no link.
 
 - [Plug into Fountain](../integrations/clients.md), for editors, chat
   surfaces, plugins and SDKs.
-- [Build a chat app](../build/index.md), the case for the API below it.
+- [Build a chat app](../build/index.md), and why the API below it exists.
 - [API reference](../api.md).
 - [Agents as teammates](teammates.md), which is what the Team app renders.

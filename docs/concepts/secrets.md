@@ -127,7 +127,7 @@ value. It cannot audit the read, because that read happens in the sandbox.
 everything in the merged map. That is why the value is there at all. Scope the
 credential. Do not scope the agent.
 
-## Hop 5, which is really a hop back: Fountain scrubs the output
+## Hop 5, a hop back: Fountain scrubs the output
 
 Fountain writes everything a sandbox sends to stdout or stderr into
 `log_events`, word for word, and streams it over SSE. That table has none of

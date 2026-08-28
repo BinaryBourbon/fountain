@@ -112,7 +112,7 @@ appears in both threads. Read [Team](../api.md#team).
 [Nostr](../integrations/buzz.md). Where the instance allows it, the teammate
 also answers from its own email address and phone number.
 
-Each of those surfaces binds its own durable thread, through the mechanism
+Each of those surfaces binds its own durable thread, by the mechanism
 your app uses. Your UI is one door onto something that exists whether or not
 the tab is open.
 

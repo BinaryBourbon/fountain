@@ -2,8 +2,7 @@
 
 [OpenBot](https://copilotkit.ai/openbot) is CopilotKit's self-hosted agent
 platform. It has channels, a coworker roster, an audit trail, and a browser
-computer for each bot. A "Bot" there is not a framework and not an SDK. It is
-**any HTTP endpoint that speaks
+computer for each bot. A "Bot" there is **any HTTP endpoint that speaks
 [AG-UI](https://github.com/ag-ui-protocol/ag-ui)**, the open protocol for
 interaction between an agent and a user.
 
@@ -23,7 +22,7 @@ agent the same way, whether it is a hand-written client or another product
 built on the protocol. OpenBot is the host we built it against and verified it
 against, and nothing more.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

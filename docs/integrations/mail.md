@@ -5,7 +5,7 @@ verification email that Fountain throws away leaves signup at a dead end, with
 no error to see. There are exactly three options, and Fountain checks them in
 the order below.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

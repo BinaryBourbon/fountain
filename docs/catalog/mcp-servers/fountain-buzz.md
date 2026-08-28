@@ -2,7 +2,7 @@
 
 > Lets a hosted Buzz agent publish its reply to a Nostr channel.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

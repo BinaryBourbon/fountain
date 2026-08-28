@@ -18,7 +18,7 @@ alpha, behind the `openai_compat` flag. There is no package to install from
 us. One file, `fountain_langchain.py`, is the whole integration, and the
 example ships it.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|

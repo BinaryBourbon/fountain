@@ -43,7 +43,7 @@ against a database problem that is older than the deploy. Read
 
 ## Related
 
-- [Wire up observability](../guides/operate/observability.md), for what each
+- [Configure observability](../guides/operate/observability.md), for what each
   health endpoint is for.
 - [Deploy on Kubernetes](../guides/operate/kubernetes.md).
 - [Architecture](../architecture.md), for which component owns which symptom.

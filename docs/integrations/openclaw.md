@@ -19,7 +19,7 @@ speaks ACP over stdio. So the integration is a config block, and not code.
    (a chat channel)   (ACP over stdio)                                        (the agent)
 ```
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
@@ -264,7 +264,7 @@ level at the harness on the way. That is the case that used to abort the turn
 [#760](https://github.com/BinaryBourbon/fountain/issues/760)).
 
 When you test through `openclaw agent`, or with a prompt that must delegate,
-check that the harness truly ran. OpenClaw's own model will happily answer a
+check that the harness ran. OpenClaw's own model will happily answer a
 "reply with X" prompt itself, and report success. The tell is a
 `sessions_spawn` call in the tool summary, and a new conversation on the
 Fountain agent. From the Fountain side, `fountain conv list` shows it, with
