@@ -51,6 +51,14 @@ upgrade, is in
 
 ### Changed
 
+- **The marketing footer wraps into groups instead of one long row.** Ten
+  links on one line had gone cramped as pages were added, and the row was
+  ordered by nothing. They sit under Product, Learn and Account now, with the
+  brand and its one-line description in the first column and the copyright,
+  Terms and Privacy on a rule below. A deployment that is not the marketing
+  site drops the Product group whole rather than heading an empty column, so
+  a self-host still gets a footer with only the two groups it can fill.
+
 - **`/self-hosted` leads with the bring-up.** The compose block is on the
   first screen beside the argument rather than three sections down, the
   headline is the reason to run it yourself, and the four things a bring-up
