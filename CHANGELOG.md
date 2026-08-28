@@ -72,6 +72,28 @@ upgrade, is in
   anybody who needs more to `/self-hosted`, which now names that as the second
   reason to go there.
 
+- **The homepage answers the security review.** A builder cannot ship an agent
+  without somebody asking where the customer data goes and what the model can
+  see, and the material for that answer was three feature bullets scattered
+  across the page. `/` now carries a section written to be forwarded whole.
+  Seven questions, each answered with the mechanism rather than the intention,
+  and each answer that has a limit carrying it in the same breath: the
+  per-account AES-256-GCM key and the write-only rule, the fact that a secret
+  reaches the process environment and never the model's context, the 8-byte
+  literal match that redacts a log row before it is written and what that match
+  misses, the `_unsafe_` convention and the cross-tenant suite that enforces
+  it, what the audit trail records and for how long, `ask` and the runtimes
+  that cannot enforce it, and the two ways to keep everything inside your own
+  perimeter with the runner's trusted-mode caveat beside them.
+
+  It ends with **What we do not have**, on the page rather than in week three
+  of somebody's review. No SOC 2, no ISO 27001, no HIPAA posture, no DPA, no
+  sub-processor list, no penetration test, no single sign-on, and an egress
+  broker that runs for one account and is not yet a thing you can turn on. Each
+  row was verified absent from the repository. The suite pins every question,
+  every limit and all five absences, so a row cannot quietly go missing and the
+  broker cannot be upgraded to a general claim by accident.
+
 - **Two snippets on the marketing site were not runnable.** The homepage's SDK
   call printed `run.output`, which is not a field on `RunResult`; a reader who
   pasted it got `undefined`. It now prints `run.text` and passes a

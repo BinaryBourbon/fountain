@@ -64,7 +64,7 @@
           How does it get a token that can push?
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          A GitHub token that can open a pull request, an API key that can charge. None of it may reach the prompt, the model's context or the transcript you keep. Vaults hold those, encrypted per account, and hand them to the machine rather than to the model.
+          A GitHub token that can open a pull request, an API key that can charge. None of it may reach the prompt, the model's context or the transcript you keep. Here they are held encrypted under a key derived for your account, and handed to the machine rather than to the model.
         </p>
       </div>
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
@@ -514,6 +514,73 @@
   </div>
 </section>
 
+<%!-- The security review, answered on the page rather than in a questionnaire.
+      A builder cannot ship an agent without somebody asking where the customer
+      data went, and the material for that answer was scattered across three
+      feature bullets before this section existed.
+
+      Two rules hold this section together. Every answer names the mechanism
+      rather than the intention, which is the case study's "the mechanism that
+      stops it is not a system prompt" applied to the platform. And every
+      answer that has a limit states it in the same breath, because a security
+      reader who finds the limit themselves stops believing the rest.
+
+      `security_answers/0` and `security_absent/0` carry the copy. The second
+      is the list of things this platform does not have, and it is on the page
+      on purpose: a reviewer asks for a SOC 2 report in week one, and finding
+      out then is cheaper for both sides than finding out in a questionnaire.
+      Do not soften it into "coming soon", and do not add a row to it that is
+      not verified absent. --%>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      The part you forward to your security reviewer.
+    </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+      Putting an agent in front of your users means somebody asks where the credentials sit, what the model can see and what lands in the logs. Here are the answers, each one a mechanism rather than an intention, and each limit stated beside the thing it limits.
+    </p>
+    <dl class="max-w-3xl mx-auto space-y-6" data-role="security-answers">
+      <div :for={item <- security_answers()}>
+        <dt class="font-medium text-[var(--color-text-primary)]">{item.question}</dt>
+        <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          {item.answer}
+        </dd>
+        <dd :if={item.limit} class="mt-1 text-sm text-[var(--color-text-muted)] leading-relaxed">
+          {item.limit}
+        </dd>
+      </div>
+    </dl>
+    <div class="max-w-3xl mx-auto mt-10 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+        What we do not have.
+      </h3>
+      <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
+        Here rather than in week three of your review.
+      </p>
+      <ul class="space-y-3 text-sm text-[var(--color-text-secondary)]">
+        <li :for={item <- security_absent()} class="flex items-start gap-3">
+          <span class="mt-1.5 size-1.5 rounded-full bg-[var(--color-text-muted)] flex-shrink-0">
+          </span>
+          <span>{item}</span>
+        </li>
+      </ul>
+    </div>
+    <p class="text-center text-sm text-[var(--color-text-muted)] mt-8">
+      The manual goes further on
+      <a
+        href={~p"/docs/concepts/secrets"}
+        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+      >
+        where a secret comes from
+      </a>
+      and on <a
+        href={~p"/docs/concepts/permissions"}
+        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+      >what happens before a tool runs</a>.
+    </p>
+  </div>
+</section>
+
 <%!-- The flagship three: the apps this project builds itself, and the fastest
       answer to "what does using it look like". Cards come from built_apps/0,
       so the homepage cannot name an app /built-with has renamed or retired. --%>
@@ -687,7 +754,7 @@
         Is this only good for writing code?
       </dt>
       <dd class="mt-1 text-sm leading-relaxed">
-        The runtimes are coding agents, which is to say a shell, a filesystem and a network. One of the apps above runs Python over a CSV you drop in. Another reads real sources and hands back a cited brief. If the job fits on a computer, it fits here.
+        The runtimes are coding agents, which is to say a shell, a filesystem and a network. One of the apps above runs Python over a CSV you drop in. Another reads real sources and hands back a cited brief. If you would do the job at a terminal, it fits here.
       </dd>
     </div>
     <div>

@@ -31,6 +31,137 @@ defmodule FountainWeb.MarketingHTML do
     """
   end
 
+  ## The security review
+  #
+  # What a builder's security reviewer asks, answered on the page. Every answer
+  # names a mechanism that exists in this repo today, and every one that has a
+  # limit carries it in `:limit` rather than leaving the reader to find it.
+  # That field is not decoration: a reviewer who discovers an unstated limit
+  # stops believing the answers above it too.
+  #
+  # Sources, so a later edit can be checked rather than guessed:
+  #   crypto.ex + docs/concepts/secrets.md      the DEK and the write-only rule
+  #   conversations/redaction.ex                the 8-byte literal match
+  #   cross_tenant_isolation_test.exs           the scoping guardrail
+  #   decisions/0013-audit-trail.md             what is recorded, and what is not
+  #   docs/concepts/permissions.md              `ask`, and opencode's 422
+  #   workers/retention_pruner.ex               the retention windows
+  #   decisions/0009 + account deletion         export, deletion, crypto-shred
+  #
+  # The egress broker (ADR 0019) is deliberately absent. Its status is
+  # Proposed and it runs for one account, so it belongs in `security_absent/0`
+  # rather than in an answer.
+
+  @doc "The questions a security reviewer asks, and the mechanism that answers each."
+  def security_answers do
+    [
+      %{
+        question: "Where do the credentials live, and who can read them?",
+        answer:
+          "An Environment holds the machine's own variables and a Vault holds a small " <>
+            "bag of overrides for one run. The name collides with HashiCorp's and means " <>
+            "close to the opposite here. A Vault is a per-run override layer rather " <>
+            "than a central store. " <>
+            "Both are encrypted at rest with AES-256-GCM under a key derived for your " <>
+            "account alone. Values are write-only. No endpoint returns one, to anybody, " <>
+            "including an operator.",
+        limit:
+          "Deleting your account destroys that key with it, so what any backup still " <>
+            "holds is unreadable rather than merely deleted."
+      },
+      %{
+        question: "Does the model ever see them?",
+        answer:
+          "No. Secrets merge into the sandbox's process environment when it spawns, " <>
+            "and reach an agent's configuration through ${VAR} substitution. Nothing " <>
+            "puts them in the prompt, the system prompt or the model's context.",
+        limit:
+          "An agent that reads its own environment and says the value out loud has " <>
+            "said it. The next answer is what happens to that line."
+      },
+      %{
+        question: "What ends up in your logs?",
+        answer:
+          "Every secret value you registered that is eight bytes or longer is replaced " <>
+            "with [REDACTED] before the log row is written, not after. The transcript " <>
+            "we store never held it.",
+        limit:
+          "The match is on exact bytes. A value the agent re-encodes, splits or prints " <>
+            "in pieces is not caught, and neither is one shorter than eight bytes."
+      },
+      %{
+        question: "Can one account's agent reach another's?",
+        answer:
+          "Every user-facing query is scoped by account. The few unscoped internal " <>
+            "reads carry an _unsafe_ prefix so a reviewer can grep for all of them in " <>
+            "one command, and a cross-tenant isolation suite in CI asserts the scoped " <>
+            "endpoints answer 404 on somebody else's row.",
+        limit: nil
+      },
+      %{
+        question: "What is recorded when something changes, and for how long?",
+        answer:
+          "The event is written where the change happens rather than where the request " <>
+            "arrived, so the console, the API and a background worker are covered by one " <>
+            "rule. An update names the fields that moved and never their values; a secret " <>
+            "event records the key, the size and the provider. Read your own trail at " <>
+            "GET /api/audit, filtered by action, resource or time.",
+        limit:
+          "Conversation log events are kept 90 days, audit events a year, usage 400 " <>
+            "days. On your own instance every window is a setting."
+      },
+      %{
+        question: "Can the agent do something nobody approved?",
+        answer:
+          "Set an agent's permission policy to ask and a tool call stops for a human " <>
+            "before it runs, not after. The stronger pattern is the one the case study " <>
+            "uses. Build the last gate somewhere the agent cannot reach, so refusing " <>
+            "is somebody else's job rather than the model's.",
+        limit:
+          "Asking is not the default, and it is not universal. claude, codex and gemini " <>
+            "enforce it. opencode cannot, and refuses anything stricter than auto-allow " <>
+            "with a 422 rather than pretending to hold the line."
+      },
+      %{
+        question: "What if none of this may leave our network?",
+        answer:
+          "Run the server yourself, or keep the platform and put the sandboxes on your " <>
+            "own hardware with a runner. Either way the code and the secrets stay inside " <>
+            "your perimeter.",
+        limit:
+          "Read the runner's trust model first. It runs in trusted mode, the agent's " <>
+            "processes run as the daemon's user, and no container or VM stands between " <>
+            "them. An opt-in Firecracker backend exists and is not the default."
+      }
+    ]
+  end
+
+  @doc """
+  What this platform does not have, said on the page.
+
+  A security reviewer asks for the first two of these in week one. Finding out
+  then is cheaper for both sides than finding out in a questionnaire, and the
+  voice standard's "concede the failure case in the same breath" applies to a
+  product's posture as much as to a feature. Every row was verified absent
+  from the repo. Do not soften one into "coming soon", and do not add a row
+  that has not been checked.
+  """
+  def security_absent do
+    [
+      "No SOC 2 report, no ISO 27001 certificate, and no HIPAA posture. " <>
+        "None of that work has been done. A review that requires one of them is a " <>
+        "review this platform cannot pass.",
+      "No data processing agreement on file and no published sub-processor list.",
+      "No single sign-on, no organisations and no seats. An account is one person, " <>
+        "and a team shares one or runs an instance of its own.",
+      "No independent penetration test. The security work in the repo is the " <>
+        "security work there is, and it is open source, so you can read all of it.",
+      "The egress broker that keeps a credential out of the sandbox entirely is " <>
+        "built and running for one account. It is not something you can turn on yet, " <>
+        "so assume the sandbox holds the values you give it."
+    ]
+  end
+
   @doc "Whether the pricing section renders at all: only where the deployment bills."
   def pricing?, do: Fountain.Credits.enabled?()
 

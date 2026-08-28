@@ -506,6 +506,66 @@ defmodule FountainWeb.MarketingControllerTest do
   # The three apps this project builds itself lead every page that shows the
   # roster (#1219). Each is one entry in built_apps/0 carrying a :flagship
   # key, so these tests are what stops a page naming them by hand and drifting.
+  describe "the security section on /" do
+    test "renders every answer and every limit", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      assert body =~ "The part you forward to your security reviewer."
+      assert body =~ ~s(data-role="security-answers")
+
+      for item <- FountainWeb.MarketingHTML.security_answers() do
+        assert body =~ escape(item.question), "the page drops #{inspect(item.question)}"
+
+        # A limit that never reaches the page is worse than no limit: the
+        # answer above it then reads as unqualified.
+        if item.limit, do: assert(body =~ escape(item.limit), "the page drops its limit")
+      end
+    end
+
+    test "says out loud what the platform does not have", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      assert body =~ "What we do not have."
+
+      for item <- FountainWeb.MarketingHTML.security_absent() do
+        assert body =~ escape(item), "the page drops #{inspect(String.slice(item, 0, 40))}"
+      end
+
+      # The four a reviewer asks for first. If one of these ever ships, this
+      # test is the reminder to delete its row rather than leave the page
+      # disclaiming something the platform now has.
+      assert body =~ "No SOC 2 report"
+      assert body =~ "no published sub-processor list"
+      assert body =~ "No single sign-on"
+      assert body =~ "No independent penetration test"
+    end
+
+    test "claims nothing for the egress broker, which runs for one account", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      # ADR 0019 is Proposed and live for the maintainer alone. The page may
+      # only name it among the things you cannot turn on.
+      assert body =~ "It is not something you can turn on yet"
+      refute body =~ "the sandbox never holds"
+    end
+
+    test "every link into the manual resolves to a page", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      links =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert links != []
+
+      for slug <- links do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+  end
+
   describe "the flagship three" do
     test "the roster holds exactly three, each with the lines a featured card needs" do
       flagship = FountainWeb.MarketingHTML.flagship_apps()
@@ -598,6 +658,13 @@ defmodule FountainWeb.MarketingControllerTest do
         assert body =~ app.name, "/integrations does not name #{app.name}"
       end
     end
+  end
+
+  # Copy held in `marketing_html.ex` is plain text; the rendered page has been
+  # through HEEx, so an apostrophe is `&#39;` by the time it lands. Compare
+  # like with like rather than writing the entity into the expectation.
+  defp escape(text) do
+    text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
   end
 end
 
