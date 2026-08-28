@@ -42,6 +42,7 @@ nav:
       - Deploy an instance: guides/operate/deploy.md
       - Put it on the internet: guides/operate/put-it-on-the-internet.md
       - Connect a database: guides/operate/database.md
+      - Deploy on Render: guides/operate/render.md
       - Deploy on Kubernetes: guides/operate/kubernetes.md
       - Configure email: guides/operate/email.md
       - Change sandbox lifetimes: guides/operate/sandbox-lifetime.md

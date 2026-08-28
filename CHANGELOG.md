@@ -18,6 +18,25 @@ upgrade, is in
 
 ### Added
 
+- **A Render blueprint, for an instance that is not ours.** `render.yaml`
+  declares one web service on the published image and one managed Postgres,
+  so somebody who wants Fountain on Render applies a blueprint instead of
+  reverse-engineering the compose file. It asks for three values
+  (`SECRET_KEY_BASE`, `MASTER_SECRETS_KEY`, `SPRITES_TOKEN`) and defaults the
+  rest the way compose does: credits off, no mail, registration open for the
+  first account, one instance. `PUBLIC_URL` is deliberately not among the
+  three. It is required in prod and the hostname does not exist until the
+  first deploy has happened, so a blueprint that asked for it up front could
+  never complete its own first deploy; `config/runtime.exs` now falls back to
+  Render's injected `RENDER_EXTERNAL_URL`, behind an operator's own
+  `PUBLIC_URL`. That fallback is a list rather than an `||` chain, because
+  `""` is truthy in Elixir and a blank `PUBLIC_URL` — what every `${VAR:-}`
+  and every blank dashboard field delivers — would otherwise win it and raise.
+  Three guards hold the new surface to the old one: every key the blueprint
+  sets must be a variable the app reads, every variable a prod boot raises
+  without must be present, and the image pin joins the four `release-bump.yml`
+  already moves. The guide is at `/docs/guides/operate/render`.
+
 - **A code review bot, whole, at `/code-review-bot`.** The shortest useful
   program anybody writes on this API, shown unabridged rather than described:
   a GitHub webhook handler that upserts the reviewer for the repository it

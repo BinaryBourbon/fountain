@@ -38,6 +38,7 @@ what breaks when a dependency is down.
 - [Deploy an instance](guides/operate/deploy.md)
 - [Put it on the internet](guides/operate/put-it-on-the-internet.md)
 - [Connect a database](guides/operate/database.md)
+- [Deploy on Render](guides/operate/render.md)
 - [Deploy on Kubernetes](guides/operate/kubernetes.md)
 
 **The decisions it forces.**
