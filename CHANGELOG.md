@@ -51,6 +51,34 @@ upgrade, is in
 
 ### Changed
 
+- **The homepage sells infrastructure to builders, not an agent to a
+  consumer.** The pitch read as a coworker product ("hire an agent by role",
+  "close the laptop", "build a roster"), which is the wrong reader. The one
+  who arrives is building something whose users will meet the agent, and the
+  agent is the afternoon while the machine under it is the quarter. That line
+  is now the headline. The problem section is the six questions between a
+  working demo and a shipped feature, each answered with the mechanism that
+  settles it: where it runs, how it gets a token that can push, how the work
+  gets out, how you get an answer instead of a transcript, who turns the
+  machines off, and what starts one when nobody is at a keyboard. The SDK call
+  moves up to sit directly under them. The teammate section becomes the
+  durable thread a builder maps onto ids they already hold, the roster section
+  becomes how a hundred tickets get worked at once, and both new objections
+  are the ones a builder asks first: whether their own users need accounts
+  here, and whether any of this works outside writing code. The apps are
+  reframed as reference implementations of the thing the reader is about to
+  write. The scale section states the hosted ceiling out loud and sends
+  anybody who needs more to `/self-hosted`, which now names that as the second
+  reason to go there.
+
+- **Two snippets on the marketing site were not runnable.** The homepage's SDK
+  call printed `run.output`, which is not a field on `RunResult`; a reader who
+  pasted it got `undefined`. It now prints `run.text` and passes a
+  `channelId`, which is the option that binds a conversation to an id the
+  caller already has. The `/integrations` pipeline scenario ran
+  `fountain conversations create --external-id`; neither the command nor the
+  flag exists, and the real one is `fountain run <agent> --prompt`.
+
 - **The marketing footer wraps into groups instead of one long row.** Ten
   links on one line had gone cramped as pages were added, and the row was
   ordered by nothing. They sit under Product, Learn and Account now, with the

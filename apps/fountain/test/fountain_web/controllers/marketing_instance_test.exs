@@ -159,7 +159,7 @@ defmodule FountainWeb.MarketingInstanceTest do
       Application.put_env(:fountain, :marketing_site, true)
 
       body = conn |> get(~p"/") |> html_response(200)
-      assert body =~ "Every agent gets a brief, a budget, and a boundary."
+      assert body =~ "The agent took an afternoon. The machine under it takes a quarter."
       assert body =~ "Managed agent infrastructure"
       refute body =~ "This instance runs agents on sandboxes"
     end

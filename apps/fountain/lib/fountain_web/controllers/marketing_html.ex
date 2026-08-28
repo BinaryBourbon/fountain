@@ -5,7 +5,17 @@ defmodule FountainWeb.MarketingHTML do
 
   embed_templates "marketing_html/*"
 
-  @doc "The SDK call on the homepage, kept out of the template so its braces are not HEEx."
+  @doc """
+  The SDK call on the homepage, kept out of the template so its braces are not
+  HEEx.
+
+  It is the whole builder pitch in nine lines, so every identifier in it has to
+  be one the published SDK exports. `channelId` binds the conversation to an id
+  the caller already has (`RunConfig.channelId`), and `text` is the answer with
+  the tool noise removed (`RunResult.text`). An earlier draft printed
+  `run.output`, which is not a field, and a reader who pasted it got
+  `undefined`.
+  """
   def sdk_example do
     """
     import { Fountain } from "@agentshit/fountain-sdk";
@@ -14,10 +24,10 @@ defmodule FountainWeb.MarketingHTML do
 
     const run = await fountain.run(
       "Fix the failing test and open a PR",
-      { agent: "reviewer" }
+      { agent: "reviewer", channelId: ticket.id }
     );
 
-    console.log(run.output);\
+    console.log(run.text);\
     """
   end
 
@@ -448,9 +458,10 @@ defmodule FountainWeb.MarketingHTML do
         how: "The CLI in a step, a signed webhook to a URL you own.",
         lang: "bash",
         docs: "/docs/reference/webhooks",
+        # Both commands are real. An earlier draft ran `fountain conversations
+        # create --external-id`, and neither the command nor the flag exists.
         code: """
-        fountain conversations create --agent reviewer \\
-          --prompt "Review PR #$PR" --external-id "pr-$PR"
+        fountain run reviewer --prompt "Review PR #$PR"
 
         fountain webhooks create https://example.com/hooks/fountain \\
           --event conversation.turn.done --event conversation.turn.failed

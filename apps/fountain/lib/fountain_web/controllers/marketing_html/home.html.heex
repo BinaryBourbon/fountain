@@ -12,10 +12,10 @@
     {Fountain.Brand.name()} is the hosted {Fountain.Brand.engine()}. The engine is open source and you can run it yourself.
   </p>
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    Every agent gets a brief, a budget, and a boundary.
+    The agent took an afternoon. The machine under it takes a quarter.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Hire an agent by role. It picks up where it left off, and it can hand work to the others on your roster. Run it on our infrastructure, or on hardware inside your own network.
+    You are shipping a product, not an agent platform. {Fountain.Brand.name()} is the API under the agents inside it. One call gets a sandbox with a checkout, credentials the model never sees, and the answer back instead of the transcript.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
@@ -39,61 +39,136 @@
   </p>
 </section>
 
-<%!-- Problem --%>
+<%!-- The problem, stated as the questions a builder hits between a working
+      demo and a shipped feature. Every answer names the mechanism that
+      settles it, and every mechanism has its own section further down. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      The agent takes an afternoon. The machine under it takes a quarter.
+      Six questions between a demo and a product.
     </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-8">
-      Want an agent that fixes a failing test, answers a customer, or opens a pull request from inside your product? Before it can, somebody has to build all of this:
+    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+      The agent works on your laptop. Putting it in front of your users means answering all of these first, and not one of them is the thing you set out to build.
     </p>
-    <ul class="max-w-xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
-      <li class="flex items-start gap-3">
-        <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">A machine.</span>
-          A filesystem, a shell, a package manager, a checkout, a network. Real infrastructure, and not the thing you set out to ship.
-        </span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">
-            A way to hand it secrets.
-          </span>
-          A GitHub token that can push, an API key that can charge. None of it may reach the prompt, the model's context, or the transcript you keep.
-        </span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">An owner.</span>
-          Something that starts the machine, parks it when the talk stops, wakes it on the next message, keeps every account's work apart, and stops it before the bill notices.
-        </span>
-      </li>
-    </ul>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mt-8">
-      {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the conversation.
+    <div class="grid sm:grid-cols-2 gap-6">
+      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
+          Where does it run?
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)]">
+          An agent needs a filesystem, a shell, a package manager, a checkout and a network. That is a machine, and somebody has to build the thing that builds machines. Here an Environment describes one, and a conversation spawns it.
+        </p>
+      </div>
+      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
+          How does it get a token that can push?
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)]">
+          A GitHub token that can open a pull request, an API key that can charge. None of it may reach the prompt, the model's context or the transcript you keep. Vaults hold those, encrypted per account, and hand them to the machine rather than to the model.
+        </p>
+      </div>
+      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
+          How does the work get out?
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)]">
+          It does not have to. The agent already holds the checkout and the credential, so it opens the pull request itself. Nothing of yours copies a diff out of somebody else's cloud.
+        </p>
+      </div>
+      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
+          How do I get an answer instead of a transcript?
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)]">
+          Your users want the reply, not a harness dumping tool calls at them. Await the run and read one field. When you do want the stream, the server parses each runtime's dialect first, so you render one shape whether the agent is Claude Code or Codex.
+        </p>
+      </div>
+      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
+          Who turns the machines off?
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)]">
+          Something has to start a sandbox, park it when the talk stops, wake it on the next message, keep every thread's work apart and stop it before the bill notices. That owner is the platform, and you do not write it.
+        </p>
+      </div>
+      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
+        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
+          What starts one when nobody is at a keyboard?
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)]">
+          An alert fires, a ticket opens, a cron comes round. Each of those is one HTTP call that hires an agent, and a signed webhook tells your system when the turn is done.
+        </p>
+      </div>
+    </div>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mt-10">
+      {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the product.
     </p>
   </div>
 </section>
 
-<%!-- One teammate. Lane one's whole promise, and every claim in it is
-      generally available, so nothing here carries a status badge. --%>
+<%!-- How it works --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+    Everything above is three rows and one call.
+  </h2>
+  <div class="grid md:grid-cols-2 gap-10 items-start">
+    <ol class="space-y-6 text-[var(--color-text-secondary)]">
+      <li class="flex items-start gap-4">
+        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
+          1
+        </span>
+        <span>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Describe the machine once.
+          </span>
+          An Environment describes the machine an agent wakes up on. It names repositories, packages and env vars, and the scripts that run first. Write it in the console, or apply it as YAML from the CLI.
+        </span>
+      </li>
+      <li class="flex items-start gap-4">
+        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
+          2
+        </span>
+        <span>
+          <span class="font-medium text-[var(--color-text-primary)]">Name the agent.</span>
+          Pick the runtime and the model, add skills and MCP servers, attach the Environment. Or start from a ready-made one and change what you need.
+        </span>
+      </li>
+      <li class="flex items-start gap-4">
+        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
+          3
+        </span>
+        <span>
+          <span class="font-medium text-[var(--color-text-primary)]">Send a prompt.</span>
+          A sandbox spawns and the agent works. The reply streams back as it goes. Send another prompt and the same machine is still there, with its work on it.
+        </span>
+      </li>
+    </ol>
+    <pre
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+      phx-no-format
+    ><code>{sdk_example()}</code></pre>
+  </div>
+</section>
+
+<%!-- The durable thread, told as the thing a builder maps onto their own ids
+      rather than as a coworker they message. Every claim here is generally
+      available, so nothing carries a status badge. The key is `channel_id`
+      (`Conversations.create/2`); it resumes a conversation for the same agent,
+      vault and environment, so the copy says "the same agent" rather than
+      claiming a global unique key. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-8 text-center">
-    Close the laptop. The work is still there.
+    One user, one machine, one thread that survives.
   </h2>
   <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
     <p>
-      A teammate is an agent with a thread that keeps going. Give it a name and a one-line brief.
+      Bind a conversation to an id you already have. A customer, a ticket, a Slack channel, a row in your database. The next prompt you send for the same id and the same agent continues that conversation, so there is no lookup table and nothing to carry between messages.
     </p>
     <p>
-      It parks when you stop typing, and a parked teammate costs nothing. The next message wakes it with its files and its checkout intact. The second message costs a sentence, not a re-explanation of the first.
+      It parks when nobody is typing, and a parked sandbox costs nothing and takes none of your concurrency. The next message wakes it with its files and its checkout intact. The second prompt costs a sentence, not a re-explanation of the first.
     </p>
     <p>
-      Give it a schedule and it works while you are not there. "Each weekday at nine" is a cron, and the reply lands in the thread when it is done.
+      Put one on a schedule and it runs when nobody is there. "Each weekday at nine" is a cron, and the reply lands in the thread when it is done.
     </p>
     <p>
       Its memory is the disk it runs on. End the conversation and the memory goes with it, and the thread survives without it.
@@ -101,79 +176,81 @@
   </div>
   <p class="mt-8 text-center">
     <a
-      href={~p"/auth/register"}
+      href={~p"/docs/api"}
       class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
     >
-      Hire your first teammate
+      Read the API reference
     </a>
   </p>
 </section>
 
-<%!-- The roster. Every mechanism named here ships unflagged, which is why none
-      of it carries a badge. The closing concession is the hero's "budget"
-      doing its work: recursion has no server-side cap, and the balance is what
-      bounds it. --%>
+<%!-- Scale, which is the question a builder asks third and which this platform
+      answers with a real ceiling rather than a promise. Every mechanism named
+      here ships unflagged, so none of it carries a badge. The concession at
+      the end is the honest half: the hosted ceiling is low today, and a
+      hundred at once is the self-hosted lane. Do not put a number on the
+      fleet ceiling here; the limits section already refuses to, because it is
+      an operator setting rather than a published product promise. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      Agents that cooperate contractually.
+      A hundred tickets is a hundred calls, not an architecture.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
-      A roster is not a list of bots. Each agent is hired for a role, and it can hand work to the others.
+      There is no queue for you to run, no worker pool to size and no image to bake per repository. There is a ceiling, and we would rather you read it here than find it in production.
     </p>
 
     <div class="grid sm:grid-cols-2 gap-6">
-      <%!-- create-team --%>
+      <%!-- fan-out: from your code, or from inside an agent --%>
       <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
         <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          Five questions, then a roster
+          Fan out from your code, or from inside an agent
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Say <code class="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-2)]">/create-team</code>
-          to any teammate. It asks five questions about the work and the repos in scope. The model keys you hold decide which brains it can offer. It proposes nothing you cannot run, and creates nothing until you say yes.
+          One call starts one conversation, so a batch is a loop. Every sandbox also carries the skill that starts more conversations, so an agent can split its own work, run the pieces in parallel and collect the answers. Each child takes its own machine, or shares the one its parent is on.
         </p>
       </div>
 
-      <%!-- fountain-team MCP --%>
+      <%!-- ADR 0023: many conversations, one sandbox, with the real capacities --%>
       <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
         <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          They reach each other by role
+          Or put many conversations on one machine
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          A teammate resolves another by description. "The engineer" or "whoever handles support" returns a match, and the message lands in that teammate's thread with the sender named in front. A lead routes work, and nobody has to relay it.
+          Several conversations can share one sandbox and take turns at the same time, with a separate transcript each. Claude Code and Codex run as many as you send. opencode and gemini run one at a time, and a turn past that is refused rather than queued.
         </p>
       </div>
 
-      <%!-- the fountain skill --%>
+      <%!-- The cap, said out loud. --%>
       <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
         <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          Any agent can fan out
+          The ceiling is published, not discovered
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Every sandbox carries the skill that starts more conversations. An agent runs a batch of them in parallel and collects the answers. Each child takes its own computer, or shares the one its parent is on.
+          On this platform your balance sets how many run at once, up to a stated maximum, under a ceiling for the whole fleet. Both refuse in plain words rather than charging you or silently queueing. Need a higher one? Ask, and we raise it on your account.
         </p>
       </div>
 
       <%!-- allowlists, versions, provenance --%>
       <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
         <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          What makes it contractual
+          Every run can be reconstructed afterwards
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          An agent may only launch with the environments and vaults on its allowlist. Every shape it has had is kept as a version, and each conversation records the version it ran under. A spawned conversation carries its parent's id, so the whole chain can be rebuilt afterwards.
+          An agent may only launch with the environments and vaults on its allowlist. Every shape it has had is kept as a version, and each conversation records the version it ran under. A conversation an agent spawned carries its parent's id, so the whole chain can be rebuilt.
         </p>
       </div>
     </div>
 
     <p class="mt-10 max-w-2xl mx-auto text-sm text-[var(--color-text-secondary)] leading-relaxed">
-      Nothing stops recursion on our side. The skill tells the agent to cap its own depth, and a runaway fan-out is a real way to spend money. What bounds it is the budget. Your balance sets how many agents can run at once, and an agent cannot spend past it.
+      Two honest limits. Nothing stops recursion on our side, so the skill tells each agent to cap its own depth and your balance is the backstop under a runaway fan-out. And the hosted ceiling is set for a platform this size, so a hundred machines at once means asking us to raise it, or running the sandboxes on hardware you own.
     </p>
     <p class="mt-8 text-center">
       <a
-        href={~p"/auth/register"}
+        href={~p"/self-hosted"}
         class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
       >
-        Build a roster
+        Run the sandboxes yourself
       </a>
     </p>
   </div>
@@ -219,7 +296,7 @@
         MCP, both directions
       </dt>
       <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Your agents reach the servers you declare on them. Fountain injects its own on top. A teammate can read the roster and message the others without you wiring anything.
+        Your agents reach the servers you declare on them. {Fountain.Brand.name()} injects its own on top, so one of your agents can read the roster and message the others without you wiring anything.
       </dd>
     </div>
 
@@ -281,10 +358,10 @@
 
       <div>
         <dt class="font-medium text-[var(--color-text-primary)]">
-          A teammate is not a shared inbox
+          A conversation is not a shared inbox
         </dt>
         <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          One agent has one thread on one computer. Two people who message the same teammate are talking to the same thread and the same machine.
+          One conversation is one thread on one machine. Two of your users pointed at the same conversation share both, and see each other's work. Give each of them an id of their own.
         </dd>
       </div>
 
@@ -298,50 +375,6 @@
   </div>
 </section>
 
-<%!-- How it works --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-    Everything above is three rows and one call.
-  </h2>
-  <div class="grid md:grid-cols-2 gap-10 items-start">
-    <ol class="space-y-6 text-[var(--color-text-secondary)]">
-      <li class="flex items-start gap-4">
-        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
-          1
-        </span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">
-            Describe the machine once.
-          </span>
-          An Environment describes the machine an agent wakes up on. It names repositories, packages and env vars, and the scripts that run first. Write it in the console, or apply it as YAML from the CLI.
-        </span>
-      </li>
-      <li class="flex items-start gap-4">
-        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
-          2
-        </span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">Name the agent.</span>
-          Pick the runtime and the model, add skills and MCP servers, attach the Environment. Or start from a ready-made one and change what you need.
-        </span>
-      </li>
-      <li class="flex items-start gap-4">
-        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
-          3
-        </span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">Send a prompt.</span>
-          A sandbox spawns and the agent works. The reply streams back as it goes. Send another prompt and the same machine is still there, with its work on it.
-        </span>
-      </li>
-    </ol>
-    <pre
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
-      phx-no-format
-    ><code>{sdk_example()}</code></pre>
-  </div>
-</section>
-
 <%!-- Feature cards --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
@@ -349,10 +382,11 @@
       What you stop building.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10 -mt-6">
-      The roster above runs on four things you would otherwise have written yourself.
+      Four things you would otherwise have written yourself, and then owned.
     </p>
     <div class="grid sm:grid-cols-2 gap-6">
-      <%!-- Per-user threads --%>
+      <%!-- One seam over the runtimes and the sandbox providers. The card the
+            durable-thread section used to duplicate. --%>
       <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
         <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
           <svg
@@ -369,10 +403,10 @@
           </svg>
         </div>
         <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-          One machine per user, one thread per user
+          One integration, not eight
         </h3>
         <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          Bind a conversation to any id you already have, such as a Slack channel, a customer, or a row in your database. Each one gets a durable thread on its own sandbox. No lookup table, and nothing to carry between messages.
+          Claude Code, Codex, opencode and Gemini sit behind one API, and so do the sandbox platforms under them. Change the runtime an agent runs, or the platform its machine comes from, and your code does not move.
         </p>
       </div>
 
@@ -488,7 +522,7 @@
     Or use the apps we built on it.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    {Fountain.Brand.name()}'s own UI is a console for accounts, keys and agents. The apps you work in are these three. Each is static files in a browser talking to the same API you get, so each one runs against your account the moment you sign in.
+    {Fountain.Brand.name()}'s own UI is a console for accounts, keys and agents, and it is not the app your users meet. These three are. Each is static files in a browser calling the same public API your key opens, with no backend of its own, so each is a worked example of the thing you are about to write. Open one, read its source, take the parts you need.
   </p>
   <div class="grid md:grid-cols-3 gap-6">
     <article
@@ -532,7 +566,7 @@
       People build whole products on it.
     </h2>
     <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-8">
-      {length(built_apps_flat())} are open source and running right now. Beside the three above: a researcher that returns cited briefs, an analyst that runs Python on your CSV, an SRE on a cron, a DNS desk with an approval gate. Most have no backend of their own.
+      {length(built_apps_flat())} are open source and running right now. A researcher that returns cited briefs, an analyst that runs Python on your CSV, an SRE on a cron, a DNS desk with an approval gate. Most have no backend of their own, and in several of them nothing on screen says the word agent. The product is the document, the chart or the text message.
     </p>
     <ul class="flex flex-wrap justify-center gap-2 mb-8">
       <li
@@ -564,7 +598,7 @@
   </h2>
   <div class="max-w-2xl mx-auto space-y-4 text-center text-[var(--color-text-secondary)]">
     <p>
-      A teammate can hold an email address and a number of its own. Text it and it answers in its thread, on the same computer it has been working on all week.
+      An agent can hold an email address and a number of its own. A message to either arrives as a prompt in its thread, on the same machine it has been working on all week, and the reply goes back the same way. Your product gets an inbound channel, and you do not run an inbox.
     </p>
     <p>
       {Fountain.Brand.name()} holds the keys to that inbox and that number. The sandbox is handed tools, and never a credential.
@@ -589,7 +623,7 @@
       Or run the whole thing yourself.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-10">
-      One question decides it. If your code and your secrets cannot leave your own infrastructure, this platform was never the answer for you.
+      Two questions send you here. If your customers' code and secrets cannot leave your own infrastructure, this platform was never the answer for you. And if you need more machines at once than the ceiling above allows, the ceiling is a setting in a config file you own.
     </p>
 
     <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
@@ -618,7 +652,7 @@
 <%!-- Objections --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-    Things you would ask before signing up.
+    Things you would ask before building on it.
   </h2>
   <dl class="max-w-2xl mx-auto space-y-6 text-[var(--color-text-secondary)]">
     <div>
@@ -636,12 +670,32 @@
         That is a credential {Fountain.Brand.name()} accepts. A Claude Pro or Team subscription works in place of a metered API key, and when you hold both, the subscription is the one your agents spend. It is usually the one you want spent.
       </dd>
     </div>
+    <%!-- The one a builder asks first and the page owes an honest answer to.
+          There are no organisations and no seats (see the limits section), so
+          say plainly which of the two shapes they get rather than implying a
+          multi-tenant model that does not exist. --%>
     <div>
       <dt class="font-medium text-[var(--color-text-primary)]">
-        What happens to the sandbox when I stop talking?
+        My product has users. Do they each need an account here?
       </dt>
       <dd class="mt-1 text-sm leading-relaxed">
-        It parks. The filesystem, the checkout and the agent's memory survive, and a parked sandbox costs nothing. The next message wakes it in seconds instead of minutes.
+        Usually not. Your account holds the agents and the key, and each of your users gets their own conversation on their own machine, keyed by an id you already have for them. When you would rather they held their own account and their own model key, Sign in with {Fountain.Brand.name()} is OAuth with PKCE and the token it hands back is an ordinary API key.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Is this only good for writing code?
+      </dt>
+      <dd class="mt-1 text-sm leading-relaxed">
+        The runtimes are coding agents, which is to say a shell, a filesystem and a network. One of the apps above runs Python over a CSV you drop in. Another reads real sources and hands back a cited brief. If the job fits on a computer, it fits here.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        What happens to the sandbox between messages?
+      </dt>
+      <dd class="mt-1 text-sm leading-relaxed">
+        It parks. The filesystem, the checkout and the agent's memory survive, a parked sandbox costs nothing, and it takes none of your concurrency. The next message wakes it in seconds instead of minutes.
       </dd>
     </div>
     <div>
@@ -649,7 +703,7 @@
         Is my work separate from everyone else's?
       </dt>
       <dd class="mt-1 text-sm leading-relaxed">
-        Every query is scoped to your account, every sandbox belongs to one conversation, and your secrets are encrypted with a key derived for your tenant alone.
+        Every query is scoped to your account, every sandbox belongs to one conversation unless you put another on it, and your secrets are encrypted with a key derived for your tenant alone.
       </dd>
     </div>
     <div>
@@ -672,10 +726,10 @@
 <section class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-20 text-center">
     <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
-      Your first agent runs in minutes.
+      A key, a call, and a machine you did not build.
     </h2>
     <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
-      Sign up, paste a model key, send a prompt. No machine to provision, no card to enter, nothing that renews.
+      Sign up, paste a model key, send a prompt. No machine to provision, no card to enter, nothing that renews. Then go back to the part that is actually your product.
     </p>
     <a
       href={~p"/auth/register"}
@@ -705,7 +759,7 @@
     </h2>
     <p class="mt-3 mb-12 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto">
       No plans, no seats, no monthly fee. Buy credit, and every hour an agent
-      works comes out of it. Bring your own model keys — {Fountain.Brand.name()} never bills
+      works comes out of it. Bring your own model keys. {Fountain.Brand.name()} never bills
       you for inference.
     </p>
 
