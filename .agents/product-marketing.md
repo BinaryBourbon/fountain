@@ -1,6 +1,6 @@
 # Product Marketing Context
 
-**Document version:** v1
+**Document version:** v2
 **Last updated:** 2026-08-27
 
 This file is the positioning, the ICP and the vocabulary that marketing work in
@@ -16,7 +16,23 @@ and bump the version.
 
 ## Product Overview
 
-**One-liner:** A multi-tenant API and UI for running sandboxed coding agents.
+**One-liner:** A conversational API to a computer, metered only while an agent
+is working.
+
+**Lead with the meter.** Both halves of that line are the pitch, and the second
+half is the part nobody else offers. A prompt goes over HTTP, a machine wakes
+up with the repositories, packages and credentials already on it, an agent
+works, the answer comes back, and the machine parks. A parked machine costs
+nothing, holds its disk and takes none of the account's concurrency. Copy that
+describes the machine without the meter has described a sandbox provider.
+
+**The harness is not the product.** There is a glut of agent harnesses and
+Fountain runs four of them (`claude`, `codex`, `gemini`, `opencode`) behind one
+API. Nothing in the pitch should imply the runtime is the scarce part. The
+scarce part is everything under it: the machine lifecycle, the installs, the
+configuration, the networking, and a credential that reaches the machine
+without reaching the prompt. That list is the reader's own to-do list, and
+naming it is what makes the page land.
 
 **What it does:** Agent, Environment and Vault are templates you write once. A
 Conversation runs one of them on a machine Fountain builds, warms, meters and
@@ -84,9 +100,15 @@ Do not write multi-stakeholder copy until org features exist.
 
 ## Problems & Pain Points
 
-**Core problem:** Running Claude instances with worktrees locally, and shuffling
-MCP configurations and skill setups by hand, is painful. That sentence is
-`README.md`'s own, and it is the most load-bearing problem statement in the repo.
+**Core problem:** Builders do not want to run computers. They want software that
+holds a conversation, and the software needs a computer to hold it on. So they
+end up owning a machine lifecycle, a package install, a config, a network and a
+credential problem, none of which is the product they set out to ship. That is
+`README.md`'s own framing and the most load-bearing problem statement in the
+repo. The older version of the sentence, "running Claude instances with
+worktrees locally and shuffling MCP configs by hand is painful", is the same
+problem told from the laptop rather than from the product, and it still works
+for a reader who has not shipped yet.
 
 **Why alternatives fall short:**
 - A raw sandbox provider gives you a machine, not a template that outlives the
@@ -127,6 +149,10 @@ without telling us.
 ## Differentiation
 
 **Key differentiators:**
+- **The meter runs only while an agent works.** A parked machine, an idle one
+  and one on the customer's own runner all cost nothing. A sandbox provider
+  rents a box by the hour whether or not anybody is talking to it. This is the
+  differentiator to lead with, and the one that pays for the whole pitch.
 - **Four primitives, split by rate of change.** What the machine holds changes
   rarely; which credentials a run uses changes constantly; how the agent behaves
   changes sometimes; what it does now changes continuously. Fountain gives each
@@ -179,8 +205,14 @@ on the repo's own problem statement rather than pretending to quote a user.
 **Words to use:** Agent, Environment, Vault, Conversation, sandbox, runtime,
 template, run, transcript, credit, primitive, estate, gate, guardrail.
 
-**Words to avoid:** "computer" for a sandbox (banned in docs, and defined
-nowhere); "simply", "just", "easy", "obviously", "coming soon" (the docs style
+**"Computer" is a marketing word only.** `standards/voice-and-style.md` bans it
+from `docs/` because reference prose needs one name for the machine, and that
+name is "sandbox". The homepage hero and `README.md` use it on purpose: it is
+the word the reader already has for the thing they do not want to run, and it
+is how the one-liner lands before "sandbox" means anything. Use it once to open,
+then say "sandbox" or "machine" for the rest of the page, and never in `docs/`.
+
+**Words to avoid:** "simply", "just", "easy", "obviously", "coming soon" (the docs style
 gate fails on these); "plans", "tiers", "seats", "subscription" (there are none);
 em dashes anywhere in `docs/`.
 

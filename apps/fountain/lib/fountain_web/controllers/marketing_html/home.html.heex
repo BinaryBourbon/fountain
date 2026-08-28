@@ -12,10 +12,20 @@
     {Fountain.Brand.name()} is the hosted {Fountain.Brand.engine()}. The engine is open source and you can run it yourself.
   </p>
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    You did not set out to run a sandbox platform.
+    A conversational API to a computer.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    But an agent in front of your users needs one, and then you maintain it. {Fountain.Brand.name()} is that half. One call gets a sandbox with a checkout, credentials the model never sees, a lifecycle that parks and wakes itself, and the answer back instead of the transcript.
+    Send a prompt over HTTP. A machine wakes up with your repositories cloned, your packages installed and credentials the model never sees, a coding agent does the work, and the answer comes back.
+    <%!-- The meter is the differentiator, so it belongs in the hero. It is
+          also a claim only a billing deployment can make, and the same
+          `pricing?()` guard the price card uses keeps a free install from
+          making it. --%>
+    <span :if={pricing?()}>
+      It parks between messages, and you pay for the minutes it works rather than for the machine sitting there.
+    </span>
+    <span :if={!pricing?()}>
+      It parks between messages and wakes on the next one with its files intact, so nothing is running while nobody is talking.
+    </span>
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
@@ -45,10 +55,10 @@
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      Six questions between a demo and a product.
+      You did not set out to run a sandbox platform.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-      The agent works on your laptop. Putting it in front of your users means answering all of these first, and not one of them is the thing you set out to build.
+      Harnesses are not the scarce part. There are dozens, and {Fountain.Brand.name()} runs four of them behind one API. The scarce part is everything under the harness, and it arrives as six questions between a demo on your laptop and a feature in front of your users.
     </p>
     <div class="grid sm:grid-cols-2 gap-6">
       <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
