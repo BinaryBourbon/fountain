@@ -643,9 +643,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "fountain-conversations",
             glyph: "\u{1F9F5}",
             name: "Conversations",
-            host: "jakegaylor.com/fountain-conversations",
-            url: "https://jakegaylor.com/fountain-conversations/",
-            source: "https://github.com/jhgaylor/fountain-conversations",
+            host: "fountain-conversations.demo.managoat.com",
+            url: "https://fountain-conversations.demo.managoat.com/",
+            source: "https://github.com/managoat/fountain-conversations",
             blurb:
               "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
             shows: "the event stream as blocks, and one sandbox behind many conversations",
@@ -658,9 +658,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "fountain-team",
             glyph: "\u{1F465}",
             name: "Team",
-            host: "jakegaylor.com/fountain-team",
-            url: "https://jakegaylor.com/fountain-team/",
-            source: "https://github.com/jhgaylor/fountain-team",
+            host: "fountain-team.demo.managoat.com",
+            url: "https://fountain-team.demo.managoat.com/",
+            source: "https://github.com/managoat/fountain-team",
             blurb:
               "Your agents as teammates in a messaging app. Roster on the left, thread on the right, routines on a schedule, images and search. Enter to send.",
             shows: "the team API, SSE streaming, schedules, usage",
@@ -674,9 +674,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "fountain-workbench",
             glyph: "\u{1F9F0}",
             name: "Workbench",
-            host: "workbench.inevitable.fyi",
-            url: "https://workbench.inevitable.fyi",
-            source: "https://github.com/jhgaylor/fountain-workbench",
+            host: "fountain-workbench.demo.managoat.com",
+            url: "https://fountain-workbench.demo.managoat.com",
+            source: "https://github.com/managoat/fountain-workbench",
             blurb:
               "A dev workstation the team shares. A project is an environment and a vault, work items live in it, and putting a teammate on one is a first prompt rather than four steps of setup.",
             shows: "projects over environments and vaults, agents as staff",
@@ -699,9 +699,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "briefing-room",
             glyph: "\u{1F4F0}",
             name: "Briefing Room",
-            host: "briefs.inevitable.fyi",
-            url: "https://briefs.inevitable.fyi",
-            source: "https://github.com/jhgaylor/briefing-room",
+            host: "briefing-room.demo.managoat.com",
+            url: "https://briefing-room.demo.managoat.com",
+            source: "https://github.com/managoat/briefing-room",
             blurb:
               "Say what you need to understand and why. A researcher with its own computer reads real sources and hands back a clean, cited brief. A document, not a chat.",
             shows: "web research behind a UI with none of the AI-chat furniture"
@@ -710,9 +710,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "table-talk",
             glyph: "\u{1F4CA}",
             name: "Table Talk",
-            host: "tables.inevitable.fyi",
-            url: "https://tables.inevitable.fyi",
-            source: "https://github.com/jhgaylor/table-talk",
+            host: "table-talk.demo.managoat.com",
+            url: "https://table-talk.demo.managoat.com",
+            source: "https://github.com/managoat/table-talk",
             blurb:
               "Drop a CSV in. An analyst runs Python on its sandbox and comes back with charts and plain-English findings. Then keep asking questions of your data.",
             shows: "a real computer as the engine under a zero-jargon UI"
@@ -740,9 +740,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "repo-sage",
             glyph: "\u{1F33F}",
             name: "Repo Sage",
-            host: "reposage.inevitable.fyi",
-            url: "https://reposage.inevitable.fyi",
-            source: "https://github.com/jhgaylor/repo-sage",
+            host: "repo-sage.demo.managoat.com",
+            url: "https://repo-sage.demo.managoat.com",
+            source: "https://github.com/managoat/repo-sage",
             blurb:
               "Name any public GitHub repository. An agent clones it on its own machine and answers with file-and-line citations that link back to the source.",
             shows: "the sandbox as a workstation: clone, grep, read, cite"
@@ -751,9 +751,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "mission-control",
             glyph: "\u{1F680}",
             name: "Mission Control",
-            host: "mission.inevitable.fyi",
-            url: "https://mission.inevitable.fyi",
-            source: "https://github.com/jhgaylor/mission-control",
+            host: "mission-control.demo.managoat.com",
+            url: "https://mission-control.demo.managoat.com",
+            source: "https://github.com/managoat/mission-control",
             blurb:
               "Describe a mission. A coordinator plans it, you approve the plan, and the app starts one sandboxed agent per task. Watch the fleet work and take one report.",
             shows: "plan, approve, fan out, multiplex the streams, synthesize"
@@ -762,9 +762,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "dns-desk",
             glyph: "\u{1F5C2}\u{FE0F}",
             name: "DNS Desk",
-            host: "jakegaylor.com/dns-desk",
-            url: "https://jakegaylor.com/dns-desk/",
-            source: "https://github.com/jhgaylor/dns-desk",
+            host: "dns-desk.demo.managoat.com",
+            url: "https://dns-desk.demo.managoat.com/",
+            source: "https://github.com/managoat/dns-desk",
             blurb:
               "A DNS operator for your Cloudflare zones. Ask in plain words, read the plan as a diff, approve. The zone tables stay on screen while the agent does the work.",
             shows: "plan, approve, apply on a live system, with a vault as the blast radius"
@@ -781,9 +781,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "watchtower",
             glyph: "\u{1F5FC}",
             name: "Watchtower",
-            host: "watchtower.inevitable.fyi",
-            url: "https://watchtower.inevitable.fyi",
-            source: "https://github.com/jhgaylor/watchtower",
+            host: "watchtower.demo.managoat.com",
+            url: "https://watchtower.demo.managoat.com",
+            source: "https://github.com/managoat/watchtower",
             blurb:
               "An SRE teammate on a cron: uptime, latency, TLS expiry and DNS for every site you name. When a tile turns red, ask it to investigate. It has real tools.",
             shows: "schedules as a product heartbeat, the conversation as the store"
@@ -792,9 +792,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "mend",
             glyph: "\u{1F526}",
             name: "Mend",
-            host: "mend.inevitable.fyi",
-            url: "https://mend.inevitable.fyi",
-            source: "https://github.com/jhgaylor/mend",
+            host: "mend.demo.managoat.com",
+            url: "https://mend.demo.managoat.com",
+            source: "https://github.com/managoat/mend",
             blurb:
               "What an audit finds across a repository's CI, manifests, Dockerfiles and cloud templates, and what an agent does once you hand it that tool. Mechanical fixes applied, judgement calls argued, one patch back.",
             shows:
@@ -804,9 +804,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "rounds",
             glyph: "\u{1F501}",
             name: "Rounds",
-            host: "rounds.inevitable.fyi",
-            url: "https://rounds.inevitable.fyi",
-            source: "https://github.com/jhgaylor/rounds",
+            host: "rounds.demo.managoat.com",
+            url: "https://rounds.demo.managoat.com",
+            source: "https://github.com/managoat/rounds",
             blurb:
               "Dependabot for infrastructure config. Enrol a repository and it gets audited on a schedule; an agent fixes what it can verify and opens the pull request. Never twice for the same finding, never again for one you closed.",
             shows: "an unattended product, and an agent that knows when to do nothing"
@@ -822,9 +822,9 @@ defmodule FountainWeb.MarketingHTML do
             id: "arena",
             glyph: "\u{1F94A}",
             name: "Arena",
-            host: "arena.inevitable.fyi",
-            url: "https://arena.inevitable.fyi",
-            source: "https://github.com/jhgaylor/arena",
+            host: "arena.demo.managoat.com",
+            url: "https://arena.demo.managoat.com",
+            source: "https://github.com/managoat/arena",
             blurb:
               "One prompt, several brains, side by side. Blind columns, live streams, latency and token counts, and your vote on the scoreboard.",
             shows: "parallel conversations, the model catalog, per-turn usage"

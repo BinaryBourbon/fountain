@@ -1270,7 +1270,7 @@ config :fountain,
 #
 # Fountain's own UI is a console; conversations and the team roster are
 # separate single-page apps (Fountain.Apps). Both default to the builds
-# hosted at jakegaylor.com, which work against any Fountain the reader types
+# hosted on demo.managoat.com, which work against any Fountain the reader types
 # in — provided this server admits that origin in API_CORS_ORIGINS. Point
 # these at your own deployment instead, or set one to "" to say this
 # deployment has no such app.
@@ -1285,7 +1285,7 @@ end
 #
 # The public browser apps allowed to sign in with Fountain (#818), as JSON:
 #   OAUTH_CLIENTS='[{"id":"fountain-conversations","name":"Fountain Conversations",
-#                    "redirect_uris":["https://jakegaylor.com/fountain-conversations/"]}]'
+#                    "redirect_uris":["https://fountain-conversations.demo.managoat.com/"]}]'
 # Unset (or invalid) means no clients — /oauth/authorize refuses everything —
 # except in dev and test, whose config files register the local apps.
 case System.get_env("OAUTH_CLIENTS") do
