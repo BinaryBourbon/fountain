@@ -177,12 +177,29 @@
       This is also the page's only mention of a Vault, so it states the
       HashiCorp collision before the feature (standards/voice-and-style.md).
 
+      EVERY dt IS AN IMPERATIVE. Six of them read down one left edge, so the
+      grammar is part of the shape: a list that changes person between items
+      reads as six unrelated claims rather than one inventory. These ran a noun
+      phrase, an imperative, a negative noun phrase, "You never" and "You can"
+      across six cards before this rule was written down. "You can" also hedges
+      a claim the page is entitled to make outright.
+
+      No dd repeats its own dt. Two of them did: the card about the pull
+      request opened by restating the headline, and the card about the
+      Environment ended on the reuse the headline had already promised.
+
       Three elements, three jobs. The h2 names the problem and claims it, the
       grid shows the mechanisms, and the closer hands the product back. The
-      lead-in only puts the reader at the moment after the demo worked. It used
-      to end "none of them is your product", which is the closer's line 270
-      words early, and it used to count the cards, which the reader can see and
-      which is the move 6291ec55 took out of this same paragraph.
+      lead-in only puts the reader at the moment after the demo worked, and
+      that is all it does: it used to carry a second sentence saying what the
+      h2 had just said, in the register of the h2. It used to end "none of them
+      is your product", which is the closer's line 270 words early, and it used
+      to count the cards, which the reader can see and which is the move
+      6291ec55 took out of this same paragraph.
+
+      The closer names one noun per mechanism the grid just showed, so each has
+      a card behind it. It used to end "that machine, that vault and that
+      owner", and "owner" was the only appearance of the word on the page.
 
       This is the first of the two sections that set their heading against the
       left edge instead of the centre. Six items of dense reference read down a
@@ -194,7 +211,7 @@
     You did not set out to run a sandbox platform. We did.
   </h2>
   <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl text-lg">
-    The agent was the easy part. Under it is everything you would have built next.
+    The agent was the easy part.
   </p>
   <%!-- A definition list, which is what the page uses for a claim and the
         mechanism behind it (the protocols, the limits and the case study all
@@ -208,10 +225,10 @@
   <dl class="mt-12 grid sm:grid-cols-2 gap-x-12 gap-y-9">
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        One setup, every agent you run.
+        Set it up once, then point every agent at it.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        An Environment names the filesystem, the packages, the checkout and the network. You list it, diff it and launch from it, and the next agent points at the same one.
+        An Environment names the filesystem, the packages, the checkout and the network. You list it, diff it and launch from it, and it outlives every run that uses it.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
@@ -224,15 +241,15 @@
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Nothing to build to get the work out.
+        Let the agent open the pull request itself.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The agent holds the checkout and the credential, so it opens the pull request itself. Nothing has to carry a diff back out of the sandbox.
+        It already holds the checkout and the credential, so nothing has to carry a diff back out of the sandbox.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        You never parse a runtime's output.
+        Never parse a runtime's output.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
         Await the run and read one field. Or stream with <code
@@ -246,12 +263,12 @@
         Pick up where the agent left off.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A parked sandbox holds the checkout and the work in progress, and wakes on the next message with the files where the agent left them. Nobody has to remember to turn it off.
+        A parked sandbox holds the checkout and the work in progress, and wakes on the next message with the files where the agent left them. It takes none of your concurrency while it waits.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        You can say what changed, and who changed it.
+        Say what changed, and who changed it.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
         Every change is recorded where it happens, not where the request arrived. An update names the fields that moved and never their values. Agents are versioned, and each conversation records the version it ran under.
@@ -259,7 +276,7 @@
     </div>
   </dl>
   <p class="mt-12 text-lg text-[var(--color-text-primary)] max-w-2xl">
-    {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the product.
+    {Fountain.Brand.name()} runs the machine, holds the credential and keeps the record. You keep the product.
   </p>
 </section>
 
