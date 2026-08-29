@@ -8,8 +8,8 @@
       (now the label over the terminal). --%>
 <section class="max-w-6xl mx-auto px-5 sm:px-6 pt-8 pb-14 sm:pt-12 sm:pb-20 grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
   <div>
-    <p class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-[var(--color-text-secondary)]">
-      <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-brand)]" aria-hidden="true"></span>
+    <p class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] px-3.5 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
+      <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" aria-hidden="true"></span>
       Self-hosted
     </p>
     <h1 class="mt-6 text-4xl sm:text-5xl font-bold tracking-tight leading-[1.05] text-[var(--color-text-primary)]">
@@ -84,12 +84,10 @@
       promise a bring-up the manual contradicts. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-7 sm:py-8">
-    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
-      Before you start
-    </p>
+    <.eyebrow label="Before you start" align={:left} />
     <div class="mt-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <div :for={item <- prerequisites()} data-role="prerequisite">
-        <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
           {item.label}
         </p>
         <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">{item.body}</p>
@@ -102,9 +100,7 @@
       A first-time operator otherwise reads a refused connection during the
       cold start as a failed install. --%>
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-    01 · Install
-  </p>
+  <.eyebrow label="01 · Install" align={:left} />
   <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
     After the six commands.
   </h2>
@@ -113,7 +109,7 @@
   </p>
   <div class="grid md:grid-cols-3 gap-6 mt-8">
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
         Then
       </p>
       <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Register</h3>
@@ -123,7 +119,7 @@
       >Open <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">http://localhost:4000</code> and sign up. The first account verifies itself and takes the admin role, so there is no bootstrap ritual and no console of ours in the path. Close registration behind you when you are done.</p>
     </div>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
         Check
       </p>
       <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Know it worked</h3>
@@ -133,7 +129,7 @@
       <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-3 sm:p-4 text-[11px] sm:text-xs text-[var(--color-code-text)]"><code phx-no-format>{health_probe()}</code></pre>
     </div>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
+      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
         Instead
       </p>
       <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Kubernetes</h3>
@@ -155,9 +151,7 @@
       flagship_apps/0, so this cannot name a retired app. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-      02 · What you open
-    </p>
+    <.eyebrow label="02 · What you open" align={:left} />
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
       The apps come with it.
     </h2>
@@ -220,9 +214,7 @@
 <%!-- 03. Evidence that other people build on this. Selected from
       built_apps/0 by id, so a card cannot drift from /built-with. --%>
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-    03 · Built on it
-  </p>
+  <.eyebrow label="03 · Built on it" align={:left} />
   <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
     {built_app_count()} applications already hire from one roster.
   </h2>
@@ -263,9 +255,7 @@
       rather than four loose cards, because the rungs are an order. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-      04 · Ownership
-    </p>
+    <.eyebrow label="04 · Ownership" align={:left} />
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
       How far down do you want to own it?
     </h2>
@@ -307,9 +297,7 @@
       config column is the page's point, so it gets a column of its own and a
       tint. The rows track docs/reference/feature-status.md. --%>
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-    05 · Feature flags
-  </p>
+  <.eyebrow label="05 · Feature flags" align={:left} />
   <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
     The features we ration, you switch on.
   </h2>
@@ -317,7 +305,7 @@
     Three things are not on for everyone here. Two are alpha and one changes what a sandbox can reach, so on the hosted platform each of them means an email to us and a wait. On an instance of your own they are a line in a config file, and nobody has to approve you.
   </p>
   <div class="mt-8 overflow-hidden rounded-xl border border-[var(--color-border)]">
-    <div class="hidden md:grid md:grid-cols-[1.5fr_1fr_1.25fr] bg-[var(--color-bg-2)] border-b border-[var(--color-border)] font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-secondary)]">
+    <div class="hidden md:grid md:grid-cols-[1.5fr_1fr_1.25fr] bg-[var(--color-bg-2)] border-b border-[var(--color-border)] text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
       <p class="px-6 py-3">Capability</p>
       <p class="px-6 py-3 border-l border-[var(--color-border)]">On this site</p>
       <p class="px-6 py-3 border-l border-[var(--color-border)] text-[var(--color-brand)]">
@@ -342,7 +330,7 @@
         </a>
       </div>
       <div class="p-6 border-t md:border-t-0 md:border-l border-[var(--color-border)]">
-        <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-text-muted)] md:hidden">
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] md:hidden">
           On this site
         </p>
         <p class="mt-2 md:mt-0 text-sm text-[var(--color-text-secondary)] leading-relaxed">
@@ -350,7 +338,7 @@
         </p>
       </div>
       <div class="p-6 border-t md:border-t-0 md:border-l border-[var(--color-border)] bg-[var(--color-info-bg)]">
-        <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
+        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
           Config
         </p>
         <p class="mt-2 font-mono text-xs text-[var(--color-text-primary)] leading-relaxed">
@@ -374,9 +362,7 @@
 <%!-- 06. Licenses --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-      06 · Licenses
-    </p>
+    <.eyebrow label="06 · Licenses" align={:left} />
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
       Three licenses, and what each one asks of you.
     </h2>
@@ -417,9 +403,7 @@
 
 <%!-- 07. The bill, said out loud. --%>
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-  <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-    07 · Trade-offs
-  </p>
+  <.eyebrow label="07 · Trade-offs" align={:left} />
   <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
     What it costs you instead.
   </h2>
@@ -451,9 +435,7 @@
       links to its section by anchor. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-    <p class="font-mono text-[11px] uppercase tracking-widest text-[var(--color-brand)]">
-      08 · Before the clone
-    </p>
+    <.eyebrow label="08 · Before the clone" align={:left} />
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
       Things you would ask before the clone.
     </h2>
