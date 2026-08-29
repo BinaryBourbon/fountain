@@ -6,6 +6,41 @@ defmodule FountainWeb.MarketingHTML do
   embed_templates "marketing_html/*"
 
   @doc """
+  The homepage's section mark: a short accent rule and a one-word label.
+
+  The page is ten sections of argument and every one of them used to open with
+  the same centred `text-2xl` heading, so nothing told a reader which section
+  they had landed in or how far through they were. The label is navigational
+  rather than a claim, which is why it is one word wherever one word will do.
+
+  The rule is the page's only repeated ornament. It carries `--color-accent`,
+  which appears nowhere clickable, so it reads as a mark rather than a link.
+
+  `tone` picks the palette: `:page` on the light sections and inside the
+  case-study panel, whose warm ground `--color-accent-ink` also reads on, and
+  `:ink` on the two dark ones.
+  """
+  attr :label, :string, required: true
+  attr :tone, :atom, default: :page
+  attr :align, :atom, default: :center
+  attr :class, :string, default: nil
+
+  def eyebrow(assigns) do
+    ~H"""
+    <p class={[
+      "flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.18em]",
+      @align == :center && "justify-center",
+      @tone == :ink && "text-[var(--color-accent)]",
+      @tone == :page && "text-[var(--color-accent-ink)]",
+      @class
+    ]}>
+      <span class="h-px w-6 shrink-0 bg-[var(--color-accent)]" aria-hidden="true"></span>
+      {@label}
+    </p>
+    """
+  end
+
+  @doc """
   The homepage's build sequence: one beat per document, plus the call.
 
   Each beat annotates the code beside it rather than sitting in a column of

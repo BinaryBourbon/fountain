@@ -65,6 +65,41 @@
 
   /* Focus ring */
   --color-focus-ring: #0b5acc;
+
+  /* ── Marketing ─────────────────────────────────────────────────────────
+   * Three scales the console does not use, added for the homepage's visual
+   * identity. They live here rather than in the template so light and dark
+   * stay one edit apart, like every other token.
+   */
+
+  /* Section band. `--color-bg-1` is white and the page is #f9fafb, so a band
+     built from it is a 2% step and reads as one continuous surface. This is
+     the tint marketing sections alternate on, and it is a real step. */
+  --color-band: #eef1f6;
+
+  /* Ink: a dark surface that does NOT invert with the theme. A section
+     designed dark stays dark in light mode; in dark mode the same tokens
+     lift it clear of the near-black page instead, so one set of classes
+     gives an anchored section in both. Ladder, darkest first:
+       light  bg-0 #f9fafb · band #eef1f6 · ink-0 #0c0c11 · ink-1 #17171e
+       dark   bg-0 #09090b · band #101015 · ink-0 #17171e · ink-1 #212129 */
+  --color-ink-0:         #0c0c11;
+  --color-ink-1:         #17171e;
+  --color-ink-2:         #212129;
+  --color-ink-border:    #2c2c37;
+  --color-ink-text:      #f5f5f7;
+  --color-ink-secondary: #a6a6b2;
+  --color-ink-muted:     #71717f;
+  --color-ink-brand:     #5796f4;
+
+  /* Accent: the warm counterpoint to the brand blue. Spent on proof and on
+     section marks, never on an action. Every button on the site stays
+     `--color-brand`, so the accent cannot be mistaken for something to
+     click. */
+  --color-accent:      #d98d2b;
+  --color-accent-soft: #fdf4e6;
+  --color-accent-line: #efd3a6;
+  --color-accent-ink:  #7a4a09;
 }
 
 /* Dark mode — activated by data-theme="dark" on <html> */
@@ -109,7 +144,7 @@
   --color-info-text:   #93c5fd;
 
   /* Code block */
-  --color-code-bg:   #000000;
+  --color-code-bg:   #0d0d12;
   --color-code-text: #e4e4e7;
 
   /* Conversation status badges (dark) */
@@ -126,6 +161,19 @@
 
   /* Focus ring */
   --color-focus-ring: #5796f4;
+
+  /* Marketing: the band drops below the page, and ink lifts above it. */
+  --color-band: #101015;
+
+  --color-ink-0: #17171e;
+  --color-ink-1: #212129;
+  --color-ink-2: #2b2b34;
+
+  /* Marketing: the accent panel becomes a warm dark, and its text warms up. */
+  --color-accent:      #e0a251;
+  --color-accent-soft: #221a0c;
+  --color-accent-line: #4a3617;
+  --color-accent-ink:  #f0c684;
 }
 
 /* Accessible focus ring for all interactive elements */

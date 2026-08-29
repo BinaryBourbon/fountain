@@ -1,0 +1,138 @@
+defmodule FountainWeb.DesignTokensTest do
+  @moduledoc """
+  The design tokens exist twice and nothing built the second copy.
+
+  `assets/css/tokens.css` is the source, with the reasoning in comments.
+  `apps/fountain/priv/static/assets/tokens.css` is the file a browser actually
+  loads, and it is the same declarations with the comments taken out. There is
+  no bundler on this site (Tailwind is the play CDN and there is no asset
+  build), so nothing generates the second file and nothing checked it.
+
+  It had already drifted before these tests existed, and editing it by hand
+  broke it in the way that is hardest to notice: half a comment survived, the
+  parser swallowed the declarations after it, and the page rendered with three
+  tokens silently empty. Every test stayed green, because a token that
+  resolves to nothing is a background that does not paint, not an error.
+
+  So: same properties, same values, same order, and no comment left half
+  standing.
+  """
+  use ExUnit.Case, async: true
+
+  @source Path.expand("../../../../assets/css/tokens.css", __DIR__)
+  @served Path.expand("../../priv/static/assets/tokens.css", __DIR__)
+
+  @external_resource @source
+  @external_resource @served
+
+  defp declarations(css) do
+    css
+    |> String.replace(~r|/\*.*?\*/|s, "")
+    |> then(&Regex.scan(~r/(--[\w-]+)\s*:\s*([^;]+);/, &1))
+    |> Enum.map(fn [_, name, value] -> {name, value |> String.split() |> Enum.join(" ")} end)
+  end
+
+  test "both files exist where the layout and the config expect them" do
+    assert File.exists?(@source), "the token source is gone"
+    assert File.exists?(@served), "root.html.heex links /assets/tokens.css and it is not there"
+  end
+
+  test "the served copy declares exactly what the source declares" do
+    source = declarations(File.read!(@source))
+    served = declarations(File.read!(@served))
+
+    assert source != [], "the token source parsed to no declarations at all"
+
+    assert source == served, """
+    apps/fountain/priv/static/assets/tokens.css has drifted from assets/css/tokens.css.
+
+    The served copy is the source with the comments removed. Regenerate it:
+
+        python3 - <<'PY'
+        import re, pathlib
+        src = pathlib.Path("assets/css/tokens.css").read_text()
+        out = re.sub(r"/\\*.*?\\*/", "", src, flags=re.S)
+        out = re.sub(r"[ \\t]+\\n", "\\n", out)
+        out = re.sub(r"\\n{3,}", "\\n\\n", out)
+        out = re.sub(r"\\{\\n\\n+", "{\\n", out)
+        out = re.sub(r"\\n\\n+\\}", "\\n}", out)
+        pathlib.Path("apps/fountain/priv/static/assets/tokens.css").write_text(out.lstrip("\\n"))
+        PY
+    """
+  end
+
+  test "the served copy carries no comment, whole or half" do
+    served = File.read!(@served)
+
+    refute served =~ "/*", "a comment opener reached the served copy"
+    refute served =~ "*/", "a comment closer reached the served copy, which swallows what follows"
+  end
+
+  test "every declaration in the served copy is one a CSS parser would keep" do
+    # A line the parser cannot read is not an error; it is a token that
+    # resolves to nothing, which is how the last break got as far as a
+    # screenshot. Anything between the braces is a declaration or blank.
+    for {line, n} <- @served |> File.read!() |> String.split("\n") |> Enum.with_index(1),
+        trimmed = String.trim(line),
+        trimmed != "",
+        not String.ends_with?(trimmed, "{"),
+        trimmed != "}" do
+      assert Regex.match?(~r/^--[\w-]+\s*:\s*[^;]+;$/, trimmed) or
+               Regex.match?(~r/^[\w-]+\s*:\s*[^;]+;$/, trimmed),
+             "tokens.css line #{n} is neither a declaration nor a block edge: #{inspect(line)}"
+    end
+  end
+
+  describe "the marketing scales" do
+    setup do
+      %{tokens: Map.new(declarations(File.read!(@source)))}
+    end
+
+    test "the ink surface is defined in both themes, because it inverts in neither", %{
+      tokens: tokens
+    } do
+      # `--color-ink-*` is the one scale that must not follow the theme: a
+      # section designed dark stays dark in light mode, and in dark mode the
+      # same tokens lift it clear of the near-black page. A missing dark
+      # override would leave the ink sections at #0c0c11 against a #09090b
+      # page, which is the anchor gone.
+      css = File.read!(@source)
+      [_, dark] = String.split(css, ~s([data-theme="dark"] {), parts: 2)
+
+      for name <- ~w(--color-ink-0 --color-ink-1 --color-ink-2) do
+        assert Map.has_key?(tokens, name), "#{name} is not declared"
+        assert dark =~ name, "#{name} has no dark value, so the ink sections vanish in dark mode"
+      end
+
+      # The text on ink is deliberately the same in both.
+      for name <- ~w(--color-ink-text --color-ink-secondary --color-ink-muted --color-ink-border) do
+        assert Map.has_key?(tokens, name), "#{name} is not declared"
+        refute dark =~ name, "#{name} is overridden in dark mode; ink text is theme independent"
+      end
+    end
+
+    test "the accent is not the brand, so it cannot read as something to click", %{tokens: tokens} do
+      assert tokens["--color-accent"] != tokens["--color-brand"]
+      assert tokens["--color-accent"] != tokens["--color-brand-hover"]
+    end
+
+    test "the band is a real step away from the page it sits on", %{tokens: tokens} do
+      # The band used to be `--color-bg-1`, which is #ffffff on a #f9fafb page:
+      # a 2% step that read as one continuous surface at every viewport.
+      assert tokens["--color-band"] != tokens["--color-bg-0"]
+      assert tokens["--color-band"] != tokens["--color-bg-1"]
+    end
+
+    test "the dark code background clears the panel it sits on", %{tokens: tokens} do
+      # It was #000000 against a #18181b card, which is a code block you cannot
+      # see in dark mode on any page that renders one.
+      css = File.read!(@source)
+      [_, dark] = String.split(css, ~s([data-theme="dark"] {), parts: 2)
+      dark_tokens = Map.new(declarations("x {" <> dark))
+
+      refute dark_tokens["--color-code-bg"] == dark_tokens["--color-bg-1"]
+      refute dark_tokens["--color-code-bg"] == "#000000"
+      assert tokens["--color-code-bg"], "the light value is gone"
+    end
+  end
+end

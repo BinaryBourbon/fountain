@@ -57,6 +57,27 @@ module.exports = {
           bg:   "var(--color-code-bg)",
           text: "var(--color-code-text)",
         },
+        // Marketing only. `band` is the section tint the homepage alternates
+        // on, `ink` is the dark surface that does not invert with the theme,
+        // and `ft-accent` is the warm counterpoint spent on proof rather than
+        // on actions. See the Marketing block in assets/css/tokens.css.
+        band: "var(--color-band)",
+        ink: {
+          0:        "var(--color-ink-0)",
+          1:        "var(--color-ink-1)",
+          2:        "var(--color-ink-2)",
+          border:    "var(--color-ink-border)",
+          text:      "var(--color-ink-text)",
+          secondary: "var(--color-ink-secondary)",
+          muted:     "var(--color-ink-muted)",
+          brand:     "var(--color-ink-brand)",
+        },
+        "ft-accent": {
+          DEFAULT: "var(--color-accent)",
+          soft:    "var(--color-accent-soft)",
+          line:    "var(--color-accent-line)",
+          ink:     "var(--color-accent-ink)",
+        },
       },
     },
   },
