@@ -1146,6 +1146,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/oauth/clients/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an OAuth client */
+        get: operations["FountainWeb.OAuthClientController.show"];
+        put?: never;
+        post?: never;
+        /**
+         * Unregister an OAuth client
+         * @description Deleting a client stops new sign-ins through it. Keys it already issued are ordinary API keys and outlive it — revoke those under the API keys endpoint.
+         */
+        delete: operations["FountainWeb.OAuthClientController.delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Change an OAuth client
+         * @description Rename the client or replace its redirect URIs. `client_id` never changes, and publishing is not a self-serve operation.
+         */
+        patch: operations["FountainWeb.OAuthClientController.update"];
+        trace?: never;
+    };
     "/api/admin/users/{id}/role": {
         parameters: {
             query?: never;
@@ -1603,6 +1628,30 @@ export interface paths {
         get: operations["FountainWeb.ConversationController.tree"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/oauth/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List OAuth clients
+         * @description The OAuth clients this account registered. Each one is in development mode until an operator publishes it, which means it signs in its owner and refuses every other account.
+         */
+        get: operations["FountainWeb.OAuthClientController.index"];
+        put?: never;
+        /**
+         * Register an OAuth client
+         * @description Register an app that can offer "Sign in with Fountain". The response carries the generated `client_id` to put in the app. Redirect URIs match exactly, must be https unless they are loopback, and a loopback URI matches on any port. The client starts in development mode, so it signs in nobody but you — which is why you may register any redirect URI you like, a sandbox's public URL included.
+         */
+        post: operations["FountainWeb.OAuthClientController.create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2421,6 +2470,10 @@ export interface components {
              * @enum {string}
              */
             media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+        };
+        /** OAuthClientListResponse */
+        OAuthClientListResponse: {
+            data: components["schemas"]["OAuthClient"][];
         };
         /** Repository */
         Repository: {
@@ -4009,6 +4062,31 @@ export interface components {
             setup_script?: string;
         };
         /**
+         * OAuthClient
+         * @description An OAuth client an account registered for itself (#1125), so an app can offer "Sign in with Fountain" without an operator adding it to `OAUTH_CLIENTS`. Until an operator publishes it the client is in development mode: it signs in its owner and renders an error page for every other account. Its redirect origins are admitted by CORS.
+         */
+        OAuthClient: {
+            /** @description What the app sends as `client_id` at /oauth/authorize. */
+            client_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: uuid
+             * @description Record id, for these routes.
+             */
+            id: string;
+            /** @description Shown on the consent page. */
+            name: string;
+            /** @description Derived from redirect_uris. These origins may call /api. */
+            origins: string[];
+            /** @description False means development mode: owner-only sign-in. */
+            published: boolean;
+            /** @description Exact match, except that a loopback URI matches on any port (RFC 8252). https, unless the host is loopback. */
+            redirect_uris: string[];
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /**
          * ConnectionProvidersResponse
          * @description Which providers this deployment can connect, and the URL that starts each flow.
          */
@@ -4299,6 +4377,22 @@ export interface components {
         /** SupportReportListResponse */
         SupportReportListResponse: {
             data: components["schemas"]["SupportReport"][];
+        };
+        /**
+         * OAuthClientRequest
+         * @example {
+         *       "name": "Notes",
+         *       "redirect_uris": [
+         *         "https://abc123.sprites.app/callback",
+         *         "http://localhost:5173/callback"
+         *       ]
+         *     }
+         */
+        OAuthClientRequest: {
+            /** @description Shown on the consent page. */
+            name: string;
+            /** @description Where the code is returned to. At least one. */
+            redirect_uris: string[];
         };
         /**
          * LogEvent
@@ -7393,6 +7487,141 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.OAuthClientController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Client record id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Client */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthClient"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such client */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.OAuthClientController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Client record id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such client */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.OAuthClientController.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Client record id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Client */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthClientRequest"];
+            };
+        };
+        responses: {
+            /** @description Client */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthClient"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such client */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.AdminController.set_role": {
         parameters: {
             query?: never;
@@ -8612,6 +8841,78 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.OAuthClientController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Clients */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthClientListResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.OAuthClientController.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Client */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthClientRequest"];
+            };
+        };
+        responses: {
+            /** @description Client */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthClient"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Validation error */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

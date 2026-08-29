@@ -99,6 +99,7 @@ defmodule FountainWeb.Layouts do
                 current={@current_path}
               />
               <.nav_link href={~p"/account/runners"} label="Runners" current={@current_path} />
+              <.nav_link href={~p"/account/oauth-apps"} label="OAuth apps" current={@current_path} />
               <.nav_link
                 :if={assigns[:current_user] && Fountain.Broker.enabled_for?(assigns.current_user.id)}
                 href={~p"/account/bindings"}
