@@ -1473,7 +1473,7 @@ defmodule FountainWeb.MarketingHTML do
   # The case study is data first, like /integrations above. Every number here
   # was counted once, by hand, over the window `case_window/0` names: the
   # dispatch counts and turn durations from this deployment's own database,
-  # the pull requests and their timestamps from the estate's repository. They
+  # the pull requests and their timestamps from the cluster's repository. They
   # are literals on purpose. A figure that recomputed at request time would
   # quietly widen its own window and end up claiming something nobody checked.
 
@@ -1486,7 +1486,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         value: "78",
         label: "incidents handled by an agent",
-        note: "Fifteen days, one estate, one runbook, no rota."
+        note: "Fifteen days, one cluster, one runbook."
       },
       %{
         value: "4m 27s",
@@ -1513,15 +1513,15 @@ defmodule FountainWeb.MarketingHTML do
         step: "1",
         title: "Prometheus notices",
         mono: "KubePodCrashLooping · PodOOMKilled · CPUThrottlingHigh · PodRestartChurn",
-        body: "The estate's existing alert rules. Prometheus knows nothing about the agent."
+        body: "The cluster's existing alert rules. Prometheus knows nothing about the agent."
       },
       %{
         step: "2",
         title: "Alertmanager forks the page",
         mono: "continue: true",
         body:
-          "One copy to the operator's phone, as before. One to a webhook. " <>
-            "The human is added to, not replaced."
+          "One copy goes to the on-call engineer's phone, as before. One goes to a webhook. " <>
+            "The agent joins the response; it does not replace the engineer."
       },
       %{
         step: "3",
@@ -1533,10 +1533,10 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         step: "4",
-        title: "The agent reads the estate",
+        title: "The agent reads the cluster",
         mono: "Authorization: Bearer … (GET only)",
         body:
-          "A read-only estate service answers with node health, drift from " <>
+          "A read-only service answers with node health, drift from " <>
             "source, and controller conditions. Every other method returns 405."
       },
       %{
@@ -1558,7 +1558,7 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         step: "7",
-        title: "A human approves",
+        title: "The on-call engineer decides",
         mono: "422 on self-approval · 405 on self-merge",
         body:
           "The one gate. GitHub blocks self-approval, and the branch needs a " <>
@@ -1585,7 +1585,7 @@ defmodule FountainWeb.MarketingHTML do
   def case_guardrails do
     [
       %{
-        can: "Read the whole estate graph, including controller conditions.",
+        can: "Read cluster state, including controller conditions.",
         cannot: "Change anything. The token is refused on any method but GET."
       },
       %{
@@ -1645,7 +1645,7 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         time: "08:50:27",
-        title: "A human wakes up and reads two pull requests",
+        title: "The on-call engineer wakes up and reads two pull requests",
         body:
           "The throttling fix is merged. Flux reconciles on the webhook, and " <>
             "the agent watches the container come back."
@@ -1700,7 +1700,7 @@ defmodule FountainWeb.MarketingHTML do
         title: "Environment",
         body:
           "The machine the agent wakes up on, with the repository, the CLI and " <>
-            "the read-only estate service's address. Described once, rebuilt " <>
+            "a read-only service for cluster state. Described once, rebuilt " <>
             "per incident, never patched by hand."
       },
       %{
@@ -1735,7 +1735,7 @@ defmodule FountainWeb.MarketingHTML do
         agent_id: agentId,  // estate-medic
         vault_id: vaultId,  // the identity it acts as
         prompt: [
-          `The estate is alerting.`,
+          `The cluster is alerting.`,
           alertLines,
           `Diagnose it. If a change to the repo can`,
           `fix it, open one minimal PR, wait for the`,

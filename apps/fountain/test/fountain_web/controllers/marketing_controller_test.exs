@@ -525,6 +525,9 @@ defmodule FountainWeb.MarketingControllerTest do
       body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
 
       assert body =~ "The pager still goes off at 06:58."
+      assert body =~ "That engineer decides whether to merge it."
+      refute body =~ "Kubernetes estate"
+      refute body =~ "production estate"
 
       # The headline quotes the incident's own clock. Assert it against the
       # timeline so editing one cannot leave the other behind: the hero would

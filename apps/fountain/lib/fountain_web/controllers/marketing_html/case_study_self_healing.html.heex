@@ -9,7 +9,7 @@
     The pager still goes off at 06:58. The pull request is open by 07:02.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    A Kubernetes estate pages a person when a workload breaks. This one also starts an agent. It reads the cluster, finds the commit at fault, and opens one small pull request it is unable to merge.
+    A Kubernetes cluster pages an on-call engineer when a workload breaks. This one also starts an agent. It reads the cluster, finds the commit at fault, and opens one small pull request. That engineer decides whether to merge it.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center">
     <a
@@ -40,7 +40,7 @@
       </div>
     </div>
     <p class="mt-8 text-center text-xs text-[var(--color-text-muted)]">
-      Counted on one production estate over {case_window()}.
+      Counted in one production cluster over {case_window()}.
     </p>
   </div>
 </section>
@@ -88,7 +88,7 @@
       Nine steps, one of them a person.
     </h2>
     <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
-      Everything but the agent was already in the estate. One webhook, one API call.
+      The alerting stack was already there. Adding the agent took one webhook and one API call.
     </p>
     <ol class="max-w-3xl mx-auto space-y-4">
       <li
@@ -306,7 +306,7 @@
     </a>
   </div>
   <p class="mt-10 text-xs text-[var(--color-text-muted)] max-w-2xl mx-auto leading-relaxed">
-    The estate is a Kubernetes cluster carrying live production workloads. Numbers reported by the cluster administrator (us). Twelve fix pull requests opened in the window and eight merged, four of them the same rehearsal fault raised on purpose. Most incidents end with no pull request, because the agent decides the repository cannot fix them. The agent's definition is public at <a
+    This is a Kubernetes cluster carrying live production workloads. Numbers reported by the cluster administrator (us). Twelve fix pull requests opened in the window and eight merged, four of them the same rehearsal fault raised on purpose. Most incidents end with no pull request, because the agent decides the repository cannot fix them. The agent's definition is public at <a
       href="https://github.com/jhgaylor/agent-specs/blob/main/src/agents/specialists/engineering/estate-medic.ts"
       class="underline underline-offset-2 hover:text-[var(--color-text-secondary)]"
     >jhgaylor/agent-specs</a>.
