@@ -223,6 +223,10 @@ defmodule FountainWeb.MarketingControllerTest do
       {ownership_at, _} = :binary.match(body, "Choose how much of the stack you own.")
       {prerequisites_at, _} = :binary.match(body, "Before you start")
       assert ownership_at < prerequisites_at
+
+      # A connector belongs only between adjacent rungs. Drawing one as the
+      # border of the whole list leaves a dangling line below the last node.
+      assert length(Regex.scan(~r/data-role="ownership-connector"/, body)) == 3
     end
 
     test "names every feature the manual says is rationed", %{conn: conn} do
