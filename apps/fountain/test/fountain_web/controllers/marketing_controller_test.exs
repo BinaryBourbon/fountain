@@ -561,7 +561,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "the homepage and the marketing footer link to it", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
       assert body =~ ~p"/case-studies/self-healing-infrastructure"
-      assert body =~ "An estate that answers its own alerts."
+      assert body =~ "A cluster that answers its own alerts."
     end
   end
 
