@@ -203,12 +203,19 @@
       redeploy", and the credential that never enters the sandbox. It works
       because a redeploy is expensive and memorable. It did not work for
       "Never parse a runtime's output", where the denied chore is one jq
-      filter, and selling the absence of a small chore cost the card the four
+      filter, and selling the absence of a small chore cost the card the two
       larger things `Blocks` actually does: one renderer across four dialect
       parsers (claude, codex, gemini, opencode in `legacy_blocks.ex`, plus
-      ACP), tool calls and approval requests as first-class kinds rather than
-      scraped text, and stored transcripts that survive a runtime change
-      because each event keeps the parser that produced it (0014, #642).
+      ACP), and tool calls and approval requests as first-class kinds rather
+      than scraped text.
+
+      A third property is deliberately not on the card. Stored transcripts
+      survive a runtime change, because each event keeps the parser that
+      produced it (0014, #642). It is the most valuable thing here to a reader
+      who has already been bitten by it and the least legible to everyone
+      else, and it needed a subordinate clause about a hypothetical past to
+      say at all, on the card that was already the longest of the six. It
+      belongs in `docs/`, where a reader has the context to want it.
 
       NO dt MAY NAME AN OPS CHORE. The h2 two lines above says the reader did
       not set out to run a sandbox platform, so a card that opens "Set the
@@ -293,7 +300,7 @@
         Text, thinking, tool calls and their results, and approval requests arrive as the same blocks from every runtime. Ask for them with <code
           class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
           phx-no-format
-        >?blocks=true</code>, and transcripts you stored before you changed runtime keep rendering, because every event keeps the parser that produced it.
+        >?blocks=true</code>.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
