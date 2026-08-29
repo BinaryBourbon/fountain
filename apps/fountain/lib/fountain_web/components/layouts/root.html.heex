@@ -6,6 +6,10 @@
     if Map.get(assigns[:current_user] || %{}, :theme_preference) == "dark", do: "dark", else: ""
   }
   data-skin={assigns[:skin]}
+  style={
+    assigns[:skin] == "paper" &&
+      "--paper-mark: url(#{Fountain.Brand.asset("mark-mono.png")})"
+  }
 >
   <head>
     <meta charset="utf-8" />

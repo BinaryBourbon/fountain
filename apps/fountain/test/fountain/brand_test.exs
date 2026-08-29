@@ -65,7 +65,22 @@ defmodule Fountain.BrandTest do
     assert Brand.assets_origin() == "https://cdn.example.com"
   end
 
-  test "only the six bundle files resolve" do
+  test "only the bundle files resolve" do
     assert_raise FunctionClauseError, fn -> Brand.asset("logo.svg") end
+  end
+
+  test "the release ships a built-in for every file a bundle would supply" do
+    # A name added to `assets/0` without a file beside it is a 404 on any
+    # deployment with no bundle, and the page that asks for it renders
+    # perfectly otherwise, so nothing else would catch it.
+    Application.delete_env(:fountain, :brand_assets_url)
+    static = Path.expand("../../priv/static", __DIR__)
+
+    for name <- Brand.assets() do
+      "/" <> path = Brand.asset(name)
+      file = Path.join(static, path)
+
+      assert File.exists?(file), "#{name} resolves to #{path} and the release has no such file"
+    end
   end
 end

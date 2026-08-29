@@ -14,6 +14,7 @@ defmodule FountainWeb.PaperSkinTest do
 
   @paper Path.expand("../../priv/static/assets/paper.css", __DIR__)
   @tokens Path.expand("../../priv/static/assets/tokens.css", __DIR__)
+  @layout Path.expand("../../lib/fountain_web/components/layouts/root.html.heex", __DIR__)
   @templates Path.expand("../../lib/fountain_web/controllers/marketing_html", __DIR__)
   @home Path.expand(
           "../../lib/fountain_web/controllers/marketing_html/home.html.heex",
@@ -80,6 +81,21 @@ defmodule FountainWeb.PaperSkinTest do
         assert glyphs == hooks,
                "#{Path.basename(file)} renders #{glyphs} glyphs and carries #{hooks} hooks"
       end
+    end
+
+    test "the mark is a brand file, so no brand's pixels live in this repository" do
+      # The goat is Managoat's, not the engine's: brand images are served from
+      # `BRAND_ASSETS_URL` so that changing one is not an image rebuild. The
+      # skin therefore names no drawing of its own — the layout resolves
+      # `mark-mono.png` through the bundle and hands the URL to the property.
+      layout = File.read!(@layout)
+      css = File.read!(@paper)
+
+      assert layout =~ ~S|Fountain.Brand.asset("mark-mono.png")|,
+             "the layout no longer resolves the mark, so the skin falls back to the engine's"
+
+      assert "mark-mono.png" in Fountain.Brand.assets()
+      assert css =~ "--paper-mark"
     end
 
     test "declares a dark value for every surface it lightens" do
