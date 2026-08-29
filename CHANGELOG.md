@@ -18,6 +18,37 @@ upgrade, is in
 
 ### Added
 
+- **Register your own OAuth app, and the CORS follows** (#1125). An app can
+  offer "Sign in with Fountain" against any server, the hosted one included,
+  without an operator editing `OAUTH_CLIENTS` and `API_CORS_ORIGINS` and
+  redeploying. Register a client under Account → OAuth apps, with
+  `fountain oauth-client create`, or at `POST /api/oauth/clients`; the one
+  registration covers both the sign-in and the browser's right to call `/api`
+  from that origin.
+
+  The obvious answer here — wildcard the sandbox domain in both lists — is a
+  phishing kit, because PKCE does not protect a flow the attacker started. So
+  the boundary is elsewhere: a client you register is **in development mode**,
+  which means it signs in *you* and renders every other account an error page
+  rather than a redirect. That is precisely what makes a self-chosen redirect
+  URI safe, so you may name a sandbox's public URL, a `localhost` port,
+  anything. A loopback URI matches on any port (RFC 8252) for the redirect
+  *and* for CORS, so a dev server that moves off 5173 does not half-break.
+  Publishing a client, which lets other accounts sign in to it, stays an
+  operator action, and `OAUTH_CLIENTS` still holds the apps an operator
+  vouches for.
+
+  Managing clients needs a **full-scope** key. A sandbox's per-conversation
+  token is refused, for the reason it cannot mint an API key: a registered
+  client is a standing way to obtain a full-scope key with one consent, and
+  nothing running in a sandbox should be able to leave one behind. The consent
+  page's `form-action` CSP also narrowed from every registered client's
+  origins to the requested client's — with tenant-registered apps the old
+  header would have grown without bound and published the whole registry to
+  any visitor. `oauth_client.created`, `.updated` and `.deleted` are audited,
+  and `oauth.authorized` now carries the client it authorized. ADR 0021 is
+  amended.
+
 - **One page for the questions, at `/faq`.** Three marketing pages carried a
   question-shaped block at the bottom, and a reader with a question had to
   guess which page it sat on. They are one page now, grouped into building on

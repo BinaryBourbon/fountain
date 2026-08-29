@@ -110,13 +110,43 @@ POST /api/oauth/token    # {grant_type: "authorization_code", code, code_verifie
 POST /api/oauth/revoke   # bearer: revoke the presented token (sign-out)
 ```
 
-You register a client on the server, in `OAUTH_CLIENTS`, with exact redirect
-URIs. A client or a redirect that nobody registered renders an error page, and
+A client or a redirect that nobody registered renders an error page, and
 Fountain redirects nowhere.
 
 A code lives five minutes, and it works once. The key is full-scope, it
 expires in 30 days, and it lists under Account, then API keys, as
 `oauth:<client_id>`.
+
+### Register your own app
+
+You do not have to ask an operator to add your app to `OAUTH_CLIENTS`. Any
+account can register a client for itself, in the console under Account, then
+OAuth apps, with `fountain oauth-client create`, or over the API.
+
+```
+GET    /api/oauth/clients        # the account's clients
+POST   /api/oauth/clients        # {name, redirect_uris} -> {client_id, ...}
+GET    /api/oauth/clients/:id
+PATCH  /api/oauth/clients/:id    # rename, or replace the redirect URIs
+DELETE /api/oauth/clients/:id
+```
+
+These routes need a full-scope key. A conversation-scoped sandbox token
+cannot register a client, for the same reason it cannot mint an API key.
+
+Your client starts in **development mode**. It signs in the account that
+registered it, and every other account gets an error page instead of a
+redirect. That boundary is why you can name any redirect URI you like, such as
+a sandbox's public URL or a port on your own machine. Only an operator can
+publish a client, which is what lets other accounts sign in to it.
+
+A redirect URI must match exactly, and must be `https`, unless the host is
+`localhost` or `127.0.0.1`. A loopback URI matches on any port, so a dev
+server that moves from 5173 to 5174 still works.
+
+A registered client's redirect origins can also call `/api` from a browser.
+So one registration covers the sign-in and the CORS allowance, and neither
+needs `OAUTH_CLIENTS` nor `API_CORS_ORIGINS`.
 
 ## Account state
 

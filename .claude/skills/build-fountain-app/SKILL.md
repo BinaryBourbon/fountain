@@ -1,6 +1,6 @@
 ---
 name: build-fountain-app
-description: Build an application on top of the Fountain API — a browser app, a bot, an internal tool, anything that hires agents, sends them prompts and renders what they do. Use whenever the user says "build an app on Fountain", "a client for Fountain", "another fountain-team / workbench / demo app", "Sign in with Fountain", or wants to ship something that talks to /api from its own origin. Covers the published TypeScript SDK (@agentshit/fountain-sdk), the shape (static SPA on the SDK, or a small server in front), auth (OAuth code + PKCE, tokens are API keys), streaming, the server-side registration an app needs (API_CORS_ORIGINS, OAUTH_CLIENTS), a hosting recipe for any static host or container, and the traps every previous app hit.
+description: Build an application on top of the Fountain API — a browser app, a bot, an internal tool, anything that hires agents, sends them prompts and renders what they do. Use whenever the user says "build an app on Fountain", "a client for Fountain", "another fountain-team / workbench / demo app", "Sign in with Fountain", or wants to ship something that talks to /api from its own origin. Covers the published TypeScript SDK (@agentshit/fountain-sdk), the shape (static SPA on the SDK, or a small server in front), auth (OAuth code + PKCE, tokens are API keys), streaming, the server-side registration an app needs (API_CORS_ORIGINS, OAUTH_CLIENTS), self-registering an OAuth client so no operator is in the loop, a hosting recipe for any static host or container, and the traps every previous app hit.
 ---
 
 # Build an app on Fountain
@@ -147,20 +147,49 @@ returns keys); say so in the UI when someone pastes a token.
 
 ## 5. Register the app with the Fountain it talks to
 
-Two settings on the Fountain deployment, both exact-match lists
+**Register it yourself (#1125).** One call with a full-scope key, against any
+Fountain including the hosted one, and it covers both the sign-in and the CORS
+allowance. No operator, no redeploy:
+
+```bash
+fountain oauth-client create "My App" \
+  --redirect-uri https://<host>/callback \
+  --redirect-uri http://localhost:5173/callback
+```
+
+(or `POST /api/oauth/clients {name, redirect_uris}`, or the console under
+Account → OAuth apps). It prints the `client_id` your app sends.
+
+Your client is in **development mode**: it signs in *you* and shows every
+other account an error page. That is the boundary that lets you name any
+redirect URI at all — a sandbox's public URL, a `localhost` port. It is also
+why you cannot ship a dev-mode client to other people: publishing one is an
+operator action, and an app meant for a whole instance still wants an
+`OAUTH_CLIENTS` entry.
+
+Rules that bite: a redirect URI matches **exactly** (trailing slash included),
+must be `https` unless the host is `localhost`/`127.0.0.1`, and a loopback URI
+matches on **any port** — so Vite falling back from 5173 to 5174 is fine, and
+you do not need a second registration for it. **The client-management routes
+need a full-scope key**: a sprite's `FOUNTAIN_TOKEN` is refused, because a
+registered client is a standing way to get a full-scope key with one consent.
+Register from your own key, then let the app run the flow.
+
+The two operator settings still exist, for apps the operator vouches for
 (`docs/configuration.md`, ADR 0021):
 
 | Setting | What |
 |---|---|
-| `API_CORS_ORIGINS` | one exact origin per app: `https://<host>` — scheme and host, no path. Off by default; it only ever admits a presented bearer key, since no cookie crosses an origin. |
-| `OAUTH_CLIENTS` | JSON array: `{"id":"<app>","name":"<Title>","redirect_uris":["https://<host>/"]}`. Redirect URIs match exactly, trailing slash included. |
+| `API_CORS_ORIGINS` | one exact origin per app: `https://<host>` — scheme and host, no path. Off by default; it only ever admits a presented bearer key, since no cookie crosses an origin. A registered client's redirect origins are admitted without a row here. |
+| `OAUTH_CLIENTS` | JSON array: `{"id":"<app>","name":"<Title>","redirect_uris":["https://<host>/"]}`. Config clients are treated as published, so any account can sign in to them. |
 
-Who sets them:
+For a **local server** you can still add the client to `config/dev.exs`
+`:oauth_clients` — that is a PR to this repo and benefits every contributor —
+and run `API_CORS_ORIGINS=http://localhost:5173 mix phx.server`. A dev
+instance has no sandbox provider token, so a real turn needs a real one.
 
-- **Your own Fountain** (self-hosted, `docker compose`, a dev server): you do. For a local server, add the client to `config/dev.exs` `:oauth_clients` with `http://localhost:5173/` and `:5174/` — that is a PR to this repo and benefits every contributor — and run `API_CORS_ORIGINS=http://localhost:5173 mix phx.server`. A dev instance has no sandbox provider token, so a real turn needs a real one.
-- **The hosted instance** (the SDK's default base URL): the operator. Open an issue on this repo with the app's origin and redirect URI; the registration is an env change on their deployment, not a code change.
-
-Convention: `client_id` = repo name. An app that *replaces* a first-party
+Convention: `client_id` = repo name for a config client; a self-registered one
+gets a generated `app_…` id you copy out. An app that *replaces* a first-party
 surface (conversations or team) is also wired through `Fountain.Apps`
 (`CONVERSATIONS_APP_URL` / `TEAM_APP_URL`) — the only place the server knows
 where an app lives.
