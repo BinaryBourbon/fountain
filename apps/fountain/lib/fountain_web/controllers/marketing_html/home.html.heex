@@ -588,71 +588,32 @@
   </p>
 </section>
 
-<%!-- The limits, stated before the price rather than discovered after it. Every
-      number here reads from the same settings the quota enforces. This is the
-      only place the concurrency rule is explained outside the price card.
+<%!-- Questions, where the limits used to be.
 
-      The h2 does not name the section, because `eyebrow` already did. It used
-      to read "The limits, before you build on them", whose first two words
-      repeated the label directly above them and whose remaining five told the
-      reader when to read rather than what any of it meant. A heading that
-      announces its own section spends the largest type in the section saying
-      nothing.
+      This was a three-item list of things the product cannot do: no depth cap
+      on recursion, no shared conversations, no organizations or seats. Those
+      are now answers on /faq, and the two that were missing from it were
+      written when this came out (the third, orgs and seats, has been in
+      `security_absent/0` verbatim the whole time).
 
-      What the section is actually doing is volunteering bad news. Nobody asked
-      whether recursion has a depth cap, whether two people can share a
-      conversation, or whether there are organizations. The three answers are
-      no, no and no, and they arrive unprompted and above the price rather than
-      in a support thread afterwards. That is the claim, and the sentence in
-      this comment made it better than the heading did.
+      What stays is the signpost, and it is not decoration. A page that sells
+      hard and mentions no limit anywhere is the shape the voice standard
+      argues against, and the pinned `/faq#security` link (a test asserts it on
+      this page) is the one URL a reader forwards to somebody who has to
+      approve this. Both survive here without the homepage carrying a list that
+      goes stale as the tickets close.
 
-      So the heading is the concession itself. It carries no noun from the
-      section because it does not need one: three items sit directly under it,
-      and a reader who has met the eyebrow knows what "these" are. --%>
-The second of the two left-aligned sections, and for the same reason as
-the first: it is reference, read down a margin. Setting it left also
-separates it from the protocol list directly above, which is centred and
-is otherwise the same shape of thing. --%>
+      Left-aligned, and it keeps the rule above it: it is still reference, and
+      it still separates the centred protocol list from the band below. --%>
 <section class="max-w-5xl mx-auto px-6 pb-16">
   <div class="border-t border-[var(--color-border)] pt-16">
-    <.eyebrow label="Limits" align={:left} />
+    <.eyebrow label="Questions" align={:left} />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-      Better to hear these from us.
+      What it cannot do is written down.
     </h2>
-
-    <dl class="mt-10 grid gap-x-12 gap-y-8 sm:grid-cols-3">
-      <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
-        <dt class="font-medium text-[var(--color-text-primary)]">Recursion is yours to bound</dt>
-        <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          An agent that starts agents can do it again from inside the one it started. Nothing caps the depth on our side; your balance is the backstop.
-        </dd>
-      </div>
-
-      <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
-        <dt class="font-medium text-[var(--color-text-primary)]">
-          A conversation is not a shared inbox
-        </dt>
-        <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          One conversation is one thread on one machine. Two users pointed at the same one see each other's work. Give each an id of their own.
-        </dd>
-      </div>
-
-      <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
-        <dt class="font-medium text-[var(--color-text-primary)]">An account is one person</dt>
-        <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          No organizations, no seats, no single sign-on. A team shares an account, or runs its own instance.
-        </dd>
-      </div>
-    </dl>
-    <%!-- The questions used to be a section of their own here, 48 words and a
-          tinted band whose only job was two links the footer already carries.
-          Limits and questions are the same beat for the same reader, so the
-          links close this section instead. Keep the `/faq#security` one: a
-          reader forwarding an answer wants one URL to forward, and a test
-          pins it. --%>
     <div class="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm text-[var(--color-text-secondary)] max-w-lg">
-        More of them are on the questions page, beside what a security reviewer asks, each answer a mechanism rather than an intention.
+        The limits are on the questions page, beside what a security reviewer asks, each answer a mechanism rather than an intention.
       </p>
       <div class="flex flex-col sm:flex-row gap-3 sm:shrink-0">
         <a
