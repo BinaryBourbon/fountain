@@ -46,11 +46,19 @@ defmodule Fountain.Brand do
   # The files a brand supplies, and nothing else: the console header and the
   # marketing chrome use the app icon, the root layout links the favicons and
   # the touch icon, and every Open Graph card carries the 1200×630 card. The
-  # names are fixed so that a bundle is a directory with these six files in
+  # names are fixed so that a bundle is a directory with these seven files in
   # it, whatever brand it is for.
-  @assets ~w(app-icon.png apple-touch-icon.png favicon-32x32.png favicon-16x16.png favicon.ico og-card.png)
+  #
+  # `mark-mono.png` is the odd one: a single-colour drawing of the mark on a
+  # transparent ground, which is what the marketing site's paper skin puts in
+  # its chrome and behind its opening lines. The app icon is a coloured tile
+  # and cannot do that job — a page set in one ink cannot hold a second
+  # palette in the corner — and the drawing is inverted rather than duplicated
+  # for the dark theme, so one file serves both. A brand that supplies the
+  # other six has to supply this one too.
+  @assets ~w(app-icon.png apple-touch-icon.png favicon-32x32.png favicon-16x16.png favicon.ico og-card.png mark-mono.png)
 
-  @doc "The six files a brand asset bundle holds."
+  @doc "The seven files a brand asset bundle holds."
   @spec assets() :: [String.t()]
   def assets, do: @assets
 

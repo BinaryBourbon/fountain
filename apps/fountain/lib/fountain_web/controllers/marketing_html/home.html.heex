@@ -9,10 +9,30 @@
 
       Every section opens with `eyebrow/1`. Ten sections used to open with the
       same centred heading and nothing else, so a reader had no way to tell
-      which one they were in. --%>
+      which one they were in.
+
+      VERTICAL RHYTHM, and it is the site's, not this page's. Measured as the
+      distance from a section's edge — a band edge, a hairline rule, or the
+      neighbouring section — to the first or last thing that paints:
+
+        80px  `py-20`, the two ends of a page: the hero and the closer.
+        64px  `py-16`, every body section, on both sides.
+        32px  `py-8`, half a step, for the leading side of a section that
+              butts against another on the same surface with no rule and no
+              band edge between them. Nothing explains that boundary, so it
+              gets one beat rather than two: the case study below is the only
+              one on this page.
+
+      A section whose content is a padded panel counts the panel's padding as
+      part of its own, because the panel's border is the edge a reader sees.
+
+      This page used to run the whole scale one step wide — `py-20` bodies and
+      a `py-24` closer against `py-16` everywhere else on the site — which is
+      how the same boundary came out at 152, 168 and 217 pixels depending on
+      what was above it. --%>
 
 <%!-- Hero --%>
-<section class="max-w-5xl mx-auto px-6 pt-20 pb-16 text-center">
+<section class="max-w-5xl mx-auto px-6 py-20 text-center" data-role="hero">
   <%!-- On a branded hosted site, say what this is before the pitch. The engine
         is open source and nothing is held back from it (ADR 0034), so a reader
         who will never use the hosted product learns that in the first line
@@ -85,7 +105,7 @@
       that a laptop viewport shows the hero and the top of the code at once,
       which is the page's first impression: type, then the machine. --%>
 <section class="bg-[var(--color-ink-0)] text-[var(--color-ink-text)]">
-  <div class="max-w-5xl mx-auto px-6 py-20">
+  <div class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="Setup" tone={:ink} />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-ink-text)] text-center">
       This is everything you write.
@@ -168,7 +188,7 @@
       left edge instead of the centre. Six items of dense reference read down a
       left margin; a centred heading over left-aligned prose gives the eye two
       starting points and it uses neither. --%>
-<section class="max-w-5xl mx-auto px-6 py-20">
+<section class="max-w-5xl mx-auto px-6 py-16">
   <.eyebrow label="What you get" align={:left} />
   <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] max-w-3xl">
     You did not set out to run a sandbox platform. We did.
@@ -252,7 +272,7 @@
       set larger than any heading below the hero, which is the ranking they
       deserve and the one they did not have when they matched the body text
       around them. --%>
-<section class="max-w-5xl mx-auto px-6 py-20">
+<section class="max-w-5xl mx-auto px-6 pt-8 pb-16">
   <div
     class="rounded-2xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-8 sm:p-12"
     data-role="case-study-callout"
@@ -266,7 +286,10 @@
     </p>
     <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
       <div :for={stat <- case_stats()}>
-        <dt class="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+        <dt
+          class="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+          data-role="figure"
+        >
           {stat.value}
         </dt>
         <dd class="mt-1.5 text-xs leading-snug text-[var(--color-accent-ink)]">{stat.label}</dd>
@@ -311,7 +334,7 @@
         vault and environment, so the copy says "the same agent" rather than
         claiming a global unique key. What parking *costs* belongs to the pricing
         section, not here. --%>
-  <section class="max-w-5xl mx-auto px-6 py-20">
+  <section class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="State" />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
       You keep no session state.
@@ -343,8 +366,8 @@
         the closing "two honest limits" paragraph restated both and is gone.
         Do not put a number on the fleet ceiling here, or in the limits section:
         it is an operator setting rather than a published product promise. --%>
-  <section class="max-w-5xl mx-auto px-6 pb-20">
-    <div class="border-t border-[var(--color-border)] pt-20">
+  <section class="max-w-5xl mx-auto px-6 pb-16">
+    <div class="border-t border-[var(--color-border)] pt-16">
       <.eyebrow label="Scale" />
       <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
         A hundred tickets is a hundred calls, not an architecture.
@@ -382,7 +405,7 @@
       this is where the badge legend lives: it is the first badge a reader
       meets, and everything above it is generally available. How to turn the
       flag on is a docs question, not a homepage one. --%>
-<section class="max-w-5xl mx-auto px-6 py-20">
+<section class="max-w-5xl mx-auto px-6 py-16">
   <.eyebrow label="Protocols" />
   <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
     Bring the stack you already have.
@@ -452,7 +475,7 @@
       the first: it is reference, read down a margin. Setting it left also
       separates it from the protocol list directly above, which is centred and
       is otherwise the same shape of thing. --%>
-<section class="max-w-5xl mx-auto px-6 pb-20">
+<section class="max-w-5xl mx-auto px-6 pb-16">
   <div class="border-t border-[var(--color-border)] pt-16">
     <.eyebrow label="Limits" align={:left} />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
@@ -520,7 +543,7 @@
         two intros and two buttons saying the same thing. Cards come from
         built_apps/0, so the homepage cannot name an app /built-with has renamed
         or retired. --%>
-  <section class="max-w-5xl mx-auto px-6 py-20">
+  <section class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="Apps" />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
       Start from an app that already works.
@@ -541,6 +564,7 @@
         <div
           class="size-11 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-2)] flex items-center justify-center text-xl leading-none"
           aria-hidden="true"
+          data-role="glyph"
         >
           {app.glyph}
         </div>
@@ -581,7 +605,7 @@
         :for={app <- other_apps_flat()}
         class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
       >
-        <span aria-hidden="true">{app.glyph}</span>
+        <span aria-hidden="true" data-role="glyph">{app.glyph}</span>
         {app.name}
       </li>
     </ul>
@@ -598,8 +622,8 @@
   <%!-- Lane three's section on the homepage. The runner concession sits beside
         the runner claim rather than a page away, because the hero promises a
         boundary and a runner has none. --%>
-  <section class="max-w-5xl mx-auto px-6 pb-20">
-    <div class="border-t border-[var(--color-border)] pt-20">
+  <section class="max-w-5xl mx-auto px-6 pb-16">
+    <div class="border-t border-[var(--color-border)] pt-16">
       <.eyebrow label="Self-host" />
       <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
         Or run the whole thing yourself.
@@ -645,7 +669,7 @@
       cards state the hour price, the grant and the cap; "How billing works"
       adds only what a card cannot hold. Do not restate a card there. --%>
 <section :if={pricing?()} id="pricing" class="bg-[var(--color-ink-0)]">
-  <div class="max-w-5xl mx-auto px-6 py-20">
+  <div class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="Pricing" tone={:ink} />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-ink-text)]">
       Pay for what your agents do
@@ -657,7 +681,10 @@
 
     <div class="mt-12 grid gap-6 md:grid-cols-3">
       <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-7">
-        <p class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]"
+          data-role="figure"
+        >
           {turn_hour_price()}
         </p>
         <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">per agent hour</p>
@@ -669,7 +696,10 @@
       <%!-- The free grant is the one card a reader is looking for, so it is
             the one carrying the accent. --%>
       <div class="rounded-xl border border-[var(--color-accent)] bg-[var(--color-ink-1)] p-7">
-        <p class="text-4xl font-semibold tracking-tight text-[var(--color-accent)]">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-accent)]"
+          data-role="figure"
+        >
           {elem(opening_credit(), 0)}
         </p>
         <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">to start, free</p>
@@ -678,7 +708,10 @@
         </p>
       </div>
       <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-7">
-        <p class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]"
+          data-role="figure"
+        >
           {elem(cap_rule(), 2)}
         </p>
         <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">
@@ -749,7 +782,7 @@
   "bg-[var(--color-ink-0)]",
   pricing?() && "border-t border-[var(--color-ink-border)]"
 ]}>
-  <div class="max-w-5xl mx-auto px-6 py-24 text-center">
+  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
     <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-ink-text)] mb-4">
       A key, a call, and a machine you did not build.
     </h2>
