@@ -40,7 +40,27 @@ defmodule Fountain.Workers.AutonomousTurnReaper do
   `status in [...] and cutoff` query shape, same
   `ConversationServer.whereis/1` liveness check — cluster-wide through
   Horde's registry, so a live server on another node is not mistaken for
-  a dead one — same reject-anything-alive-then-act-on-the-rest fold.
+  a dead one — same reject-anything-alive-then-act-on-the-rest fold, same
+  per-run cap (`@turn_stuck_limit`, mirroring `SandboxReaper`'s
+  `@destroy_limit`) so a large historical backlog drains over several
+  runs instead of firing every close — each one a `log_events` insert, a
+  PubSub broadcast, and a tenant webhook dispatch — in one burst
+  (review, #1197).
+
+  ## What this does not fully close (review, #1197)
+
+  Aliveness is re-checked immediately before each write rather than once
+  for the whole batch, which shrinks but does not eliminate the window
+  between "no live server" and "orphaned": a server can still attach in
+  the gap between that check and the write landing. A cluster partition
+  lasting the full `@stuck_after_minutes` can also make `whereis/1`
+  report `nil` for a server that is very much alive on the unreachable
+  side (the #799/#801 class) — `SandboxReaper` compensates for its own
+  version of this with `@abandoned_grace_minutes` against
+  `sandboxes.updated_at`, which the wake path touches; `turns` has no
+  such column (`updated_at: false`) and this worker does not yet have an
+  equivalent guard. Left open pending a decision on what signal to key
+  it against.
   """
 
   use Oban.Worker, queue: :maintenance, max_attempts: 3
@@ -56,6 +76,12 @@ defmodule Fountain.Workers.AutonomousTurnReaper do
   # Wider than the 10-minute `autonomous_quiet` watchdog on purpose — see
   # the moduledoc. Overridable in tests the same way the watchdog itself is.
   @stuck_after_minutes 30
+
+  # A cap per run, so a large backlog drains over several runs instead of
+  # firing hundreds of closes — each one a log_events insert, a PubSub
+  # broadcast, and a tenant webhook dispatch — in one burst. Mirrors
+  # SandboxReaper's `@destroy_limit` (review, #1197).
+  @turn_stuck_limit 25
 
   @impl Oban.Worker
   def perform(_job) do
@@ -74,10 +100,17 @@ defmodule Fountain.Workers.AutonomousTurnReaper do
 
     Turn
     |> where([t], t.status == "running" and t.started_at < ^cutoff)
+    |> order_by([t], asc: t.started_at)
+    |> limit(^@turn_stuck_limit)
     |> Repo.all()
+    # Re-checked here, immediately before the write, rather than once for
+    # the whole batch — shrinks (does not eliminate) the window a server
+    # could attach in between. See the moduledoc for what is still open.
     |> Enum.reject(&server_alive?/1)
     |> Enum.map(fn turn ->
-      :ok = Conversations.orphan_turn(turn, "stuck_running_no_server")
+      {:ok, _turn, conv} = Conversations._unsafe_orphan_turn(turn, "stuck_running_no_server")
+
+      record_reap(conv, turn)
 
       Logger.info(
         "autonomous_turn_reaper: closed turn #{turn.id} " <>
@@ -87,6 +120,26 @@ defmodule Fountain.Workers.AutonomousTurnReaper do
       turn
     end)
     |> length()
+  end
+
+  # A turn stuck running with nobody live behind it is not a tenant-chosen
+  # outcome, so — same reasoning as `SandboxReaper.record_reap/3` (#551) —
+  # it gets its own line in the tenant's audit trail rather than existing
+  # only in the server log.
+  defp record_reap(conv, %Turn{} = turn) do
+    Fountain.Audit.record(%{
+      user_id: conv.user_id,
+      action: "conversation.turn.reaped",
+      resource_type: "turn",
+      resource_id: turn.id,
+      actor: "system:autonomous_turn_reaper",
+      metadata: %{
+        "conversation_id" => turn.conversation_id,
+        "turn_number" => turn.turn_number,
+        "started_at" => turn.started_at,
+        "stuck_after_minutes" => stuck_after_minutes()
+      }
+    })
   end
 
   # A live ConversationServer means the turn is still someone's, however

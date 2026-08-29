@@ -152,22 +152,119 @@ defmodule Fountain.Workers.AutonomousTurnReaperTest do
       assert data["turn_id"] == turn.id
       assert data["reason"] == "stuck_running_no_server"
     end
+
+    test "does not resurrect a conversation already terminated (review, #1197)" do
+      # terminate_conv's non-kept branch destroys the sprite and sets
+      # "terminated" without necessarily clearing current_turn — an
+      # unguarded idle write here would have flipped a destroyed
+      # conversation back to "idle" and made it look resumable.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "terminated")
+
+      turn =
+        insert_turn(conv, %{
+          status: "running",
+          origin: "user",
+          started_at: minutes_ago(45)
+        })
+
+      stub_no_live_servers()
+
+      assert 1 = AutonomousTurnReaper.sweep_stuck_turns()
+
+      assert Repo.reload(turn).status == "interrupted"
+      assert Repo.reload(conv).status == "terminated"
+    end
+
+    test "caps a run at @turn_stuck_limit and takes the oldest turns first" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "running")
+
+      turns =
+        for i <- 1..30 do
+          insert_turn(conv, %{
+            status: "running",
+            origin: "autonomous",
+            turn_number: i,
+            started_at: minutes_ago(45 + i)
+          })
+        end
+
+      oldest_25_ids = turns |> Enum.sort_by(& &1.started_at) |> Enum.take(25) |> Enum.map(& &1.id)
+
+      stub_no_live_servers()
+
+      assert 25 = AutonomousTurnReaper.sweep_stuck_turns()
+
+      closed_ids =
+        turns
+        |> Enum.map(&Repo.reload(&1))
+        |> Enum.filter(&(&1.status == "interrupted"))
+        |> Enum.map(& &1.id)
+
+      assert length(closed_ids) == 25
+      assert Enum.sort(closed_ids) == Enum.sort(oldest_25_ids)
+    end
+
+    test "records an audit event for each closed turn (review, #1197)" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "running")
+
+      turn =
+        insert_turn(conv, %{
+          status: "running",
+          origin: "autonomous",
+          started_at: minutes_ago(45)
+        })
+
+      stub_no_live_servers()
+
+      assert 1 = AutonomousTurnReaper.sweep_stuck_turns()
+
+      event =
+        Fountain.Audit.Event
+        |> Fountain.Repo.get_by(resource_type: "turn", resource_id: turn.id)
+
+      assert event
+      assert event.user_id == user.id
+      assert event.action == "conversation.turn.reaped"
+      assert event.actor == "system:autonomous_turn_reaper"
+    end
   end
 
-  describe "Conversations.orphan_turn/2" do
-    # The shared function both terminate/2 and this worker call — tested
-    # directly here since there is no dedicated conversations_test.exs in
-    # this checkout to house it.
-    test "closes the turn and flips the conversation back to idle" do
+  describe "Conversations._unsafe_orphan_turn/2" do
+    # The shared function terminate/2, the reattach path, and this worker
+    # all call — tested directly here since there is no dedicated
+    # conversations_test.exs in this checkout to house it.
+    test "closes the turn and flips a running conversation back to idle" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "running")
       turn = insert_turn(conv, %{status: "running", origin: "autonomous"})
 
-      assert :ok = Conversations.orphan_turn(turn, "test_reason")
+      assert {:ok, updated_turn, updated_conv} =
+               Conversations._unsafe_orphan_turn(turn, "test_reason")
 
+      assert updated_turn.status == "interrupted"
+      assert updated_conv.status == "idle"
       assert Repo.reload(turn).status == "interrupted"
       assert Repo.reload(conv).status == "idle"
+    end
+
+    test "leaves a non-running conversation's status alone (review, #1197)" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "terminated")
+      turn = insert_turn(conv, %{status: "running", origin: "autonomous"})
+
+      assert {:ok, _updated_turn, updated_conv} =
+               Conversations._unsafe_orphan_turn(turn, "test_reason")
+
+      assert updated_conv.status == "terminated"
+      assert Repo.reload(conv).status == "terminated"
     end
   end
 end
