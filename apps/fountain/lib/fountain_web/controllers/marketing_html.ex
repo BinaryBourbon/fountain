@@ -1046,24 +1046,24 @@ defmodule FountainWeb.MarketingHTML do
   def prerequisites do
     [
       %{
-        label: "You need",
-        body: "Docker Engine with Compose v2, and openssl for the two key lines."
-      },
-      %{
-        label: "No database",
-        body: "The compose file runs Postgres 16 for you. You install no database."
-      },
-      %{
-        label: "Network",
+        label: "Compose tools",
         body:
-          "Your machine reaches ghcr.io, the registry that holds the image. " <>
-            "Blocked? Compose builds it from the checkout instead."
+          "For the six-command path, bring Docker Engine with Compose v2 and openssl for the two key lines."
       },
       %{
-        label: "One address",
+        label: "Postgres 16+",
         body:
-          "Reaching it by anything but localhost? Set PUBLIC_URL too. It builds " <>
-            "the links in verification emails, and every sandbox reads it."
+          "Fountain requires it. Compose runs one for you, or point Fountain at a Postgres you operate."
+      },
+      %{
+        label: "Image access",
+        body:
+          "Pull the release image from ghcr.io. If your network blocks it, Compose can build from the checkout."
+      },
+      %{
+        label: "Public URL",
+        body:
+          "Set PUBLIC_URL when users or sandboxes reach Fountain anywhere but localhost. It also builds verification links."
       }
     ]
   end

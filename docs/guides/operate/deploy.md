@@ -12,8 +12,8 @@ instance that stays up.
 ## Before you start
 
 You must have Docker Engine with Compose v2, and `openssl` for the two key
-lines below. The compose file runs Postgres 16 for you, so you do not install
-a database yourself.
+lines below. Fountain requires Postgres 16 or newer. The compose file runs one
+for you, or you can point Fountain at a Postgres you operate.
 
 Your machine must also reach `ghcr.io`, the registry that holds the published
 image. Does your network block it? Then comment the `image:` line in

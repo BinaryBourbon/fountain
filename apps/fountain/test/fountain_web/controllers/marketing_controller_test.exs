@@ -225,6 +225,9 @@ defmodule FountainWeb.MarketingControllerTest do
 
       {prerequisites_at, _} = :binary.match(body, "Before you start")
       assert ownership_at < prerequisites_at
+      assert body =~ "Postgres 16+"
+      assert body =~ "Fountain requires it."
+      refute body =~ "No database"
 
       assert body =~ "Master key"
       assert body =~ "Inference"
