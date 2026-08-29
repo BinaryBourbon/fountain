@@ -23,7 +23,7 @@ defmodule FountainWeb.MarketingPricingTest do
   } do
     body = conn |> get(~p"/") |> html_response(200)
 
-    assert body =~ "Pay for what your agents do"
+    assert body =~ "You pay only while an agent is working."
     assert body =~ "$0.25"
     assert body =~ "per agent hour"
     assert body =~ "$5.00"
@@ -76,7 +76,7 @@ defmodule FountainWeb.MarketingPricingTest do
     Application.put_env(:fountain, :credits_enabled, false)
 
     body = conn |> get(~p"/") |> html_response(200)
-    refute body =~ "Pay for what your agents do"
+    refute body =~ "You pay only while an agent is working."
     refute body =~ "per agent hour"
     refute body =~ "of credit to start"
   end

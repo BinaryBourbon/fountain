@@ -710,16 +710,29 @@
 <%!-- Pricing (ADR 0031): credits are the product. Rendered only where the
       deployment bills, so a self-hosted instance shows nothing. The three
       cards state the hour price, the grant and the cap; "How billing works"
-      adds only what a card cannot hold. Do not restate a card there. --%>
+      adds only what a card cannot hold. Do not restate a card there.
+
+      The h2 used to read "Pay for what your agents do", which nobody would
+      expect to be false. A pricing heading that states the ordinary case has
+      spent itself: of course you pay for what they do. The claim worth making
+      is the word "only", and it is the differentiator
+      .agents/product-marketing.md says to lead with, because a sandbox
+      provider rents a box by the hour whether or not anybody is talking to it.
+
+      The section used to make that claim three times: this heading weakly, the
+      deck ("every hour an agent works comes out of it"), and the first card's
+      note ("An hour with a prompt in flight"). The heading has it now, the
+      deck keeps only what is its own (prepaid credit, and no subscription),
+      and the card still defines the hour, which is the one place a definition
+      belongs. --%>
 <section :if={pricing?()} id="pricing" class="bg-[var(--color-ink-0)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="Pricing" tone={:ink} />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-ink-text)]">
-      Pay for what your agents do
+      You pay only while an agent is working.
     </h2>
     <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
-      No plans, no seats, no monthly fee. Buy credit, and every hour an agent works
-      comes out of it.
+      No plans, no seats, no monthly fee. You buy credit and spend it by the hour.
     </p>
 
     <div class="mt-12 grid gap-6 md:grid-cols-3">
@@ -818,7 +831,40 @@
 
 <%!-- Lane three's section on the homepage. The runner concession sits beside
       the runner claim rather than a page away, because the hero promises a
-      boundary and a runner has none. --%>
+      boundary and a runner has none.
+
+      The deck states the value, in the second person. It used to open "Two
+      reasons to go" and then name two: code that cannot leave your
+      infrastructure, and needing more machines than the ceiling allows. Both
+      are real, and both are qualifying criteria, so a reader in neither case
+      reads the sentence as being told this is not for them. A section that
+      exists to say the exit is open should not open by fencing it.
+
+      The claim it makes instead is one the self-hosting FAQ already makes and
+      this page did not: "The console, the CLI and the API are the same on
+      both, and so are the SDK and the manual. What changes is whose machine it
+      runs on", and "There is no license key and no seat count, and nobody has
+      to talk to us first." Nothing a reader builds on the hosted service is
+      stranded there, which is worth knowing whether or not they ever self-host
+      — it is the answer to a question they are asking on the price section
+      directly above this one.
+
+      It does not repeat the paragraphs below it. Those are the two shapes the
+      software runs in. This is what the reader keeps.
+
+      Those two shapes are two paragraphs now, and each opens with the reader's
+      verb. They were one paragraph carrying both offers, joined by a semicolon
+      and split by a colon, so the second choice arrived as a subordinate
+      clause of the first and a reader skimming saw one option. "Take the whole
+      platform" and "Or keep this one and bring only the machines" are the
+      choice, and now they scan as one.
+
+      The runner note keeps its own rule and its own beat, because it is the
+      concession rather than the offer: trusted mode means no container between
+      the agent and the machine, and it is the one place this page promises
+      less than the hosted product does. Its colon went too. A colon there set
+      the concession up as an explanation of the claim, when it is a limit on
+      it. --%>
 <section class="bg-[var(--color-ink-0)]">
   <div class="max-w-5xl mx-auto px-6 pb-16">
     <div class="border-t border-[var(--color-ink-border)] pt-16">
@@ -827,15 +873,18 @@
         Run the whole thing yourself.
       </h2>
       <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
-        Two reasons to go: your customers' code cannot leave your infrastructure, or you need more machines than the ceiling allows.
+        You are not locked in. The same API, SDK and CLI run on your own hardware, with no license key and nobody to ask first.
       </p>
 
       <div class="mt-10 max-w-2xl mx-auto space-y-4 text-[var(--color-ink-secondary)] leading-relaxed">
         <p>
-          {Fountain.Brand.engine()} is open source and nothing is held back from the copy you run; a compose file brings an instance up. Or keep this platform and serve only the sandboxes: a runner dials out, needs no inbound port and burns no credit.
+          Take the whole platform. {Fountain.Brand.engine()} is open source, nothing is held back from the copy you run, and a compose file brings an instance up.
+        </p>
+        <p>
+          Or keep this one and bring only the machines. A runner dials out from your network, needs no inbound port and burns no credit.
         </p>
         <p class="border-l-2 border-[var(--color-ink-border)] pl-4 text-sm text-[var(--color-ink-secondary)]">
-          A runner runs in trusted mode: the agent's processes run as you, with your network and tools and no container between. Run one where you would hand a colleague a shell.
+          A runner runs in trusted mode. The agent's processes run as you, with your network and your tools and no container between. Run one where you would hand a colleague a shell.
         </p>
       </div>
 
@@ -866,6 +915,19 @@
       approve this. Both survive here without the homepage carrying a list that
       goes stale as the tickets close.
 
+      The h2 is what the reader gets, in the second person, like the rest of
+      the page. It read "What it cannot do is written down", which is about the
+      product and in the passive, and which sells the existence of a document
+      rather than the reason to trust one. Being able to check is the value;
+      the writing-down is only how it is delivered.
+
+      It is also the claim the section can actually make. standards/voice-and-
+      style.md is built on conceding the failure case and on answers that name
+      mechanisms, and the server is open source, so "you do not have to take
+      our word for it" is a statement about this repository rather than a
+      posture. The deck carries the mechanism-not-intention line underneath,
+      which is the proof of the heading rather than a restatement of it.
+
       Left-aligned, which is what it was when it sat under the protocol list.
       It keeps that here for a different reason: it is the one section of the
       ink finale that is reference rather than pitch, and the margin says so
@@ -875,11 +937,11 @@
     <div class="border-t border-[var(--color-ink-border)] pt-16">
       <.eyebrow label="Questions" align={:left} tone={:ink} />
       <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-ink-text)]">
-        What it cannot do is written down.
+        You do not have to take our word for it.
       </h2>
       <div class="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-sm text-[var(--color-ink-secondary)] max-w-lg">
-          The limits are on the questions page, beside what a security reviewer asks, each answer a mechanism rather than an intention.
+          Every limit is written down on the questions page, beside what a security reviewer asks, and every answer names a mechanism you can check rather than an intention we state.
         </p>
         <div class="flex flex-col sm:flex-row gap-3 sm:shrink-0">
           <a
@@ -902,6 +964,29 @@
 
 <%!-- Footer CTA. The last thing on the page, which is what a closer is.
 
+      The h2 is the page's own argument turned into an instruction. "You did
+      not set out to run a sandbox platform" opens the middle of the page; this
+      is the other end of it. The "What you get" grid used to close on "You
+      keep the product", which was a recap sitting under the six cards that had
+      just said it; here it is the ask, which is where it belongs.
+
+      It used to read "A key, a call, and a machine you did not build", three
+      nouns in a row that named the ingredients rather than the payoff. The
+      machine you did not build is also the page's third telling of that idea
+      by this point.
+
+      The deck is one sentence and three steps. It was three sentences: the
+      steps, then a list of things that do not happen (no machine to provision,
+      no card, nothing that renews), then the payoff. The middle sentence is
+      the hero's own fine print and the price card's, and the payoff is now the
+      heading above it.
+
+      It says "model key", the phrase the other five marketing mentions use,
+      and it names no surface. The protocols section a screen above ends
+      "Whatever you use starts an agent with a URL and a key", so a closer that
+      said "with the SDK" would narrow the promise the page had just widened,
+      and the SDK is TypeScript while the API is not.
+
       On ink the primary button is `--color-ink-brand`, which is the brand blue
       the dark theme already uses. `--color-brand` is #0b5acc and would be a
       dark button on a near-black ground. --%>
@@ -911,10 +996,10 @@
 ]}>
   <div class="max-w-5xl mx-auto px-6 py-20 text-center">
     <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-ink-text)] mb-4">
-      A key, a call, and a machine you did not build.
+      Go build the part that is yours.
     </h2>
     <p class="text-[var(--color-ink-secondary)] mb-9 max-w-lg mx-auto text-lg leading-relaxed">
-      Sign up, paste a model key, send a prompt. No machine to provision, no card, nothing that renews. Then go back to the part that is your product.
+      Sign up, paste a model key, and wire it into your product.
     </p>
     <a
       href={~p"/auth/register"}
