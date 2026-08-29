@@ -8,7 +8,83 @@
           {Fountain.Brand.name()}
         </span>
       </a>
-      <nav class="flex items-center gap-3">
+      <%!-- Six links in one flex row with no responsive rule: below about
+            700px "Integrations" ran over the wordmark and the rest left the
+            viewport, on every marketing page. The links are the same list at
+            both sizes, so `<details>` opens them under the header rather than
+            a second nav duplicating them, and it needs no JavaScript. The site
+            has no bundler (Tailwind is the play CDN), so a menu that depends
+            on a script is a menu that depends on the CDN answering. --%>
+      <details class="sm:hidden relative group" data-role="mobile-nav">
+        <summary class="list-none cursor-pointer p-2 -mr-2 rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] [&::-webkit-details-marker]:hidden">
+          <span class="sr-only">Menu</span>
+          <svg
+            class="size-5"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path class="group-open:hidden" d="M3 6h14M3 10h14M3 14h14" />
+            <path class="hidden group-open:block" d="M5 5l10 10M15 5L5 15" />
+          </svg>
+        </summary>
+        <nav class="absolute right-0 top-full z-20 mt-3 w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-1)] p-2 shadow-lg flex flex-col">
+          <a
+            :if={Fountain.Marketing.site?()}
+            href={~p"/integrations"}
+            class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-2 rounded-md hover:bg-[var(--color-bg-2)]"
+          >
+            Integrations
+          </a>
+          <a
+            :if={Fountain.Marketing.site?()}
+            href={~p"/built-with"}
+            class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-2 rounded-md hover:bg-[var(--color-bg-2)]"
+          >
+            Built with
+          </a>
+          <a
+            :if={Fountain.Marketing.site?()}
+            href={~p"/self-hosted"}
+            class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-2 rounded-md hover:bg-[var(--color-bg-2)]"
+          >
+            Self-host
+          </a>
+          <a
+            href="/docs"
+            class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-2 rounded-md hover:bg-[var(--color-bg-2)]"
+          >
+            Docs
+          </a>
+          <%= if @current_user do %>
+            <a
+              href={~p"/dashboard"}
+              class="mt-1 text-sm font-medium text-center bg-[var(--color-brand)] text-white px-3 py-2 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
+            >
+              Go to app
+            </a>
+          <% else %>
+            <a
+              href={~p"/auth/login"}
+              class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-2 rounded-md hover:bg-[var(--color-bg-2)]"
+            >
+              Sign in
+            </a>
+            <a
+              :if={Fountain.Accounts.registration_enabled?()}
+              href={~p"/auth/register"}
+              class="mt-1 text-sm font-medium text-center bg-[var(--color-brand)] text-white px-3 py-2 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
+            >
+              Get started
+            </a>
+          <% end %>
+        </nav>
+      </details>
+
+      <nav class="hidden sm:flex items-center gap-1 lg:gap-3">
         <a
           :if={Fountain.Marketing.site?()}
           href={~p"/integrations"}
