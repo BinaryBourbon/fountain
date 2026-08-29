@@ -76,7 +76,7 @@ defmodule FountainWeb.MarketingController do
         meta_description:
           "#{Fountain.Brand.name()} speaks AG-UI, the Agent Client Protocol, " <>
             "OpenAI chat completions, MCP and its own REST API, so the editor, " <>
-            "chat app, gateway or framework you already use can hire an agent " <>
+            "chat app, gateway or framework you already use can start an agent " <>
             "on a sandbox."
       )
     else
@@ -140,7 +140,7 @@ defmodule FountainWeb.MarketingController do
         layout: {FountainWeb.Layouts, :marketing},
         page_title: "A code review bot · #{Fountain.Brand.name()}",
         meta_description:
-          "A pull request opens, GitHub posts a webhook, and one API call hires " <>
+          "A pull request opens, GitHub posts a webhook, and one API call starts " <>
             "an agent that already has the checkout. The whole program is on the " <>
             "page: no runner pool, no queue, no container image per repository."
       )
@@ -159,7 +159,7 @@ defmodule FountainWeb.MarketingController do
         layout: {FountainWeb.Layouts, :marketing},
         page_title: "Self-host #{Fountain.Brand.engine()} · #{Fountain.Brand.name()}",
         meta_description:
-          "Define an agent once and every app you build can hire it over one API. " <>
+          "Define an agent once and every app you build can start it over one API. " <>
             "#{Fountain.Brand.engine()} is open source and the whole platform is in " <>
             "the repo. Bring an instance up with Docker Compose or plain Kubernetes " <>
             "manifests, on your hardware, under your own keys, with no license key " <>
@@ -190,7 +190,7 @@ defmodule FountainWeb.MarketingController do
         page_title: "Self-healing infrastructure · #{Fountain.Brand.name()}",
         meta_description:
           "A Kubernetes estate that answers its own alerts. Prometheus fires, " <>
-            "#{Fountain.Brand.name()} hires an agent, the agent finds the commit that " <>
+            "#{Fountain.Brand.name()} starts an agent, the agent finds the commit that " <>
             "broke the cluster and opens one pull request. A human still approves every " <>
             "merge, because the agent is built so that it cannot."
       )

@@ -204,7 +204,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "makes the case and shows the whole bring-up", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
 
-      assert body =~ "Define your agents once. Let every app you build hire them."
+      assert body =~ "Define your agents once. Let every app you build run them."
       assert body =~ "Six commands and a token."
       assert body =~ "The features we ration, you switch on."
       assert body =~ "What it costs you instead."
@@ -237,10 +237,10 @@ defmodule FountainWeb.MarketingControllerTest do
       end
     end
 
-    test "shows apps that already hire from the roster, and links every one", %{conn: conn} do
+    test "shows apps that already share the roster, and links every one", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
 
-      # The hero's claim is that an agent defined once gets hired by anything.
+      # The hero's claim is that an agent defined once gets started by anything.
       # The cards are the evidence, so each has to be a working pair of links
       # into the same roster /built-with renders.
       showcase = FountainWeb.MarketingHTML.self_host_showcase()
@@ -253,7 +253,7 @@ defmodule FountainWeb.MarketingControllerTest do
       end
 
       count = to_string(FountainWeb.MarketingHTML.built_app_count())
-      assert body =~ "#{count} applications already hire from one roster."
+      assert body =~ "#{count} applications already share one roster."
       assert body =~ ~p"/built-with"
     end
 
@@ -828,12 +828,12 @@ defmodule FountainWeb.OpenGraphTest do
                length(MarketingHTML.apply_kinds())
     end
 
-    test "defines the agent the SDK call underneath hires" do
+    test "defines the agent the SDK call underneath starts" do
       [_, name] =
         Regex.run(~r/kind: Agent\nmetadata:\n  name: (\S+)/, MarketingHTML.apply_example())
 
       assert MarketingHTML.sdk_example() =~ ~s(agent: "#{name}"),
-             "the manifest defines agent #{name} and the call beside it hires a different one"
+             "the manifest defines agent #{name} and the call beside it starts a different one"
     end
 
     test "carries no plaintext secret onto the page" do

@@ -381,7 +381,7 @@
       A cluster that answers its own alerts.
     </h2>
     <p class="mt-4 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-      A Kubernetes cluster used to page a person when a workload broke. Now it also hires an agent, which finds the commit that broke it and opens one small pull request. It cannot merge that request, and the mechanism stopping it is not a system prompt.
+      A Kubernetes cluster used to page a person when a workload broke. Now it also starts an agent, which finds the commit that broke it and opens one small pull request. It cannot merge that request, and the mechanism stopping it is not a system prompt.
     </p>
     <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
       <div :for={stat <- case_stats()}>
@@ -510,7 +510,7 @@
     Bring the stack you already have.
   </h2>
   <p class="mt-3 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto text-lg">
-    Four protocols sit on the REST API, with a TypeScript SDK and a CLI over it. Whatever you use hires an agent with a URL and a key.
+    Four protocols sit on the REST API, with a TypeScript SDK and a CLI over it. Whatever you use starts an agent with a URL and a key.
   </p>
 
   <dl class="mt-12 max-w-3xl mx-auto divide-y divide-[var(--color-border)]">
@@ -585,7 +585,7 @@
       <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
         <dt class="font-medium text-[var(--color-text-primary)]">Recursion is yours to bound</dt>
         <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          An agent that hires agents can do it again from inside the one it hired. Nothing caps the depth on our side; your balance is the backstop.
+          An agent that starts agents can do it again from inside the one it started. Nothing caps the depth on our side; your balance is the backstop.
         </dd>
       </div>
 

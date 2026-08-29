@@ -59,7 +59,7 @@ defmodule FountainWeb.MarketingHTML do
   rather than carry a plaintext token on a public page.
 
   The Agent is named `reviewer` because that is the agent `sdk_example/0`
-  hires in the last beat. Renaming it here means renaming it there.
+  starts in the last beat. Renaming it here means renaming it there.
 
   The Vault beat argues rate of change rather than the HashiCorp collision.
   The collision is stated once on this page, in the "Whose token does it push
@@ -1008,7 +1008,7 @@ defmodule FountainWeb.MarketingHTML do
 
   @doc """
   The applications /self-hosted shows above the bring-up. The page's claim is
-  that an agent defined once gets hired by anything, and these are the anything.
+  that an agent defined once gets started by anything, and these are the anything.
   """
   def self_host_showcase do
     by_id = Map.new(built_apps_flat(), &{&1.id, &1})
@@ -1505,7 +1505,7 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         step: "3",
-        title: "A webhook hires an agent",
+        title: "A webhook starts an agent",
         mono: "POST /api/conversations",
         body:
           "Two hundred lines of Node, posting an agent id, a vault id and the " <>
@@ -1601,7 +1601,7 @@ defmodule FountainWeb.MarketingHTML do
         title: "A sidecar is killed for memory",
         body:
           "PodOOMKilled on a container that syncs a checkout. The phone buzzes. " <>
-            "So does a webhook, which hires the agent."
+            "So does a webhook, which starts the agent."
       },
       %{
         time: "06:59:34",
