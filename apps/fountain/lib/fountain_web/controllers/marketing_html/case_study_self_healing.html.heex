@@ -32,7 +32,9 @@
   <div class="max-w-5xl mx-auto px-6 py-14">
     <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <div :for={stat <- case_stats()} data-role="case-stat">
-        <p class="text-3xl font-semibold text-[var(--color-text-primary)]">{stat.value}</p>
+        <p class="text-3xl font-semibold text-[var(--color-text-primary)]" data-role="figure">
+          {stat.value}
+        </p>
         <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">{stat.label}</p>
         <p class="mt-2 text-xs text-[var(--color-text-muted)] leading-relaxed">{stat.note}</p>
       </div>

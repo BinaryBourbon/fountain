@@ -164,7 +164,7 @@
         class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-5 sm:p-6 flex flex-col"
         data-role="flagship"
       >
-        <div class="text-2xl leading-none" aria-hidden="true">{app.glyph}</div>
+        <div class="text-2xl leading-none" aria-hidden="true" data-role="glyph">{app.glyph}</div>
         <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
         <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
           {app.flagship.like}
@@ -229,7 +229,7 @@
       data-role="showcase"
       class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 hover:border-[var(--color-brand)] transition-colors"
     >
-      <span class="text-2xl" aria-hidden="true">{app.glyph}</span>
+      <span class="text-2xl" aria-hidden="true" data-role="glyph">{app.glyph}</span>
       <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
       <p class="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)] break-all">
         {app.host}

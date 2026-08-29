@@ -31,6 +31,14 @@ defmodule FountainWeb.StaticVersion do
                   |> Base.encode16(case: :lower)
                   |> binary_part(0, 8)
 
+  @paper_path Path.expand("../../priv/static/assets/paper.css", __DIR__)
+  @external_resource @paper_path
+
+  @paper_version :sha256
+                 |> :crypto.hash(File.read!(@paper_path))
+                 |> Base.encode16(case: :lower)
+                 |> binary_part(0, 8)
+
   @doc """
   The versioned path for `tokens.css`, for the `href` in the root layout.
 
@@ -42,4 +50,18 @@ defmodule FountainWeb.StaticVersion do
   @doc "The hash alone, so a test can compare it against the file on disk."
   @spec tokens_version() :: String.t()
   def tokens_version, do: @tokens_version
+
+  @doc """
+  The versioned path for `paper.css`, the marketing skin.
+
+  Linked only where the `:skin` assign asks for it, and versioned for the same
+  reason `tokens.css` is: it is a hand-maintained file under a four-hour
+  `max-age` with a CDN in front of it.
+  """
+  @spec paper_css() :: String.t()
+  def paper_css, do: "/assets/paper.css?v=" <> @paper_version
+
+  @doc "The skin's hash alone."
+  @spec paper_version() :: String.t()
+  def paper_version, do: @paper_version
 end

@@ -12,7 +12,7 @@
       which one they were in. --%>
 
 <%!-- Hero --%>
-<section class="max-w-5xl mx-auto px-6 pt-20 pb-16 text-center">
+<section class="max-w-5xl mx-auto px-6 pt-20 pb-16 text-center" data-role="hero">
   <%!-- On a branded hosted site, say what this is before the pitch. The engine
         is open source and nothing is held back from it (ADR 0034), so a reader
         who will never use the hosted product learns that in the first line
@@ -266,7 +266,10 @@
     </p>
     <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
       <div :for={stat <- case_stats()}>
-        <dt class="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+        <dt
+          class="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+          data-role="figure"
+        >
           {stat.value}
         </dt>
         <dd class="mt-1.5 text-xs leading-snug text-[var(--color-accent-ink)]">{stat.label}</dd>
@@ -541,6 +544,7 @@
         <div
           class="size-11 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-2)] flex items-center justify-center text-xl leading-none"
           aria-hidden="true"
+          data-role="glyph"
         >
           {app.glyph}
         </div>
@@ -581,7 +585,7 @@
         :for={app <- other_apps_flat()}
         class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
       >
-        <span aria-hidden="true">{app.glyph}</span>
+        <span aria-hidden="true" data-role="glyph">{app.glyph}</span>
         {app.name}
       </li>
     </ul>
@@ -657,7 +661,10 @@
 
     <div class="mt-12 grid gap-6 md:grid-cols-3">
       <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-7">
-        <p class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]"
+          data-role="figure"
+        >
           {turn_hour_price()}
         </p>
         <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">per agent hour</p>
@@ -669,7 +676,10 @@
       <%!-- The free grant is the one card a reader is looking for, so it is
             the one carrying the accent. --%>
       <div class="rounded-xl border border-[var(--color-accent)] bg-[var(--color-ink-1)] p-7">
-        <p class="text-4xl font-semibold tracking-tight text-[var(--color-accent)]">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-accent)]"
+          data-role="figure"
+        >
           {elem(opening_credit(), 0)}
         </p>
         <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">to start, free</p>
@@ -678,7 +688,10 @@
         </p>
       </div>
       <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-7">
-        <p class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]"
+          data-role="figure"
+        >
           {elem(cap_rule(), 2)}
         </p>
         <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">

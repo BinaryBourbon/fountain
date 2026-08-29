@@ -14,6 +14,29 @@ defmodule FountainWeb.MarketingController do
   """
   use FountainWeb, :controller
 
+  # The paper skin, on every page this controller serves and nowhere else.
+  # The root layout turns the assign into `data-skin` on <html> plus one
+  # stylesheet (`FountainWeb.StaticVersion.paper_css/0`).
+  #
+  # A controller plug rather than a router one, because the marketing routes
+  # share their scope with `/docs`, and the manual and the console keep the
+  # console's tokens. It is also why this is not on the marketing *layout*:
+  # the instance front door and a self-hoster's legal pages render through
+  # that layout too, and a deployment that is not the marketing site is not
+  # the one this look belongs to.
+  #
+  # `?skin=classic` is the way back while the skin is being decided. An
+  # unknown value is paper rather than an error: this is a look, not a route.
+  plug :put_skin
+
+  defp put_skin(conn, _opts) do
+    if Fountain.Marketing.site?() and conn.params["skin"] != "classic" do
+      assign(conn, :skin, "paper")
+    else
+      conn
+    end
+  end
+
   def home(conn, _params) do
     page = if Fountain.Marketing.site?(), do: :home, else: :instance
     render(conn, page, layout: {FountainWeb.Layouts, :marketing})
