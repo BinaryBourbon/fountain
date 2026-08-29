@@ -208,7 +208,7 @@ transcripts, reviews or quotes in this repo to mine. Until there are, copy draws
 on the repo's own problem statement rather than pretending to quote a user.
 
 **Words to use:** Agent, Environment, Vault, Conversation, sandbox, runtime,
-template, run, transcript, credit, primitive, estate, gate, guardrail.
+template, run, transcript, credit, primitive, cluster, gate, guardrail.
 
 **"Computer" is a marketing word only.** `standards/voice-and-style.md` bans it
 from `docs/` because reference prose needs one name for the machine, and that
@@ -271,14 +271,14 @@ fail the gate in a manual, and that is by design.
 ## Proof Points
 
 **Metrics:** The only sourced numbers are the case study's, counted on one
-production estate over a stated window (11 to 25 August 2026) and held as
+production cluster over a stated window (11 to 25 August 2026) and held as
 literals in `marketing_html.ex` so they cannot quietly widen their own window.
 78 incidents handled by an agent; 4m 27s from alert to open pull request on the
 worked incident; 7.5 minute median incident to verdict; 0 cluster credentials
 the agent holds. Twelve fix pull requests opened, eight merged, four of those a
 rehearsal fault raised on purpose.
 
-The estate is a Kubernetes cluster carrying live production workloads. Numbers
+The system is a Kubernetes cluster carrying live production workloads. Numbers
 reported by the cluster administrator (us). **Say both whenever the numbers
 appear, and keep the "(us)".** Without it the role noun reads as a neutral
 third party, on a page where the administrator and the seller are the same
@@ -286,7 +286,7 @@ party. That conflict is the disclosure, so hiding it behind a job title is
 worse than saying nothing.
 
 The disclosure is provenance, not size. Every number is self-reported from a
-single estate rather than audited or drawn from a customer, and that is what a
+single cluster rather than audited or drawn from a customer, and that is what a
 reader is owed. It is not a hobby cluster and copy must not imply one: "a
 private cluster run by one person" conceded smallness, which is neither true
 nor the thing being disclosed. "The numbers are its own" then failed the other

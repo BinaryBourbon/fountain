@@ -178,7 +178,7 @@ defmodule FountainWeb.MarketingController do
     end
   end
 
-  # An estate that pages an agent instead of a person, and what stops the
+  # A cluster that pages an agent as well as a person, and what stops the
   # agent from merging its own work. Sales copy, so it follows `/`: another
   # deployment gets the manual's tour of the same shape.
   def case_study(conn, _params) do
@@ -187,10 +187,10 @@ defmodule FountainWeb.MarketingController do
         layout: {FountainWeb.Layouts, :marketing},
         page_title: "Self-healing infrastructure · #{Fountain.Brand.name()}",
         meta_description:
-          "A Kubernetes estate that answers its own alerts. Prometheus fires, " <>
+          "A Kubernetes cluster that answers its own alerts. Prometheus fires, " <>
             "#{Fountain.Brand.name()} starts an agent, the agent finds the commit that " <>
-            "broke the cluster and opens one pull request. A human still approves every " <>
-            "merge, because the agent is built so that it cannot."
+            "broke the cluster and opens one pull request. The on-call engineer decides " <>
+            "whether to merge it."
       )
     else
       redirect(conn, to: ~p"/docs/tour")
