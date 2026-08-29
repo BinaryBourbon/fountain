@@ -1137,32 +1137,32 @@ defmodule FountainWeb.MarketingHTML do
     ]
   end
 
-  @doc "The four rungs of ownership, from the app down to the last vendor."
-  def ownership_rungs do
+  @doc "The four ownership boundaries, with who controls each one."
+  def ownership_boundaries do
     [
       %{
-        step: "01",
-        title: "The control plane",
+        status: "Runs in your account",
+        title: "Control plane and database",
         body:
-          "Your container, your Postgres, your domain. Conversations, transcripts, audit events and API keys live in a database you can open with psql."
+          "The API, console, conversations, transcripts, audit events and API keys live in your deployment and Postgres."
       },
       %{
-        step: "02",
-        title: "The secrets",
+        status: "Yours to protect",
+        title: "Master key",
         body:
-          "Every tenant's env vars are encrypted with a key derived from a master key you generate. It is not in the database, which is also why a database backup on its own does not save you."
+          "You generate the key that encrypts every tenant's environment variables. Fountain never stores it in Postgres, so back it up with the database."
       },
       %{
-        step: "03",
-        title: "The sandbox machines",
+        status: "Hosted or yours",
+        title: "Sandbox compute",
         body:
-          "A Mac mini, a home server or a GPU box becomes a sandbox backend with one daemon. It dials out and holds one connection. There is no inbound port to open and no credential to hand it."
+          "Use a hosted sandbox provider or connect a Mac mini, home server or GPU box from your network. The runner dials out, so you open no inbound port and hand it no platform credential."
       },
       %{
-        step: "04",
-        title: "The last vendor",
+        status: "Your provider account",
+        title: "Inference",
         body:
-          "Server on your hardware, sandboxes on your machines, and no third-party account is left in the loop. Not a sandbox host's, and not ours."
+          "Each user supplies their own model credential. Their provider bills them directly, and Fountain adds no markup to token usage."
       }
     ]
   end

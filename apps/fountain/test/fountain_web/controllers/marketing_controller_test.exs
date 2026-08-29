@@ -207,6 +207,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "Run #{Fountain.Brand.engine()} on your infrastructure."
       assert body =~ "Your database, your keys and your sandboxes."
       assert body =~ "Six commands and one provider token."
+      assert body =~ "Three checks before you go live."
       assert body =~ "On your instance, every feature flag is yours to set."
       assert body =~ "What it costs you instead."
 
@@ -220,13 +221,41 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ FountainWeb.MarketingHTML.repo_url()
 
-      {ownership_at, _} = :binary.match(body, "Choose how much of the stack you own.")
+      {ownership_at, _} = :binary.match(body, ~s(data-role="ownership-boundary"))
+
       {prerequisites_at, _} = :binary.match(body, "Before you start")
       assert ownership_at < prerequisites_at
 
-      # A connector belongs only between adjacent rungs. Drawing one as the
-      # border of the whole list leaves a dangling line below the last node.
-      assert length(Regex.scan(~r/data-role="ownership-connector"/, body)) == 3
+      assert body =~ "Master key"
+      assert body =~ "Inference"
+      refute body =~ "The last vendor"
+
+      {kubernetes_at, _} = :binary.match(body, ~s(data-role="kubernetes-option"))
+      {first_boot_at, _} = :binary.match(body, ~s(data-role="first-boot"))
+      {readiness_at, _} = :binary.match(body, ~s(data-role="first-boot-readiness"))
+      {register_at, _} = :binary.match(body, ~s(data-role="first-boot-admin"))
+
+      {conversation_at, _} =
+        :binary.match(body, ~s(data-role="first-boot-conversation"))
+
+      assert kubernetes_at < first_boot_at
+      assert readiness_at < register_at
+      assert register_at < conversation_at
+
+      assert length(Regex.scan(~r/data-role="ownership-boundary"/, body)) == 4
+    end
+
+    test "the deploy guide follows the same first-boot order", %{conn: _conn} do
+      {:ok, guide} = Fountain.Docs.get("guides/operate/deploy")
+
+      {readiness_at, _} = :binary.match(guide.body, "## Verify the instance is ready")
+      {register_at, _} = :binary.match(guide.body, "## Register the first account")
+      {close_at, _} = :binary.match(guide.body, "## Close registration")
+      {prove_at, _} = :binary.match(guide.body, "## Prove the whole path")
+
+      assert readiness_at < register_at
+      assert register_at < close_at
+      assert close_at < prove_at
     end
 
     test "names every feature the manual says is rationed", %{conn: conn} do
