@@ -10,6 +10,22 @@ server releases.
 
 ---
 
+## [1.12.0] — 2026-08-29
+
+### Added
+
+- Types for the OAuth clients an account registers for itself
+  (`/api/oauth/clients`, fountain#1125). An app can register the client it
+  signs in with, rather than asking whoever runs the server to add it to
+  `OAUTH_CLIENTS` and redeploy, and the registration also admits the app's
+  own origin to the API. `OAuthClient` and `OAuthClientRequest` are on
+  `components["schemas"]`; the routes need a full-scope key.
+
+  A client starts in development mode, which signs in the account that
+  registered it and shows every other account an error page. That is what
+  lets you register any redirect URI you like, such as a sandbox's public
+  URL or a port on your own machine.
+
 ## [1.11.1] — 2026-08-28
 
 ### Changed
