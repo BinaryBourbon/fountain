@@ -204,9 +204,10 @@ defmodule FountainWeb.MarketingControllerTest do
     test "makes the case and shows the whole bring-up", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
 
-      assert body =~ "Define your agents once. Let every app you build run them."
-      assert body =~ "Six commands and a token."
-      assert body =~ "The features we ration, you switch on."
+      assert body =~ "Run #{Fountain.Brand.engine()} on your infrastructure."
+      assert body =~ "Your database, your keys and your sandboxes."
+      assert body =~ "Six commands and one provider token."
+      assert body =~ "On your instance, every feature flag is yours to set."
       assert body =~ "What it costs you instead."
 
       # The bring-up is kept out of the template so its $(...) is not HEEx.
@@ -218,6 +219,10 @@ defmodule FountainWeb.MarketingControllerTest do
       end
 
       assert body =~ FountainWeb.MarketingHTML.repo_url()
+
+      {ownership_at, _} = :binary.match(body, "Choose how much of the stack you own.")
+      {prerequisites_at, _} = :binary.match(body, "Before you start")
+      assert ownership_at < prerequisites_at
     end
 
     test "names every feature the manual says is rationed", %{conn: conn} do
@@ -237,12 +242,11 @@ defmodule FountainWeb.MarketingControllerTest do
       end
     end
 
-    test "shows apps that already share the roster, and links every one", %{conn: conn} do
+    test "shows four app shapes over the same roster, and links every one", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
 
-      # The hero's claim is that an agent defined once gets started by anything.
-      # The cards are the evidence, so each has to be a working pair of links
-      # into the same roster /built-with renders.
+      # The cards show four shapes over the same API and roster, so each has to
+      # be a working link into the same roster /built-with renders.
       showcase = FountainWeb.MarketingHTML.self_host_showcase()
       assert length(showcase) == 4
 
@@ -253,7 +257,7 @@ defmodule FountainWeb.MarketingControllerTest do
       end
 
       count = to_string(FountainWeb.MarketingHTML.built_app_count())
-      assert body =~ "#{count} applications already share one roster."
+      assert body =~ "#{count} open-source apps already run on the API."
       assert body =~ ~p"/built-with"
     end
 
@@ -262,7 +266,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ ~s(<meta property="og:title" content="Self-host Fountain · Fountain")
 
       assert body =~
-               ~s(<meta name="description" content="Define an agent once and every app)
+               ~s(<meta name="description" content="Run #{Fountain.Brand.engine()} on your infrastructure)
 
       assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/self-hosted")
     end
@@ -745,7 +749,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "/self-hosted shows them as the front ends an instance gets", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
 
-      assert body =~ "The apps come with it."
+      assert body =~ "Use the apps or host your own."
       assert body =~ "API_CORS_ORIGINS"
       assert body =~ "CONVERSATIONS_APP_URL"
       assert body =~ "TEAM_APP_URL"
@@ -755,8 +759,8 @@ defmodule FountainWeb.MarketingControllerTest do
         assert body =~ app.source, "self-hosted does not link #{app.name}'s source"
       end
 
-      # The showcase above the bring-up argues that other people build on this,
-      # so it must not spend one of its four cards on an app of ours.
+      # The showcase complements the three frontends above it, so it must not
+      # repeat one of those cards.
       showcase = FountainWeb.MarketingHTML.self_host_showcase()
       assert showcase -- FountainWeb.MarketingHTML.flagship_apps() == showcase
     end

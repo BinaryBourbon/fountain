@@ -995,21 +995,21 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The project's repository. The self-hosted page links it from four places."
   def repo_url, do: @repo_url
 
-  # The four apps /self-hosted leads with, chosen for four different shapes of
+  # The four apps /self-hosted shows, chosen for four different shapes of
   # front door: a commission that comes back as a document, an analyst behind a
   # file upload, an unattended repair loop, and a fan-out. Selected from
   # `built_apps/0` by id rather than restated, so a card here cannot drift from
   # /built-with, and an app that is renamed or retired there raises at render
   # instead of linking nowhere — which is exactly what dropping Reflex from the
   # roster did to this list, and why briefing-room now holds the first slot.
-  # The flagship three are deliberately not here: the same page shows them
-  # below the bring-up, as the front ends the reader gets rather than as
-  # evidence that other people build on this.
+  # The flagship three are deliberately not here because the same page shows
+  # them above as the front ends an instance gets. The showcase adds four
+  # different product shapes without repeating those cards.
   @showcase_ids ~w(briefing-room table-talk rounds mission-control)
 
   @doc """
-  The applications /self-hosted shows above the bring-up. The page's claim is
-  that an agent defined once gets started by anything, and these are the anything.
+  Four applications /self-hosted shows as different frontends over the same
+  API and roster.
   """
   def self_host_showcase do
     by_id = Map.new(built_apps_flat(), &{&1.id, &1})
@@ -1051,7 +1051,7 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         label: "No database",
-        body: "The compose file runs Postgres 16 for you. You install nothing."
+        body: "The compose file runs Postgres 16 for you. You install no database."
       },
       %{
         label: "Network",
@@ -1142,7 +1142,7 @@ defmodule FountainWeb.MarketingHTML do
     [
       %{
         step: "01",
-        title: "The app",
+        title: "The control plane",
         body:
           "Your container, your Postgres, your domain. Conversations, transcripts, audit events and API keys live in a database you can open with psql."
       },
@@ -1154,7 +1154,7 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         step: "03",
-        title: "The machines",
+        title: "The sandbox machines",
         body:
           "A Mac mini, a home server or a GPU box becomes a sandbox backend with one daemon. It dials out and holds one connection. There is no inbound port to open and no credential to hand it."
       },
@@ -1174,28 +1174,28 @@ defmodule FountainWeb.MarketingHTML do
   def self_host_costs do
     [
       %{
-        title: "A sandbox backend is somebody's service, unless you bring machines",
+        title: "Bring machines or choose a sandbox provider",
         body:
           "Sprites, E2B and Daytona are all hosted. Daytona you can run yourself, and your own runners need no vendor at all. Pick one before your first conversation, because without one every conversation fails.",
         docs: "/docs/integrations/runners",
         docs_label: "Runners on your own hardware"
       },
       %{
-        title: "Email is a decision, not an optional extra",
+        title: "Configure email before inviting anyone",
         body:
           "Verification and password resets go through Resend, or an SMTP server of yours. So does anything a teammate sends. The compose defaults skip delivery so the first account can register, and that default is for day one only.",
         docs: "/docs/guides/operate/email",
         docs_label: "Configure email"
       },
       %{
-        title: "The master key is yours to lose",
+        title: "Back up the master key with the database",
         body:
           "Back it up before you have data. Lose it and every encrypted secret in the instance is gone, and no database restore brings them back.",
         docs: "/docs/guides/operate/back-up-and-restore",
         docs_label: "Back up and restore"
       },
       %{
-        title: "Upgrades are yours to run",
+        title: "Own every upgrade",
         body:
           "Pull the tag, run the migrations, read the note. There is no window where somebody else does it for you, and no window where somebody else does it to you.",
         docs: "/docs/guides/operate/upgrade",
