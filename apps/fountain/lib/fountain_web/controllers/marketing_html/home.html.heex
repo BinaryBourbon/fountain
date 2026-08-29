@@ -355,6 +355,28 @@
       deserve and the one they did not have when they matched the body text
       around them.
 
+      THE LAST SENTENCE IS THE CREDENTIAL, NOT THE MERGE. Two mechanisms hold
+      this agent and they are not the same one. It never holds a cluster
+      credential, which is the `0` stat directly below and the thing it is
+      unable to do. It cannot merge, which is GitHub refusing a self-approval
+      from an account that does hold a token: it clones, pushes a branch and
+      opens the request. Copy that says the keys are kept away from the agent
+      and then points at the merge has fused the two, and the merge half is
+      false.
+
+      The paragraph leads on the credential because that is the reader's
+      actual fear (.agents/product-marketing.md calls handing a real
+      credential to a model "the product's best material"), and because the
+      stat under it counts exactly that. It sets the number up rather than
+      restating its note, which already reads "No kubectl, no kubeconfig, no
+      write path of its own".
+
+      It used to end "the mechanism stopping it is not a system prompt". True,
+      and it only lands for a reader who already knows a system prompt is the
+      usual way an agent gets constrained, which is a lot to assume in the
+      last clause of a card. A credential the agent was never given is the
+      same argument without the prerequisite.
+
       The h2 says "cluster" and the rest of the case study says "estate". That
       is on purpose and it is the only place the two differ. "Estate" is the
       right word for what the story is about, which is a whole footprint and
@@ -381,7 +403,7 @@
       A cluster that answers its own alerts.
     </h2>
     <p class="mt-4 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-      A Kubernetes cluster used to page a person when a workload broke. Now it also starts an agent, which finds the commit that broke it and opens one small pull request. It cannot merge that request, and the mechanism stopping it is not a system prompt.
+      A Kubernetes cluster used to page a person when a workload broke. Now it also starts an agent, which finds the commit that broke it and opens one small pull request. The agent never holds a credential for the cluster it is fixing, and a person still merges the request.
     </p>
     <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
       <div :for={stat <- case_stats()}>
