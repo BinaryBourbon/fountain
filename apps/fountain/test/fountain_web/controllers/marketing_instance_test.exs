@@ -38,6 +38,11 @@ defmodule FountainWeb.MarketingInstanceTest do
                ~s(<meta property="og:description" content="Fountain runs agents on sandboxes)
 
       assert body =~ ~s(<meta property="og:image:alt" content="Fountain")
+
+      # The title too. The marketing site names the category here; an instance
+      # is a front door and not the project, so it keeps the bare brand.
+      assert body =~ "<title>#{Fountain.Brand.name()}</title>"
+      refute body =~ "Serverless sandboxes for coding agents"
     end
 
     # The footer groups its links now. A deployment that is not the marketing

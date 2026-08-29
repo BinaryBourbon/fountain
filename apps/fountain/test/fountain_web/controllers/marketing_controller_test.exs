@@ -5,6 +5,26 @@ defmodule FountainWeb.MarketingControllerTest do
   # the unpublished and placeholder paths live in MarketingLegalUnpublishedTest
   # (async: false — they mutate global app env).
 
+  describe "GET / titling" do
+    test "names the category in the title and both card titles", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      expected = "Serverless sandboxes for coding agents · #{Fountain.Brand.name()}"
+
+      assert body =~ "<title>#{expected}</title>"
+      assert body =~ ~s(<meta property="og:title" content="#{expected}")
+      assert body =~ ~s(<meta name="twitter:title" content="#{expected}")
+    end
+
+    test "the title is not the bare brand name", %{conn: conn} do
+      # The whole defect: `OpenGraph.title/1` falls back to the brand when a
+      # page sets no `:page_title`, so this page announced only a word a new
+      # reader cannot decode, in the tab, the bookmark and every unfurl.
+      body = conn |> get(~p"/") |> html_response(200)
+
+      refute body =~ "<title>#{Fountain.Brand.name()}</title>"
+    end
+  end
+
   describe "GET /terms" do
     test "renders the terms of service with the configured identity", %{conn: conn} do
       body = conn |> get(~p"/terms") |> html_response(200)
@@ -759,7 +779,14 @@ defmodule FountainWeb.OpenGraphTest do
 
   test "every public page carries an Open Graph card", %{conn: conn} do
     body = conn |> get(~p"/") |> html_response(200)
-    assert body =~ ~s(<meta property="og:title" content="Fountain")
+
+    # This asserted `content="Fountain"` and so was pinning `OpenGraph.title/1`'s
+    # brand-name fallback, which is what a page with no `:page_title` gets. The
+    # homepage has one now. What belongs here is that the card carries a title
+    # ending in the brand; the phrase itself is owned by "GET / titling".
+    assert body =~ ~s(<meta property="og:title" content=")
+    assert body =~ ~s(· #{Fountain.Brand.name()}")
+
     assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/")
 
     assert body =~
