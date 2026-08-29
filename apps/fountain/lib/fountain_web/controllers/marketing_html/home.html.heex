@@ -710,16 +710,29 @@
 <%!-- Pricing (ADR 0031): credits are the product. Rendered only where the
       deployment bills, so a self-hosted instance shows nothing. The three
       cards state the hour price, the grant and the cap; "How billing works"
-      adds only what a card cannot hold. Do not restate a card there. --%>
+      adds only what a card cannot hold. Do not restate a card there.
+
+      The h2 used to read "Pay for what your agents do", which nobody would
+      expect to be false. A pricing heading that states the ordinary case has
+      spent itself: of course you pay for what they do. The claim worth making
+      is the word "only", and it is the differentiator
+      .agents/product-marketing.md says to lead with, because a sandbox
+      provider rents a box by the hour whether or not anybody is talking to it.
+
+      The section used to make that claim three times: this heading weakly, the
+      deck ("every hour an agent works comes out of it"), and the first card's
+      note ("An hour with a prompt in flight"). The heading has it now, the
+      deck keeps only what is its own (prepaid credit, and no subscription),
+      and the card still defines the hour, which is the one place a definition
+      belongs. --%>
 <section :if={pricing?()} id="pricing" class="bg-[var(--color-ink-0)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="Pricing" tone={:ink} />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-ink-text)]">
-      Pay for what your agents do
+      You pay only while an agent is working.
     </h2>
     <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
-      No plans, no seats, no monthly fee. Buy credit, and every hour an agent works
-      comes out of it.
+      No plans, no seats, no monthly fee. You buy credit and spend it by the hour.
     </p>
 
     <div class="mt-12 grid gap-6 md:grid-cols-3">
