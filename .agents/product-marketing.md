@@ -1,6 +1,6 @@
 # Product Marketing Context
 
-**Document version:** v3
+**Document version:** v4
 **Last updated:** 2026-08-29
 
 This file is the positioning, the ICP and the vocabulary that marketing work in
@@ -48,6 +48,12 @@ every page.
 
 **Product type:** Multi-tenant hosted API plus a self-hostable server. Web UI is
 an operator console, not an application.
+
+**Self-hosted positioning:** Ownership is the decision, and the bring-up is its
+proof. Lead with the same API, SDK and CLI running under the reader's keys and
+infrastructure. Put the ownership choices before prerequisites and installation
+detail. The open-source applications demonstrate product shapes, not customer
+adoption, and copy must not present them as third-party proof.
 
 **Business model:** Prepaid credit. No plans, no seats, no subscription
 (ADR 0031). Agent time bills out of a balance at the rate on the price card
@@ -319,5 +325,6 @@ reader into someone who has seen the primitives compose.
 
 ## Changelog
 *Newest first. One line per revision: what changed and why.*
+- v4 (2026-08-29) — Self-hosted clarity pass: lead with ownership, put the ownership decision before installation detail, and frame open-source apps as examples rather than customer proof.
 - v3 (2026-08-29) — Homepage clarity pass: lead with coding agents and the work-only meter, put production proof before implementation detail, and remove customer-shaped proof language.
 - v1 (2026-08-27) — Initial context, drafted from the repo while working the case study headline. Competitive landscape, customer language, customers, testimonials and current WAU left as explicit GAPs rather than invented.
