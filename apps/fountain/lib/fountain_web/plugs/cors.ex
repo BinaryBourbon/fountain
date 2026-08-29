@@ -3,14 +3,24 @@ defmodule FountainWeb.Plugs.Cors do
   CORS for `/api/*`, for a browser client on another origin — the standalone
   team app (#810) is the first.
 
-  Off by default: with no configured origins the plug does nothing, and the
-  API stays same-origin + non-browser clients only, as it always was. Set
-  `API_CORS_ORIGINS` (comma-separated, exact origins such as
-  `https://team.example.com`, or `*`) to allow browsers there to call the API
-  with a bearer token. No cookies are ever allowed across origins
+  Two sources, checked in that order.
+
+  **`API_CORS_ORIGINS`** — the operator's list (comma-separated, exact origins
+  such as `https://team.example.com`, or `*`). Unset, it admits nothing.
+
+  **A registered OAuth client's redirect origin** (`Fountain.OAuth`, #1125) —
+  so that registering an app is enough to call the API from it, and nobody has
+  to notice that "Sign in with Fountain" and "fetch from the app" were two
+  unrelated pieces of operator config. Costs one indexed lookup per
+  cross-origin request that the static list did not already answer — a
+  preflight is cached for `access-control-max-age`, the rest are not.
+
+  With neither, the API stays same-origin plus non-browser clients, as it
+  always was. No cookies are ever allowed across origins
   (`Access-Control-Allow-Credentials` is never sent), so a session cannot be
   ridden from an allowed origin — only an explicitly presented API key works,
-  which is the point.
+  which is the point, and it is what makes the second source safe: admitting
+  an origin admits nobody who does not already hold a key.
 
   A preflight (`OPTIONS` with `Access-Control-Request-Method`) from an allowed
   origin is answered here with 204 and never reaches the router, which would
@@ -34,7 +44,7 @@ defmodule FountainWeb.Plugs.Cors do
   @impl true
   def call(%Plug.Conn{path_info: ["api" | _]} = conn, _opts) do
     with [origin] <- get_req_header(conn, "origin"),
-         true <- allowed?(origin, origins()) do
+         true <- allowed?(origin) do
       conn = put_cors_headers(conn, origin)
 
       if preflight?(conn) do
@@ -51,8 +61,11 @@ defmodule FountainWeb.Plugs.Cors do
 
   defp origins, do: Application.get_env(:fountain, :api_cors_origins, [])
 
-  defp allowed?(_origin, []), do: false
-  defp allowed?(origin, allowed), do: "*" in allowed or origin in allowed
+  defp allowed?(origin) do
+    allowed = origins()
+
+    "*" in allowed or origin in allowed or Fountain.OAuth.registered_origin?(origin)
+  end
 
   defp preflight?(%Plug.Conn{method: "OPTIONS"} = conn),
     do: get_req_header(conn, "access-control-request-method") != []
