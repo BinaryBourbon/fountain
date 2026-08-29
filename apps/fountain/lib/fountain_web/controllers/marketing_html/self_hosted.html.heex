@@ -73,6 +73,18 @@
         What each provider needs →
       </a>
     </p>
+    <p class="px-5 py-4 border-t border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      <strong class="font-semibold text-[var(--color-text-primary)]">
+        Using Kubernetes instead?
+      </strong>
+      Start from the plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>. They run the same release image and expect a Postgres of your own.
+      <a
+        href={~p"/docs/guides/operate/kubernetes"}
+        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+      >
+        Deploy on Kubernetes →
+      </a>
+    </p>
   </div>
 </section>
 
@@ -137,52 +149,61 @@
   </div>
 </section>
 
-<%!-- 02. What happens after the commands, including how you know it worked.
-      A first-time operator otherwise reads a refused connection during the
-      cold start as a failed install. --%>
+<%!-- 02. The three proofs after `docker compose up`, in operational order.
+      Kubernetes is an alternative bring-up path beside the commands above,
+      not a step in this sequence. --%>
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
-  <.eyebrow label="02 · Install" align={:left} />
+  <.eyebrow label="02 · First boot" align={:left} />
   <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
-    From clone to a healthy instance.
+    Prove the instance works before you expose it.
   </h2>
   <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[60ch]">
-    The app runs migrations before it opens a listener. On a cold start, expect up to a minute of refused connections.
+    The first boot runs migrations before opening a listener. Refused connections are normal for up to a minute. Wait for readiness, claim the first admin account, then run one conversation.
   </p>
   <div class="grid md:grid-cols-3 gap-6 mt-8">
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
       <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-        Then
+        01 · Verify
       </p>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Register</h3>
-      <p
-        class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed"
-        phx-no-format
-      >Open <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">http://localhost:4000</code> and sign up. The first account verifies itself and becomes admin. Close registration when you are done.</p>
-    </div>
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-        Check
-      </p>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Check readiness</h3>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Wait for readiness</h3>
       <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Wait for the app container to report healthy, then probe it.
+        Run <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">docker compose ps</code>. When the app reports healthy, probe it. An ok response proves Fountain can reach Postgres.
       </p>
       <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-3 sm:p-4 text-[11px] sm:text-xs text-[var(--color-code-text)]"><code phx-no-format>{health_probe()}</code></pre>
     </div>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
       <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-        Instead
+        02 · Claim
       </p>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Kubernetes</h3>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">
+        Register the first admin
+      </h3>
       <p
         class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed"
         phx-no-format
-      >Plain manifests live in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>, with no operator or CRDs. Every merge publishes them as an OCI artifact. The hosted instance deploys from the same artifact.</p>
+      >Now open <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">http://localhost:4000</code> and register. With the Compose defaults, the first account verifies itself and becomes admin. Do this before the instance is public, then close registration.</p>
       <a
-        href={~p"/docs/guides/operate/kubernetes"}
+        href={~p"/docs/guides/operate/deploy#register-the-first-account"}
         class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
       >
-        Deploy on Kubernetes →
+        Claim the instance safely →
+      </a>
+    </div>
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+      <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+        03 · Prove
+      </p>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">
+        Start one conversation
+      </h3>
+      <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        A run that reaches its first turn proves the database, master key and sandbox provider are wired together. Now the whole path is ready for your apps.
+      </p>
+      <a
+        href={~p"/docs/guides/operate/deploy#prove-the-whole-path"}
+        class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+      >
+        Verify the whole deployment →
       </a>
     </div>
   </div>

@@ -52,6 +52,23 @@ The [configuration reference](../../configuration.md) holds the complete list,
 and it includes the deploy-level variables that the compose file never
 mentions.
 
+## Verify the instance is ready
+
+The app applies database migrations before it opens a listener, so a cold
+start takes up to a minute. Wait for the app container to report `healthy`,
+then probe it.
+
+```bash
+docker compose ps
+# wait for the app to report healthy, then:
+curl -sS localhost:4000/health/ready
+# {"checks":{"database":"ok"},"status":"ok"}
+```
+
+A refused connection means the app has not opened its listener yet. That is
+the normal state during a cold start, and not a failed install. Read
+`docker compose logs -f app` if it stays refused.
+
 ## Register the first account
 
 Open <http://localhost:4000> and register. That is the whole first login.
@@ -70,6 +87,16 @@ For the manual path, set `FIRST_USER_ADMIN=false` and use a release task. Read [
 docker compose exec app bin/fountain_server eval \
   'Fountain.Release.promote_admin("you@example.com")'
 ```
+
+## Close registration
+
+```bash
+echo "REGISTRATION_ENABLED=false" >> .env
+docker compose up -d
+```
+
+Registration is open by default. Somebody will find an instance on the public
+internet that has registration open.
 
 ## Point the apps at it
 
@@ -100,36 +127,11 @@ Point those at your own build of either repo and it works the same way. Set
 them to `""` to tell the console that this deployment has neither, and the
 console stops the offer.
 
-## Close registration
+## Prove the whole path
 
-```bash
-echo "REGISTRATION_ENABLED=false" >> .env
-docker compose up -d
-```
-
-Registration is open by default. Somebody will find an instance on the public
-internet that has registration open.
-
-## Verify it worked
-
-The app applies database migrations before it opens a listener, so a cold
-start takes up to a minute. Wait for the app container to report `healthy`,
-then probe it.
-
-```bash
-docker compose ps
-# wait for the app to report healthy, then:
-curl -sS localhost:4000/health/ready
-# {"checks":{"database":"ok"},"status":"ok"}
-```
-
-A refused connection means the app has not opened its listener yet. That is
-the normal state during a cold start, and not a failed install. Read
-`docker compose logs -f app` if it stays refused.
-
-Then sign in and create a conversation. A run that reaches its first turn
-proves that the database, the secrets key and the sandbox provider are all
-wired up.
+Readiness proves that the app can reach Postgres. It does not exercise the
+master key or the sandbox provider. Sign in and create a conversation. A run
+that reaches its first turn proves that all three are wired up.
 
 ## Start over
 

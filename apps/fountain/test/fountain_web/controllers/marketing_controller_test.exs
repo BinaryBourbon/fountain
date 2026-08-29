@@ -207,6 +207,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "Run #{Fountain.Brand.engine()} on your infrastructure."
       assert body =~ "Your database, your keys and your sandboxes."
       assert body =~ "Six commands and one provider token."
+      assert body =~ "Prove the instance works before you expose it."
       assert body =~ "On your instance, every feature flag is yours to set."
       assert body =~ "What it costs you instead."
 
@@ -223,6 +224,29 @@ defmodule FountainWeb.MarketingControllerTest do
       {ownership_at, _} = :binary.match(body, "Choose how much of the stack you own.")
       {prerequisites_at, _} = :binary.match(body, "Before you start")
       assert ownership_at < prerequisites_at
+
+      {kubernetes_at, _} = :binary.match(body, "Using Kubernetes instead?")
+      {first_boot_at, _} = :binary.match(body, "Prove the instance works before you expose it.")
+      {readiness_at, _} = :binary.match(body, "Wait for readiness")
+      {register_at, _} = :binary.match(body, "Register the first admin")
+      {conversation_at, _} = :binary.match(body, "Start one conversation")
+
+      assert kubernetes_at < first_boot_at
+      assert readiness_at < register_at
+      assert register_at < conversation_at
+    end
+
+    test "the deploy guide follows the same first-boot order", %{conn: _conn} do
+      {:ok, guide} = Fountain.Docs.get("guides/operate/deploy")
+
+      {readiness_at, _} = :binary.match(guide.body, "## Verify the instance is ready")
+      {register_at, _} = :binary.match(guide.body, "## Register the first account")
+      {close_at, _} = :binary.match(guide.body, "## Close registration")
+      {prove_at, _} = :binary.match(guide.body, "## Prove the whole path")
+
+      assert readiness_at < register_at
+      assert register_at < close_at
+      assert close_at < prove_at
     end
 
     test "names every feature the manual says is rationed", %{conn: conn} do
