@@ -188,6 +188,14 @@
       request opened by restating the headline, and the card about the
       Environment ended on the reuse the headline had already promised.
 
+      A reuse claim counts runs, not Agents. `environment_id` sits on both
+      `agents` and `conversations`, so "point every agent at it" was true and
+      still the wrong axis: an account has a handful of Agents and an unbounded
+      number of runs, and only the second number makes writing the Environment
+      down once worth anything. "Run" over "Conversation" here because the card
+      already introduces one primitive and the page is not owed a second one in
+      the same four lines.
+
       Three elements, three jobs. The h2 names the problem and claims it, the
       grid shows the mechanisms, and the closer hands the product back. The
       lead-in only puts the reader at the moment after the demo worked, and
@@ -225,10 +233,10 @@
   <dl class="mt-12 grid sm:grid-cols-2 gap-x-12 gap-y-9">
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Set it up once, then point every agent at it.
+        Set the machine up once, then launch every run from it.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        An Environment names the filesystem, the packages, the checkout and the network. You list it, diff it and launch from it, and it outlives every run that uses it.
+        An Environment names the filesystem, the packages, the checkout and the network. You list it and diff it like any other object you keep under version control.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
