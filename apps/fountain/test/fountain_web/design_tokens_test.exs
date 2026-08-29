@@ -94,8 +94,8 @@ defmodule FountainWeb.DesignTokensTest do
       # `--color-ink-*` is the one scale that must not follow the theme: a
       # section designed dark stays dark in light mode, and in dark mode the
       # same tokens lift it clear of the near-black page. A missing dark
-      # override would leave the ink sections at #0c0c11 against a #09090b
-      # page, which is the anchor gone.
+      # override would leave the ink sections at the light-mode slate against
+      # a #09090b page, which is the anchor gone.
       css = File.read!(@source)
       [_, dark] = String.split(css, ~s([data-theme="dark"] {), parts: 2)
 
@@ -105,10 +105,25 @@ defmodule FountainWeb.DesignTokensTest do
       end
 
       # The text on ink is deliberately the same in both.
-      for name <- ~w(--color-ink-text --color-ink-secondary --color-ink-muted --color-ink-border) do
+      for name <- ~w(--color-ink-text --color-ink-secondary --color-ink-border) do
         assert Map.has_key?(tokens, name), "#{name} is not declared"
         refute dark =~ name, "#{name} is overridden in dark mode; ink text is theme independent"
       end
+    end
+
+    test "a code panel is a step off the ink it sits on, in both themes", %{tokens: tokens} do
+      # `ink-1` is the ground a code block gets on an ink section, and which
+      # side of `ink-0` it falls on is not the same in both themes: in light
+      # mode the ground is a slate and the code is an inset below it, in dark
+      # mode the ground is the lifted surface and the code sits above the
+      # page. Either reads. The two being *equal* is the failure, because
+      # then a code block has no edge at all.
+      css = File.read!(@source)
+      [_, dark] = String.split(css, ~s([data-theme="dark"] {), parts: 2)
+      dark_tokens = Map.new(declarations("x {" <> dark))
+
+      assert tokens["--color-ink-0"] != tokens["--color-ink-1"]
+      assert dark_tokens["--color-ink-0"] != dark_tokens["--color-ink-1"]
     end
 
     test "the accent is not the brand, so it cannot read as something to click", %{tokens: tokens} do

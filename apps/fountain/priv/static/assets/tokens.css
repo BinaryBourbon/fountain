@@ -49,13 +49,12 @@
 
   --color-band: #eef1f6;
 
-  --color-ink-0:         #0c0c11;
-  --color-ink-1:         #17171e;
-  --color-ink-2:         #212129;
-  --color-ink-border:    #2c2c37;
+  --color-ink-0:         #1e2129;
+  --color-ink-1:         #151820;
+  --color-ink-2:         #2a2e38;
+  --color-ink-border:    #363b47;
   --color-ink-text:      #f5f5f7;
   --color-ink-secondary: #a6a6b2;
-  --color-ink-muted:     #71717f;
   --color-ink-brand:     #5796f4;
 
   --color-accent:      #d98d2b;
