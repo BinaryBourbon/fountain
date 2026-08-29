@@ -1298,6 +1298,25 @@ defmodule FountainWeb.MarketingHTML do
         docs_label: "Build a chat app"
       },
       %{
+        q: "Can two people share one conversation?",
+        a:
+          "Not as a shared inbox. One conversation is one thread on one machine, so " <>
+            "two users pointed at the same one see each other's work and each other's " <>
+            "files. Give each person a conversation id of their own. Your account holds " <>
+            "the agents, and the ids are yours to assign.",
+        docs: "concepts/conversation",
+        docs_label: "About conversations"
+      },
+      %{
+        q: "Can an agent start another agent, and how deep does that go?",
+        a:
+          "It can, and the agent it starts can do the same from inside its own " <>
+            "sandbox. Nothing caps the depth on our side, so the balance is the " <>
+            "backstop rather than a limit #{Fountain.Brand.name()} enforces. Treat a " <>
+            "spawning agent the way you would treat a recursive job anywhere else, and " <>
+            "watch the balance while you do."
+      },
+      %{
         q: "Is this only good for writing code?",
         a:
           "The runtimes are coding agents, which is to say a shell, a filesystem and a " <>

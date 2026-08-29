@@ -12,12 +12,18 @@
  * templates keep their classes and the classic look is one attribute away:
  * `/?skin=classic`.
  *
- * The three sections built on `--color-ink-*` (setup, pricing, the closer) are
- * dark in the classic skin. On paper they are not: the ink scale is redefined
- * here as the deeper sheet the page is printed on, and the closer alone takes
- * the ink back by redeclaring those same custom properties *on its own
- * element*, which every Tailwind `var(--color-ink-…)` class inside it then
- * reads. One inverted block at the end, like the back of a card.
+ * The sections built on `--color-ink-*` are dark in the classic skin. On paper
+ * they are not: the ink scale is redefined here as the deeper sheet the page is
+ * printed on, so an ink section is a tinted band rather than a black slab.
+ *
+ * There are five of them on the homepage now: setup near the top, then pricing,
+ * self-host, questions and the closer, which run together as one band at the
+ * end. Nothing here needs to know the count, because the skin redefines the
+ * tokens rather than naming sections, but the number is worth knowing before
+ * you decide the page has too much of one surface on it.
+ *
+ * The closer used to redeclare these properties on its own element to take the
+ * ink back. It no longer does; see "No inverted block" below.
  *
  * ONE FILE, unlike `tokens.css`. That one is split into a commented source and
  * a stripped served copy with nothing generating the second, which is a drift

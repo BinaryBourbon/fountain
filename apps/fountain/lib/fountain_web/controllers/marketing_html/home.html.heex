@@ -522,6 +522,19 @@
   </section>
 </div>
 
+<%!-- FORK ONE: drive it with the stack you have, or start from something that
+      already works. Two sections on one surface with a rule between them,
+      which is the shape State and Scale use above for the same reason.
+
+      On the page ground rather than a tint, because the band above is tinted
+      and two tinted regions with nothing between them read as one long tint.
+      The rule does the pairing instead.
+
+      Apps used to be banded with Self-host, on the argument that both are the
+      reader looking at somebody else's copy of the product. True, and the
+      wrong cut. An app you start from is the alternative to writing against
+      the protocols; running it yourself is the alternative to paying us. Each
+      fork now sits beside the thing it forks. --%>
 <%!-- Bring your own stack. Four protocols, one of which is behind a flag, so
       this is where the badge legend lives: it is the first badge a reader
       meets, and everything above it is generally available. How to turn the
@@ -588,83 +601,13 @@
   </p>
 </section>
 
-<%!-- The limits, stated before the price rather than discovered after it. Every
-      number here reads from the same settings the quota enforces. This is the
-      only place the concurrency rule is explained outside the price card.
-
-      The second of the two left-aligned sections, and for the same reason as
-      the first: it is reference, read down a margin. Setting it left also
-      separates it from the protocol list directly above, which is centred and
-      is otherwise the same shape of thing. --%>
+<%!-- The apps, in one section. The flagship three as cards, the rest of the
+      roster as chips under them. These used to be two adjacent sections with
+      two intros and two buttons saying the same thing. Cards come from
+      built_apps/0, so the homepage cannot name an app /built-with has renamed
+      or retired. --%>
 <section class="max-w-5xl mx-auto px-6 pb-16">
   <div class="border-t border-[var(--color-border)] pt-16">
-    <.eyebrow label="Limits" align={:left} />
-    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-      The limits, before you build on them.
-    </h2>
-
-    <dl class="mt-10 grid gap-x-12 gap-y-8 sm:grid-cols-3">
-      <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
-        <dt class="font-medium text-[var(--color-text-primary)]">Recursion is yours to bound</dt>
-        <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          An agent that starts agents can do it again from inside the one it started. Nothing caps the depth on our side; your balance is the backstop.
-        </dd>
-      </div>
-
-      <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
-        <dt class="font-medium text-[var(--color-text-primary)]">
-          A conversation is not a shared inbox
-        </dt>
-        <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          One conversation is one thread on one machine. Two users pointed at the same one see each other's work. Give each an id of their own.
-        </dd>
-      </div>
-
-      <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
-        <dt class="font-medium text-[var(--color-text-primary)]">An account is one person</dt>
-        <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-          No organizations, no seats, no single sign-on. A team shares an account, or runs its own instance.
-        </dd>
-      </div>
-    </dl>
-    <%!-- The questions used to be a section of their own here, 48 words and a
-          tinted band whose only job was two links the footer already carries.
-          Limits and questions are the same beat for the same reader, so the
-          links close this section instead. Keep the `/faq#security` one: a
-          reader forwarding an answer wants one URL to forward, and a test
-          pins it. --%>
-    <div class="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <p class="text-sm text-[var(--color-text-secondary)] max-w-lg">
-        More of them are on the questions page, beside what a security reviewer asks, each answer a mechanism rather than an intention.
-      </p>
-      <div class="flex flex-col sm:flex-row gap-3 sm:shrink-0">
-        <a
-          href={~p"/faq"}
-          class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-        >
-          Get the answers
-        </a>
-        <a
-          href={~p"/faq#security"}
-          class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-        >
-          The security answers
-        </a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<%!-- The second band: what other people have already built on this, and what
-      it takes to run it yourself. Both are the reader looking at somebody
-      else's copy of the product. --%>
-<div class="bg-[var(--color-band)] border-y border-[var(--color-border)]">
-  <%!-- The apps, in one section. The flagship three as cards, the rest of the
-        roster as chips under them. These used to be two adjacent sections with
-        two intros and two buttons saying the same thing. Cards come from
-        built_apps/0, so the homepage cannot name an app /built-with has renamed
-        or retired. --%>
-  <section class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="Apps" />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
       Start from an app that already works.
@@ -738,52 +681,31 @@
         See what people built
       </a>
     </p>
-  </section>
+  </div>
+</section>
 
-  <%!-- Lane three's section on the homepage. The runner concession sits beside
-        the runner claim rather than a page away, because the hero promises a
-        boundary and a runner has none. --%>
-  <section class="max-w-5xl mx-auto px-6 pb-16">
-    <div class="border-t border-[var(--color-border)] pt-16">
-      <.eyebrow label="Self-host" />
-      <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
-        Or run the whole thing yourself.
-      </h2>
-      <p class="mt-3 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto text-lg">
-        Two reasons to go: your customers' code cannot leave your infrastructure, or you need more machines than the ceiling allows.
-      </p>
-
-      <div class="mt-10 max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)] leading-relaxed">
-        <p>
-          {Fountain.Brand.engine()} is open source and nothing is held back from the copy you run; a compose file brings an instance up. Or keep this platform and serve only the sandboxes: a runner dials out, needs no inbound port and burns no credit.
-        </p>
-        <p class="border-l-2 border-[var(--color-accent-line)] pl-4 text-sm text-[var(--color-text-muted)]">
-          A runner runs in trusted mode: the agent's processes run as you, with your network and tools and no container between. Run one where you would hand a colleague a shell.
-        </p>
-      </div>
-
-      <p class="mt-10 text-center">
-        <a
-          href={~p"/self-hosted"}
-          class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-        >
-          What it takes to run it yourself
-        </a>
-      </p>
-    </div>
-  </section>
-</div>
-
-<%!-- The finale, on ink: the price, then the ask.
+<%!-- FORK TWO, and the finale, on ink: what it costs, how to owe us nothing,
+      what it cannot do, then the ask.
 
       Pricing used to sit *after* the closing call to action, so the page said
       goodbye and then kept talking about money. It now answers the last
-      question a convinced reader has and hands them the button underneath it.
+      questions a convinced reader has and hands them the button underneath
+      them.
 
-      The two are separate sections sharing one surface rather than one
-      section, because a deployment that prices nothing renders no pricing and
-      the closer has to stand on its own. It does: same ink, same ask, no seam
-      where the price would have been. --%>
+      Self-host is the other half of the price. "What does this cost" and "what
+      if I would rather it cost nothing and run on my own hardware" are one
+      question with two answers, so they share a surface.
+
+      Questions is last before the ask, because a limit is the final thing
+      between a convinced reader and the button, and `/faq#security` is the URL
+      they forward to whoever has to approve it.
+
+      Four sections sharing one surface rather than one section, because a
+      deployment that prices nothing renders no pricing and the rest has to
+      stand without it. It does: same ink, same ask, no seam where the price
+      would have been. That is also why the self-host heading no longer opens
+      with "Or". With `pricing?()` false there is nothing above it for the "Or"
+      to answer. --%>
 
 <%!-- Pricing (ADR 0031): credits are the product. Rendered only where the
       deployment bills, so a self-hosted instance shows nothing. The three
@@ -889,6 +811,90 @@
           A new conversation or prompt is refused until the balance is positive again.
           Anything already running finishes, even below zero.
         </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%!-- Lane three's section on the homepage. The runner concession sits beside
+      the runner claim rather than a page away, because the hero promises a
+      boundary and a runner has none. --%>
+<section class="bg-[var(--color-ink-0)]">
+  <div class="max-w-5xl mx-auto px-6 pb-16">
+    <div class="border-t border-[var(--color-ink-border)] pt-16">
+      <.eyebrow label="Self-host" tone={:ink} />
+      <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-ink-text)] text-center">
+        Run the whole thing yourself.
+      </h2>
+      <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
+        Two reasons to go: your customers' code cannot leave your infrastructure, or you need more machines than the ceiling allows.
+      </p>
+
+      <div class="mt-10 max-w-2xl mx-auto space-y-4 text-[var(--color-ink-secondary)] leading-relaxed">
+        <p>
+          {Fountain.Brand.engine()} is open source and nothing is held back from the copy you run; a compose file brings an instance up. Or keep this platform and serve only the sandboxes: a runner dials out, needs no inbound port and burns no credit.
+        </p>
+        <p class="border-l-2 border-[var(--color-ink-border)] pl-4 text-sm text-[var(--color-ink-secondary)]">
+          A runner runs in trusted mode: the agent's processes run as you, with your network and tools and no container between. Run one where you would hand a colleague a shell.
+        </p>
+      </div>
+
+      <p class="mt-10 text-center">
+        <a
+          href={~p"/self-hosted"}
+          class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-ink-text)] text-sm font-medium hover:bg-[var(--color-ink-2)] transition-colors"
+        >
+          What it takes to run it yourself
+        </a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<%!-- Questions, where the limits used to be.
+
+      This was a three-item list of things the product cannot do: no depth cap
+      on recursion, no shared conversations, no organizations or seats. Those
+      are now answers on /faq, and the two that were missing from it were
+      written when this came out (the third, orgs and seats, has been in
+      `security_absent/0` verbatim the whole time).
+
+      What stays is the signpost, and it is not decoration. A page that sells
+      hard and mentions no limit anywhere is the shape the voice standard
+      argues against, and the pinned `/faq#security` link (a test asserts it on
+      this page) is the one URL a reader forwards to somebody who has to
+      approve this. Both survive here without the homepage carrying a list that
+      goes stale as the tickets close.
+
+      Left-aligned, which is what it was when it sat under the protocol list.
+      It keeps that here for a different reason: it is the one section of the
+      ink finale that is reference rather than pitch, and the margin says so
+      against the two centred sections above it. --%>
+<section class="bg-[var(--color-ink-0)]">
+  <div class="max-w-5xl mx-auto px-6 pb-16">
+    <div class="border-t border-[var(--color-ink-border)] pt-16">
+      <.eyebrow label="Questions" align={:left} tone={:ink} />
+      <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-ink-text)]">
+        What it cannot do is written down.
+      </h2>
+      <div class="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-[var(--color-ink-secondary)] max-w-lg">
+          The limits are on the questions page, beside what a security reviewer asks, each answer a mechanism rather than an intention.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-3 sm:shrink-0">
+          <a
+            href={~p"/faq"}
+            class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-ink-text)] text-sm font-medium hover:bg-[var(--color-ink-2)] transition-colors"
+          >
+            Get the answers
+          </a>
+          <a
+            href={~p"/faq#security"}
+            class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-ink-text)] text-sm font-medium hover:bg-[var(--color-ink-2)] transition-colors"
+          >
+            The security answers
+          </a>
+        </div>
       </div>
     </div>
   </div>
