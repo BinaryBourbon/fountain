@@ -369,20 +369,15 @@ defmodule FountainWeb.MarketingControllerTest do
       end
     end
 
-    # The three pages that gave up their questions link back by anchor. A
-    # renamed section id would leave those links pointing at nothing, and
-    # nothing else in the suite would notice.
+    # The self-hosted page gave up its questions and links back by anchor. A
+    # renamed section id would leave that link pointing at nothing, and nothing
+    # else in the suite would notice.
     test "the anchors the other pages link at all exist", %{conn: conn} do
       body = conn |> get(~p"/faq") |> html_response(200)
       ids = Enum.map(FountainWeb.MarketingHTML.faq_sections(), & &1.id)
 
-      for anchor <- ~w(security self-hosting) do
-        assert anchor in ids, "/faq has no ##{anchor} section to link at"
-        assert body =~ ~s(id="#{anchor}")
-      end
-
-      home = conn |> get(~p"/") |> html_response(200)
-      assert home =~ "/faq#security"
+      assert "self-hosting" in ids, "/faq has no #self-hosting section to link at"
+      assert body =~ ~s(id="self-hosting")
 
       self_hosted = conn |> get(~p"/self-hosted") |> html_response(200)
       assert self_hosted =~ "/faq#self-hosting"
