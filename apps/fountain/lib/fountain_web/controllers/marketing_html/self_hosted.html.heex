@@ -88,18 +88,17 @@
   </div>
 </section>
 
-<%!-- 01. The ownership ladder is the decision this page helps the reader
-      make, so it comes before prerequisites and installation detail. Drawn as
-      a connected ladder rather than four loose cards because the rungs are an
-      order. --%>
+<%!-- 01. Four ownership boundaries, not four optional tiers. The control
+      plane and master key come with self-hosting, sandbox machines are a
+      choice, and inference stays on the reader's provider account. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
     <.eyebrow label="01 · Ownership" align={:left} />
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
-      Choose how much of the stack you own.
+      Know exactly which parts of the stack are yours.
     </h2>
     <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
-      Run the control plane, add machines from your network, or remove the last hosted dependency. Each step is configuration, not a sales conversation.
+      You run the control plane and database, and you hold the encryption key. You decide whether sandboxes run with a provider or on machines from your network. Inference stays on your model account.
     </p>
     <ol class="mt-8 sm:mt-10 ml-3">
       <li
@@ -131,7 +130,7 @@
       </li>
     </ol>
     <p class="mt-2 sm:mt-3 ml-0 sm:ml-6 border-l-2 border-[var(--color-brand)] pl-5 sm:pl-6 text-[var(--color-text-secondary)] leading-relaxed max-w-[74ch]">
-      A model key is the one thing you still bring, and you always did. The agent bills your own provider account for tokens, so nothing in the middle takes a cut of inference. <a
+      Want to own the sandbox machines too? <a
         href={~p"/docs/integrations/runners"}
         class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
       >Read how a machine of yours becomes a sandbox</a>.

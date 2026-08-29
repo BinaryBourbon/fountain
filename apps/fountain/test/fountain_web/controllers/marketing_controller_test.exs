@@ -221,9 +221,15 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ FountainWeb.MarketingHTML.repo_url()
 
-      {ownership_at, _} = :binary.match(body, "Choose how much of the stack you own.")
+      {ownership_at, _} =
+        :binary.match(body, "Know exactly which parts of the stack are yours.")
+
       {prerequisites_at, _} = :binary.match(body, "Before you start")
       assert ownership_at < prerequisites_at
+
+      assert body =~ "The master key"
+      assert body =~ "Inference"
+      refute body =~ "The last vendor"
 
       {kubernetes_at, _} = :binary.match(body, "Using Kubernetes instead?")
       {first_boot_at, _} = :binary.match(body, "Prove the instance works before you expose it.")

@@ -131,7 +131,8 @@ console stops the offer.
 
 Readiness proves that the app can reach Postgres. It does not exercise the
 master key or the sandbox provider. Sign in and create a conversation. A run
-that reaches its first turn proves that all three are wired up.
+that reaches its first turn proves that Fountain can read the database,
+decrypt the model key and start a sandbox through the provider.
 
 ## Start over
 

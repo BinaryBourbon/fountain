@@ -1137,7 +1137,7 @@ defmodule FountainWeb.MarketingHTML do
     ]
   end
 
-  @doc "The four rungs of ownership, from the app down to the last vendor."
+  @doc "The four ownership boundaries, from the control plane through inference."
   def ownership_rungs do
     [
       %{
@@ -1148,9 +1148,9 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         step: "02",
-        title: "The secrets",
+        title: "The master key",
         body:
-          "Every tenant's env vars are encrypted with a key derived from a master key you generate. It is not in the database, which is also why a database backup on its own does not save you."
+          "Self-hosting makes this key your responsibility. Fountain derives the keys that encrypt every tenant's environment variables from it, and never stores it in Postgres. Back it up with the database."
       },
       %{
         step: "03",
@@ -1160,9 +1160,9 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         step: "04",
-        title: "The last vendor",
+        title: "Inference",
         body:
-          "Server on your hardware, sandboxes on your machines, and no third-party account is left in the loop. Not a sandbox host's, and not ours."
+          "Fountain does not replace your model provider. The agent uses your model key, and the provider bills your account directly. Fountain never adds a markup to token usage."
       }
     ]
   end

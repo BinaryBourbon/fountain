@@ -80,6 +80,7 @@ defmodule Fountain.Umbrella.MixProject do
         "compile --warnings-as-errors",
         &deps_unlock_unused_changes_nothing/1,
         "format --check-formatted",
+        &docs_prose_gates/1,
         "credo --strict",
         &dialyzer_in_dev/1,
         &sobelow_in_app/1,
@@ -106,6 +107,26 @@ defmodule Fountain.Umbrella.MixProject do
     end
 
     :ok
+  end
+
+  # CI runs these three prose gates whenever a change touches docs/. Keep them
+  # in the all-purpose local gate too, so `mix precommit` and CI reject the same
+  # documentation. A function runs each command once from the umbrella root;
+  # `mix cmd` would repeat it for every child app.
+  defp docs_prose_gates(_args) do
+    commands = [
+      "python3 scripts/docs-style.py",
+      "vale lint docs",
+      "npm ci --prefix scripts/destink",
+      "node scripts/destink/destink.mjs"
+    ]
+
+    Enum.each(commands, fn command ->
+      case Mix.shell().cmd(command) do
+        0 -> :ok
+        status -> Mix.raise("#{command} failed with exit status #{status}")
+      end
+    end)
   end
 
   # MIX_ENV=dev on purpose (precommit itself runs in :test): dialyzer analyzes
