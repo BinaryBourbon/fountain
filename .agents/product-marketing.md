@@ -1,7 +1,7 @@
 # Product Marketing Context
 
-**Document version:** v2
-**Last updated:** 2026-08-27
+**Document version:** v3
+**Last updated:** 2026-08-29
 
 This file is the positioning, the ICP and the vocabulary that marketing work in
 this repo starts from. It is drafted from the repo itself: `README.md`,
@@ -16,8 +16,7 @@ and bump the version.
 
 ## Product Overview
 
-**One-liner:** A conversational API to a computer, metered only while an agent
-is working.
+**One-liner:** Run coding agents on ready machines. Pay only while they work.
 
 **Lead with the meter.** Both halves of that line are the pitch, and the second
 half is the part nobody else offers. A prompt goes over HTTP, a machine wakes
@@ -207,10 +206,11 @@ template, run, transcript, credit, primitive, estate, gate, guardrail.
 
 **"Computer" is a marketing word only.** `standards/voice-and-style.md` bans it
 from `docs/` because reference prose needs one name for the machine, and that
-name is "sandbox". The homepage hero and `README.md` use it on purpose: it is
-the word the reader already has for the thing they do not want to run, and it
-is how the one-liner lands before "sandbox" means anything. Use it once to open,
-then say "sandbox" or "machine" for the rest of the page, and never in `docs/`.
+name is "sandbox". `README.md` uses it on purpose because it is the word the
+reader already has for the thing they do not want to run. The homepage instead
+names coding agents and the work-only meter in its first line. When another
+marketing surface uses "computer", use it once to open, then say "sandbox" or
+"machine" for the rest of the page. Never use it in `docs/`.
 
 **Words to avoid:** "simply", "just", "easy", "obviously", "coming soon" (the docs style
 gate fails on these); "plans", "tiers", "seats", "subscription" (there are none);
@@ -319,4 +319,5 @@ reader into someone who has seen the primitives compose.
 
 ## Changelog
 *Newest first. One line per revision: what changed and why.*
+- v3 (2026-08-29) — Homepage clarity pass: lead with coding agents and the work-only meter, put production proof before implementation detail, and remove customer-shaped proof language.
 - v1 (2026-08-27) — Initial context, drafted from the repo while working the case study headline. Competitive landscape, customer language, customers, testimonials and current WAU left as explicit GAPs rather than invented.

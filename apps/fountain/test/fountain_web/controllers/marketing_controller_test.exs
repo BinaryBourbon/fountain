@@ -196,7 +196,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "the marketing nav and the homepage link to it", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
       assert body =~ ~p"/built-with"
-      assert body =~ "People build whole products on it."
+      assert body =~ "open-source apps are running on it now."
     end
   end
 
@@ -562,6 +562,10 @@ defmodule FountainWeb.MarketingControllerTest do
       body = conn |> get(~p"/") |> html_response(200)
       assert body =~ ~p"/case-studies/self-healing-infrastructure"
       assert body =~ "A cluster that answers its own alerts."
+
+      {proof_at, _} = :binary.match(body, ~s(data-role="case-study-callout"))
+      {setup_at, _} = :binary.match(body, "You write this once.")
+      assert proof_at < setup_at
     end
   end
 

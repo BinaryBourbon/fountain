@@ -49,22 +49,11 @@
         be `text-5xl`, one step off the section headings, so the page opened at
         roughly the volume it kept for the next eight thousand pixels. --%>
   <h1 class="text-[2.75rem] leading-[1.05] sm:text-6xl font-bold tracking-[-0.03em] text-[var(--color-text-primary)] mb-6">
-    A conversational API to a computer.
+    Run coding agents on ready machines.<span :if={pricing?()}> Pay only while they work.</span>
   </h1>
   <p class="text-lg sm:text-xl leading-relaxed text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
     The machine arrives with your repositories cloned, your packages installed and credentials the model never sees.
-    <%!-- The meter is the differentiator, so it gets its own sentence rather
-          than the trailing clause of a fourth one. The h1 already says the
-          API and the answer coming back, so the subhead no longer narrates
-          them a second time. It is also a claim only a billing deployment
-          can make, and the same `pricing?()` guard the price card uses keeps
-          a free install from making it. --%>
-    <span :if={pricing?()}>
-      The meter runs while an agent works and stops while the machine waits.
-    </span>
-    <span :if={!pricing?()}>
-      It parks between messages and wakes with its work intact.
-    </span>
+    It parks between prompts and wakes with its work intact.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-5">
     <a
@@ -88,9 +77,57 @@
   </p>
 </section>
 
-<%!-- How it works, directly under the hero. The reader has no prior model for
+<%!-- Proof comes before the implementation detail. A reader sees one measured
+      production use before the page asks them to parse the primitives and five
+      code blocks.
+
+      The agent never holds a cluster credential. It cannot merge for a
+      different reason: GitHub refuses a self-approval from the account that
+      clones, pushes a branch and opens the request. Keep those mechanisms
+      separate in the copy.
+
+      "Cluster" stays in the heading because it is familiar on a homepage.
+      "Estate" is accurate in the disclosure after the paragraph defines it. --%>
+<section class="max-w-5xl mx-auto px-6 pt-8 pb-16">
+  <div
+    class="rounded-2xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-8 sm:p-12"
+    data-role="case-study-callout"
+  >
+    <.eyebrow label="Case study" align={:left} />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+      A cluster that answers its own alerts.
+    </h2>
+    <p class="mt-4 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
+      A Kubernetes cluster used to page a person when a workload broke. Now it also starts an agent, which finds the commit that broke it and opens one small pull request. The agent never holds a credential for the cluster it is fixing, and a person still merges the request.
+    </p>
+    <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
+      <div :for={stat <- case_stats()}>
+        <dt
+          class="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+          data-role="figure"
+        >
+          {stat.value}
+        </dt>
+        <dd class="mt-1.5 text-xs leading-snug text-[var(--color-accent-ink)]">{stat.label}</dd>
+      </div>
+    </dl>
+    <p class="mt-8 max-w-2xl text-xs text-[var(--color-text-secondary)]">
+      Counted over {case_window()} on one production estate, a Kubernetes cluster carrying live production workloads. Numbers reported by the cluster administrator (us).
+    </p>
+    <div class="mt-8">
+      <a
+        href={~p"/case-studies/self-healing-infrastructure"}
+        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-accent-line)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+      >
+        Follow the whole incident
+      </a>
+    </div>
+  </div>
+</section>
+
+<%!-- How it works, directly after the proof. The reader has no prior model for
       the category, so the shape comes before the argument and the SDK call is
-      the second thing on the page rather than the fourth.
+      near the top of the page rather than buried under the feature inventory.
 
       This used to follow the six-question grid and open with "Everything above
       is three rows and one call". That pointed backwards at a section the
@@ -345,106 +382,6 @@
   </dl>
 </section>
 
-<%!-- Proof. One deployment, in production, with its own numbers.
-
-      This is the one place the accent is spent on a whole panel rather than a
-      six-pixel rule, because it is the only section on the page carrying
-      measurements from a real estate rather than a claim about the product.
-      The four numbers are the peak of the light half of the page: they are
-      set larger than any heading below the hero, which is the ranking they
-      deserve and the one they did not have when they matched the body text
-      around them.
-
-      THE LAST SENTENCE IS THE CREDENTIAL, NOT THE MERGE. Two mechanisms hold
-      this agent and they are not the same one. It never holds a cluster
-      credential, which is the `0` stat directly below and the thing it is
-      unable to do. It cannot merge, which is GitHub refusing a self-approval
-      from an account that does hold a token: it clones, pushes a branch and
-      opens the request. Copy that says the keys are kept away from the agent
-      and then points at the merge has fused the two, and the merge half is
-      false.
-
-      The paragraph leads on the credential because that is the reader's
-      actual fear (.agents/product-marketing.md calls handing a real
-      credential to a model "the product's best material"), and because the
-      stat under it counts exactly that. It sets the number up rather than
-      restating its note, which already reads "No kubectl, no kubeconfig, no
-      write path of its own".
-
-      It used to end "the mechanism stopping it is not a system prompt". True,
-      and it only lands for a reader who already knows a system prompt is the
-      usual way an agent gets constrained, which is a lot to assume in the
-      last clause of a card. A credential the agent was never given is the
-      same argument without the prerequisite.
-
-      The h2 says "cluster" and the rest of the case study says "estate". That
-      is on purpose and it is the only place the two differ. "Estate" is the
-      right word for what the story is about, which is a whole footprint and
-      not one cluster: alerts, Prometheus, node health, controller drift and
-      the repositories behind them. It is also enterprise IT vocabulary, more
-      at home in the UK than here, and .agents/product-marketing.md names the
-      enterprise buyer as the anti-persona. In American English the first
-      prior for the word is real estate.
-
-      A reader deep in the case study has been given the gloss ("The estate is
-      a Kubernetes cluster carrying live production workloads") and can afford the
-      word. A reader scanning the homepage has not, and this heading is where
-      they decide whether the section is for them. It also used to disagree
-      with its own paragraph, which opens "A Kubernetes cluster used to page a
-      person": the unfamiliar word in the heading, the familiar one for the
-      same thing a line later. --%>
-<section class="max-w-5xl mx-auto px-6 pt-8 pb-16">
-  <div
-    class="rounded-2xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-8 sm:p-12"
-    data-role="case-study-callout"
-  >
-    <.eyebrow label="Case study" align={:left} />
-    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-      A cluster that answers its own alerts.
-    </h2>
-    <p class="mt-4 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-      A Kubernetes cluster used to page a person when a workload broke. Now it also starts an agent, which finds the commit that broke it and opens one small pull request. The agent never holds a credential for the cluster it is fixing, and a person still merges the request.
-    </p>
-    <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
-      <div :for={stat <- case_stats()}>
-        <dt
-          class="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--color-text-primary)]"
-          data-role="figure"
-        >
-          {stat.value}
-        </dt>
-        <dd class="mt-1.5 text-xs leading-snug text-[var(--color-accent-ink)]">{stat.label}</dd>
-      </div>
-    </dl>
-    <p class="mt-8 max-w-2xl text-xs text-[var(--color-text-secondary)]">
-      Counted over {case_window()} on one production estate, a Kubernetes cluster carrying live production workloads. Numbers reported by the cluster administrator (us).
-    </p>
-    <div class="mt-8 flex flex-col sm:flex-row gap-3">
-      <a
-        href={~p"/case-studies/self-healing-infrastructure"}
-        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-accent-line)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-      >
-        Follow the whole incident
-      </a>
-      <%!-- The page's second ask. The first is the hero and the next one was
-            1,300 words further down, so a reader convinced by the six claims
-            above had nowhere to act without scrolling back. cd2745fa had two
-            mid-page asks and 5cf40e2c dropped both; this is that pattern
-            restored. It sits beside the proof rather than alone under it,
-            where it read as a stray button on an empty band, and it stays in
-            the secondary style so it does not compete with the hero and the
-            closer. The label matches them on purpose. One primary action,
-            worded once. --%>
-      <a
-        href={~p"/auth/register"}
-        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg text-sm font-medium text-[var(--color-accent-ink)] hover:underline underline-offset-4"
-      >
-        Run your first agent free
-      </a>
-    </div>
-  </div>
-</section>
-
 <%!-- The band. Two sections about how a run behaves over time, on one tint
       with a rule between them rather than two tinted bands with a page
       between, because they answer the same question. --%>
@@ -462,7 +399,7 @@
     </h2>
     <div class="mt-10 max-w-2xl mx-auto space-y-5 text-[var(--color-text-secondary)] leading-relaxed">
       <p>
-        A conversation binds to an id you already have, a customer, a ticket or a Slack channel. The next prompt for that id and that agent continues it, so there is no lookup table to keep.
+        A conversation binds to an id you already have, such as a customer id, ticket id or Slack channel. The next prompt for that id and that agent continues it, so there is no lookup table to keep.
       </p>
       <p>
         It parks when nobody is typing and wakes with its files intact. Put one on a schedule and it runs with nobody there at all.
@@ -613,7 +550,7 @@
       Start from an app that already works.
     </h2>
     <p class="mt-3 text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto text-lg">
-      Each is static files in a browser on the same public API your key opens, with no backend of its own. Read the source, take what you need, or point it at your own instance.
+      Each app is a static frontend over the same public API. Read its source, borrow what you need, or point it at your own instance.
     </p>
     <div class="mt-10 grid md:grid-cols-3 gap-6">
       <article
@@ -660,9 +597,9 @@
 
     <p class="mt-12 text-center text-[var(--color-text-secondary)]">
       <span class="font-medium text-[var(--color-text-primary)]">
-        People build whole products on it.
+        {length(built_apps_flat())} open-source apps are running on it now.
       </span>
-      {length(built_apps_flat())} are open source and running now, and in several nothing on screen says the word agent.
+      In several, nothing on screen says the word agent.
     </p>
     <ul class="mt-6 flex flex-wrap justify-center gap-2">
       <li
@@ -799,7 +736,7 @@
       <div class="mt-6 space-y-4 text-sm text-[var(--color-ink-secondary)] leading-relaxed">
         <p>
           <span class="font-medium text-[var(--color-ink-text)]">
-            Credit is the whole product.
+            Credit is the whole pricing model.
           </span>
           The opening grant expires; credit you buy never expires and is spent after
           it, in packs of {credit_packs()}.
@@ -873,7 +810,7 @@
         Run the whole thing yourself.
       </h2>
       <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
-        You are not locked in. The same API, SDK and CLI run on your own hardware, with no license key and nobody to ask first.
+        The same API, SDK and CLI run on your own hardware. There is no license key and nobody to ask first.
       </p>
 
       <div class="mt-10 max-w-2xl mx-auto space-y-4 text-[var(--color-ink-secondary)] leading-relaxed">
@@ -941,7 +878,7 @@
       </h2>
       <div class="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-sm text-[var(--color-ink-secondary)] max-w-lg">
-          Every limit is written down on the questions page, beside what a security reviewer asks, and every answer names a mechanism you can check rather than an intention we state.
+          Read every limit and review the security model yourself. Each answer names a mechanism you can check, not an intention you have to trust.
         </p>
         <div class="flex flex-col sm:flex-row gap-3 sm:shrink-0">
           <a
