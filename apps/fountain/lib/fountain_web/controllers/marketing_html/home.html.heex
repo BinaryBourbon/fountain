@@ -157,8 +157,8 @@
 </section>
 
 <%!-- The problem and the answer, in one pass. The h2 concedes the reader's
-      complaint and claims it; each card states one thing they get for that,
-      and the closer hands the product back.
+      complaint and claims it, and each card states one thing they get for
+      that. The section ends on the grid.
 
       The cards were questions until they stopped needing to be. A question
       grid asks a reader who already holds the problem to re-derive it, and
@@ -177,12 +177,81 @@
       This is also the page's only mention of a Vault, so it states the
       HashiCorp collision before the feature (standards/voice-and-style.md).
 
-      Three elements, three jobs. The h2 names the problem and claims it, the
-      grid shows the mechanisms, and the closer hands the product back. The
-      lead-in only puts the reader at the moment after the demo worked. It used
-      to end "none of them is your product", which is the closer's line 270
-      words early, and it used to count the cards, which the reader can see and
-      which is the move 6291ec55 took out of this same paragraph.
+      EVERY dt IS AN IMPERATIVE. Six of them read down one left edge, so the
+      grammar is part of the shape: a list that changes person between items
+      reads as six unrelated claims rather than one inventory. These ran a noun
+      phrase, an imperative, a negative noun phrase, "You never" and "You can"
+      across six cards before this rule was written down. "You can" also hedges
+      a claim the page is entitled to make outright.
+
+      No dd repeats its own dt. Two of them did: the card about the pull
+      request opened by restating the headline, and the card about the
+      Environment ended on the reuse the headline had already promised.
+
+      The imperative fits five of these cleanly, because five are things the
+      reader does with the product. The audit card is a capability they have
+      afterwards without acting, so the mood has to be earned rather than
+      applied: "Say what changed" made the reader the speaker when the system
+      is the one that recorded, and read as an instruction to confess. The verb
+      has to name something they really do against the trail. If a future card
+      is a property rather than an action and no honest verb presents itself,
+      the rule is wrong for that card and it is better to break it in one place
+      than to force a sentence nobody would write.
+
+      A DENIED CHORE HAS TO HURT. Naming an ops chore only to take it away is
+      the register this section wants, and two cards do it: "without a
+      redeploy", and the credential that never enters the sandbox. It works
+      because a redeploy is expensive and memorable. It did not work for
+      "Never parse a runtime's output", where the denied chore is one jq
+      filter, and selling the absence of a small chore cost the card the two
+      larger things `Blocks` actually does: one renderer across four dialect
+      parsers (claude, codex, gemini, opencode in `legacy_blocks.ex`, plus
+      ACP), and tool calls and approval requests as first-class kinds rather
+      than scraped text.
+
+      A third property is deliberately not on the card. Stored transcripts
+      survive a runtime change, because each event keeps the parser that
+      produced it (0014, #642). It is the most valuable thing here to a reader
+      who has already been bitten by it and the least legible to everyone
+      else, and it needed a subordinate clause about a hypothetical past to
+      say at all, on the card that was already the longest of the six. It
+      belongs in `docs/`, where a reader has the context to want it.
+
+      NO dt MAY NAME AN OPS CHORE. The h2 two lines above says the reader did
+      not set out to run a sandbox platform, so a card that opens "Set the
+      machine up" hands back the job the section just took away, six words
+      after taking it. The reader's verb is declarative: they describe a
+      machine, they do not build or configure one, and an Environment names a
+      filesystem rather than installing one. The same trap is open to "install",
+      "provision", "configure" and "wire up".
+
+      A reuse claim counts runs, not Agents. `environment_id` sits on both
+      `agents` and `conversations`, so "point every agent at it" was true and
+      still the wrong axis: an account has a handful of Agents and an unbounded
+      number of runs, and only the second number makes writing the Environment
+      down once worth anything. "Run" over "Conversation" here because the card
+      already introduces one primitive and the page is not owed a second one in
+      the same four lines.
+
+      Two elements, two jobs. The h2 names the problem and claims it, and the
+      grid shows the mechanisms. The lead-in only puts the reader at the moment
+      after the demo worked, and that is all it does: it used to carry a second
+      sentence saying what the h2 had just said, in the register of the h2. It
+      used to end "none of them is your product" and it used to count the
+      cards, which the reader can see and which is the move 6291ec55 took out
+      of this same paragraph.
+
+      THERE IS NO CLOSER, AND THAT IS THE DECISION. The section used to end on
+      a line handing the product back, and three versions of it failed the same
+      way. "That machine, that vault and that owner" dangled a noun that
+      appeared nowhere else on the page. The triad that replaced it fixed the
+      noun by listing the grid back at the reader. "You keep the product" alone
+      was the only part of that pair doing any work, and on the page it was one
+      short line stranded in the section's bottom padding with the case study
+      panel below it, which reads as something unfinished rather than as a last
+      beat. The grid is the argument and it ends on its own. Anything added
+      here has to be a claim the six cards do not already make, and the two
+      that were tried were both a summary of them.
 
       This is the first of the two sections that set their heading against the
       left edge instead of the centre. Six items of dense reference read down a
@@ -194,7 +263,7 @@
     You did not set out to run a sandbox platform. We did.
   </h2>
   <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl text-lg">
-    The agent was the easy part. Under it is everything you would have built next.
+    The agent was the easy part.
   </p>
   <%!-- A definition list, which is what the page uses for a claim and the
         mechanism behind it (the protocols, the limits and the case study all
@@ -208,10 +277,10 @@
   <dl class="mt-12 grid sm:grid-cols-2 gap-x-12 gap-y-9">
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        One setup, every agent you run.
+        Describe the machine once, then launch every run from it.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        An Environment names the filesystem, the packages, the checkout and the network. You list it, diff it and launch from it, and the next agent points at the same one.
+        An Environment names the filesystem, the packages, the checkout and the network. You list it and diff it like any other object you keep under version control.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
@@ -224,21 +293,21 @@
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Nothing to build to get the work out.
+        Let the agent open the pull request itself.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The agent holds the checkout and the credential, so it opens the pull request itself. Nothing has to carry a diff back out of the sandbox.
+        It already holds the checkout and the credential, so nothing has to carry a diff back out of the sandbox.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        You never parse a runtime's output.
+        Render one shape, whatever runtime produced it.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Await the run and read one field. Or stream with <code
+        Text, thinking, tool calls and their results, and approval requests arrive as the same blocks from every runtime. Ask for them with <code
           class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
           phx-no-format
-        >?blocks=true</code> and the server parses each runtime's dialect, so you render one shape.
+        >?blocks=true</code>.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
@@ -246,21 +315,18 @@
         Pick up where the agent left off.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A parked sandbox holds the checkout and the work in progress, and wakes on the next message with the files where the agent left them. Nobody has to remember to turn it off.
+        A parked sandbox holds the checkout and the work in progress, and wakes on the next message with the files where the agent left them. It takes none of your concurrency while it waits.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        You can say what changed, and who changed it.
+        Trace what changed, and who changed it.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
         Every change is recorded where it happens, not where the request arrived. An update names the fields that moved and never their values. Agents are versioned, and each conversation records the version it ran under.
       </dd>
     </div>
   </dl>
-  <p class="mt-12 text-lg text-[var(--color-text-primary)] max-w-2xl">
-    {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the product.
-  </p>
 </section>
 
 <%!-- Proof. One deployment, in production, with its own numbers.
