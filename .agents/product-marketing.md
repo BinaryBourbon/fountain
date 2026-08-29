@@ -272,10 +272,16 @@ worked incident; 7.5 minute median incident to verdict; 0 cluster credentials
 the agent holds. Twelve fix pull requests opened, eight merged, four of those a
 rehearsal fault raised on purpose.
 
-The estate is a Kubernetes cluster carrying live production workloads and the
-numbers are its own. **Say that whenever the numbers appear.** It is not a
-hobby cluster and copy must not imply one; the disclosure is that the numbers
-are self-reported from a single estate, not that the estate is small. The agent's definition is
+The estate is a Kubernetes cluster carrying live production workloads. We run
+it and we took the measurements. **Say both whenever the numbers appear.**
+
+The disclosure is provenance, not size. Every number is self-reported from a
+single estate rather than audited or drawn from a customer, and that is what a
+reader is owed. It is not a hobby cluster and copy must not imply one: "a
+private cluster run by one person" conceded smallness, which is neither true
+nor the thing being disclosed. "The numbers are its own" then failed the other
+way, because a possessive asserts nothing about who measured. Name the two
+facts plainly, that we run it and that we counted. The agent's definition is
 public at `jhgaylor/agent-specs`.
 
 **Customers:** GAP. No named customers or logos.
