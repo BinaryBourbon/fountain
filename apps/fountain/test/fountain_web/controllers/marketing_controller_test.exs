@@ -234,6 +234,10 @@ defmodule FountainWeb.MarketingControllerTest do
       assert kubernetes_at < first_boot_at
       assert readiness_at < register_at
       assert register_at < conversation_at
+
+      # A connector belongs only between adjacent rungs. Drawing one as the
+      # border of the whole list leaves a dangling line below the last node.
+      assert length(Regex.scan(~r/data-role="ownership-connector"/, body)) == 3
     end
 
     test "the deploy guide follows the same first-boot order", %{conn: _conn} do

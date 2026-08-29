@@ -101,13 +101,20 @@
     <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
       Run the control plane, add machines from your network, or remove the last hosted dependency. Each step is configuration, not a sales conversation.
     </p>
-    <ol class="mt-8 sm:mt-10 ml-3 border-l-2 border-[var(--color-border-strong)]">
+    <ol class="mt-8 sm:mt-10 ml-3">
       <li
         :for={rung <- ownership_rungs()}
-        class="grid grid-cols-[auto_1fr] gap-4 sm:gap-6 pb-6 sm:pb-8"
+        class="relative grid grid-cols-[auto_1fr] gap-4 sm:gap-6 pb-6 sm:pb-8"
         data-role="rung"
       >
-        <div class="-ml-[13px] flex items-start gap-3">
+        <span
+          :if={rung.step != "04"}
+          class="absolute -left-px top-[18px] -bottom-[18px] w-0.5 bg-[var(--color-border-strong)]"
+          data-role="ownership-connector"
+          aria-hidden="true"
+        >
+        </span>
+        <div class="relative z-10 -ml-3 flex items-start gap-3">
           <span
             class="mt-1.5 h-6 w-6 shrink-0 rounded-full bg-[var(--color-brand)] ring-4 ring-[var(--color-bg-1)]"
             aria-hidden="true"
@@ -123,7 +130,7 @@
         </div>
       </li>
     </ol>
-    <p class="ml-0 sm:ml-6 border-l-2 border-[var(--color-brand)] pl-5 sm:pl-6 text-[var(--color-text-secondary)] leading-relaxed max-w-[74ch]">
+    <p class="mt-2 sm:mt-3 ml-0 sm:ml-6 border-l-2 border-[var(--color-brand)] pl-5 sm:pl-6 text-[var(--color-text-secondary)] leading-relaxed max-w-[74ch]">
       A model key is the one thing you still bring, and you always did. The agent bills your own provider account for tokens, so nothing in the middle takes a cut of inference. <a
         href={~p"/docs/integrations/runners"}
         class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
