@@ -6,6 +6,116 @@ defmodule FountainWeb.MarketingHTML do
   embed_templates "marketing_html/*"
 
   @doc """
+  The homepage's build sequence: one beat per document, plus the call.
+
+  Each beat annotates the code beside it rather than sitting in a column of
+  prose next to a column of code. The earlier shape put three steps against
+  three stacked blocks, which left a third of a column of text beside a full
+  page of YAML and gave the Vault no beat at all even though the heading
+  counts it.
+
+  `nil` for `:n` is the connector, which is unnumbered because applying the
+  file is not one of the three templates and is not the call either.
+
+  Every key in the YAML is one the CLI reads. `manifest.go` decodes a
+  `---`-separated file document by document, and `fountain apply` reconciles
+  these three kinds and no others (`docs/cli.md`). `op://` is a documented
+  secret-manager reference, which is what lets the manifest be committed
+  rather than carry a plaintext token on a public page.
+
+  The Agent is named `reviewer` because that is the agent `sdk_example/0`
+  hires in the last beat. Renaming it here means renaming it there.
+
+  The Vault beat argues rate of change rather than the HashiCorp collision.
+  The collision is stated once on this page, in the "Whose token does it push
+  with?" card below, which is where a reader meets the word with an
+  explanation attached.
+  """
+  def build_steps do
+    [
+      %{
+        n: 1,
+        title: "Describe the machine once.",
+        body:
+          "Repositories, packages, env vars, setup scripts. Write it in the " <>
+            "console, or keep it in git.",
+        code: """
+        # fountain.yml
+        apiVersion: fountain.dev/v1
+        kind: Environment
+        metadata:
+          name: app
+        spec:
+          repositories:
+            - url: https://github.com/acme/app
+              mount_path: /work/app
+              secret_key: GITHUB_TOKEN
+          setup_script: cd /work/app && npm install\
+        """
+      },
+      %{
+        n: 2,
+        title: "Keep the credentials apart.",
+        body:
+          "They are their own document, so rotating a token is not an edit to " <>
+            "the machine, and one machine can run as you or as a bot.",
+        code: """
+        apiVersion: fountain.dev/v1
+        kind: Vault
+        metadata:
+          name: ci-bot
+        spec:
+          secrets:
+            GITHUB_TOKEN: op://Private/github/token\
+        """
+      },
+      %{
+        n: 3,
+        title: "Name the agent.",
+        body:
+          "Pick the runtime and model, add skills and MCP servers, attach the " <>
+            "Environment. Or start from a ready-made one.",
+        code: """
+        apiVersion: fountain.dev/v1
+        kind: Agent
+        metadata:
+          name: reviewer
+        spec:
+          runtime: claude
+          model: anthropic/claude-sonnet-5
+          environment: app\
+        """
+      },
+      %{
+        n: nil,
+        title: "One file, three documents.",
+        body:
+          "Separate them with --- and apply once. It creates what is new and " <>
+            "updates what changed.",
+        code: "fountain apply -f fountain.yml"
+      },
+      %{
+        n: 4,
+        title: "Send a prompt.",
+        body:
+          "A sandbox spawns and the agent works, streaming as it goes. Send " <>
+            "another prompt and the machine is still there with its work on it.",
+        code: sdk_example()
+      }
+    ]
+  end
+
+  @doc "The three manifest documents, joined as the one file `apply` reads."
+  def apply_example do
+    build_steps()
+    |> Enum.filter(&(&1.code =~ "kind: "))
+    |> Enum.map_join("\n---\n", & &1.code)
+  end
+
+  @doc "The kinds `fountain apply` supports. `apply_example/0` may name no other."
+  def apply_kinds, do: ~w(Environment Vault Agent)
+
+  @doc """
   The SDK call on the homepage, kept out of the template so its braces are not
   HEEx.
 
@@ -83,7 +193,7 @@ defmodule FountainWeb.MarketingHTML do
         question: "What ends up in your logs?",
         answer:
           "Every secret value you registered that is eight bytes or longer is replaced " <>
-            "with [REDACTED] before the log row is written, not after. The transcript " <>
+            "with [REDACTED] before the log line is written, not after. The transcript " <>
             "we store never held it.",
         limit:
           "The match is on exact bytes. A value the agent re-encodes, splits or prints " <>
@@ -95,7 +205,7 @@ defmodule FountainWeb.MarketingHTML do
           "Every user-facing query is scoped by account. The few unscoped internal " <>
             "reads carry an _unsafe_ prefix so a reviewer can grep for all of them in " <>
             "one command, and a cross-tenant isolation suite in CI asserts the scoped " <>
-            "endpoints answer 404 on somebody else's row.",
+            "endpoints answer 404 on another account's data.",
         limit: nil
       },
       %{
@@ -998,7 +1108,7 @@ defmodule FountainWeb.MarketingHTML do
         step: "01",
         title: "The app",
         body:
-          "Your container, your Postgres, your domain. Conversations, transcripts, audit rows and API keys live in a database you can open with psql."
+          "Your container, your Postgres, your domain. Conversations, transcripts, audit events and API keys live in a database you can open with psql."
       },
       %{
         step: "02",

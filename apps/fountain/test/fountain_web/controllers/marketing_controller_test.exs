@@ -681,7 +681,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "the homepage opens each one and links its source", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
 
-      assert body =~ "Or use the apps we built on it."
+      assert body =~ "Start from an app that already works."
 
       for app <- FountainWeb.MarketingHTML.flagship_apps() do
         assert body =~ app.name, "the homepage does not name #{app.name}"
@@ -779,5 +779,47 @@ defmodule FountainWeb.OpenGraphTest do
 
   test "the card image is served" do
     assert File.exists?(Application.app_dir(:fountain, "priv/static/images/og-card.png"))
+  end
+
+  describe "the homepage manifest" do
+    alias FountainWeb.MarketingHTML
+
+    # docs/cli.md is diffed against the real CLI by cli/internal/cmd/docs_test.go.
+    # A marketing snippet has no such guard, which is how `run.output` and
+    # `--external-id` reached the site. These are that guard.
+
+    test "names only the kinds `fountain apply` supports" do
+      kinds =
+        Regex.scan(~r/^kind: (\w+)$/m, MarketingHTML.apply_example()) |> Enum.map(&List.last/1)
+
+      assert kinds == MarketingHTML.apply_kinds(),
+             "the manifest names a kind `fountain apply` does not reconcile, or dropped one"
+    end
+
+    test "is a multi-document file, which is the only reason one apply covers three" do
+      assert MarketingHTML.apply_example() |> String.split("\n---\n") |> length() ==
+               length(MarketingHTML.apply_kinds())
+    end
+
+    test "defines the agent the SDK call underneath hires" do
+      [_, name] =
+        Regex.run(~r/kind: Agent\nmetadata:\n  name: (\S+)/, MarketingHTML.apply_example())
+
+      assert MarketingHTML.sdk_example() =~ ~s(agent: "#{name}"),
+             "the manifest defines agent #{name} and the call beside it hires a different one"
+    end
+
+    test "carries no plaintext secret onto the page" do
+      assert MarketingHTML.apply_example() =~ "op://",
+             "the manifest should reference a secret manager, not inline a token"
+    end
+
+    test "the homepage renders it, and the command that applies it", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      assert body =~ "This is everything you write."
+      assert body =~ "fountain apply -f fountain.yml"
+      assert body =~ "kind: Environment"
+    end
   end
 end

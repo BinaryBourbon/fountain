@@ -81,8 +81,14 @@
             </span>
           </a>
           <p class="mt-3 max-w-xs text-[var(--color-text-muted)]">
+            <%!-- Uncontracted, like every other line on the site: "who'd" was the
+                  only contraction on any marketing page. It also said "for teams",
+                  which the homepage's own limits contradict ("An account is one
+                  person. No organizations, no seats, no single sign-on"), and this
+                  footer runs on every marketing page. No meter claim here either,
+                  so it stays true on a deployment that prices nothing. --%>
             <span :if={Fountain.Marketing.site?()}>
-              Managed agent infrastructure for teams who'd rather build than configure.
+              Run coding agents on machines you do not have to manage.
             </span>
             <span :if={!Fountain.Marketing.site?()}>Powered by Fountain.</span>
           </p>

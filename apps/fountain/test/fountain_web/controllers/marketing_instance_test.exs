@@ -31,7 +31,7 @@ defmodule FountainWeb.MarketingInstanceTest do
       refute body =~ "You did not set out to run a sandbox platform."
       refute body =~ "A hundred tickets is a hundred calls, not an architecture."
       refute body =~ "14-day trial"
-      refute body =~ "Managed agent infrastructure"
+      refute body =~ "machines you do not have to manage"
 
       # The Open Graph card follows the same rule: no pitch, only what it is.
       assert body =~
@@ -172,7 +172,7 @@ defmodule FountainWeb.MarketingInstanceTest do
 
       body = conn |> get(~p"/") |> html_response(200)
       assert body =~ "You did not set out to run a sandbox platform."
-      assert body =~ "Managed agent infrastructure"
+      assert body =~ "machines you do not have to manage"
       refute body =~ "This instance runs agents on sandboxes"
     end
   end

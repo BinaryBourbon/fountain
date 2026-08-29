@@ -33,9 +33,9 @@ defmodule FountainWeb.OpenGraph do
   @spec default_description() :: String.t()
   def default_description do
     if Fountain.Marketing.site?() do
-      "#{Fountain.Brand.name()} is a conversational API to a computer. Send a " <>
-        "prompt, a sandbox with your repositories and credentials does the work, " <>
-        "and you pay for the minutes it works."
+      "#{Fountain.Brand.name()} is a conversational API to a computer. The " <>
+        "machine arrives with your repositories and credentials, and the meter " <>
+        "runs while an agent works and stops while the machine waits."
     else
       "#{Fountain.Brand.name()} runs agents on sandboxes and serves their " <>
         "conversations over an API."
