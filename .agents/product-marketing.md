@@ -272,8 +272,10 @@ worked incident; 7.5 minute median incident to verdict; 0 cluster credentials
 the agent holds. Twelve fix pull requests opened, eight merged, four of those a
 rehearsal fault raised on purpose.
 
-The estate is a private Kubernetes cluster run by one person and the numbers are
-its own. **Say that whenever the numbers appear.** The agent's definition is
+The estate is a Kubernetes cluster carrying live production workloads and the
+numbers are its own. **Say that whenever the numbers appear.** It is not a
+hobby cluster and copy must not imply one; the disclosure is that the numbers
+are self-reported from a single estate, not that the estate is small. The agent's definition is
 public at `jhgaylor/agent-specs`.
 
 **Customers:** GAP. No named customers or logos.
