@@ -31,6 +31,7 @@ defmodule Fountain.AuditGuardrailTest do
     Conversations,
     Environments,
     InferenceCredentials,
+    OAuth,
     Vaults,
     Webhooks
   }
@@ -114,6 +115,11 @@ defmodule Fountain.AuditGuardrailTest do
     {"secret binding create", &__MODULE__.do_binding_create/1, "secret_binding.created"},
     {"secret binding update", &__MODULE__.do_binding_update/1, "secret_binding.updated"},
     {"secret binding delete", &__MODULE__.do_binding_delete/1, "secret_binding.deleted"},
+    # OAuth clients an account registers for itself (#1125): a client is a
+    # standing way to obtain a full-scope key, so its life is trail-worthy.
+    {"oauth client create", &__MODULE__.do_oauth_client_create/1, "oauth_client.created"},
+    {"oauth client update", &__MODULE__.do_oauth_client_update/1, "oauth_client.updated"},
+    {"oauth client delete", &__MODULE__.do_oauth_client_delete/1, "oauth_client.deleted"},
     {"connection connect", &__MODULE__.do_connection_connect/1, "connection.created"},
     {"connection revoke", &__MODULE__.do_connection_revoke/1, "connection.revoked"},
     {"credit grant", &__MODULE__.do_credit_grant/1, "credit.granted"},
@@ -268,6 +274,18 @@ defmodule Fountain.AuditGuardrailTest do
 
   def do_vault_delete(user) do
     {:ok, _} = Vaults.delete_vault(insert_vault(user_id: user.id))
+  end
+
+  def do_oauth_client_create(user) do
+    {:ok, _} = OAuth.create_client(user.id, oauth_client_attrs())
+  end
+
+  def do_oauth_client_update(user) do
+    {:ok, _} = OAuth.update_client(insert_oauth_client(user_id: user.id), %{"name" => "renamed"})
+  end
+
+  def do_oauth_client_delete(user) do
+    {:ok, _} = OAuth.delete_client(insert_oauth_client(user_id: user.id))
   end
 
   def do_buzz_create(user), do: {:ok, _} = Buzz.create_identity(buzz_attrs(user))
