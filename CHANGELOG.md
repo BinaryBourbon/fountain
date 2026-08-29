@@ -121,6 +121,30 @@ upgrade, is in
   rather than to one runner. See ADR 0036.
 
 ### Changed
+- **The homepage sells the reader an outcome, and shows the manifest.** Every
+  section heading and every claim on `/` now says what the reader gets rather
+  than what Fountain does. The six claims that were questions ("How does the
+  work get out?") are statements of value ("Nothing to build to get the work
+  out"), rendered as a definition list like the rest of the page rather than
+  as the only bordered cards on it. The hero subheadline drops the two
+  sentences the headline already made and gives the meter a sentence of its
+  own, and the Open Graph description follows it. `build_steps/0` holds a new
+  `fountain apply` manifest beside the SDK call, one document per beat, so the
+  section that promises three templates and one call shows all four; the suite
+  asserts it names only the kinds `apply` reconciles, stays multi-document,
+  carries no plaintext secret, and defines the agent the call beside it hires.
+  The case study moved from the seventh section to the third and now carries
+  the attribution its numbers require on the page where they appear, one
+  production estate over a stated window. The page gained a second
+  registration ask after the proof, so the gap between asks falls from about
+  1,300 words to 539. `/faq` keeps its links, folded into the limits section
+  instead of a band of its own. Calls to action name a result instead of
+  reading: "See it work in 40 lines", "Browse the endpoints", "Follow the
+  whole incident", "Get the answers". The word "row" leaves the marketing
+  pages, which described the primitives after a database table; they are
+  templates. The footer loses the site's only contraction and stops offering
+  something for "teams", which the same page's limits deny.
+
 - **The homepage says each thing once.** The page had grown to about 2,630
   rendered words across sixteen sections, and roughly half of that was the
   same claims restated. The concurrency rule was interpolated in four places,

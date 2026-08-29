@@ -15,16 +15,18 @@
     A conversational API to a computer.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Send a prompt over HTTP. A machine wakes with your repositories cloned, your packages installed and credentials the model never sees. An agent works, and the answer comes back.
-    <%!-- The meter is the differentiator, so it belongs in the hero. It is
-          also a claim only a billing deployment can make, and the same
-          `pricing?()` guard the price card uses keeps a free install from
-          making it. --%>
+    The machine arrives with your repositories cloned, your packages installed and credentials the model never sees.
+    <%!-- The meter is the differentiator, so it gets its own sentence rather
+          than the trailing clause of a fourth one. The h1 already says the
+          API and the answer coming back, so the subhead no longer narrates
+          them a second time. It is also a claim only a billing deployment
+          can make, and the same `pricing?()` guard the price card uses keeps
+          a free install from making it. --%>
     <span :if={pricing?()}>
-      It parks between messages, and you pay for the minutes it works.
+      The meter runs while an agent works and stops while the machine waits.
     </span>
     <span :if={!pricing?()}>
-      It parks between messages and wakes on the next one with its files intact.
+      It parks between messages and wakes with its work intact.
     </span>
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
@@ -38,7 +40,7 @@
       href={~p"/docs/tour"}
       class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
     >
-      Read the 40-line tour
+      See it work in 40 lines
     </a>
   </div>
   <p :if={pricing?()} class="text-xs text-[var(--color-text-muted)]">
@@ -49,120 +51,195 @@
   </p>
 </section>
 
-<%!-- The problem and the answer, in one pass. Each card is a question a
-      builder hits between a working demo and a shipped feature, and the
-      clause that closes it. This used to be two sections 800 words apart: six
-      questions here, then four "what you stop building" cards restating the
-      same mechanisms. One card per mechanism, and nothing below repeats it. --%>
+<%!-- How it works, directly under the hero. The reader has no prior model for
+      the category, so the shape comes before the argument and the SDK call is
+      the second thing on the page rather than the fourth.
+
+      This used to follow the six-question grid and open with "Everything above
+      is three rows and one call". That pointed backwards at a section the
+      reader had not been promised, and it named the primitives after a
+      database table. They are templates here and in
+      .agents/product-marketing.md. "Row" is not a marketing word. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      You did not set out to run a sandbox platform.
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+      This is everything you write.
     </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-      The agent was the easy part. Six questions sit between a demo and a feature, and none of them is your product.
-    </p>
-    <div class="grid sm:grid-cols-2 gap-6">
-      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
-          Where does it run?
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)]">
-          A filesystem, a shell, a package manager, a checkout, a network. An Environment describes that machine and a conversation spawns it. Every runtime sits behind one API.
-        </p>
-      </div>
-      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
-          How does it get a token that can push?
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)]">
-          Vaults are encrypted under a key derived for your account and arrive as environment variables. They reach the machine, never the prompt, and {Fountain.Brand.name()} scrubs them from every line of output it stores.
-        </p>
-      </div>
-      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
-          How does the work get out?
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)]">
-          It does not. The agent holds the checkout and the credential, so it opens the pull request itself.
-        </p>
-      </div>
-      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
-          How do I get an answer instead of a transcript?
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)]">
-          Await the run and read one field. Or stream with <code
-            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-            phx-no-format
-          >?blocks=true</code>: the server parses each runtime's dialect, so you render one shape.
-        </p>
-      </div>
-      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
-          Who turns the machines off?
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)]">
-          The platform. It starts a sandbox, parks it when the talk stops, wakes it on the next message, and stops it before the bill notices.
-        </p>
-      </div>
-      <div class="p-5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)]">
-        <h3 class="font-medium text-[var(--color-text-primary)] mb-2">
-          Who can say what it did?
-        </h3>
-        <p class="text-sm text-[var(--color-text-secondary)]">
-          Every change is recorded where it happens, not where the request arrived. Agents are versioned, and each conversation records the version it ran under.
-        </p>
+    <%!-- One beat per document. Each annotation sits on the row of the code it
+          describes, so the numbers line up with the thing they name instead of
+          stacking in a column beside a page of YAML. --%>
+    <div class="grid md:grid-cols-2 gap-x-10 gap-y-8 items-center">
+      <div :for={step <- build_steps()} class="contents">
+        <div class="flex items-start gap-4">
+          <span
+            :if={step.n}
+            class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center"
+          >
+            {step.n}
+          </span>
+          <%!-- The connector carries no number and still holds the column. --%>
+          <span :if={!step.n} class="flex-shrink-0 size-7" aria-hidden="true"></span>
+          <span class="text-[var(--color-text-secondary)]">
+            <span class="font-medium text-[var(--color-text-primary)]">{step.title}</span>
+            {step.body}
+          </span>
+        </div>
+        <pre
+          class="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+          phx-no-format
+        ><code>{step.code}</code></pre>
       </div>
     </div>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mt-10">
-      {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the product.
-    </p>
   </div>
 </section>
 
-<%!-- How it works --%>
+<%!-- The problem and the answer, in one pass. The h2 concedes the reader's
+      complaint and claims it; each card states one thing they get for that,
+      and the closer hands the product back.
+
+      The cards were questions until they stopped needing to be. A question
+      grid asks a reader who already holds the problem to re-derive it, and
+      after the hero and the manifest above there is nothing left to draw out
+      of them. Each h3 is now the claim and the body is the mechanism. This used to be two sections 800 words apart: six
+      questions here, then four "what you stop building" cards restating the
+      same mechanisms. One card per mechanism, and nothing below repeats it.
+
+      Nothing above repeats it either. The hero asserts the ready machine, the
+      unseen credential and the meter that stops, so the cards covering those
+      three take the next step instead. The template that outlives the run, the
+      identity a run borrows, and what a parked sandbox still holds. A card that
+      re-opens a claim the subheadline just made reads as the page doubting
+      itself.
+
+      This is also the page's only mention of a Vault, so it states the
+      HashiCorp collision before the feature (standards/voice-and-style.md).
+
+      Three elements, three jobs. The h2 names the problem and claims it, the
+      grid shows the mechanisms, and the closer hands the product back. The
+      lead-in only puts the reader at the moment after the demo worked. It used
+      to end "none of them is your product", which is the closer's line 270
+      words early, and it used to count the cards, which the reader can see and
+      which is the move 6291ec55 took out of this same paragraph. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-    Everything above is three rows and one call.
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+    You did not set out to run a sandbox platform. We did.
   </h2>
-  <div class="grid md:grid-cols-2 gap-10 items-start">
-    <ol class="space-y-6 text-[var(--color-text-secondary)]">
-      <li class="flex items-start gap-4">
-        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
-          1
-        </span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">
-            Describe the machine once.
-          </span>
-          Repositories, packages, env vars, setup scripts. Write it in the console, or apply YAML from the CLI.
-        </span>
-      </li>
-      <li class="flex items-start gap-4">
-        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
-          2
-        </span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">Name the agent.</span>
-          Pick the runtime and model, add skills and MCP servers, attach the Environment. Or start from a ready-made one.
-        </span>
-      </li>
-      <li class="flex items-start gap-4">
-        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
-          3
-        </span>
-        <span>
-          <span class="font-medium text-[var(--color-text-primary)]">Send a prompt.</span>
-          A sandbox spawns and the agent works, streaming as it goes. Send another and the machine is still there with its work on it.
-        </span>
-      </li>
-    </ol>
-    <pre
-      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
-      phx-no-format
-    ><code>{sdk_example()}</code></pre>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+    The agent was the easy part. Under it is everything you would have built next.
+  </p>
+  <%!-- A definition list, which is what the page uses for a claim and the
+        mechanism behind it (the protocols, the limits and the case study all
+        do). These six were the only bordered cards on the homepage. Six boxes
+        under three code blocks read as a pick-one feature grid, and these are
+        not separable features: they are one run in order, from the machine to
+        the trail it leaves. --%>
+  <dl class="grid sm:grid-cols-2 gap-x-10 gap-y-8">
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        One setup, every agent you run.
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        An Environment names the filesystem, the packages, the checkout and the network. You list it, diff it and launch from it, and the next agent points at the same one.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Change a credential without a redeploy.
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        A Vault is a small override layer for one run, not a central store like HashiCorp's, and its values win on collision. The same Environment runs as you, as a bot, or as your customer. {Fountain.Brand.name()} scrubs those values from every line of output it stores.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Nothing to build to get the work out.
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The agent holds the checkout and the credential, so it opens the pull request itself. Nothing has to carry a diff back out of the sandbox.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        You never parse a runtime's output.
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Await the run and read one field. Or stream with <code
+          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+          phx-no-format
+        >?blocks=true</code> and the server parses each runtime's dialect, so you render one shape.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Pick up where the agent left off.
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        A parked sandbox holds the checkout and the work in progress, and wakes on the next message with the files where the agent left them. Nobody has to remember to turn it off.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        You can say what changed, and who changed it.
+      </dt>
+      <dd class="mt-1 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Every change is recorded where it happens, not where the request arrived. An update names the fields that moved and never their values. Agents are versioned, and each conversation records the version it ran under.
+      </dd>
+    </div>
+  </dl>
+  <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mt-10">
+    {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the product.
+  </p>
+</section>
+
+<%!-- Proof. One deployment, in production, with its own numbers.
+
+      The section stays plain on purpose. The callout inside is bg-1 and is its
+      own visual break, so tinting the section too leaves a card the same
+      colour as its background. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <div
+    class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-8 sm:p-10"
+    data-role="case-study-callout"
+  >
+    <p class="text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+      Case study
+    </p>
+    <h2 class="mt-2 text-2xl font-semibold text-[var(--color-text-primary)]">
+      An estate that answers its own alerts.
+    </h2>
+    <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
+      A Kubernetes cluster used to page a person when a workload broke. Now it also hires an agent, which finds the commit that broke it and opens one small pull request. It cannot merge that request, and the mechanism stopping it is not a system prompt.
+    </p>
+    <dl class="mt-6 flex flex-wrap gap-x-10 gap-y-4">
+      <div :for={stat <- case_stats()}>
+        <dt class="text-2xl font-semibold text-[var(--color-text-primary)]">{stat.value}</dt>
+        <dd class="text-xs text-[var(--color-text-muted)]">{stat.label}</dd>
+      </div>
+    </dl>
+    <p class="mt-6 max-w-2xl text-xs text-[var(--color-text-muted)]">
+      Counted on one production estate over {case_window()}. It is a private Kubernetes cluster run by one person, and the numbers are its own.
+    </p>
+    <a
+      href={~p"/case-studies/self-healing-infrastructure"}
+      class="mt-8 inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      Follow the whole incident
+    </a>
   </div>
+  <%!-- The page's second ask. The first is the hero and the next one was 1,300
+          words further down, so a reader convinced by the six claims above had
+          nowhere to act without scrolling back. cd2745fa had two mid-page asks
+          and 5cf40e2c dropped both; this is that pattern restored, in the
+          secondary style so it does not compete with the hero and the closer.
+          The label matches them on purpose. One primary action, worded once. --%>
+  <p class="mt-10 text-center">
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      Run your first agent free
+    </a>
+  </p>
 </section>
 
 <%!-- The durable thread, told as the thing a builder maps onto their own ids
@@ -173,11 +250,11 @@
       section, not here. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-8 text-center">
-    One user, one machine, one thread that survives.
+    You keep no session state.
   </h2>
   <div class="max-w-2xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
     <p>
-      Bind a conversation to an id you already have: a customer, a ticket, a Slack channel, a database row. The next prompt for that id and that agent continues it, so there is no lookup table to keep.
+      A conversation binds to an id you already have, a customer, a ticket or a Slack channel. The next prompt for that id and that agent continues it, so there is no lookup table to keep.
     </p>
     <p>
       It parks when nobody is typing and wakes with its files intact. Put one on a schedule and it runs with nobody there at all.
@@ -191,7 +268,7 @@
       href={~p"/docs/api"}
       class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
     >
-      Read the API reference
+      Browse the endpoints
     </a>
   </p>
 </section>
@@ -328,59 +405,21 @@
         </dd>
       </div>
     </dl>
-  </div>
-</section>
-
-<%!-- Proof. One deployment, in production, with its own numbers. --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <div
-    class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-8 sm:p-10"
-    data-role="case-study-callout"
-  >
-    <p class="text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-      Case study
+    <%!-- The questions used to be a section of their own here, 48 words and a
+          tinted band whose only job was two links the footer already carries.
+          Limits and questions are the same beat for the same reader, so the
+          links close this section instead. Keep the `/faq#security` one: a
+          reader forwarding an answer wants one URL to forward, and a test
+          pins it. --%>
+    <p class="mt-10 text-center text-sm text-[var(--color-text-secondary)] max-w-2xl mx-auto">
+      More of them are on the questions page, beside what a security reviewer asks, each answer a mechanism rather than an intention.
     </p>
-    <h2 class="mt-2 text-2xl font-semibold text-[var(--color-text-primary)]">
-      An estate that answers its own alerts.
-    </h2>
-    <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-      A Kubernetes cluster used to page a person when a workload broke. Now it also hires an agent, which finds the commit that broke it and opens one small pull request. It cannot merge that request, and the mechanism stopping it is not a system prompt.
-    </p>
-    <dl class="mt-6 flex flex-wrap gap-x-10 gap-y-4">
-      <div :for={stat <- case_stats()}>
-        <dt class="text-2xl font-semibold text-[var(--color-text-primary)]">{stat.value}</dt>
-        <dd class="text-xs text-[var(--color-text-muted)]">{stat.label}</dd>
-      </div>
-    </dl>
-    <a
-      href={~p"/case-studies/self-healing-infrastructure"}
-      class="mt-8 inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-    >
-      Read the case study →
-    </a>
-  </div>
-</section>
-
-<%!-- The questions. Both blocks that used to sit here linked at /faq forty
-      words apart: one for the security review, one for the build objections.
-      They are one section now, with a button each, because the answers are on
-      one page. `security_answers/0`, `security_absent/0` and `build_faq/0`
-      render there. Keep the `/faq#security` link: a reader forwarding an
-      answer wants one URL to forward, and a test pins it. --%>
-<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-5xl mx-auto px-6 py-16 text-center">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3">
-      The questions you would ask before building on it.
-    </h2>
-    <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-8">
-      Whether you need a model key, whether your users need accounts here, what a machine does between messages. Beside them, what a security reviewer asks, each answer a mechanism rather than an intention.
-    </p>
-    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+    <div class="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
       <a
         href={~p"/faq"}
         class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
       >
-        Read the questions
+        Get the answers
       </a>
       <a
         href={~p"/faq#security"}
@@ -399,7 +438,7 @@
       or retired. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-    Or use the apps we built on it.
+    Start from an app that already works.
   </h2>
   <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
     Each is static files in a browser on the same public API your key opens, with no backend of its own. Read the source, take what you need, or point it at your own instance.
@@ -412,7 +451,9 @@
     >
       <div class="text-3xl leading-none" aria-hidden="true">{app.glyph}</div>
       <h3 class="mt-3 text-lg font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
-      <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">{app.flagship.like}</p>
+      <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">
+        {app.flagship.like}
+      </p>
       <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed flex-1">
         {app.blurb}
       </p>
