@@ -817,7 +817,7 @@ defmodule FountainWeb.OpenGraphTest do
     test "the homepage renders it, and the command that applies it", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
 
-      assert body =~ "This is everything you write."
+      assert body =~ "You write this once."
       assert body =~ "fountain apply -f fountain.yml"
       assert body =~ "kind: Environment"
     end
