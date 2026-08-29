@@ -272,8 +272,20 @@ worked incident; 7.5 minute median incident to verdict; 0 cluster credentials
 the agent holds. Twelve fix pull requests opened, eight merged, four of those a
 rehearsal fault raised on purpose.
 
-The estate is a private Kubernetes cluster run by one person and the numbers are
-its own. **Say that whenever the numbers appear.** The agent's definition is
+The estate is a Kubernetes cluster carrying live production workloads. Numbers
+reported by the cluster administrator (us). **Say both whenever the numbers
+appear, and keep the "(us)".** Without it the role noun reads as a neutral
+third party, on a page where the administrator and the seller are the same
+party. That conflict is the disclosure, so hiding it behind a job title is
+worse than saying nothing.
+
+The disclosure is provenance, not size. Every number is self-reported from a
+single estate rather than audited or drawn from a customer, and that is what a
+reader is owed. It is not a hobby cluster and copy must not imply one: "a
+private cluster run by one person" conceded smallness, which is neither true
+nor the thing being disclosed. "The numbers are its own" then failed the other
+way, because a possessive asserts nothing about who measured. Name the source
+and admit it is us. The agent's definition is
 public at `jhgaylor/agent-specs`.
 
 **Customers:** GAP. No named customers or logos.
