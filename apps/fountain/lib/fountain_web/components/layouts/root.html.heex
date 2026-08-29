@@ -111,7 +111,7 @@
       });
     </script>
     <%!-- Design tokens — must load before Tailwind CDN so CSS vars are defined --%>
-    <link rel="stylesheet" href="/assets/tokens.css" />
+    <link rel="stylesheet" href={FountainWeb.StaticVersion.tokens_css()} />
     <%!-- Tailwind CDN config: register token-backed colour utilities --%>
     <script>
       window.tailwind = window.tailwind || {};

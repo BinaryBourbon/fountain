@@ -83,6 +83,46 @@ defmodule FountainWeb.DesignTokensTest do
     end
   end
 
+  describe "the URL the layout links" do
+    @layout Path.expand(
+              "../../lib/fountain_web/components/layouts/root.html.heex",
+              __DIR__
+            )
+
+    test "carries the file's hash, so a deploy cannot land on a cached stylesheet" do
+      # #1258 shipped correct markup to production against a four-hour-old
+      # tokens.css, because the layout asked for the same URL it always had and
+      # the CDN answered from cache. The ink and accent tokens were undefined
+      # for every reader: a section designed dark had a transparent ground.
+      layout = File.read!(@layout)
+
+      refute layout =~ ~s(href="/assets/tokens.css"),
+             "the layout links the bare path, so a token change cannot reach a cached reader"
+
+      assert layout =~ "FountainWeb.StaticVersion.tokens_css()",
+             "the layout should link the versioned path"
+    end
+
+    test "the version is the hash of the file actually served" do
+      expected =
+        :sha256
+        |> :crypto.hash(File.read!(@served))
+        |> Base.encode16(case: :lower)
+        |> binary_part(0, 8)
+
+      assert FountainWeb.StaticVersion.tokens_version() == expected,
+             "the compiled hash is stale against priv/static/assets/tokens.css"
+
+      assert FountainWeb.StaticVersion.tokens_css() == "/assets/tokens.css?v=" <> expected
+    end
+
+    test "the served file is reachable at the path the layout asks for" do
+      "/" <> path = FountainWeb.StaticVersion.tokens_css() |> String.split("?") |> hd()
+      assert Path.basename(path) == Path.basename(@served)
+      assert "assets/tokens.css" == path
+    end
+  end
+
   describe "the marketing scales" do
     setup do
       %{tokens: Map.new(declarations(File.read!(@source)))}
