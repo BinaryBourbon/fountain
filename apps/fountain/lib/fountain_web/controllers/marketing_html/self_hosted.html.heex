@@ -73,11 +73,14 @@
         What each provider needs →
       </a>
     </p>
-    <p class="px-5 py-4 border-t border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] leading-relaxed">
+    <p
+      class="px-5 py-4 border-t border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] leading-relaxed"
+      data-role="kubernetes-option"
+    >
       <strong class="font-semibold text-[var(--color-text-primary)]">
-        Using Kubernetes instead?
+        Prefer Kubernetes?
       </strong>
-      Start from the plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>. They run the same release image and expect a Postgres of your own.
+      Use the plain manifests in <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">deploy/k8s/</code>—no operator or CRDs. They deploy the same release image as hosted Fountain against your Postgres.
       <a
         href={~p"/docs/guides/operate/kubernetes"}
         class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
@@ -88,52 +91,44 @@
   </div>
 </section>
 
-<%!-- 01. Four ownership boundaries, not four optional tiers. The control
-      plane and master key come with self-hosting, sandbox machines are a
-      choice, and inference stays on the reader's provider account. --%>
+<%!-- 01. Four ownership boundaries, with the operator for each one stated
+      directly. These are not progressive tiers, so they are cards rather
+      than a numbered ladder. --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
     <.eyebrow label="01 · Ownership" align={:left} />
     <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
-      Know exactly which parts of the stack are yours.
+      Run the control plane. Choose where the work runs.
     </h2>
-    <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[62ch]">
-      You run the control plane and database, and you hold the encryption key. You decide whether sandboxes run with a provider or on machines from your network. Inference stays on your model account.
+    <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[68ch]">
+      Fountain and Postgres run in your account, protected by a master key you hold. Use a hosted sandbox provider or connect machines from your network. Each user brings their own model credential, and Fountain never marks up inference.
     </p>
-    <ol class="mt-8 sm:mt-10 ml-3">
-      <li
-        :for={rung <- ownership_rungs()}
-        class="relative grid grid-cols-[auto_1fr] gap-4 sm:gap-6 pb-6 sm:pb-8"
-        data-role="rung"
+    <dl class="mt-8 sm:mt-10 grid sm:grid-cols-2 gap-6">
+      <div
+        :for={boundary <- ownership_boundaries()}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-5 sm:p-6"
+        data-role="ownership-boundary"
       >
-        <span
-          :if={rung.step != "04"}
-          class="absolute -left-px top-[18px] -bottom-[18px] w-0.5 bg-[var(--color-border-strong)]"
-          data-role="ownership-connector"
-          aria-hidden="true"
-        >
-        </span>
-        <div class="relative z-10 -ml-3 flex items-start gap-3">
-          <span
-            class="mt-1.5 h-6 w-6 shrink-0 rounded-full bg-[var(--color-brand)] ring-4 ring-[var(--color-bg-1)]"
-            aria-hidden="true"
-          >
+        <dt>
+          <span class="text-xs font-medium uppercase tracking-wide text-[var(--color-brand)]">
+            {boundary.status}
           </span>
-          <span class="text-2xl font-bold leading-none text-[var(--color-border-strong)]">
-            {rung.step}
+          <span class="mt-2 block text-xl font-semibold text-[var(--color-text-primary)]">
+            {boundary.title}
           </span>
-        </div>
-        <div class="max-w-[68ch]">
-          <h3 class="text-xl font-semibold text-[var(--color-text-primary)]">{rung.title}</h3>
-          <p class="mt-2 text-[var(--color-text-secondary)] leading-relaxed">{rung.body}</p>
-        </div>
-      </li>
-    </ol>
-    <p class="mt-2 sm:mt-3 ml-0 sm:ml-6 border-l-2 border-[var(--color-brand)] pl-5 sm:pl-6 text-[var(--color-text-secondary)] leading-relaxed max-w-[74ch]">
-      Want to own the sandbox machines too? <a
+        </dt>
+        <dd class="mt-3 text-[var(--color-text-secondary)] leading-relaxed">
+          {boundary.body}
+        </dd>
+      </div>
+    </dl>
+    <p class="mt-8 text-sm">
+      <a
         href={~p"/docs/integrations/runners"}
-        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-      >Read how a machine of yours becomes a sandbox</a>.
+        class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+      >
+        Run sandboxes on your own machines →
+      </a>
     </p>
   </div>
 </section>
@@ -158,58 +153,78 @@
 <%!-- 02. The three proofs after `docker compose up`, in operational order.
       Kubernetes is an alternative bring-up path beside the commands above,
       not a step in this sequence. --%>
-<section class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16">
+<section
+  class="max-w-6xl mx-auto px-5 sm:px-6 py-12 sm:py-16"
+  data-role="first-boot"
+>
   <.eyebrow label="02 · First boot" align={:left} />
   <h2 class="mt-3 text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
-    Prove the instance works before you expose it.
+    Three checks before you go live.
   </h2>
-  <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[60ch]">
-    The first boot runs migrations before opening a listener. Refused connections are normal for up to a minute. Wait for readiness, claim the first admin account, then run one conversation.
+  <p class="mt-4 text-[var(--color-text-secondary)] leading-relaxed max-w-[68ch]">
+    Give first boot up to a minute while migrations run. Then check readiness, create the first admin and disable registration, and run a conversation to test the complete path.
   </p>
   <div class="grid md:grid-cols-3 gap-6 mt-8">
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+    <div
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6"
+      data-role="first-boot-readiness"
+    >
       <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-        01 · Verify
+        01 · Ready
       </p>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Wait for readiness</h3>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">Check readiness</h3>
       <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Run <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">docker compose ps</code>. When the app reports healthy, probe it. An ok response proves Fountain can reach Postgres.
+        Wait for
+        <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">
+          docker compose ps
+        </code>
+        to report the app as healthy, then call the readiness endpoint. An
+        <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">
+          ok
+        </code>
+        database check means Fountain and Postgres are ready.
       </p>
       <pre class="mt-3 overflow-x-auto rounded-lg bg-[var(--color-code-bg)] p-3 sm:p-4 text-[11px] sm:text-xs text-[var(--color-code-text)]"><code phx-no-format>{health_probe()}</code></pre>
     </div>
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+    <div
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6"
+      data-role="first-boot-admin"
+    >
       <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-        02 · Claim
+        02 · Admin
       </p>
       <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">
-        Register the first admin
+        Create the first admin
       </h3>
       <p
         class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed"
         phx-no-format
-      >Now open <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">http://localhost:4000</code> and register. With the Compose defaults, the first account verifies itself and becomes admin. Do this before the instance is public, then close registration.</p>
+      >Open <code class="text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5">http://localhost:4000</code> and create your account. With the Compose defaults, Fountain verifies the first account and promotes it to admin. Do this before the instance is public, then disable registration.</p>
       <a
         href={~p"/docs/guides/operate/deploy#register-the-first-account"}
         class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
       >
-        Claim the instance safely →
+        Create the first admin safely →
       </a>
     </div>
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+    <div
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6"
+      data-role="first-boot-conversation"
+    >
       <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-        03 · Prove
+        03 · End to end
       </p>
       <h3 class="mt-3 font-semibold text-[var(--color-text-primary)]">
-        Start one conversation
+        Run an end-to-end conversation
       </h3>
       <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A run that reaches its first turn proves the database, master key and sandbox provider are wired together. Now the whole path is ready for your apps.
+        Add your model credential, then start a conversation. A run that reaches its first turn confirms Fountain can read Postgres, decrypt the credential, reach the model provider and start a sandbox.
       </p>
       <a
         href={~p"/docs/guides/operate/deploy#prove-the-whole-path"}
         class="inline-block mt-3 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
       >
-        Verify the whole deployment →
+        Run the end-to-end check →
       </a>
     </div>
   </div>

@@ -1137,32 +1137,32 @@ defmodule FountainWeb.MarketingHTML do
     ]
   end
 
-  @doc "The four ownership boundaries, from the control plane through inference."
-  def ownership_rungs do
+  @doc "The four ownership boundaries, with who controls each one."
+  def ownership_boundaries do
     [
       %{
-        step: "01",
-        title: "The control plane",
+        status: "Runs in your account",
+        title: "Control plane and database",
         body:
-          "Your container, your Postgres, your domain. Conversations, transcripts, audit events and API keys live in a database you can open with psql."
+          "The API, console, conversations, transcripts, audit events and API keys live in your deployment and Postgres."
       },
       %{
-        step: "02",
-        title: "The master key",
+        status: "Yours to protect",
+        title: "Master key",
         body:
-          "Self-hosting makes this key your responsibility. Fountain derives the keys that encrypt every tenant's environment variables from it, and never stores it in Postgres. Back it up with the database."
+          "You generate the key that encrypts every tenant's environment variables. Fountain never stores it in Postgres, so back it up with the database."
       },
       %{
-        step: "03",
-        title: "The sandbox machines",
+        status: "Hosted or yours",
+        title: "Sandbox compute",
         body:
-          "A Mac mini, a home server or a GPU box becomes a sandbox backend with one daemon. It dials out and holds one connection. There is no inbound port to open and no credential to hand it."
+          "Use a hosted sandbox provider or connect a Mac mini, home server or GPU box from your network. The runner dials out, so you open no inbound port and hand it no platform credential."
       },
       %{
-        step: "04",
+        status: "Your provider account",
         title: "Inference",
         body:
-          "Fountain does not replace your model provider. The agent uses your model key, and the provider bills your account directly. Fountain never adds a markup to token usage."
+          "Each user supplies their own model credential. Their provider bills them directly, and Fountain adds no markup to token usage."
       }
     ]
   end

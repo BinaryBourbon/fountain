@@ -207,7 +207,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "Run #{Fountain.Brand.engine()} on your infrastructure."
       assert body =~ "Your database, your keys and your sandboxes."
       assert body =~ "Six commands and one provider token."
-      assert body =~ "Prove the instance works before you expose it."
+      assert body =~ "Three checks before you go live."
       assert body =~ "On your instance, every feature flag is yours to set."
       assert body =~ "What it costs you instead."
 
@@ -221,29 +221,28 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ FountainWeb.MarketingHTML.repo_url()
 
-      {ownership_at, _} =
-        :binary.match(body, "Know exactly which parts of the stack are yours.")
+      {ownership_at, _} = :binary.match(body, ~s(data-role="ownership-boundary"))
 
       {prerequisites_at, _} = :binary.match(body, "Before you start")
       assert ownership_at < prerequisites_at
 
-      assert body =~ "The master key"
+      assert body =~ "Master key"
       assert body =~ "Inference"
       refute body =~ "The last vendor"
 
-      {kubernetes_at, _} = :binary.match(body, "Using Kubernetes instead?")
-      {first_boot_at, _} = :binary.match(body, "Prove the instance works before you expose it.")
-      {readiness_at, _} = :binary.match(body, "Wait for readiness")
-      {register_at, _} = :binary.match(body, "Register the first admin")
-      {conversation_at, _} = :binary.match(body, "Start one conversation")
+      {kubernetes_at, _} = :binary.match(body, ~s(data-role="kubernetes-option"))
+      {first_boot_at, _} = :binary.match(body, ~s(data-role="first-boot"))
+      {readiness_at, _} = :binary.match(body, ~s(data-role="first-boot-readiness"))
+      {register_at, _} = :binary.match(body, ~s(data-role="first-boot-admin"))
+
+      {conversation_at, _} =
+        :binary.match(body, ~s(data-role="first-boot-conversation"))
 
       assert kubernetes_at < first_boot_at
       assert readiness_at < register_at
       assert register_at < conversation_at
 
-      # A connector belongs only between adjacent rungs. Drawing one as the
-      # border of the whole list leaves a dangling line below the last node.
-      assert length(Regex.scan(~r/data-role="ownership-connector"/, body)) == 3
+      assert length(Regex.scan(~r/data-role="ownership-boundary"/, body)) == 4
     end
 
     test "the deploy guide follows the same first-boot order", %{conn: _conn} do

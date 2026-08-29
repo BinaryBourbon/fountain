@@ -1,8 +1,9 @@
 # Deploy an instance
 
-This guide shows you how to get a Fountain instance up with Docker Compose. It
-then shows you how to register the first account, and how to close
-registration behind you.
+This guide takes a Fountain instance from first boot to its first successful
+conversation with Docker Compose. You verify readiness, create the first admin
+account, close registration, and exercise the database, encryption, inference
+and sandbox provider end to end.
 
 For a development environment on your own machine, read
 [Setup](../../setup.md). That is a different thing. This guide is for an
@@ -65,13 +66,13 @@ curl -sS localhost:4000/health/ready
 # {"checks":{"database":"ok"},"status":"ok"}
 ```
 
-A refused connection means the app has not opened its listener yet. That is
-the normal state during a cold start, and not a failed install. Read
-`docker compose logs -f app` if it stays refused.
+Expect refused connections during first boot until migrations finish. If the
+app still refuses connections after a minute, inspect
+`docker compose logs -f app`.
 
 ## Register the first account
 
-Open <http://localhost:4000> and register. That is the whole first login.
+Open <http://localhost:4000> and create your account.
 
 The compose defaults are `EMAIL_DELIVERY=none` and `FIRST_USER_ADMIN=true`.
 Your account then self-verifies at registration, and Fountain promotes it to
@@ -95,8 +96,8 @@ echo "REGISTRATION_ENABLED=false" >> .env
 docker compose up -d
 ```
 
-Registration is open by default. Somebody will find an instance on the public
-internet that has registration open.
+Registration is open by default. Disable it immediately after you create the
+first admin and before you expose the instance to an untrusted network.
 
 ## Point the apps at it
 
@@ -129,10 +130,12 @@ console stops the offer.
 
 ## Prove the whole path
 
-Readiness proves that the app can reach Postgres. It does not exercise the
-master key or the sandbox provider. Sign in and create a conversation. A run
-that reaches its first turn proves that Fountain can read the database,
-decrypt the model key and start a sandbox through the provider.
+Readiness checks Fountain's connection to Postgres. It does not check
+encryption, inference credentials or the sandbox provider. In the console, add
+a model credential under Settings, then Inference credentials. Open
+Conversations and start a run. A first turn confirms that Fountain can read
+Postgres, decrypt the credential, reach the model provider and start a sandbox
+through the selected provider.
 
 ## Start over
 
