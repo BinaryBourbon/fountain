@@ -51,7 +51,7 @@ defmodule FountainWeb.MarketingPricingTest do
     body = conn |> get(~p"/") |> html_response(200)
 
     assert body =~ "How billing works"
-    assert body =~ "Credit is the whole product"
+    assert body =~ "Credit is the whole pricing model"
     assert body =~ "Agent time costs $0.25 an hour"
     assert body =~ "in packs of $10.00, $25.00, $100.00"
     assert body =~ "At zero, new work pauses; nothing dies"
@@ -69,6 +69,8 @@ defmodule FountainWeb.MarketingPricingTest do
 
   test "the hero quotes the opening credit", %{conn: conn} do
     body = conn |> get(~p"/") |> html_response(200)
+    assert body =~ "Run coding agents on ready machines."
+    assert body =~ "Pay only while they work."
     assert body =~ "$5.00 of credit to start"
   end
 
@@ -76,6 +78,8 @@ defmodule FountainWeb.MarketingPricingTest do
     Application.put_env(:fountain, :credits_enabled, false)
 
     body = conn |> get(~p"/") |> html_response(200)
+    assert body =~ "Run coding agents on ready machines."
+    refute body =~ "Pay only while they work."
     refute body =~ "You pay only while an agent is working."
     refute body =~ "per agent hour"
     refute body =~ "of credit to start"

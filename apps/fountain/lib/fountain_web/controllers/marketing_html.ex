@@ -795,7 +795,8 @@ defmodule FountainWeb.MarketingHTML do
               "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
             shows: "the event stream as blocks, and one sandbox behind many conversations",
             flagship: %{
-              like: "ChatGPT, except the model has a real computer and you can watch it use one.",
+              like:
+                "ChatGPT, except the model has a checkout and a shell, and you can watch it work.",
               who: "Open this one first. It is the whole platform with a face on it."
             }
           },
