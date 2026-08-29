@@ -26,7 +26,12 @@ defmodule FountainWeb.OAuthClientsLiveTest do
       |> render_submit()
 
     assert [client] = OAuth.list_clients(user.id)
-    assert client.redirect_uris == ["https://abc.sprites.app/callback", "http://localhost:5173/callback"]
+
+    assert client.redirect_uris == [
+             "https://abc.sprites.app/callback",
+             "http://localhost:5173/callback"
+           ]
+
     assert html =~ client.client_id
     assert html =~ "In development"
   end

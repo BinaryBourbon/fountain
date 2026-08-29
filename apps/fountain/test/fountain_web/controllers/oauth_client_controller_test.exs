@@ -70,11 +70,15 @@ defmodule FountainWeb.OAuthClientControllerTest do
       theirs = insert_oauth_client()
 
       assert conn |> get("/api/oauth/clients/#{theirs.id}") |> json_response(404)
-      assert conn |> patch("/api/oauth/clients/#{theirs.id}", %{"name" => "x"}) |> json_response(404)
+
+      assert conn
+             |> patch("/api/oauth/clients/#{theirs.id}", %{"name" => "x"})
+             |> json_response(404)
+
       assert conn |> delete("/api/oauth/clients/#{theirs.id}") |> json_response(404)
     end
 
-    test "updates the name and the redirect URIs, never the client_id", %{conn: conn, user: user} do
+    test "updates the name and the URIs, never the client_id", %{conn: conn, user: user} do
       client = insert_oauth_client(user_id: user.id)
 
       body =

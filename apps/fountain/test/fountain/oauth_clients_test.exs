@@ -102,6 +102,7 @@ defmodule Fountain.OAuthClientsTest do
 
     test "records oauth_client.created with the client_id and the URIs" do
       user = insert_verified_user()
+
       {:ok, client} =
         OAuth.create_client(user.id, %{"name" => "N", "redirect_uris" => ["https://n.test/c"]})
 
@@ -109,6 +110,7 @@ defmodule Fountain.OAuthClientsTest do
                user.id
                |> Audit.list_recent_for_user(20)
                |> Enum.filter(&(&1.action == "oauth_client.created"))
+
       assert event.resource_type == "oauth_client"
       assert event.resource_id == client.id
       assert event.metadata["client_id"] == client.client_id
@@ -249,7 +251,8 @@ defmodule Fountain.OAuthClientsTest do
     end
 
     test "a published client gets no port latitude" do
-      client = insert_oauth_client(redirect_uris: ["http://localhost:5173/callback"], published: true)
+      client =
+        insert_oauth_client(redirect_uris: ["http://localhost:5173/callback"], published: true)
 
       assert {:error, :redirect_uri_mismatch} =
                OAuth.validate_request(
