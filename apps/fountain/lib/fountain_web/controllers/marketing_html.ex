@@ -1543,35 +1543,45 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The window every number on the case study covers."
   def case_window, do: "11 to 25 August 2026"
 
-  @doc "The four headline numbers, counted over `case_window/0`."
+  @doc "The lead result and its three supporting numbers, counted over `case_window/0`."
   def case_stats do
     [
+      %{
+        value: "7.5 min",
+        label: "median alert-to-verdict time",
+        home_label: "median alert-to-verdict time",
+        note: "The longest investigation ran 50 minutes.",
+        emphasis: :lead
+      },
       %{
         value: "78",
         label: "alerts investigated by an agent",
         home_label: "alerts investigated",
-        note: "Fifteen days, one cluster, one runbook."
+        note: "Fifteen days, one cluster, one runbook.",
+        emphasis: :supporting
       },
       %{
         value: "12",
         label: "fix pull requests opened",
         home_label: "fix pull requests opened",
-        note: "Four came from the same planned rehearsal fault."
+        note: "Four came from the same planned rehearsal fault.",
+        emphasis: :supporting
       },
       %{
         value: "8",
         label: "fix pull requests merged",
         home_label: "fix pull requests merged",
-        note: "The agent could neither approve nor merge."
-      },
-      %{
-        value: "7.5 min",
-        label: "median alert-to-verdict time",
-        home_label: "median alert-to-verdict time",
-        note: "The longest investigation ran 50 minutes."
+        note: "The agent could neither approve nor merge.",
+        emphasis: :supporting
       }
     ]
   end
+
+  @doc "The result the case study leads with."
+  def case_lead_stat, do: Enum.find(case_stats(), &(&1.emphasis == :lead))
+
+  @doc "The counts that support the lead result."
+  def case_supporting_stats, do: Enum.filter(case_stats(), &(&1.emphasis == :supporting))
 
   @doc "The two observed intervals around the case study's human handoff."
   def case_handoff_metrics do
