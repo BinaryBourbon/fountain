@@ -323,8 +323,14 @@ defmodule FountainWeb.MarketingControllerTest do
       end
     end
 
-    test "the marketing nav and the homepage link to it", %{conn: conn} do
+    test "the homepage presents both ownership paths and links to the details", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
+
+      assert body =~ "Own as much of the stack as you want."
+      assert body =~ "Run the control plane yourself."
+      assert body =~ "Bring your own sandbox compute."
+      assert body =~ "By default, a runner uses trusted mode."
+      assert body =~ "Firecracker backend"
       assert body =~ ~p"/self-hosted"
     end
   end
