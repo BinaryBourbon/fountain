@@ -631,7 +631,15 @@ defmodule FountainWeb.MarketingControllerTest do
     test "the homepage and the marketing footer link to it", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
       assert body =~ ~p"/case-studies/self-healing-infrastructure"
-      assert body =~ "A cluster that answers its own alerts."
+      assert body =~ "The pager still rings. An agent starts working too."
+      assert body =~ "pages an on-call engineer and starts an agent at the same time"
+      assert body =~ "when it finds a repository fix"
+      assert body =~ "A person decides whether to merge."
+      refute body =~ "used to page a person"
+
+      for stat <- FountainWeb.MarketingHTML.case_stats() do
+        assert body =~ stat.home_label, "missing homepage label for #{stat.value}"
+      end
 
       {proof_at, _} = :binary.match(body, ~s(data-role="case-study-callout"))
       {setup_at, _} = :binary.match(body, "You write this once.")

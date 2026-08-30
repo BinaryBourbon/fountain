@@ -1484,21 +1484,25 @@ defmodule FountainWeb.MarketingHTML do
       %{
         value: "78",
         label: "incidents handled by an agent",
+        home_label: "incidents investigated",
         note: "Fifteen days, one cluster, one runbook."
       },
       %{
         value: "4m 27s",
         label: "from alert to open pull request",
+        home_label: "alert to open pull request in the incident below",
         note: "The incident below. The second took 4m 08s."
       },
       %{
         value: "7.5 min",
         label: "median incident, start to verdict",
+        home_label: "median investigation time",
         note: "The longest ran 50 minutes."
       },
       %{
         value: "0",
         label: "cluster credentials the agent holds",
+        home_label: "cluster credentials held by the agent",
         note: "No kubectl, no kubeconfig, no write path of its own."
       }
     ]
