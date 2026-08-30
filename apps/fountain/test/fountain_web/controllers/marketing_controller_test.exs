@@ -66,10 +66,20 @@ defmodule FountainWeb.MarketingControllerTest do
   end
 
   describe "GET /integrations" do
-    test "renders every protocol and what speaks it", %{conn: conn} do
+    test "renders every integration around the reader's starting point", %{conn: conn} do
       body = conn |> get(~p"/integrations") |> html_response(200)
 
-      assert body =~ "It speaks what your stack already speaks."
+      assert body =~ "Start a coding agent from the tools you already use."
+      assert body =~ "Start from what you have."
+      assert body =~ "Connect to the same agent four ways."
+      assert body =~ "Give the agent the tools it needs."
+      assert body =~ "Put the agent on a Nostr relay."
+
+      assert Enum.map(FountainWeb.MarketingHTML.client_protocols(), & &1.id) ==
+               ~w(agui acp openai api)
+
+      assert FountainWeb.MarketingHTML.tool_protocol().id == "mcp"
+      assert FountainWeb.MarketingHTML.outbound_protocol().id == "nostr"
 
       for name <- ~w(AG-UI ACP OpenAI-compatible MCP Nostr) do
         assert body =~ name, "missing protocol #{name}"
@@ -88,8 +98,8 @@ defmodule FountainWeb.MarketingControllerTest do
 
     test "carries its own card", %{conn: conn} do
       body = conn |> get(~p"/integrations") |> html_response(200)
-      assert body =~ ~s(<meta property="og:title" content="Integrations · Fountain")
-      assert body =~ ~s(<meta name="description" content="Fountain speaks AG-UI)
+      assert body =~ ~s(<meta property="og:title" content="Coding agent integrations · Fountain")
+      assert body =~ ~s(<meta name="description" content="Start a coding agent from your editor)
       assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/integrations")
     end
 
