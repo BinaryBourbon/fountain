@@ -694,6 +694,11 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "The sandbox has no kubectl and no kubeconfig."
       assert body =~ "install_members()"
 
+      # Orient the reader before presenting the agent's verbatim diagnosis.
+      {quote_context_at, _} = :binary.match(body, "The agent's root-cause paragraph")
+      {root_cause_at, _} = :binary.match(body, "Both modes call")
+      assert quote_context_at < root_cause_at
+
       # The incident is told with its own timestamps, not rounded prose.
       for event <- FountainWeb.MarketingHTML.case_timeline() do
         assert body =~ event.time, "missing timeline entry #{event.time}"
