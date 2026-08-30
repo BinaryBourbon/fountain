@@ -645,6 +645,26 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ FountainWeb.MarketingHTML.case_window()
     end
 
+    test "the median is the lead figure and the counts support it", %{conn: conn} do
+      lead = FountainWeb.MarketingHTML.case_lead_stat()
+      supporting = FountainWeb.MarketingHTML.case_supporting_stats()
+
+      assert lead.value == "7.5 min"
+      assert length(supporting) == 3
+      assert Enum.all?(supporting, &(&1.emphasis == :supporting))
+
+      for path <- [~p"/", ~p"/case-studies/self-healing-infrastructure"] do
+        body = conn |> get(path) |> html_response(200)
+
+        assert length(Regex.scan(~r/data-emphasis="lead"/, body)) == 1
+        assert length(Regex.scan(~r/data-emphasis="supporting"/, body)) == 3
+
+        {lead_at, _} = :binary.match(body, ~s(data-emphasis="lead"))
+        {supporting_at, _} = :binary.match(body, ~s(data-emphasis="supporting"))
+        assert lead_at < supporting_at
+      end
+    end
+
     test "carries its own card", %{conn: conn} do
       body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
 

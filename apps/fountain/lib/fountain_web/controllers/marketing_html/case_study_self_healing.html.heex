@@ -30,13 +30,37 @@
 <%!-- The numbers, counted once over a stated window (see case_window/0). --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
-    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-      <div :for={stat <- case_stats()} data-role="case-stat">
-        <p class="text-3xl font-semibold text-[var(--color-text-primary)]" data-role="figure">
-          {stat.value}
+    <div class="grid gap-10 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:items-center md:gap-14">
+      <% lead_stat = case_lead_stat() %>
+      <div data-role="case-stat" data-emphasis="lead">
+        <p
+          class="text-5xl sm:text-6xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+          data-role="figure"
+        >
+          {lead_stat.value}
         </p>
-        <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">{stat.label}</p>
-        <p class="mt-2 text-xs text-[var(--color-text-muted)] leading-relaxed">{stat.note}</p>
+        <p class="mt-2 text-base font-medium text-[var(--color-text-primary)]">
+          {lead_stat.label}
+        </p>
+        <p class="mt-3 text-sm text-[var(--color-text-muted)] leading-relaxed">
+          {lead_stat.note}
+        </p>
+      </div>
+      <div class="border-t border-[var(--color-border)] md:border-l md:border-t-0 md:pl-10">
+        <div
+          :for={stat <- case_supporting_stats()}
+          class="grid grid-cols-[4rem_1fr] gap-5 border-b border-[var(--color-border)] py-4 last:border-b-0 first:pt-0 md:first:pt-4"
+          data-role="case-stat"
+          data-emphasis="supporting"
+        >
+          <p class="text-2xl font-semibold text-[var(--color-text-primary)]" data-role="figure">
+            {stat.value}
+          </p>
+          <div>
+            <p class="text-sm font-medium text-[var(--color-text-primary)]">{stat.label}</p>
+            <p class="mt-1 text-xs text-[var(--color-text-muted)] leading-relaxed">{stat.note}</p>
+          </div>
+        </div>
       </div>
     </div>
     <p class="mt-8 text-center text-xs text-[var(--color-text-muted)]">

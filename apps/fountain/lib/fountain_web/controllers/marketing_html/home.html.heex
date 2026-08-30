@@ -97,19 +97,41 @@
     <p class="mt-4 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
       When a workload breaks, this Kubernetes cluster pages an on-call engineer and starts an agent at the same time. The agent investigates the alert and, when it finds a repository fix, opens one focused pull request. It never holds cluster credentials. A person decides whether to merge.
     </p>
-    <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
-      <div :for={stat <- case_stats()}>
+    <div class="mt-10 grid gap-8 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] sm:items-center sm:gap-10">
+      <% lead_stat = case_lead_stat() %>
+      <dl data-role="case-stat" data-emphasis="lead">
         <dt
-          class="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+          class="text-5xl sm:text-6xl font-semibold tracking-tight text-[var(--color-text-primary)]"
           data-role="figure"
         >
-          {stat.value}
+          {lead_stat.value}
         </dt>
-        <dd class="mt-1.5 text-xs leading-snug text-[var(--color-accent-ink)]">
-          {stat.home_label}
+        <dd class="mt-2 text-sm font-medium leading-snug text-[var(--color-text-primary)]">
+          {lead_stat.home_label}
         </dd>
-      </div>
-    </dl>
+        <dd class="mt-2 text-xs leading-relaxed text-[var(--color-accent-ink)]">
+          {lead_stat.note}
+        </dd>
+      </dl>
+      <dl class="border-t border-[var(--color-accent-line)] sm:border-l sm:border-t-0 sm:pl-8">
+        <div
+          :for={stat <- case_supporting_stats()}
+          class="grid grid-cols-[3.5rem_1fr] gap-4 border-b border-[var(--color-accent-line)] py-4 last:border-b-0 first:pt-0 sm:first:pt-4"
+          data-role="case-stat"
+          data-emphasis="supporting"
+        >
+          <dt
+            class="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+            data-role="figure"
+          >
+            {stat.value}
+          </dt>
+          <dd class="self-center text-xs leading-snug text-[var(--color-accent-ink)]">
+            {stat.home_label}
+          </dd>
+        </div>
+      </dl>
+    </div>
     <p class="mt-8 max-w-2xl text-xs text-[var(--color-text-secondary)]">
       Measured from {case_window()} on one Kubernetes cluster running live production workloads. Numbers reported by the cluster administrator (us).
     </p>

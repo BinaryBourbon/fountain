@@ -273,6 +273,8 @@ fail the gate in a manual, and that is by design.
 **Metrics:** The only sourced numbers are the case study's, counted on one
 production cluster over a stated window (11 to 25 August 2026) and held as
 literals in `marketing_html.ex` so they cannot quietly widen their own window.
+Lead the aggregate proof with the 7.5 minute median alert-to-verdict time. The
+alert and pull-request counts support that result rather than compete with it.
 78 alerts investigated by an agent; 4m 27s from alert to open pull request on
 the worked incident; 7.5 minute median alert to verdict; 0 cluster credentials
 the agent holds. Twelve fix pull requests opened, eight merged, four of those a
@@ -325,6 +327,7 @@ reader into someone who has seen the primitives compose.
 
 ## Changelog
 *Newest first. One line per revision: what changed and why.*
+- v6 (2026-08-29) — Proof hierarchy pass: lead the aggregate case with median alert-to-verdict time and make the alert and pull-request counts supporting evidence.
 - v5 (2026-08-29) — Case-study clarity pass: report alerts rather than incidents, show the full pull-request funnel, and describe the outcome as alert to pull request rather than self-healing.
 - v4 (2026-08-29) — Self-hosted clarity pass: lead with ownership, put the ownership decision before installation detail, and frame open-source apps as examples rather than customer proof.
 - v3 (2026-08-29) — Homepage clarity pass: lead with coding agents and the work-only meter, put production proof before implementation detail, and remove customer-shaped proof language.
