@@ -121,6 +121,14 @@ upgrade, is in
   rather than to one runner. See ADR 0036.
 
 ### Changed
+- **The homepage makes session state and the two scaling modes explicit.** A
+  caller binds a conversation to an id it already owns and sends the same
+  Agent, Environment and Vault to resume it, without keeping a lookup table of
+  Fountain conversation ids. The copy now limits the destroy-with-the-
+  conversation memory boundary to the default ephemeral mode. The Scale cards
+  name the choice it leads into: give each job its own sandbox, or use
+  persistent mode to share one checkout across conversations.
+
 - **The homepage protocols section starts with the integration outcome.** It
   now tells builders to put Fountain behind the stack they already use instead
   of leading with the REST API's internal layering. Each protocol description

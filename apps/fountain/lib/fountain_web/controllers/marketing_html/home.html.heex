@@ -385,24 +385,28 @@
 <div class="bg-[var(--color-band)] border-y border-[var(--color-border)]">
   <%!-- The durable thread, told as the thing a builder maps onto their own ids
         rather than as a coworker they message. The key is `channel_id`
-        (`Conversations.create/2`); it resumes a conversation for the same agent,
-        vault and environment, so the copy says "the same agent" rather than
-        claiming a global unique key. What parking *costs* belongs to the pricing
-        section, not here. --%>
+        (`Conversations.start_or_resume_conversation/2`); it resumes a
+        conversation for the same Agent, Environment and Vault rather than
+        acting as a global unique key. What parking *costs* belongs to the
+        pricing section, not here.
+
+        The memory boundary names the default ephemeral mode. A persistent
+        sandbox survives the end of one conversation, which is the second
+        choice in Scale directly below. --%>
   <section class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="State" />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
-      You keep no session state.
+      Use an id you already have. {Fountain.Brand.name()} keeps the session.
     </h2>
     <div class="mt-10 max-w-2xl mx-auto space-y-5 text-[var(--color-text-secondary)] leading-relaxed">
       <p>
-        A conversation binds to an id you already have, such as a customer id, ticket id or Slack channel. The next prompt for that id and that agent continues it, so there is no lookup table to keep.
+        Bind a conversation to a customer, ticket or Slack channel id. Send that id with the same Agent, Environment and Vault to resume the live conversation. You do not store or look up a {Fountain.Brand.name()} conversation id.
       </p>
       <p>
-        It parks when nobody is typing and wakes with its files intact. Put one on a schedule and it runs with nobody there at all.
+        Between prompts, the sandbox parks with its files intact. The next message or a scheduled run wakes it.
       </p>
       <p>
-        Its memory is the disk it runs on. End the conversation and the memory goes with it.
+        In the default mode, the disk belongs to that conversation. End the conversation and its workspace goes with it.
       </p>
     </div>
     <p class="mt-10 text-center">
@@ -410,12 +414,13 @@
         href={~p"/docs/api"}
         class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
       >
-        Browse the endpoints
+        See the conversation API
       </a>
     </p>
   </section>
 
-  <%!-- Scale. Two cards, both about fan-out. The published-ceiling card and the
+  <%!-- Scale. Two cards name the two axes: a sandbox per job, or many
+        conversations on one persistent sandbox. The published-ceiling card and
         provenance card that used to sit here moved to the limits and the
         "what you stop building" sections, which already owned those subjects;
         the closing "two honest limits" paragraph restated both and is gone.
@@ -425,30 +430,30 @@
     <div class="border-t border-[var(--color-border)] pt-16">
       <.eyebrow label="Scale" />
       <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
-        A hundred tickets is a hundred calls, not an architecture.
+        A hundred tickets take a hundred calls, not a new architecture.
       </h2>
       <p class="mt-3 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto text-lg">
         No queue to run, no worker pool to size, no image to bake per repository.
       </p>
 
       <div class="mt-10 grid sm:grid-cols-2 gap-6">
-        <%!-- fan-out: from your code, or from inside an agent --%>
+        <%!-- Default ephemeral mode: one isolated sandbox per job. --%>
         <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
           <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-            Fan out from your code, or from inside an agent
+            Give each job its own sandbox
           </h3>
           <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            One call starts one conversation, so a batch is a loop. Every sandbox carries the skill that starts more, so an agent splits its own work and collects the answers.
+            In the default mode, one call starts one conversation on its own sandbox. A batch is a loop. Every sandbox carries the bundled skill, so an agent can start more work and collect the replies.
           </p>
         </div>
 
         <%!-- ADR 0023: many conversations, one sandbox, with the real capacities --%>
         <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
           <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-            Or put many conversations on one machine
+            Or share one sandbox across conversations
           </h3>
           <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            Several conversations share one sandbox and take turns at once, each with its own transcript. Capacity depends on the runtime; a turn past it is refused, not queued.
+            Use persistent mode when many conversations need the same checkout. They keep separate transcripts and run up to the runtime's capacity. Work beyond that limit is refused, not queued.
           </p>
         </div>
       </div>

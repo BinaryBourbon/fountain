@@ -25,6 +25,22 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET / state and scale" do
+    test "names the resume key and both sandbox modes", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      assert body =~ "Use an id you already have. #{Fountain.Brand.name()} keeps the session."
+      assert body =~ "same Agent, Environment and Vault"
+      assert body =~ "In the default mode, the disk belongs to that conversation"
+      assert body =~ "See the conversation API"
+
+      assert body =~ "Give each job its own sandbox"
+      assert body =~ "Use persistent mode when many conversations need the same checkout"
+      assert body =~ "Work beyond that limit is refused, not queued"
+      refute body =~ "take turns at once"
+    end
+  end
+
   describe "GET /terms" do
     test "renders the terms of service with the configured identity", %{conn: conn} do
       body = conn |> get(~p"/terms") |> html_response(200)
