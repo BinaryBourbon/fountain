@@ -303,15 +303,15 @@
         Persistence depends on the backend.
       </dt>
       <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A provider without suspend support destroys an idle sandbox. The transcript survives, but the runtime starts fresh.
+        All four built-in backends support it: Sprites, E2B and Daytona park the sandbox, and a self-hosted runner keeps its workspace. A third-party backend without suspend support destroys an idle sandbox; the transcript survives, but the runtime starts fresh.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        A trusted runner is not a sandbox.
+        Runner trusted mode has no isolation.
       </dt>
       <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The default self-hosted runner executes as you, with your network and tools. Use the Firecracker backend on Linux with KVM when you need a microVM boundary.
+        The default self-hosted runner gives each conversation its own home directory, but its processes run as you, with the host's network and tools. There is no VM, container or egress policy. Use it on a machine where you would hand the agent a shell, or run the Firecracker backend on Linux with KVM to put each sandbox in a microVM.
       </dd>
     </div>
   </dl>
