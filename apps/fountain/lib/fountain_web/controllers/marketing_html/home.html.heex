@@ -469,17 +469,18 @@
       wrong cut. An app you start from is the alternative to writing against
       the protocols; running it yourself is the alternative to paying us. Each
       fork now sits beside the thing it forks. --%>
-<%!-- Bring your own stack. Four protocols, one of which is behind a flag, so
-      this is where the badge legend lives: it is the first badge a reader
-      meets, and everything above it is generally available. How to turn the
-      flag on is a docs question, not a homepage one. --%>
+<%!-- Put Fountain behind the stack the reader already uses. Four protocols,
+      one of which is behind a flag, so this is where the badge legend lives:
+      it is the first badge a reader meets, and everything above it is
+      generally available. How to turn the flag on is a docs question, not a
+      homepage one. --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <.eyebrow label="Protocols" />
   <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
-    Bring the stack you already have.
+    Put {Fountain.Brand.name()} behind the stack you already use.
   </h2>
   <p class="mt-3 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto text-lg">
-    Four protocols sit on the REST API, with a TypeScript SDK and a CLI over it. Whatever you use starts an agent with a URL and a key.
+    Your editor, framework, gateway or chat surface keeps speaking the same protocol. Give it a {Fountain.Brand.name()} URL and key to run any agent on your roster.
   </p>
 
   <dl class="mt-12 max-w-3xl mx-auto divide-y divide-[var(--color-border)]">
@@ -488,21 +489,21 @@
         Agent Client Protocol
       </dt>
       <dd class="mt-1 sm:mt-0 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        For an editor or a chat surface.
+        Connect an ACP editor or chat surface to any agent on your roster with
         <%!-- One line on purpose: brand_chrome_test.exs pins `>fountain acp</code>`,
               and HEEx renders a wrapped element with the whitespace it was
               written with. --%>
         <code
           class="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-2)] text-[var(--color-text-primary)]"
           phx-no-format
-        >fountain acp</code> points one at any agent on your roster.
+        >fountain acp</code>.
       </dd>
     </div>
 
     <div class="sm:flex sm:gap-8 py-5 first:pt-0 last:pb-0">
       <dt class="font-medium text-[var(--color-text-primary)] sm:w-56 sm:shrink-0">AG-UI</dt>
       <dd class="mt-1 sm:mt-0 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        For a coworker platform. One endpoint per agent, streaming each step.
+        Give a coworker platform one endpoint per agent, with every step streamed as it happens.
       </dd>
     </div>
 
@@ -511,7 +512,7 @@
         MCP, both directions
       </dt>
       <dd class="mt-1 sm:mt-0 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Your agents reach the servers you declare, and read the roster to message each other.
+        Let agents use the servers you declare, then expose the roster so they can delegate to each other.
       </dd>
     </div>
 
@@ -523,14 +524,14 @@
         </span>
       </dt>
       <dd class="mt-1 sm:mt-0 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        The shape every gateway speaks, where the model is an agent. Drops one into a LangChain loop as a subagent. It works; the shape can change. Ask and we turn it on.
+        Use an agent anywhere that accepts an OpenAI-compatible model, including as a LangChain subagent. Available on request while the response shape is in alpha.
       </dd>
     </div>
   </dl>
 
   <p class="mt-10 text-center text-sm">
     <a href={~p"/integrations"} class="text-[var(--color-brand)] hover:underline font-medium">
-      See what already speaks them
+      See what connects today
     </a>
   </p>
 </section>
