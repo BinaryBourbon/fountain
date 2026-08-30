@@ -1618,42 +1618,47 @@ defmodule FountainWeb.MarketingHTML do
     [
       %{
         time: "06:58:15",
-        title: "A sidecar is killed for memory",
+        title: "The repo-sync sidecar runs out of memory",
         body:
-          "PodOOMKilled on a container that syncs a checkout. The phone buzzes. " <>
-            "So does a webhook, which starts the agent."
+          "A PodOOMKilled alert fires for the container that keeps the checkout current. " <>
+            "Alertmanager sends it to the on-call engineer and the webhook at the same time."
       },
       %{
         time: "06:59:34",
-        title: "A second alert, same container",
-        body: "CPUThrottlingHigh, at 94.44%. Its own incident, its own agent."
+        title: "The same sidecar starts throttling",
+        body:
+          "CPUThrottlingHigh reports 94.44%. Alertmanager sends that alert through the " <>
+            "same route, starting a second investigation."
       },
       %{
         time: "07:02:42",
-        title: "The first pull request opens",
+        title: "The OOM investigation opens a pull request",
         body:
-          "Two files, nine lines added and four removed. The agent traced the " <>
-            "kill to a code path the limit never covered, and to the commit that " <>
-            "introduced it."
+          "The agent traces the memory spike to a package install that the sidecar's " <>
+            "limit never accounted for. The pull request changes two files: nine lines " <>
+            "added and four removed. It also names the commit that exercised the path."
       },
       %{
         time: "07:03:42",
-        title: "The second pull request opens",
+        title: "The CPU investigation opens a second pull request",
         body:
-          "Six lines added, two removed. The same root cause seen from the " <>
-            "other side, and the second agent said so rather than diagnose it again."
+          "The second run reaches the same root cause and references the first pull " <>
+            "request instead of repeating the diagnosis. Its diff adds six lines and " <>
+            "removes two."
       },
       %{
         time: "08:50:27",
-        title: "The on-call engineer wakes up and reads two pull requests",
+        title: "The on-call engineer reviews both pull requests",
         body:
-          "The throttling fix is merged. Flux reconciles on the webhook, and " <>
-            "the agent watches the container come back."
+          "The CPU fix is merged first. Flux reconciles the change, and the agent " <>
+            "watches the sidecar become healthy again."
       },
       %{
         time: "23:46:01",
-        title: "The memory fix follows",
-        body: "Nothing was on fire, so it waited for a proper read. That is the gate working."
+        title: "The OOM fix is merged after review",
+        body:
+          "The OOM pull request stays open until that evening. The agent could open it, " <>
+            "but it could not approve or merge it."
       }
     ]
   end

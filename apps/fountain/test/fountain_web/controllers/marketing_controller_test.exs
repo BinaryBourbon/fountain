@@ -565,7 +565,7 @@ defmodule FountainWeb.MarketingControllerTest do
       # timeline so editing one cannot leave the other behind: the hero would
       # otherwise keep advertising times the page below no longer tells.
       [alert | _] = timeline = FountainWeb.MarketingHTML.case_timeline()
-      first_pr = Enum.find(timeline, &(&1.title == "The first pull request opens"))
+      first_pr = Enum.find(timeline, &String.contains?(&1.title, "opens a pull request"))
 
       {:ok, alert_at} = Time.from_iso8601(alert.time)
       {:ok, first_pr_at} = Time.from_iso8601(first_pr.time)
