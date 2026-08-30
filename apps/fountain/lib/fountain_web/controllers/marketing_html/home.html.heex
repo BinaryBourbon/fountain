@@ -160,47 +160,74 @@
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-ink-text)] text-center">
       You write this once. Everything after it is a prompt.
     </h2>
-    <%!-- One beat per document, each annotation on the row of the code it
-          describes. `items-start` rather than `items-center`: the prose is two
-          lines and the code is twelve, and centring the short cell against the
-          tall one left a void the height of a paragraph beside every step. The
-          numeral now sits on the first line of the block it names.
+    <%!-- The three resources are one file, so they are one code block. On wide
+          screens its annotations occupy proportional rows beside it: 43/27/30
+          follows the documents' rendered line counts (including each `---`),
+          keeping every annotation level with the document it names. On narrow
+          screens the numbered annotations become a compact preface to the
+          manifest, where a side-by-side alignment would leave neither column
+          enough room.
 
           The code column is the wider of the two, because a wrapped line of
           YAML is a defect and a wrapped line of prose is not. --%>
-    <div class="mt-12 divide-y divide-[var(--color-ink-border)]">
-      <div
-        :for={step <- build_steps()}
-        class="grid md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-10 gap-y-5 items-start py-8 first:pt-0 last:pb-0"
-      >
-        <div class="flex items-start gap-4">
-          <%!-- Outlined rather than filled. A filled blue disc is the shape of
-                every button on the page, and these are not clickable. --%>
-          <span
-            :if={step.n}
-            class="mt-0.5 flex-shrink-0 size-7 rounded-full border border-[var(--color-accent)] text-[var(--color-accent)] text-xs font-semibold flex items-center justify-center"
+    <div class="mt-12">
+      <div class="grid md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-10 gap-y-5 items-stretch">
+        <div class="grid md:grid-rows-[43%_27%_30%]">
+          <div
+            :for={step <- Enum.take(build_steps(), 3)}
+            class="flex items-start gap-4 py-4 first:pt-0 last:pb-0 md:py-0 md:pr-4"
+            data-role="setup-manifest-annotation"
           >
-            {step.n}
-          </span>
-          <%!-- The connector carries no number and still holds the column, as
-                a rule rather than a gap, so the sequence reads as continuous
-                through the beat that applies it. --%>
-          <span
-            :if={!step.n}
-            class="mt-0.5 flex-shrink-0 size-7 flex items-center justify-center"
-            aria-hidden="true"
-          >
-            <span class="h-4 w-px bg-[var(--color-ink-border)]"></span>
-          </span>
-          <span class="text-[var(--color-ink-secondary)] leading-relaxed">
-            <span class="font-medium text-[var(--color-ink-text)]">{step.title}</span>
-            {step.body}
-          </span>
+            <%!-- Outlined rather than filled. A filled blue disc is the shape
+                  of every button on the page, and these are not clickable. --%>
+            <span class="mt-0.5 flex-shrink-0 size-7 rounded-full border border-[var(--color-accent)] text-[var(--color-accent)] text-xs font-semibold flex items-center justify-center">
+              {step.n}
+            </span>
+            <span class="text-[var(--color-ink-secondary)] leading-relaxed">
+              <span class="font-medium text-[var(--color-ink-text)]">{step.title}</span>
+              {step.body}
+            </span>
+          </div>
         </div>
         <pre
           class="min-w-0 rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+          data-role="setup-manifest"
           phx-no-format
-        ><code>{step.code}</code></pre>
+        ><code>{apply_example()}</code></pre>
+      </div>
+
+      <%!-- Applying the file and calling the agent happen after the manifest,
+            so they keep their own rows and code blocks. The connector carries
+            no number because applying is not another resource definition. --%>
+      <div class="mt-8 border-t border-[var(--color-ink-border)] divide-y divide-[var(--color-ink-border)]">
+        <div
+          :for={step <- Enum.drop(build_steps(), 3)}
+          class="grid md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-10 gap-y-5 items-start py-8 last:pb-0"
+        >
+          <div class="flex items-start gap-4">
+            <span
+              :if={step.n}
+              class="mt-0.5 flex-shrink-0 size-7 rounded-full border border-[var(--color-accent)] text-[var(--color-accent)] text-xs font-semibold flex items-center justify-center"
+            >
+              {step.n}
+            </span>
+            <span
+              :if={!step.n}
+              class="mt-0.5 flex-shrink-0 size-7 flex items-center justify-center"
+              aria-hidden="true"
+            >
+              <span class="h-4 w-px bg-[var(--color-ink-border)]"></span>
+            </span>
+            <span class="text-[var(--color-ink-secondary)] leading-relaxed">
+              <span class="font-medium text-[var(--color-ink-text)]">{step.title}</span>
+              {step.body}
+            </span>
+          </div>
+          <pre
+            class="min-w-0 rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+            phx-no-format
+          ><code>{step.code}</code></pre>
+        </div>
       </div>
     </div>
   </div>

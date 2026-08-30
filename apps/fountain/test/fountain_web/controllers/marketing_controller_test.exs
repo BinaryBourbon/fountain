@@ -925,5 +925,18 @@ defmodule FountainWeb.OpenGraphTest do
       assert body =~ "fountain apply -f fountain.yml"
       assert body =~ "kind: Environment"
     end
+
+    test "renders the three documents as one annotated code block", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      [manifest] =
+        Regex.run(~r/<pre[^>]*data-role="setup-manifest"[^>]*>.*?<\/pre>/s, body)
+
+      assert manifest =~ "kind: Environment"
+      assert manifest =~ "kind: Vault"
+      assert manifest =~ "kind: Agent"
+      assert length(Regex.scan(~r/^---$/m, manifest)) == 2
+      assert length(Regex.scan(~r/data-role="setup-manifest-annotation"/, body)) == 3
+    end
   end
 end
