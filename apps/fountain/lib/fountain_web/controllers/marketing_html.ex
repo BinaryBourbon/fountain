@@ -41,13 +41,12 @@ defmodule FountainWeb.MarketingHTML do
   end
 
   @doc """
-  The homepage's build sequence: one beat per document, plus the call.
+  The homepage's build sequence: three document annotations, apply, then call.
 
-  Each beat annotates the code beside it rather than sitting in a column of
-  prose next to a column of code. The earlier shape put three steps against
-  three stacked blocks, which left a third of a column of text beside a full
-  page of YAML and gave the Vault no beat at all even though the heading
-  counts it.
+  The first three beats annotate one `---`-separated manifest. Keeping their
+  source as individual documents lets each annotation stay attached to the
+  document it explains while `apply_example/0` renders the file the reader
+  actually writes.
 
   `nil` for `:n` is the connector, which is unnumbered because applying the
   file is not one of the three templates and is not the call either.
@@ -124,9 +123,7 @@ defmodule FountainWeb.MarketingHTML do
       %{
         n: nil,
         title: "One file, three documents.",
-        body:
-          "Separate them with --- and apply once. It creates what is new and " <>
-            "updates what changed.",
+        body: "Apply it once. It creates what is new and updates what changed.",
         code: "fountain apply -f fountain.yml"
       },
       %{
