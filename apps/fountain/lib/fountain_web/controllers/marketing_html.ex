@@ -1582,7 +1582,7 @@ defmodule FountainWeb.MarketingHTML do
         value: "12",
         label: "fix pull requests opened",
         home_label: "fix pull requests opened",
-        note: "Four came from the same planned rehearsal fault.",
+        note: "Sixty-six alerts ended with no repository fix to propose.",
         emphasis: :supporting
       },
       %{
