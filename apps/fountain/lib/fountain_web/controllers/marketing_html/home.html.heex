@@ -631,8 +631,9 @@
       question with two answers, so they share a surface.
 
       Questions is last before the ask, because a limit is the final thing
-      between a convinced reader and the button, and `/faq#security` is the URL
-      they forward to whoever has to approve it.
+      between a convinced reader and the button. The single link opens the full
+      set of answers rather than making the reader choose between two routes to
+      the same page.
 
       Four sections sharing one surface rather than one section, because a
       deployment that prices nothing renders no pricing and the rest has to
@@ -844,10 +845,8 @@
 
       What stays is the signpost, and it is not decoration. A page that sells
       hard and mentions no limit anywhere is the shape the voice standard
-      argues against, and the pinned `/faq#security` link (a test asserts it on
-      this page) is the one URL a reader forwards to somebody who has to
-      approve this. Both survive here without the homepage carrying a list that
-      goes stale as the tickets close.
+      argues against. The full FAQ carries both the limits and the security
+      answers without making the homepage offer two links to the same page.
 
       The h2 is what the reader gets, in the second person, like the rest of
       the page. It read "What it cannot do is written down", which is about the
@@ -859,8 +858,8 @@
       style.md is built on conceding the failure case and on answers that name
       mechanisms, and the server is open source, so "you do not have to take
       our word for it" is a statement about this repository rather than a
-      posture. The deck carries the mechanism-not-intention line underneath,
-      which is the proof of the heading rather than a restatement of it.
+      posture. The deck says what the answers give the reader: the enforced
+      boundary and the point where it ends.
 
       Left-aligned, which is what it was when it sat under the protocol list.
       It keeps that here for a different reason: it is the one section of the
@@ -875,22 +874,14 @@
       </h2>
       <div class="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-sm text-[var(--color-ink-secondary)] max-w-lg">
-          Read every limit and review the security model yourself. Each answer names a mechanism you can check, not an intention you have to trust.
+          Read every limit and review the security model yourself. The answers tell you what the software enforces and where it stops.
         </p>
-        <div class="flex flex-col sm:flex-row gap-3 sm:shrink-0">
-          <a
-            href={~p"/faq"}
-            class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-ink-text)] text-sm font-medium hover:bg-[var(--color-ink-2)] transition-colors"
-          >
-            Get the answers
-          </a>
-          <a
-            href={~p"/faq#security"}
-            class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-ink-text)] text-sm font-medium hover:bg-[var(--color-ink-2)] transition-colors"
-          >
-            The security answers
-          </a>
-        </div>
+        <a
+          href={~p"/faq"}
+          class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-ink-text)] text-sm font-medium hover:bg-[var(--color-ink-2)] transition-colors sm:shrink-0"
+        >
+          Get the answers
+        </a>
       </div>
     </div>
   </div>
@@ -898,22 +889,20 @@
 
 <%!-- Footer CTA. The last thing on the page, which is what a closer is.
 
-      The h2 is the page's own argument turned into an instruction. "You did
-      not set out to run a sandbox platform" opens the middle of the page; this
-      is the other end of it. The "What you get" grid used to close on "You
-      keep the product", which was a recap sitting under the six cards that had
-      just said it; here it is the ask, which is where it belongs.
+      The h2 names the job the reader came to do. The "What you get" grid used
+      to close on "You keep the product", which was a recap sitting under the
+      six cards that had just said it. Here the outcome becomes the ask.
 
       It used to read "A key, a call, and a machine you did not build", three
       nouns in a row that named the ingredients rather than the payoff. The
       machine you did not build is also the page's third telling of that idea
       by this point.
 
-      The deck is one sentence and three steps. It was three sentences: the
+      The deck is one sentence and four steps. It was three sentences: the
       steps, then a list of things that do not happen (no machine to provision,
       no card, nothing that renews), then the payoff. The middle sentence is
-      the hero's own fine print and the price card's, and the payoff is now the
-      heading above it.
+      the hero's own fine print and the price card's. The new line gives the
+      four steps a concrete finish instead.
 
       It says "model key", the phrase the other five marketing mentions use,
       and it names no surface. The protocols section a screen above ends
@@ -930,10 +919,10 @@
 ]}>
   <div class="max-w-5xl mx-auto px-6 py-20 text-center">
     <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-ink-text)] mb-4">
-      Go build the part that is yours.
+      Give your product a coding agent.
     </h2>
     <p class="text-[var(--color-ink-secondary)] mb-9 max-w-lg mx-auto text-lg leading-relaxed">
-      Sign up, paste a model key, and wire it into your product.
+      Sign up, paste a model key, configure your agent, and start each run with one API call.
     </p>
     <a
       href={~p"/auth/register"}
