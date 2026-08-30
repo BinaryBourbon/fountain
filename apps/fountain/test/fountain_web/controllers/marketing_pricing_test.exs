@@ -15,22 +15,21 @@ defmodule FountainWeb.MarketingPricingTest do
     :ok
   end
 
-  # Credits are the product (ADR 0031): the page quotes the hour price, the
-  # opening grant and the concurrency rule, all read from the same config the
-  # meter and the cap enforce.
-  test "the pricing section quotes the price per hour, the opening credit and the cap", %{
+  # Credits are the product (ADR 0031): the page quotes the hour price and the
+  # opening grant from the same config the meter enforces.
+  test "the pricing section quotes the price per hour and the opening credit", %{
     conn: conn
   } do
     body = conn |> get(~p"/") |> html_response(200)
 
     assert body =~ "You pay only while an agent is working."
+    assert body =~ "spend it only while a prompt is in flight"
     assert body =~ "$0.25"
-    assert body =~ "per agent hour"
+    assert body =~ "per active agent hour"
     assert body =~ "$5.00"
-    assert body =~ "to start, free"
-    assert body =~ "Good for 14 days"
-    assert body =~ "agents at once, at most"
-    assert body =~ "One more for every $2.00 you hold, from 2"
+    assert body =~ "free credit to start"
+    assert body =~ "No card required"
+    assert body =~ "Starter credit expires after 14 days"
     assert body =~ "Start with $5.00 free"
     # A monthly price renders as a number attached to "/mo". The bare string
     # would now match GET /v1/models in the protocols section.
@@ -42,24 +41,25 @@ defmodule FountainWeb.MarketingPricingTest do
   # not, would undercut it.
   test "the pricing section says parked and idle time cost nothing", %{conn: conn} do
     body = conn |> get(~p"/") |> html_response(200)
-    assert body =~ "An hour with a prompt in flight"
-    assert body =~ "A parked agent, an idle one"
-    assert body =~ "your own machine all cost nothing"
+    assert body =~ "One agent hour is one hour with a prompt in flight"
+    assert body =~ "Two agents working"
+    assert body =~ "Parked and idle agents cost nothing"
   end
 
   test "the page says what happens at zero and at the cap", %{conn: conn} do
     body = conn |> get(~p"/") |> html_response(200)
 
     assert body =~ "How billing works"
-    assert body =~ "Credit is the whole pricing model"
-    assert body =~ "Agent time costs $0.25 an hour"
-    assert body =~ "in packs of $10.00, $25.00, $100.00"
-    assert body =~ "At zero, new work pauses; nothing dies"
-    assert body =~ "Anything already running finishes"
-    # The cap rule is stated once now, on the price card, rather than restated
-    # under "How billing works" and again in the limits section.
-    assert body =~ "One more for every $2.00 you hold, from 2"
-    assert body =~ "is refused rather than queued"
+    assert body =~ "Purchased credit never expires"
+    assert body =~ "Add credit in packs of $10.00, $25.00, $100.00"
+    assert body =~ "Bring your own model key"
+    assert body =~ "Fountain bills agent time, not inference"
+    assert body =~ "Your balance sets your concurrency"
+    assert body =~ "Each $2.00 in your balance supports one agent working at a time"
+    assert body =~ "with a minimum of 2 and a maximum of 20"
+    assert body =~ "Starts beyond your limit are refused, not queued"
+    assert body =~ "At zero, new work pauses"
+    assert body =~ "Work already in flight finishes"
     # No rent or message price in test config, so the page says nothing about
     # contacts rather than quoting $0.
     refute body =~ "Teammate contacts come out of the same balance"
@@ -100,8 +100,8 @@ defmodule FountainWeb.MarketingPricingTest do
     )
 
     body = conn |> get("/") |> html_response(200)
-    assert body =~ "A phone number $3.00 a month, an email inbox $2.00 a month"
-    assert body =~ "a month up front"
+    assert body =~ "A phone number is $3.00 a month and an email inbox is $2.00 a month"
+    assert body =~ "billed in advance"
     assert body =~ "$0.02 an email and $0.02 a text, sent or received"
   end
 end

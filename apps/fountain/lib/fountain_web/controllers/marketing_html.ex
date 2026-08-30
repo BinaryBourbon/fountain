@@ -340,13 +340,13 @@ defmodule FountainWeb.MarketingHTML do
     parts =
       [
         card.number_month &&
-          "a phone number #{Fountain.Credits.format_cents(card.number_month)} a month",
+          "a phone number is #{Fountain.Credits.format_cents(card.number_month)} a month",
         card.inbox_month &&
-          "an email inbox #{Fountain.Credits.format_cents(card.inbox_month)} a month"
+          "an email inbox is #{Fountain.Credits.format_cents(card.inbox_month)} a month"
       ]
       |> Enum.reject(&is_nil/1)
 
-    if parts == [], do: nil, else: Enum.join(parts, ", ")
+    if parts == [], do: nil, else: Enum.join(parts, " and ")
   end
 
   def message_line do
