@@ -134,10 +134,11 @@ upgrade, is in
 
 ### Changed
 - **The Open Graph card carries the current product promise.** Link previews
-  now lead with ready machines and the work-only meter instead of the retired
-  "Have the conversation" headline. The 1200-by-630 card uses the marketing
-  site's paper and violet system, its alt text says the same thing the image
-  does, and the checked-in SVG and render script make the bitmap reproducible.
+  now lead with ready machines and their wake-work-park lifecycle instead of
+  the retired "Have the conversation" headline. The 1200-by-630 card uses the
+  marketing site's paper and violet system, its alt text says the same thing
+  the image does, and the checked-in SVG and render script make the bitmap
+  reproducible.
 
 - **The integrations page leads with the managed machine and the work-only
   meter.** Its hero now treats editors, chat apps, gateways, frameworks and

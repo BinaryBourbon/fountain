@@ -8,7 +8,7 @@
 
   <text x="78" y="240" fill="#1c1620" font-family="Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif" font-size="69" font-weight="600" letter-spacing="-1.5">Run coding agents</text>
   <text x="78" y="316" fill="#1c1620" font-family="Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif" font-size="69" font-weight="600" letter-spacing="-1.5">on ready machines.</text>
-  <text x="78" y="397" fill="#553196" font-family="Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif" font-size="43" font-weight="600" letter-spacing="-0.6">Pay only while they work.</text>
+  <text x="78" y="397" fill="#553196" font-family="Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif" font-size="43" font-weight="600" letter-spacing="-0.6">Wake for a prompt. Park when quiet.</text>
 
   <text x="80" y="480" fill="#5b5266" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="24">Repositories, packages and credentials arrive with the machine.</text>
   <text x="80" y="518" fill="#5b5266" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="24">It parks between prompts and wakes with its work intact.</text>
