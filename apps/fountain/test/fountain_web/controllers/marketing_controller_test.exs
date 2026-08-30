@@ -70,7 +70,10 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ "Know the boundary before you build on it."
       assert body =~ "The server is pre-1.0."
-      assert body =~ "A trusted runner is not a sandbox."
+      assert body =~ "All four built-in backends support it"
+      assert body =~ "Sprites, E2B and Daytona park the sandbox"
+      assert body =~ "Runner trusted mode has no isolation."
+      assert body =~ "There is no VM, container or egress policy."
     end
 
     test "uses the case-study figures with their provenance", %{conn: conn} do
