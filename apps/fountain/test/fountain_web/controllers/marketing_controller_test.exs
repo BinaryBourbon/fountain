@@ -196,7 +196,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "the marketing nav and the homepage link to it", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
       assert body =~ ~p"/built-with"
-      assert body =~ "open-source apps are running on it now."
+      assert body =~ "open-source apps already run on the public API."
     end
   end
 
@@ -728,6 +728,7 @@ defmodule FountainWeb.MarketingControllerTest do
                ~w(fountain-conversations fountain-team fountain-workbench)
 
       for app <- flagship do
+        assert app.flagship.homepage != ""
         assert app.flagship.like != ""
         assert app.flagship.who != ""
         assert app in FountainWeb.MarketingHTML.built_apps_flat(), "#{app.name} left the roster"
@@ -749,13 +750,15 @@ defmodule FountainWeb.MarketingControllerTest do
     test "the homepage opens each one and links its source", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
 
-      assert body =~ "Start from an app that already works."
+      assert body =~ "Use an app. Or build your own on the same API."
+      assert body =~ "Browse all #{FountainWeb.MarketingHTML.built_app_count()} apps"
 
       for app <- FountainWeb.MarketingHTML.flagship_apps() do
         assert body =~ app.name, "the homepage does not name #{app.name}"
         assert body =~ app.url, "the homepage does not open #{app.name}"
         assert body =~ app.source, "the homepage does not link #{app.name}'s source"
-        assert body =~ app.flagship.like, "the homepage drops #{app.name}'s framing"
+        assert body =~ app.flagship.homepage, "the homepage drops #{app.name}'s short description"
+        refute body =~ app.blurb, "the homepage expands #{app.name} into a catalog card"
       end
     end
 
