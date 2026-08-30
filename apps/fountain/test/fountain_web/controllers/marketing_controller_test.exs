@@ -69,7 +69,10 @@ defmodule FountainWeb.MarketingControllerTest do
     test "renders every integration around the reader's starting point", %{conn: conn} do
       body = conn |> get(~p"/integrations") |> html_response(200)
 
-      assert body =~ "Start a coding agent from the tools you already use."
+      assert body =~ "Your tools start the agent. Fountain runs the machine."
+      assert body =~ "No machine to manage. No idle time to pay for."
+      assert body =~ "Run your first agent free"
+      assert body =~ "Browse integration guides"
       assert body =~ "Start from what you have."
       assert body =~ "Connect to the same agent four ways."
       assert body =~ "Give the agent the tools it needs."
@@ -99,7 +102,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "carries its own card", %{conn: conn} do
       body = conn |> get(~p"/integrations") |> html_response(200)
       assert body =~ ~s(<meta property="og:title" content="Coding agent integrations · Fountain")
-      assert body =~ ~s(<meta name="description" content="Start a coding agent from your editor)
+      assert body =~ ~s(<meta name="description" content="Run coding agents from your editor)
       assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/integrations")
     end
 

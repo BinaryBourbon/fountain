@@ -74,9 +74,8 @@ defmodule FountainWeb.MarketingController do
         layout: {FountainWeb.Layouts, :marketing},
         page_title: "Coding agent integrations · #{Fountain.Brand.name()}",
         meta_description:
-          "Start a coding agent from your editor, chat app, gateway, framework " <>
-            "or code. #{Fountain.Brand.name()} connects over ACP, AG-UI, OpenAI-compatible " <>
-            "chat completions, MCP and its REST API."
+          "Run coding agents from your editor, chat app, framework, gateway or code. " <>
+            "#{Fountain.Brand.name()} manages ready sandboxes and charges only while agents work."
       )
     else
       redirect(conn, to: ~p"/docs/integrations/clients")

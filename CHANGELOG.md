@@ -121,6 +121,14 @@ upgrade, is in
   rather than to one runner. See ADR 0036.
 
 ### Changed
+- **The integrations page leads with the managed machine and the work-only
+  meter.** Its hero now treats editors, chat apps, gateways, frameworks and
+  code as ways into Fountain rather than the product itself. The machine is
+  provisioned, preserves its work and parks between turns, so the reader sees
+  the two differences in the first screen: there is no machine to manage and
+  no idle time to pay for. Registration and integration-guide actions now sit
+  beside that promise instead of appearing only at the bottom of the page.
+
 - **The homepage case study distinguishes investigation from resolution.** The
   pager still reaches an on-call engineer while an agent investigates in
   parallel, and the copy now says that a pull request follows only when the
