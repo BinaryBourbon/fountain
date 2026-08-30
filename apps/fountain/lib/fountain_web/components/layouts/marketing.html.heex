@@ -8,14 +8,14 @@
           {Fountain.Brand.name()}
         </span>
       </a>
-      <%!-- Six links in one flex row with no responsive rule: below about
+      <%!-- Seven links in one flex row with no responsive rule: below about
             700px "Integrations" ran over the wordmark and the rest left the
             viewport, on every marketing page. The links are the same list at
             both sizes, so `<details>` opens them under the header rather than
             a second nav duplicating them, and it needs no JavaScript. The site
             has no bundler (Tailwind is the play CDN), so a menu that depends
             on a script is a menu that depends on the CDN answering. --%>
-      <details class="sm:hidden relative group" data-role="mobile-nav">
+      <details class="md:hidden relative group" data-role="mobile-nav">
         <summary class="list-none cursor-pointer p-2 -mr-2 rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] [&::-webkit-details-marker]:hidden">
           <span class="sr-only">Menu</span>
           <svg
@@ -54,6 +54,13 @@
             Self-host
           </a>
           <a
+            :if={Fountain.Marketing.site?()}
+            href={FountainWeb.MarketingHTML.repo_url()}
+            class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-2 rounded-md hover:bg-[var(--color-bg-2)]"
+          >
+            GitHub
+          </a>
+          <a
             href="/docs"
             class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-2 rounded-md hover:bg-[var(--color-bg-2)]"
           >
@@ -84,7 +91,7 @@
         </nav>
       </details>
 
-      <nav class="hidden sm:flex items-center gap-1 lg:gap-3">
+      <nav class="hidden md:flex items-center gap-1 lg:gap-3">
         <a
           :if={Fountain.Marketing.site?()}
           href={~p"/integrations"}
@@ -105,6 +112,13 @@
           class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
         >
           Self-host
+        </a>
+        <a
+          :if={Fountain.Marketing.site?()}
+          href={FountainWeb.MarketingHTML.repo_url()}
+          class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
+        >
+          GitHub
         </a>
         <a
           href="/docs"
@@ -204,6 +218,14 @@
             Learn
           </h2>
           <ul class="mt-4 space-y-2.5 text-[var(--color-text-muted)]">
+            <li :if={Fountain.Marketing.site?()}>
+              <a
+                href={FountainWeb.MarketingHTML.repo_url()}
+                class="hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                GitHub
+              </a>
+            </li>
             <li>
               <a href="/docs" class="hover:text-[var(--color-text-primary)] transition-colors">
                 Docs

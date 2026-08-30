@@ -806,6 +806,15 @@ defmodule FountainWeb.MarketingControllerTest do
   # were added. It is groups now, so the test is that every destination the
   # single row carried is still reachable from one of them.
   describe "the marketing footer" do
+    test "links directly to the GitHub repository from the navigation and footer", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      href = ~s(href="#{FountainWeb.MarketingHTML.repo_url()}")
+
+      # The shared layout renders one link in each navigation variant and one
+      # in the footer, so the repository stays visible at every viewport size.
+      assert length(String.split(body, href)) - 1 == 3
+    end
+
     test "groups every link it used to carry in one row", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
 
