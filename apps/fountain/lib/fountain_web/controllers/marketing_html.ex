@@ -173,6 +173,24 @@ defmodule FountainWeb.MarketingHTML do
     """
   end
 
+  @doc "The two-turn launch example, kept out of the template so its braces are not HEEx."
+  def launch_example do
+    """
+    import { Fountain } from "@agentshit/fountain-sdk";
+
+    const fountain = new Fountain(); // FOUNTAIN_API_KEY
+
+    const first = await fountain.run(
+      "Add a --version flag and open a PR",
+      { agent: "tour-contributor", vault: "tour-github" }
+    );
+
+    const revision = await fountain
+      .resume(first.conversationId)
+      .send("Also accept -v as an alias. Push it to the same PR.");\
+    """
+  end
+
   ## The security review
   #
   # What a builder's security reviewer asks, answered on the page. Every answer

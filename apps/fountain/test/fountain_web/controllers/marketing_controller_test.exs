@@ -41,6 +41,76 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /launch" do
+    test "makes the short campaign argument with one primary action", %{conn: conn} do
+      body = conn |> get(~p"/launch") |> html_response(200)
+
+      assert body =~ "Open source · self-hostable"
+      assert body =~ "Run coding agents on ready machines."
+      assert body =~ "Pay only while they work."
+      assert body =~ "Run your first agent free"
+      assert body =~ "See it work in 40 lines"
+
+      assert body =~ "Thirteen seconds. Same machine. Same pull request."
+      assert body =~ "opened a pull request in 43 seconds"
+      assert body =~ "revised that pull request in 13"
+      assert body =~ "resume(first.conversationId)"
+      assert body =~ "Nothing re-cloned. Nothing re-explained."
+
+      assert body =~ "You build the product. #{Fountain.Brand.name()} runs the machine."
+      assert body =~ "Keep the workspace. Release the capacity."
+      assert body =~ "Ephemeral mode is the default"
+      assert body =~ "Persistent mode lets several conversations share"
+      assert body =~ "There is no continuous-run ceiling by default"
+
+      assert body =~ "The credential never enters the prompt."
+      assert body =~ "not a central secret store"
+      assert body =~ "Redaction matches exact bytes"
+      assert body =~ "If the agent deliberately reads its environment"
+
+      assert body =~ "Know the boundary before you build on it."
+      assert body =~ "The server is pre-1.0."
+      assert body =~ "A trusted runner is not a sandbox."
+    end
+
+    test "uses the case-study figures with their provenance", %{conn: conn} do
+      body = conn |> get(~p"/launch") |> html_response(200)
+
+      for stat <- FountainWeb.MarketingHTML.case_stats() do
+        assert body =~ stat.value, "missing launch figure #{stat.value}"
+        assert body =~ stat.home_label, "missing launch label for #{stat.value}"
+      end
+
+      assert body =~ FountainWeb.MarketingHTML.case_window()
+      assert body =~ "one Kubernetes cluster running live production workloads"
+      assert body =~ "Numbers reported by the cluster administrator (us)."
+
+      {lead_at, _} = :binary.match(body, ~s(data-emphasis="lead"))
+      {supporting_at, _} = :binary.match(body, ~s(data-emphasis="supporting"))
+      assert lead_at < supporting_at
+    end
+
+    test "carries its own card", %{conn: conn} do
+      body = conn |> get(~p"/launch") |> html_response(200)
+
+      assert body =~
+               ~s(<meta property="og:title" content="Run coding agents on ready machines · Fountain")
+
+      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/launch")
+
+      assert body =~
+               ~s(<meta name="description" content="Give your product a coding agent on a ready machine.)
+    end
+
+    test "is a campaign destination rather than a navigation item", %{conn: conn} do
+      refute conn |> get(~p"/") |> html_response(200) =~ ~s(href="/launch")
+      refute conn |> get(~p"/built-with") |> html_response(200) =~ ~s(href="/launch")
+
+      assert conn |> get(~p"/launch") |> html_response(200) =~
+               "Run coding agents on ready machines."
+    end
+  end
+
   describe "GET /terms" do
     test "renders the terms of service with the configured identity", %{conn: conn} do
       body = conn |> get(~p"/terms") |> html_response(200)

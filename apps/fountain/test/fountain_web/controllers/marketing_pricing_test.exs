@@ -36,6 +36,21 @@ defmodule FountainWeb.MarketingPricingTest do
     refute body =~ ~r"\$[\d,.]+\s*/\s*mo"
   end
 
+  test "the launch page reads the same live price card", %{conn: conn} do
+    body = conn |> get(~p"/launch") |> html_response(200)
+
+    assert body =~ "Pay only while a prompt is in flight."
+    assert body =~ "No plans, no seats, no subscription"
+    assert body =~ "$0.25"
+    assert body =~ "per active agent hour"
+    assert body =~ "$5.00"
+    assert body =~ "free credit to start"
+    assert body =~ "Starter credit expires after 14 days"
+    assert body =~ "Each $2.00 in your balance supports one agent working at a time"
+    assert body =~ "from a minimum of 2 to a maximum of 20"
+    assert body =~ "Starts beyond the limit are refused, not queued"
+  end
+
   # Scale-to-zero (0017) is the strongest claim the rest of the page makes. A
   # pricing page that charged for parked time, or merely failed to say it did
   # not, would undercut it.
@@ -83,6 +98,13 @@ defmodule FountainWeb.MarketingPricingTest do
     refute body =~ "You pay only while an agent is working."
     refute body =~ "per agent hour"
     refute body =~ "of credit to start"
+
+    launch = conn |> get(~p"/launch") |> html_response(200)
+    assert launch =~ "Run coding agents on ready machines."
+    refute launch =~ "Pay only while they work."
+    refute launch =~ "Pay only while a prompt is in flight."
+    refute launch =~ "per active agent hour"
+    refute launch =~ "of credit to start"
   end
 
   test "priced contacts and messages are quoted from the price card", %{conn: conn} do

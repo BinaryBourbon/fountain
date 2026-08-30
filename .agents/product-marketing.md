@@ -1,6 +1,6 @@
 # Product Marketing Context
 
-**Document version:** v5
+**Document version:** v7
 **Last updated:** 2026-08-29
 
 This file is the positioning, the ICP and the vocabulary that marketing work in
@@ -327,6 +327,7 @@ reader into someone who has seen the primitives compose.
 
 ## Changelog
 *Newest first. One line per revision: what changed and why.*
+- v7 (2026-08-29) — Added a focused, unlisted launch campaign page that leads with the work-only meter, uses current production proof, and sends readers to one conversion action.
 - v6 (2026-08-29) — Proof hierarchy pass: lead the aggregate case with median alert-to-verdict time and make the alert and pull-request counts supporting evidence.
 - v5 (2026-08-29) — Case-study clarity pass: report alerts rather than incidents, show the full pull-request funnel, and describe the outcome as alert to pull request rather than self-healing.
 - v4 (2026-08-29) — Self-hosted clarity pass: lead with ownership, put the ownership decision before installation detail, and frame open-source apps as examples rather than customer proof.

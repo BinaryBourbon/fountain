@@ -120,7 +120,7 @@ defmodule FountainWeb.PaperSkinTest do
 
   # `config/test.exs` pins `:marketing_site`, so these are the pitch here.
   @marketing ~w(
-    / /integrations /built-with /self-hosted /faq /code-review-bot
+    / /launch /integrations /built-with /self-hosted /faq /code-review-bot
     /case-studies/self-healing-infrastructure /terms /privacy
   )
 

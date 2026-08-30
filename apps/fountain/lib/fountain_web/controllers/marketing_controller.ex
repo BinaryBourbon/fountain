@@ -1,13 +1,14 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
-  The public pages: `/`, `/integrations`, `/built-with`, `/self-hosted`,
-  `/faq`, `/code-review-bot`, `/case-studies/*`, `/terms` and `/privacy`.
+  The public pages: `/`, `/launch`, `/integrations`, `/built-with`,
+  `/self-hosted`, `/faq`, `/code-review-bot`, `/case-studies/*`, `/terms`
+  and `/privacy`.
 
   None of them is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
-  (`Fountain.Marketing`); `/integrations`, `/built-with`, `/self-hosted`,
-  `/faq`, `/code-review-bot` and the case studies are the pitch's other pages
-  and redirect into the manual on any other instance;
+  (`Fountain.Marketing`); `/launch`, `/integrations`, `/built-with`,
+  `/self-hosted`, `/faq`, `/code-review-bot` and the case studies are the
+  pitch's other pages and redirect into the manual on any other instance;
   the legal pages render the operator's identity, or nothing at all
   (`Fountain.Legal`). A deployment is not the Fountain project, and these
   pages are the ones that would claim otherwise.
@@ -62,6 +63,25 @@ defmodule FountainWeb.MarketingController do
       |> render(:home, layout: {FountainWeb.Layouts, :marketing})
     else
       render(conn, :instance, layout: {FountainWeb.Layouts, :marketing})
+    end
+  end
+
+  # A focused campaign page for readers arriving from a launch announcement.
+  # It is intentionally absent from the navigation: the homepage is the
+  # canonical product page, while this page makes one shorter argument and
+  # asks for one action. Another deployment gets the executable tour rather
+  # than sales copy for the hosted product.
+  def launch(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :launch,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Run coding agents on ready machines · #{Fountain.Brand.name()}",
+        meta_description:
+          "Give your product a coding agent on a ready machine. Repositories, packages " <>
+            "and credentials arrive with it, and you pay only while the agent works."
+      )
+    else
+      redirect(conn, to: ~p"/docs/tour")
     end
   end
 
