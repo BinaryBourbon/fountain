@@ -148,7 +148,9 @@ defmodule FountainWeb.MarketingControllerTest do
     test "renders every app, grouped", %{conn: conn} do
       body = conn |> get(~p"/built-with") |> html_response(200)
 
-      assert body =~ "One API behind all of them."
+      assert body =~ "One API for the agents behind them."
+      assert body =~ "We built these apps to show what #{Fountain.Brand.name()} can power"
+      refute body =~ "Nothing of yours reaches whoever wrote it"
 
       for group <- FountainWeb.MarketingHTML.built_apps() do
         assert body =~ group.title, "missing group #{group.title}"
