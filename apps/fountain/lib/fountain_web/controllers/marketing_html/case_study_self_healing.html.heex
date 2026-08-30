@@ -135,47 +135,80 @@
   </div>
 </section>
 
-<%!-- The loop --%>
+<%!-- The handoff. The timeline above supplies the chronology; this section
+      turns those timestamps into the operating-model change. It does not
+      claim time saved against a counterfactual incident that never ran. --%>
 <section
   id="loop"
   class="scroll-mt-6"
 >
+  <% handoff_metrics = case_handoff_metrics() %>
+  <% [alert_to_pr, pr_to_review] = handoff_metrics %>
   <div class="max-w-5xl mx-auto px-6 py-16">
+    <.eyebrow label="Nine steps · one human decision" class="mb-4" />
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
-      Nine steps, one of them a person.
+      The pull request waited for the engineer.
     </h2>
-    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-12">
-      The existing alert path gained one webhook. That webhook starts the agent with one API call.
+    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
+      The agent opened a proposed fix {alert_to_pr.prose_value} after the page. The on-call engineer reviewed it {pr_to_review.prose_value} later.
     </p>
-    <ol class="max-w-3xl mx-auto space-y-4">
-      <li
-        :for={step <- case_loop()}
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-5 sm:p-6 flex items-start gap-4"
-        data-role="loop-step"
+    <div class="grid sm:grid-cols-2 gap-px max-w-3xl mx-auto overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-border)]">
+      <div
+        :for={metric <- handoff_metrics}
+        class="bg-[var(--color-bg-0)] p-6 text-center"
+        data-role="handoff-metric"
+        data-metric={metric.id}
       >
-        <span class={[
-          "flex-shrink-0 size-7 rounded-full text-sm font-semibold flex items-center justify-center",
-          if(step.step == "7",
-            do: "bg-[var(--color-text-primary)] text-[var(--color-bg-0)]",
-            else: "bg-[var(--color-brand)] text-white"
+        <p class="text-3xl font-semibold text-[var(--color-text-primary)] tabular-nums">
+          {metric.value}
+        </p>
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)]">{metric.label}</p>
+      </div>
+    </div>
+
+    <p
+      class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-10"
+      data-role="handoff-contrast"
+    >
+      By review time, the starting point was no longer an alert. It was a root-cause explanation, the commit that exposed the fault, and a 13-line diff.
+    </p>
+
+    <ol class="grid md:grid-cols-[1.4fr_0.7fr_1fr] gap-4 max-w-4xl mx-auto mt-10">
+      <li
+        :for={stage <- case_workflow()}
+        class={[
+          "rounded-xl border p-5",
+          if(stage.human?,
+            do: "border-[var(--color-text-primary)] bg-[var(--color-text-primary)]",
+            else: "border-[var(--color-border)] bg-[var(--color-bg-0)]"
+          )
+        ]}
+        data-role="workflow-stage"
+      >
+        <p class={[
+          "text-xs font-medium uppercase tracking-wide",
+          if(stage.human?,
+            do: "text-[var(--color-bg-0)]",
+            else: "text-[var(--color-text-muted)]"
           )
         ]}>
-          {step.step}
-        </span>
-        <div class="min-w-0">
-          <h3 class="font-semibold text-[var(--color-text-primary)]">{step.title}</h3>
-          <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-            {step.body}
-          </p>
-          <div class="mt-3 overflow-x-auto">
-            <code
-              class="inline-block whitespace-nowrap text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
-              phx-no-format
-            >{step.mono}</code>
-          </div>
-        </div>
+          {stage.owner}
+        </p>
+        <p class={[
+          "mt-2 text-sm leading-relaxed",
+          if(stage.human?,
+            do: "text-[var(--color-bg-0)]",
+            else: "text-[var(--color-text-secondary)]"
+          )
+        ]}>
+          {stage.body}
+        </p>
       </li>
     </ol>
+
+    <p class="text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto mt-10">
+      The person still owned the consequential step. The agent could propose a change; it could not approve or merge one.
+    </p>
   </div>
 </section>
 

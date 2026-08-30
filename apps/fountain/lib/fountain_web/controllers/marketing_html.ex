@@ -1506,77 +1506,43 @@ defmodule FountainWeb.MarketingHTML do
     ]
   end
 
-  @doc "The loop, in the order it runs."
-  def case_loop do
+  @doc "The two observed intervals around the case study's human handoff."
+  def case_handoff_metrics do
     [
       %{
-        step: "1",
-        title: "Prometheus notices",
-        mono: "KubePodCrashLooping · PodOOMKilled · CPUThrottlingHigh · PodRestartChurn",
-        body: "The cluster's existing alert rules. Prometheus knows nothing about the agent."
+        id: "alert-to-pr",
+        value: "4m 27s",
+        prose_value: "4 minutes 27 seconds",
+        seconds: 267,
+        label: "Alert to proposed fix"
       },
       %{
-        step: "2",
-        title: "Alertmanager forks the page",
-        mono: "continue: true",
-        body:
-          "One copy goes to the on-call engineer's phone, as before. One goes to a webhook. " <>
-            "The agent joins the response; it does not replace the engineer."
+        id: "pr-to-review",
+        value: "1h 47m 45s",
+        prose_value: "1 hour 47 minutes 45 seconds",
+        seconds: 6_465,
+        label: "Proposed fix to human review"
+      }
+    ]
+  end
+
+  @doc "The loop compressed into automatic work around its one human decision."
+  def case_workflow do
+    [
+      %{
+        owner: "Automatic",
+        human?: false,
+        body: "Detect → page and start agent → read cluster → trace git → open pull request"
       },
       %{
-        step: "3",
-        title: "A webhook starts an agent",
-        mono: "POST /api/conversations",
-        body:
-          "The production handler is two hundred lines of Node. Its handoff to " <>
-            "Fountain posts an agent id, an identity id and the alert text."
+        owner: "Human",
+        human?: true,
+        body: "Decide whether to approve and merge"
       },
       %{
-        step: "4",
-        title: "The agent reads the cluster",
-        mono: "Authorization: Bearer … (GET only)",
-        body:
-          "A read-only service answers with node health, drift from " <>
-            "source, and controller conditions. Every other method returns 405."
-      },
-      %{
-        step: "5",
-        title: "It finds the wrong fact in git",
-        mono: "gh api · git log -S",
-        body:
-          "When the repository can fix an alert, the agent reads the history and " <>
-            "names the commit at fault before editing."
-      },
-      %{
-        step: "6",
-        title: "It opens one minimal pull request",
-        mono: "symptom · root cause · why this diff is the whole fix",
-        body:
-          "Source and regenerated manifests in one commit, from an identity " <>
-            "with push rights and nothing else. If no change to the repository " <>
-            "can fix the alert, it opens nothing."
-      },
-      %{
-        step: "7",
-        title: "The on-call engineer decides",
-        mono: "422 on self-approval · 405 on self-merge",
-        body:
-          "The one gate. GitHub blocks self-approval, and the branch needs a " <>
-            "review from another account."
-      },
-      %{
-        step: "8",
-        title: "Flux applies the merge",
-        mono: "reconcile on webhook",
-        body: "Git was always the apply path. There is no apply button to trust it with."
-      },
-      %{
-        step: "9",
-        title: "The agent verifies and reports",
-        mono: "poll until healthy",
-        body:
-          "It watches the node come back, checks nothing else regressed, " <>
-            "posts the summary, and stops."
+        owner: "Automatic",
+        human?: false,
+        body: "Flux applies the merge → agent verifies health"
       }
     ]
   end

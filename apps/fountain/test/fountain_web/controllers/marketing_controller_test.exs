@@ -553,7 +553,7 @@ defmodule FountainWeb.MarketingControllerTest do
   end
 
   describe "GET /case-studies/self-healing-infrastructure" do
-    test "renders the loop, the guardrails and the incident", %{conn: conn} do
+    test "renders the handoff, the guardrails and the incident", %{conn: conn} do
       body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
 
       assert body =~ "The pager went off at 06:58."
@@ -576,12 +576,35 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~
                "#{div(elapsed, 60)} minutes #{rem(elapsed, 60)} seconds later"
 
-      # Every step of the loop, and the human gate among them.
-      for step <- FountainWeb.MarketingHTML.case_loop() do
-        assert body =~ step.title, "missing loop step #{step.title}"
+      # The handoff uses the incident's measured intervals, not a claimed
+      # comparison against a counterfactual incident that never ran.
+      review = Enum.find(timeline, &String.contains?(&1.title, "reviews both pull requests"))
+
+      metrics =
+        FountainWeb.MarketingHTML.case_handoff_metrics()
+        |> Map.new(&{&1.id, &1})
+
+      {:ok, review_at} = Time.from_iso8601(review.time)
+
+      assert metrics["alert-to-pr"].seconds == elapsed
+      assert metrics["pr-to-review"].seconds == Time.diff(review_at, first_pr_at)
+
+      for {_id, metric} <- metrics do
+        assert body =~ metric.value, "missing handoff metric #{metric.label}"
+        assert body =~ metric.prose_value, "missing handoff prose #{metric.label}"
+        assert body =~ metric.label, "missing handoff label #{metric.label}"
       end
 
-      assert body =~ "422 on self-approval"
+      # The full loop is compressed into ownership stages, with the human gate
+      # still explicit rather than buried among nine equal cards.
+      for stage <- FountainWeb.MarketingHTML.case_workflow() do
+        assert body =~ stage.body, "missing workflow stage #{stage.owner}"
+      end
+
+      assert body =~ "The pull request waited for the engineer."
+      assert body =~ "The person still owned the consequential step."
+      refute body =~ ~s(data-role="loop-step")
+      assert body =~ "GitHub blocks self-approval"
       assert body =~ "The sandbox has no kubectl and no kubeconfig."
       assert body =~ "install_members()"
 
@@ -591,8 +614,8 @@ defmodule FountainWeb.MarketingControllerTest do
       end
 
       {timeline_at, _} = :binary.match(body, ~s(data-role="timeline-event"))
-      {loop_at, _} = :binary.match(body, ~s(data-role="loop-step"))
-      assert timeline_at < loop_at
+      {handoff_at, _} = :binary.match(body, ~s(data-role="handoff-metric"))
+      assert timeline_at < handoff_at
 
       # The snippet is kept out of the template so its braces are not HEEx.
       assert body =~ "POST"
