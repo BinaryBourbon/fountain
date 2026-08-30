@@ -2,11 +2,25 @@
 <section class="max-w-5xl mx-auto px-6 py-20 text-center">
   <.eyebrow label="Integrations" class="mb-5" />
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    Start a coding agent from the tools you already use.
+    Your tools start the agent. {Fountain.Brand.name()} runs the machine.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Connect your editor, chat app, gateway, framework or your own code to a coding agent on a ready sandbox. Use ACP, AG-UI, OpenAI-compatible chat completions or {Fountain.Brand.name()}'s REST API. The sandbox keeps its work between messages and costs nothing while parked.
+    Connect your editor, chat app, gateway, framework or code to a coding agent on a ready sandbox. {Fountain.Brand.name()} provisions the machine, preserves its work between messages and parks it when the agent stops. No machine to manage. No idle time to pay for.
   </p>
+  <div class="flex flex-col sm:flex-row gap-3 justify-center mb-8">
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm shadow-sm"
+    >
+      Run your first agent free
+    </a>
+    <a
+      href={~p"/docs/integrations/clients"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      Browse integration guides
+    </a>
+  </div>
   <div class="flex flex-wrap gap-2 justify-center" data-role="protocol-chips">
     <a
       :for={protocol <- protocols()}
