@@ -771,9 +771,10 @@ defmodule FountainWeb.MarketingHTML do
   #
   # The first group is the three this project builds itself, and they lead
   # every page that shows the roster. An app in it carries a `:flagship` key
-  # holding the two lines the featured cards add: what it is like, and who it
-  # is for. That key is what `flagship_apps/0` selects on, so the tier is a
-  # property of the entry rather than a second list to keep in step.
+  # holding the lines its featured cards add: a short homepage description,
+  # what it is like, and who it is for. That key is what `flagship_apps/0`
+  # selects on, so the tier is a property of the entry rather than a second
+  # list to keep in step.
 
   @doc "The applications built on the API, in the order and grouping the page shows."
   def built_apps do
@@ -795,6 +796,7 @@ defmodule FountainWeb.MarketingHTML do
               "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
             shows: "the event stream as blocks, and one sandbox behind many conversations",
             flagship: %{
+              homepage: "Run an agent and watch every step.",
               like:
                 "ChatGPT, except the model has a checkout and a shell, and you can watch it work.",
               who: "Open this one first. It is the whole platform with a face on it."
@@ -811,6 +813,7 @@ defmodule FountainWeb.MarketingHTML do
               "Your agents as teammates in a messaging app. Roster on the left, thread on the right, routines on a schedule, images and search. Enter to send.",
             shows: "the team API, SSE streaming, schedules, usage",
             flagship: %{
+              homepage: "Message your agents like teammates.",
               like:
                 "A group chat whose contacts are bots you made, one click each, faces and all.",
               who: "For anyone who would rather text a teammate than fill in a form."
@@ -827,6 +830,7 @@ defmodule FountainWeb.MarketingHTML do
               "A dev workstation the team shares. A project is an environment and a vault, work items live in it, and putting a teammate on one is a first prompt rather than four steps of setup.",
             shows: "projects over environments and vaults, agents as staff",
             flagship: %{
+              homepage: "Assign work across shared projects.",
               like:
                 "Multiplayer engineering: one board of work items, and staff you put on them by typing.",
               who:
@@ -984,9 +988,6 @@ defmodule FountainWeb.MarketingHTML do
 
   @doc "The rest of the roster, which /built-with lists under the featured three."
   def other_app_groups, do: Enum.reject(built_apps(), &(&1.id == "flagship"))
-
-  @doc "The rest of the roster, flattened, for the homepage's chip row."
-  def other_apps_flat, do: Enum.flat_map(other_app_groups(), & &1.apps)
 
   ## /self-hosted
 

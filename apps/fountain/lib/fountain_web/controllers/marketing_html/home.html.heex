@@ -535,24 +535,27 @@
   </p>
 </section>
 
-<%!-- The apps, in one section. The flagship three as cards, the rest of the
-      roster as chips under them. These used to be two adjacent sections with
-      two intros and two buttons saying the same thing. Cards come from
-      built_apps/0, so the homepage cannot name an app /built-with has renamed
-      or retired. --%>
+<%!-- The apps, as the other side of the fork the protocols open above: use a
+      working frontend or build one on the same API. The homepage names three
+      shapes and leaves the catalog to /built-with. Showing the rest as chips
+      repeated that apps exist without helping a reader choose one, and made
+      this proof section compete with the product argument above it.
+
+      Cards come from built_apps/0, so the homepage cannot name an app
+      /built-with has renamed or retired. --%>
 <section class="max-w-5xl mx-auto px-6 pb-16">
   <div class="border-t border-[var(--color-border)] pt-16">
     <.eyebrow label="Apps" />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] text-center">
-      Start from an app that already works.
+      Use an app. Or build your own on the same API.
     </h2>
     <p class="mt-3 text-center text-[var(--color-text-secondary)] max-w-2xl mx-auto text-lg">
-      Each app is a static frontend over the same public API. Read its source, borrow what you need, or point it at your own instance.
+      {built_app_count()} open-source apps already run on the public API. Use one, fork its source, or point it at your own instance.
     </p>
     <div class="mt-10 grid md:grid-cols-3 gap-6">
       <article
         :for={app <- flagship_apps()}
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 flex flex-col"
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 flex flex-col"
         data-role="flagship"
       >
         <%!-- The glyph is an emoji out of built_apps/0, shared with
@@ -567,11 +570,8 @@
           {app.glyph}
         </div>
         <h3 class="mt-4 text-lg font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
-        <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">
-          {app.flagship.like}
-        </p>
-        <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed flex-1">
-          {app.blurb}
+        <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed flex-1">
+          {app.flagship.homepage}
         </p>
         <div class="mt-5 flex flex-wrap items-center gap-4">
           <a
@@ -579,7 +579,7 @@
             rel="noopener"
             class="inline-flex items-center px-4 py-2 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
           >
-            Open it
+            Open app
           </a>
           <a
             href={app.source}
@@ -591,28 +591,12 @@
         </div>
       </article>
     </div>
-
-    <p class="mt-12 text-center text-[var(--color-text-secondary)]">
-      <span class="font-medium text-[var(--color-text-primary)]">
-        {length(built_apps_flat())} open-source apps are running on it now.
-      </span>
-      In several, nothing on screen says the word agent.
-    </p>
-    <ul class="mt-6 flex flex-wrap justify-center gap-2">
-      <li
-        :for={app <- other_apps_flat()}
-        class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3 py-1 text-sm text-[var(--color-text-secondary)]"
-      >
-        <span aria-hidden="true" data-role="glyph">{app.glyph}</span>
-        {app.name}
-      </li>
-    </ul>
     <p class="mt-8 text-center">
       <a
         href={~p"/built-with"}
         class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
       >
-        See what people built
+        Browse all {built_app_count()} apps
       </a>
     </p>
   </div>
