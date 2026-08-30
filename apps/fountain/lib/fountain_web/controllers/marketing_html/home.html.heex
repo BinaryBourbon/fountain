@@ -766,60 +766,49 @@
 
 <%!-- Lane three's section on the homepage. The runner concession sits beside
       the runner claim rather than a page away, because the hero promises a
-      boundary and a runner has none.
+      boundary and the default runner backend has none.
 
-      The deck states the value, in the second person. It used to open "Two
-      reasons to go" and then name two: code that cannot leave your
-      infrastructure, and needing more machines than the ceiling allows. Both
-      are real, and both are qualifying criteria, so a reader in neither case
-      reads the sentence as being told this is not for them. A section that
-      exists to say the exit is open should not open by fencing it.
+      The section used to promise "the whole thing" while naming two paths:
+      self-host the control plane, or keep the hosted control plane and attach
+      runners. It also made "own hardware" the boundary, which excluded an
+      operator running Fountain in a cloud account. Ownership is the common
+      decision, so the heading and deck name how much of the stack the reader
+      wants to own and where each part runs.
 
-      The claim it makes instead is one the self-hosting FAQ already makes and
-      this page did not: "The console, the CLI and the API are the same on
-      both, and so are the SDK and the manual. What changes is whose machine it
-      runs on", and "There is no license key and no seat count, and nobody has
-      to talk to us first." Nothing a reader builds on the hosted service is
-      stranded there, which is worth knowing whether or not they ever self-host
-      — it is the answer to a question they are asking on the price section
-      directly above this one.
+      The two paragraphs scan as parallel choices and replace "nothing is held
+      back" with things a reader can verify: open source, the compose bring-up,
+      the Kubernetes manifests and the shared release image.
 
-      It does not repeat the paragraphs below it. Those are the two shapes the
-      software runs in. This is what the reader keeps.
-
-      Those two shapes are two paragraphs now, and each opens with the reader's
-      verb. They were one paragraph carrying both offers, joined by a semicolon
-      and split by a colon, so the second choice arrived as a subordinate
-      clause of the first and a reader skimming saw one option. "Take the whole
-      platform" and "Or keep this one and bring only the machines" are the
-      choice, and now they scan as one.
-
-      The runner note keeps its own rule and its own beat, because it is the
-      concession rather than the offer: trusted mode means no container between
-      the agent and the machine, and it is the one place this page promises
-      less than the hosted product does. Its colon went too. A colon there set
-      the concession up as an explanation of the claim, when it is a limit on
-      it. --%>
+      The runner note keeps its own rule and its own beat because the default
+      process backend is a concession, not the offer. It also names the
+      Firecracker override now that trusted mode is no longer the runner's only
+      backend. The limit and the safer boundary sit in the same place. --%>
 <section class="bg-[var(--color-ink-0)]">
   <div class="max-w-5xl mx-auto px-6 pb-16">
     <div class="border-t border-[var(--color-ink-border)] pt-16">
       <.eyebrow label="Self-host" tone={:ink} />
       <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-ink-text)] text-center">
-        Run the whole thing yourself.
+        Own as much of the stack as you want.
       </h2>
       <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
-        The same API, SDK and CLI run on your own hardware. There is no license key and nobody to ask first.
+        Keep the same API, SDK and CLI. Run Fountain and Postgres in your account, or keep hosted Fountain and connect machines from your network.
       </p>
 
       <div class="mt-10 max-w-2xl mx-auto space-y-4 text-[var(--color-ink-secondary)] leading-relaxed">
         <p>
-          Take the whole platform. {Fountain.Brand.engine()} is open source, nothing is held back from the copy you run, and a compose file brings an instance up.
+          <strong class="font-medium text-[var(--color-ink-text)]">
+            Run the control plane yourself.
+          </strong>
+          {Fountain.Brand.engine()} is open source. Docker Compose brings up Fountain and Postgres, while plain Kubernetes manifests run the same release image as hosted Fountain.
         </p>
         <p>
-          Or keep this one and bring only the machines. A runner dials out from your network, needs no inbound port and burns no credit.
+          <strong class="font-medium text-[var(--color-ink-text)]">
+            Bring your own sandbox compute.
+          </strong>
+          A runner dials out from your network, opens no inbound port, and uses no Fountain credit for agent time.
         </p>
         <p class="border-l-2 border-[var(--color-ink-border)] pl-4 text-sm text-[var(--color-ink-secondary)]">
-          A runner runs in trusted mode. The agent's processes run as you, with your network and your tools and no container between. Run one where you would hand a colleague a shell.
+          By default, a runner uses trusted mode. The agent runs as you, with your network and tools and no container between. Use it where you would hand a colleague a shell, or use the Firecracker backend on Linux with KVM for a microVM boundary.
         </p>
       </div>
 
@@ -828,7 +817,7 @@
           href={~p"/self-hosted"}
           class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-ink-text)] text-sm font-medium hover:bg-[var(--color-ink-2)] transition-colors"
         >
-          What it takes to run it yourself
+          See what self-hosting takes
         </a>
       </p>
     </div>
