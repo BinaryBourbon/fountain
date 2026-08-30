@@ -277,8 +277,10 @@ Lead the aggregate proof with the 7.5 minute median alert-to-verdict time. The
 alert and pull-request counts support that result rather than compete with it.
 78 alerts investigated by an agent; 4m 27s from alert to open pull request on
 the worked incident; 7.5 minute median alert to verdict; 0 cluster credentials
-the agent holds. Twelve fix pull requests opened, eight merged, four of those a
-rehearsal fault raised on purpose.
+the agent holds. Twelve fix pull requests opened and eight merged, against 78
+alerts, because most alerts end with no repository fix to propose. Frame that
+ratio as reach rather than as a ceiling: it is set by how many systems the
+agent may read and how many repositories it may open a pull request against.
 
 The system is a Kubernetes cluster carrying live production workloads. Numbers
 reported by the cluster administrator (us). **Say both whenever the numbers
