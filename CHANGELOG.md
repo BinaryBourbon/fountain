@@ -121,6 +121,12 @@ upgrade, is in
   rather than to one runner. See ADR 0036.
 
 ### Changed
+- **The homepage protocols section starts with the integration outcome.** It
+  now tells builders to put Fountain behind the stack they already use instead
+  of leading with the REST API's internal layering. Each protocol description
+  says what it connects, and the integrations link says what the reader will
+  find there.
+
 - **The homepage sells the reader an outcome, and shows the manifest.** Every
   section heading and every claim on `/` now says what the reader gets rather
   than what Fountain does. The six claims that were questions ("How does the

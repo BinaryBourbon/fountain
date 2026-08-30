@@ -116,6 +116,16 @@ defmodule FountainWeb.MarketingControllerTest do
       body = conn |> get(~p"/") |> html_response(200)
       assert body =~ ~p"/integrations"
     end
+
+    test "the homepage puts the existing stack before the protocol machinery", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+
+      assert body =~ "Put #{Fountain.Brand.name()} behind the stack you already use."
+      assert body =~ "keeps speaking the same protocol"
+      assert body =~ "Give it a #{Fountain.Brand.name()} URL and key"
+      assert body =~ "See what connects today"
+      refute body =~ "Four protocols sit on the REST API"
+    end
   end
 
   describe "GET /built-with" do
