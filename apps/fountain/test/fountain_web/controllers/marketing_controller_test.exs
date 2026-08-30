@@ -1016,6 +1016,10 @@ defmodule FountainWeb.OpenGraphTest do
              ~s(<meta property="og:image" content="http://localhost:4000/images/og-card.png")
 
     assert body =~ ~s(<meta property="og:image:width" content="1200")
+
+    assert body =~
+             ~s(<meta property="og:image:alt" content="Run coding agents on ready machines. Wake for a prompt; park when quiet.")
+
     assert body =~ ~s(<meta name="twitter:card" content="summary_large_image")
     assert body =~ ~s(<meta name="description" content="Fountain is a conversational API)
   end
