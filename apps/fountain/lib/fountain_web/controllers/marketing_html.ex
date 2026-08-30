@@ -367,21 +367,87 @@ defmodule FountainWeb.MarketingHTML do
   # page of the manual, and the controller test checks every such link
   # resolves, so a renamed docs page fails here rather than on the site.
 
-  @doc "The protocols Fountain answers, in the order the page shows them."
+  attr :protocol, :map, required: true
+  attr :works_label, :string, default: "Works with"
+
+  def protocol_card(assigns) do
+    ~H"""
+    <article
+      id={@protocol.id}
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 sm:p-8 scroll-mt-6"
+      data-role="protocol"
+    >
+      <div class="grid md:grid-cols-5 gap-8">
+        <div class="md:col-span-3">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+            <h3 class="text-xl font-semibold text-[var(--color-text-primary)]">
+              {@protocol.name}
+            </h3>
+            <span class="text-sm text-[var(--color-text-muted)]">{@protocol.long}</span>
+            <span
+              :if={@protocol[:status]}
+              class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-bg-2)] text-[var(--color-text-muted)]"
+            >
+              {@protocol.status}
+            </span>
+          </div>
+          <code
+            class="inline-block mt-1 mb-4 text-xs text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5"
+            phx-no-format
+          >{@protocol.surface}</code>
+          <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+            {@protocol.pitch}
+          </p>
+          <p class="mt-3 text-xs text-[var(--color-text-muted)]">
+            {@protocol.direction}
+          </p>
+          <a
+            href={@protocol.docs}
+            class="inline-block mt-4 text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+          >
+            {@protocol.docs_label} →
+          </a>
+        </div>
+        <div class="md:col-span-2">
+          <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)] mb-3">
+            {@works_label}
+          </p>
+          <ul class="space-y-2">
+            <li
+              :for={item <- @protocol.works_with}
+              class="flex items-start gap-2.5 text-sm"
+              data-role="works-with"
+            >
+              <span class="mt-0.5 flex-shrink-0 text-[var(--color-text-primary)]">
+                <.mark name={item.name} slug={item.slug} class="size-4" />
+              </span>
+              <span>
+                <span class="font-medium text-[var(--color-text-primary)]">{item.name}</span>
+                <span class="text-[var(--color-text-muted)]">· {item.note}</span>
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </article>
+    """
+  end
+
+  @doc "The protocol integrations this page describes."
   def protocols do
     [
       %{
         id: "agui",
+        kind: :client,
         name: "AG-UI",
         long: "Agent-User Interaction Protocol",
         surface: "POST /api/agui/:agent_id",
-        direction: "An AG-UI host drives a Fountain agent.",
+        direction: "An AG-UI host starts and follows a Fountain agent.",
         pitch:
-          "The open protocol between an agent and a front end, from CopilotKit. " <>
-            "Fountain answers a RunAgentInput with the standard event stream, so a " <>
-            "Fountain agent takes a seat next to a LangGraph or CrewAI one with no " <>
-            "adapter. Pass the host's tools and a call comes back as TOOL_CALL events. " <>
-            "One thread binds to one conversation, and the sandbox is the memory.",
+          "Put a Fountain agent in an AG-UI front end without writing an adapter. " <>
+            "Fountain turns RunAgentInput into the standard event stream and returns " <>
+            "host tools as TOOL_CALL events. Each thread maps to one Conversation, so " <>
+            "its sandbox keeps the files and context from one message to the next.",
         docs: "/docs/integrations/openbot",
         docs_label: "OpenBot and AG-UI",
         works_with: [
@@ -405,15 +471,16 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         id: "acp",
+        kind: :client,
         name: "ACP",
         long: "Agent Client Protocol",
         surface: "fountain acp --agent <name>",
-        direction: "An editor or chat harness spawns the CLI and drives a conversation.",
+        direction: "An editor or chat app launches the local CLI; the work runs remotely.",
         pitch:
-          "Zed's editor protocol for coding agents. Fountain is an ACP client of the " <>
-            "agents it runs in sandboxes and an ACP agent for the editor in front of you, " <>
-            "so the same block vocabulary flows through untranslated. Close the laptop " <>
-            "mid-turn; the turn continues on the sandbox and replays when you reopen.",
+          "Run a Fountain agent from an ACP-capable editor or chat app. The CLI " <>
+            "connects the client to a remote sandbox, so you can close your laptop " <>
+            "mid-turn and pick up the result when you return. The protocol's block " <>
+            "vocabulary passes through without another adapter.",
         docs: "/docs/integrations/editors",
         docs_label: "Editors over ACP",
         works_with: [
@@ -443,16 +510,17 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         id: "openai",
+        kind: :client,
         name: "OpenAI-compatible",
+        status: "Alpha",
         long: "Chat completions, where the model is an agent",
         surface: "POST /v1/chat/completions",
         direction: "Any client or gateway with a base-URL field drives a Fountain agent.",
         pitch:
-          "The request shape every gateway and every chat client already speaks. Point " <>
-            "one at your instance with an API key, and GET /v1/models fills its picker with " <>
-            "your agents. Your tools come back as tool_calls, so a Fountain agent sits " <>
-            "inside a LangChain loop or a Deep Agents plan as a subagent. A thread key " <>
-            "binds each chat to one sandbox. Alpha, behind a flag; ask and it is on.",
+          "Point an OpenAI-compatible client or gateway at Fountain and your agents " <>
+            "appear in its model picker. A thread key binds each chat to one sandbox, " <>
+            "and tools come back as tool_calls for existing LangChain and Deep Agents " <>
+            "loops. Available on request while the response shape is in alpha.",
         docs: "/docs/integrations/openai-compatible",
         docs_label: "The OpenAI-compatible API",
         works_with: [
@@ -484,16 +552,17 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         id: "mcp",
+        kind: :tool,
         name: "MCP",
         long: "Model Context Protocol, both ways",
         surface: "Any MCP server, on any agent",
         direction: "Agents call the servers you name; Fountain hosts four of its own.",
         pitch:
-          "An agent's config lists the MCP servers it may call, and Fountain passes " <>
-            "the declaration through and curates nothing. A Gmail Connection holds the " <>
-            "OAuth grant on the server, so an inbox arrives as tools with no token in " <>
-            "the prompt. Fountain also serves MCP to its own sandboxes: a teammate to " <>
-            "message, an email address and a phone number, a Buzz channel, a mailbox.",
+          "Give each Fountain agent the stdio or HTTP MCP servers it needs. Fountain " <>
+            "passes their declarations to the runtime without curating them. With a " <>
+            "brokered Gmail Connection, the sandbox gets inbox tools without receiving " <>
+            "the OAuth token. Fountain also serves MCP tools for teammate messaging, " <>
+            "email, phone and Buzz.",
         docs: "/docs/catalog/mcp-servers",
         docs_label: "The MCP servers Fountain hosts",
         works_with: [
@@ -514,17 +583,16 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         id: "api",
+        kind: :client,
         name: "REST, SSE and webhooks",
         long: "Fountain's own API",
         surface: "/api, with a TypeScript SDK and a CLI",
         direction: "Your code drives everything the console can, and more.",
         pitch:
-          "Everything above is a translation of this. Create a conversation, send a " <>
-            "prompt, stream the turn as blocks the server has already parsed, or take a " <>
-            "signed webhook when it ends. Sign in with Fountain gives a browser app of " <>
-            "your own an OAuth flow whose tokens are ordinary API keys. The three apps " <>
-            "this project ships are built on exactly this and nothing private: static " <>
-            "files, the SDK, your key.",
+          "Start and follow agents from your own code. Create a Conversation, send a " <>
+            "prompt, stream the parsed blocks or receive a signed webhook when the turn " <>
+            "ends. Sign in with Fountain gives browser apps an OAuth flow. The apps this " <>
+            "project ships use the same public API and TypeScript SDK.",
         docs: "/docs/api",
         docs_label: "The API reference",
         works_with: [
@@ -555,15 +623,15 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         id: "nostr",
+        kind: :outbound,
         name: "Nostr",
         long: "Buzz, the other direction",
         surface: "POST /api/buzz/agents",
         direction: "Outbound. Fountain hosts the agent and shows up on the relay.",
         pitch:
-          "Buzz is an agent workspace on Nostr, and on the desktop an agent's body runs " <>
-            "on your laptop. Bind its identity to a Fountain agent instead and the body " <>
-            "runs here: it holds presence on the relay, answers a mention from a sandbox, " <>
-            "and its key stays in a vault Fountain signs with.",
+          "Run a Buzz identity on Fountain instead of your laptop. It holds presence on " <>
+            "the relay, answers a mention from its sandbox and keeps its signing key on " <>
+            "the server.",
         docs: "/docs/integrations/buzz",
         docs_label: "Buzz on Fountain",
         works_with: [
@@ -574,13 +642,22 @@ defmodule FountainWeb.MarketingHTML do
     ]
   end
 
-  @doc "What runs inside a conversation, grouped for the page's second section."
+  @doc "The interfaces a client uses to start and follow an agent."
+  def client_protocols, do: Enum.filter(protocols(), &(&1.kind == :client))
+
+  @doc "The protocol an agent uses to reach its tools."
+  def tool_protocol, do: Enum.find(protocols(), &(&1.kind == :tool))
+
+  @doc "The integration where Fountain brings the agent to another network."
+  def outbound_protocol, do: Enum.find(protocols(), &(&1.kind == :outbound))
+
+  @doc "What runs behind an integration, split into choices the developer makes."
   def inside do
     [
       %{
         title: "Runtimes",
         blurb:
-          "The coding agent the sandbox runs. All four speak ACP to Fountain, so every surface above sees one shape.",
+          "Choose the coding agent the sandbox runs. Every client-facing interface sees the same shape.",
         items: [
           %{name: "Claude Code", slug: "claudecode"},
           %{name: "Codex", slug: "openai"},
@@ -589,9 +666,9 @@ defmodule FountainWeb.MarketingHTML do
         ]
       },
       %{
-        title: "Models",
+        title: "Model access",
         blurb:
-          "Bring your own key. Inference bills your account; Fountain never marks up a token.",
+          "Bring your own credentials. Your model provider bills you directly; Fountain never marks up tokens.",
         items: [
           %{name: "Anthropic", slug: "anthropic"},
           %{name: "OpenAI", slug: "openai"},
@@ -608,17 +685,6 @@ defmodule FountainWeb.MarketingHTML do
           %{name: "E2B", slug: nil},
           %{name: "Daytona", slug: nil},
           %{name: "Your own machine", slug: nil}
-        ]
-      },
-      %{
-        title: "Chat surfaces",
-        blurb:
-          "Where a person talks to the agent, through OpenClaw or Hermes on one side or a Buzz channel on the other.",
-        items: [
-          %{name: "Telegram", slug: "telegram"},
-          %{name: "Discord", slug: "discord"},
-          %{name: "Slack", slug: "slack"},
-          %{name: "Signal", slug: "signal"}
         ]
       }
     ]
@@ -664,7 +730,8 @@ defmodule FountainWeb.MarketingHTML do
         id: "react",
         have: "A React app",
         want: "An agent in the product, with a sandbox of its own behind the chat.",
-        how: "Point CopilotKit's AG-UI client at the agent's endpoint. No adapter, no proxy.",
+        how:
+          "Point CopilotKit's AG-UI client at the agent's endpoint with a user-scoped OAuth token. No server-side adapter.",
         lang: "ts",
         docs: "/docs/integrations/openbot",
         code: """
@@ -672,7 +739,7 @@ defmodule FountainWeb.MarketingHTML do
 
         const reviewer = new HttpAgent({
           url: "https://managoat.com/api/agui/<agent_id>",
-          headers: { Authorization: "Bearer ftn_..." },
+          headers: { Authorization: `Bearer ${userToken}` }, // from Sign in with Fountain
         });
         """
       },

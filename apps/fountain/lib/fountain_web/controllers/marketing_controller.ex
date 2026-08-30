@@ -72,12 +72,11 @@ defmodule FountainWeb.MarketingController do
     if Fountain.Marketing.site?() do
       render(conn, :integrations,
         layout: {FountainWeb.Layouts, :marketing},
-        page_title: "Integrations · #{Fountain.Brand.name()}",
+        page_title: "Coding agent integrations · #{Fountain.Brand.name()}",
         meta_description:
-          "#{Fountain.Brand.name()} speaks AG-UI, the Agent Client Protocol, " <>
-            "OpenAI chat completions, MCP and its own REST API, so the editor, " <>
-            "chat app, gateway or framework you already use can start an agent " <>
-            "on a sandbox."
+          "Start a coding agent from your editor, chat app, gateway, framework " <>
+            "or code. #{Fountain.Brand.name()} connects over ACP, AG-UI, OpenAI-compatible " <>
+            "chat completions, MCP and its REST API."
       )
     else
       redirect(conn, to: ~p"/docs/integrations/clients")
