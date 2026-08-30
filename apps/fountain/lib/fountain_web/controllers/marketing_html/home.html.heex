@@ -643,9 +643,10 @@
       to answer. --%>
 
 <%!-- Pricing (ADR 0031): credits are the product. Rendered only where the
-      deployment bills, so a self-hosted instance shows nothing. The three
-      cards state the hour price, the grant and the cap; "How billing works"
-      adds only what a card cannot hold. Do not restate a card there.
+      deployment bills, so a self-hosted instance shows nothing. The two cards
+      answer the first questions a buyer has: the rate and what it costs to
+      try. Concurrency is an operating limit rather than a third price, so it
+      sits under "How billing works" with the rest of the mechanics.
 
       The h2 used to read "Pay for what your agents do", which nobody would
       expect to be false. A pricing heading that states the ordinary case has
@@ -654,12 +655,10 @@
       .agents/product-marketing.md says to lead with, because a sandbox
       provider rents a box by the hour whether or not anybody is talking to it.
 
-      The section used to make that claim three times: this heading weakly, the
-      deck ("every hour an agent works comes out of it"), and the first card's
-      note ("An hour with a prompt in flight"). The heading has it now, the
-      deck keeps only what is its own (prepaid credit, and no subscription),
-      and the card still defines the hour, which is the one place a definition
-      belongs. --%>
+      The deck names the prepaid model and defines when the meter moves. The
+      first card defines an agent hour and makes concurrent work additive. The
+      detail below handles purchased credit, inference, contacts, concurrency
+      and the zero-balance boundary once each. --%>
 <section :if={pricing?()} id="pricing" class="bg-[var(--color-ink-0)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <.eyebrow label="Pricing" tone={:ink} />
@@ -667,10 +666,10 @@
       You pay only while an agent is working.
     </h2>
     <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
-      No plans, no seats, no monthly fee. You buy credit and spend it by the hour.
+      No plans, no seats, no subscription. Buy prepaid credit and spend it only while a prompt is in flight.
     </p>
 
-    <div class="mt-12 grid gap-6 md:grid-cols-3">
+    <div class="mt-12 grid gap-6 md:grid-cols-2 max-w-3xl mx-auto">
       <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-7">
         <p
           class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]"
@@ -678,10 +677,12 @@
         >
           {turn_hour_price()}
         </p>
-        <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">per agent hour</p>
+        <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">
+          per active agent hour
+        </p>
         <p class="mt-3 text-xs leading-relaxed text-[var(--color-ink-secondary)]">
-          An hour with a prompt in flight. A parked agent, an idle one, and one
-          running on your own machine all cost nothing.
+          One agent hour is one hour with a prompt in flight. Two agents working
+          for an hour use two agent hours. Parked and idle agents cost nothing.
         </p>
       </div>
       <%!-- The free grant is the one card a reader is looking for, so it is
@@ -693,24 +694,11 @@
         >
           {elem(opening_credit(), 0)}
         </p>
-        <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">to start, free</p>
-        <p class="mt-3 text-xs leading-relaxed text-[var(--color-ink-secondary)]">
-          Good for {elem(opening_credit(), 1)} days. No card to sign up; add one when you buy more.
-        </p>
-      </div>
-      <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-7">
-        <p
-          class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]"
-          data-role="figure"
-        >
-          {elem(cap_rule(), 2)}
-        </p>
         <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">
-          agents at once, at most
+          free credit to start
         </p>
         <p class="mt-3 text-xs leading-relaxed text-[var(--color-ink-secondary)]">
-          One more for every {elem(cap_rule(), 0)} you hold, from {elem(cap_rule(), 1)}. A start beyond
-          it is refused rather than queued. Need more? Ask.
+          No card required. Starter credit expires after {elem(opening_credit(), 1)} days.
         </p>
       </div>
     </div>
@@ -734,30 +722,37 @@
       <div class="mt-6 space-y-4 text-sm text-[var(--color-ink-secondary)] leading-relaxed">
         <p>
           <span class="font-medium text-[var(--color-ink-text)]">
-            Credit is the whole pricing model.
+            Purchased credit never expires.
           </span>
-          The opening grant expires; credit you buy never expires and is spent after
-          it, in packs of {credit_packs()}.
+          Fountain uses your starter credit first. Add credit in packs of {credit_packs()}.
         </p>
         <p>
           <span class="font-medium text-[var(--color-ink-text)]">
-            Agent time costs {turn_hour_price()} an hour, out of that balance.
+            Bring your own model key.
           </span>
-          Two agents working an hour on the same machine are two hours.
+          Fountain bills agent time, not inference. Your model provider bills its usage separately.
         </p>
         <p :if={rent_line() || message_line()}>
           <span class="font-medium text-[var(--color-ink-text)]">
             Teammate contacts come out of the same balance.
           </span>
-          <span :if={rent_line()}>{String.capitalize(rent_line())}, a month up front.</span>
+          <span :if={rent_line()}>{String.capitalize(rent_line())}, billed in advance.</span>
           <span :if={message_line()}>Messages are {message_line()}.</span>
         </p>
         <p>
           <span class="font-medium text-[var(--color-ink-text)]">
-            At zero, new work pauses; nothing dies.
+            Your balance sets your concurrency.
           </span>
-          A new conversation or prompt is refused until the balance is positive again.
-          Anything already running finishes, even below zero.
+          Each {elem(cap_rule(), 0)} in your balance supports one agent working at a time,
+          with a minimum of {elem(cap_rule(), 1)} and a maximum of {elem(cap_rule(), 2)}.
+          Starts beyond your limit are refused, not queued.
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-ink-text)]">
+            At zero, new work pauses.
+          </span>
+          You cannot start a conversation or send another prompt until you add credit.
+          Work already in flight finishes, even if the balance goes negative.
         </p>
       </div>
     </div>
