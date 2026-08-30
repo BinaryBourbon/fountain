@@ -92,10 +92,10 @@
   >
     <.eyebrow label="Case study" align={:left} />
     <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-      A cluster that answers its own alerts.
+      The pager still rings. An agent starts working too.
     </h2>
     <p class="mt-4 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-      A Kubernetes cluster used to page a person when a workload broke. Now it also starts an agent, which finds the commit that broke it and opens one small pull request. The agent never holds a credential for the cluster it is fixing, and a person still merges the request.
+      When a workload breaks, this Kubernetes cluster pages an on-call engineer and starts an agent at the same time. The agent investigates the alert and, when it finds a repository fix, opens one focused pull request. It never holds cluster credentials. A person decides whether to merge.
     </p>
     <dl class="mt-10 grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4 sm:gap-x-6">
       <div :for={stat <- case_stats()}>
@@ -105,18 +105,20 @@
         >
           {stat.value}
         </dt>
-        <dd class="mt-1.5 text-xs leading-snug text-[var(--color-accent-ink)]">{stat.label}</dd>
+        <dd class="mt-1.5 text-xs leading-snug text-[var(--color-accent-ink)]">
+          {stat.home_label}
+        </dd>
       </div>
     </dl>
     <p class="mt-8 max-w-2xl text-xs text-[var(--color-text-secondary)]">
-      Counted over {case_window()} on one Kubernetes cluster carrying live production workloads. Numbers reported by the cluster administrator (us).
+      Measured from {case_window()} on one Kubernetes cluster running live production workloads. Numbers reported by the cluster administrator (us).
     </p>
     <div class="mt-8">
       <a
         href={~p"/case-studies/self-healing-infrastructure"}
         class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-accent-line)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
       >
-        Follow the whole incident
+        Follow the incident, minute by minute
       </a>
     </div>
   </div>

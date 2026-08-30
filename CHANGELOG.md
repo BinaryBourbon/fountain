@@ -121,6 +121,12 @@ upgrade, is in
   rather than to one runner. See ADR 0036.
 
 ### Changed
+- **The homepage case study distinguishes investigation from resolution.** The
+  pager still reaches an on-call engineer while an agent investigates in
+  parallel, and the copy now says that a pull request follows only when the
+  agent finds a repository fix. Its headline, stat labels and incident link
+  make that human gate and the scope of the measured proof explicit.
+
 - **The homepage makes session state and the two scaling modes explicit.** A
   caller binds a conversation to an id it already owns and sends the same
   Agent, Environment and Vault to resume it, without keeping a lookup table of
