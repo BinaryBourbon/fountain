@@ -46,7 +46,7 @@ defmodule FountainWeb.OpenGraph do
   @spec image_alt() :: String.t()
   def image_alt do
     if Fountain.Marketing.site?(),
-      do: "Have the conversation. Skip the infrastructure.",
+      do: "Run coding agents on ready machines. Pay only while they work.",
       else: Fountain.Brand.name()
   end
 
