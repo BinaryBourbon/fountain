@@ -105,6 +105,9 @@
   <%!-- The agent's own words. Quoted verbatim from the pull request body,
         so the reader judges the diagnosis rather than our summary of it. --%>
   <figure class="max-w-3xl mx-auto mt-4" data-role="case-quote">
+    <figcaption class="mb-3 text-xs text-[var(--color-text-muted)]">
+      The agent's root-cause paragraph, quoted from the pull request it opened at 07:02. The gap had sat there for months unalerted, because no commit had moved a lockfile until that week.
+    </figcaption>
     <blockquote class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 text-sm text-[var(--color-text-secondary)] leading-relaxed">
       <span :for={part <- case_quote()}>
         <%= case part do %>
@@ -118,9 +121,6 @@
         <% end %>
       </span>
     </blockquote>
-    <figcaption class="mt-3 text-xs text-[var(--color-text-muted)]">
-      The agent's root-cause paragraph, quoted from the pull request it opened at 07:02. The gap had sat there for months unalerted, because no commit had moved a lockfile until that week.
-    </figcaption>
   </figure>
 </section>
 
