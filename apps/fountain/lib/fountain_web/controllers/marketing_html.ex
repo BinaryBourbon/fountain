@@ -1483,27 +1483,27 @@ defmodule FountainWeb.MarketingHTML do
     [
       %{
         value: "78",
-        label: "incidents handled by an agent",
-        home_label: "incidents investigated",
+        label: "alerts investigated by an agent",
+        home_label: "alerts investigated",
         note: "Fifteen days, one cluster, one runbook."
       },
       %{
-        value: "4m 27s",
-        label: "from alert to open pull request",
-        home_label: "alert to open pull request in the incident below",
-        note: "The incident below. The second took 4m 08s."
+        value: "12",
+        label: "fix pull requests opened",
+        home_label: "fix pull requests opened",
+        note: "Four came from the same planned rehearsal fault."
+      },
+      %{
+        value: "8",
+        label: "fix pull requests merged",
+        home_label: "fix pull requests merged",
+        note: "The agent could neither approve nor merge."
       },
       %{
         value: "7.5 min",
-        label: "median incident, start to verdict",
-        home_label: "median investigation time",
-        note: "The longest ran 50 minutes."
-      },
-      %{
-        value: "0",
-        label: "cluster credentials the agent holds",
-        home_label: "cluster credentials held by the agent",
-        note: "No kubectl, no kubeconfig, no write path of its own."
+        label: "median alert-to-verdict time",
+        home_label: "median alert-to-verdict time",
+        note: "The longest investigation ran 50 minutes."
       }
     ]
   end
@@ -1530,8 +1530,8 @@ defmodule FountainWeb.MarketingHTML do
         title: "A webhook starts an agent",
         mono: "POST /api/conversations",
         body:
-          "Two hundred lines of Node, posting an agent id, a vault id and the " <>
-            "alert text. It needs no cluster access."
+          "The production handler is two hundred lines of Node. Its handoff to " <>
+            "Fountain posts an agent id, an identity id and the alert text."
       },
       %{
         step: "4",
@@ -1546,8 +1546,8 @@ defmodule FountainWeb.MarketingHTML do
         title: "It finds the wrong fact in git",
         mono: "gh api · git log -S",
         body:
-          "A bad cluster is a bad commit. The agent reads the history and " <>
-            "names the one at fault before editing."
+          "When the repository can fix an alert, the agent reads the history and " <>
+            "names the commit at fault before editing."
       },
       %{
         step: "6",
@@ -1694,8 +1694,8 @@ defmodule FountainWeb.MarketingHTML do
       %{
         title: "Agent",
         body:
-          "Runtime, model, runbook and tools, written once as a file in a " <>
-            "public repository. The runbook is the product: diagnose, fix by " <>
+          "Runtime, model, runbook and tools, defined once in a file in a " <>
+            "public repository. That reviewed file defines the job: diagnose, fix by " <>
             "pull request, wait for the human, verify, report."
       },
       %{
@@ -1706,18 +1706,17 @@ defmodule FountainWeb.MarketingHTML do
             "per incident, never patched by hand."
       },
       %{
-        title: "Vault",
+        title: "Fountain Vault",
         body:
-          "The bot identity, kept apart from the environment. Swap it and the " <>
-            "agent acts as a different GitHub account. The token is an environment " <>
-            "variable, never in the prompt, the context or the transcript."
+          "Not a central secret store, a Fountain Vault is a small override layer. " <>
+            "Here it supplied the bot identity separately from the environment. " <>
+            "The token never entered the prompt, context or transcript."
       },
       %{
         title: "Conversation",
         body:
           "One incident, one sandbox, one transcript, addressed by its alert. " <>
-            "It survives an hour-long diagnosis, and a human opens it at 08:50 " <>
-            "to see 07:02."
+            "The run and transcript stayed available while the human was away."
       }
     ]
   end

@@ -1,6 +1,6 @@
 # Product Marketing Context
 
-**Document version:** v4
+**Document version:** v5
 **Last updated:** 2026-08-29
 
 This file is the positioning, the ICP and the vocabulary that marketing work in
@@ -273,8 +273,8 @@ fail the gate in a manual, and that is by design.
 **Metrics:** The only sourced numbers are the case study's, counted on one
 production cluster over a stated window (11 to 25 August 2026) and held as
 literals in `marketing_html.ex` so they cannot quietly widen their own window.
-78 incidents handled by an agent; 4m 27s from alert to open pull request on the
-worked incident; 7.5 minute median incident to verdict; 0 cluster credentials
+78 alerts investigated by an agent; 4m 27s from alert to open pull request on
+the worked incident; 7.5 minute median alert to verdict; 0 cluster credentials
 the agent holds. Twelve fix pull requests opened, eight merged, four of those a
 rehearsal fault raised on purpose.
 
@@ -307,7 +307,7 @@ pull-request text, not a person's.
 | The machine is not your problem | Built, warmed, metered, reclaimed; parks and wakes with work intact |
 | The credential is separable from the machine | Vault wins on collision; egress broker placeholders |
 | A run is addressable | Id, status, transcript, event stream; the case study's webhook |
-| Guardrails are mechanisms, not promises | "Each refusal is somebody else's 405" |
+| Guardrails are mechanisms, not promises | Every limit in the case study is enforced outside the model |
 | You pay for machine time, never tokens | Live price card; bring your own model key |
 
 ## Goals
@@ -325,6 +325,7 @@ reader into someone who has seen the primitives compose.
 
 ## Changelog
 *Newest first. One line per revision: what changed and why.*
+- v5 (2026-08-29) — Case-study clarity pass: report alerts rather than incidents, show the full pull-request funnel, and describe the outcome as alert to pull request rather than self-healing.
 - v4 (2026-08-29) — Self-hosted clarity pass: lead with ownership, put the ownership decision before installation detail, and frame open-source apps as examples rather than customer proof.
 - v3 (2026-08-29) — Homepage clarity pass: lead with coding agents and the work-only meter, put production proof before implementation detail, and remove customer-shaped proof language.
 - v1 (2026-08-27) — Initial context, drafted from the repo while working the case study headline. Competitive landscape, customer language, customers, testimonials and current WAU left as explicit GAPs rather than invented.
