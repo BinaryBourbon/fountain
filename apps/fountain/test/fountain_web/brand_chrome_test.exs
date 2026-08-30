@@ -41,7 +41,7 @@ defmodule FountainWeb.BrandChromeTest do
   test "the marketing page and legal pages name the brand; the CLI stays fountain", %{conn: conn} do
     home = conn |> get(~p"/") |> html_response(200)
     assert home =~ "You did not set out to run a sandbox platform."
-    assert home =~ "Managoat scrubs those values from every line of output"
+    assert home =~ "Managoat scrubs secret values from stored output"
     assert home =~ "Put Managoat behind the stack you already use."
     assert home =~ "Give it a Managoat URL and key"
     # The CLI keeps the engine's name on a branded deployment. The anchor moved

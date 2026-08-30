@@ -250,8 +250,8 @@
 
       A DENIED CHORE HAS TO HURT. Naming an ops chore only to take it away is
       the register this section wants, and two cards do it: "without a
-      redeploy", and the credential that never enters the sandbox. It works
-      because a redeploy is expensive and memorable. It did not work for
+      redeploy" and without a patch handoff. Both are expensive and memorable.
+      It did not work for
       "Never parse a runtime's output", where the denied chore is one jq
       filter, and selling the absence of a small chore cost the card the two
       larger things `Blocks` actually does: one renderer across four dialect
@@ -270,9 +270,8 @@
       NO dt MAY NAME AN OPS CHORE. The h2 two lines above says the reader did
       not set out to run a sandbox platform, so a card that opens "Set the
       machine up" hands back the job the section just took away, six words
-      after taking it. The reader's verb is declarative: they describe a
-      machine, they do not build or configure one, and an Environment names a
-      filesystem rather than installing one. The same trap is open to "install",
+      after taking it. The reader launches from a declared setup. They do not
+      build or configure one. The same trap is open to "install",
       "provision", "configure" and "wire up".
 
       A reuse claim counts runs, not Agents. `environment_id` sits on both
@@ -284,12 +283,11 @@
       the same four lines.
 
       Two elements, two jobs. The h2 names the problem and claims it, and the
-      grid shows the mechanisms. The lead-in only puts the reader at the moment
-      after the demo worked, and that is all it does: it used to carry a second
-      sentence saying what the h2 had just said, in the register of the h2. It
-      used to end "none of them is your product" and it used to count the
-      cards, which the reader can see and which is the move 6291ec55 took out
-      of this same paragraph.
+      grid shows the mechanisms. The lead-in distinguishes the visible agent
+      from the infrastructure the section inventories. It used to call the
+      agent "the easy part", which dismissed a hard problem without adding to
+      the argument. It also used to count the cards, which the reader can see
+      and which is the move 6291ec55 took out of this same paragraph.
 
       THERE IS NO CLOSER, AND THAT IS THE DECISION. The section used to end on
       a line handing the product back, and three versions of it failed the same
@@ -313,7 +311,7 @@
     You did not set out to run a sandbox platform. We did.
   </h2>
   <p class="mt-3 text-[var(--color-text-secondary)] max-w-2xl text-lg">
-    The agent was the easy part.
+    The agent is only the visible part.
   </p>
   <%!-- A definition list, which is what the page uses for a claim and the
         mechanism behind it (the protocols, the limits and the case study all
@@ -327,10 +325,10 @@
   <dl class="mt-12 grid sm:grid-cols-2 gap-x-12 gap-y-9">
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Describe the machine once, then launch every run from it.
+        Launch every run from the same reviewable setup.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        An Environment names the filesystem, the packages, the checkout and the network. You list it and diff it like any other object you keep under version control.
+        An Environment defines repositories, packages, environment variables, setup scripts, and network policy. Keep it in git, review changes, and reuse it across runs.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
@@ -338,23 +336,23 @@
         Change a credential without a redeploy.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A Vault is a small override layer for one run, not a central store like HashiCorp's, and its values win on collision. The same Environment runs as you, as a bot, or as your customer. {Fountain.Brand.name()} scrubs those values from every line of output it stores.
+        Here, a Vault is a per-run override, not a central secret store. Its values override the Environment, so the same setup can run as you, a bot, or your customer. {Fountain.Brand.name()} scrubs secret values from stored output.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Let the agent open the pull request itself.
+        Let the agent open the pull request.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        It already holds the checkout and the credential, so nothing has to carry a diff back out of the sandbox.
+        The sandbox already has the checkout and the credential you assigned. The agent can commit, push, and open the pull request without a patch handoff.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Render one shape, whatever runtime produced it.
+        Build one interface for every runtime.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Text, thinking, tool calls and their results, and approval requests arrive as the same blocks from every runtime. Ask for them with <code
+        {Fountain.Brand.name()} normalizes text, reasoning, tool calls, results, and approval requests into one block schema. Request it with <code
           class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
           phx-no-format
         >?blocks=true</code>.
@@ -362,18 +360,18 @@
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Pick up where the agent left off.
+        Keep the workspace. Release the capacity.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A parked sandbox holds the checkout and the work in progress, and wakes on the next message with the files where the agent left them. It takes none of your concurrency while it waits.
+        While a sandbox waits, its checkout and work in progress stay intact, but it uses none of your concurrency. The next message wakes it on the same files.
       </dd>
     </div>
     <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
       <dt class="font-medium text-[var(--color-text-primary)]">
-        Trace what changed, and who changed it.
+        Trace what changed and who changed it.
       </dt>
       <dd class="mt-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Every change is recorded where it happens, not where the request arrived. An update names the fields that moved and never their values. Agents are versioned, and each conversation records the version it ran under.
+        The audit trail records who changed each resource and which fields changed, without storing their values. Each conversation also records the exact Agent version it ran under.
       </dd>
     </div>
   </dl>
