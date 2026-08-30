@@ -760,27 +760,27 @@ defmodule FountainWeb.MarketingHTML do
 
   ## /built-with
   #
-  # The apps built on the API, grouped by who they are for. Every one is a
-  # real deployment against the hosted instance, and every one is open source,
-  # so a card carries two links and the page carries no claim that cannot be
-  # clicked. The controller test asserts both are absolute and that no app is
-  # listed twice.
+  # The example apps this project built on the API, grouped by product shape.
+  # Every one is a real deployment against the hosted instance, and every one
+  # is open source, so a card carries two links and the page carries no claim
+  # that cannot be clicked. The controller test asserts both are absolute and
+  # that no app is listed twice.
   #
-  # The first group is the three this project builds itself, and they lead
-  # every page that shows the roster. An app in it carries a `:flagship` key
-  # holding the lines its featured cards add: a short homepage description,
-  # what it is like, and who it is for. That key is what `flagship_apps/0`
-  # selects on, so the tier is a property of the entry rather than a second
-  # list to keep in step.
+  # The first group holds the three flagship apps, and they lead every page
+  # that shows the roster. An app in it carries a `:flagship` key holding the
+  # lines its featured cards add: a short homepage description, what it is
+  # like, and who it is for. That key is what `flagship_apps/0` selects on, so
+  # the tier is a property of the entry rather than a second list to keep in
+  # step.
 
   @doc "The applications built on the API, in the order and grouping the page shows."
   def built_apps do
     [
       %{
         id: "flagship",
-        title: "The three we build ourselves",
+        title: "Three ways to work with your agents",
         blurb:
-          "Fountain's own UI is a console: accounts, keys, agents, environments, audit. The apps you actually work in are these, on their own origins, built on the same public API as everything below. Open one, point it at your instance, sign in.",
+          "Fountain's web UI is the operator console for accounts, keys, agents, environments and audit. These three apps are working surfaces built on the same public API available to your product.",
         apps: [
           %{
             id: "fountain-conversations",
@@ -790,13 +790,13 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://fountain-conversations.demo.managoat.com/",
             source: "https://github.com/managoat/fountain-conversations",
             blurb:
-              "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
-            shows: "the event stream as blocks, and one sandbox behind many conversations",
+              "Start a run and watch the agent work turn by turn. Switch among chat, timeline and raw views of the same conversation, including the sandbox it shares with related runs.",
+            shows:
+              "event streams rendered as blocks and one sandbox shared by several conversations",
             flagship: %{
               homepage: "Run an agent and watch every step.",
-              like:
-                "ChatGPT, except the model has a checkout and a shell, and you can watch it work.",
-              who: "Open this one first. It is the whole platform with a face on it."
+              like: "A coding-agent chat with its checkout, shell and event stream visible.",
+              who: "Start here to see one run from first prompt to final response."
             }
           },
           %{
@@ -807,13 +807,12 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://fountain-team.demo.managoat.com/",
             source: "https://github.com/managoat/fountain-team",
             blurb:
-              "Your agents as teammates in a messaging app. Roster on the left, thread on the right, routines on a schedule, images and search. Enter to send.",
-            shows: "the team API, SSE streaming, schedules, usage",
+              "Message your agents as teammates. Keep a roster beside the thread, schedule recurring routines, attach images and search the conversation history.",
+            shows: "the team API, SSE streaming, schedules and usage",
             flagship: %{
               homepage: "Message your agents like teammates.",
-              like:
-                "A group chat whose contacts are bots you made, one click each, faces and all.",
-              who: "For anyone who would rather text a teammate than fill in a form."
+              like: "A team messenger whose contacts are agents you configured.",
+              who: "Use it when a thread is the natural place to hand off work."
             }
           },
           %{
@@ -824,23 +823,22 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://fountain-workbench.demo.managoat.com",
             source: "https://github.com/managoat/fountain-workbench",
             blurb:
-              "A dev workstation the team shares. A project is an environment and a vault, work items live in it, and putting a teammate on one is a first prompt rather than four steps of setup.",
-            shows: "projects over environments and vaults, agents as staff",
+              "A shared engineering workbench. Each project bundles a reusable environment and credentials with its work items, so assigning an agent takes one prompt.",
+            shows:
+              "projects composed from reusable environments and credentials, with agents as staff",
             flagship: %{
               homepage: "Assign work across shared projects.",
-              like:
-                "Multiplayer engineering: one board of work items, and staff you put on them by typing.",
-              who:
-                "For a team that wants the same projects, the same agents and one place to watch."
+              like: "One board for shared projects, work items and the agents assigned to them.",
+              who: "Use it when several people need the same agents and project setup."
             }
           }
         ]
       },
       %{
         id: "everyone",
-        title: "For everyone",
+        title: "Research and data",
         blurb:
-          "No agent, no sandbox and no prompt box on screen. The product is the document or the chart.",
+          "The output is a document or a chart. The agent and its sandbox stay behind the interface.",
         apps: [
           %{
             id: "briefing-room",
@@ -850,8 +848,8 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://briefing-room.demo.managoat.com",
             source: "https://github.com/managoat/briefing-room",
             blurb:
-              "Say what you need to understand and why. A researcher with its own computer reads real sources and hands back a clean, cited brief. A document, not a chat.",
-            shows: "web research behind a UI with none of the AI-chat furniture"
+              "Describe what you need to understand and why. A research agent reads sources on the web and returns a cited brief instead of a chat transcript.",
+            shows: "web research that returns a document instead of a chat interface"
           },
           %{
             id: "table-talk",
@@ -861,16 +859,16 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://table-talk.demo.managoat.com",
             source: "https://github.com/managoat/table-talk",
             blurb:
-              "Drop a CSV in. An analyst runs Python on its sandbox and comes back with charts and plain-English findings. Then keep asking questions of your data.",
-            shows: "a real computer as the engine under a zero-jargon UI"
+              "Drop in a CSV. An analyst runs Python in its sandbox and returns charts with plain-language findings. Keep asking questions of the same data.",
+            shows: "sandboxed Python analysis behind a file-upload interface"
           }
         ]
       },
       %{
         id: "engineers",
-        title: "For engineers",
+        title: "Software engineering",
         blurb:
-          "The sandbox is the point. Each of these hands an agent a checkout, a shell and a task list, then shows you the work.",
+          "Each app gives an agent a checkout, a shell and a bounded task, then makes the work visible.",
         apps: [
           %{
             id: "repo-sage",
@@ -880,8 +878,8 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://repo-sage.demo.managoat.com",
             source: "https://github.com/managoat/repo-sage",
             blurb:
-              "Name any public GitHub repository. An agent clones it on its own machine and answers with file-and-line citations that link back to the source.",
-            shows: "the sandbox as a workstation: clone, grep, read, cite"
+              "Name any public GitHub repository. An agent clones it in a sandbox and answers with file-and-line citations that link back to the source.",
+            shows: "repository checkout, search and file-and-line citations"
           },
           %{
             id: "mission-control",
@@ -891,8 +889,8 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://mission-control.demo.managoat.com",
             source: "https://github.com/managoat/mission-control",
             blurb:
-              "Describe a mission. A coordinator plans it, you approve the plan, and the app starts one sandboxed agent per task. Watch the fleet work and take one report.",
-            shows: "plan, approve, fan out, multiplex the streams, synthesize"
+              "Describe a goal. A coordinator drafts a plan for your approval, then starts one sandboxed agent per task. Watch them work and receive one combined report.",
+            shows: "approval gates, parallel runs, combined event streams and a final report"
           },
           %{
             id: "dns-desk",
@@ -903,15 +901,15 @@ defmodule FountainWeb.MarketingHTML do
             source: "https://github.com/managoat/dns-desk",
             blurb:
               "A DNS operator for your Cloudflare zones. Ask in plain words, read the plan as a diff, approve. The zone tables stay on screen while the agent does the work.",
-            shows: "plan, approve, apply on a live system, with a vault as the blast radius"
+            shows: "a reviewable plan and explicit approval before changing a live system"
           }
         ]
       },
       %{
         id: "infrastructure",
-        title: "For infrastructure",
+        title: "Infrastructure operations",
         blurb:
-          "Nobody is watching these. A schedule wakes the agent, it decides whether anything needs doing, and most of the time the answer is no.",
+          "These apps monitor and repair systems with tools scoped to the job. A scheduled run can decide that nothing needs doing.",
         apps: [
           %{
             id: "watchtower",
@@ -921,8 +919,9 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://watchtower.demo.managoat.com",
             source: "https://github.com/managoat/watchtower",
             blurb:
-              "An SRE teammate on a cron: uptime, latency, TLS expiry and DNS for every site you name. When a tile turns red, ask it to investigate. It has real tools.",
-            shows: "schedules as a product heartbeat, the conversation as the store"
+              "A scheduled SRE agent monitors uptime, latency, TLS expiry and DNS for every site you name. When a tile turns red, ask it to investigate with its tools.",
+            shows:
+              "scheduled runs, tool-backed investigation and conversations as durable history"
           },
           %{
             id: "mend",
@@ -932,9 +931,8 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://mend.demo.managoat.com",
             source: "https://github.com/managoat/mend",
             blurb:
-              "What an audit finds across a repository's CI, manifests, Dockerfiles and cloud templates, and what an agent does once you hand it that tool. Mechanical fixes applied, judgement calls argued, one patch back.",
-            shows:
-              "a real CLI in the sandbox, and the restraint to leave the ambiguous ones alone"
+              "Mend audits CI, manifests, Dockerfiles and cloud templates. It applies mechanical fixes, explains judgment calls and returns one patch.",
+            shows: "a real CLI in the sandbox and ambiguous findings left for review"
           },
           %{
             id: "rounds",
@@ -944,15 +942,15 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://rounds.demo.managoat.com",
             source: "https://github.com/managoat/rounds",
             blurb:
-              "Dependabot for infrastructure config. Enroll a repository and it gets audited on a schedule; an agent fixes what it can verify and opens the pull request. Never twice for the same finding, never again for one you closed.",
-            shows: "an unattended product, and an agent that knows when to do nothing"
+              "Dependabot for infrastructure config. Rounds audits an enrolled repository on a schedule, fixes what it can verify and opens a pull request without repeating closed findings.",
+            shows: "an unattended workflow and an agent that knows when to do nothing"
           }
         ]
       },
       %{
         id: "ai-engineers",
-        title: "For AI engineers",
-        blurb: "Several agents at once, side by side, with the numbers underneath.",
+        title: "Agent evaluation",
+        blurb: "Run the same prompt across several agents, then compare their outputs and usage.",
         apps: [
           %{
             id: "arena",
@@ -962,8 +960,8 @@ defmodule FountainWeb.MarketingHTML do
             url: "https://arena.demo.managoat.com",
             source: "https://github.com/managoat/arena",
             blurb:
-              "One prompt, several brains, side by side. Blind columns, live streams, latency and token counts, and your vote on the scoreboard.",
-            shows: "parallel conversations, the model catalog, per-turn usage"
+              "Send one prompt to several agents in blind columns. Compare their live responses, latency and token counts, then vote on the result.",
+            shows: "parallel conversations, model selection and per-turn usage"
           }
         ]
       }
@@ -974,9 +972,9 @@ defmodule FountainWeb.MarketingHTML do
   def built_apps_flat, do: Enum.flat_map(built_apps(), & &1.apps)
 
   @doc """
-  The three applications this project builds itself, in the order every page
-  shows them. Selected out of `built_apps/0` rather than restated, so a
-  flagship card cannot drift from its roster entry.
+  The three flagship applications, in the order every page shows them.
+  Selected out of `built_apps/0` rather than restated, so a flagship card
+  cannot drift from its roster entry.
   """
   def flagship_apps, do: Enum.filter(built_apps_flat(), &Map.has_key?(&1, :flagship))
 

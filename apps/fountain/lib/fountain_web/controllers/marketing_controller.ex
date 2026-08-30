@@ -114,10 +114,9 @@ defmodule FountainWeb.MarketingController do
         page_title: "Built with #{Fountain.Brand.name()} · #{Fountain.Brand.name()}",
         meta_description:
           "#{length(FountainWeb.MarketingHTML.built_apps_flat())} open-source " <>
-            "applications built on the #{Fountain.Brand.name()} API: research briefs, " <>
-            "CSV analysis, repository Q&A, agent fleets, DNS and infrastructure " <>
-            "patrols, model bake-offs and the team clients. Most have no backend " <>
-            "of their own."
+            "applications built on the #{Fountain.Brand.name()} API. Explore chat, " <>
+            "research, data analysis, code work, infrastructure operations and " <>
+            "multi-agent workflows."
       )
     else
       redirect(conn, to: ~p"/docs/build")
