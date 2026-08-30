@@ -29,7 +29,7 @@ defmodule FountainWeb.MarketingInstanceTest do
       assert body =~ "/docs"
 
       refute body =~ "You did not set out to run a sandbox platform."
-      refute body =~ "A hundred tickets is a hundred calls, not an architecture."
+      refute body =~ "A hundred tickets take a hundred calls, not a new architecture."
       refute body =~ "14-day trial"
       refute body =~ "Give your product a coding agent."
 
