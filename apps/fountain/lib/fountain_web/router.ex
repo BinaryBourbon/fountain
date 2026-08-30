@@ -155,6 +155,7 @@ defmodule FountainWeb.Router do
   scope "/", FountainWeb do
     pipe_through [:browser, :browser_optional_auth, :public_analytics]
     get "/", MarketingController, :home
+    get "/launch", MarketingController, :launch
     get "/integrations", MarketingController, :integrations
     get "/built-with", MarketingController, :built_with
     get "/self-hosted", MarketingController, :self_hosted

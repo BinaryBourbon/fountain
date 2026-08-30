@@ -1,0 +1,350 @@
+<%!-- A campaign page, not a second homepage. It is intentionally unlisted and
+      makes one argument for one reader: a developer arriving from a launch
+      announcement can run a first agent without first learning the whole
+      product surface. Numbers come from the same helpers as the homepage and
+      the case study. Prices come from the card the ledger burns at. --%>
+
+<%!-- Hero --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center" data-role="hero">
+  <p class="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3.5 py-1.5 text-xs text-[var(--color-text-secondary)]">
+    <span class="size-1.5 rounded-full bg-[var(--color-accent)]" aria-hidden="true"></span>
+    Open source · self-hostable
+  </p>
+  <h1 class="text-[2.75rem] leading-[1.05] sm:text-6xl font-bold tracking-[-0.03em] text-[var(--color-text-primary)]">
+    Run coding agents on ready machines.<span :if={pricing?()}> Pay only while they work.</span>
+  </h1>
+  <p class="mt-6 text-lg sm:text-xl leading-relaxed text-[var(--color-text-secondary)] max-w-2xl mx-auto">
+    Send a prompt. {Fountain.Brand.name()} starts a machine with your repositories, packages and credentials already attached. It parks between prompts and wakes with its work intact.
+  </p>
+  <div class="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm shadow-sm"
+    >
+      Run your first agent free
+    </a>
+    <a
+      href={~p"/docs/tour"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      See it work in 40 lines
+    </a>
+  </div>
+  <p :if={pricing?()} class="mt-5 text-xs text-[var(--color-text-muted)]">
+    {elem(opening_credit(), 0)} of credit to start, no card. Bring your own model key. You pay for agent time, never tokens.
+  </p>
+  <p :if={!pricing?()} class="mt-5 text-xs text-[var(--color-text-muted)]">
+    Free to use on this install.
+  </p>
+</section>
+
+<%!-- Production proof before implementation detail. --%>
+<section class="max-w-5xl mx-auto px-6 pb-16">
+  <div class="rounded-2xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-8 sm:p-12">
+    <.eyebrow label="Production proof" align={:left} />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] max-w-2xl">
+      An alert can have a verdict before the on-call opens a terminal.
+    </h2>
+    <p class="mt-4 text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
+      One Kubernetes cluster pages an engineer and starts an agent at the same time. The agent investigates, proposes a repository fix when it finds one, and leaves the merge to a person.
+    </p>
+    <div class="mt-10 grid gap-8 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] sm:items-center sm:gap-10">
+      <% lead = case_lead_stat() %>
+      <dl data-emphasis="lead">
+        <dt
+          class="text-5xl sm:text-6xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+          data-role="figure"
+        >
+          {lead.value}
+        </dt>
+        <dd class="mt-2 text-sm font-medium text-[var(--color-text-primary)]">
+          {lead.home_label}
+        </dd>
+        <dd class="mt-2 text-xs text-[var(--color-accent-ink)]">{lead.note}</dd>
+      </dl>
+      <dl class="border-t border-[var(--color-accent-line)] sm:border-l sm:border-t-0 sm:pl-8">
+        <div
+          :for={stat <- case_supporting_stats()}
+          class="grid grid-cols-[3.5rem_1fr] gap-4 border-b border-[var(--color-accent-line)] py-4 last:border-b-0 first:pt-0 sm:first:pt-4"
+          data-emphasis="supporting"
+        >
+          <dt
+            class="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]"
+            data-role="figure"
+          >
+            {stat.value}
+          </dt>
+          <dd class="self-center text-xs leading-snug text-[var(--color-accent-ink)]">
+            {stat.home_label}
+          </dd>
+        </div>
+      </dl>
+    </div>
+    <p class="mt-8 max-w-2xl text-xs text-[var(--color-text-secondary)]">
+      Measured from {case_window()} on one Kubernetes cluster running live production workloads. Numbers reported by the cluster administrator (us).
+    </p>
+    <p class="mt-8">
+      <a
+        href={~p"/case-studies/self-healing-infrastructure"}
+        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-accent-line)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+      >
+        Read the incident timeline
+      </a>
+    </p>
+  </div>
+</section>
+
+<%!-- The persistent-workspace proof. The two timings and output come from the
+      checked-in tour, whose example produced both turns. --%>
+<section class="bg-[var(--color-ink-0)] text-[var(--color-ink-text)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <.eyebrow label="Two turns" tone={:ink} />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-ink-text)]">
+      Thirteen seconds. Same machine. Same pull request.
+    </h2>
+    <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-2xl mx-auto text-lg">
+      The first turn cloned the repository, changed it and opened a pull request in 43 seconds. The next prompt revised that pull request in 13.
+    </p>
+
+    <div class="mt-12 grid gap-8 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] md:items-center">
+      <pre
+        class="min-w-0 rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+        phx-no-format
+      ><code>{launch_example()}</code></pre>
+      <div class="space-y-5 text-[var(--color-ink-secondary)] leading-relaxed">
+        <p>
+          Nothing re-cloned. Nothing re-explained. No second branch appeared.
+        </p>
+        <p>
+          The checkout stayed on the first turn's branch. The GitHub CLI kept its authentication. The runtime session kept what it had done and why.
+        </p>
+        <p class="font-medium text-[var(--color-ink-text)]">
+          That is the difference between an agent with a machine and an agent with a context window.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%!-- The division of responsibility, reduced to the decisions the developer
+      keeps and the machinery Fountain takes. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <.eyebrow label="The split" />
+  <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-text-primary)]">
+    You build the product. {Fountain.Brand.name()} runs the machine.
+  </h2>
+  <div class="mt-12 grid gap-6 md:grid-cols-2">
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-7">
+      <h3 class="font-semibold text-[var(--color-text-primary)]">You decide</h3>
+      <ul class="mt-5 space-y-3 text-sm text-[var(--color-text-secondary)]">
+        <li>Your interface and user identity</li>
+        <li>What the agent is for</li>
+        <li>Which repository and credential each run gets</li>
+        <li>Which consequential actions still require a person</li>
+      </ul>
+    </div>
+    <div class="rounded-xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-7">
+      <h3 class="font-semibold text-[var(--color-text-primary)]">
+        {Fountain.Brand.name()} handles
+      </h3>
+      <ul class="mt-5 space-y-3 text-sm text-[var(--color-text-secondary)]">
+        <li>Provisioning, warming, parking and reclaiming the sandbox</li>
+        <li>Attaching credentials without putting them in the prompt</li>
+        <li>Running Claude, Codex, Gemini or opencode behind one API</li>
+        <li>Normalizing the stream, keeping the transcript and recording changes</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<%!-- State and the credential boundary share one band because both answer
+      what survives a run and what crosses into it. --%>
+<div class="bg-[var(--color-band)] border-y border-[var(--color-border)]">
+  <section class="max-w-5xl mx-auto px-6 py-16">
+    <.eyebrow label="State" />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-text-primary)]">
+      Keep the workspace. Release the capacity.
+    </h2>
+    <div class="mt-10 grid gap-6 md:grid-cols-2">
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)]">
+          A fresh sandbox for each job
+        </h3>
+        <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Ephemeral mode is the default. One conversation gets one sandbox, and ending the conversation ends its workspace.
+        </p>
+      </div>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
+        <h3 class="font-semibold text-[var(--color-text-primary)]">
+          One agent home across conversations
+        </h3>
+        <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Persistent mode lets several conversations share the same checkout and installed tools while keeping separate transcripts.
+        </p>
+      </div>
+    </div>
+    <p class="mt-8 max-w-2xl mx-auto text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      By default, 60 quiet minutes parks a sandbox on a provider that supports suspend. Its disk survives and it uses none of your concurrency. There is no continuous-run ceiling by default. A provider without suspend destroys on idle, and {Fountain.Brand.name()} says that the runtime starts fresh.
+    </p>
+  </section>
+
+  <section class="max-w-5xl mx-auto px-6 pb-16">
+    <div class="border-t border-[var(--color-border)] pt-16">
+      <.eyebrow label="Credentials" />
+      <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-text-primary)]">
+        The credential never enters the prompt.
+      </h2>
+      <div class="mt-8 max-w-2xl mx-auto space-y-5 text-[var(--color-text-secondary)] leading-relaxed">
+        <p>
+          An Environment describes the machine. A {Fountain.Brand.name()} Vault is a small per-run override layer, not a central secret store. Its values win when keys collide, so changing
+          <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
+            vault: "github-bot"
+          </code>
+          to
+          <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
+            vault: "github-readonly"
+          </code>
+          changes what the agent can do without changing the task.
+        </p>
+        <p>
+          Values enter the sandbox environment at spawn. Exact values of eight bytes or more are replaced with
+          <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
+            [REDACTED]
+          </code>
+          before stored output is written.
+        </p>
+        <p class="border-l-2 border-[var(--color-border-strong)] pl-4 text-sm">
+          Redaction matches exact bytes. It does not catch a value the agent encodes, splits or prints in pieces, or a value shorter than eight bytes. If the agent deliberately reads its environment, the model can see that tool result.
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<%!-- Pricing follows the same deployment-aware rule as the homepage. --%>
+<section :if={pricing?()} id="pricing" class="bg-[var(--color-ink-0)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <.eyebrow label="Pricing" tone={:ink} />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-ink-text)]">
+      Pay only while a prompt is in flight.
+    </h2>
+    <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-xl mx-auto text-lg">
+      No plans, no seats, no subscription. Buy prepaid credit and use it only while an agent works.
+    </p>
+
+    <div class="mt-12 grid gap-6 md:grid-cols-2 max-w-3xl mx-auto">
+      <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-7">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-ink-text)]"
+          data-role="figure"
+        >
+          {turn_hour_price()}
+        </p>
+        <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">
+          per active agent hour
+        </p>
+        <p class="mt-3 text-xs leading-relaxed text-[var(--color-ink-secondary)]">
+          One hour means one hour with a prompt in flight. Parked agents, idle agents and agents on your own runner cost no {Fountain.Brand.name()} credit.
+        </p>
+      </div>
+      <div class="rounded-xl border border-[var(--color-accent)] bg-[var(--color-ink-1)] p-7">
+        <p
+          class="text-4xl font-semibold tracking-tight text-[var(--color-accent)]"
+          data-role="figure"
+        >
+          {elem(opening_credit(), 0)}
+        </p>
+        <p class="mt-2 text-sm font-medium text-[var(--color-ink-text)]">
+          free credit to start
+        </p>
+        <p class="mt-3 text-xs leading-relaxed text-[var(--color-ink-secondary)]">
+          No card required. Starter credit expires after {elem(opening_credit(), 1)} days. Purchased credit never expires.
+        </p>
+      </div>
+    </div>
+
+    <div class="mt-10 max-w-2xl mx-auto grid gap-4 text-sm text-[var(--color-ink-secondary)] sm:grid-cols-2">
+      <p class="border-l border-[var(--color-ink-border)] pl-4">
+        Each {elem(cap_rule(), 0)} in your balance supports one agent working at a time, from a minimum of {elem(
+          cap_rule(),
+          1
+        )} to a maximum of {elem(cap_rule(), 2)}. Starts beyond the limit are refused, not queued.
+      </p>
+      <p class="border-l border-[var(--color-ink-border)] pl-4">
+        At zero, new work pauses. Work already in flight finishes. Add credit and the next prompt can wake the same workspace.
+      </p>
+    </div>
+  </div>
+</section>
+
+<%!-- The limits are part of the conversion argument rather than an appendix. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <.eyebrow label="The honest version" align={:left} />
+  <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+    Know the boundary before you build on it.
+  </h2>
+  <dl class="mt-10 grid gap-x-12 gap-y-8 sm:grid-cols-2">
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Bring your own model credential.
+      </dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        {Fountain.Brand.name()} charges for agent time, not tokens. Your model provider bills inference.
+      </dd>
+    </div>
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">The server is pre-1.0.</dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        A minor release can contain breaking changes. The changelog identifies them, and the upgrade guide states the supported path.
+      </dd>
+    </div>
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Persistence depends on the backend.
+      </dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        A provider without suspend support destroys an idle sandbox. The transcript survives, but the runtime starts fresh.
+      </dd>
+    </div>
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        A trusted runner is not a sandbox.
+      </dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The default self-hosted runner executes as you, with your network and tools. Use the Firecracker backend on Linux with KVM when you need a microVM boundary.
+      </dd>
+    </div>
+  </dl>
+  <p class="mt-10">
+    <a
+      href={~p"/faq"}
+      class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      Read every limit
+    </a>
+  </p>
+</section>
+
+<%!-- Final CTA. --%>
+<section class="bg-[var(--color-ink-0)]">
+  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
+    <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-ink-text)]">
+      Give your product a coding agent.
+    </h2>
+    <p class="mt-4 text-[var(--color-ink-secondary)] max-w-lg mx-auto text-lg leading-relaxed">
+      Sign up, paste a model key, configure your agent, and start the first run with one API call.
+    </p>
+    <a
+      href={~p"/auth/register"}
+      class="mt-9 inline-flex items-center justify-center px-8 py-3.5 rounded-lg bg-[var(--color-ink-brand)] text-[var(--color-ink-0)] font-semibold hover:opacity-90 transition-opacity"
+    >
+      Run your first agent free
+    </a>
+    <p class="mt-5 text-sm text-[var(--color-ink-secondary)]">
+      Or <a
+        href={~p"/self-hosted"}
+        class="underline underline-offset-2 hover:text-[var(--color-ink-text)]"
+      >run it yourself</a>.
+    </p>
+  </div>
+</section>

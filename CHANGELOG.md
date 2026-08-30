@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Added
 
+- **A focused launch page at `/launch`.** The homepage remains the canonical
+  product page; this unlisted campaign page makes the shorter argument for a
+  developer arriving from a launch announcement. It leads with ready machines
+  and the work-only meter, then uses the production case-study figures and the
+  tour's 43-second first turn and 13-second revision as its proof. The rest of
+  the page names the responsibility split, both sandbox modes, the exact
+  redaction boundary and the product's current limitations before asking the
+  reader to run a first agent. Prices, opening credit, concurrency settings and
+  case-study figures come from the same helpers as the homepage, so the page
+  cannot preserve an old plan or an old number. On an instance that is not the
+  marketing site, `/launch` redirects to the executable tour.
+
 - **One page for the questions, at `/faq`.** Three marketing pages carried a
   question-shaped block at the bottom, and a reader with a question had to
   guess which page it sat on. They are one page now, grouped into building on
