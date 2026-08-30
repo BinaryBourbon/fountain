@@ -554,8 +554,8 @@ defmodule FountainWeb.MarketingControllerTest do
     test "renders the loop, the guardrails and the incident", %{conn: conn} do
       body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
 
-      assert body =~ "The pager still goes off at 06:58."
-      assert body =~ "That engineer decides whether to merge it."
+      assert body =~ "The pager went off at 06:58."
+      assert body =~ "A human still had to approve it."
       refute body =~ "Kubernetes estate"
       refute body =~ "production estate"
 
@@ -565,8 +565,14 @@ defmodule FountainWeb.MarketingControllerTest do
       [alert | _] = timeline = FountainWeb.MarketingHTML.case_timeline()
       first_pr = Enum.find(timeline, &(&1.title == "The first pull request opens"))
 
-      assert body =~ "goes off at #{String.slice(alert.time, 0, 5)}"
-      assert body =~ "open by #{String.slice(first_pr.time, 0, 5)}"
+      {:ok, alert_at} = Time.from_iso8601(alert.time)
+      {:ok, first_pr_at} = Time.from_iso8601(first_pr.time)
+      elapsed = Time.diff(first_pr_at, alert_at)
+
+      assert body =~ "went off at #{String.slice(alert.time, 0, 5)}"
+
+      assert body =~
+               "#{div(elapsed, 60)} minutes #{rem(elapsed, 60)} seconds later"
 
       # Every step of the loop, and the human gate among them.
       for step <- FountainWeb.MarketingHTML.case_loop() do
@@ -581,6 +587,10 @@ defmodule FountainWeb.MarketingControllerTest do
       for event <- FountainWeb.MarketingHTML.case_timeline() do
         assert body =~ event.time, "missing timeline entry #{event.time}"
       end
+
+      {timeline_at, _} = :binary.match(body, ~s(data-role="timeline-event"))
+      {loop_at, _} = :binary.match(body, ~s(data-role="loop-step"))
+      assert timeline_at < loop_at
 
       # The snippet is kept out of the template so its braces are not HEEx.
       assert body =~ "POST"
@@ -601,7 +611,7 @@ defmodule FountainWeb.MarketingControllerTest do
       body = conn |> get(~p"/case-studies/self-healing-infrastructure") |> html_response(200)
 
       assert body =~
-               ~s(<meta property="og:title" content="Self-healing infrastructure · Fountain")
+               ~s(<meta property="og:title" content="Kubernetes alert to pull request in 4m 27s · Fountain")
 
       assert body =~
                ~s(<meta property="og:url" content="http://localhost:4000/case-studies/self-healing-infrastructure")

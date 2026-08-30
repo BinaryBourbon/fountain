@@ -185,12 +185,10 @@ defmodule FountainWeb.MarketingController do
     if Fountain.Marketing.site?() do
       render(conn, :case_study_self_healing,
         layout: {FountainWeb.Layouts, :marketing},
-        page_title: "Self-healing infrastructure · #{Fountain.Brand.name()}",
+        page_title: "Kubernetes alert to pull request in 4m 27s · #{Fountain.Brand.name()}",
         meta_description:
-          "A Kubernetes cluster that answers its own alerts. Prometheus fires, " <>
-            "#{Fountain.Brand.name()} starts an agent, the agent finds the commit that " <>
-            "broke the cluster and opens one pull request. The on-call engineer decides " <>
-            "whether to merge it."
+          "A real Kubernetes incident from alert to pull request in 4m 27s. The agent " <>
+            "held no cluster credentials, and a human kept the only approval."
       )
     else
       redirect(conn, to: ~p"/docs/tour")
