@@ -121,6 +121,7 @@ Options:
 
 ```
       --api-key   paste an API key instead of email + password (for accounts that sign in with GitHub)
+      --device    sign in by approving this device in your browser (works for accounts that sign in with GitHub)
 ```
 
 ## `fountain auth logout`

@@ -33,10 +33,18 @@ defmodule Fountain.OAuth do
   import Ecto.Query, warn: false
 
   alias Fountain.{Accounts, Audit, Repo}
-  alias Fountain.OAuth.AuthorizationCode
+  alias Fountain.OAuth.{AuthorizationCode, DeviceGrant}
 
   @code_ttl_seconds 300
   @token_ttl_seconds 30 * 24 * 3600
+
+  @device_ttl_seconds 900
+  @device_interval_seconds 5
+  # RFC 8628's suggested consonant alphabet: no vowels (no words, no
+  # accidental profanity), no ambiguous glyphs. 20^8 codes for a
+  # fifteen-minute, rate-limited window.
+  @user_code_alphabet ~c"BCDFGHJKLMNPQRSTVWXZ"
+  @user_code_length 8
 
   @type client :: %{id: String.t(), name: String.t(), redirect_uris: [String.t()]}
 
@@ -211,14 +219,241 @@ defmodule Fountain.OAuth do
     Accounts.revoke_api_key(key.user_id, key.id, opts)
   end
 
-  @doc "Delete codes past their expiry (a sweep; codes are tiny, this is hygiene)."
+  ## ─── Device authorization (RFC 8628 shape, for the CLI — #1305) ───────────
+  #
+  # `fountain auth login --device` cannot exchange a password: an account
+  # created with "Sign up with GitHub" has none. Instead the CLI starts a
+  # grant, shows the human a short code and the console's `/device` page,
+  # and polls with its own high-entropy device code until the signed-in
+  # browser session approves. The mint mirrors `POST /api/auth/token`:
+  # a full-scope API key with no expiry, because it replaces that endpoint
+  # for these accounts.
+
+  @doc """
+  Start a device grant. Returns `{:ok, %{device_code, user_code, expires_in,
+  interval}}` — `device_code` is raw (only its hash is stored) and stays on
+  the polling machine; `user_code` is formatted `XXXX-XXXX` for a human to
+  type. Unauthenticated and deliberately unaudited: nothing has happened to
+  any account yet, and the poll's mint audits `api_key.created` as usual.
+  """
+  def start_device_grant do
+    raw = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+    insert_device_grant(raw, _attempts_left = 3)
+  end
+
+  defp insert_device_grant(_raw, 0), do: {:error, :server_error}
+
+  defp insert_device_grant(raw, attempts_left) do
+    user_code = generate_user_code()
+
+    %DeviceGrant{}
+    |> DeviceGrant.changeset(%{
+      device_code_hash: hash(raw),
+      user_code: user_code,
+      expires_at:
+        DateTime.utc_now()
+        |> DateTime.add(@device_ttl_seconds, :second)
+        |> DateTime.truncate(:second)
+    })
+    |> Repo.insert()
+    |> case do
+      {:ok, _grant} ->
+        {:ok,
+         %{
+           device_code: raw,
+           user_code: format_user_code(user_code),
+           expires_in: @device_ttl_seconds,
+           interval: @device_interval_seconds
+         }}
+
+      # A user_code collision (20^8 space, so effectively never) — roll again.
+      {:error, %Ecto.Changeset{errors: errors}} ->
+        if Keyword.has_key?(errors, :user_code),
+          do: insert_device_grant(raw, attempts_left - 1),
+          else: {:error, :server_error}
+    end
+  end
+
+  defp generate_user_code do
+    for _ <- 1..@user_code_length, into: "" do
+      <<Enum.random(@user_code_alphabet)>>
+    end
+  end
+
+  @doc ~S(Format a stored user code for humans: "BCDFGHJK" → "BCDF-GHJK".)
+  def format_user_code(<<a::binary-size(4), b::binary-size(4)>>), do: a <> "-" <> b
+  def format_user_code(code), do: code
+
+  @doc """
+  Normalize what a human typed: case, the display dash, stray spaces.
+  """
+  def normalize_user_code(input) when is_binary(input) do
+    input |> String.upcase() |> String.replace(~r/[^A-Z]/, "")
+  end
+
+  @doc """
+  The pending, unexpired grant for a typed user code — what the `/device`
+  approval page shows before the user decides. `{:ok, grant}` or
+  `{:error, :not_found}` (one answer for unknown, expired and decided alike).
+  """
+  def get_device_grant_for_approval(input) when is_binary(input) do
+    now = DateTime.utc_now()
+    code = normalize_user_code(input)
+
+    Repo.one(
+      from g in DeviceGrant,
+        where:
+          g.user_code == ^code and is_nil(g.approved_at) and is_nil(g.denied_at) and
+            is_nil(g.used_at) and g.expires_at > ^now
+    )
+    |> case do
+      %DeviceGrant{} = grant -> {:ok, grant}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  The signed-in user approves the grant behind a typed user code: binds their
+  account to it so the next poll mints them a key. Conditional on the grant
+  still being pending and unexpired, so approve/deny/expiry cannot race.
+  Records `oauth.device_approved`.
+  """
+  def approve_device_grant(input, user_id, opts \\ []) when is_binary(user_id) do
+    decide_device_grant(input, user_id, [approved_at: now_s()], "oauth.device_approved", opts)
+  end
+
+  @doc """
+  The signed-in user denies the grant: the polling CLI gets `access_denied`.
+  Records `oauth.device_denied`.
+  """
+  def deny_device_grant(input, user_id, opts \\ []) when is_binary(user_id) do
+    decide_device_grant(input, user_id, [denied_at: now_s()], "oauth.device_denied", opts)
+  end
+
+  defp decide_device_grant(input, user_id, set, action, opts) do
+    with {:ok, grant} <- get_device_grant_for_approval(input) do
+      from(g in DeviceGrant,
+        where:
+          g.id == ^grant.id and is_nil(g.approved_at) and is_nil(g.denied_at) and
+            is_nil(g.used_at)
+      )
+      |> Repo.update_all(set: [{:user_id, user_id} | set])
+      |> case do
+        {1, _} ->
+          Audit.record(%{
+            user_id: user_id,
+            action: action,
+            resource_type: "oauth_device_grant",
+            resource_id: grant.id,
+            actor: Keyword.get(opts, :actor, "ui"),
+            request_ip: Keyword.get(opts, :request_ip)
+          })
+
+          :ok
+
+        {0, _} ->
+          {:error, :not_found}
+      end
+    end
+  end
+
+  @doc """
+  The CLI polls with its device code. One of:
+
+  - `{:ok, %{access_token, api_key}}` — approved; the grant is consumed and a
+    full-scope API key minted (once: the conditional update that marks the
+    grant used means two concurrent polls cannot both win)
+  - `{:error, :authorization_pending}` — nobody has decided yet
+  - `{:error, :slow_down}` — polled faster than the advertised interval
+  - `{:error, :access_denied}` — denied in the console, or the approving
+    account cannot hold a key (suspended, unverified)
+  - `{:error, :expired_token}` — the grant timed out
+  - `{:error, :invalid_grant}` — unknown or already-consumed code
+  """
+  def poll_device_grant(device_code, opts \\ []) when is_binary(device_code) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    case Repo.get_by(DeviceGrant, device_code_hash: hash(device_code)) do
+      nil ->
+        {:error, :invalid_grant}
+
+      %DeviceGrant{used_at: %DateTime{}} ->
+        {:error, :invalid_grant}
+
+      %DeviceGrant{denied_at: %DateTime{}} ->
+        {:error, :access_denied}
+
+      %DeviceGrant{} = grant ->
+        if DateTime.compare(grant.expires_at, now) == :gt,
+          do: poll_live_grant(grant, now, opts),
+          else: {:error, :expired_token}
+    end
+  end
+
+  defp poll_live_grant(%DeviceGrant{approved_at: nil} = grant, now, _opts) do
+    threshold = DateTime.add(now, -(@device_interval_seconds - 1), :second)
+
+    from(g in DeviceGrant,
+      where: g.id == ^grant.id and (is_nil(g.last_polled_at) or g.last_polled_at <= ^threshold)
+    )
+    |> Repo.update_all(set: [last_polled_at: now])
+    |> case do
+      {1, _} -> {:error, :authorization_pending}
+      {0, _} -> {:error, :slow_down}
+    end
+  end
+
+  defp poll_live_grant(%DeviceGrant{} = grant, now, opts) do
+    # user_id was established by the approval above; the grant is the proof.
+    user = Repo.preload(grant, :user).user
+
+    cond do
+      is_nil(user) ->
+        {:error, :invalid_grant}
+
+      # The console page sits behind `require_authenticated_user`, which
+      # turns away unverified and suspended sessions — so these are
+      # belt-and-braces for state that changed between approval and poll.
+      Accounts.suspended?(user) or is_nil(user.email_verified_at) ->
+        {:error, :access_denied}
+
+      true ->
+        mint_device_key(grant, user, now, opts)
+    end
+  end
+
+  defp mint_device_key(grant, user, now, opts) do
+    from(g in DeviceGrant, where: g.id == ^grant.id and is_nil(g.used_at))
+    |> Repo.update_all(set: [used_at: now])
+    |> case do
+      {0, _} ->
+        {:error, :invalid_grant}
+
+      {1, _} ->
+        name = "CLI login — #{DateTime.to_date(now)}"
+
+        case Accounts.create_api_key(user.id, name,
+               actor: Keyword.get(opts, :actor, "api"),
+               request_ip: Keyword.get(opts, :request_ip)
+             ) do
+          {:ok, {api_key, raw_key}} -> {:ok, %{access_token: raw_key, api_key: api_key}}
+          {:error, _} -> {:error, :server_error}
+        end
+    end
+  end
+
+  defp now_s, do: DateTime.utc_now() |> DateTime.truncate(:second)
+
+  @doc "Delete codes and device grants past their expiry (a sweep; hygiene)."
   def prune_expired do
     now = DateTime.utc_now()
-    {n, _} = Repo.delete_all(from(c in AuthorizationCode, where: c.expires_at < ^now))
-    n
+    {codes, _} = Repo.delete_all(from(c in AuthorizationCode, where: c.expires_at < ^now))
+    {grants, _} = Repo.delete_all(from(g in DeviceGrant, where: g.expires_at < ^now))
+    codes + grants
   end
 
   def token_ttl_seconds, do: @token_ttl_seconds
+  def device_interval_seconds, do: @device_interval_seconds
 
   defp hash(raw), do: Base.encode16(:crypto.hash(:sha256, raw), case: :lower)
 end

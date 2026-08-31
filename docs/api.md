@@ -40,10 +40,17 @@ curl -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
 
 ```
 POST   /api/auth/token             # email + password -> a fresh API key
+POST   /api/auth/device            # start a device login: user_code + verification URL
+POST   /api/auth/device/token      # poll with device_code -> the key, once approved
 GET    /api/auth/me                # identity of the authenticated user
 POST   /api/auth/api-keys          # create a key (plaintext returned once)
 DELETE /api/auth/api-keys/:id      # revoke a key
 ```
+
+The two device endpoints serve accounts without a password, such as one from
+the "Sign up with GitHub" button. `fountain auth login --device` drives them.
+You approve the code in the console at `/device`. The poll then returns a
+fresh key.
 
 **Registration and account recovery.** These need no auth. The token in the
 email authenticates the last step.

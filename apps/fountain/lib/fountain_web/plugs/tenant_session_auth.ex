@@ -43,8 +43,20 @@ defmodule FountainWeb.Plugs.TenantSessionAuth do
     else
       _ ->
         conn
+        |> maybe_stash_return_to()
         |> redirect(to: ~p"/auth/login")
         |> halt()
     end
   end
+
+  # A GET that needed a session comes back to the same path + query after
+  # login — the pattern ReturnTo established for the OAuth consent page
+  # (#818), needed here for /device?code=… (#1305): the CLI keeps polling
+  # while the human signs in, so losing the destination strands both. POSTs
+  # are not stashed: the post-login redirect is a GET, and replaying a POST
+  # path as one lands nowhere.
+  defp maybe_stash_return_to(%Plug.Conn{method: "GET"} = conn),
+    do: FountainWeb.ReturnTo.stash(conn)
+
+  defp maybe_stash_return_to(conn), do: conn
 end
