@@ -7,18 +7,60 @@ its answer to your terminal.
 The example uses Fountain's public repository. It needs no GitHub token, setup
 script, package install, or Vault.
 
-## Before you run it
+## Choose where Fountain runs
 
-You need a Fountain account with an Anthropic credential under Settings, then
-Inference credentials. You also need the `fountain` CLI.
+Run the server yourself, or use the hosted server. The manifest and the agent
+run are the same on both.
+
+### Run your own server
+
+You need Docker, OpenSSL, and a sandbox provider token. The Compose file runs
+Postgres. The example below uses Sprites as the sandbox provider.
+
+```sh
+git clone https://github.com/BinaryBourbon/fountain
+cd fountain
+cp .env.compose.example .env
+
+echo "SECRET_KEY_BASE=$(openssl rand -base64 48 | tr -d '\n')" >> .env
+echo "MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')" >> .env
+
+# Add your SPRITES_TOKEN to .env, then start Fountain.
+docker compose up -d
+```
+
+Open <http://localhost:4000>. Create the first operator account, then add an
+Anthropic credential under Settings, then Inference credentials.
+
+The Compose defaults self-verify the first account and make it the admin.
+Create that account before you expose the server to another network. The
+[deployment guide](guides/operate/deploy.md) covers readiness, closing
+registration, and the other sandbox providers.
+
+### Use the hosted server
+
+Create an account on [managoat.com](https://managoat.com), then add an
+Anthropic credential under Settings, then Inference credentials. The hosted
+server supplies the control plane and sandbox provider.
+
+## Install and authenticate the CLI
 
 ```sh
 brew install BinaryBourbon/tap/fountain
+```
+
+Point the CLI at the server you chose.
+
+```sh
+# Your own server
+FOUNTAIN_BASE_URL=http://localhost:4000 fountain auth login
+
+# Hosted server
 fountain auth login
 ```
 
-The CLI defaults to the hosted instance. For an instance of your own, set
-`FOUNTAIN_BASE_URL` before `fountain auth login`.
+`auth login` saves the server URL and an API key. The commands below need no
+server flag after that.
 
 ## Apply and run
 
@@ -59,23 +101,3 @@ The example uses Claude because it is Fountain's most exercised runtime. To
 use Codex, Gemini CLI, or OpenCode, change `runtime` and `model` in the
 manifest and add that provider's inference credential. The
 [runtime catalog](catalog/runtimes/index.md) lists the accepted shapes.
-
-## Run the server yourself
-
-The hosted path above removes the control plane setup from the product demo.
-Self-hosting has real inputs that a three-command example must not hide. A
-Fountain server needs two encryption keys, Postgres, and a sandbox provider.
-After the first boot, you create an account, add a model credential, and point
-the CLI at the instance.
-
-```sh
-git clone https://github.com/BinaryBourbon/fountain
-cd fountain
-cp .env.compose.example .env
-# Generate the two keys and add a sandbox provider token to .env.
-docker compose up -d
-```
-
-[Deploy an instance](guides/operate/deploy.md) gives the commands and checks
-for that path. Once `fountain auth login` targets the instance, the same
-`apply` and `run` commands above work unchanged.
