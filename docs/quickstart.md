@@ -59,13 +59,9 @@ FOUNTAIN_BASE_URL=http://localhost:4000 fountain auth login
 fountain auth login
 ```
 
-`auth login` asks for an email and a password. It saves the server URL and an
-API key. The commands below need no server flag after that.
-
-**A GitHub account has no password.** If you created your account with the
-GitHub button, add `--device` to the command above. The CLI shows a one-time
-code and opens the console's approval page. Approve the device there, and the
-CLI saves the key for you.
+`auth login` shows a one-time code and opens the console's approval page in
+your browser. Approve the device there. The CLI saves the server URL and an
+API key, so the commands below need no server flag.
 
 ## Apply and run
 
