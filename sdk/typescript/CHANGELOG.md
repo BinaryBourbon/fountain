@@ -10,6 +10,19 @@ server releases.
 
 ---
 
+## [1.12.0] — 2026-08-31
+
+### Added
+
+- Generated types for device-authorization login (fountain #1305):
+  `POST /api/auth/device` starts a grant (`DeviceAuthResponse` — the
+  `user_code` a human types at the console's `/device` page, the
+  `device_code` the machine polls with) and `POST /api/auth/device/token`
+  polls it (`DeviceTokenRequest`), answering the RFC 8628 error vocabulary
+  until approval mints the same `AuthTokenResponse` as
+  `POST /api/auth/token`. This is the login path for accounts created with
+  "Sign up with GitHub", which have no password to exchange.
+
 ## [1.11.1] — 2026-08-28
 
 ### Changed
