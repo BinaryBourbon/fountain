@@ -34,8 +34,8 @@ Anthropic credential under Settings, then Inference credentials.
 
 The Compose defaults self-verify the first account and make it the admin.
 Create that account before you expose the server to another network. The
-[deployment guide](guides/operate/deploy.md) covers readiness, closing
-registration, and the other sandbox providers.
+[deployment guide](guides/operate/deploy.md) shows how to verify readiness,
+close registration, and configure the other sandbox providers.
 
 ### Use the hosted server
 
