@@ -122,11 +122,15 @@ Log in against your Fountain instance:
 fountain auth login
 ```
 
-Apply a manifest. [`jhgaylor/agent-specs`](https://github.com/jhgaylor/agent-specs) is a public example tree of agents, environments, and vaults:
+Before the first run, add an Anthropic credential under Account, then
+Inference keys. From this checkout, apply the smallest example and run its
+agent against a real repository. (Not in the checkout? The
+[quickstart](docs/quickstart.md) downloads the manifest first.)
 
 ```sh
-git clone https://github.com/jhgaylor/agent-specs
-fountain apply -f agent-specs
+fountain apply -f examples/quickstart/fountain.yml
+fountain run fountain-reader -p \
+  "Find the code that reclaims an idle sandbox. Explain when it runs and name the files you read."
 ```
 
 `fountain apply` walks the directory and applies every `*.yml` / `*.yaml` doc that declares both `apiVersion` and `kind`. See [`cli/README.md`](cli/README.md) for the rest of the command surface.

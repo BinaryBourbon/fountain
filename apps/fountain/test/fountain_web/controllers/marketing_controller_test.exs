@@ -120,6 +120,10 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ "Fountain · AGPL-3.0-or-later"
       assert body =~ "The open-source control plane for coding agents."
+      assert body =~ ~s(href="/docs/quickstart")
+      assert body =~ "Run the quickstart"
+      assert body =~ ~s(href="/docs/tour")
+      assert body =~ "Run the complete tour"
       assert body =~ "Deploy Fountain"
       assert body =~ FountainWeb.MarketingHTML.repo_url()
 

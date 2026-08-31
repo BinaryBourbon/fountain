@@ -134,20 +134,29 @@ defmodule Fountain.DocsTest do
 
     test "keeps docs/nav.yml's order" do
       titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
-      assert Enum.take(titles, 3) == ["Home", "Guided tour, a pull request", "Concepts"]
+
+      assert Enum.take(titles, 4) == [
+               "Home",
+               "Quickstart, first agent",
+               "Guided tour, a pull request",
+               "Concepts"
+             ]
+
       assert List.last(titles) == "Changelog"
     end
 
-    # The tutorial sits second and the concepts tree third, ahead of every
-    # reference page. It was position 15 of 34 and unlinked from the home page,
-    # so a newcomer met three reference pages before the lesson.
-    test "the tutorial and the concepts tree come before reference" do
+    # The quickstart and tutorial sit before the concepts tree, and all three
+    # sit ahead of every reference page. A newcomer gets an executable path
+    # before the data model and the command catalog.
+    test "the quickstart, tutorial, and concepts tree come before reference" do
       titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
 
+      quickstart = Enum.find_index(titles, &(&1 == "Quickstart, first agent"))
       tour = Enum.find_index(titles, &(&1 == "Guided tour, a pull request"))
       concepts = Enum.find_index(titles, &(&1 == "Concepts"))
       reference = Enum.find_index(titles, &(&1 == "Reference"))
 
+      assert quickstart < tour
       assert tour < concepts
       assert concepts < reference
     end

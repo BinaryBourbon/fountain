@@ -17,7 +17,7 @@ is there.
     fountain auth whoami
     ```
     The CLI now works, and you have no agent to run yet. The
-    [guided tour](tour.md) builds the first one.
+    [quickstart](quickstart.md) starts the first one.
 
 ## The problem
 
@@ -68,9 +68,12 @@ in full.
 
 ## Start here
 
+- **[Run your first agent](quickstart.md)** applies a small manifest and
+  starts an agent against a public repository. It needs no GitHub token or
+  setup script. Start here if Fountain is new to you.
 - **[The guided tour](tour.md)** builds an agent that clones a repo, changes it
   and opens a pull request. A second turn then lands a revision on the same PR.
-  The tour is about forty lines. Start here if Fountain is new to you.
+  The tour is about forty lines. It is the step after the quickstart.
 - **[The four primitives](primitives.md)** explains the data model, and why
   Fountain divides it four ways.
 
