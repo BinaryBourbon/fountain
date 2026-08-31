@@ -144,9 +144,12 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "fixing test_user_login.py"
       refute body =~ ~s(absolute inset-x-0 top-0 h-px)
 
+      # A slug the icon module lacks falls back to a monogram silently, so a
+      # renamed Simple Icons slug would pass the render but drop the mark.
       for target <- FountainWeb.MarketingHTML.oss_deploy_targets() do
         assert body =~ target.name, "missing deployment target #{target.name}"
         assert body =~ target.href, "missing guide for #{target.name}"
+        assert FountainWeb.MarketingIcons.has?(target.slug), "no mark for #{target.name}"
       end
 
       assert body =~ "Define an agent once. Then send prompts."
@@ -164,6 +167,10 @@ defmodule FountainWeb.MarketingControllerTest do
 
       for name <- ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Sprites", "E2B"] do
         assert body =~ name, "missing runtime or sandbox #{name}"
+      end
+
+      for group <- FountainWeb.MarketingHTML.inside() do
+        assert body =~ group.pitch, "missing group pitch #{group.pitch}"
       end
 
       assert body =~ "Nothing phones home unless you tell it to."

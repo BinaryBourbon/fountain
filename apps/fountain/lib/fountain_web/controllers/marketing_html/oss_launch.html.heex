@@ -265,42 +265,38 @@
     Connect through Fountain’s own API, an OpenAI-compatible endpoint, ACP or AG-UI. Different doors, same agents: every interface reaches the same roster and the same conversation and event APIs.
   </p>
 
-  <div class="mt-10 grid lg:grid-cols-[1.15fr_0.85fr] gap-6">
-    <div class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 sm:p-8">
-      <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
-        Start and follow an agent
+  <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-border)]">
+    <a
+      :for={protocol <- client_protocols()}
+      href={protocol.docs}
+      class="bg-[var(--color-bg-0)] p-5 hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      <h3 class="font-semibold text-[var(--color-text-primary)]">{protocol.name}</h3>
+      <p class="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        {protocol.direction}
       </p>
-      <div class="mt-5 grid sm:grid-cols-2 gap-px overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-border)]">
-        <a
-          :for={protocol <- client_protocols()}
-          href={protocol.docs}
-          class="bg-[var(--color-bg-0)] p-5 hover:bg-[var(--color-bg-2)] transition-colors"
-        >
-          <h3 class="font-semibold text-[var(--color-text-primary)]">{protocol.name}</h3>
-          <p class="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            {protocol.direction}
-          </p>
-        </a>
-      </div>
-    </div>
+    </a>
+  </div>
 
-    <div class="rounded-2xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-6 sm:p-8">
-      <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
-        What runs behind it
-      </p>
-      <div class="mt-5 space-y-6">
-        <div :for={group <- inside()}>
-          <h3 class="text-sm font-semibold text-[var(--color-text-primary)]">{group.title}</h3>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <span
-              :for={item <- group.items}
-              class="rounded-full border border-[var(--color-accent-line)] bg-[var(--color-bg-1)] px-3 py-1 text-xs text-[var(--color-text-secondary)]"
-            >
-              {item.name}
-            </span>
-          </div>
-        </div>
-      </div>
+  <%!-- The choices behind every door, as parallel columns: the mark names the
+        third party, the monogram fallback covers the ones Simple Icons does
+        not carry (Sprites, E2B, Daytona). Same data as /integrations. --%>
+  <div class="mt-6 grid md:grid-cols-3 gap-6" data-role="inside-groups">
+    <div
+      :for={group <- inside()}
+      class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6"
+    >
+      <h3 class="font-semibold text-[var(--color-text-primary)]">{group.pitch}</h3>
+      <p class="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">{group.blurb}</p>
+      <ul class="mt-5 space-y-3">
+        <li
+          :for={item <- group.items}
+          class="flex items-center gap-2.5 text-sm font-medium text-[var(--color-text-primary)]"
+        >
+          <.mark name={item.name} slug={item.slug} class="size-4 shrink-0" />
+          {item.name}
+        </li>
+      </ul>
     </div>
   </div>
 
@@ -320,8 +316,9 @@
       <div class="flex flex-wrap gap-2">
         <span
           :for={service <- brokered_services()}
-          class="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)]"
+          class="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)]"
         >
+          <.mark name={service.name} slug={service.slug} class="size-3.5 shrink-0" />
           {service.name}
         </span>
         <span class="rounded-md border border-dashed border-[var(--color-border-strong)] px-3 py-2 text-xs font-medium text-[var(--color-text-muted)]">
@@ -338,122 +335,111 @@
   </a>
 </section>
 
+<%!-- The operator's pair, side by side: what leaves the instance and where it
+      runs. Both come after the reader knows what the product is — deployment
+      is proof, not pitch. Folding the two bands into one keeps the page's
+      back half from sprawling; the audit-trail and SSE facts from the old
+      activity strip live in the telemetry card's intro line. --%>
 <section
   class="bg-[var(--color-band)] border-y border-[var(--color-border)]"
   data-role="telemetry"
 >
-  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-20">
-    <.eyebrow label="Telemetry" align={:left} />
-    <div class="mt-4 grid lg:grid-cols-[1fr_0.78fr] gap-5 lg:items-end">
-      <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
+  <div class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-20 grid lg:grid-cols-2 gap-6 items-start">
+    <article class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 sm:p-8">
+      <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
+        Telemetry
+      </p>
+      <h2 class="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
         Nothing phones home unless you tell it to.
       </h2>
-      <p class="text-[var(--color-text-secondary)] leading-relaxed">
-        Logs stay on stdout. Metrics stay on a private listener. Trace and error export only turn on when you configure a destination.
+      <p class="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        Logs stay on stdout. Metrics stay on a private listener. Trace and error export only turn on when you configure a destination. Conversation events and the audit trail land in your Postgres, not anyone else's.
       </p>
-    </div>
-
-    <div class="mt-10 grid lg:grid-cols-3 gap-6">
-      <article
-        :for={item <- oss_telemetry()}
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6"
-        data-role="telemetry-signal"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
-            {item.signal}
+      <div class="mt-7 space-y-5">
+        <div
+          :for={item <- oss_telemetry()}
+          class="border-t border-[var(--color-border)] pt-5"
+          data-role="telemetry-signal"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
+              {item.signal}
+            </p>
+            <span class="rounded-full border border-[var(--color-border)] px-2.5 py-1 text-[10px] text-[var(--color-text-muted)]">
+              {item.state}
+            </span>
+          </div>
+          <h3 class="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">
+            {item.destination}
+          </h3>
+          <p class="mt-1 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+            {item.body}
           </p>
-          <span class="rounded-full border border-[var(--color-border)] px-2.5 py-1 text-[10px] text-[var(--color-text-muted)]">
-            {item.state}
-          </span>
+          <code class="mt-2 inline-block rounded-md bg-[var(--color-code-bg)] px-2 py-1 text-[11px] text-[var(--color-code-text)]">
+            {item.config}
+          </code>
         </div>
-        <h3 class="mt-4 font-semibold text-[var(--color-text-primary)]">{item.destination}</h3>
-        <p class="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">{item.body}</p>
-        <code class="mt-5 block overflow-x-auto rounded-md bg-[var(--color-code-bg)] px-3 py-2 text-[11px] text-[var(--color-code-text)]">
-          {item.config}
-        </code>
-      </article>
-    </div>
+        <div class="border-t border-[var(--color-border)] pt-5">
+          <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
+            Health
+          </p>
+          <p class="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+            <code class="text-xs">/health</code>
+            reports liveness. <code class="text-xs">/health/ready</code>
+            reports whether the instance can receive traffic.
+          </p>
+        </div>
+      </div>
+      <a
+        href={~p"/docs/guides/operate/observability"}
+        class="mt-7 inline-block text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-4 hover:text-[var(--color-brand)]"
+      >
+        Import the included dashboards and alert pack →
+      </a>
+    </article>
 
-    <div class="mt-6 grid md:grid-cols-3 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)]">
-      <div class="p-5 border-b md:border-b-0 md:border-r border-[var(--color-border)]">
-        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-          Agent activity
-        </p>
-        <p class="mt-2 text-sm text-[var(--color-text-secondary)]">
-          Stage events stream to clients over SSE and persist with the conversation.
-        </p>
-      </div>
-      <div class="p-5 border-b md:border-b-0 md:border-r border-[var(--color-border)]">
-        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-          Operator activity
-        </p>
-        <p class="mt-2 text-sm text-[var(--color-text-secondary)]">
-          Resource and administrative changes land in the audit trail in your database.
-        </p>
-      </div>
-      <div class="p-5">
-        <p class="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-          Health
-        </p>
-        <p class="mt-2 text-sm text-[var(--color-text-secondary)]">
-          <code class="text-xs">/health</code>
-          reports liveness. <code class="text-xs">/health/ready</code>
-          reports whether the instance can receive traffic.
-        </p>
-      </div>
-    </div>
-    <a
-      href={~p"/docs/guides/operate/observability"}
-      class="mt-7 inline-block text-sm font-medium text-[var(--color-text-primary)] underline underline-offset-4 hover:text-[var(--color-brand)]"
+    <article
+      class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6 sm:p-8"
+      data-role="deployments"
     >
-      Import the included dashboards and alert pack →
-    </a>
-  </div>
-</section>
-
-<%!-- Deployment comes after the reader knows what the product is. The grid
-      is the proof for the headline's claim, not the opening pitch. --%>
-<section class="max-w-6xl mx-auto px-5 sm:px-6 py-14 sm:py-20" data-role="deployments">
-  <.eyebrow label="Deploy anywhere" align={:left} />
-  <div class="mt-4 grid lg:grid-cols-[1fr_0.72fr] gap-5 lg:items-end">
-    <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
-      Start with one machine. Grow when you need to.
-    </h2>
-    <p class="text-[var(--color-text-secondary)] leading-relaxed">
-      Begin with Docker Compose and the published release image. If the workload grows, run a clustered set of replicas against the same Postgres. The deployment shape changes; the API does not.
-    </p>
-  </div>
-  <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-5 border-y border-l border-[var(--color-border)]">
-    <a
-      :for={target <- oss_deploy_targets()}
-      href={target.href}
-      class="group min-w-0 border-r border-b sm:[&:nth-last-child(-n+1)]:border-b-0 lg:border-b-0 border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 hover:bg-[var(--color-bg-2)] transition-colors"
-      data-role="deployment-target"
-    >
-      <p class="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-accent-ink)]">
-        {target.label}
+      <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
+        Deploy anywhere
       </p>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-brand)]">
-        {target.name}
-      </h3>
-      <p class="mt-2 min-h-20 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-        {target.body}
+      <h2 class="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--color-text-primary)]">
+        Start with one machine. Grow when you need to.
+      </h2>
+      <p class="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        Begin with Docker Compose and the published release image. If the workload grows, run a clustered set of replicas against the same Postgres. The deployment shape changes; the API does not.
       </p>
-      <code class="mt-4 block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[var(--color-code-text)]">
-        {target.command}
-      </code>
-    </a>
+      <div class="mt-7 space-y-1">
+        <a
+          :for={target <- oss_deploy_targets()}
+          href={target.href}
+          class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-3 hover:bg-[var(--color-bg-2)] transition-colors"
+          data-role="deployment-target"
+        >
+          <.mark name={target.name} slug={target.slug} class="mt-0.5 size-5 shrink-0" />
+          <span class="min-w-0">
+            <span class="block font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-brand)]">
+              {target.name}
+            </span>
+            <span class="mt-0.5 block text-sm leading-relaxed text-[var(--color-text-secondary)]">
+              {target.body}
+            </span>
+          </span>
+        </a>
+      </div>
+      <p class="mt-6 border-t border-[var(--color-border)] pt-5 text-sm text-[var(--color-text-secondary)]">
+        Or run the OCI image anywhere that can keep a Phoenix process and Postgres alive.
+        <a
+          href={~p"/docs/self-hosting"}
+          class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+        >
+          Compare deployment requirements →
+        </a>
+      </p>
+    </article>
   </div>
-  <p class="mt-6 text-sm text-[var(--color-text-secondary)]">
-    Or run the OCI image anywhere that can keep a Phoenix process and Postgres alive.
-    <a
-      href={~p"/docs/self-hosting"}
-      class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
-    >
-      Compare deployment requirements →
-    </a>
-  </p>
 </section>
 
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-20">
