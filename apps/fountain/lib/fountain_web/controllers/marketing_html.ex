@@ -1076,6 +1076,80 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The project's repository. The self-hosted page links it from four places."
   def repo_url, do: @repo_url
 
+  @doc "Deployment paths featured by the Fountain open-source launch page."
+  def oss_deploy_targets do
+    [
+      %{
+        name: "Docker Compose",
+        label: "Fastest start",
+        body:
+          "One app container, Postgres and the same published release image used everywhere else.",
+        href: "/docs/guides/operate/deploy",
+        command: "docker compose up -d"
+      },
+      %{
+        name: "Render",
+        label: "Blueprint",
+        body: "Fork the repo and let render.yaml create the web service and managed Postgres.",
+        href: "/docs/guides/operate/render",
+        command: "render.yaml"
+      },
+      %{
+        name: "Fly.io",
+        label: "Machine",
+        body:
+          "Deploy the published image from fly.toml and bring the Postgres database you choose.",
+        href: "/docs/guides/operate/fly",
+        command: "fly deploy"
+      },
+      %{
+        name: "Kubernetes",
+        label: "Portable baseline",
+        body:
+          "Plain manifests, no operator or CRDs, with clustering and probes already described.",
+        href: "/docs/guides/operate/kubernetes",
+        command: "kubectl apply -k deploy/k8s"
+      },
+      %{
+        name: "Coolify",
+        label: "Your server",
+        body: "Point Coolify at the repository and use the same Compose stack behind its proxy.",
+        href: "/docs/guides/operate/coolify",
+        command: "docker-compose.yml"
+      }
+    ]
+  end
+
+  @doc "The three observability signals an operator controls on /oss-launch."
+  def oss_telemetry do
+    [
+      %{
+        signal: "Metrics",
+        destination: "Prometheus → Grafana",
+        body:
+          "Scrape routes, database timings, provisioning, turn latency and sandbox state from the private metrics listener. The repo includes dashboards and alerts.",
+        config: "METRICS_PORT=9568",
+        state: "Local by default"
+      },
+      %{
+        signal: "Traces",
+        destination: "OpenTelemetry → your OTLP backend",
+        body:
+          "Export request, provisioning and turn spans over OTLP. Point the standard exporter variables at Honeycomb, Grafana Tempo or another compatible collector.",
+        config: "OTEL_EXPORTER_OTLP_ENDPOINT=…",
+        state: "Off until configured"
+      },
+      %{
+        signal: "Errors",
+        destination: "Sentry API → Sentry or GlitchTip",
+        body:
+          "Send grouped crashes without cookies, IP addresses or request bodies. Unset the DSN and the SDK stays inert; nothing is buffered for later.",
+        config: "SENTRY_DSN=…",
+        state: "Off until configured"
+      }
+    ]
+  end
+
   # The four apps /self-hosted shows, chosen for four different shapes of
   # front door: a commission that comes back as a document, an analyst behind a
   # file upload, an unattended repair loop, and a fan-out. Selected from

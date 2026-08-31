@@ -114,6 +114,74 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /oss-launch" do
+    test "launches the Fountain project from deploy through telemetry", %{conn: conn} do
+      body = conn |> get(~p"/oss-launch") |> html_response(200)
+
+      assert body =~ "Fountain · AGPL-3.0"
+      assert body =~ "The open-source control plane for coding agents."
+      assert body =~ "Deploy Fountain"
+      assert body =~ FountainWeb.MarketingHTML.repo_url()
+
+      for target <- FountainWeb.MarketingHTML.oss_deploy_targets() do
+        assert body =~ target.name, "missing deployment target #{target.name}"
+        assert body =~ target.href, "missing guide for #{target.name}"
+      end
+
+      assert body =~ "Describe it once. After that, send prompts."
+      assert body =~ "kind: Environment"
+      assert body =~ "kind: Vault"
+      assert body =~ "kind: Agent"
+      assert body =~ "fountain apply -f fountain.yml"
+      assert body =~ "@agentshit/fountain-sdk"
+
+      assert body =~ "One agent, every place your team already works."
+
+      for name <- ~w(AG-UI ACP OpenAI-compatible) do
+        assert body =~ name, "missing client protocol #{name}"
+      end
+
+      for name <- ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Sprites", "E2B"] do
+        assert body =~ name, "missing runtime or sandbox #{name}"
+      end
+
+      assert body =~ "Telemetry goes where you point it—and nowhere by surprise."
+      assert body =~ "Prometheus → Grafana"
+      assert body =~ "OpenTelemetry → your OTLP backend"
+      assert body =~ "Sentry API → Sentry or GlitchTip"
+      assert body =~ "Off until configured"
+      assert body =~ "/docs/guides/operate/observability"
+    end
+
+    test "carries a Fountain-specific card and stays out of permanent navigation", %{conn: conn} do
+      body = conn |> get(~p"/oss-launch") |> html_response(200)
+
+      assert body =~
+               ~s(<meta property="og:title" content="Open-source infrastructure for coding agents · Fountain")
+
+      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/oss-launch")
+      assert body =~ ~s(<meta name="description" content="Deploy Fountain with Docker)
+
+      refute conn |> get(~p"/") |> html_response(200) =~ ~s(href="/oss-launch")
+    end
+
+    test "every link into the manual resolves", %{conn: conn} do
+      body = conn |> get(~p"/oss-launch") |> html_response(200)
+
+      slugs =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert slugs != []
+
+      for slug <- slugs do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+  end
+
   describe "GET /terms" do
     test "renders the terms of service with the configured identity", %{conn: conn} do
       body = conn |> get(~p"/terms") |> html_response(200)

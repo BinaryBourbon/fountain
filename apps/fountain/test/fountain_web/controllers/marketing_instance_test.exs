@@ -116,6 +116,15 @@ defmodule FountainWeb.MarketingInstanceTest do
     end
   end
 
+  describe "GET /oss-launch where the deployment is not the marketing site" do
+    test "sends the visitor to the open-source manual", %{conn: conn} do
+      Application.put_env(:fountain, :marketing_site, false)
+
+      conn = get(conn, ~p"/oss-launch")
+      assert redirected_to(conn) == ~p"/docs/open-source"
+    end
+  end
+
   describe "GET /built-with where the deployment is not the marketing site" do
     test "sends the visitor to the build guide rather than somebody else's apps", %{conn: conn} do
       Application.put_env(:fountain, :marketing_site, false)

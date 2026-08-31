@@ -1,12 +1,12 @@
 defmodule FountainWeb.MarketingController do
   @moduledoc """
-  The public pages: `/`, `/launch`, `/integrations`, `/built-with`,
+  The public pages: `/`, `/launch`, `/oss-launch`, `/integrations`, `/built-with`,
   `/self-hosted`, `/faq`, `/code-review-bot`, `/case-studies/*`, `/terms`
   and `/privacy`.
 
   None of them is the same page on every deployment. `/` serves the
   product pitch on the marketing site and a plain front door everywhere else
-  (`Fountain.Marketing`); `/launch`, `/integrations`, `/built-with`,
+  (`Fountain.Marketing`); `/launch`, `/oss-launch`, `/integrations`, `/built-with`,
   `/self-hosted`, `/faq`, `/code-review-bot` and the case studies are the
   pitch's other pages and redirect into the manual on any other instance;
   the legal pages render the operator's identity, or nothing at all
@@ -82,6 +82,26 @@ defmodule FountainWeb.MarketingController do
       )
     else
       redirect(conn, to: ~p"/docs/tour")
+    end
+  end
+
+  # The Fountain project launch page. Managoat's `/launch` sells the hosted
+  # instance; this page makes the parallel case for the open-source engine:
+  # deploy it, define one agent, connect existing systems and choose what
+  # observability leaves the instance. It is a campaign destination rather
+  # than a second homepage, so it stays out of the permanent navigation.
+  def oss_launch(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :oss_launch,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Open-source infrastructure for coding agents · #{Fountain.Brand.engine()}",
+        meta_description:
+          "Deploy #{Fountain.Brand.engine()} with Docker, Render, Fly.io or Kubernetes. " <>
+            "Define a coding agent once, connect it to the systems you already use, and " <>
+            "keep telemetry under your control."
+      )
+    else
+      redirect(conn, to: ~p"/docs/open-source")
     end
   end
 
