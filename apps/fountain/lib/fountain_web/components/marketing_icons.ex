@@ -13,6 +13,13 @@ defmodule FountainWeb.MarketingIcons do
 
   Regenerate: fetch `https://cdn.simpleicons.org/<slug>` and paste the
   `<path d>`; keep the `<title>` as the second element.
+
+  A handful of marks are not in Simple Icons and were traced from the
+  parties' own published assets instead (`@custom`): the Sprites pixel
+  invader (sprites.dev's mask icon), the E2B wordmark (e2b.dev), and the
+  Daytona stripes (daytonaio/docs, `logo-icon.svg`). Those carry their own
+  viewBox. `terminal` is nobody's brand — a generic glyph for hardware the
+  reader owns.
   """
   use Phoenix.Component
 
@@ -162,24 +169,62 @@ defmodule FountainWeb.MarketingIcons do
        "M2.25 1.5a.75.75 0 0 0-.75.75v16.5H0V2.25A2.25 2.25 0 0 1 2.25 0h20.095c1.002 0 1.504 1.212.795 1.92L10.764 14.298h3.486V12.75h1.5v1.922a1.125 1.125 0 0 1-1.125 1.125H9.264l-2.578 2.578h11.689V9h1.5v9.375a1.5 1.5 0 0 1-1.5 1.5H5.185L2.562 22.5H21.75a.75.75 0 0 0 .75-.75V5.25H24v16.5A2.25 2.25 0 0 1 21.75 24H1.655C.653 24 .151 22.788.86 22.08L13.19 9.75H9.75v1.5h-1.5V9.375A1.125 1.125 0 0 1 9.375 8.25h5.314l2.625-2.625H5.625V15h-1.5V5.625a1.5 1.5 0 0 1 1.5-1.5h13.19L21.438 1.5z"}
   }
 
+  # Marks Simple Icons does not carry, traced from the parties' own published
+  # assets (see the moduledoc), plus the generic `terminal` glyph. Each entry
+  # carries its own viewBox and renders with `fill-rule="evenodd"`.
+  @custom %{
+    "daytona" =>
+      {"Daytona",
+       "M14.5584 193.736H114.275V227.925H14.5584V193.736Z M148.464 74.076H262.426V108.265H148.464V74.076Z M88.6338 84.6127L173.246 0L197.422 24.175L112.809 108.788L88.6338 84.6127Z M89.157 170.084L24.175 105.102L0 129.277L64.9819 194.259L89.157 170.084Z M174.629 217.911L106.133 286.407L81.9577 262.232L150.454 193.736L174.629 217.911Z M174.106 132.44L250.66 208.994L274.835 184.819L198.281 108.265L174.106 132.44Z M88.6338 48.434V131.057H54.4451L54.4451 48.434H88.6338Z M208.294 168.094V270.66H174.106V168.094H208.294Z",
+       "0 0 275 287"},
+    "e2b" =>
+      {"E2B",
+       "M20.2235 0V4.67645H5.49328C5.04263 4.67661 4.67645 5.0426 4.67645 5.49328V5.84494C4.67645 6.29563 5.04263 6.66161 5.49328 6.66178H20.2235V11.3382H5.49328C5.04263 11.3384 4.67645 11.7044 4.67645 12.1551V12.5067C4.67657 12.9573 5.04271 13.3222 5.49328 13.3223H20.2235V18H3.12668C1.39998 17.9996 1.98414e-05 16.5989 0 14.8721V3.12668C0.000280465 1.40008 1.40013 0.000432767 3.12668 0H20.2235Z M39.2723 0C40.9992 0.000155056 42.399 1.40092 42.399 3.12791V8.36701C42.3989 10.0101 41.0672 11.3417 39.424 11.3419H36.9587C36.9413 11.3408 36.9232 11.3382 36.9057 11.3382H27.6379C27.1873 11.3384 26.8211 11.7044 26.8211 12.1551V12.5067C26.8213 12.9572 27.1874 13.3221 27.6379 13.3223H42.3903V18H22.1446V9.63299C22.1446 7.98998 23.4767 6.65732 25.1195 6.65684H27.5762C27.5967 6.65838 27.6174 6.66174 27.6379 6.66178H36.9057C37.3563 6.66171 37.7225 6.29578 37.7225 5.84494V5.49328C37.7224 5.04255 37.3563 4.67775 36.9057 4.67768H22.1755V0H39.2723Z M61.4379 0C63.1648 3.6786e-05 64.5655 1.39985 64.5658 3.12668V14.8721C64.5658 16.5992 63.1649 18 61.4379 18H44.3386V0H61.4379ZM49.8319 11.3382C49.3813 11.3384 49.0151 11.7044 49.0151 12.1551V12.5067C49.0152 12.9573 49.3813 13.3222 49.8319 13.3223H59.0725C59.523 13.3222 59.888 12.9574 59.8881 12.5067V12.1551C59.8881 11.7043 59.5231 11.3384 59.0725 11.3382H49.8319ZM49.8319 4.67645C49.3813 4.67661 49.0151 5.0426 49.0151 5.49328V5.84494C49.0151 6.29562 49.3813 6.66161 49.8319 6.66178H59.0725C59.5231 6.66162 59.8881 6.29571 59.8881 5.84494V5.49328C59.8881 5.04252 59.5231 4.67661 59.0725 4.67645H49.8319Z",
+       "0 0 65 18"},
+    "sprites" =>
+      {"Sprites",
+       "M2 0h1v1H2zM7 0h1v1H7zM3 1h1v1H3zM6 1h1v1H6zM2 2h6v1H2zM1 3h2v1H1zM4 3h2v1H4zM7 3h2v1H7zM1 4h8v1H1zM0 5h1v1H0zM2 5h6v1H2zM9 5h1v1H9zM0 6h1v1H0zM3 6h4v1H3zM9 6h1v1H9zM2 7h1v1H2zM7 7h1v1H7z",
+       "0 0 10 8"},
+    "terminal" =>
+      {"Terminal",
+       "M4 3h16c1.657 0 3 1.343 3 3v12c0 1.657-1.343 3-3 3H4c-1.657 0-3-1.343-3-3V6c0-1.657 1.343-3 3-3zM4 5c-.552 0-1 .448-1 1v12c0 .552.448 1 1 1h16c.552 0 1-.448 1-1V6c0-.552-.448-1-1-1H4zM6.4 8.4 8 6.8l5.2 5.2L8 17.2l-1.6-1.6 3.6-3.6-3.6-3.6zM13 15h5v2h-5v-2z",
+       "0 0 24 24"}
+  }
+
   @doc "The slugs with a mark."
   @spec slugs() :: [String.t()]
-  def slugs, do: Map.keys(@paths)
+  def slugs, do: Map.keys(@paths) ++ Map.keys(@custom)
 
   @doc "Whether a slug has a mark."
   @spec has?(String.t() | nil) :: boolean()
-  def has?(slug), do: is_map_key(@paths, slug)
+  def has?(slug), do: is_map_key(@paths, slug) or is_map_key(@custom, slug)
 
   attr :slug, :string, required: true
   attr :class, :string, default: "size-5"
 
   @doc "The mark for a slug, as an inline SVG drawn in `currentColor`."
   def icon(assigns) do
-    {title, d} = Map.fetch!(@paths, assigns.slug)
-    assigns = assign(assigns, title: title, d: d)
+    {title, d, viewbox, rule} =
+      case Map.fetch(@paths, assigns.slug) do
+        {:ok, {title, d}} ->
+          {title, d, "0 0 24 24", nil}
+
+        :error ->
+          {title, d, viewbox} = Map.fetch!(@custom, assigns.slug)
+          {title, d, viewbox, "evenodd"}
+      end
+
+    assigns = assign(assigns, title: title, d: d, viewbox: viewbox, rule: rule)
 
     ~H"""
-    <svg class={@class} viewBox="0 0 24 24" fill="currentColor" role="img" aria-label={@title}>
+    <svg
+      class={@class}
+      viewBox={@viewbox}
+      fill="currentColor"
+      fill-rule={@rule}
+      role="img"
+      aria-label={@title}
+    >
       <path d={@d} />
     </svg>
     """

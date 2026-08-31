@@ -706,10 +706,10 @@ defmodule FountainWeb.MarketingHTML do
         blurb:
           "Where the agent runs. A hosted provider, or a runner on hardware you own that dials out over WebSocket.",
         items: [
-          %{name: "Sprites", slug: nil},
-          %{name: "E2B", slug: nil},
-          %{name: "Daytona", slug: nil},
-          %{name: "Your own machine", slug: nil}
+          %{name: "Sprites", slug: "sprites"},
+          %{name: "E2B", slug: "e2b"},
+          %{name: "Daytona", slug: "daytona"},
+          %{name: "Your own machine", slug: "terminal"}
         ]
       }
     ]
