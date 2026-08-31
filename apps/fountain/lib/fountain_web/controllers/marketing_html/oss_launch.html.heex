@@ -36,52 +36,110 @@
       </p>
     </div>
 
-    <%!-- A compact system map, not a decorative terminal. It establishes the
-          product boundary before the page expands each layer below. --%>
-    <div
-      class="rounded-2xl border border-[var(--color-ink-border)] bg-[var(--color-ink-0)] text-[var(--color-ink-text)] shadow-xl shadow-black/10 overflow-hidden"
+    <%!-- The launch path is one continuous story: a request enters Fountain,
+          Fountain assembles the complete working context, and a live agent
+          comes out. Keeping the whole bundle in one box makes the product
+          boundary legible at a glance. --%>
+    <figure
+      class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 sm:p-7 shadow-xl shadow-black/5"
       data-role="system-map"
+      aria-labelledby="system-map-caption"
     >
-      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-[var(--color-ink-border)] bg-[var(--color-ink-1)]">
-        <span class="size-2 rounded-full bg-[var(--color-accent)]"></span>
-        <span class="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--color-ink-secondary)]">
-          Your Fountain instance
-        </span>
-        <span class="ml-auto font-mono text-[10px] text-[var(--color-accent)]">ready</span>
-      </div>
-      <div class="p-5 sm:p-6 space-y-3">
-        <div class="grid grid-cols-3 gap-2 text-center font-mono text-[11px] text-[var(--color-ink-secondary)]">
-          <div class="rounded-lg border border-[var(--color-ink-border)] px-2 py-3">your app</div>
-          <div class="rounded-lg border border-[var(--color-ink-border)] px-2 py-3">your IDE</div>
-          <div class="rounded-lg border border-[var(--color-ink-border)] px-2 py-3">
+      <figcaption id="system-map-caption" class="sr-only">
+        Your product, IDE or chat sends a request to Fountain. Fountain combines a repository, model, tools, secrets and sandbox into a running agent.
+      </figcaption>
+
+      <div class="grid grid-cols-3 gap-2" aria-label="Ways to start an agent">
+        <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] px-2 py-3 text-center">
+          <span class="block font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+            API
+          </span>
+          <span class="mt-1 block text-xs font-medium text-[var(--color-text-primary)]">
+            your product
+          </span>
+        </div>
+        <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] px-2 py-3 text-center">
+          <span class="block font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+            ACP
+          </span>
+          <span class="mt-1 block text-xs font-medium text-[var(--color-text-primary)]">
+            your IDE
+          </span>
+        </div>
+        <div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-0)] px-2 py-3 text-center">
+          <span class="block font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+            AG-UI
+          </span>
+          <span class="mt-1 block text-xs font-medium text-[var(--color-text-primary)]">
             your chat
-          </div>
-        </div>
-        <div class="flex justify-center text-[var(--color-accent)]" aria-hidden="true">↓</div>
-        <div class="rounded-xl border border-[var(--color-accent)] bg-[var(--color-ink-1)] p-5">
-          <div class="flex items-center justify-between gap-4">
-            <strong class="text-sm">Fountain API</strong>
-            <span class="font-mono text-[10px] text-[var(--color-accent)]">
-              REST · SSE · webhooks
-            </span>
-          </div>
-          <div class="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[var(--color-ink-secondary)]">
-            <span class="rounded-md bg-[var(--color-ink-0)] px-2 py-2">Agent</span>
-            <span class="rounded-md bg-[var(--color-ink-0)] px-2 py-2">Environment</span>
-            <span class="rounded-md bg-[var(--color-ink-0)] px-2 py-2">Vault</span>
-          </div>
-        </div>
-        <div class="flex justify-center text-[var(--color-accent)]" aria-hidden="true">↓</div>
-        <div class="grid grid-cols-3 gap-2 text-center font-mono text-[11px] text-[var(--color-ink-secondary)]">
-          <div class="rounded-lg border border-[var(--color-ink-border)] px-2 py-3">sandbox</div>
-          <div class="rounded-lg border border-[var(--color-ink-border)] px-2 py-3">runtime</div>
-          <div class="rounded-lg border border-[var(--color-ink-border)] px-2 py-3">tools</div>
+          </span>
         </div>
       </div>
-      <p class="border-t border-[var(--color-ink-border)] px-5 py-4 font-mono text-[11px] text-[var(--color-ink-secondary)]">
-        state → Postgres&nbsp;&nbsp; logs → stdout&nbsp;&nbsp; metrics → :9568
+
+      <div class="flex h-9 justify-center text-[var(--color-text-muted)]" aria-hidden="true">
+        <svg class="h-9 w-4" viewBox="0 0 16 36" fill="none">
+          <path
+            d="M8 1v27m0 0-5-5m5 5 5-5"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+
+      <div class="rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-0)] px-4 py-5 sm:px-6 sm:py-6 text-[var(--color-ink-text)] shadow-lg shadow-black/10">
+        <div class="flex items-center justify-center gap-2.5">
+          <img
+            src={Fountain.Brand.asset("app-icon.png")}
+            alt=""
+            class="size-8 rounded-lg ring-1 ring-white/15"
+          />
+          <strong class="text-sm font-semibold uppercase tracking-[0.08em]">
+            Fountain
+          </strong>
+        </div>
+        <div class="mt-5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-2 font-mono text-[10px] sm:text-[11px] text-[var(--color-ink-secondary)]">
+          <span>repo</span>
+          <span class="text-[var(--color-accent)]" aria-hidden="true">+</span>
+          <span>model</span>
+          <span class="text-[var(--color-accent)]" aria-hidden="true">+</span>
+          <span>tools</span>
+          <span class="text-[var(--color-accent)]" aria-hidden="true">+</span>
+          <span>secrets</span>
+          <span class="text-[var(--color-accent)]" aria-hidden="true">+</span>
+          <span>sandbox</span>
+        </div>
+      </div>
+
+      <div class="flex h-9 justify-center text-[var(--color-text-muted)]" aria-hidden="true">
+        <svg class="h-9 w-4" viewBox="0 0 16 36" fill="none">
+          <path
+            d="M8 1v27m0 0-5-5m5 5 5-5"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+
+      <p class="text-center font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
+        Running agent
       </p>
-    </div>
+      <div class="mt-3 flex min-w-0 items-center gap-3 rounded-lg border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] px-3.5 py-3 text-[var(--color-text-primary)]">
+        <span class="shrink-0 font-mono text-xs text-[var(--color-accent-ink)]" aria-hidden="true">
+          $
+        </span>
+        <code class="min-w-0 flex-1 truncate bg-transparent p-0 text-[11px] sm:text-xs text-[var(--color-text-secondary)]">
+          fixing test_user_login.py …
+        </code>
+        <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-wider text-[var(--color-ink-0)]">
+          <span class="size-1.5 rounded-full bg-current opacity-75" aria-hidden="true"></span>
+          live
+        </span>
+      </div>
+    </figure>
   </div>
 </section>
 
