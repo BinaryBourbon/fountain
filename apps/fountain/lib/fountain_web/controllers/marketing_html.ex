@@ -1076,6 +1076,33 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The project's repository. The self-hosted page links it from four places."
   def repo_url, do: @repo_url
 
+  @doc """
+  The four primitives as /oss-launch introduces them: one line each, framed by
+  what an agent needs beyond a model rather than by Fountain's internals. The
+  long versions live in `docs/primitives.md` and on the homepage.
+  """
+  def oss_primitives do
+    [
+      %{
+        name: "Environment",
+        body: "The machine: repositories, packages, env vars and setup scripts."
+      },
+      %{
+        name: "Vault",
+        body:
+          "The credentials a run is allowed to use, kept apart so rotating a token is not a machine edit."
+      },
+      %{
+        name: "Agent",
+        body: "The runtime, model, skills and tools, under one name your software can call."
+      },
+      %{
+        name: "Conversation",
+        body: "The running work: prompts, streamed output and the sandbox behind them."
+      }
+    ]
+  end
+
   @doc "Deployment paths featured by the Fountain open-source launch page."
   def oss_deploy_targets do
     [

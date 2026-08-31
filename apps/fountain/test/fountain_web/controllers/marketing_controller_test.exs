@@ -115,11 +115,18 @@ defmodule FountainWeb.MarketingControllerTest do
   end
 
   describe "GET /oss-launch" do
-    test "launches the Fountain project from deploy through telemetry", %{conn: conn} do
+    test "launches the Fountain project from definition through deploy", %{conn: conn} do
       body = conn |> get(~p"/oss-launch") |> html_response(200)
 
       assert body =~ "Fountain · AGPL-3.0-or-later"
-      assert body =~ "The open-source control plane for coding agents."
+      assert body =~ "Run coding agents on infrastructure you control."
+
+      assert body =~ "An agent should not need a laptop."
+
+      for primitive <- FountainWeb.MarketingHTML.oss_primitives() do
+        assert body =~ primitive.name, "missing primitive #{primitive.name}"
+      end
+
       assert body =~ ~s(href="/docs/quickstart")
       assert body =~ "Run the quickstart"
       assert body =~ ~s(href="/docs/tour")
@@ -159,7 +166,7 @@ defmodule FountainWeb.MarketingControllerTest do
         assert body =~ name, "missing runtime or sandbox #{name}"
       end
 
-      assert body =~ "Telemetry goes where you point it. Nothing leaves by default."
+      assert body =~ "Nothing phones home unless you tell it to."
       assert body =~ "Prometheus → Grafana"
       assert body =~ "OpenTelemetry → your OTLP backend"
       assert body =~ "Sentry API → Sentry or GlitchTip"

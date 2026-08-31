@@ -10,10 +10,10 @@
         Fountain · AGPL-3.0-or-later
       </p>
       <h1 class="mt-6 text-[2.75rem] leading-[1.02] sm:text-6xl font-bold tracking-[-0.035em] text-[var(--color-text-primary)]">
-        The open-source control plane for coding agents.
+        Run coding agents on infrastructure you control.
       </h1>
       <p class="mt-6 text-lg sm:text-xl leading-relaxed text-[var(--color-text-secondary)] max-w-[39rem]">
-        Deploy Fountain on your infrastructure. Define each agent’s runtime, environment, tools and credentials once. Start it from any product that can make an API call.
+        Define the repo, tools, credentials, runtime and model an agent needs, and give it a name. Then call it from your product, editor, chat app or CI job. Fountain handles the machine underneath.
       </p>
       <div class="mt-9 flex flex-col sm:flex-row gap-3 [&>a]:w-full sm:[&>a]:w-auto">
         <a
@@ -143,46 +143,31 @@
   </div>
 </section>
 
-<section class="max-w-6xl mx-auto px-5 sm:px-6 py-14 sm:py-20" data-role="deployments">
-  <.eyebrow label="Deploy anywhere" align={:left} />
-  <div class="mt-4 grid lg:grid-cols-[1fr_0.72fr] gap-5 lg:items-end">
-    <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
-      One container image. Five documented paths to production.
-    </h2>
-    <p class="text-[var(--color-text-secondary)] leading-relaxed">
-      Start on one machine, or run a clustered control plane against your Postgres. The deployment shape changes; the API does not.
+<%!-- The problem before the product. The reader meets Environment, Vault,
+      Agent and Conversation here, framed by what an agent needs beyond a
+      model, before any protocol or deployment name asks them to care. --%>
+<section class="max-w-6xl mx-auto px-5 sm:px-6 py-14 sm:py-20" data-role="primitives">
+  <h2 class="text-3xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] max-w-3xl">
+    An agent should not need a laptop.
+  </h2>
+  <div class="mt-6 max-w-3xl space-y-4 text-lg text-[var(--color-text-secondary)] leading-relaxed">
+    <p>
+      A coding agent needs more than a model. It needs a repository. Packages. Tools. Credentials. A machine to run on. Somewhere to keep its work between prompts. And an API that lets the rest of your software reach it.
+    </p>
+    <p>
+      Without that layer, every new agent becomes another pile of shell scripts, environment variables and special cases. Fountain turns those pieces into infrastructure you define once and reuse.
     </p>
   </div>
-  <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-5 border-y border-l border-[var(--color-border)]">
-    <a
-      :for={target <- oss_deploy_targets()}
-      href={target.href}
-      class="group min-w-0 border-r border-b sm:[&:nth-last-child(-n+1)]:border-b-0 lg:border-b-0 border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 hover:bg-[var(--color-bg-2)] transition-colors"
-      data-role="deployment-target"
-    >
-      <p class="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-accent-ink)]">
-        {target.label}
-      </p>
-      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-brand)]">
-        {target.name}
+  <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-border)]">
+    <div :for={primitive <- oss_primitives()} class="bg-[var(--color-bg-1)] p-5">
+      <h3 class="font-mono text-xs uppercase tracking-[0.14em] text-[var(--color-accent-ink)]">
+        {primitive.name}
       </h3>
-      <p class="mt-2 min-h-20 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-        {target.body}
+      <p class="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        {primitive.body}
       </p>
-      <code class="mt-4 block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[var(--color-code-text)]">
-        {target.command}
-      </code>
-    </a>
+    </div>
   </div>
-  <p class="mt-6 text-sm text-[var(--color-text-secondary)]">
-    Or run the OCI image anywhere that can keep a Phoenix process and Postgres alive.
-    <a
-      href={~p"/docs/self-hosting"}
-      class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
-    >
-      Compare deployment requirements →
-    </a>
-  </p>
 </section>
 
 <section class="bg-[var(--color-ink-0)] text-[var(--color-ink-text)]">
@@ -226,7 +211,7 @@
             <div>
               <h3 class="font-semibold">Resume with the conversation ID</h3>
               <p class="mt-1 text-sm text-[var(--color-ink-secondary)]">
-                The checkout, installed packages and runtime session are still there.
+                A warm sandbox still has the checkout, installed packages and runtime session. If the machine was reclaimed, Fountain provisions a new one and the transcript carries over.
               </p>
             </div>
           </li>
@@ -272,12 +257,12 @@
 </section>
 
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-20" data-role="integrations">
-  <.eyebrow label="Fits your stack" align={:left} />
+  <.eyebrow label="Interfaces" align={:left} />
   <h2 class="mt-4 text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)] max-w-3xl">
     Use the same agents from your product, editor or chat app.
   </h2>
   <p class="mt-4 max-w-2xl text-[var(--color-text-secondary)] leading-relaxed">
-    Connect through AG-UI, ACP, an OpenAI-compatible endpoint or Fountain’s own API. Each interface reaches the same roster and uses the same conversation and event APIs.
+    Connect through Fountain’s own API, an OpenAI-compatible endpoint, ACP or AG-UI. Different doors, same agents: every interface reaches the same roster and the same conversation and event APIs.
   </p>
 
   <div class="mt-10 grid lg:grid-cols-[1.15fr_0.85fr] gap-6">
@@ -358,10 +343,10 @@
   data-role="telemetry"
 >
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-20">
-    <.eyebrow label="Observable by design" align={:left} />
+    <.eyebrow label="Telemetry" align={:left} />
     <div class="mt-4 grid lg:grid-cols-[1fr_0.78fr] gap-5 lg:items-end">
       <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
-        Telemetry goes where you point it. Nothing leaves by default.
+        Nothing phones home unless you tell it to.
       </h2>
       <p class="text-[var(--color-text-secondary)] leading-relaxed">
         Logs stay on stdout. Metrics stay on a private listener. Trace and error export only turn on when you configure a destination.
@@ -427,11 +412,55 @@
   </div>
 </section>
 
+<%!-- Deployment comes after the reader knows what the product is. The grid
+      is the proof for the headline's claim, not the opening pitch. --%>
+<section class="max-w-6xl mx-auto px-5 sm:px-6 py-14 sm:py-20" data-role="deployments">
+  <.eyebrow label="Deploy anywhere" align={:left} />
+  <div class="mt-4 grid lg:grid-cols-[1fr_0.72fr] gap-5 lg:items-end">
+    <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
+      Start with one machine. Grow when you need to.
+    </h2>
+    <p class="text-[var(--color-text-secondary)] leading-relaxed">
+      Begin with Docker Compose and the published release image. If the workload grows, run more copies against the same Postgres. The deployment shape changes; the API does not.
+    </p>
+  </div>
+  <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-5 border-y border-l border-[var(--color-border)]">
+    <a
+      :for={target <- oss_deploy_targets()}
+      href={target.href}
+      class="group min-w-0 border-r border-b sm:[&:nth-last-child(-n+1)]:border-b-0 lg:border-b-0 border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 hover:bg-[var(--color-bg-2)] transition-colors"
+      data-role="deployment-target"
+    >
+      <p class="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-accent-ink)]">
+        {target.label}
+      </p>
+      <h3 class="mt-3 font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-brand)]">
+        {target.name}
+      </h3>
+      <p class="mt-2 min-h-20 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+        {target.body}
+      </p>
+      <code class="mt-4 block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[var(--color-code-text)]">
+        {target.command}
+      </code>
+    </a>
+  </div>
+  <p class="mt-6 text-sm text-[var(--color-text-secondary)]">
+    Or run the OCI image anywhere that can keep a Phoenix process and Postgres alive.
+    <a
+      href={~p"/docs/self-hosting"}
+      class="font-medium text-[var(--color-text-primary)] underline underline-offset-2 hover:text-[var(--color-brand)]"
+    >
+      Compare deployment requirements →
+    </a>
+  </p>
+</section>
+
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-20">
   <div class="rounded-2xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-8 sm:p-12 grid lg:grid-cols-[1fr_auto] gap-8 lg:items-center">
     <div>
       <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-ink)]">
-        Own the whole loop
+        Run it yourself
       </p>
       <h2 class="mt-4 text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
         Your database. Your keys. Your agents.
