@@ -374,6 +374,74 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Enum.any?(turns, &(&1.origin == "autonomous" and &1.status == "completed"))
     end
 
+    test "an out-of-turn session_info_update opens no autonomous turn (#1300)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert is_nil(:sys.get_state(pid).current_turn)
+
+      # The claude adapter writes the generated session title about a second
+      # after every prompt response — session metadata, not the agent talking.
+      notify(pid, ref, %{
+        "sessionUpdate" => "session_info_update",
+        "title" => "Research Xfinity internet promotion pricing",
+        "updatedAt" => "2026-08-25T12:05:48.620Z"
+      })
+
+      assert is_nil(:sys.get_state(pid).current_turn)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+      assert [%{origin: "user"}] = Conversations._unsafe_list_turns(conv.id)
+
+      # With no turn to attach it to, the line is dropped, not persisted.
+      refute Enum.any?(
+               Conversations._unsafe_list_log_events(conv.id),
+               &(&1.data =~ "session_info_update")
+             )
+    end
+
+    test "session metadata mid-turn still lands on the transcript (#1300)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "Early title"})
+
+      assert Enum.any?(
+               Conversations._unsafe_list_log_events(conv.id),
+               &(&1.stream == "acp" and &1.data =~ "session_info_update")
+             )
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert [%{origin: "user", status: "completed"}] = Conversations._unsafe_list_turns(conv.id)
+    end
+
+    test "metadata does not re-arm the quiet timer holding an autonomous turn open (#1300)", %{
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      # A real background narration opens the turn and arms the quiet timer.
+      notify(pid, ref, %{"sessionUpdate" => "agent_message_chunk", "text" => "CI passed"})
+      %{current_turn: %{origin: "autonomous"}, autonomous_quiet: timer} = :sys.get_state(pid)
+      assert is_reference(timer)
+
+      # A title update mid-cycle persists into the open turn but must not
+      # extend its life: the same timer is still the one running.
+      notify(pid, ref, %{"sessionUpdate" => "session_info_update", "title" => "t"})
+      assert :sys.get_state(pid).autonomous_quiet == timer
+
+      # A further narration line does re-arm.
+      notify(pid, ref, %{"sessionUpdate" => "agent_message_chunk", "text" => "and deployed"})
+      refute :sys.get_state(pid).autonomous_quiet == timer
+    end
+
     test "terminating the conversation closes the connection (#817)", %{
       conv: conv,
       pid: pid,

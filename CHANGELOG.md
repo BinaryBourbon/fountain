@@ -425,6 +425,25 @@ upgrade, is in
   leaks nothing by sitting there, but a live-looking secrets artifact in the
   repo root implies a workflow that does not exist.
 
+### Fixed
+
+- **The session title no longer opens a phantom "(background task follow-up)"
+  turn after every claude turn** (#1300). The claude adapter generates the
+  session title asynchronously and writes its `session_info_update` about a
+  second after the prompt response — out of turn — and the server read any
+  out-of-turn protocol line as a background task narrating a follow-up (#817).
+  So nearly every claude turn was followed by a synthetic autonomous turn
+  holding the conversation `running` for the full ten-minute quiet window:
+  a phantom user bubble in the transcript, idle park deferred, and the window
+  billed as turn time. On the hosted instance, 167 of the 190 autonomous turns
+  in the fourteen days before the fix held exactly one such line and nothing
+  else. Session metadata (`session_info_update`, `available_commands_update`,
+  `current_mode_update`) is now classified as describing the session rather
+  than the agent talking: it opens no autonomous turn, does not extend one
+  already open, and still lands on the transcript when a real turn is in
+  flight. Real background follow-ups — updates that carry agent output or
+  tool calls — behave exactly as before.
+
 ## [0.14.0] — 2026-08-25
 
 ### Upgrade notes
