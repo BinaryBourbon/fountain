@@ -154,15 +154,19 @@ defmodule FountainWeb.MarketingControllerTest do
         assert FountainWeb.MarketingIcons.has?(target.slug), "no mark for #{target.name}"
       end
 
-      assert body =~ "Define an agent once. Then send prompts."
-      assert body =~ "kind: Environment"
-      assert body =~ "kind: Vault"
-      assert body =~ "kind: Agent"
-      assert body =~ "source: obra/superpowers"
-      assert body =~ "url: https://mcp.deepwiki.com/mcp"
+      assert body =~ "You write this once. Everything after it is a prompt."
+      assert body =~ "fountain.environments.create"
+      assert body =~ "fountain.vaults.create"
+      assert body =~ "fountain.vaults.secrets.set"
+      assert body =~ "fountain.agents.create"
+      assert body =~ "environment_id: environment.id"
+      assert body =~ "allowed_vault_ids: [vault.id]"
+      assert body =~ "obra/superpowers"
+      assert body =~ "https://mcp.deepwiki.com/mcp"
       assert body =~ "vault: &quot;ci-bot&quot;"
-      assert body =~ "fountain apply -f fountain.yml"
       assert body =~ "@agentshit/fountain-sdk"
+      refute body =~ "kind: Environment"
+      refute body =~ "fountain apply -f fountain.yml"
 
       assert body =~ "Use the same agents from your product, editor or chat app."
 
