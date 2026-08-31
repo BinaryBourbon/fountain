@@ -138,9 +138,9 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ ~s(data-role="system-map")
 
-      for part <- ~w(repo model tools secrets sandbox) do
-        assert body =~ ">#{part}</span>", "missing #{part} from the agent bundle"
-      end
+      assert body =~ "assembles Agent + Environment + Vault"
+      assert body =~ "repo · tools · config · credentials"
+      assert body =~ "Sandbox"
 
       assert body =~ "Running agent"
       assert body =~ "fixing test_user_login.py"

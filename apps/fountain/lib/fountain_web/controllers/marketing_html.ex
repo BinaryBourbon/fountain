@@ -100,7 +100,7 @@ defmodule FountainWeb.MarketingHTML do
           name: ci-bot
         spec:
           secrets:
-            GITHUB_TOKEN: op://Private/github/token\
+            GITHUB_TOKEN: op://Private/github/token # resolved from 1Password at apply time\
         """
       },
       %{
