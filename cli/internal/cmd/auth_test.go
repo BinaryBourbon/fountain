@@ -185,6 +185,53 @@ func TestPollDeviceGrantStopsOnDenial(t *testing.T) {
 	}
 }
 
+// TestLoginModeDefaults pins the dispatch that makes #1305's "auto detect"
+// unnecessary: the server's 401 is deliberately uniform (anti-enumeration),
+// so instead of detecting a passwordless account the default flow is one
+// that works for every account — device on a terminal — while piped stdin
+// keeps the email + password read so existing scripts are unchanged.
+func TestLoginModeDefaults(t *testing.T) {
+	cases := []struct {
+		name                     string
+		apiKey, device, password bool
+		tty                      bool
+		want                     string
+		wantErr                  bool
+	}{
+		{name: "terminal defaults to device", tty: true, want: loginModeDevice},
+		{name: "piped stdin keeps password", tty: false, want: loginModePassword},
+		{name: "--password wins on a terminal", password: true, tty: true, want: loginModePassword},
+		{name: "--device works piped", device: true, tty: false, want: loginModeDevice},
+		{name: "--api-key works piped", apiKey: true, tty: false, want: loginModeAPIKey},
+		{name: "two flags is an error", device: true, password: true, tty: true, wantErr: true},
+	}
+	for _, tc := range cases {
+		got, err := loginMode(tc.apiKey, tc.device, tc.password, tc.tty)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("%s: want an error, got mode %q", tc.name, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("%s: got (%q, %v), want %q", tc.name, got, err, tc.want)
+		}
+	}
+}
+
+func TestDeviceFallbackAccepted(t *testing.T) {
+	for _, yes := range []string{"", "y", "Y", "yes", " Yes "} {
+		if !deviceFallbackAccepted(yes) {
+			t.Errorf("%q should accept the fallback", yes)
+		}
+	}
+	for _, no := range []string{"n", "N", "no", "q", "later"} {
+		if deviceFallbackAccepted(no) {
+			t.Errorf("%q should decline the fallback", no)
+		}
+	}
+}
+
 // stdinFrom replaces os.Stdin with a pipe holding `input` and returns the
 // restore func. promptPassword falls back to a plain line read on a non-TTY,
 // which is what a pipe is.
