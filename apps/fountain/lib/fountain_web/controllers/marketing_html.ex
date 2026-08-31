@@ -669,11 +669,16 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The integration where Fountain brings the agent to another network."
   def outbound_protocol, do: Enum.find(protocols(), &(&1.kind == :outbound))
 
-  @doc "What runs behind an integration, split into choices the developer makes."
+  @doc """
+  What runs behind an integration, split into choices the developer makes.
+  `title` names each group on /integrations; `pitch` is the imperative heading
+  /oss-launch gives the same group.
+  """
   def inside do
     [
       %{
         title: "Runtimes",
+        pitch: "Bring the runtime you want.",
         blurb:
           "Choose the coding agent the sandbox runs. Every client-facing interface sees the same shape.",
         items: [
@@ -685,6 +690,7 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         title: "Model access",
+        pitch: "Use the model provider you trust.",
         blurb:
           "Bring your own credentials. Your model provider bills you directly; Fountain never marks up tokens.",
         items: [
@@ -696,6 +702,7 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         title: "Sandboxes",
+        pitch: "Run on the sandbox you choose.",
         blurb:
           "Where the agent runs. A hosted provider, or a runner on hardware you own that dials out over WebSocket.",
         items: [
@@ -1076,46 +1083,71 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The project's repository. The self-hosted page links it from four places."
   def repo_url, do: @repo_url
 
-  @doc "Deployment paths featured by the Fountain open-source launch page."
+  @doc """
+  The four primitives as /oss-launch introduces them: one line each, framed by
+  what an agent needs beyond a model rather than by Fountain's internals. The
+  long versions live in `docs/primitives.md` and on the homepage.
+  """
+  def oss_primitives do
+    [
+      %{
+        name: "Environment",
+        body: "The machine: repositories, packages, env vars and setup scripts."
+      },
+      %{
+        name: "Vault",
+        body:
+          "The credentials a run is allowed to use, kept apart so rotating a token is not a machine edit."
+      },
+      %{
+        name: "Agent",
+        body: "The runtime, model, skills and tools, under one name your software can call."
+      },
+      %{
+        name: "Conversation",
+        body: "The running work: prompts, streamed output and the sandbox behind them."
+      }
+    ]
+  end
+
+  @doc """
+  Deployment paths featured by the Fountain open-source launch page. `slug` is
+  the `FountainWeb.MarketingIcons` mark for each target's own platform.
+  """
   def oss_deploy_targets do
     [
       %{
         name: "Docker Compose",
-        label: "Fastest start",
+        slug: "docker",
         body:
           "One app container, Postgres and the same published release image used everywhere else.",
-        href: "/docs/guides/operate/deploy",
-        command: "docker compose up -d"
+        href: "/docs/guides/operate/deploy"
       },
       %{
         name: "Render",
-        label: "Blueprint",
+        slug: "render",
         body: "Fork the repo and let render.yaml create the web service and managed Postgres.",
-        href: "/docs/guides/operate/render",
-        command: "render.yaml"
+        href: "/docs/guides/operate/render"
       },
       %{
         name: "Fly.io",
-        label: "Machine",
+        slug: "flydotio",
         body:
           "Deploy the published image from fly.toml and bring the Postgres database you choose.",
-        href: "/docs/guides/operate/fly",
-        command: "fly deploy"
+        href: "/docs/guides/operate/fly"
       },
       %{
         name: "Kubernetes",
-        label: "Portable baseline",
+        slug: "kubernetes",
         body:
           "Plain manifests, no operator or CRDs, with clustering and probes already described.",
-        href: "/docs/guides/operate/kubernetes",
-        command: "kubectl apply -k deploy/k8s"
+        href: "/docs/guides/operate/kubernetes"
       },
       %{
         name: "Coolify",
-        label: "Your server",
+        slug: "coolify",
         body: "Point Coolify at the repository and use the same Compose stack behind its proxy.",
-        href: "/docs/guides/operate/coolify",
-        command: "docker-compose.yml"
+        href: "/docs/guides/operate/coolify"
       }
     ]
   end
