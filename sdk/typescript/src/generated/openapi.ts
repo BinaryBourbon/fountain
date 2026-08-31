@@ -1905,6 +1905,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/device/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Poll a device grant for the API key
+         * @description Polled by the CLI with the `device_code` from `POST /api/auth/device`. Until the user decides, 400 `authorization_pending` (or `slow_down` when polled faster than `interval`). A denial is 400 `access_denied`; a timed-out grant is 400 `expired_token`; an unknown or already-used code is 400 `invalid_grant`. On approval, 201 with a full-scope API key — the same shape `POST /api/auth/token` returns — and the grant is consumed.
+         */
+        post: operations["FountainWeb.DeviceAuthController.token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a device-authorization grant
+         * @description The CLI login path for accounts without a password ("Sign up with GitHub"). Show the user `user_code` and send them to `verification_uri` (or open `verification_uri_complete`), then poll `POST /api/auth/device/token` with `device_code` every `interval` seconds until they approve. The grant expires after `expires_in` seconds. Rate-limited to 10 grants per IP per hour.
+         */
+        post: operations["FountainWeb.DeviceAuthController.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/{id}": {
         parameters: {
             query?: never;
@@ -3299,6 +3339,11 @@ export interface components {
         ApiKeyListResponse: {
             data: components["schemas"]["ApiKey"][];
         };
+        /** DeviceTokenRequest */
+        DeviceTokenRequest: {
+            /** @description The `device_code` from `POST /api/auth/device`. */
+            device_code: string;
+        };
         /**
          * Runner
          * @description A self-hosted runner: a machine of yours running `fountain runner`, serving sandboxes for the `runner` provider (ADR 0022). `online` is live — whether the daemon holds a connection right now.
@@ -3747,6 +3792,27 @@ export interface components {
         /** TeamScheduleResponse */
         TeamScheduleResponse: {
             data: components["schemas"]["TeamSchedule"];
+        };
+        /**
+         * DeviceAuthResponse
+         * @description A fresh device-authorization grant (#1305). `device_code` stays on the polling machine and never gets typed; `user_code` is what the human enters at `verification_uri`.
+         */
+        DeviceAuthResponse: {
+            /** @description High-entropy code the CLI polls the token endpoint with. Shown once. */
+            device_code: string;
+            /** @description Seconds until the grant expires. */
+            expires_in: number;
+            /** @description Minimum seconds between polls; faster gets `slow_down`. */
+            interval: number;
+            /**
+             * @description Short code for the human to type into the console.
+             * @example BCDF-GHJK
+             */
+            user_code: string;
+            /** @description The console page where the user approves the grant. */
+            verification_uri: string;
+            /** @description `verification_uri` with the user code prefilled. */
+            verification_uri_complete: string;
         };
         /** EmailRequest */
         EmailRequest: {
@@ -9339,6 +9405,60 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+        };
+    };
+    "FountainWeb.DeviceAuthController.token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Device token request */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description A new API key */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description authorization_pending / slow_down / access_denied / expired_token / invalid_grant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.DeviceAuthController.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A new device grant */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceAuthResponse"];
                 };
             };
         };
