@@ -30,7 +30,7 @@ docker compose up -d
 ```
 
 Open <http://localhost:4000>. Create the first operator account, then add an
-Anthropic credential under Settings, then Inference credentials.
+Anthropic credential under Account, then Inference keys.
 
 The Compose defaults self-verify the first account and make it the admin.
 Create that account before you expose the server to another network. The
@@ -40,7 +40,7 @@ close registration, and configure the other sandbox providers.
 ### Use the hosted server
 
 Create an account on [managoat.com](https://managoat.com), then add an
-Anthropic credential under Settings, then Inference credentials. The hosted
+Anthropic credential under Account, then Inference keys. The hosted
 server supplies the control plane and sandbox provider.
 
 ## Install and authenticate the CLI
@@ -59,8 +59,17 @@ FOUNTAIN_BASE_URL=http://localhost:4000 fountain auth login
 fountain auth login
 ```
 
-`auth login` saves the server URL and an API key. The commands below need no
-server flag after that.
+`auth login` asks for an email and a password. It saves the server URL and an
+API key. The commands below need no server flag after that.
+
+**Did you create your account with GitHub?** That account has no password, so
+`auth login` cannot sign you in. Create an API key in the console under
+Account, then API keys. Export it, and the CLI uses it before the saved
+credentials.
+
+```sh
+export FOUNTAIN_API_KEY=ftn_...
+```
 
 ## Apply and run
 
@@ -74,6 +83,11 @@ fountain apply -f fountain.yml
 fountain run fountain-reader -p \
   "Find the code that reclaims an idle sandbox. Explain when it runs and name the files you read."
 ```
+
+**Did you clone the repository for your own server?** The checkout already
+contains the manifest. Skip the download and apply
+`examples/quickstart/fountain.yml` from the repository root, so the manifest
+matches the code you deployed.
 
 `apply` creates two reusable rows. The Environment says which repository the
 sandbox receives. The Agent says which runtime and model work in it.

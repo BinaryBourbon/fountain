@@ -5,7 +5,6 @@ kind: Environment
 metadata:
   name: fountain-quickstart
 spec:
-  networking_type: unrestricted
   repositories:
     - url: https://github.com/BinaryBourbon/fountain
       mount_path: /workspace/fountain
@@ -23,5 +22,3 @@ spec:
     Work in /workspace/fountain. Inspect the repository before you answer.
     Do not edit files. Keep the answer short and name the source files that
     support it.
-  permission_policy:
-    default: auto_allow

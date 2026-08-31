@@ -122,9 +122,10 @@ Log in against your Fountain instance:
 fountain auth login
 ```
 
-Before the first run, add an Anthropic credential under Settings, then
-Inference credentials. Apply the smallest example and run its agent against a
-real checkout:
+Before the first run, add an Anthropic credential under Account, then
+Inference keys. From this checkout, apply the smallest example and run its
+agent against a real repository. (Not in the checkout? The
+[quickstart](docs/quickstart.md) downloads the manifest first.)
 
 ```sh
 fountain apply -f examples/quickstart/fountain.yml
@@ -133,8 +134,6 @@ fountain run fountain-reader -p \
 ```
 
 `fountain apply` walks the directory and applies every `*.yml` / `*.yaml` doc that declares both `apiVersion` and `kind`. See [`cli/README.md`](cli/README.md) for the rest of the command surface.
-If you are not in this checkout, the [quickstart](docs/quickstart.md) downloads
-the manifest first.
 
 ## Use the API directly
 
