@@ -67,6 +67,33 @@ defmodule Fountain.Runtimes.ACP.Protocol do
     end
   end
 
+  # `sessionUpdate` kinds that describe the *session* rather than anything the
+  # agent did: the generated title, the slash-command list, the current mode.
+  @metadata_updates ~w(session_info_update available_commands_update current_mode_update)
+
+  @doc """
+  Whether this line is a `session/update` carrying session metadata rather
+  than agent activity.
+
+  The claude adapter generates the session title asynchronously and writes the
+  `session_info_update` about a second *after* the prompt response — out of
+  turn. Metadata is nothing the agent said or ran, so it must not be read as
+  "the agent is talking out of turn": it opens no autonomous turn and holds
+  none open (#1300). Exposed for `ConversationServer`, which classifies the
+  peer's reported lines.
+  """
+  @spec session_metadata?(String.t()) :: boolean()
+  def session_metadata?(line) when is_binary(line) do
+    case classify_line(line) do
+      {:notification, "session/update", params} ->
+        update = Map.get(params, "update") || %{}
+        Map.get(update, "sessionUpdate") in @metadata_updates
+
+      _ ->
+        false
+    end
+  end
+
   @doc "Classify a decoded JSON-RPC object."
   @spec classify(map()) :: message()
   def classify(%{"id" => id, "result" => result}), do: {:response, id, result}

@@ -2211,12 +2211,28 @@ defmodule Fountain.Conversations.ConversationServer do
   # follow-up. That opens an autonomous turn — a real row, so the log budget,
   # redaction and the stage events apply unchanged — and every further line
   # re-arms the quiet timer that closes it if no `cycle_end` ever does.
+  #
+  # Session *metadata* is the exception (#1300). The claude adapter writes its
+  # `session_info_update` (the generated title) about a second after every
+  # prompt response — out of turn — and reading that as a background follow-up
+  # opened a phantom autonomous turn after nearly every turn, held open for
+  # the full quiet window: `running` status, deferred idle park, billed turn
+  # time. Metadata is nothing the agent did, so it opens no turn and re-arms
+  # no quiet timer; with a turn in flight it still lands on the transcript.
   def handle_info({:acp, ref, {:lines, stream, data}}, %{current_command_ref: ref} = state) do
     cond do
       stream == "acp" and MapSet.member?(state.replay_dedup, data) ->
         # A replayed line we already hold (ACP reattach). Each persisted line
         # suppresses at most one arrival, so a legitimate later repeat survives.
         {:noreply, %{state | replay_dedup: MapSet.delete(state.replay_dedup, data)}}
+
+      stream == "acp" and Fountain.Runtimes.ACP.Protocol.session_metadata?(data) ->
+        if is_nil(state.current_turn) do
+          # No turn to attach it to, and not worth opening one: dropped.
+          {:noreply, state}
+        else
+          {:noreply, persist_acp_lines(state, stream, data)}
+        end
 
       stream == "acp" and is_nil(state.current_turn) ->
         state = open_autonomous_turn(state)

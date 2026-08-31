@@ -101,6 +101,58 @@ defmodule Fountain.Runtimes.ACP.ProtocolTest do
     end
   end
 
+  defp update_line(update) do
+    Jason.encode!(%{
+      "jsonrpc" => "2.0",
+      "method" => "session/update",
+      "params" => %{"sessionId" => "s1", "update" => update}
+    })
+  end
+
+  describe "session_metadata?/1" do
+    test "true for every metadata update kind" do
+      for kind <- ~w(session_info_update available_commands_update current_mode_update) do
+        assert Protocol.session_metadata?(update_line(%{"sessionUpdate" => kind})),
+               "expected #{kind} to be metadata"
+      end
+    end
+
+    test "the claude adapter's post-turn title line is metadata (#1300)" do
+      assert Protocol.session_metadata?(
+               update_line(%{
+                 "sessionUpdate" => "session_info_update",
+                 "title" => "Research Xfinity internet promotion pricing",
+                 "updatedAt" => "2026-08-25T12:05:48.620Z"
+               })
+             )
+    end
+
+    test "false for agent activity" do
+      for kind <- ~w(agent_message_chunk agent_thought_chunk tool_call tool_call_update plan
+                     usage_update user_message_chunk) do
+        refute Protocol.session_metadata?(update_line(%{"sessionUpdate" => kind})),
+               "expected #{kind} not to be metadata"
+      end
+    end
+
+    test "false for other notifications, requests, responses and junk" do
+      refute Protocol.session_metadata?(
+               Jason.encode!(%{"jsonrpc" => "2.0", "method" => "session/cancel", "params" => %{}})
+             )
+
+      refute Protocol.session_metadata?(
+               Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "result" => %{}})
+             )
+
+      refute Protocol.session_metadata?("npm warn deprecated foo@1.0.0")
+
+      # A session/update with no update object at all is not metadata either.
+      refute Protocol.session_metadata?(
+               Jason.encode!(%{"jsonrpc" => "2.0", "method" => "session/update"})
+             )
+    end
+  end
+
   describe "encoding" do
     test "every encoded frame ends in exactly one newline" do
       for frame <- [
