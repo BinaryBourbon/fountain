@@ -185,7 +185,7 @@
       You write this once. Everything after it is a prompt.
     </h2>
     <%!-- The three resources are one file, so they are one code block. On wide
-          screens its annotations occupy proportional rows beside it: 43/27/30
+          screens its annotations occupy proportional rows beside it: 34/23/43
           follows the documents' rendered line counts (including each `---`),
           keeping every annotation level with the document it names. On narrow
           screens the numbered annotations become a compact preface to the
@@ -196,7 +196,7 @@
           YAML is a defect and a wrapped line of prose is not. --%>
     <div class="mt-12">
       <div class="grid md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-x-10 gap-y-5 items-stretch">
-        <div class="grid md:grid-rows-[43%_27%_30%]">
+        <div class="grid md:grid-rows-[34%_23%_43%]">
           <div
             :for={step <- Enum.take(build_steps(), 3)}
             class="flex items-start gap-4 py-4 first:pt-0 last:pb-0 md:py-0 md:pr-4"

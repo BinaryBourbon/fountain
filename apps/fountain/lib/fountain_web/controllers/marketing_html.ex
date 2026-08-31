@@ -60,10 +60,10 @@ defmodule FountainWeb.MarketingHTML do
   The Agent is named `reviewer` because that is the agent `sdk_example/0`
   starts in the last beat. Renaming it here means renaming it there.
 
-  The Vault beat argues rate of change rather than the HashiCorp collision.
-  The collision is stated once on this page, in the "Whose token does it push
-  with?" card below, which is where a reader meets the word with an
-  explanation attached.
+  The Vault beat says what the record is, when to attach it, and that it is
+  optional. The collision with HashiCorp is stated once on this page, in the
+  "Whose token does it push with?" card below, where the longer distinction
+  belongs.
   """
   def build_steps do
     [
@@ -89,10 +89,10 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         n: 2,
-        title: "Keep the credentials apart.",
+        title: "Add credentials only when a run needs them.",
         body:
-          "They are their own document, so rotating a token is not an edit to " <>
-            "the machine, and one machine can run as you or as a bot.",
+          "A Vault is an optional set of environment-variable overrides. " <>
+            "Attach one in the API call; leave it off when a run needs no credentials.",
         code: """
         apiVersion: fountain.dev/v1
         kind: Vault
@@ -105,10 +105,10 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         n: 3,
-        title: "Name the agent.",
+        title: "Name the agent and its tools.",
         body:
-          "Pick the runtime and model, add skills and MCP servers, attach the " <>
-            "Environment. Or start from a ready-made one.",
+          "Pick the runtime and model, add skills and MCP tools, and attach the " <>
+            "Environment. The public DeepWiki server needs no credential.",
         code: """
         apiVersion: fountain.dev/v1
         kind: Agent
@@ -117,7 +117,14 @@ defmodule FountainWeb.MarketingHTML do
         spec:
           runtime: claude
           model: anthropic/claude-sonnet-5
-          environment: app\
+          environment: app
+          skills:
+            - source: obra/superpowers
+              ref: v2.1.0
+          mcp_servers:
+            deepwiki:
+              type: http
+              url: https://mcp.deepwiki.com/mcp\
         """
       },
       %{
@@ -166,7 +173,7 @@ defmodule FountainWeb.MarketingHTML do
 
     const run = await fountain.run(
       "Fix the failing test and open a PR",
-      { agent: "reviewer", channelId: ticket.id }
+      { agent: "reviewer", vault: "ci-bot", channelId: ticket.id }
     );
 
     console.log(run.text);\

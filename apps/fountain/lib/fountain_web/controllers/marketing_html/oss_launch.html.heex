@@ -13,7 +13,7 @@
         Run coding agents on infrastructure you control.
       </h1>
       <p class="mt-6 text-lg sm:text-xl leading-relaxed text-[var(--color-text-secondary)] max-w-[39rem]">
-        Define the repo, tools, credentials, runtime and model an agent needs, and give it a name. Then call it from your product, editor, chat app or CI job. Fountain handles the machine underneath.
+        Connect your repo, tools, credentials, and model. Specify a runtime and give the agent a name. Then call it from your product, editor, chat app or CI job. Fountain handles the machine underneath.
       </p>
       <div class="mt-9 flex flex-col sm:flex-row gap-3 [&>a]:w-full sm:[&>a]:w-auto">
         <a
@@ -179,7 +179,7 @@
           Define an agent once. Then send prompts.
         </h2>
         <p class="mt-5 text-[var(--color-ink-secondary)] leading-relaxed">
-          An Environment describes the machine. A Vault provides per-run credentials. An Agent chooses the runtime, model and tools. Keep all three in one manifest and apply it like infrastructure.
+          An Environment supplies the machine and checkout. An Agent adds the runtime, model, skills and MCP tools. When a run needs credentials, attach a Vault in the API call. Keep the configuration in one manifest and apply it like infrastructure.
         </p>
         <ol class="mt-8 space-y-5">
           <li class="grid grid-cols-[2rem_1fr] gap-3">
@@ -200,7 +200,9 @@
             <div>
               <h3 class="font-semibold">Call the agent by name</h3>
               <p class="mt-1 text-sm text-[var(--color-ink-secondary)]">
-                The API provisions the sandbox, clones repositories and starts the runtime.
+                Attach the
+                <code class="font-mono text-xs text-[var(--color-ink-text)]">ci-bot</code>
+                Vault for a run that needs its GitHub token; leave it off otherwise.
               </p>
             </div>
           </li>
@@ -235,7 +237,7 @@
             </span>
           </div>
           <pre
-            class="max-h-[28rem] overflow-auto p-4 text-xs leading-relaxed text-[var(--color-code-text)]"
+            class="overflow-x-auto p-4 text-xs leading-relaxed text-[var(--color-code-text)]"
             phx-no-format
           ><code>{apply_example()}</code></pre>
           <p class="border-t border-[var(--color-ink-border)] px-4 py-3 font-mono text-xs text-[var(--color-accent)]">
