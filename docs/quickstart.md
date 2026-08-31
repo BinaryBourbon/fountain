@@ -62,14 +62,10 @@ fountain auth login
 `auth login` asks for an email and a password. It saves the server URL and an
 API key. The commands below need no server flag after that.
 
-**Did you create your account with GitHub?** That account has no password, so
-`auth login` cannot sign you in. Create an API key in the console under
-Account, then API keys. Export it, and the CLI uses it before the saved
-credentials.
-
-```sh
-export FOUNTAIN_API_KEY=ftn_...
-```
+**A GitHub account has no password.** If you created your account with the
+GitHub button, add `--device` to the command above. The CLI shows a one-time
+code and opens the console's approval page. Approve the device there, and the
+CLI saves the key for you.
 
 ## Apply and run
 
@@ -84,10 +80,9 @@ fountain run fountain-reader -p \
   "Find the code that reclaims an idle sandbox. Explain when it runs and name the files you read."
 ```
 
-**Did you clone the repository for your own server?** The checkout already
-contains the manifest. Skip the download and apply
-`examples/quickstart/fountain.yml` from the repository root, so the manifest
-matches the code you deployed.
+**The clone already contains the manifest.** If you run your own server from
+the checkout, skip the download. Apply `examples/quickstart/fountain.yml`
+from the repository root, so the manifest matches the code you deployed.
 
 `apply` creates two reusable rows. The Environment says which repository the
 sandbox receives. The Agent says which runtime and model work in it.
