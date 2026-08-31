@@ -122,8 +122,19 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "The open-source control plane for coding agents."
       assert body =~ ~s(href="/docs/quickstart")
       assert body =~ "Run the quickstart"
+      assert body =~ ~s(href="/docs/tour")
+      assert body =~ "Run the complete tour"
       assert body =~ "Deploy Fountain"
       assert body =~ FountainWeb.MarketingHTML.repo_url()
+
+      assert body =~ ~s(data-role="system-map")
+
+      for part <- ~w(repo model tools secrets sandbox) do
+        assert body =~ ">#{part}</span>", "missing #{part} from the agent bundle"
+      end
+
+      assert body =~ "Running agent"
+      assert body =~ "fixing test_user_login.py"
 
       for target <- FountainWeb.MarketingHTML.oss_deploy_targets() do
         assert body =~ target.name, "missing deployment target #{target.name}"
