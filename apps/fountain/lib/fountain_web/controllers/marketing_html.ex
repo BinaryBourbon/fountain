@@ -100,7 +100,7 @@ defmodule FountainWeb.MarketingHTML do
           name: ci-bot
         spec:
           secrets:
-            GITHUB_TOKEN: op://Private/github/token\
+            GITHUB_TOKEN: op://Private/github/token # resolved from 1Password at apply time\
         """
       },
       %{
@@ -178,6 +178,80 @@ defmodule FountainWeb.MarketingHTML do
 
     console.log(run.text);\
     """
+  end
+
+  @doc """
+  The SDK definitions on the open-source launch page, one resource per beat.
+
+  The page keeps the three definitions separate so the explanation beside each
+  one stays attached to the code it describes. Together they are one setup
+  script: the Environment and Vault ids returned by Fountain are passed to the
+  Agent, and the Agent and Vault names match `sdk_example/0` underneath.
+
+  The secret write is deliberately separate from `vaults.create/1`. Secret
+  values are write-only in the SDK, and showing that call keeps the Vault from
+  reading like an empty marker record.
+  """
+  def oss_sdk_setup_steps do
+    [
+      %{
+        n: 1,
+        title: "Describe the machine once.",
+        body:
+          "Repositories, packages, env vars and setup scripts. The Environment is reusable across agents and runs.",
+        code: """
+        import { Fountain } from "@agentshit/fountain-sdk";
+
+        const fountain = new Fountain(); // FOUNTAIN_API_KEY
+
+        const environment = await fountain.environments.create({
+          name: "app",
+          repositories: [{
+            url: "https://github.com/acme/app",
+            mount_path: "/work/app",
+          }],
+          setup_script: "cd /work/app && npm install",
+        });\
+        """
+      },
+      %{
+        n: 2,
+        title: "Add credentials only when a run needs them.",
+        body:
+          "A Vault is an optional set of environment-variable overrides. Write its values separately, then attach it only to runs that need them.",
+        code: """
+        const vault = await fountain.vaults.create({ name: "ci-bot" });
+
+        await fountain.vaults.secrets.set(
+          vault.id,
+          "GITHUB_TOKEN",
+          process.env.GITHUB_TOKEN!
+        );\
+        """
+      },
+      %{
+        n: 3,
+        title: "Name the agent and its tools.",
+        body:
+          "Pick the runtime and model, add skills and MCP tools, attach the Environment, and allow the Vault callers may opt into.",
+        code: """
+        await fountain.agents.create({
+          name: "reviewer",
+          runtime: "claude",
+          model: "anthropic/claude-sonnet-5",
+          environment_id: environment.id,
+          allowed_vault_ids: [vault.id],
+          skills: [{ source: "obra/superpowers", ref: "v2.1.0" }],
+          mcp_servers: {
+            deepwiki: {
+              type: "http",
+              url: "https://mcp.deepwiki.com/mcp",
+            },
+          },
+        });\
+        """
+      }
+    ]
   end
 
   @doc "The two-turn launch example, kept out of the template so its braces are not HEEx."
