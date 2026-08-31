@@ -120,6 +120,8 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ "Fountain · AGPL-3.0-or-later"
       assert body =~ "Run coding agents on infrastructure you control."
+      assert body =~ "Connect your repo, tools, credentials, and model."
+      assert body =~ "Specify a runtime and give the agent a name."
 
       assert body =~ "An agent should not need a laptop."
 
