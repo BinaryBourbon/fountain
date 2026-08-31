@@ -136,6 +136,102 @@ defmodule Fountain.OAuthTest do
     end
   end
 
+  describe "device authorization (#1305)" do
+    alias Fountain.OAuth.DeviceGrant
+
+    test "the happy path: start → approve in the console → poll mints a key, once" do
+      user = insert_verified_user()
+
+      assert {:ok, %{device_code: device_code, user_code: user_code} = grant} =
+               OAuth.start_device_grant()
+
+      assert grant.expires_in == 900
+      assert grant.interval == OAuth.device_interval_seconds()
+      # The display shape a human types back in, dash and all.
+      assert user_code =~ ~r/^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/
+
+      # Nobody has decided yet.
+      assert {:error, :authorization_pending} = OAuth.poll_device_grant(device_code)
+
+      # The approval page finds it however the human typed it.
+      assert {:ok, _} = OAuth.get_device_grant_for_approval(String.downcase(user_code))
+      assert :ok = OAuth.approve_device_grant(user_code, user.id, actor: "ui")
+
+      assert {:ok, %{access_token: token, api_key: key}} =
+               OAuth.poll_device_grant(device_code, actor: "api")
+
+      assert key.name =~ "CLI login"
+      assert key.scopes == ["full"]
+      assert is_nil(key.expires_at)
+      assert {:ok, %{id: uid}, _} = Accounts.authenticate_api_key(token)
+      assert uid == user.id
+
+      # Single use: the grant is consumed with the mint.
+      assert {:error, :invalid_grant} = OAuth.poll_device_grant(device_code)
+
+      actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
+      assert "oauth.device_approved" in actions
+      assert "api_key.created" in actions
+    end
+
+    test "polling faster than the interval gets slow_down" do
+      {:ok, %{device_code: device_code}} = OAuth.start_device_grant()
+
+      assert {:error, :authorization_pending} = OAuth.poll_device_grant(device_code)
+      assert {:error, :slow_down} = OAuth.poll_device_grant(device_code)
+    end
+
+    test "a denial reaches the polling CLI as access_denied and audits" do
+      user = insert_verified_user()
+      {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
+
+      assert :ok = OAuth.deny_device_grant(user_code, user.id, actor: "ui")
+      assert {:error, :access_denied} = OAuth.poll_device_grant(device_code)
+
+      # Decided is decided: no second opinion, in either direction.
+      assert {:error, :not_found} = OAuth.approve_device_grant(user_code, user.id)
+      assert {:error, :not_found} = OAuth.get_device_grant_for_approval(user_code)
+
+      actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
+      assert "oauth.device_denied" in actions
+    end
+
+    test "an expired grant is expired_token to the poll, invisible to approval, and pruned" do
+      user = insert_verified_user()
+      {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
+
+      Repo.update_all(DeviceGrant,
+        set: [
+          expires_at: DateTime.add(DateTime.utc_now(), -1, :second) |> DateTime.truncate(:second)
+        ]
+      )
+
+      assert {:error, :expired_token} = OAuth.poll_device_grant(device_code)
+      assert {:error, :not_found} = OAuth.get_device_grant_for_approval(user_code)
+      assert {:error, :not_found} = OAuth.approve_device_grant(user_code, user.id)
+      assert OAuth.prune_expired() >= 1
+    end
+
+    test "an unknown device code is invalid_grant" do
+      assert {:error, :invalid_grant} = OAuth.poll_device_grant("not-a-code")
+    end
+
+    test "a suspended approver cannot collect a key" do
+      user = insert_verified_user()
+      {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
+      assert :ok = OAuth.approve_device_grant(user_code, user.id)
+
+      {:ok, _, _} = Accounts.suspend_user(user, actor: "admin")
+
+      assert {:error, :access_denied} = OAuth.poll_device_grant(device_code)
+    end
+
+    test "normalize_user_code strips the display shape" do
+      assert OAuth.normalize_user_code(" bcdf-ghjk ") == "BCDFGHJK"
+      assert OAuth.format_user_code("BCDFGHJK") == "BCDF-GHJK"
+    end
+  end
+
   test "pkce_verify is S256 and constant-shape" do
     {v, c} = pkce()
     assert OAuth.pkce_verify(v, c)

@@ -3,7 +3,6 @@
       observability part of the first-screen promise. --%>
 
 <section class="relative overflow-hidden border-b border-[var(--color-border)]">
-  <div class="absolute inset-x-0 top-0 h-px bg-[var(--color-accent)]" aria-hidden="true"></div>
   <div class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-24 grid lg:grid-cols-[1.05fr_0.95fr] gap-12 lg:gap-16 items-center">
     <div>
       <p class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] px-3.5 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
@@ -93,7 +92,8 @@
           <img
             src={Fountain.Brand.asset("app-icon.png")}
             alt=""
-            class="size-8 rounded-lg ring-1 ring-white/15"
+            class="size-8 rounded-lg"
+            data-role="brand-mark"
           />
           <strong class="text-sm font-semibold uppercase tracking-[0.08em]">
             Fountain

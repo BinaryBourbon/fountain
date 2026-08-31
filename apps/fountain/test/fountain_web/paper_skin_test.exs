@@ -146,6 +146,13 @@ defmodule FountainWeb.PaperSkinTest do
 
       assert html =~ ~s(data-skin="paper")
     end
+
+    test "the OSS diagram uses the same displayed brand mark as the chrome", %{conn: conn} do
+      html = conn |> get(~p"/oss-launch") |> html_response(200)
+
+      assert length(Regex.scan(~r/data-role="brand-mark"/, html)) == 3
+      assert File.read!(@paper) =~ ~s(img[data-role="brand-mark"])
+    end
   end
 
   describe "everything that is not a marketing page" do

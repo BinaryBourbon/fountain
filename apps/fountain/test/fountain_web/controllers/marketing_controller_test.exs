@@ -135,6 +135,7 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ "Running agent"
       assert body =~ "fixing test_user_login.py"
+      refute body =~ ~s(absolute inset-x-0 top-0 h-px)
 
       for target <- FountainWeb.MarketingHTML.oss_deploy_targets() do
         assert body =~ target.name, "missing deployment target #{target.name}"
