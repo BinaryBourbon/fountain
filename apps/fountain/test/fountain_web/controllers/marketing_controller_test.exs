@@ -158,6 +158,9 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "kind: Environment"
       assert body =~ "kind: Vault"
       assert body =~ "kind: Agent"
+      assert body =~ "source: obra/superpowers"
+      assert body =~ "url: https://mcp.deepwiki.com/mcp"
+      assert body =~ "vault: &quot;ci-bot&quot;"
       assert body =~ "fountain apply -f fountain.yml"
       assert body =~ "@agentshit/fountain-sdk"
 
@@ -1176,6 +1179,23 @@ defmodule FountainWeb.OpenGraphTest do
 
       assert MarketingHTML.sdk_example() =~ ~s(agent: "#{name}"),
              "the manifest defines agent #{name} and the call beside it starts a different one"
+    end
+
+    test "defines the vault the SDK call attaches" do
+      [_, name] =
+        Regex.run(~r/kind: Vault\nmetadata:\n  name: (\S+)/, MarketingHTML.apply_example())
+
+      assert MarketingHTML.sdk_example() =~ ~s(vault: "#{name}"),
+             "the manifest defines vault #{name} but the call beside it never attaches it"
+    end
+
+    test "shows a skill and a credential-free MCP server on the agent" do
+      manifest = MarketingHTML.apply_example()
+
+      assert manifest =~ "skills:\n"
+      assert manifest =~ "source: obra/superpowers"
+      assert manifest =~ "mcp_servers:\n"
+      assert manifest =~ "url: https://mcp.deepwiki.com/mcp"
     end
 
     test "carries no plaintext secret onto the page" do
