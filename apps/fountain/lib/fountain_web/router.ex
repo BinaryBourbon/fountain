@@ -246,6 +246,14 @@ defmodule FountainWeb.Router do
     pipe_through :api_public
 
     post "/token", AuthTokenController, :create
+
+    # Device authorization (#1305): the CLI login path for accounts that have
+    # no password ("Sign up with GitHub"). Unauthenticated by design — the
+    # approval happens in a signed-in browser at /device; rate-limited in the
+    # controller.
+    post "/device", DeviceAuthController, :create
+    post "/device/token", DeviceAuthController, :token
+
     post "/register", RegistrationController, :api_create
     post "/resend-verification", RegistrationController, :api_resend
     post "/forgot", PasswordResetController, :api_forgot
@@ -679,6 +687,10 @@ defmodule FountainWeb.Router do
       live "/vaults/:id/edit", VaultsLive.Form, :edit
       live "/audit", AuditLive.Index, :index
       live "/api-keys", ApiKeysLive.Index, :index
+      # Device-authorization approval (#1305): where `fountain auth login
+      # --device` sends the human. Authenticated so the key lands on the
+      # signed-in account.
+      live "/device", DeviceLive, :index
       live "/help", HelpLive.Show, :index
       live "/help/:topic", HelpLive.Show, :show
 

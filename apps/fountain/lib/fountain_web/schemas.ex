@@ -2822,6 +2822,69 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule DeviceAuthResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "DeviceAuthResponse",
+      description:
+        "A fresh device-authorization grant (#1305). `device_code` stays on the " <>
+          "polling machine and never gets typed; `user_code` is what the human " <>
+          "enters at `verification_uri`.",
+      type: :object,
+      properties: %{
+        device_code: %Schema{
+          type: :string,
+          description: "High-entropy code the CLI polls the token endpoint with. Shown once."
+        },
+        user_code: %Schema{
+          type: :string,
+          example: "BCDF-GHJK",
+          description: "Short code for the human to type into the console."
+        },
+        verification_uri: %Schema{
+          type: :string,
+          description: "The console page where the user approves the grant."
+        },
+        verification_uri_complete: %Schema{
+          type: :string,
+          description: "`verification_uri` with the user code prefilled."
+        },
+        expires_in: %Schema{type: :integer, description: "Seconds until the grant expires."},
+        interval: %Schema{
+          type: :integer,
+          description: "Minimum seconds between polls; faster gets `slow_down`."
+        }
+      },
+      required: [
+        :device_code,
+        :user_code,
+        :verification_uri,
+        :verification_uri_complete,
+        :expires_in,
+        :interval
+      ]
+    })
+  end
+
+  defmodule DeviceTokenRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "DeviceTokenRequest",
+      type: :object,
+      properties: %{
+        device_code: %Schema{
+          type: :string,
+          description: "The `device_code` from `POST /api/auth/device`."
+        }
+      },
+      required: [:device_code]
+    })
+  end
+
   defmodule WebhookEndpoint do
     @moduledoc false
     require OpenApiSpex

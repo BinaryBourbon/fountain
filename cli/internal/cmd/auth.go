@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,14 +31,24 @@ func init() {
 		Short: "Authenticate and save credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			withAPIKey, _ := cmd.Flags().GetBool("api-key")
-			if withAPIKey {
+			withDevice, _ := cmd.Flags().GetBool("device")
+			switch {
+			case withAPIKey && withDevice:
+				Fatal("--api-key and --device are two different login flows; pick one")
+				return nil
+			case withAPIKey:
 				return authLoginAPIKey()
+			case withDevice:
+				return authLoginDevice()
+			default:
+				return authLogin()
 			}
-			return authLogin()
 		},
 	}
 	loginCmd.Flags().Bool("api-key", false,
 		"paste an API key instead of email + password (for accounts that sign in with GitHub)")
+	loginCmd.Flags().Bool("device", false,
+		"sign in by approving this device in your browser (works for accounts that sign in with GitHub)")
 	authCmd.AddCommand(
 		loginCmd,
 		&cobra.Command{
@@ -94,8 +106,10 @@ func authLogin() error {
 		if resp.StatusCode == http.StatusUnauthorized {
 			Fatalf("login failed (HTTP %d): %s\n\n"+
 				"If you signed up with GitHub, your account has no password.\n"+
-				"Create an API key in the console (%s/api-keys), then run:\n\n"+
-				"  fountain auth login --api-key",
+				"Sign in through your browser instead:\n\n"+
+				"  fountain auth login --device\n\n"+
+				"Or create an API key in the console (%s/api-keys) and run\n"+
+				"`fountain auth login --api-key`.",
 				resp.StatusCode, respBody, base)
 		}
 		Fatalf("login failed (HTTP %d): %s", resp.StatusCode, respBody)
@@ -153,6 +167,169 @@ func authLoginAPIKey() error {
 
 	fmt.Printf("Logged in as %s. Credentials written to ~/.fountain/credentials (profile: %s).\n", me.Email, profile)
 	return nil
+}
+
+// authLoginDevice is `auth login --device`: the RFC-8628-shaped flow (#1305).
+// Works for every account, and is the only interactive option for one created
+// with "Sign up with GitHub" — no password exists to exchange. The CLI starts
+// a grant, sends the human to the console's /device page with a short code,
+// and polls until they approve; the server then mints an API key that is
+// written to ~/.fountain/credentials like any other login.
+func authLoginDevice() error {
+	opts := activeOpts()
+	profile := credentials.ProfileName(opts)
+	base := config.BaseURL(opts)
+
+	grant, err := startDeviceGrant(base)
+	if err != nil {
+		Fatalf("could not start a device login against %s: %v", base, err)
+	}
+
+	fmt.Printf("First, note your one-time code: %s\n\n", grant.UserCode)
+	fmt.Printf("Then approve this device at: %s\n", grant.VerificationURI)
+	// Only reach for a browser on a real terminal; scripts and tests get the
+	// printed URL and nothing else.
+	if term.IsTerminal(int(os.Stdout.Fd())) && openBrowser(grant.VerificationURIComplete) {
+		fmt.Println("(opened in your browser)")
+	}
+	fmt.Println("\nWaiting for approval...")
+
+	key, err := pollDeviceGrant(base, grant)
+	if err != nil {
+		Fatal(err.Error())
+	}
+
+	// The email is cosmetic; the key is already proven by the mint itself.
+	email := "you"
+	if me, err := fetchAuthMe(base, key); err == nil && me.Email != "" {
+		email = me.Email
+	}
+
+	if err := credentials.WriteProfile(profile, map[string]string{
+		"api_key":  key,
+		"base_url": base,
+	}); err != nil {
+		return err
+	}
+
+	fmt.Printf("Logged in as %s. Credentials written to ~/.fountain/credentials (profile: %s).\n", email, profile)
+	return nil
+}
+
+// deviceGrant mirrors FountainWeb.DeviceAuthController.create/2.
+type deviceGrant struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
+}
+
+func startDeviceGrant(base string) (*deviceGrant, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, base+"/api/auth/device", strings.NewReader("{}"))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("HTTP 404 — this server does not support device login yet; use `fountain auth login --api-key` instead")
+		}
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, respBody)
+	}
+
+	var grant deviceGrant
+	if err := json.Unmarshal(respBody, &grant); err != nil || grant.DeviceCode == "" || grant.UserCode == "" {
+		return nil, fmt.Errorf("unexpected response: %s", respBody)
+	}
+	return &grant, nil
+}
+
+// deviceSleep is swapped out by tests so the poll loop's pacing is
+// observable without waiting it out.
+var deviceSleep = time.Sleep
+
+// pollDeviceGrant polls until the grant is decided or times out, returning
+// the minted API key. The pacing is the server's: `interval` seconds between
+// polls, plus five more whenever it answers slow_down (RFC 8628 §3.5).
+func pollDeviceGrant(base string, grant *deviceGrant) (string, error) {
+	interval := grant.Interval
+	expiresIn := grant.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = 900
+	}
+	deadline := time.Now().Add(time.Duration(expiresIn) * time.Second)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	body, _ := json.Marshal(map[string]string{"device_code": grant.DeviceCode})
+
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, base+"/api/auth/device/token", bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			if key := extractAPIKey(respBody); key != "" {
+				return key, nil
+			}
+			return "", fmt.Errorf("unexpected token response: %s", respBody)
+		}
+
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(respBody, &errResp)
+
+		switch errResp.Error {
+		case "authorization_pending":
+			// keep waiting
+		case "slow_down":
+			interval += 5
+		case "access_denied":
+			return "", fmt.Errorf("the request was denied in the console; no key was created")
+		case "expired_token":
+			return "", fmt.Errorf("the code expired before it was approved — run `fountain auth login --device` again")
+		default:
+			return "", fmt.Errorf("device login failed (HTTP %d): %s", resp.StatusCode, respBody)
+		}
+
+		deviceSleep(time.Duration(interval) * time.Second)
+	}
+	return "", fmt.Errorf("timed out waiting for approval — run `fountain auth login --device` again")
+}
+
+// openBrowser best-effort opens url in the user's browser; false means the
+// user follows the printed URL by hand.
+func openBrowser(url string) bool {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start() == nil
 }
 
 // fetchAuthMe checks a raw key against GET /api/auth/me. It cannot go through

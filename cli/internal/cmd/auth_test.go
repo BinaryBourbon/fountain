@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
 )
@@ -83,6 +85,103 @@ func TestAuthLoginAPIKeyRejectsBadKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "401") {
 		t.Errorf("error %q does not name the 401", err)
+	}
+}
+
+// TestAuthLoginDeviceWritesCredentials drives the whole RFC-8628-shaped flow
+// (#1305) against the exact JSON FountainWeb.DeviceAuthController renders:
+// start a grant, poll through authorization_pending and slow_down, collect
+// the key once "the browser approved", and write the credentials file.
+func TestAuthLoginDeviceWritesCredentials(t *testing.T) {
+	const key = "ftn_test_2222222222222222"
+
+	var polls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/auth/device":
+			// interval 0 keeps the test's poll loop fast.
+			_, _ = w.Write([]byte(`{
+				"device_code": "dev-code-1",
+				"user_code": "BCDF-GHJK",
+				"verification_uri": "` + "http://console.test/device" + `",
+				"verification_uri_complete": "http://console.test/device?code=BCDF-GHJK",
+				"expires_in": 900,
+				"interval": 0
+			}`))
+		case "/api/auth/device/token":
+			body, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(body), "dev-code-1") {
+				t.Errorf("poll body %q does not carry the device code", body)
+			}
+			polls++
+			switch polls {
+			case 1:
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"authorization_pending"}`))
+			case 2:
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"slow_down"}`))
+			default:
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"api_key":"` + key + `","key_id":"k1","prefix":"ftn_test"}`))
+			}
+		case "/api/auth/me":
+			_, _ = w.Write([]byte(`{"id":"u1","email":"goat@example.com","role":"user"}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("FOUNTAIN_BASE_URL", srv.URL)
+	t.Setenv("FOUNTAIN_PROFILE", "")
+
+	credsPath := filepath.Join(t.TempDir(), "credentials")
+	credentials.SetPathOverride(credsPath)
+	t.Cleanup(func() { credentials.SetPathOverride("") })
+
+	var sleeps []time.Duration
+	deviceSleep = func(d time.Duration) { sleeps = append(sleeps, d) }
+	t.Cleanup(func() { deviceSleep = time.Sleep })
+
+	if err := authLoginDevice(); err != nil {
+		t.Fatalf("authLoginDevice: %v", err)
+	}
+	if polls < 3 {
+		t.Errorf("expected the loop to ride out pending and slow_down, got %d polls", polls)
+	}
+	// slow_down (poll 2) must have added five seconds to the pacing.
+	if len(sleeps) < 2 || sleeps[1] != 5*time.Second {
+		t.Errorf("slow_down did not back the interval off: sleeps = %v", sleeps)
+	}
+
+	content, err := os.ReadFile(credsPath)
+	if err != nil {
+		t.Fatalf("credentials file was not written: %v", err)
+	}
+	attrs := credentials.ParseAll(string(content))["default"]
+	if attrs["api_key"] != key {
+		t.Errorf("saved api_key = %q, want %q", attrs["api_key"], key)
+	}
+	if attrs["base_url"] != srv.URL {
+		t.Errorf("saved base_url = %q, want %q", attrs["base_url"], srv.URL)
+	}
+}
+
+// A denial must stop the loop with a clear error, not run out the clock.
+func TestPollDeviceGrantStopsOnDenial(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"access_denied"}`))
+	}))
+	defer srv.Close()
+
+	_, err := pollDeviceGrant(srv.URL, &deviceGrant{DeviceCode: "dev", ExpiresIn: 900, Interval: 0})
+	if err == nil || !strings.Contains(err.Error(), "denied") {
+		t.Fatalf("want a denial error, got %v", err)
 	}
 }
 
