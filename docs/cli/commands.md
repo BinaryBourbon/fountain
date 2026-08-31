@@ -120,8 +120,9 @@ fountain auth login [flags]
 Options:
 
 ```
-      --api-key   paste an API key instead of email + password (for accounts that sign in with GitHub)
-      --device    sign in by approving this device in your browser (works for accounts that sign in with GitHub)
+      --api-key    paste an API key you created in the console
+      --device     sign in by approving this device in your browser (the default on a terminal)
+      --password   sign in with email + password (the default when stdin is piped)
 ```
 
 ## `fountain auth logout`

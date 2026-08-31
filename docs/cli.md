@@ -23,20 +23,25 @@ Or take a release binary from the
 ## Authentication
 
 ```bash
-fountain auth login            # prompts for email + password, saves an API key
-fountain auth login --device   # approve this device in your browser instead
+fountain auth login            # browser approval on a terminal; email + password when piped
+fountain auth login --device   # force the browser approval flow
+fountain auth login --password # force the email + password prompt
 fountain auth login --api-key  # prompts for a pasted API key instead
 fountain auth whoami           # print the current user
 fountain auth logout           # remove saved credentials
 ```
 
-An account made with the "Sign up with GitHub" button has no password. For
-that account, use `--device` or `--api-key`.
+On a terminal, `fountain auth login` signs you in through your browser. The
+CLI shows a short one-time code and a console URL, and opens the URL for
+you. Enter the code in the console and approve the device. The CLI waits,
+collects a fresh API key, and saves it. This flow works for every account.
+An account made with the "Sign up with GitHub" button has no password, so
+the other flows cannot serve it.
 
-`--device` is the easy path. The CLI shows a short one-time code and a
-console URL, and opens the URL in your browser when it runs on a terminal.
-Enter the code in the console and approve the device. The CLI waits,
-collects a fresh API key, and saves it.
+When stdin is a pipe, the command reads an email and a password instead.
+A script that feeds credentials keeps its behavior. `--password` forces that
+prompt on a terminal. If the password login fails there, the CLI offers the
+browser flow.
 
 `--api-key` takes a key you created yourself. Create an API key in the
 console, on the **API keys** page. Then run `fountain auth login --api-key`

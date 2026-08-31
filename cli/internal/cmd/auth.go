@@ -32,23 +32,29 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			withAPIKey, _ := cmd.Flags().GetBool("api-key")
 			withDevice, _ := cmd.Flags().GetBool("device")
-			switch {
-			case withAPIKey && withDevice:
-				Fatal("--api-key and --device are two different login flows; pick one")
-				return nil
-			case withAPIKey:
+			withPassword, _ := cmd.Flags().GetBool("password")
+
+			mode, err := loginMode(withAPIKey, withDevice, withPassword,
+				term.IsTerminal(int(os.Stdin.Fd())))
+			if err != nil {
+				Fatal(err.Error())
+			}
+			switch mode {
+			case loginModeAPIKey:
 				return authLoginAPIKey()
-			case withDevice:
+			case loginModeDevice:
 				return authLoginDevice()
 			default:
 				return authLogin()
 			}
 		},
 	}
-	loginCmd.Flags().Bool("api-key", false,
-		"paste an API key instead of email + password (for accounts that sign in with GitHub)")
 	loginCmd.Flags().Bool("device", false,
-		"sign in by approving this device in your browser (works for accounts that sign in with GitHub)")
+		"sign in by approving this device in your browser (the default on a terminal)")
+	loginCmd.Flags().Bool("password", false,
+		"sign in with email + password (the default when stdin is piped)")
+	loginCmd.Flags().Bool("api-key", false,
+		"paste an API key you created in the console")
 	authCmd.AddCommand(
 		loginCmd,
 		&cobra.Command{
@@ -63,6 +69,48 @@ func init() {
 		},
 	)
 	rootCmd.AddCommand(authCmd)
+}
+
+// deviceFallbackAccepted reads the [Y/n] answer to the post-401 offer:
+// enter and anything starting with y mean yes.
+func deviceFallbackAccepted(answer string) bool {
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "" || strings.HasPrefix(answer, "y")
+}
+
+const (
+	loginModeAPIKey   = "api-key"
+	loginModeDevice   = "device"
+	loginModePassword = "password"
+)
+
+// loginMode picks the flow for `auth login`. At most one flag may force one;
+// with none, a terminal gets the device flow — it works for every account,
+// including "Sign up with GitHub" ones that have no password to type (#1305),
+// so there is nothing to detect and no wrong default. Piped stdin keeps the
+// email + password read, so a script that feeds credentials is unchanged.
+func loginMode(apiKey, device, password, stdinTTY bool) (string, error) {
+	forced := 0
+	for _, f := range []bool{apiKey, device, password} {
+		if f {
+			forced++
+		}
+	}
+	if forced > 1 {
+		return "", fmt.Errorf("--device, --password and --api-key are different login flows; pick one")
+	}
+	switch {
+	case apiKey:
+		return loginModeAPIKey, nil
+	case device:
+		return loginModeDevice, nil
+	case password:
+		return loginModePassword, nil
+	case stdinTTY:
+		return loginModeDevice, nil
+	default:
+		return loginModePassword, nil
+	}
 }
 
 func authLogin() error {
@@ -101,16 +149,21 @@ func authLogin() error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// The server answers every bad credential with the same 401 on
 		// purpose (anti-enumeration, #324) — an account created with "Sign
-		// up with GitHub" has no password and lands here too, so the hint
-		// has to live on this side.
+		// up with GitHub" has no password and lands here too, and the CLI
+		// cannot tell the two apart. It does not need to: the device flow
+		// works for both, so on a terminal offer it instead of erroring.
 		if resp.StatusCode == http.StatusUnauthorized {
-			Fatalf("login failed (HTTP %d): %s\n\n"+
-				"If you signed up with GitHub, your account has no password.\n"+
-				"Sign in through your browser instead:\n\n"+
-				"  fountain auth login --device\n\n"+
-				"Or create an API key in the console (%s/api-keys) and run\n"+
-				"`fountain auth login --api-key`.",
-				resp.StatusCode, respBody, base)
+			fmt.Fprintf(os.Stderr, "fountain: login failed (HTTP %d): %s\n\n", resp.StatusCode, respBody)
+			fmt.Fprintln(os.Stderr, "If you signed up with GitHub, your account has no password.")
+			if term.IsTerminal(int(os.Stdin.Fd())) {
+				answer, perr := promptLine("Sign in through your browser instead? [Y/n] ")
+				if perr == nil && deviceFallbackAccepted(answer) {
+					return authLoginDevice()
+				}
+			}
+			Fatalf("run `fountain auth login --device` to sign in through your browser,\n"+
+				"or create an API key in the console (%s/api-keys) and run\n"+
+				"`fountain auth login --api-key`.", base)
 		}
 		Fatalf("login failed (HTTP %d): %s", resp.StatusCode, respBody)
 	}
