@@ -68,6 +68,9 @@ in full.
 
 ## Start here
 
+- **[Run your first agent](quickstart.md)** applies a small manifest and
+  starts an agent against a public repository. It needs no GitHub token or
+  setup script.
 - **[The guided tour](tour.md)** builds an agent that clones a repo, changes it
   and opens a pull request. A second turn then lands a revision on the same PR.
   The tour is about forty lines. Start here if Fountain is new to you.

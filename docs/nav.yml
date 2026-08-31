@@ -22,6 +22,7 @@
 # Paths are relative to `docs/`.
 nav:
   - Home: index.md
+  - Quickstart, first agent: quickstart.md
   - Guided tour, a pull request: tour.md
   - Concepts:
       - The four primitives: primitives.md
