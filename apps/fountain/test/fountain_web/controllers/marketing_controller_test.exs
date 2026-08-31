@@ -118,7 +118,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "launches the Fountain project from deploy through telemetry", %{conn: conn} do
       body = conn |> get(~p"/oss-launch") |> html_response(200)
 
-      assert body =~ "Fountain · AGPL-3.0"
+      assert body =~ "Fountain · AGPL-3.0-or-later"
       assert body =~ "The open-source control plane for coding agents."
       assert body =~ "Deploy Fountain"
       assert body =~ FountainWeb.MarketingHTML.repo_url()
@@ -128,14 +128,14 @@ defmodule FountainWeb.MarketingControllerTest do
         assert body =~ target.href, "missing guide for #{target.name}"
       end
 
-      assert body =~ "Describe it once. After that, send prompts."
+      assert body =~ "Define an agent once. Then send prompts."
       assert body =~ "kind: Environment"
       assert body =~ "kind: Vault"
       assert body =~ "kind: Agent"
       assert body =~ "fountain apply -f fountain.yml"
       assert body =~ "@agentshit/fountain-sdk"
 
-      assert body =~ "One agent, every place your team already works."
+      assert body =~ "Use the same agents from your product, editor or chat app."
 
       for name <- ~w(AG-UI ACP OpenAI-compatible) do
         assert body =~ name, "missing client protocol #{name}"
@@ -145,7 +145,7 @@ defmodule FountainWeb.MarketingControllerTest do
         assert body =~ name, "missing runtime or sandbox #{name}"
       end
 
-      assert body =~ "Telemetry goes where you point it—and nowhere by surprise."
+      assert body =~ "Telemetry goes where you point it. Nothing leaves by default."
       assert body =~ "Prometheus → Grafana"
       assert body =~ "OpenTelemetry → your OTLP backend"
       assert body =~ "Sentry API → Sentry or GlitchTip"

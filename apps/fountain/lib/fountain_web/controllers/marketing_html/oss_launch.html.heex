@@ -8,13 +8,13 @@
     <div>
       <p class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] px-3.5 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
         <span class="size-1.5 rounded-full bg-[var(--color-accent)]" aria-hidden="true"></span>
-        Fountain · AGPL-3.0
+        Fountain · AGPL-3.0-or-later
       </p>
       <h1 class="mt-6 text-[2.75rem] leading-[1.02] sm:text-6xl font-bold tracking-[-0.035em] text-[var(--color-text-primary)]">
         The open-source control plane for coding agents.
       </h1>
       <p class="mt-6 text-lg sm:text-xl leading-relaxed text-[var(--color-text-secondary)] max-w-[39rem]">
-        Deploy Fountain in your cloud. Define an agent with its machine, tools and credentials. Start it from any product that can make an API call.
+        Deploy Fountain on your infrastructure. Define each agent’s runtime, environment, tools and credentials once. Start it from any product that can make an API call.
       </p>
       <div class="mt-9 flex flex-col sm:flex-row gap-3 [&>a]:w-full sm:[&>a]:w-auto">
         <a
@@ -133,7 +133,7 @@
     <div class="mt-4 grid lg:grid-cols-[0.78fr_1.22fr] gap-10 lg:gap-14 items-start">
       <div>
         <h2 class="text-3xl sm:text-4xl font-bold tracking-tight">
-          Describe it once. After that, send prompts.
+          Define an agent once. Then send prompts.
         </h2>
         <p class="mt-5 text-[var(--color-ink-secondary)] leading-relaxed">
           An Environment describes the machine. A Vault provides per-run credentials. An Agent chooses the runtime, model and tools. Keep all three in one manifest and apply it like infrastructure.
@@ -216,10 +216,10 @@
 <section class="max-w-6xl mx-auto px-5 sm:px-6 py-16 sm:py-20" data-role="integrations">
   <.eyebrow label="Fits your stack" align={:left} />
   <h2 class="mt-4 text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)] max-w-3xl">
-    One agent, every place your team already works.
+    Use the same agents from your product, editor or chat app.
   </h2>
   <p class="mt-4 max-w-2xl text-[var(--color-text-secondary)] leading-relaxed">
-    Put Fountain behind your product, editor, chat app or agent framework. Every interface reaches the same roster, persistent workspace and event stream.
+    Connect through AG-UI, ACP, an OpenAI-compatible endpoint or Fountain’s own API. Each interface reaches the same roster and uses the same conversation and event APIs.
   </p>
 
   <div class="mt-10 grid lg:grid-cols-[1.15fr_0.85fr] gap-6">
@@ -271,7 +271,7 @@
           MCP inside. Webhooks outside.
         </h3>
         <p class="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-          Attach any stdio or HTTP MCP server. Use credential bindings for services Fountain knows, so the real token can stay outside the sandbox.
+          Attach any stdio or HTTP MCP server. Use built-in credential bindings to keep provider tokens out of the sandbox.
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -303,7 +303,7 @@
     <.eyebrow label="Observable by design" align={:left} />
     <div class="mt-4 grid lg:grid-cols-[1fr_0.78fr] gap-5 lg:items-end">
       <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
-        Telemetry goes where you point it—and nowhere by surprise.
+        Telemetry goes where you point it. Nothing leaves by default.
       </h2>
       <p class="text-[var(--color-text-secondary)] leading-relaxed">
         Logs stay on stdout. Metrics stay on a private listener. Trace and error export only turn on when you configure a destination.
@@ -355,8 +355,8 @@
         </p>
         <p class="mt-2 text-sm text-[var(--color-text-secondary)]">
           <code class="text-xs">/health</code>
-          restarts; <code class="text-xs">/health/ready</code>
-          controls load-balancer readiness.
+          reports liveness. <code class="text-xs">/health/ready</code>
+          reports whether the instance can receive traffic.
         </p>
       </div>
     </div>
