@@ -165,6 +165,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "https://mcp.deepwiki.com/mcp"
       assert body =~ "vault: &quot;ci-bot&quot;"
       assert body =~ "@agentshit/fountain-sdk"
+      assert length(Regex.scan(~r/data-role="sdk-walkthrough-step"/, body)) == 4
       refute body =~ "kind: Environment"
       refute body =~ "fountain apply -f fountain.yml"
 

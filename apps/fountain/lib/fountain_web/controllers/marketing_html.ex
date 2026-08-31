@@ -181,21 +181,24 @@ defmodule FountainWeb.MarketingHTML do
   end
 
   @doc """
-  The SDK definitions on the open-source launch page, one resource per beat.
+  The SDK walkthrough on the open-source launch page, one action per beat.
 
-  The page keeps the three definitions separate so the explanation beside each
-  one stays attached to the code it describes. Together they are one setup
-  script: the Environment and Vault ids returned by Fountain are passed to the
-  Agent, and the Agent and Vault names match `sdk_example/0` underneath.
+  The page keeps the three definitions and first prompt separate so the
+  explanation beside each stays attached to the code it describes. The first
+  three are one setup script: the Environment and Vault ids returned by
+  Fountain are passed to the Agent. The last beat changes to `run.ts`, where
+  the Agent and Vault names match the definitions above it.
 
   The secret write is deliberately separate from `vaults.create/1`. Secret
   values are write-only in the SDK, and showing that call keeps the Vault from
   reading like an empty marker record.
   """
-  def oss_sdk_setup_steps do
+  def oss_sdk_steps do
     [
       %{
         n: 1,
+        file: "setup.ts",
+        label: "environment",
         title: "Describe the machine once.",
         body:
           "Repositories, packages, env vars and setup scripts. The Environment is reusable across agents and runs.",
@@ -216,6 +219,8 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         n: 2,
+        file: "setup.ts",
+        label: "vault",
         title: "Add credentials only when a run needs them.",
         body:
           "A Vault is an optional set of environment-variable overrides. Write its values separately, then attach it only to runs that need them.",
@@ -231,6 +236,8 @@ defmodule FountainWeb.MarketingHTML do
       },
       %{
         n: 3,
+        file: "setup.ts",
+        label: "agent",
         title: "Name the agent and its tools.",
         body:
           "Pick the runtime and model, add skills and MCP tools, attach the Environment, and allow the Vault callers may opt into.",
@@ -250,6 +257,16 @@ defmodule FountainWeb.MarketingHTML do
           },
         });\
         """
+      },
+      %{
+        n: 4,
+        file: "run.ts",
+        label: "prompt",
+        title: "Send a prompt.",
+        body:
+          "Attach the Vault when this run needs its GitHub token; leave it off otherwise. " <>
+            "Fountain streams the work as it happens and keeps the conversation ready for the next prompt.",
+        code: sdk_example()
       }
     ]
   end
