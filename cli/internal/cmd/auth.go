@@ -24,12 +24,21 @@ func init() {
 		Use:   "auth",
 		Short: "Authenticate against the Fountain API",
 	}
-	authCmd.AddCommand(
-		&cobra.Command{
-			Use:   "login",
-			Short: "Authenticate and save credentials",
-			RunE:  func(cmd *cobra.Command, args []string) error { return authLogin() },
+	loginCmd := &cobra.Command{
+		Use:   "login",
+		Short: "Authenticate and save credentials",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			withAPIKey, _ := cmd.Flags().GetBool("api-key")
+			if withAPIKey {
+				return authLoginAPIKey()
+			}
+			return authLogin()
 		},
+	}
+	loginCmd.Flags().Bool("api-key", false,
+		"paste an API key instead of email + password (for accounts that sign in with GitHub)")
+	authCmd.AddCommand(
+		loginCmd,
 		&cobra.Command{
 			Use:   "logout",
 			Short: "Remove saved credentials",
@@ -78,6 +87,17 @@ func authLogin() error {
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// The server answers every bad credential with the same 401 on
+		// purpose (anti-enumeration, #324) — an account created with "Sign
+		// up with GitHub" has no password and lands here too, so the hint
+		// has to live on this side.
+		if resp.StatusCode == http.StatusUnauthorized {
+			Fatalf("login failed (HTTP %d): %s\n\n"+
+				"If you signed up with GitHub, your account has no password.\n"+
+				"Create an API key in the console (%s/api-keys), then run:\n\n"+
+				"  fountain auth login --api-key",
+				resp.StatusCode, respBody, base)
+		}
 		Fatalf("login failed (HTTP %d): %s", resp.StatusCode, respBody)
 	}
 
@@ -95,6 +115,76 @@ func authLogin() error {
 
 	fmt.Printf("Logged in as %s. Credentials written to ~/.fountain/credentials (profile: %s).\n", email, profile)
 	return nil
+}
+
+// authLoginAPIKey is `auth login --api-key`: the login path for accounts that
+// sign in with GitHub and therefore have no password to exchange at
+// /api/auth/token (#1305). The key is prompted for, never taken as a flag
+// value, so it stays out of shell history; the prompt is hidden on a TTY and
+// falls back to a plain stdin read so `echo $KEY | fountain auth login
+// --api-key` works in scripts.
+func authLoginAPIKey() error {
+	opts := activeOpts()
+	profile := credentials.ProfileName(opts)
+	base := config.BaseURL(opts)
+
+	key, err := promptPassword("API key: ")
+	if err != nil {
+		return err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		Fatal("no API key given. Create one in the console at " + base + "/api-keys.")
+	}
+
+	// Validate before writing, so a mispasted key fails here rather than on
+	// the next command.
+	me, err := fetchAuthMe(base, key)
+	if err != nil {
+		Fatalf("could not verify the API key against %s: %v", base, err)
+	}
+
+	if err := credentials.WriteProfile(profile, map[string]string{
+		"api_key":  key,
+		"base_url": base,
+	}); err != nil {
+		return err
+	}
+
+	fmt.Printf("Logged in as %s. Credentials written to ~/.fountain/credentials (profile: %s).\n", me.Email, profile)
+	return nil
+}
+
+// fetchAuthMe checks a raw key against GET /api/auth/me. It cannot go through
+// api.Client, which resolves its key from the environment and the credentials
+// file — exactly what this key has not been written to yet.
+func fetchAuthMe(base, key string) (*authMe, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, base+"/api/auth/me", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("the server rejected the key (HTTP 401)")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, respBody)
+	}
+
+	var me authMe
+	if err := json.Unmarshal(respBody, &me); err != nil {
+		return nil, fmt.Errorf("unexpected response: %s", respBody)
+	}
+	return &me, nil
 }
 
 // extractAPIKey accepts any of the four shapes the server has returned:
