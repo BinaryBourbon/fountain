@@ -2721,6 +2721,30 @@ defmodule FountainWeb.Schemas do
                 team: %Schema{type: :string, nullable: true}
               },
               required: [:conversations, :team]
+            },
+            mcp_servers: %Schema{
+              type: :array,
+              description:
+                "Remote MCP servers verified to complete the MCP authorization " <>
+                  "discovery chain, each with the date it was last verified. " <>
+                  "Suggestions, not an allowlist — any URL can be discovered.",
+              items: %Schema{
+                type: :object,
+                properties: %{
+                  slug: %Schema{type: :string},
+                  name: %Schema{type: :string},
+                  url: %Schema{type: :string},
+                  dcr: %Schema{
+                    type: :boolean,
+                    description:
+                      "Whether the authorization server offers dynamic client " <>
+                        "registration (RFC 7591). False means the tenant pastes a " <>
+                        "client id from their own app registration."
+                  },
+                  verified_on: %Schema{type: :string, format: :date}
+                },
+                required: [:slug, :name, :url, :dcr, :verified_on]
+              }
             }
           },
           required: [

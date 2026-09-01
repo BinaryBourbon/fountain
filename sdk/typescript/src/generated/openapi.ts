@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * The instance's form vocabulary
-         * @description Runtimes with model suggestions per runtime (suggestions, not an allowlist — any `provider/model` under a known provider is accepted), sandbox providers usable on this instance and the default, package managers an environment accepts, the avatar generator's bases and moods, and the URLs of the browser apps this instance sends people to for conversations and the team.
+         * @description Runtimes with model suggestions per runtime (suggestions, not an allowlist — any `provider/model` under a known provider is accepted), sandbox providers usable on this instance and the default, package managers an environment accepts, the avatar generator's bases and moods, the URLs of the browser apps this instance sends people to for conversations and the team, and remote MCP servers verified to complete connection discovery (again suggestions — any URL can be discovered), each with the date it was last verified.
          */
         get: operations["FountainWeb.CatalogController.show"];
         put?: never;
@@ -2932,6 +2932,16 @@ export interface components {
                     bases: string[];
                     moods: string[];
                 };
+                /** @description Remote MCP servers verified to complete the MCP authorization discovery chain, each with the date it was last verified. Suggestions, not an allowlist — any URL can be discovered. */
+                mcp_servers?: {
+                    /** @description Whether the authorization server offers dynamic client registration (RFC 7591). False means the tenant pastes a client id from their own app registration. */
+                    dcr: boolean;
+                    name: string;
+                    slug: string;
+                    url: string;
+                    /** Format: date */
+                    verified_on: string;
+                }[];
                 model_providers?: string[];
                 /** @description Suggested `provider/model` ids per runtime. Suggestions, not an allowlist. */
                 models: {

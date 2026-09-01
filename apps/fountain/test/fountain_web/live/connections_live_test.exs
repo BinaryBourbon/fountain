@@ -169,6 +169,10 @@ defmodule FountainWeb.ConnectionsLiveTest do
 
     {:ok, lv, _html} = conn |> login_user(user) |> live(~p"/account/connections")
 
+    # A chip from the verified registry (#1322) prefills the URL.
+    html = lv |> element("#mcp-discover-form button", "Linear") |> render_click()
+    assert html =~ ~s(value="https://mcp.linear.app/mcp")
+
     html =
       lv
       |> form("#mcp-discover-form", %{"mcp_url" => "https://mcp.example/mcp"})
