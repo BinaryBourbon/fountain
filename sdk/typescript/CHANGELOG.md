@@ -10,6 +10,18 @@ server releases.
 
 ---
 
+## [1.14.0] — 2026-09-01
+
+### Added
+
+- `client.catalog()` now returns `mcp_servers` (#1322): remote MCP servers
+  verified to complete the MCP authorization discovery chain, each with
+  `slug`, `name`, `url`, `dcr` (whether the server registers a client for
+  Fountain, RFC 7591) and `verified_on`, the date the chain last completed.
+  Suggestions, not an allowlist — any URL can still be discovered through
+  `client.connections.providers.create({ kind: "mcp", mcp_url })`. The
+  field is absent on servers older than this release.
+
 ## [1.13.0] — 2026-09-01
 
 ### Added
