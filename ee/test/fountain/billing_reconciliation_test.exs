@@ -37,10 +37,15 @@ defmodule Fountain.Billing.ReconciliationTest do
     admin
   end
 
-  defp month_start do
-    now = DateTime.utc_now()
-    %DateTime{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-  end
+  # The previous, closed month: the page and Finance.summary clip every
+  # interval to `now`, so hours seeded forward from the running month's start
+  # only report in full once the month is that many hours old — these tests
+  # failed on the first CI runs of 2026-09-01, the same way
+  # admin_finance_live_test.exs did. A closed month has a fixed ceiling, so
+  # the numbers are exact whenever the suite runs. Tests that seed through
+  # `ran/2` compute over `month_range(1)` and open the page with
+  # ?months_ago=1.
+  defp month_start, do: Billing.month_range(1).start
 
   defp ran(user, hours) do
     started = month_start()
@@ -87,7 +92,7 @@ defmodule Fountain.Billing.ReconciliationTest do
     user = insert_verified_user()
     ran(user, 10)
 
-    {ps, pe} = Billing.current_month_range()
+    %{start: ps, end: pe} = Billing.month_range(1)
     summary = Finance.summary(period: {ps, pe}, basis: :active)
 
     {:ok, _} =
@@ -118,7 +123,7 @@ defmodule Fountain.Billing.ReconciliationTest do
     admin = insert_admin()
     ran(insert_verified_user(), 10)
 
-    {:ok, lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+    {:ok, lv, html} = live(login_user(conn, admin), ~p"/admin/finance?months_ago=1")
     assert html =~ "Provider invoices"
     assert html =~ "$10.00"
     refute html =~ "dropped on this node"
