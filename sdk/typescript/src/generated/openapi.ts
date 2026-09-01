@@ -516,7 +516,7 @@ export interface paths {
         };
         /**
          * List connection providers
-         * @description The platform provider (Google) followed by the tenant's own. Each carries the redirect URI to register at the service and the env var its tokens are brokered under. Only for accounts the egress broker is on for (ADR 0019); 404 otherwise.
+         * @description The platform providers (Google, Microsoft, Slack) followed by the tenant's own. Each carries the redirect URI to register at the service and the env var its tokens are brokered under. Only for accounts the egress broker is on for (ADR 0019); 404 otherwise.
          */
         get: operations["FountainWeb.ConnectionProviderController.index"];
         put?: never;
@@ -558,7 +558,7 @@ export interface paths {
         };
         /**
          * List connectable providers
-         * @description Every provider this account can connect — Google, and the tenant's own (#1186) — with the scopes each asks for, the env var its token is brokered under, and the console URL that starts the flow (a browser signed in as the account owner). The same list as `GET /api/connection-providers`.
+         * @description Every provider this account can connect — the platform ones (Google, Microsoft, Slack; #1299), and the tenant's own (#1186) — with the scopes each asks for, the env var its token is brokered under, and the console URL that starts the flow (a browser signed in as the account owner). The same list as `GET /api/connection-providers`.
          */
         get: operations["FountainWeb.ConnectionController.providers"];
         put?: never;
@@ -4470,7 +4470,7 @@ export interface components {
         };
         /**
          * ConnectionProvider
-         * @description Where a connection's tokens come from (#1186): the platform provider (Google, `platform: true`, id `google`), a tenant's own OAuth app at a service (`kind: oauth2`), or a remote MCP server whose authorization Fountain discovered (`kind: mcp`). The client secret is never returned.
+         * @description Where a connection's tokens come from (#1186, #1299): a platform provider (`platform: true`, id `google`, `microsoft` or `slack` — Fountain's own OAuth client), a tenant's own OAuth app at a service (`kind: oauth2`), or a remote MCP server whose authorization Fountain discovered (`kind: mcp`). The client secret is never returned.
          */
         ConnectionProvider: {
             /** @description A dotted path into the userinfo body that names the account. */
@@ -4491,7 +4491,7 @@ export interface components {
             /** @description The env var a connection's access token is brokered under. */
             env_key: string;
             has_client_secret?: boolean;
-            /** @description A uuid, or `google`. */
+            /** @description A uuid, or a platform slug. */
             id: string;
             /** @description The authorization server discovery found (`mcp`). */
             issuer?: string | null;
@@ -4500,7 +4500,7 @@ export interface components {
             mcp_url?: string | null;
             name: string;
             pkce?: boolean;
-            /** @description True for Google, which has no row. */
+            /** @description True for a platform provider, which has no row. */
             platform: boolean;
             /** @description The callback to register at the service. */
             redirect_uri: string;
