@@ -34,11 +34,16 @@ fountain/                  umbrella root
   apps/
     fountain/              core business logic (Elixir OTP app)
       lib/fountain/        contexts: Accounts, Agents, Environments, Vaults,
-      |                              Conversations, Crypto, Audit, Substitution
+      |                              Conversations, Crypto, Audit
       lib/fountain_web/    Phoenix: controllers, LiveView, plugs, router
       test/fountain/       context unit tests (async: true, DataCase)
       test/fountain_web/   controller/LiveView integration tests
       test/support/        DataCase, ConnCase, factory.ex
+    managoat_*/            component libraries being extracted from the server
+                           (ADR 0037, tracker #1334): Apache-2.0, Managoat.*
+                           namespace, no reference back into Fountain. Each is
+                           an in_umbrella dep of fountain until it graduates to
+                           a managoat/<name> repo. See CONTRIBUTING.md.
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is
@@ -170,7 +175,9 @@ Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => "plaintext"}, dek
 
 ## Substitution engine
 
-`Fountain.Substitution.apply(value, vars)` substitutes `${VAR}` references:
+`Managoat.Substitution.apply(value, vars)` substitutes `${VAR}` references.
+It lives in `apps/managoat_substitution`, the first library extracted under
+ADR 0037; there is no `Fountain.Substitution` any more.
 
 - `${VAR}` → value from `vars` map
 - `$$` → literal `$`

@@ -123,7 +123,6 @@ apps/fountain/test/fountain/self_host_switches_test.exs	2433
 apps/fountain/test/fountain/sentry_config_test.exs	13
 apps/fountain/test/fountain/sobelow_gate_test.exs	2
 apps/fountain/test/fountain/sprites_token_config_test.exs	21
-apps/fountain/test/fountain/substitution_test.exs	107
 apps/fountain/test/fountain/support_test.exs	1551
 apps/fountain/test/fountain/team/comms/inbound_test.exs	2535
 apps/fountain/test/fountain/team/comms/mcp_test.exs	0

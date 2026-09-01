@@ -20,11 +20,11 @@ defmodule Fountain.Conversations.ConversationServer do
     Crypto,
     Environments,
     InferenceCredentials,
-    Substitution,
     Vaults
   }
 
   alias Fountain.Conversations.{Conversation, HomeCheckpoint, Lifecycle}
+  alias Managoat.Substitution
 
   # How often the sandbox lifetime bounds are evaluated. A minute is far finer
   # than the bounds themselves (an hour, a day), so the cost of the tick is

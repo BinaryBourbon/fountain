@@ -16,6 +16,10 @@ its own LICENSE file, and that file governs.
   cli/                           Apache License 2.0 ........... cli/LICENSE
   sdk/typescript/                Apache License 2.0 ........... sdk/typescript/LICENSE
 
+  apps/managoat_*/               Apache License 2.0 ........... apps/<app>/LICENSE
+  (component libraries being extracted from the server under decisions/0037;
+  each carries its own LICENSE and graduates to a managoat/<name> repository)
+
 The client surfaces are deliberately permissive. Building something on top of
 the Fountain API, or shipping the CLI inside a proprietary product, carries no
 copyleft obligation. Running a modified Fountain server and offering it over a

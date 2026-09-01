@@ -46,6 +46,12 @@ defmodule Fountain.MixProject do
 
   defp deps do
     [
+      # Umbrella library apps (decisions/0037). Each is Apache-2.0, carries no
+      # reference back into Fountain, and graduates to a managoat/<name>
+      # repository once its surface stops moving; the line then becomes a hex
+      # requirement. umbrella_layout_test.exs checks every apps/managoat_*
+      # directory is listed here.
+      {:managoat_substitution, in_umbrella: true},
       {:sentry, "~> 13.3"},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.5"},
