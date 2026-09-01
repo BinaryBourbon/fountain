@@ -162,10 +162,10 @@ jobs:
 
   image:
     # The server image is built fresh from the tag's tree rather than
-    # re-tagging the sha- image build.yml already pushed, for two reasons:
-    # the tag points at release-bump's version commit, which build.yml never
-    # built ([skip ci] + GITHUB_TOKEN suppression), and the mix.exs version
-    # baked into the image is surfaced in-app — it must match the tag.
+    # re-tagging the sha- image build.yml pushes for the same commit. The
+    # bump lands on main through a PR (#1329), so build.yml does build it,
+    # but that build runs concurrently with this one and this workflow must
+    # not wait on it or race it: the tag's tree, built here, is the release.
     #
     # Each architecture builds NATIVELY and pushes by digest; image-manifest
     # below stitches the digests into one multi-arch manifest and owns the
@@ -262,11 +262,10 @@ jobs:
           outputs: type=image,name=ghcr.io/binarybourbon/fountain,push-by-digest=true,name-canonical=true,push=true
           provenance: false
           # Read build.yml's cache, write nothing back. The layers above
-          # `COPY mix.exs` hit; the deps.compile layer below it cannot,
-          # because release-bump's commit exists precisely to change the
-          # version in mix.exs. Writing mode=max back would replace main's
-          # cache with the version-bump variant, so the next build.yml run
-          # would miss the same layer — a release must not degrade the cache
+          # `COPY mix.exs` hit; the deps.compile layer below it may not,
+          # because the bump commit exists precisely to change the version
+          # in mix.exs. build.yml owns that cache and is building the same
+          # commit beside this run; a release must not overwrite the cache
           # every subsequent main build depends on.
           cache-from: type=registry,ref=ghcr.io/binarybourbon/fountain:buildcache-${{ matrix.arch }}
 
@@ -353,6 +352,54 @@ jobs:
             $(printf "${IMAGE}@sha256:%s " *)
           docker buildx imagetools inspect "${IMAGE}:${TAG}"
 
+  compose-boot:
+    # ci.yml's "Compose boots the pinned image" skips on the bump PR and on
+    # the merged bump commit, because the pin names this image before it
+    # exists (#1329). This is where that check runs instead: the tag's tree
+    # pins the tag, the manifest job just published it, and the release
+    # below waits for the answer. A tag whose image will not boot through
+    # the documented quick start gets no release page telling self-hosters
+    # to pin it.
+    name: Compose boots the released image
+    needs: image-manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+
+      - name: The tree pins the tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          pin="$(sed -nE 's/^FOUNTAIN_IMAGE_TAG=(v[0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .env.compose.example)"
+          if [ "${pin}" != "${TAG}" ]; then
+            echo ".env.compose.example pins ${pin}, but this is ${TAG}; the bump did not reach this tree" >&2
+            exit 1
+          fi
+
+      - name: Run the documented quick start and probe the app
+        run: scripts/compose-boot-check.sh
+
+      - name: Dump container logs
+        if: failure()
+        run: docker compose logs --timestamps
+
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -361,7 +408,9 @@ jobs:
     # image — the release page is what tells a self-hoster the tag exists to
     # pin. Depending on the manifest job rather than the per-arch builds: two
     # pushed digests with no manifest list on the tag is not a published image.
-    needs: [build, openapi, image-manifest]
+    # compose-boot goes one further: the image also has to boot through the
+    # quick start the release page points at.
+    needs: [build, openapi, image-manifest, compose-boot]
     permissions:
       contents: write
 

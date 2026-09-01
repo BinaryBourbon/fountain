@@ -32,6 +32,15 @@ upgrade, is in
 
 ### Fixed
 
+- **Releases are cut through a pull request.** The release bump used to
+  commit straight to `main`, which the branch ruleset rejects, so the two
+  v0.15.0 attempts failed before the tag step (#1329). "Release bump" now
+  opens a `release/vX.Y.Z` PR; merging it tags the squash commit and starts
+  the release. The "Compose boots the pinned image" check skips on that PR
+  and on the merged commit, where the pinned image cannot exist yet, and
+  runs on the tag after the image is published instead. That red check on
+  `main` is also why the deployed footer stayed on v0.14.0 after 0.15.0
+  merged: the failed CI run kept the image from being built.
 - **The quickstart installs on Linux.** The page offered only `brew install`,
   and Homebrew on Linux refuses to install any formula, even one that only
   downloads a prebuilt binary, until a C compiler is present. Walked on a
