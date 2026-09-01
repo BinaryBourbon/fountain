@@ -45,12 +45,17 @@ defmodule FountainWeb.AdminFinanceLiveTest do
 
   defp subscriber(_plan), do: insert_empty_user()
 
-  # A sandbox in the current month, awake for `hours` with a prompt in flight
-  # for `busy_hours`. Anchored to the start of this month so the page's default
-  # window contains it whatever day the suite runs.
+  # A sandbox in the previous, closed month, awake for `hours` with a prompt
+  # in flight for `busy_hours`. The previous month rather than the running one
+  # because the page clips every interval to `now` (SandboxUsage's ceiling is
+  # `earliest(period_end, now)`): anchored to the start of the running month,
+  # a 100-hour sandbox reports 100 hours only once the month is 100 hours
+  # old, so these tests failed for the first days of every month. A closed
+  # month has a fixed ceiling, so the numbers are exact whenever the suite
+  # runs. Every test that seeds through here opens the page with
+  # ?months_ago=1.
   defp ran(user, hours, busy_hours) do
-    now = DateTime.utc_now()
-    started = %DateTime{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
+    %{start: started} = Fountain.Billing.month_range(1)
     ended = DateTime.add(started, hours * 3600, :second)
 
     sandbox =
@@ -98,7 +103,7 @@ defmodule FountainWeb.AdminFinanceLiveTest do
       user = subscriber("solo")
       ran(user, 10, 4)
 
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance?months_ago=1")
 
       assert html =~ "No rate card is configured"
       assert html =~ "PROVIDER_HOURLY_CENTS"
@@ -118,7 +123,7 @@ defmodule FountainWeb.AdminFinanceLiveTest do
       user = subscriber("solo")
       ran(user, 10, 4)
 
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance?months_ago=1")
 
       refute html =~ "No rate card is configured"
       # Ten active hours at $1 — active, not the four turn hours: the provider
@@ -134,7 +139,7 @@ defmodule FountainWeb.AdminFinanceLiveTest do
       user = subscriber("solo")
       ran(user, 100, 100)
 
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance?months_ago=1")
 
       # 100 hours at $5 with nothing burned this period: the whole cost is the loss.
       assert html =~ "text-red-700"
@@ -161,7 +166,7 @@ defmodule FountainWeb.AdminFinanceLiveTest do
       user = subscriber("solo")
       ran(user, 10, 4)
 
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance?months_ago=1")
 
       # A rate is shown in cents keeping its fraction — rounded to whole cents
       # 10.76 and 5.45 would both collapse and stop being comparable.
@@ -176,7 +181,7 @@ defmodule FountainWeb.AdminFinanceLiveTest do
       user = subscriber("solo")
       ran(user, 5, 5)
 
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance?months_ago=1")
 
       assert html =~ "12c/hour"
       refute html =~ "12.0c/hour"
@@ -193,14 +198,14 @@ defmodule FountainWeb.AdminFinanceLiveTest do
 
       conn = login_user(conn, admin)
 
-      {:ok, lv, html} = live(conn, ~p"/admin/finance")
+      {:ok, lv, html} = live(conn, ~p"/admin/finance?months_ago=1")
       assert html =~ "active hours"
       # Ten awake hours at $1.
       assert html =~ "$10.00"
 
       html =
         lv
-        |> element(~s{a[href="/admin/finance?months_ago=0&basis=turn"]})
+        |> element(~s{a[href="/admin/finance?months_ago=1&basis=turn"]})
         |> render_click()
 
       # The same two turn hours, now the thing being charged for.
@@ -217,7 +222,7 @@ defmodule FountainWeb.AdminFinanceLiveTest do
       user = subscriber("solo")
       ran(user, 10, 2)
 
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance?months_ago=1")
 
       assert html =~ "$2.00"
     end
