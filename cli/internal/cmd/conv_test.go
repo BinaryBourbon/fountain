@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +46,15 @@ func TestHandleStageEvent(t *testing.T) {
 		{
 			name:     "turn failed",
 			data:     map[string]any{"stage": "turn", "state": "failed", "data": "{}"},
+			terminal: true,
+			wantErr:  errTurnFailed,
+		},
+		{
+			name: "turn failed with a reason is still errTurnFailed",
+			data: map[string]any{
+				"stage": "turn", "state": "failed",
+				"data": `{"reason":"acp: {:acp_error, :prompt, %{\"code\" => -32000, \"message\" => \"Authentication required\"}}"}`,
+			},
 			terminal: true,
 			wantErr:  errTurnFailed,
 		},
@@ -204,5 +214,18 @@ func TestLastEventIDIn(t *testing.T) {
 	// Heartbeat comments carry no id and must not confuse the head.
 	if got := lastEventIDIn(": heartbeat\n\n"); got != "" {
 		t.Errorf("heartbeat-only drain should have no head, got %q", got)
+	}
+}
+
+// A turn that fails because the runtime was started with no provider
+// credential reports "Authentication required"; the CLI names the fix rather
+// than leaving a bare "turn failed" (the quickstart's inference-key step).
+func TestTurnFailureHint(t *testing.T) {
+	reason := `acp: {:acp_error, :prompt, %{"code" => -32000, "message" => "Authentication required"}}`
+	if hint := turnFailureHint(reason); !strings.Contains(hint, "Inference keys") {
+		t.Fatalf("expected an inference-key hint, got %q", hint)
+	}
+	if hint := turnFailureHint("acp: peer closed"); hint != "" {
+		t.Fatalf("expected no hint for an unrelated reason, got %q", hint)
 	}
 }

@@ -427,7 +427,18 @@ func handleStageEvent(data map[string]any) (bool, error) {
 	// stream would reconnect and wait out the idle timeout for a turn that
 	// is never coming.
 	case stage == "turn" && state == "failed":
-		fmt.Fprintf(os.Stderr, "▸ turn failed\n")
+		// The server puts why in the payload (conversation_server.ex
+		// publish_stage of "turn"/"failed"); a bare "turn failed" left a
+		// first-time user whose only mistake was skipping the inference
+		// key with nothing to act on.
+		if reason := innerDataString(data, "reason"); reason != "" {
+			fmt.Fprintf(os.Stderr, "▸ turn failed: %s\n", reason)
+			if hint := turnFailureHint(reason); hint != "" {
+				fmt.Fprintf(os.Stderr, "  %s\n", hint)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "▸ turn failed\n")
+		}
 		return true, errTurnFailed
 
 	case stage == "provision" && state == "failed":
@@ -488,6 +499,18 @@ func exitCodeFromStageDone(data map[string]any) string {
 // innerDataString digs `data.data.<key>` out of a stage event. The Elixir
 // code JSON-encodes the stage metadata into the inner `data`, so we accept
 // either a nested map or a JSON string.
+// turnFailureHint turns a failure reason the runtime reported into the one
+// step that fixes it, where there is such a step. The ACP runtimes answer a
+// prompt with "Authentication required" when they were started with no
+// provider credential at all, which is what a run looks like when the
+// inference-key step of the quickstart was skipped.
+func turnFailureHint(reason string) string {
+	if strings.Contains(reason, "Authentication required") {
+		return "The runtime has no inference credential. Add one in the console under Account, then Inference keys, and prompt again."
+	}
+	return ""
+}
+
 func innerDataString(data map[string]any, key string) string {
 	inner := data["data"]
 	if s, ok := inner.(string); ok {

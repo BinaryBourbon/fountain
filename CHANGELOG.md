@@ -446,6 +446,13 @@ upgrade, is in
 
 ### Fixed
 
+- **`fountain run` says why a turn failed.** A `turn`/`failed` event carries
+  the runtime's reason, and the CLI printed only `turn failed`. It prints the
+  reason now, and when the reason is the runtime's "Authentication required"
+  (what a sandbox reports when the account has no inference credential, the
+  quickstart step most easily skipped) it names the fix: add one under
+  Account, then Inference keys. The exit code is unchanged.
+
 - **The session title no longer opens a phantom "(background task follow-up)"
   turn after every claude turn** (#1300). The claude adapter generates the
   session title asynchronously and writes its `session_info_update` about a
