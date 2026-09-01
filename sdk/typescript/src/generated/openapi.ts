@@ -159,6 +159,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The tenant's agents, as models (alpha)
+         * @description OpenAI's `GET /v1/models`, so a base-URL client's model picker fills itself. Each agent is a model whose `id` is the agent's name.
+         */
+        get: operations["FountainWeb.OpenAIController.list_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/secret-bindings/{id}": {
         parameters: {
             query?: never;
@@ -822,6 +842,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one config version of an agent
+         * @description One version by number, with its full config. A conversation's `agent_version` names the number to look up here.
+         */
+        get: operations["FountainWeb.AgentVersionController.show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/webhooks/{id}": {
         parameters: {
             query?: never;
@@ -985,6 +1025,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an agent's config versions
+         * @description The agent's config history (ADR 0029), newest first. A version is written on create and on every update that changes a config field, so version 1 is the config the agent was created with. Read-only: rollback is a console action, and applies a version's config as a new edit rather than rewriting history.
+         */
+        get: operations["FountainWeb.AgentVersionController.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/me": {
         parameters: {
             query?: never;
@@ -997,6 +1057,23 @@ export interface paths {
          * @description What the presented bearer token resolves to. `fountain auth whoami` calls this to show which account a key belongs to.
          */
         get: operations["FountainWeb.AuthMeController.show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/models/{model}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One agent, as a model (alpha) */
+        get: operations["FountainWeb.OpenAIController.show_model"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1641,6 +1718,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat completions, where the model is an agent (alpha)
+         * @description **Alpha, behind the `openai_compat` flag** — 404 with code `openai_compat_not_enabled` when it is off for the account.
+         *
+         *     OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any gateway or base-URL chat client at `/v1` with an API key as the bearer token.
+         *
+         *     The thread is the conversation: `X-Fountain-Thread` (else the `user` field) binds to channel `openai:<key>`. The first request on a key opens a conversation, later ones prompt it, and only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript. A request with neither is refused with 400.
+         *
+         *     `stream: true` answers with SSE `chat.completion.chunk` events (`content` for the reply, `reasoning_content` for thinking, tool use and provisioning stages) and `data: [DONE]`; a turn that fails mid-stream sends an `error` event first. `stream: false` blocks until the turn ends.
+         *
+         *     **Tools.** A request's `tools` are offered to the agent beside its own. When the agent calls one, the completion ends with `finish_reason: "tool_calls"` and the turn stays open; send the next request on the same thread with `role: "tool"` messages that carry the results, and the rest of the turn streams. The sandbox's own tools never come back as tool calls.
+         *
+         *     Errors use OpenAI's `{"error": {...}}` envelope: 404 for an unknown model, 402 with no credit, 409 with `Retry-After` while the thread is already running a turn (`thread_busy`) or waiting on tool results (`tool_calls_pending`).
+         */
+        post: operations["FountainWeb.OpenAIController.create_chat_completion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vaults/{vault_id}/secrets": {
         parameters: {
             query?: never;
@@ -1841,6 +1948,46 @@ export interface paths {
         get: operations["FountainWeb.TeamController.stream"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/device/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Poll a device grant for the API key
+         * @description Polled by the CLI with the `device_code` from `POST /api/auth/device`. Until the user decides, 400 `authorization_pending` (or `slow_down` when polled faster than `interval`). A denial is 400 `access_denied`; a timed-out grant is 400 `expired_token`; an unknown or already-used code is 400 `invalid_grant`. On approval, 201 with a full-scope API key — the same shape `POST /api/auth/token` returns — and the grant is consumed.
+         */
+        post: operations["FountainWeb.DeviceAuthController.token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a device-authorization grant
+         * @description The CLI login path for accounts without a password ("Sign up with GitHub"). Show the user `user_code` and send them to `verification_uri` (or open `verification_uri_complete`), then poll `POST /api/auth/device/token` with `device_code` every `interval` seconds until they approve. The grant expires after `expires_in` seconds. Rate-limited to 10 grants per IP per hour.
+         */
+        post: operations["FountainWeb.DeviceAuthController.create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2393,6 +2540,10 @@ export interface components {
             secret_key?: string;
             /** Format: uri */
             url: string;
+        };
+        /** AgentVersionListResponse */
+        AgentVersionListResponse: {
+            data: components["schemas"]["AgentVersion"][];
         };
         /** RunnerListResponse */
         RunnerListResponse: {
@@ -2992,6 +3143,15 @@ export interface components {
             /** Format: uuid */
             user_id?: string | null;
         };
+        /** OpenAIError */
+        OpenAIError: {
+            error?: {
+                code?: string | null;
+                message?: string;
+                param?: string | null;
+                type?: string;
+            };
+        };
         /** SecretBindingListResponse */
         SecretBindingListResponse: {
             data: components["schemas"]["SecretBinding"][];
@@ -3004,6 +3164,23 @@ export interface components {
             errors: {
                 [key: string]: string[];
             };
+        };
+        /**
+         * AgentVersion
+         * @description One immutable snapshot of an agent's config (ADR 0029), written on create and on every update that changes a config field. `config` holds the full values, keyed by the agent fields `Agent.changeset/2` casts (everything but ownership and the avatar). Versions are read-only over the API; rollback is a console action.
+         */
+        AgentVersion: {
+            /** Format: uuid */
+            agent_id: string;
+            config: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at: string;
+            /** @description 1-based, monotonic per agent. */
+            version: number;
         };
         /**
          * Agent
@@ -3149,6 +3326,13 @@ export interface components {
             readonly acp?: boolean;
             /** Format: uuid */
             agent_id?: string | null;
+            /** @description The version number behind agent_version_id, resolved on the list and get endpoints; null elsewhere and wherever agent_version_id is null. */
+            readonly agent_version?: number | null;
+            /**
+             * Format: uuid
+             * @description The agent config version this conversation launched under (ADR 0029): provenance only, the live agent still drives the sandbox. Null for a conversation that predates versioning. Resolve it at GET /api/agents/{agent_id}/versions/{agent_version}.
+             */
+            agent_version_id?: string | null;
             /** @description The external channel key this conversation is bound to, if it was created with one. */
             channel_id?: string | null;
             /**
@@ -3201,7 +3385,7 @@ export interface components {
         };
         /**
          * RunAgentInput
-         * @description The AG-UI run envelope, as the protocol defines it. Extra fields are accepted and ignored: only `threadId`, `runId` and `messages` are read.
+         * @description The AG-UI run envelope, as the protocol defines it. Extra fields are accepted and ignored: only `threadId`, `runId`, `messages` and `tools` are read.
          */
         RunAgentInput: {
             context?: Record<string, never>[];
@@ -3213,7 +3397,7 @@ export interface components {
             state?: Record<string, never>;
             /** @description The host's thread. Bound to one Fountain conversation as `agui:<threadId>`. */
             threadId: string;
-            /** @description Accepted and ignored — see the module doc on why no tool call is emitted. */
+            /** @description The host's tools (`name`, `description`, `parameters`). Offered to the agent beside its own; a call comes back as `TOOL_CALL_*` events and the run ends, and the next run's `role: "tool"` messages answer it. */
             tools?: Record<string, never>[];
         };
         /** EnvironmentListResponse */
@@ -3223,6 +3407,11 @@ export interface components {
         /** ApiKeyListResponse */
         ApiKeyListResponse: {
             data: components["schemas"]["ApiKey"][];
+        };
+        /** DeviceTokenRequest */
+        DeviceTokenRequest: {
+            /** @description The `device_code` from `POST /api/auth/device`. */
+            device_code: string;
         };
         /**
          * Runner
@@ -3426,6 +3615,27 @@ export interface components {
         /** AdminSandboxListResponse */
         AdminSandboxListResponse: {
             data: components["schemas"]["AdminSandbox"][];
+        };
+        /**
+         * ChatCompletionRequest
+         * @description The OpenAI chat-completions request. `model`, `messages`, `stream`, `user`, `tools` and `tool_choice` are read; sampling parameters, `n`, `response_format` and the rest are accepted and ignored, because the thing behind the URL is an agent, not a model.
+         */
+        ChatCompletionRequest: {
+            /** @description The chat so far. The newest `user` message becomes the prompt (its `image_url` parts must be `data:` URLs); `system`/`developer` messages become the standing role of a new conversation and are ignored afterwards. When the newest messages are `role: "tool"`, they answer the `tool_calls` the previous completion ended with and the turn resumes. */
+            messages: Record<string, never>[];
+            /** @description A Fountain agent: its name or its id. Unknown → 404. */
+            model: string;
+            /**
+             * @description `true` streams `chat.completion.chunk` events as SSE, ending with `data: [DONE]`.
+             * @default false
+             */
+            stream: boolean;
+            /** @description `auto` (default) or `none` (register nothing for this request). `required` and a named tool are refused with 400: Fountain cannot force an agent's next action. */
+            tool_choice?: string;
+            /** @description Caller-defined function tools, in OpenAI's shape. The agent sees them beside its own; when it calls one the completion ends with `finish_reason: "tool_calls"` and the turn waits for the `role: "tool"` answer on the next request. */
+            tools?: Record<string, never>[];
+            /** @description The thread key when `X-Fountain-Thread` is not set. */
+            user?: string;
         };
         /**
          * AuditEvent
@@ -3661,6 +3871,27 @@ export interface components {
         ConnectionProviderListResponse: {
             data: components["schemas"]["ConnectionProvider"][];
         };
+        /**
+         * DeviceAuthResponse
+         * @description A fresh device-authorization grant (#1305). `device_code` stays on the polling machine and never gets typed; `user_code` is what the human enters at `verification_uri`.
+         */
+        DeviceAuthResponse: {
+            /** @description High-entropy code the CLI polls the token endpoint with. Shown once. */
+            device_code: string;
+            /** @description Seconds until the grant expires. */
+            expires_in: number;
+            /** @description Minimum seconds between polls; faster gets `slow_down`. */
+            interval: number;
+            /**
+             * @description Short code for the human to type into the console.
+             * @example BCDF-GHJK
+             */
+            user_code: string;
+            /** @description The console page where the user approves the grant. */
+            verification_uri: string;
+            /** @description `verification_uri` with the user code prefilled. */
+            verification_uri_complete: string;
+        };
         /** EmailRequest */
         EmailRequest: {
             /** Format: email */
@@ -3688,6 +3919,20 @@ export interface components {
             source?: "ui" | "api" | "agent";
             /** @enum {string} */
             status?: "pending" | "running" | "idle" | "failed" | "terminated";
+        };
+        /** Model */
+        Model: {
+            created?: number;
+            fountain?: {
+                agent_id?: string;
+                model?: string | null;
+                runtime?: string;
+            };
+            /** @description The agent's name. */
+            id?: string;
+            /** @enum {string} */
+            object?: "model";
+            owned_by?: string;
         };
         /** SupportReportResponse */
         SupportReportResponse: {
@@ -4000,9 +4245,48 @@ export interface components {
             turn_id?: string | null;
             turn_number?: number | null;
         };
+        /** AgentVersionResponse */
+        AgentVersionResponse: {
+            data: components["schemas"]["AgentVersion"];
+        };
         /** TeamScheduleListResponse */
         TeamScheduleListResponse: {
             data: components["schemas"]["TeamSchedule"][];
+        };
+        /** ChatCompletion */
+        ChatCompletion: {
+            choices?: {
+                /** @enum {string} */
+                finish_reason?: "stop" | "tool_calls";
+                index?: number;
+                message?: {
+                    content?: string;
+                    /** @description Thinking, tool use and lifecycle stages, if any. */
+                    reasoning_content?: string;
+                    /** @enum {string} */
+                    role?: "assistant";
+                    /** @description The caller-defined tools the agent is waiting on, when `finish_reason` is `tool_calls`. */
+                    tool_calls?: Record<string, never>[];
+                };
+            }[];
+            created?: number;
+            /** @description Where the turn ran, for a caller that wants the real API next. */
+            fountain?: {
+                conversation_id?: string;
+                thread?: string;
+                turn_id?: string | null;
+            };
+            id?: string;
+            /** @description The agent's name. */
+            model?: string;
+            /** @enum {string} */
+            object?: "chat.completion";
+            /** @description Always zeros: a turn is billed in seconds, not tokens. */
+            usage?: {
+                completion_tokens?: number;
+                prompt_tokens?: number;
+                total_tokens?: number;
+            };
         };
         /**
          * AdminEventListResponse
@@ -4606,6 +4890,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    "FountainWeb.OpenAIController.list_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            created?: number;
+                            fountain?: {
+                                agent_id?: string;
+                                model?: string | null;
+                                runtime?: string;
+                            };
+                            /** @description The agent's name. */
+                            id?: string;
+                            /** @enum {string} */
+                            object?: "model";
+                            owned_by?: string;
+                        }[];
+                        /** @enum {string} */
+                        object?: "list";
+                    };
                 };
             };
         };
@@ -5255,7 +5575,7 @@ export interface operations {
                     state?: Record<string, never>;
                     /** @description The host's thread. Bound to one Fountain conversation as `agui:<threadId>`. */
                     threadId: string;
-                    /** @description Accepted and ignored — see the module doc on why no tool call is emitted. */
+                    /** @description The host's tools (`name`, `description`, `parameters`). Offered to the agent beside its own; a call comes back as `TOOL_CALL_*` events and the run ends, and the next run's `role: "tool"` messages answer it. */
                     tools?: Record<string, never>[];
                 };
             };
@@ -6394,6 +6714,39 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.AgentVersionController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                /** @description 1-based. */
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentVersionResponse"];
+                };
+            };
+            /** @description Agent or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.WebhookEndpointController.show": {
         parameters: {
             query?: never;
@@ -7004,6 +7357,37 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.AgentVersionController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentVersionListResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.AuthMeController.show": {
         parameters: {
             query?: never;
@@ -7029,6 +7413,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.OpenAIController.show_model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent name or id. */
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The model */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        created?: number;
+                        fountain?: {
+                            agent_id?: string;
+                            model?: string | null;
+                            runtime?: string;
+                        };
+                        /** @description The agent's name. */
+                        id?: string;
+                        /** @enum {string} */
+                        object?: "model";
+                        owned_by?: string;
+                    };
+                };
+            };
+            /** @description No such model (agent) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error?: {
+                            code?: string | null;
+                            message?: string;
+                            param?: string | null;
+                            type?: string;
+                        };
+                    };
                 };
             };
         };
@@ -8742,6 +9177,131 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.OpenAIController.create_chat_completion": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The thread key. Overrides the `user` field. */
+                "x-fountain-thread"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Chat-completions request */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The chat so far. The newest `user` message becomes the prompt (its `image_url` parts must be `data:` URLs); `system`/`developer` messages become the standing role of a new conversation and are ignored afterwards. When the newest messages are `role: "tool"`, they answer the `tool_calls` the previous completion ended with and the turn resumes. */
+                    messages: Record<string, never>[];
+                    /** @description A Fountain agent: its name or its id. Unknown → 404. */
+                    model: string;
+                    /**
+                     * @description `true` streams `chat.completion.chunk` events as SSE, ending with `data: [DONE]`.
+                     * @default false
+                     */
+                    stream?: boolean;
+                    /** @description `auto` (default) or `none` (register nothing for this request). `required` and a named tool are refused with 400: Fountain cannot force an agent's next action. */
+                    tool_choice?: string;
+                    /** @description Caller-defined function tools, in OpenAI's shape. The agent sees them beside its own; when it calls one the completion ends with `finish_reason: "tool_calls"` and the turn waits for the `role: "tool"` answer on the next request. */
+                    tools?: Record<string, never>[];
+                    /** @description The thread key when `X-Fountain-Thread` is not set. */
+                    user?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The completion (or, with `stream: true`, its SSE stream) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        choices?: {
+                            /** @enum {string} */
+                            finish_reason?: "stop" | "tool_calls";
+                            index?: number;
+                            message?: {
+                                content?: string;
+                                /** @description Thinking, tool use and lifecycle stages, if any. */
+                                reasoning_content?: string;
+                                /** @enum {string} */
+                                role?: "assistant";
+                                /** @description The caller-defined tools the agent is waiting on, when `finish_reason` is `tool_calls`. */
+                                tool_calls?: Record<string, never>[];
+                            };
+                        }[];
+                        created?: number;
+                        /** @description Where the turn ran, for a caller that wants the real API next. */
+                        fountain?: {
+                            conversation_id?: string;
+                            thread?: string;
+                            turn_id?: string | null;
+                        };
+                        id?: string;
+                        /** @description The agent's name. */
+                        model?: string;
+                        /** @enum {string} */
+                        object?: "chat.completion";
+                        /** @description Always zeros: a turn is billed in seconds, not tokens. */
+                        usage?: {
+                            completion_tokens?: number;
+                            prompt_tokens?: number;
+                            total_tokens?: number;
+                        };
+                    };
+                };
+            };
+            /** @description No thread key, or no user message */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error?: {
+                            code?: string | null;
+                            message?: string;
+                            param?: string | null;
+                            type?: string;
+                        };
+                    };
+                };
+            };
+            /** @description No such model (agent) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error?: {
+                            code?: string | null;
+                            message?: string;
+                            param?: string | null;
+                            type?: string;
+                        };
+                    };
+                };
+            };
+            /** @description The thread is running a turn; retry */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error?: {
+                            code?: string | null;
+                            message?: string;
+                            param?: string | null;
+                            type?: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
     "FountainWeb.VaultSecretController.index": {
         parameters: {
             query?: never;
@@ -9225,6 +9785,60 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+        };
+    };
+    "FountainWeb.DeviceAuthController.token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Device token request */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description A new API key */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description authorization_pending / slow_down / access_denied / expired_token / invalid_grant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.DeviceAuthController.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A new device grant */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceAuthResponse"];
                 };
             };
         };

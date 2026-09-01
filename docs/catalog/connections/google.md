@@ -3,7 +3,7 @@
 > The one platform provider. The operator registers a Google Cloud client
 > once, and every tenant connects a Google account with it.
 
-## At a glance
+## Summary
 
 | | |
 |---|---|
