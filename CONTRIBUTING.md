@@ -92,6 +92,37 @@ mix test apps/fountain/test/fountain/docs_test.exs
 To read a page as it will ship, start the server and open `/docs`. That route
 is the only place `docs/` is published.
 
+## Adding an umbrella library app
+
+Fountain's database-free subsystems are being extracted as Apache-2.0
+libraries under the `Managoat.*` namespace (decisions/0037, tracker #1334).
+Each starts as an app in this umbrella, `apps/managoat_<name>`, and graduates
+to a `managoat/<name>` repository once its surface stops moving.
+`apps/managoat_substitution` is the model; copy it. A new one needs:
+
+- `apps/managoat_<name>/mix.exs` with the four umbrella path lines
+  (`build_path`, `config_path`, `deps_path`, `lockfile`), `package` metadata
+  with `licenses: ["Apache-2.0"]`, and its own `test_coverage` threshold.
+- `LICENSE` (Apache-2.0, copy `cli/LICENSE`), `README.md`, `.formatter.exs`,
+  `test/test_helper.exs`.
+- A line in `apps/fountain/mix.exs`: `{:managoat_<name>, in_umbrella: true}`.
+- A `COPY apps/managoat_<name>/mix.exs` line in the Dockerfile's deps layer,
+  beside the existing one. Without it `mix deps.get` fails in the image
+  build, which CI does not run.
+- No reference to `Fountain.*` or `FountainWeb.*`, no
+  `Application.get_env(:fountain, …)`, and no `[:fountain, …]` telemetry
+  anywhere under its `lib/` or `test/`. The library takes what it needs as
+  arguments or reads its own otp_app.
+
+`apps/fountain/test/fountain/umbrella_layout_test.exs` checks every one of
+those and fails the suite on a miss. The root gates already reach the new
+app: `mix format` through `subdirectories: ["apps/*"]`, credo through
+`apps/*/lib/`, dialyzer and `mix test` because they run at the root. In CI
+the library's tests run from `scripts/test-libraries.sh` in one partition
+and their coverage export joins the merged gate, so a library with no tests
+fails the run rather than passing unmeasured. Add a `[Unreleased]` entry
+and update the "Built so far" block in decisions/0037.
+
 ## Pull requests
 
 Every change goes through a PR and the CI gate must pass. Do not push directly

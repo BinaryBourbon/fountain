@@ -1,8 +1,10 @@
-defmodule Fountain.SubstitutionTest do
+defmodule Managoat.SubstitutionTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  alias Fountain.Substitution
+  alias Managoat.Substitution
+
+  doctest Substitution
 
   describe "apply/2 — string substitution" do
     test "substitutes a single variable" do

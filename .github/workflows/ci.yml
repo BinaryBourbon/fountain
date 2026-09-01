@@ -390,6 +390,18 @@ jobs:
           MIX_TEST_PARTITION: ${{ matrix.partition }}
         run: scripts/test-partition.sh ${{ strategy.job-total }}
 
+      # The umbrella library apps (apps/managoat_*, decisions/0037) are not in
+      # the partition manifest: their tests belong to the library and run from
+      # its own directory, instrumenting its own modules. One partition runs
+      # them all and copies the exports into the merge directory as lib-*, so
+      # the coverage gate below stands on the union. Partition 1 rather than a
+      # job of its own because a job carries ~60s of fixed cost and the
+      # libraries' suites are seconds; give a library its own matrix entry
+      # when that stops being true.
+      - name: Run the library apps' tests with coverage
+        if: ${{ matrix.partition == 1 }}
+        run: scripts/test-libraries.sh
+
       - name: Publish the partition count
         id: total
         run: echo "count=${{ strategy.job-total }}" >> "$GITHUB_OUTPUT"
@@ -398,9 +410,14 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverdata-${{ matrix.partition }}
+          # The lib-* globs match only on the partition that ran the library
+          # apps; if-no-files-found looks at the set as a whole, so the other
+          # partitions still upload their own pair without complaint.
           path: |
             apps/fountain/cover/${{ matrix.partition }}.coverdata
             apps/fountain/cover/${{ matrix.partition }}.tests
+            apps/fountain/cover/lib-*.coverdata
+            apps/fountain/cover/lib-*.tests
           # An export that silently fails to upload would leave the merge job
           # gating on a fraction of the suite while still printing a number.
           if-no-files-found: error
@@ -464,13 +481,22 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           expected=${{ needs.test.outputs.partitions }}
-          exports=(apps/fountain/cover/*.coverdata)
+          exports=(apps/fountain/cover/[0-9]*.coverdata)
           if [ "${#exports[@]}" -ne "$expected" ]; then
             echo "merged ${#exports[@]} coverage exports, expected $expected" >&2
             exit 1
           fi
+          # The library apps' exports (scripts/test-libraries.sh): one per
+          # apps/managoat_* directory, or the gate would stand on the
+          # partitions alone and the libraries' coverage would go unmeasured.
+          libs=(apps/managoat_*/)
+          lib_exports=(apps/fountain/cover/lib-*.coverdata)
+          if [ "${#lib_exports[@]}" -ne "${#libs[@]}" ]; then
+            echo "merged ${#lib_exports[@]} library exports, expected ${#libs[@]} (one per apps/managoat_*)" >&2
+            exit 1
+          fi
           total=$(cat apps/fountain/cover/*.tests | awk '{s += $1} END {print s + 0}')
-          echo "merging ${#exports[@]} partitions covering $total tests"
+          echo "merging ${#exports[@]} partitions and ${#lib_exports[@]} library apps covering $total tests"
 
       # Not `mix test.coverage`: ~90% of that task's time is rendering an
       # HTML report — 530 files, 129MB — that this job never opens, since all

@@ -16,6 +16,19 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **The first component library, `managoat_substitution`** (#1336, ADR
+  0037). Fountain's database-free subsystems are being extracted as
+  Apache-2.0 libraries under the `Managoat.*` namespace, first as apps in
+  this umbrella and later as `managoat/<name>` repositories (#1334). The
+  `${VAR}` substitution engine is the first: `Fountain.Substitution` is now
+  `Managoat.Substitution` in `apps/managoat_substitution`, with no change in
+  behaviour. Nothing user-facing moves; the umbrella gains the mechanics
+  every later extraction reuses (a library test step in CI with its coverage
+  merged into the gate, a Dockerfile `COPY` per library, and a test that
+  refuses a library which reaches back into Fountain).
+
 ### Added
 
 - **A verified registry of remote MCP servers** (#1322). Fountain now ships
