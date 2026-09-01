@@ -4,7 +4,8 @@ defmodule FountainWeb.CatalogController do
   agent and environment forms — runtimes and their model suggestions,
   the sandbox providers usable here and the default, the package managers
   an environment accepts, the avatar generator's bases and moods (#815),
-  and where this instance's browser apps live (#866).
+  where this instance's browser apps live (#866), and the remote MCP
+  servers verified to complete connection discovery (#1322).
 
   Everything here is already public through the forms; this is the same
   lists over the API so a client on another origin does not hard-code them
@@ -27,8 +28,11 @@ defmodule FountainWeb.CatalogController do
       "Runtimes with model suggestions per runtime (suggestions, not an allowlist — " <>
         "any `provider/model` under a known provider is accepted), sandbox providers " <>
         "usable on this instance and the default, package managers an environment " <>
-        "accepts, the avatar generator's bases and moods, and the URLs of the " <>
-        "browser apps this instance sends people to for conversations and the team.",
+        "accepts, the avatar generator's bases and moods, the URLs of the " <>
+        "browser apps this instance sends people to for conversations and the team, " <>
+        "and remote MCP servers verified to complete connection discovery " <>
+        "(again suggestions — any URL can be discovered), each with the date " <>
+        "it was last verified.",
     responses: [ok: {"Catalog", "application/json", Schemas.CatalogResponse}]
   )
 
@@ -54,7 +58,11 @@ defmodule FountainWeb.CatalogController do
         apps: %{
           conversations: Fountain.Apps.conversations(),
           team: Fountain.Apps.team()
-        }
+        },
+        # Remote MCP servers whose authorization chain is known to complete
+        # (dated, re-checked by scripts/mcp-catalog-probe.exs) — so a client
+        # can render "Connect Sentry"-style rows without hard-coding URLs.
+        mcp_servers: Fountain.Connections.McpServerCatalog.entries()
       }
     })
   end

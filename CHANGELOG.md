@@ -16,6 +16,20 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **A verified registry of remote MCP servers** (#1322). Fountain now ships
+  a list of ten remote MCP servers (Linear, Sentry, Notion, Asana,
+  Cloudflare, PayPal, Square, Webflow, Stripe, GitHub) whose MCP
+  authorization chain is verified to complete, each entry carrying the date
+  it was last checked. The list feeds preset chips on the console's
+  *Connect a remote MCP server* box, an `mcp_servers` key on
+  `GET /api/catalog`, and per-server pages under the docs catalog.
+  `scripts/mcp-catalog-probe.exs` re-verifies every entry through the
+  production discovery code, on demand and on a monthly schedule; a failed
+  probe means the entry keeps its stale date, so the claim stays honest.
+  Suggestions, not an allowlist: any URL still discovers.
+
 ### Fixed
 
 - **The quickstart installs on Linux.** The page offered only `brew install`,

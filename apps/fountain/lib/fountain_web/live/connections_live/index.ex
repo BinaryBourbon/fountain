@@ -80,6 +80,11 @@ defmodule FountainWeb.ConnectionsLive.Index do
 
   def presets, do: @presets
 
+  # The chips on the MCP box come from the verified registry (#1322), not a
+  # second list here: same menu-not-a-gate rule as @presets above, but these
+  # entries carry a machine-checked claim, so they live beside the checker.
+  def mcp_catalog, do: Fountain.Connections.McpServerCatalog.entries()
+
   @impl true
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
@@ -257,6 +262,13 @@ defmodule FountainWeb.ConnectionsLive.Index do
   end
 
   # ── remote MCP servers ────────────────────────────────────────────────────
+
+  def handle_event("mcp_preset", %{"slug" => slug}, socket) do
+    case Fountain.Connections.McpServerCatalog.get(slug) do
+      nil -> {:noreply, socket}
+      entry -> {:noreply, assign(socket, :mcp_url, entry.url)}
+    end
+  end
 
   def handle_event("validate_mcp", params, socket) do
     {:noreply,
@@ -724,6 +736,19 @@ defmodule FountainWeb.ConnectionsLive.Index do
             client with the authorization server where it offers one, so there is no client id to
             type. Paste one below only for a server without registration.
           </p>
+          <div class="flex gap-1 flex-wrap">
+            <span class="text-xs text-[var(--color-text-secondary)] self-center">Verified:</span>
+            <button
+              :for={entry <- mcp_catalog()}
+              type="button"
+              phx-click="mcp_preset"
+              phx-value-slug={entry.slug}
+              title={entry.url}
+              class="rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs"
+            >
+              {entry.name}
+            </button>
+          </div>
           <div class="flex gap-2">
             <input
               type="url"

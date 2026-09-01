@@ -83,6 +83,16 @@ nav:
       - fountain-buzz: catalog/mcp-servers/fountain-buzz.md
       - fountain-comms: catalog/mcp-servers/fountain-comms.md
       - fountain-gmail: catalog/mcp-servers/fountain-gmail.md
+      - asana (MCP server): catalog/mcp-servers/asana.md
+      - cloudflare (MCP server): catalog/mcp-servers/cloudflare.md
+      - github (MCP server): catalog/mcp-servers/github.md
+      - linear (MCP server): catalog/mcp-servers/linear.md
+      - notion (MCP server): catalog/mcp-servers/notion.md
+      - paypal (MCP server): catalog/mcp-servers/paypal.md
+      - sentry (MCP server): catalog/mcp-servers/sentry.md
+      - square (MCP server): catalog/mcp-servers/square.md
+      - stripe (MCP server): catalog/mcp-servers/stripe.md
+      - webflow (MCP server): catalog/mcp-servers/webflow.md
       - Connections: catalog/connections/index.md
       - google (connection): catalog/connections/google.md
       - microsoft (connection): catalog/connections/microsoft.md

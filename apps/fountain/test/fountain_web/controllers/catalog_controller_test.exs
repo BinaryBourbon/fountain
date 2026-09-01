@@ -23,6 +23,15 @@ defmodule FountainWeb.CatalogControllerTest do
              "bases" => ~w(robot human alien),
              "moods" => ~w(serious casual goofy)
            }
+
+    assert length(data["mcp_servers"]) ==
+             length(Fountain.Connections.McpServerCatalog.entries())
+
+    linear = Enum.find(data["mcp_servers"], &(&1["slug"] == "linear"))
+    assert linear["name"] == "Linear"
+    assert linear["url"] == "https://mcp.linear.app/mcp"
+    assert linear["dcr"] == true
+    assert {:ok, _} = Date.from_iso8601(linear["verified_on"])
   end
 
   test "401 without a key", %{conn: conn} do

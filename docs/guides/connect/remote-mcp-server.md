@@ -18,7 +18,9 @@ For a service with a classic OAuth app, read
 
 1. Open **Account, then Connections** in the console.
 2. Under **Connect a remote MCP server**, paste the server URL, for example
-   `https://mcp.linear.app/mcp`.
+   `https://mcp.linear.app/mcp`. Or click one of the **Verified** chips,
+   and the URL appears. The chips come from the
+   [verified list](../../catalog/mcp-servers/index.md#what-verified-means).
 3. Click **Discover**.
 
 The page reports the authorization server it found. With client
@@ -165,4 +167,4 @@ other host with it.
 - [Connect a service with your own OAuth app](own-oauth-app.md).
 - [Connections](../../catalog/connections/index.md), the catalog hub.
 - [MCP servers](../../catalog/mcp-servers/index.md), for the servers
-  Fountain hosts.
+  Fountain hosts and the verified remote servers.
