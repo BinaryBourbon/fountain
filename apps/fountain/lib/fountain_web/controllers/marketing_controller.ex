@@ -86,19 +86,19 @@ defmodule FountainWeb.MarketingController do
   end
 
   # The Fountain project launch page. Managoat's `/launch` sells the hosted
-  # instance; this page makes the parallel case for the open-source engine:
-  # deploy it, define one agent, connect existing systems and choose what
-  # observability leaves the instance. It is a campaign destination rather
-  # than a second homepage, so it stays out of the permanent navigation.
+  # instance; this page shows builders what they can make with the open-source
+  # engine, then proves they can own and reshape the whole stack. It is a
+  # campaign destination rather than a second homepage, so it stays out of the
+  # permanent navigation.
   def oss_launch(conn, _params) do
     if Fountain.Marketing.site?() do
       render(conn, :oss_launch,
         layout: {FountainWeb.Layouts, :marketing},
-        page_title: "Open-source infrastructure for coding agents · #{Fountain.Brand.engine()}",
+        page_title: "A conversational API to a computer · #{Fountain.Brand.engine()}",
         meta_description:
-          "Deploy #{Fountain.Brand.engine()} with Docker, Render, Fly.io or Kubernetes. " <>
-            "Define a coding agent once, connect it to the systems you already use, and " <>
-            "keep telemetry under your control."
+          "Give your app a computer it can talk to. Build on #{Fountain.Brand.engine()}, " <>
+            "run the open-source stack yourself, and keep your data, keys and agents " <>
+            "under your control."
       )
     else
       redirect(conn, to: ~p"/docs/open-source")
