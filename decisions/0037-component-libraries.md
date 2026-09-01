@@ -1,25 +1,28 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Nothing is extracted yet; #1336 (managoat_substitution) is the first and proves the mechanics."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. The first, managoat_substitution, is built (#1347) along with the umbrella mechanics; the other eight are not."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: human:jhgaylor, at: 2026-09-01T18:00:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-09-01T18:00:00-04:00 }
+generated: { by: human:jhgaylor, at: 2026-09-01T20:00:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-09-01T20:00:00-04:00 }
 stale_after: 2026-12-01
 ---
 
 # 0037 — Component libraries, extracted umbrella-first under the Managoat namespace
 
-**Status:** Accepted, 2026-09-01. **Built so far: nothing.** No library
-exists at the time of writing; the tracker is #1334 and the first extraction
-is #1336 (`managoat_substitution`), whose job is to settle the umbrella
-mechanics this ADR names below. The guard that pins the dependency direction
-is also not yet built and is part of #1336. Each PR that extracts a library
-updates this block.
+**Status:** Accepted, 2026-09-01. The tracker is #1334. **Built so far:**
+`managoat_substitution` (#1347), with the umbrella mechanics this ADR names
+below: the library test step whose coverage joins the merged gate
+(`scripts/test-libraries.sh`), the Dockerfile `COPY` per library, and the
+guard that pins the dependency direction
+(`apps/fountain/test/fountain/umbrella_layout_test.exs`). **Not built:** the
+other eight libraries (sandbox, MCP authorization, ACP, broker, runner
+protocol, docs, OAuth, credits) and the graduation recipe (#1345). Each PR
+that extracts a library updates this block.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names
@@ -103,7 +106,7 @@ extracted it is its own Elastic-licensed repository.
 A library holds no reference to `Fountain.*` or `FountainWeb.*`, reads no
 `:fountain` configuration and emits no `[:fountain, …]` telemetry. A test
 in `apps/fountain` walks every `apps/managoat_*` directory and fails on any
-of the three (not yet built; #1336).
+of the three (`umbrella_layout_test.exs`, built in #1347).
 
 **Configuration and telemetry.** A library reads its own otp_app
 (`config :managoat_sandbox, …`) or takes an options map; `fountain`'s
