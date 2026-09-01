@@ -229,9 +229,9 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "Host your Buzz agent free"
       assert body =~ "Read the integration manual"
 
-      assert body =~ "A teammate that sleeps when you do is not a teammate."
-      assert body =~ "Presence lasts as long as the lid stays open"
-      assert body =~ "survives the loss of a node"
+      assert body =~ "Take your laptop out of the loop."
+      assert body =~ "Closing the laptop takes the agent offline"
+      assert body =~ "restarts it after a node loss"
 
       assert body =~ "From mention to signed reply."
 
@@ -240,24 +240,24 @@ defmodule FountainWeb.MarketingControllerTest do
       end
 
       assert length(Regex.scan(~r/data-role="buzz-turn-step"/, body)) == 4
-      assert body =~ "If the model never calls the tool, nothing is posted."
+      assert body =~ "The agent must make an explicit tool call to publish."
 
       assert body =~ "The signing key never enters the sandbox."
       assert body =~ "The name collides with HashiCorp's"
       assert body =~ "buzz.published"
       assert body =~ "Recording is not gating"
 
-      assert body =~ "wearing a Nostr identity."
+      assert body =~ "Give the identity a repository and the tools to use it."
       assert body =~ "Claude Code, Codex, Gemini CLI or OpenCode"
 
-      assert body =~ "Two ways in. Both converge."
+      assert body =~ "Deploy from Buzz Desktop or the API."
       assert body =~ "buzz-backend-fountain"
       assert body =~ "$FOUNTAIN_BASE_URL/api/buzz/agents"
       assert body =~ "&quot;private_key_nsec&quot;"
-      assert body =~ "The nsec goes in and never comes back."
-      assert body =~ "idempotent on the agent's pubkey"
+      assert body =~ "stores the nsec from this request and never returns it"
+      assert body =~ "updates the existing identity instead of creating a duplicate"
 
-      assert body =~ "Run it from the channel you are in."
+      assert body =~ "Control it from the Buzz channel."
 
       for owner_command <- FountainWeb.MarketingHTML.buzz_owner_commands() do
         assert body =~ owner_command.command, "missing owner command #{owner_command.command}"
@@ -265,12 +265,14 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ "fountain buzz agents set-access"
 
-      assert body =~ "Know the boundary before you hand it a channel."
-      assert body =~ "The harness never publishes the agent's own text."
+      assert body =~ "What the integration does, and what it does not."
+      assert body =~ "The harness does not publish the agent's normal response."
       assert body =~ "buzz_send_message"
       assert body =~ "buzz_react"
-      assert body =~ "Audited, not gated."
-      assert body =~ "DMs stay owner-only, whatever the gate."
+      assert body =~ "Publishing is audited, not approved."
+      assert body =~ "Direct messages remain owner-only."
+      assert body =~ "Runtime permission prompts are automatic."
+      assert body =~ "Access does not make the agent discoverable."
     end
 
     test "carries its own card and stays out of permanent navigation", %{conn: conn} do
@@ -278,7 +280,7 @@ defmodule FountainWeb.MarketingControllerTest do
 
       assert body =~ ~s(<meta property="og:title" content="Hosted Buzz agents · Fountain")
       assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/buzz-launch")
-      assert body =~ ~s(<meta name="description" content="Host a Buzz agent on Fountain)
+      assert body =~ ~s(<meta name="description" content="Keep your Buzz agent on the relay)
 
       refute conn |> get(~p"/") |> html_response(200) =~ ~s(href="/buzz-launch")
       refute conn |> get(~p"/built-with") |> html_response(200) =~ ~s(href="/buzz-launch")

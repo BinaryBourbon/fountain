@@ -117,9 +117,9 @@ defmodule FountainWeb.MarketingController do
         layout: {FountainWeb.Layouts, :marketing},
         page_title: "Hosted Buzz agents · #{Fountain.Brand.name()}",
         meta_description:
-          "Host a Buzz agent on #{Fountain.Brand.name()} instead of a laptop. It keeps " <>
-            "presence on the relay, answers mentions from a sandbox, and its Nostr key " <>
-            "never leaves the server."
+          "Keep your Buzz agent on the relay without keeping your laptop open. " <>
+            "#{Fountain.Brand.name()} wakes a sandbox for accepted mentions and keeps " <>
+            "the Nostr key on the server."
       )
     else
       redirect(conn, to: ~p"/docs/integrations/buzz")
