@@ -1,11 +1,29 @@
 name: Release bump
 
-# Manually-triggered workflow that bumps the version in both mix.exs
-# files (umbrella + fountain app), commits, tags, and pushes.
-# The tag push then dispatches release.yml which builds Go CLI binaries.
+# Cuts a release in two halves, because main only takes pull requests.
 #
-# Run from Actions tab → "Release bump" → "Run workflow".
-# Defaults to `patch`; minor / major are also available.
+# 1. "Run workflow" (Actions tab → "Release bump"; defaults to `patch`)
+#    bumps the version in both mix.exs files and the six self-host image
+#    pins on a `release/vX.Y.Z` branch and opens the PR. CI runs on it like
+#    any other PR; the compose boot check knows the pinned image does not
+#    exist yet and skips.
+# 2. Merging that PR (`gh pr merge --squash --admin`, like every PR here)
+#    triggers the `tag` job below, which tags the squash commit and
+#    dispatches release.yml to build the CLI binaries, publish the
+#    versioned image, boot it, and create the GitHub Release.
+#
+# This used to be one job that committed straight to main, tagged and
+# pushed. The Main Protection ruleset (pull requests only, no bypass actors,
+# and a user account cannot grant the Actions app one) rejects that push,
+# which is how two dispatches at v0.15.0 failed before the tag step (#1329).
+#
+# The PR is opened with RELEASE_BUMP_TOKEN, a fine-grained personal access
+# token for this repository with Contents and Pull requests set to
+# read/write, and not with GITHUB_TOKEN: a branch pushed and a PR opened by
+# GITHUB_TOKEN trigger no workflows, so the bump PR would arrive with no
+# checks at all. The tag half needs no such token; a tag pushed by
+# GITHUB_TOKEN is fine, and release.yml is dispatched explicitly because the
+# same rule suppresses its `push: tags:` trigger.
 
 on:
   workflow_dispatch:
@@ -19,31 +37,41 @@ on:
           - patch
           - minor
           - major
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
-  bump:
-    name: Bump version, commit, tag, push
+  open-pr:
+    name: Bump version and open the release PR
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     permissions:
-      # Push commit + tag back to main.
-      contents: write
-      # Dispatch release.yml after the tag push (the tag push itself
-      # doesn't trigger release.yml because tags pushed by GITHUB_TOKEN
-      # don't fire downstream workflows — GitHub anti-recursion safeguard).
-      actions: write
+      contents: read
 
     steps:
+      - name: Require RELEASE_BUMP_TOKEN
+        env:
+          TOKEN: ${{ secrets.RELEASE_BUMP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN}" ]; then
+            echo "RELEASE_BUMP_TOKEN is not set." >&2
+            echo "Add a fine-grained PAT scoped to this repository with Contents: read/write and Pull requests: read/write as that secret." >&2
+            echo "GITHUB_TOKEN cannot open this PR: a PR it opens gets no CI run." >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
-          # Full history so git tag sees existing tags and push back
-          # to main isn't rejected as a shallow-clone.
+          # Full history so the tag and branch checks below see what exists.
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_BUMP_TOKEN }}
 
       - name: Compute next version
         id: ver
@@ -62,11 +90,20 @@ jobs:
           esac
           next="${major}.${minor}.${patch}"
           tag="v${next}"
-          echo "next=$next"    >> "$GITHUB_OUTPUT"
-          echo "tag=$tag"      >> "$GITHUB_OUTPUT"
-          echo "current=$current" >> "$GITHUB_OUTPUT"
+          branch="release/${tag}"
+          echo "next=$next"
+          {
+            echo "next=$next"
+            echo "tag=$tag"
+            echo "branch=$branch"
+            echo "current=$current"
+          } >> "$GITHUB_OUTPUT"
           if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1; then
             echo "tag ${tag} already exists" >&2
+            exit 1
+          fi
+          if git rev-parse "refs/remotes/origin/${branch}" >/dev/null 2>&1; then
+            echo "branch ${branch} already exists; merge or delete the open release PR first" >&2
             exit 1
           fi
 
@@ -76,8 +113,8 @@ jobs:
         run: |
           set -euo pipefail
           # v0.3.0 shipped with its upgrade notes stranded under
-          # [Unreleased] (#318). Refuse to tag until CHANGELOG.md has a
-          # heading for the version being released.
+          # [Unreleased] (#318). Refuse to open the PR until CHANGELOG.md
+          # has a heading for the version being released.
           if ! grep -qF "## [${NEXT}]" CHANGELOG.md; then
             echo "CHANGELOG.md has no \"## [${NEXT}]\" section." >&2
             echo "Roll the [Unreleased] entries into a dated [${NEXT}] section before running the release bump." >&2
@@ -140,23 +177,109 @@ jobs:
           done
           git diff --stat
 
-      - name: Commit, tag, push
+      - name: Commit, push the branch, open the PR
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_BUMP_TOKEN }}
           TAG: ${{ steps.ver.outputs.tag }}
-          NEXT: ${{ steps.ver.outputs.next }}
+          BRANCH: ${{ steps.ver.outputs.branch }}
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
           git add mix.exs apps/fountain/mix.exs \
             docker-compose.yml .env.compose.example render.yaml fly.toml \
             deploy/k8s/kustomization.yaml deploy/k8s/deployment.yaml
-          # [skip ci] keeps this commit from re-triggering CI on main.
-          # release.yml is dispatched explicitly in the next step.
-          git commit -m "chore(release): ${TAG} [skip ci]"
-          git tag -a "${TAG}" -m "Release ${TAG}"
-          git push origin HEAD:main
-          git push origin "${TAG}"
+          # No [skip ci]: the PR is meant to run CI, and a main push whose
+          # tree a PR run already tested is skipped by ci.yml on its own.
+          git commit -m "chore(release): ${TAG}"
+          git push origin "${BRANCH}"
+          cat > "${RUNNER_TEMP}/body.md" <<EOF
+          Version bump for ${TAG}: both \`mix.exs\` files and the six self-host image pins.
+
+          Merging this PR tags the squash commit \`${TAG}\` and dispatches \`release.yml\`, which builds the CLI binaries, publishes \`ghcr.io/binarybourbon/fountain:${TAG}\`, boots it through the documented quick start and creates the GitHub Release.
+
+          "Compose boots the pinned image" skips on this PR because the pinned image does not exist until the release runs; the same check runs on the tag instead.
+          EOF
+          gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "chore(release): ${TAG}" \
+            --body-file "${RUNNER_TEMP}/body.md"
+
+  tag:
+    name: Tag the merged release PR and dispatch release.yml
+    if: >-
+      ${{ github.event_name == 'pull_request'
+          && github.event.pull_request.merged == true
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && startsWith(github.event.pull_request.head.ref, 'release/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      # Push the tag.
+      contents: write
+      # Dispatch release.yml: a tag pushed by GITHUB_TOKEN does not fire its
+      # `push: tags:` trigger (GitHub's anti-recursion rule).
+      actions: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          # The squash commit on main, not the PR's merge ref (which is gone
+          # once the PR closes). Full history so existing tags are visible.
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the tag from the merged tree
+        id: ver
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          # The version the merged tree carries is the truth; the branch name
+          # is a cross-check. A hand-opened bump PR (v0.15.0 was one) takes
+          # this path too, as long as its branch is release/vX.Y.Z.
+          version=$(grep -oE 'version: "[0-9]+\.[0-9]+\.[0-9]+"' mix.exs \
+            | head -1 \
+            | sed -E 's/version: "([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+          tag="v${version}"
+          git fetch --quiet origin main
+          if [ "${HEAD_REF}" != "release/${tag}" ]; then
+            echo "merged tree is at ${tag} but the PR branch is ${HEAD_REF}; not tagging" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${MERGE_SHA}" origin/main; then
+            echo "${MERGE_SHA} is not on main; not tagging" >&2
+            exit 1
+          fi
+          if existing="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")"; then
+            if [ "${existing}" = "${MERGE_SHA}" ]; then
+              echo "${tag} already points at ${MERGE_SHA}; nothing to push"
+              echo "push=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "${tag} already exists at ${existing}, not at the merge commit ${MERGE_SHA}" >&2
+              exit 1
+            fi
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and push
+        if: ${{ steps.ver.outputs.push == 'true' }}
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}" "${MERGE_SHA}"
+          git push origin "refs/tags/${TAG}"
 
       - name: Dispatch release.yml
         env:
@@ -164,7 +287,14 @@ jobs:
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
-          # Tag push above ran under GITHUB_TOKEN, so release.yml's
-          # `on: push: tags:` trigger is suppressed. Dispatch explicitly.
+          # If the tag was pushed by hand with a personal token, release.yml
+          # already fired on the push; a second run for the same tag would
+          # publish the same image and fail at the release page. Only
+          # dispatch when nothing is running or done for it.
+          runs="$(gh run list --workflow release.yml --branch "${TAG}" --json databaseId --jq 'length')"
+          if [ "${runs}" != "0" ]; then
+            echo "release.yml already has ${runs} run(s) for ${TAG}; not dispatching again"
+            exit 0
+          fi
           gh workflow run release.yml --ref "${TAG}" -f tag="${TAG}"
           echo "Dispatched release.yml for ${TAG}"

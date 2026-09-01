@@ -2,9 +2,10 @@ defmodule Fountain.ReleasePinTest do
   # The self-host quick start pins a release image in six places. Those pins
   # sat at v0.3.0 through two releases, handing newcomers an image from before
   # the in-app first-login flow (#478), where EMAIL_DELIVERY=none dead-ends
-  # signup. release-bump.yml now bumps the pins inside the release commit;
-  # since that commit is [skip ci], this test is the net that catches a pin
-  # the workflow missed — on the next PR, not two releases later.
+  # signup. release-bump.yml bumps the pins in the release PR, and this test
+  # runs on that PR, so a pin the workflow missed fails the bump itself
+  # rather than surfacing two releases later. ci.yml's compose boot check
+  # also reads the pin against mix.exs to know a bump tree from a broken one.
   use ExUnit.Case, async: true
 
   @root Path.expand("../../../..", __DIR__)

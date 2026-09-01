@@ -909,48 +909,42 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
-      # The exact commands the quick start documents (cp, the two openssl
-      # lines, up) rather than a synthetic env — the job exists to run what
-      # a fresh user runs, so any divergence here would defeat it. The two
-      # appended keys are now the only definition of each: the example file
-      # ships them commented out, so a followed quick start no longer leaves
-      # two copies of every secret in .env, shadowing each other and relying
-      # on last-value-wins to pick the real one (#1215).
-      - name: Run the documented quick start
+      # A release bump pins the tag it is about to create, so on the bump PR
+      # (and on main until release.yml has published the image) the pin
+      # names an image that does not exist yet. That is the one legitimate
+      # reason for the pull to fail, and it failed twice at v0.15.0: once on
+      # the PR by construction, and once on main, where the red CI run kept
+      # build.yml from building the bump commit and prod's footer stayed on
+      # the previous version (#1329). When the pin matches the version in
+      # mix.exs and the registry has no image for it, this tree is that
+      # bump: skip here, and release.yml runs the same script on the tag once
+      # the image is up. Any other missing image is a broken quick start.
+      - name: Resolve the pinned image
+        id: pin
         run: |
           set -euo pipefail
-          cp .env.compose.example .env
-          echo "SECRET_KEY_BASE=$(openssl rand -base64 48 | tr -d '\n')" >> .env
-          echo "MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')" >> .env
-          docker compose up -d
+          pin="$(sed -nE 's/^FOUNTAIN_IMAGE_TAG=(v[0-9]+\.[0-9]+\.[0-9]+)$/\1/p' .env.compose.example)"
+          version="$(grep -oE 'version: "[0-9]+\.[0-9]+\.[0-9]+"' mix.exs | head -1 \
+            | sed -E 's/version: "([0-9.]+)"/\1/')"
+          echo "pinned ${pin}; mix.exs is ${version}"
+          if docker manifest inspect "ghcr.io/binarybourbon/fountain:${pin}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${pin}" = "v${version}" ]; then
+            echo "::notice::${pin} has no image yet (release bump); release.yml boots it on the tag"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "the quick start pins ${pin}, which has no image in the registry" >&2
+          exit 1
 
-      - name: Probe /health and /health/ready
-        run: |
-          set -euo pipefail
-          probe() {
-            # Boot runs migrations before the endpoint listens, so tolerate
-            # refused connections while waiting — but a non-200 answer is a
-            # verdict, not a retry.
-            for _ in $(seq 1 60); do
-              code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:4000$1") || code=000
-              if [ "$code" = "200" ]; then
-                echo "  $1 -> 200"
-                return 0
-              fi
-              if [ "$code" != "000" ]; then
-                echo "  $1 -> $code (expected 200)" >&2
-                return 1
-              fi
-              sleep 2
-            done
-            echo "  $1 never answered" >&2
-            return 1
-          }
-          probe /health
-          probe /health/ready
+      - name: Run the documented quick start and probe the app
+        if: ${{ steps.pin.outputs.exists == 'true' }}
+        run: scripts/compose-boot-check.sh
 
       - name: Dump container logs
-        if: failure()
+        if: ${{ failure() && steps.pin.outputs.exists == 'true' }}
         run: docker compose logs --timestamps
 
   # What a docs-only PR runs instead of the three test partitions, the
