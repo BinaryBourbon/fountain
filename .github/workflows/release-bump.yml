@@ -17,9 +17,10 @@ name: Release bump
 # and a user account cannot grant the Actions app one) rejects that push,
 # which is how two dispatches at v0.15.0 failed before the tag step (#1329).
 #
-# The PR is opened with RELEASE_BUMP_TOKEN, a fine-grained personal access
-# token for this repository with Contents and Pull requests set to
-# read/write, and not with GITHUB_TOKEN: a branch pushed and a PR opened by
+# The PR is opened with RELEASE_BUMP_TOKEN, a personal access token with
+# write access to this repository's contents and pull requests (a classic
+# PAT with `repo`, or a fine-grained one with Contents and Pull requests
+# read/write), and not with GITHUB_TOKEN: a branch pushed and a PR opened by
 # GITHUB_TOKEN trigger no workflows, so the bump PR would arrive with no
 # checks at all. The tag half needs no such token; a tag pushed by
 # GITHUB_TOKEN is fine, and release.yml is dispatched explicitly because the
@@ -62,7 +63,7 @@ jobs:
           set -euo pipefail
           if [ -z "${TOKEN}" ]; then
             echo "RELEASE_BUMP_TOKEN is not set." >&2
-            echo "Add a fine-grained PAT scoped to this repository with Contents: read/write and Pull requests: read/write as that secret." >&2
+            echo "Add a PAT with write access to this repository's contents and pull requests as that secret." >&2
             echo "GITHUB_TOKEN cannot open this PR: a PR it opens gets no CI run." >&2
             exit 1
           fi
