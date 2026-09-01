@@ -118,27 +118,31 @@ defmodule FountainWeb.MarketingControllerTest do
     test "launches the Fountain project from definition through deploy", %{conn: conn} do
       body = conn |> get(~p"/oss-launch") |> html_response(200)
 
-      assert body =~ "Fountain · AGPL-3.0-or-later"
-      assert body =~ "Run coding agents on infrastructure you control."
-      assert body =~ "Connect your repo, tools, credentials, and model."
-      assert body =~ "Specify a runtime and give the agent a name."
+      assert body =~ "Open source · self-hosted · AGPL-3.0-or-later"
+      assert body =~ "Give your app a computer it can talk to."
+      assert body =~ "Build an engineering workbench around it"
+      assert body =~ "hide it behind your product"
+      assert body =~ "Your server · your database · your keys · your agents"
 
-      assert body =~ "An agent should not need a laptop."
+      assert body =~ "Put the agent wherever the idea needs it."
+      assert body =~ "Build the engineering workbench."
+      assert body =~ "Ship the outcome, not the agent."
+      assert body =~ "Start work from anything."
 
       for primitive <- FountainWeb.MarketingHTML.oss_primitives() do
         assert body =~ primitive.name, "missing primitive #{primitive.name}"
       end
 
       assert body =~ ~s(href="/docs/quickstart")
-      assert body =~ "Run the quickstart"
+      assert body =~ "Build with Fountain"
       assert body =~ ~s(href="/docs/tour")
       assert body =~ "Run the complete tour"
-      assert body =~ "Deploy Fountain"
+      assert body =~ "Start building"
       assert body =~ FountainWeb.MarketingHTML.repo_url()
 
       assert body =~ ~s(data-role="system-map")
 
-      assert body =~ "assembles Agent + Environment + Vault"
+      assert body =~ "one conversational API"
       assert body =~ "repo · tools · config · credentials"
       assert body =~ "Sandbox"
 
@@ -154,7 +158,7 @@ defmodule FountainWeb.MarketingControllerTest do
         assert FountainWeb.MarketingIcons.has?(target.slug), "no mark for #{target.name}"
       end
 
-      assert body =~ "You write this once. Everything after it is a prompt."
+      assert body =~ "Define the setup once. Your product sends the prompts."
       assert body =~ "fountain.environments.create"
       assert body =~ "fountain.vaults.create"
       assert body =~ "fountain.vaults.secrets.set"
@@ -169,7 +173,7 @@ defmodule FountainWeb.MarketingControllerTest do
       refute body =~ "kind: Environment"
       refute body =~ "fountain apply -f fountain.yml"
 
-      assert body =~ "Use the same agents from your product, editor or chat app."
+      assert body =~ "Talk to it from whatever you are building."
 
       for name <- ~w(AG-UI ACP OpenAI-compatible) do
         assert body =~ name, "missing client protocol #{name}"
@@ -183,7 +187,7 @@ defmodule FountainWeb.MarketingControllerTest do
         assert body =~ group.pitch, "missing group pitch #{group.pitch}"
       end
 
-      assert body =~ "Nothing phones home unless you tell it to."
+      assert body =~ "The conversation stays on your server."
       assert body =~ "Prometheus → Grafana"
       assert body =~ "OpenTelemetry → your OTLP backend"
       assert body =~ "Sentry API → Sentry or GlitchTip"
@@ -195,10 +199,12 @@ defmodule FountainWeb.MarketingControllerTest do
       body = conn |> get(~p"/oss-launch") |> html_response(200)
 
       assert body =~
-               ~s(<meta property="og:title" content="Open-source infrastructure for coding agents · Fountain")
+               ~s(<meta property="og:title" content="A conversational API to a computer · Fountain")
 
       assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/oss-launch")
-      assert body =~ ~s(<meta name="description" content="Deploy Fountain with Docker)
+
+      assert body =~
+               ~s(<meta name="description" content="Give your app a computer it can talk to.)
 
       refute conn |> get(~p"/") |> html_response(200) =~ ~s(href="/oss-launch")
     end
