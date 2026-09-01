@@ -62,8 +62,10 @@ defmodule FountainWeb.ConnectionControllerTest do
     assert conn |> get("/api/connections/#{id}") |> json_response(404)
   end
 
-  test "providers names Google, its scopes and where to start", %{conn: conn} do
-    assert %{"data" => [google]} = conn |> get("/api/connections/providers") |> json_response(200)
+  test "providers names each platform provider, its scopes and where to start", %{conn: conn} do
+    assert %{"data" => [google, microsoft, slack]} =
+             conn |> get("/api/connections/providers") |> json_response(200)
+
     assert google["id"] == "google"
     assert google["slug"] == "google"
     assert google["platform"] == true
@@ -71,6 +73,21 @@ defmodule FountainWeb.ConnectionControllerTest do
     assert google["env_key"] == "GOOGLE_ACCESS_TOKEN"
     assert google["connect_url"] =~ "/connections/google/start"
     assert "https://www.googleapis.com/auth/gmail.modify" in google["scopes"]
+    assert "https://www.googleapis.com/auth/calendar" in google["scopes"]
+
+    # The contract a client leans on (#1299): scopes stay in the response, so
+    # a catalog can light a product up by matching them.
+    assert microsoft["id"] == "microsoft"
+    assert microsoft["configured"] == true
+    assert microsoft["connect_url"] =~ "/connections/microsoft/start"
+    assert Enum.any?(microsoft["scopes"], &(&1 =~ ~r/mail/i))
+    assert Enum.any?(microsoft["scopes"], &(&1 =~ ~r/calendar/i))
+    assert Enum.any?(microsoft["scopes"], &(&1 =~ ~r/chat/i))
+
+    assert slack["id"] == "slack"
+    assert slack["configured"] == true
+    assert slack["env_key"] == "SLACK_ACCESS_TOKEN"
+    assert Enum.any?(slack["scopes"], &(&1 =~ ~r/chat/i))
   end
 
   test "a sprite-scoped key cannot see connections", %{user: user} do

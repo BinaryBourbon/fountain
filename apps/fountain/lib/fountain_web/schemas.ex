@@ -3792,17 +3792,21 @@ defmodule FountainWeb.Schemas do
     OpenApiSpex.schema(%{
       title: "ConnectionProvider",
       description:
-        "Where a connection's tokens come from (#1186): the platform provider " <>
-          "(Google, `platform: true`, id `google`), a tenant's own OAuth app at a " <>
+        "Where a connection's tokens come from (#1186, #1299): a platform " <>
+          "provider (`platform: true`, id `google`, `microsoft` or `slack` — " <>
+          "Fountain's own OAuth client), a tenant's own OAuth app at a " <>
           "service (`kind: oauth2`), or a remote MCP server whose authorization " <>
           "Fountain discovered (`kind: mcp`). The client secret is never returned.",
       type: :object,
       properties: %{
-        id: %Schema{type: :string, description: "A uuid, or `google`."},
+        id: %Schema{type: :string, description: "A uuid, or a platform slug."},
         slug: %Schema{type: :string},
         name: %Schema{type: :string},
         kind: %Schema{type: :string, enum: ["oauth2", "mcp"]},
-        platform: %Schema{type: :boolean, description: "True for Google, which has no row."},
+        platform: %Schema{
+          type: :boolean,
+          description: "True for a platform provider, which has no row."
+        },
         configured: %Schema{
           type: :boolean,
           description: "True when the provider has a client Fountain can start a flow with."

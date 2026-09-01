@@ -47,7 +47,8 @@ defmodule FountainWeb.ConnectionController do
   operation(:providers,
     summary: "List connectable providers",
     description:
-      "Every provider this account can connect — Google, and the tenant's own " <>
+      "Every provider this account can connect — the platform ones (Google, " <>
+        "Microsoft, Slack; #1299), and the tenant's own " <>
         "(#1186) — with the scopes each asks for, the env var its token is " <>
         "brokered under, and the console URL that starts the flow (a browser " <>
         "signed in as the account owner). The same list as " <>

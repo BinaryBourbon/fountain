@@ -1,20 +1,22 @@
 ---
 type: ADR
-title: "Connections: one platform provider, tenant-defined providers for everything else, and MCP-spec discovery for remote servers"
-description: "Built. A connection is a provider account Fountain holds the credential for and hands to an agent as a capability, never as a token in the sandbox. Google is the one provider with a Fountain-owned OAuth client; every other service is a provider the tenant defines from their own app registration, and a remote MCP server is a provider Fountain discovers (RFC 9728 / 8414) and registers a client with (RFC 7591). Only for accounts the egress broker is on for."
+title: "Connections: a small platform provider registry, tenant-defined providers for everything else, and MCP-spec discovery for remote servers"
+description: "Built. A connection is a provider account Fountain holds the credential for and hands to an agent as a capability, never as a token in the sandbox. Google, Microsoft and Slack are the platform providers with Fountain-owned OAuth clients (a closed registry, grown only by amending this ADR); every other service is a provider the tenant defines from their own app registration, and a remote MCP server is a provider Fountain discovers (RFC 9728 / 8414) and registers a client with (RFC 7591). Only for accounts the egress broker is on for."
 tags: [security, secrets, connections, oauth, mcp, egress]
 status: stable
 adr: "0033"
 adr_status: "Accepted"
 date: 2026-08-25
 generated: { by: human:jhgaylor, at: 2026-08-25T21:00:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-25T21:00:00-04:00 }
+verified: { by: agent:claude-code, at: 2026-09-01T00:00:00-04:00 }
 ---
 
-# 0033 — Connections: one platform provider, tenant-defined providers for everything else, and MCP-spec discovery for remote servers
+# 0033 — Connections: a small platform provider registry, tenant-defined providers for everything else, and MCP-spec discovery for remote servers
 
-**Status:** Accepted, built in #1182 (Google, #1178) and the PR that adds this
-file (#1186). Nothing described here is unbuilt.
+**Status:** Accepted, built in #1182 (Google, #1178) and #1187 (#1186).
+Amended for #1299: decision 1 grew from "Google is the one platform
+provider" to a registry of three (Google, Microsoft, Slack), for the reason
+recorded there. Nothing described here is unbuilt.
 
 ## Context
 
@@ -59,13 +61,29 @@ with effort:
 
 ## Decision
 
-1. **Google is the one platform provider.** It keeps Fountain's own OAuth
-   client (`GOOGLE_OAUTH_CLIENT_ID` / `_SECRET`), the Fountain-served Gmail
-   MCP server, and `access_type=offline` + `prompt=consent` on every
-   authorize URL. It is a `Fountain.Connections.Provider` struct built from
-   config (`Provider.google/0`), `user_id: nil`, id `"google"`, with no row.
-   No second platform provider is planned; adding one would need this ADR
-   amended with the reason the tenant's own app cannot do the job.
+1. **The platform providers are a small closed registry: Google, Microsoft
+   and Slack** (`Fountain.Connections.Platform`, #1299 — originally Google
+   alone). Each is a `Fountain.Connections.Provider` struct built from
+   config (`<SLUG>_OAUTH_CLIENT_ID` / `_SECRET`), `user_id: nil`, its slug
+   as the reserved id, with no row; the registry lists all of them whether
+   configured or not, so a client can render "not available here" instead
+   of not knowing the provider could exist. The reason these three clear
+   the bar decision 1 originally set: a consumer-facing app's users will
+   never register an app at Microsoft or Slack, so for them "connect your
+   calendar" works only when Fountain owns the client — the tenant's own
+   app cannot do the job because the tenant is not the person consenting.
+   What cannot be data on the record lives as two hooks in `Platform`
+   (extra authorize parameters — Google's offline pair, Slack's
+   `user_scope`; and Slack's `authed_user`-nested token response), so
+   `Fountain.Connections.OAuth` stays one code path. Scope lists are
+   operator-overridable (`<SLUG>_OAUTH_SCOPES`), which is the app-
+   verification lever: a deployment does not request what its verification
+   does not cover, and the products that need those scopes stay dark.
+   One platform connection covers several products (Google → Gmail +
+   Calendar; Microsoft → Outlook mail + calendar + Teams chat); the granted
+   scopes on the connection say which. Growing the registry still means
+   amending this ADR with the same test: why the tenant's own app cannot
+   do the job.
 
 2. **Every other service is a provider the tenant defines.** A
    `connection_providers` row, tenant-scoped, of two kinds:
@@ -106,9 +124,11 @@ with effort:
    `expires_in` means the access token does not expire until the provider
    refuses it. No refresh token at all (GitHub OAuth apps, some MCP servers)
    means the connection goes **`expired`** when the access token does, and
-   the console shows a *Reconnect* button; the platform provider alone
-   insists on a refresh token at connect, because a Google connection
-   without one is dead in an hour. Provider-specific spellings of "the grant
+   the console shows a *Reconnect* button; a platform provider insists on a
+   refresh token at connect when the token expires at all (a Google
+   connection without one is dead in an hour), and accepts its absence for
+   a non-expiring token (Slack's, good until revoked). Provider-specific
+   spellings of "the grant
    is gone" (`invalid_grant`, `bad_refresh_token`,
    `invalid_refresh_token`, `token_revoked`) all map to `revoked`. Revoke is
    RFC 7009 at `revoke_url` where the provider has one, local-only
@@ -157,15 +177,21 @@ with effort:
 - A tenant can connect any OAuth 2.0 service today by registering an app
   there, and any MCP-spec remote server by pasting its URL. No Fountain
   release is needed per service.
-- Fountain owns no app registration but Google's, and carries no
-  per-service verification burden. The trade is that the tenant does the
-  registration once per service; the console makes it a redirect URI to
-  paste and a client id and secret to paste back.
+- Fountain owns three app registrations (Google, Microsoft, Slack) and
+  carries their verification burden — Google's restricted-scope review,
+  Microsoft's publisher verification — which is an ops track, not a code
+  one, and gates when each provider is live on the hosted instance. For
+  every other service the tenant does the registration once; the console
+  makes it a redirect URI to paste and a client id and secret to paste
+  back.
 - The `oauth2` kind is deliberately generic and therefore knows nothing
   about a service's tool layer. The Fountain-served tool server exists for
-  Gmail alone; every other connection is consumed by a server the tenant
-  supplies (remote, or stdio in the sandbox). A per-provider tool layer is
-  a separate decision, if ever.
+  Gmail alone (and refuses a connection from any other provider); a
+  Microsoft or Slack connection, like every tenant-provider one, is
+  consumed by a server the tenant supplies (remote, or stdio in the
+  sandbox) or by the agent calling the API with the brokered env key. A
+  per-provider tool layer is a separate decision, taken per demonstrated
+  demand, if ever.
 - Device-code and client-credentials grants are out of scope. Both are
   possible additions to `OAuth` as data on the provider row, and neither
   has a caller yet.
@@ -175,11 +201,13 @@ with effort:
 ## Alternatives considered
 
 - **Fountain-owned OAuth clients per provider, added one at a time.** The
-  managed-agent-platform norm. Rejected for the three reasons in the
-  context: it does not scale past a handful, it puts Fountain's app in the
-  tenant's compliance story, and it duplicates what MCP servers already
-  publish. Google stays because #1178 built it and the Gmail tool layer
-  needs it; it is the exception that proves the rule.
+  managed-agent-platform norm. Rejected as the *general* answer for the
+  three reasons in the context: it does not scale past a handful, it puts
+  Fountain's app in the tenant's compliance story, and it duplicates what
+  MCP servers already publish. The #1299 amendment does not reverse this:
+  the registry is closed at the services whose consumers cannot register
+  apps themselves, each entry is data plus at most a named quirk hook, and
+  the long tail stays with tenant providers and MCP discovery.
 - **Tenant pastes a token, Fountain brokers it.** Already possible with a
   vault secret and a binding (ADR 0019 gate 1b) and remains the answer for
   a static API key. Rejected as the answer for OAuth'd services because

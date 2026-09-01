@@ -6,8 +6,11 @@ flow with it, keeps the tokens, and the egress broker attaches the access
 token to the agent's requests. The token never enters the sandbox. For the
 model behind this, read [Connections](../../catalog/connections/index.md).
 
-GitHub is the worked example. Slack, Notion and Linear work the same way, and
-the console has a preset for each of the four.
+GitHub is the worked example. Notion and Linear work the same way, and the
+console has a preset for each of the three. Google, Microsoft and Slack need
+no app of yours: each is a
+[platform provider](../../catalog/connections/index.md) with Fountain's own
+client.
 
 !!! note "Limited access"
     Connections exist only for accounts the egress broker is on for

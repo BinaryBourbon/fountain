@@ -59,10 +59,12 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
     assert created["connect_url"] =~ "/connections/#{created["id"]}/start"
     refute inspect(created) =~ "top-secret"
 
-    assert %{"data" => [google, github]} =
+    assert %{"data" => [google, microsoft, slack, github]} =
              conn |> get("/api/connection-providers") |> json_response(200)
 
     assert google["id"] == "google"
+    assert microsoft["id"] == "microsoft"
+    assert slack["id"] == "slack"
     assert github["id"] == created["id"]
 
     assert conn
@@ -71,7 +73,8 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
            |> Map.fetch!("platform")
 
     # The same list answers on the connections route, for older clients.
-    assert %{"data" => [_, _]} = conn |> get("/api/connections/providers") |> json_response(200)
+    assert %{"data" => [_, _, _, _]} =
+             conn |> get("/api/connections/providers") |> json_response(200)
 
     updated =
       conn

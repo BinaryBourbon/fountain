@@ -12,9 +12,10 @@ defmodule Fountain.Connections.Provider do
       server, and registered a client there when the server offered RFC 7591
       registration; the tenant pasted one otherwise.
 
-  Google is the one **platform** provider: the same struct, built from
-  config by `google/0`, with `user_id: nil` and the reserved id `"google"`.
-  One code path in `Fountain.Connections.OAuth` serves both.
+  The **platform** providers (Google, Microsoft, Slack) are the same
+  struct, built from config by `Fountain.Connections.Platform`, with
+  `user_id: nil` and their slug as the reserved id. One code path in
+  `Fountain.Connections.OAuth` serves every kind.
 
   The client secret is DEK-encrypted like a vault secret and never leaves
   the server; the access token a connection on this provider yields is
@@ -34,7 +35,6 @@ defmodule Fountain.Connections.Provider do
   @kinds ~w(oauth2 mcp)
   @token_endpoint_auths ~w(client_secret_post client_secret_basic none)
   @client_sources ~w(dcr manual)
-  @reserved_slugs ~w(google)
   @slug_re ~r/^[a-z][a-z0-9-]{1,63}$/
   @env_key_re ~r/^[A-Z][A-Z0-9_]*$/
   @host_re ~r/^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/
@@ -69,7 +69,7 @@ defmodule Fountain.Connections.Provider do
   def kinds, do: @kinds
   def token_endpoint_auths, do: @token_endpoint_auths
   def client_sources, do: @client_sources
-  def reserved_slugs, do: @reserved_slugs
+  def reserved_slugs, do: Fountain.Connections.Platform.slugs()
 
   @doc "True for the config-backed platform provider, which has no row."
   def platform?(%__MODULE__{user_id: nil}), do: true
@@ -114,7 +114,7 @@ defmodule Fountain.Connections.Provider do
     |> validate_format(:slug, @slug_re,
       message: "must be lowercase letters, digits and dashes, 2 to 64 characters"
     )
-    |> validate_exclusion(:slug, @reserved_slugs, message: "is a platform provider")
+    |> validate_exclusion(:slug, reserved_slugs(), message: "is a platform provider")
     |> validate_format(:env_key, @env_key_re, message: "must be UPPER_SNAKE_CASE")
     |> validate_length(:name, min: 1, max: 120)
     |> validate_length(:scopes, max: 64)
@@ -234,45 +234,4 @@ defmodule Fountain.Connections.Provider do
       value -> put_change(changeset, :client_secret_ciphertext, Crypto.encrypt(value, dek))
     end
   end
-
-  # ── the platform provider ──────────────────────────────────────────────────
-
-  @google_scopes ~w(openid email https://www.googleapis.com/auth/gmail.modify)
-  @google_token_hosts ~w(gmail.googleapis.com www.googleapis.com)
-
-  @doc """
-  Google, from `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`. The
-  secret is plaintext on the virtual field, as config is; nothing persists
-  this struct. `access_type=offline` and `prompt=consent` are sent on every
-  authorize URL: without both, Google returns no refresh token on a second
-  consent, and a connection with no refresh token is dead in an hour.
-  """
-  def google do
-    %__MODULE__{
-      id: "google",
-      user_id: nil,
-      slug: "google",
-      name: "Google (Gmail)",
-      kind: "oauth2",
-      authorize_url: "https://accounts.google.com/o/oauth2/v2/auth",
-      token_url: "https://oauth2.googleapis.com/token",
-      revoke_url: "https://oauth2.googleapis.com/revoke",
-      userinfo_url: "https://openidconnect.googleapis.com/v1/userinfo",
-      account_label_path: "email",
-      scopes: @google_scopes,
-      client_id: Application.get_env(:fountain, :google_oauth_client_id),
-      client_secret: Application.get_env(:fountain, :google_oauth_client_secret),
-      token_endpoint_auth: "client_secret_post",
-      pkce: false,
-      env_key: "GOOGLE_ACCESS_TOKEN",
-      token_hosts: @google_token_hosts,
-      client_source: "manual"
-    }
-  end
-
-  @doc "Extra authorize-URL parameters a provider needs. Google's offline pair; nothing elsewhere."
-  def authorize_params(%__MODULE__{slug: "google", user_id: nil}),
-    do: %{"access_type" => "offline", "prompt" => "consent", "include_granted_scopes" => "true"}
-
-  def authorize_params(_), do: %{}
 end

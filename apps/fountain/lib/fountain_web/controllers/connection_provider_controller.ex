@@ -4,7 +4,7 @@ defmodule FountainWeb.ConnectionProviderController do
   tokens — their own OAuth app at a service, or a remote MCP server whose
   authorization Fountain discovered.
 
-      GET    /api/connection-providers               — Google plus the tenant's own
+      GET    /api/connection-providers               — the platform providers plus the tenant's own
       POST   /api/connection-providers               — define an `oauth2` provider,
                                                        or discover an `mcp` one from its URL
       GET    /api/connection-providers/:id           — one (`google` is the platform provider)
@@ -34,7 +34,8 @@ defmodule FountainWeb.ConnectionProviderController do
   operation(:index,
     summary: "List connection providers",
     description:
-      "The platform provider (Google) followed by the tenant's own. Each " <>
+      "The platform providers (Google, Microsoft, Slack) followed by the " <>
+        "tenant's own. Each " <>
         "carries the redirect URI to register at the service and the env var " <>
         "its tokens are brokered under. Only for accounts the egress broker " <>
         "is on for (ADR 0019); 404 otherwise.",

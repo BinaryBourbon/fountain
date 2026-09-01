@@ -110,11 +110,15 @@ config :fountain, :agentphone_req_options, plug: {Req.Test, Fountain.Team.Comms.
 config :fountain, :agentphone_webhook_secret, "whsec_test"
 config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}
 
-# Connections (#1178): a Google OAuth client so the flow is "configured", and
-# Req.Test plugs so no test reaches Google. Same failure mode as AgentMail
-# above: an unstubbed call fails loudly.
+# Connections (#1178, #1299): every platform OAuth client set so the flows
+# are "configured", and Req.Test plugs so no test reaches a provider. Same
+# failure mode as AgentMail above: an unstubbed call fails loudly.
 config :fountain, :google_oauth_client_id, "google-test-client-id"
 config :fountain, :google_oauth_client_secret, "google-test-client-secret"
+config :fountain, :microsoft_oauth_client_id, "microsoft-test-client-id"
+config :fountain, :microsoft_oauth_client_secret, "microsoft-test-client-secret"
+config :fountain, :slack_oauth_client_id, "slack-test-client-id"
+config :fountain, :slack_oauth_client_secret, "slack-test-client-secret"
 config :fountain, :connections_req_options, plug: {Req.Test, Fountain.Connections.OAuth}
 # Discovery and the OAuth client refuse private hosts; the Req.Test stub
 # answers for any host, so the resolution check is off here (#1186).
