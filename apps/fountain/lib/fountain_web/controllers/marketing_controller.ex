@@ -105,6 +105,27 @@ defmodule FountainWeb.MarketingController do
     end
   end
 
+  # The Buzz campaign page: hosted Buzz agents, for readers arriving from a
+  # launch announcement in that community. Like the other campaign pages it
+  # makes one argument (the agent should outlive the laptop) and asks for one
+  # action, and stays out of the permanent navigation. Another deployment gets
+  # the integration manual, which is the page that tells an operator the same
+  # story without selling the hosted product.
+  def buzz_launch(conn, _params) do
+    if Fountain.Marketing.site?() do
+      render(conn, :buzz_launch,
+        layout: {FountainWeb.Layouts, :marketing},
+        page_title: "Hosted Buzz agents · #{Fountain.Brand.name()}",
+        meta_description:
+          "Host a Buzz agent on #{Fountain.Brand.name()} instead of a laptop. It keeps " <>
+            "presence on the relay, answers mentions from a sandbox, and its Nostr key " <>
+            "never leaves the server."
+      )
+    else
+      redirect(conn, to: ~p"/docs/integrations/buzz")
+    end
+  end
+
   # The protocols Fountain speaks and what already speaks them. Sales copy,
   # so it follows `/`: a self-hosted instance gets the manual's version of
   # the same list rather than a page selling the hosted product.

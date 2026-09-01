@@ -125,6 +125,15 @@ defmodule FountainWeb.MarketingInstanceTest do
     end
   end
 
+  describe "GET /buzz-launch where the deployment is not the marketing site" do
+    test "sends the visitor to the integration manual", %{conn: conn} do
+      Application.put_env(:fountain, :marketing_site, false)
+
+      conn = get(conn, ~p"/buzz-launch")
+      assert redirected_to(conn) == ~p"/docs/integrations/buzz"
+    end
+  end
+
   describe "GET /built-with where the deployment is not the marketing site" do
     test "sends the visitor to the build guide rather than somebody else's apps", %{conn: conn} do
       Application.put_env(:fountain, :marketing_site, false)
