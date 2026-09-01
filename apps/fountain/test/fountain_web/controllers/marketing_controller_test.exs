@@ -220,6 +220,87 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
+  describe "GET /buzz-launch" do
+    test "argues the agent should outlive the laptop, honestly", %{conn: conn} do
+      body = conn |> get(~p"/buzz-launch") |> html_response(200)
+
+      assert body =~ "Close your laptop. Your Buzz agent keeps answering."
+      assert body =~ "hosted agents on Nostr"
+      assert body =~ "Host your Buzz agent free"
+      assert body =~ "Read the integration manual"
+
+      assert body =~ "A teammate that sleeps when you do is not a teammate."
+      assert body =~ "Presence lasts as long as the lid stays open"
+      assert body =~ "survives the loss of a node"
+
+      assert body =~ "From mention to signed reply."
+
+      for step <- FountainWeb.MarketingHTML.buzz_turn_steps() do
+        assert body =~ step.title, "missing turn step #{step.n}"
+      end
+
+      assert length(Regex.scan(~r/data-role="buzz-turn-step"/, body)) == 4
+      assert body =~ "If the model never calls the tool, nothing is posted."
+
+      assert body =~ "The signing key never enters the sandbox."
+      assert body =~ "The name collides with HashiCorp's"
+      assert body =~ "buzz.published"
+      assert body =~ "Recording is not gating"
+
+      assert body =~ "wearing a Nostr identity."
+      assert body =~ "Claude Code, Codex, Gemini CLI or OpenCode"
+
+      assert body =~ "Two ways in. Both converge."
+      assert body =~ "buzz-backend-fountain"
+      assert body =~ "$FOUNTAIN_BASE_URL/api/buzz/agents"
+      assert body =~ "&quot;private_key_nsec&quot;"
+      assert body =~ "The nsec goes in and never comes back."
+      assert body =~ "idempotent on the agent's pubkey"
+
+      assert body =~ "Run it from the channel you are in."
+
+      for owner_command <- FountainWeb.MarketingHTML.buzz_owner_commands() do
+        assert body =~ owner_command.command, "missing owner command #{owner_command.command}"
+      end
+
+      assert body =~ "fountain buzz agents set-access"
+
+      assert body =~ "Know the boundary before you hand it a channel."
+      assert body =~ "The harness never publishes the agent's own text."
+      assert body =~ "buzz_send_message"
+      assert body =~ "buzz_react"
+      assert body =~ "Audited, not gated."
+      assert body =~ "DMs stay owner-only, whatever the gate."
+    end
+
+    test "carries its own card and stays out of permanent navigation", %{conn: conn} do
+      body = conn |> get(~p"/buzz-launch") |> html_response(200)
+
+      assert body =~ ~s(<meta property="og:title" content="Hosted Buzz agents · Fountain")
+      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/buzz-launch")
+      assert body =~ ~s(<meta name="description" content="Host a Buzz agent on Fountain)
+
+      refute conn |> get(~p"/") |> html_response(200) =~ ~s(href="/buzz-launch")
+      refute conn |> get(~p"/built-with") |> html_response(200) =~ ~s(href="/buzz-launch")
+    end
+
+    test "every link into the manual resolves", %{conn: conn} do
+      body = conn |> get(~p"/buzz-launch") |> html_response(200)
+
+      slugs =
+        ~r/href="\/docs\/([^"#]+)/
+        |> Regex.scan(body)
+        |> Enum.map(fn [_, slug] -> slug end)
+        |> Enum.uniq()
+
+      assert "integrations/buzz" in slugs
+
+      for slug <- slugs do
+        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+      end
+    end
+  end
+
   describe "GET /terms" do
     test "renders the terms of service with the configured identity", %{conn: conn} do
       body = conn |> get(~p"/terms") |> html_response(200)

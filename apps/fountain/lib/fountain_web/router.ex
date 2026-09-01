@@ -157,6 +157,7 @@ defmodule FountainWeb.Router do
     get "/", MarketingController, :home
     get "/launch", MarketingController, :launch
     get "/oss-launch", MarketingController, :oss_launch
+    get "/buzz-launch", MarketingController, :buzz_launch
     get "/integrations", MarketingController, :integrations
     get "/built-with", MarketingController, :built_with
     get "/self-hosted", MarketingController, :self_hosted

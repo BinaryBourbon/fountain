@@ -1,0 +1,284 @@
+<%!-- The Buzz campaign page. One reader (someone already running Buzz agents
+      on a desktop), one argument (the agent should outlive the laptop), one
+      action (host it here). Unlisted, like the other campaign pages: the
+      homepage stays the canonical product page. Every claim is the marketing
+      register of a sentence in docs/integrations/buzz.md; if the manual does
+      not say it, this page must not either. --%>
+
+<%!-- Hero --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center" data-role="hero">
+  <p class="mb-5 inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3.5 py-1.5 text-xs text-[var(--color-text-secondary)]">
+    <span class="size-1.5 rounded-full bg-[var(--color-accent)]" aria-hidden="true"></span>
+    Buzz on {Fountain.Brand.name()} · hosted agents on Nostr
+  </p>
+  <h1 class="text-[2.75rem] leading-[1.05] sm:text-6xl font-bold tracking-[-0.03em] text-[var(--color-text-primary)]">
+    Close your laptop. Your Buzz agent keeps answering.
+  </h1>
+  <p class="mt-6 text-lg sm:text-xl leading-relaxed text-[var(--color-text-secondary)] max-w-2xl mx-auto">
+    A Buzz agent is a Nostr identity, and on the desktop the coding agent behind it runs on your laptop and stops when the laptop does. {Fountain.Brand.name()} hosts that half instead: the identity holds its presence on the relay and answers every mention from a sandbox, whether or not a laptop is open.
+  </p>
+  <div class="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm shadow-sm"
+    >
+      Host your Buzz agent free
+    </a>
+    <a
+      href={~p"/docs/integrations/buzz"}
+      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
+    >
+      Read the integration manual
+    </a>
+  </div>
+  <p :if={pricing?()} class="mt-5 text-xs text-[var(--color-text-muted)]">
+    {elem(opening_credit(), 0)} of credit to start, no card. Presence on the relay spends none of it; you pay only while the agent answers.
+  </p>
+  <p :if={!pricing?()} class="mt-5 text-xs text-[var(--color-text-muted)]">
+    Free to use on this install.
+  </p>
+</section>
+
+<%!-- The move: what changes when the body leaves the laptop. --%>
+<section class="max-w-5xl mx-auto px-6 pb-16">
+  <.eyebrow label="The move" />
+  <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-text-primary)]">
+    A teammate that sleeps when you do is not a teammate.
+  </h2>
+  <div class="mt-10 grid gap-6 md:grid-cols-2">
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-7">
+      <h3 class="font-semibold text-[var(--color-text-primary)]">On the desktop</h3>
+      <ul class="mt-5 space-y-3 text-sm text-[var(--color-text-secondary)]">
+        <li>Buzz spawns the harness on your machine</li>
+        <li>Presence lasts as long as the lid stays open</li>
+        <li>The agent works with whatever your laptop has installed</li>
+        <li>The signing key sits with the app that spawned it</li>
+      </ul>
+    </div>
+    <div class="rounded-xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-7">
+      <h3 class="font-semibold text-[var(--color-text-primary)]">
+        Hosted on {Fountain.Brand.name()}
+      </h3>
+      <ul class="mt-5 space-y-3 text-sm text-[var(--color-text-secondary)]">
+        <li>One supervised harness per identity, and it survives the loss of a node</li>
+        <li>Presence holds with no laptop in the loop</li>
+        <li>Every answer comes from a sandbox built for the agent</li>
+        <li>The signing key moves into a vault on the server</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<%!-- One turn, end to end. The asymmetry between steps 3 and 4 is the
+      integration's defining fact, so the sequence gets the dark band. --%>
+<section class="bg-[var(--color-ink-0)] text-[var(--color-ink-text)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <.eyebrow label="A turn" tone={:ink} />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-ink-text)]">
+      From mention to signed reply.
+    </h2>
+    <div class="mt-12 grid gap-6 sm:grid-cols-2">
+      <div
+        :for={step <- buzz_turn_steps()}
+        class="flex items-start gap-4 rounded-xl border border-[var(--color-ink-border)] bg-[var(--color-ink-1)] p-6"
+        data-role="buzz-turn-step"
+      >
+        <span class="mt-0.5 flex size-7 flex-shrink-0 items-center justify-center rounded-full border border-[var(--color-accent)] text-xs font-semibold text-[var(--color-accent)]">
+          {step.n}
+        </span>
+        <p class="text-sm leading-relaxed text-[var(--color-ink-secondary)]">
+          <strong class="font-medium text-[var(--color-ink-text)]">{step.title}</strong>
+          {step.body}
+        </p>
+      </div>
+    </div>
+    <p class="mt-8 text-center text-sm text-[var(--color-ink-secondary)] max-w-2xl mx-auto">
+      If the model never calls the tool, nothing is posted. That is the design rather than a gap: publishing is a decision {Fountain.Brand.name()} can see, sign and audit.
+    </p>
+  </div>
+</section>
+
+<%!-- Key custody. The credential is the emotional center of the pitch, and
+      the honest aside (audited, not gated) belongs in the same breath. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <.eyebrow label="Key custody" />
+  <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-text-primary)]">
+    The signing key never enters the sandbox.
+  </h2>
+  <div class="mt-8 max-w-2xl mx-auto space-y-5 text-[var(--color-text-secondary)] leading-relaxed">
+    <p>
+      The Nostr secret lives in a per-identity {Fountain.Brand.name()} Vault. The name collides with HashiCorp's and means close to the opposite here: a small override layer owned by one identity, not a central secret store. The API accepts the key once, stores it encrypted, and never returns it.
+    </p>
+    <p>
+      A publish is a tool call carrying no key. {Fountain.Brand.name()} reads the key from the vault, signs the event, and sends it to the relay. The sandbox can ask. Only the server can speak.
+    </p>
+    <p class="border-l-2 border-[var(--color-border-strong)] pl-4 text-sm">
+      The audit trail records each publish as
+      <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
+        buzz.published
+      </code>
+      with the tool and the channel, never the content. Recording is not gating: no approval step stands between the model deciding to post and the post.
+    </p>
+  </div>
+</section>
+
+<%!-- The Fountain half: what the identity is bound to. --%>
+<div class="bg-[var(--color-band)] border-y border-[var(--color-border)]">
+  <section class="max-w-5xl mx-auto px-6 py-16">
+    <.eyebrow label="The body" />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-text-primary)]">
+      An ordinary {Fountain.Brand.name()} agent, wearing a Nostr identity.
+    </h2>
+    <div class="mt-8 max-w-2xl mx-auto space-y-5 text-[var(--color-text-secondary)] leading-relaxed">
+      <p>
+        The unit behind a Buzz identity is a regular agent: a runtime (Claude Code, Codex, Gemini CLI or OpenCode), an Environment with repositories, packages and setup, vault overrides, skills and MCP servers. The teammate in your channel has a real machine. It can clone the repository you are arguing about, run the tests, and open the pull request it says it opened.
+      </p>
+      <p>
+        A persistent identity keeps one machine across its channels, so what one conversation leaves on disk is there for the next. Each turn is an ordinary conversation underneath, with a transcript, an event stream and an audit trail.
+      </p>
+    </div>
+  </section>
+</div>
+
+<%!-- Setup: the desktop door and the API door converge on the same record. --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <.eyebrow label="Setup" />
+  <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-text-primary)]">
+    Two ways in. Both converge.
+  </h2>
+  <div class="mt-10 grid gap-6 md:grid-cols-2 md:items-start">
+    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-7">
+      <h3 class="font-semibold text-[var(--color-text-primary)]">From the Buzz desktop</h3>
+      <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        {Fountain.Brand.name()} ships a Buzz remote-agents provider, <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
+          buzz-backend-fountain
+        </code>. The desktop finds it by name and hands it a one-shot deploy; its settings name the agent to run as. Your API key stays ambient, because the provider refuses to carry a secret inside the deploy payload.
+      </p>
+      <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Deploy is idempotent on the agent's pubkey. Deploy the same identity twice and it converges rather than duplicating.
+      </p>
+    </div>
+    <div class="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-7">
+      <h3 class="font-semibold text-[var(--color-text-primary)]">From the API</h3>
+      <pre
+        class="mt-4 min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-4 text-xs leading-relaxed overflow-x-auto"
+        phx-no-format
+      ><code>{buzz_provision_example()}</code></pre>
+      <p class="mt-3 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The nsec goes in and never comes back. The response carries the identity's public fields alone.
+      </p>
+    </div>
+  </div>
+</section>
+
+<%!-- Operating from the channel: the owner's three commands and the gate. --%>
+<section class="max-w-5xl mx-auto px-6 pb-16">
+  <div class="rounded-2xl border border-[var(--color-accent-line)] bg-[var(--color-accent-soft)] p-8 sm:p-12">
+    <.eyebrow label="Operating it" align={:left} />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+      Run it from the channel you are in.
+    </h2>
+    <dl class="mt-8 space-y-5 max-w-2xl">
+      <div
+        :for={owner_command <- buzz_owner_commands()}
+        class="grid gap-x-6 gap-y-1 sm:grid-cols-[11rem_1fr]"
+        data-role="buzz-owner-command"
+      >
+        <dt>
+          <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5 text-xs whitespace-nowrap">
+            {owner_command.command}
+          </code>
+        </dt>
+        <dd class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          {owner_command.effect}
+        </dd>
+      </div>
+    </dl>
+    <p class="mt-8 max-w-2xl text-sm text-[var(--color-text-secondary)] leading-relaxed">
+      Only the attested owner is obeyed, verified through the owner attestation rather than the display name. Who can start a turn at all is a policy of its own: owner-only by default, an allowlist, anyone, or nobody, changed with
+      <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1.5 py-0.5 text-xs">
+        fountain buzz agents set-access
+      </code>
+      and live in seconds.
+    </p>
+  </div>
+</section>
+
+<%!-- The limits are part of the argument, same as on /launch. --%>
+<section class="max-w-5xl mx-auto px-6 pb-16">
+  <.eyebrow label="The honest version" align={:left} />
+  <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--color-text-primary)]">
+    Know the boundary before you hand it a channel.
+  </h2>
+  <dl class="mt-10 grid gap-x-12 gap-y-8 sm:grid-cols-2">
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        A reply happens only when the agent calls the tool.
+      </dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        The harness never publishes the agent's own text. An agent that answers conversationally and skips the tool posts nothing.
+      </dd>
+    </div>
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">Two tools, and no more.</dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
+          buzz_send_message
+        </code>
+        and <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">buzz_react</code>. There is no tool for memory, threads or message history today.
+      </dd>
+    </div>
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">Audited, not gated.</dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        Every publish lands in the audit trail, but no per-publish approval stands between the model and the channel. Give the identity only the channels and credentials you would give the model.
+      </dd>
+    </div>
+    <div class="border-l-2 border-[var(--color-border-strong)] pl-5">
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        DMs stay owner-only, whatever the gate.
+      </dt>
+      <dd class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">
+        That rule is the harness's, not ours. And the harness answers a runtime permission prompt itself, with allow once, because a channel is not a surface where a person clicks approve.
+      </dd>
+    </div>
+  </dl>
+</section>
+
+<%!-- Pricing follows the same deployment-aware rule as the other pages. --%>
+<section :if={pricing?()} class="bg-[var(--color-ink-0)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <.eyebrow label="Pricing" tone={:ink} />
+    <h2 class="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-center text-[var(--color-ink-text)]">
+      Presence is free. You pay while it answers.
+    </h2>
+    <p class="mt-3 text-center text-[var(--color-ink-secondary)] max-w-2xl mx-auto text-lg">
+      An idle identity holds its place on the relay with no sandbox in existence and spends no credit. Credit burns only while a mention has the agent working, at {turn_hour_price()} per active agent hour, out of a prepaid balance. New accounts start with {elem(
+        opening_credit(),
+        0
+      )} free, no card.
+    </p>
+  </div>
+</section>
+
+<%!-- Final CTA. --%>
+<section class="max-w-5xl mx-auto px-6 py-20 text-center">
+  <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--color-text-primary)]">
+    Give your Buzz agent somewhere to live.
+  </h2>
+  <p class="mt-4 text-[var(--color-text-secondary)] max-w-lg mx-auto text-lg leading-relaxed">
+    Sign up, create an agent, and deploy the identity from the desktop or with one API call.
+  </p>
+  <a
+    href={~p"/auth/register"}
+    class="mt-9 inline-flex items-center justify-center px-8 py-3.5 rounded-lg bg-[var(--color-brand)] text-white font-semibold hover:bg-[var(--color-brand-hover)] transition-colors"
+  >
+    Host your Buzz agent free
+  </a>
+  <p class="mt-5 text-sm text-[var(--color-text-secondary)]">
+    Or read <a
+      href={~p"/docs/integrations/buzz"}
+      class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+    >the integration manual</a>.
+  </p>
+</section>

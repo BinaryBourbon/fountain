@@ -289,6 +289,109 @@ defmodule FountainWeb.MarketingHTML do
     """
   end
 
+  ## The Buzz campaign page
+  #
+  # Every claim on /buzz-launch is the marketing register of a sentence in
+  # docs/integrations/buzz.md, which was written against the code (ADR 0020).
+  # The page must not outrun the manual: a claim that is not on that page does
+  # not belong here either.
+
+  @doc """
+  One turn of a hosted Buzz agent, from mention to signed reply.
+
+  The asymmetry between steps 3 and 4 is the integration's defining fact: the
+  harness never publishes the agent's own text, so the MCP tool is the whole
+  outbound path and the key never leaves the server.
+  docs/integrations/buzz.md carries the same sequence as a diagram.
+  """
+  def buzz_turn_steps do
+    [
+      %{
+        n: 1,
+        title: "A mention arrives.",
+        body:
+          "Somebody @-mentions the agent in a channel. The harness holding its " <>
+            "presence picks the mention up on the gateway, not on anybody's laptop."
+      },
+      %{
+        n: 2,
+        title: "A sandbox wakes.",
+        body:
+          "Fountain drives the turn over ACP on a machine built from the bound " <>
+            "agent's Environment: its repositories, packages, tools and credentials."
+      },
+      %{
+        n: 3,
+        title: "The agent asks to publish.",
+        body:
+          "To reply, it calls buzz_send_message, a Fountain-hosted MCP tool. The " <>
+            "sandbox holds no relay connection and no key, so the tool is the only " <>
+            "way anything reaches the channel."
+      },
+      %{
+        n: 4,
+        title: "Fountain signs and sends.",
+        body:
+          "The reply is signed with the key in the vault and published as the " <>
+            "agent. The owner watches the whole turn from the Buzz desktop, over " <>
+            "encrypted telemetry."
+      }
+    ]
+  end
+
+  @doc """
+  Provisioning an identity over the API, for the reader who skips the desktop.
+
+  The shape is docs/integrations/buzz.md's worked example, trimmed to the
+  required fields. The nsec goes in and never comes back: the response carries
+  the identity's public fields alone, which is the fact the section around
+  this snippet is making. Kept out of the template so its braces are not HEEx.
+  """
+  def buzz_provision_example do
+    """
+    curl -X POST $FOUNTAIN_BASE_URL/api/buzz/agents \\
+      -H "Authorization: Bearer $FOUNTAIN_API_KEY" \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "name": "night-owl",
+        "agent_id": "<fountain agent uuid>",
+        "relay_url": "wss://relay.example.com",
+        "pubkey": "<64-hex nostr pubkey>",
+        "private_key_nsec": "nsec1…",
+        "auth_tag": "<owner attestation>"
+      }'\
+    """
+  end
+
+  @doc """
+  The three in-channel owner commands a hosted identity answers.
+
+  Only the attested owner can send them, verified through the NIP-OA
+  attestation rather than the display name. `!shutdown` is a restart rather
+  than a stop because the supervisor restarts an enabled identity; the page
+  says so instead of promising an off switch a mention does not have.
+  """
+  def buzz_owner_commands do
+    [
+      %{
+        command: "@Agent !rotate",
+        effect:
+          "Ends the channel's current conversation and opens a fresh one on the " <>
+            "next mention. A clean slate without a redeploy."
+      },
+      %{
+        command: "@Agent !cancel",
+        effect: "Interrupts the turn in flight."
+      },
+      %{
+        command: "@Agent !shutdown",
+        effect:
+          "Exits the harness. Fountain restarts it while the identity stays " <>
+            "enabled, so stopping for good is the API's delete, not a mention."
+      }
+    ]
+  end
+
   ## The security review
   #
   # What a builder's security reviewer asks, answered on the page. Every answer
