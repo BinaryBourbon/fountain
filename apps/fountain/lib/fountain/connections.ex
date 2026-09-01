@@ -53,6 +53,10 @@ defmodule Fountain.Connections do
   # while on the token it started with, so refresh well ahead.
   @refresh_margin_seconds 300
 
+  # Advisory-lock namespace for per-connection refresh serialization.
+  # (Quotas holds 4315 for sandbox reservations.)
+  @refresh_lock_namespace 4331
+
   # ── providers ─────────────────────────────────────────────────────────────
 
   @doc "The tenant's own providers, by name."
@@ -127,10 +131,12 @@ defmodule Fountain.Connections do
   @doc """
   Define an `mcp` provider from a remote MCP server's URL: discover its
   authorization server, register a client there when it offers RFC 7591
-  registration (or reuse the client this tenant already registered at the
-  same server), and store the result. `attrs` may carry a `client_id` /
-  `client_secret` for a server without registration, and a `name`, `slug`
-  or `scopes` to override what discovery found.
+  registration, and store the result. Every provider registers its own
+  client — the redirect URI is derived from the provider id, so a client
+  registered for one provider carries the wrong callback for any other.
+  `attrs` may carry a `client_id` / `client_secret` for a server without
+  registration, and a `name`, `slug` or `scopes` to override what
+  discovery found.
   """
   @spec discover_provider(String.t(), String.t(), map(), keyword()) ::
           {:ok, Provider.t()} | {:error, term()}
@@ -166,11 +172,12 @@ defmodule Fountain.Connections do
   end
 
   # What discovery contributes to the provider row. A client is taken, in
-  # order: one the tenant typed; one this tenant already registered at the
-  # same issuer (RFC 7591 clients are per AS, so two servers behind one AS
-  # share it); a fresh registration; else none, and the row is saved
-  # without a client so the console can ask for one.
-  defp discovered_attrs(user_id, mcp_url, redirect_uri, attrs) do
+  # order: one the tenant typed; the provider's own DCR client where the
+  # issuer is unchanged (rediscovery); a fresh registration; else none, and
+  # the row is saved without a client so the console can ask for one. A
+  # registration is never shared between providers: it names one redirect
+  # URI, this provider's, and a conforming AS refuses any other.
+  defp discovered_attrs(_user_id, mcp_url, redirect_uri, attrs) do
     with {:ok, md} <- McpDiscovery.discover(mcp_url) do
       host = URI.parse(mcp_url).host
       manual? = present?(attrs["client_id"]) and attrs["client_source"] != "dcr"
@@ -187,9 +194,6 @@ defmodule Fountain.Connections do
           attrs["client_source"] == "dcr" and attrs["issuer"] == md["issuer"] and
               present?(attrs["client_id"]) ->
             {:ok, %{}}
-
-          reusable = registered_client(user_id, md["issuer"]) ->
-            {:ok, reusable}
 
           is_binary(md["registration_endpoint"]) ->
             McpDiscovery.register(md, redirect_uri)
@@ -216,35 +220,6 @@ defmodule Fountain.Connections do
     end
   end
 
-  # A client this tenant registered at the same authorization server, with
-  # its secret re-encrypted onto the new row.
-  defp registered_client(_user_id, nil), do: nil
-
-  defp registered_client(user_id, issuer) do
-    case Repo.one(
-           from p in Provider,
-             where: p.user_id == ^user_id and p.issuer == ^issuer and p.client_source == "dcr",
-             limit: 1
-         ) do
-      nil ->
-        nil
-
-      %Provider{} = p ->
-        case unlock_provider(p) do
-          {:ok, %Provider{client_secret: secret}} ->
-            %{
-              "client_id" => p.client_id,
-              "client_secret" => secret,
-              "token_endpoint_auth" => p.token_endpoint_auth,
-              "client_source" => "dcr"
-            }
-
-          _ ->
-            nil
-        end
-    end
-  end
-
   @doc "Edit a provider. A blank `client_secret` keeps the stored one."
   @spec update_provider(Provider.t(), map(), keyword()) ::
           {:ok, Provider.t()} | {:error, Ecto.Changeset.t() | term()}
@@ -255,12 +230,37 @@ defmodule Fountain.Connections do
       changeset = Provider.changeset(p, attrs, dek)
 
       changeset
-      |> Repo.update()
+      |> update_provider_and_connections()
       |> audited_provider(
         "connection_provider.updated",
         Keyword.put(opts, :metadata, Audit.changed_fields(changeset))
       )
     end
+  end
+
+  # `connections.provider` denormalizes the slug, so a rename must carry the
+  # rows with it in the same transaction — a connection left under the old
+  # slug reads as another provider's everywhere the slug is shown. (The
+  # audit stays outside the transaction, ADR 0013.)
+  defp update_provider_and_connections(changeset) do
+    slug_change = Ecto.Changeset.get_change(changeset, :slug)
+
+    Repo.transaction(fn ->
+      case Repo.update(changeset) do
+        {:ok, updated} ->
+          if is_binary(slug_change) do
+            Repo.update_all(
+              from(c in Connection, where: c.provider_id == ^updated.id),
+              set: [provider: updated.slug]
+            )
+          end
+
+          updated
+
+        {:error, failed} ->
+          Repo.rollback(failed)
+      end
+    end)
   end
 
   @doc "Delete a provider and, with it, every connection on it (revoked at the provider first, best effort)."
@@ -321,12 +321,10 @@ defmodule Fountain.Connections do
       label = grant[:account_email] || opts[:account_label] || provider.name
       provider_id = if Provider.platform?(provider), do: nil, else: provider.id
 
-      existing =
-        Repo.get_by(Connection,
-          user_id: user_id,
-          provider: provider.slug,
-          account_email: label
-        )
+      # Keyed on the provider row, not its slug: the slug is editable and
+      # denormalized, and a lookup through a stale one would miss the
+      # existing connection and duplicate it on reconnect.
+      existing = existing_connection(user_id, provider_id, label)
 
       attrs = %{
         user_id: user_id,
@@ -345,6 +343,19 @@ defmodule Fountain.Connections do
       |> Repo.insert_or_update()
       |> audited("connection.created", Keyword.delete(opts, :account_label))
     end
+  end
+
+  # The platform provider has no row: its connections carry a null
+  # `provider_id`, which `Repo.get_by` cannot express.
+  defp existing_connection(user_id, nil, label) do
+    Repo.one(
+      from c in Connection,
+        where: c.user_id == ^user_id and is_nil(c.provider_id) and c.account_email == ^label
+    )
+  end
+
+  defp existing_connection(user_id, provider_id, label) do
+    Repo.get_by(Connection, user_id: user_id, provider_id: provider_id, account_email: label)
   end
 
   @doc """
@@ -511,19 +522,74 @@ defmodule Fountain.Connections do
 
   defp lapsed?(_), do: false
 
+  # Refreshes are serialized per connection under an advisory lock, and the
+  # row is re-read under it. Without both, two conversations refreshing the
+  # same stale connection race: the first rotates the refresh token, the
+  # second replays the stale one, and a provider that rotates strictly
+  # answers `invalid_grant` — which would revoke a freshly valid connection.
+  # The lock spans the provider round-trip, so a waiter can sit for one HTTP
+  # timeout before its own; the transaction timeout allows for both.
   defp refresh_token(conn, dek) do
-    with {:ok, refresh} <- decrypt(conn.refresh_token_ciphertext, dek),
-         {:ok, provider} <- unlock_provider(provider_for(conn)) do
+    outcome =
+      Repo.transaction(
+        fn ->
+          Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+            @refresh_lock_namespace,
+            :erlang.phash2(conn.id)
+          ])
+
+          case Repo.get(Connection, conn.id) do
+            nil -> {:error, :no_token}
+            current -> locked_refresh(current, dek)
+          end
+        end,
+        timeout: Application.get_env(:fountain, :connections_timeout_ms, 15_000) * 2 + 5_000
+      )
+
+    # The status writes that follow a refusal audit, and an audit must not
+    # run inside a transaction (ADR 0013), so they happen out here.
+    case outcome do
+      {:ok, {:refused, current}} ->
+        _ = mark_refused(current)
+        {:error, :revoked}
+
+      {:ok, {:no_refresh_token, current}} ->
+        expire(current, dek)
+
+      {:ok, result} ->
+        result
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # A concurrent refresh may have finished while we waited on the lock: the
+  # re-read row can already be fresh (serve it), revoked or expired (say so),
+  # or reconnected without a refresh token. Only a row still stale under the
+  # lock goes to the provider — with the refresh token the row holds *now*.
+  defp locked_refresh(current, dek) do
+    cond do
+      current.status == "revoked" -> {:error, :revoked}
+      current.status == "expired" -> {:error, :expired}
+      fresh?(current) -> decrypt(current.access_token_ciphertext, dek)
+      is_nil(current.refresh_token_ciphertext) -> {:no_refresh_token, current}
+      true -> do_refresh(current, dek)
+    end
+  end
+
+  defp do_refresh(current, dek) do
+    with {:ok, refresh} <- decrypt(current.refresh_token_ciphertext, dek),
+         {:ok, provider} <- unlock_provider(provider_for(current)) do
       case OAuth.refresh(provider, refresh) do
         {:ok, %{access_token: access} = fresh} ->
-          case conn |> Connection.refresh_changeset(fresh, dek) |> Repo.update() do
+          case current |> Connection.refresh_changeset(fresh, dek) |> Repo.update() do
             {:ok, _} -> {:ok, access}
             {:error, changeset} -> {:error, changeset}
           end
 
         {:error, :invalid_grant} ->
-          _ = mark_refused(conn)
-          {:error, :revoked}
+          {:refused, current}
 
         {:error, reason} ->
           {:error, reason}

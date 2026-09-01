@@ -157,7 +157,7 @@ defmodule Fountain.Connections.McpDiscoveryTest do
   end
 
   describe "Connections.discover_provider/4" do
-    test "builds an mcp provider with a registered client, and reuses it for a second server on the same AS" do
+    test "builds an mcp provider with a registered client; a second provider registers its own" do
       user = insert_verified_user()
       Req.Test.stub(OAuth, &conforming_server/1)
 
@@ -179,10 +179,26 @@ defmodule Fountain.Connections.McpDiscoveryTest do
       assert p.scopes == ["mcp:tools"]
       assert {:ok, %Provider{client_secret: "dcr-secret"}} = Connections.unlock_provider(p)
 
-      # A second server behind the same issuer: no second registration.
+      # A second provider behind the same issuer registers its own client:
+      # a registration names one redirect URI, and this provider's callback
+      # is not the first one's.
+      test_pid = self()
+
       Req.Test.stub(OAuth, fn req ->
-        if req.request_path == "/register", do: flunk("should reuse the registered client")
-        conforming_server(req)
+        if req.method == "POST" and req.request_path == "/register" do
+          {:ok, body, _} = Plug.Conn.read_body(req)
+          send(test_pid, {:registered, Jason.decode!(body)["redirect_uris"]})
+
+          req
+          |> Plug.Conn.put_status(201)
+          |> Req.Test.json(%{
+            "client_id" => "dcr-client-2",
+            "client_secret" => "dcr-secret-2",
+            "token_endpoint_auth_method" => "client_secret_post"
+          })
+        else
+          conforming_server(req)
+        end
       end)
 
       assert {:ok, p2} =
@@ -190,9 +206,13 @@ defmodule Fountain.Connections.McpDiscoveryTest do
                  "slug" => "second"
                })
 
-      assert p2.client_id == "dcr-client"
+      assert p2.client_id == "dcr-client-2"
       assert p2.client_source == "dcr"
       assert p2.env_key == "SECOND_ACCESS_TOKEN"
+
+      assert_received {:registered, [uri]}
+      assert uri == Connections.redirect_uri(p2)
+      refute uri == Connections.redirect_uri(p)
 
       # The authorize URL carries PKCE and the resource.
       {:ok, p} = Connections.unlock_provider(p)

@@ -259,6 +259,83 @@ defmodule Fountain.Connections.ProviderTest do
       assert {:ok, "r-2"} = Crypto.decrypt(stored.refresh_token_ciphertext, dek)
     end
 
+    test "a stale struct does not replay an already-rotated refresh token" do
+      user = insert_verified_user()
+      p = insert_provider(user)
+      soon = DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
+
+      c =
+        insert_connection(user,
+          provider: p,
+          refresh_token: "r-1",
+          access_token: "a-old",
+          expires_at: soon
+        )
+
+      Req.Test.stub(OAuth, fn req ->
+        {:ok, body, _} = Plug.Conn.read_body(req)
+        assert URI.decode_query(body)["refresh_token"] == "r-1"
+
+        Req.Test.json(req, %{
+          "access_token" => "a-new",
+          "refresh_token" => "r-2",
+          "expires_in" => 7200
+        })
+      end)
+
+      assert {:ok, "a-new"} = Connections.access_token(c)
+
+      # A provider that rotates strictly refuses a replayed refresh token.
+      Req.Test.stub(OAuth, fn req ->
+        req |> Plug.Conn.put_status(400) |> Req.Test.json(%{"error" => "invalid_grant"})
+      end)
+
+      # The caller that lost the race still holds the pre-rotation struct.
+      # The refresh path must re-read the row under its lock and serve the
+      # fresh token — not replay "r-1" and revoke a valid connection.
+      assert {:ok, "a-new"} = Connections.access_token(c)
+      assert %Connection{status: "active"} = Connections.get_connection(c.id, user.id)
+    end
+
+    test "an error in a 200 body (Slack's shape) is an error, and invalid grants revoke" do
+      user = insert_verified_user()
+      p = insert_provider(user)
+      soon = DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
+      c = insert_connection(user, provider: p, refresh_token: "r-1", expires_at: soon)
+
+      Req.Test.stub(OAuth, fn req ->
+        Req.Test.json(req, %{"ok" => false, "error" => "invalid_refresh_token"})
+      end)
+
+      assert {:error, :revoked} = Connections.access_token(c)
+      assert %Connection{status: "revoked"} = Connections.get_connection(c.id, user.id)
+
+      # A transient 200 error leaves the connection alone.
+      c2 = insert_connection(user, provider: p, refresh_token: "r-2", expires_at: soon)
+
+      Req.Test.stub(OAuth, fn req ->
+        Req.Test.json(req, %{"ok" => false, "error" => "ratelimited"})
+      end)
+
+      assert {:error, {:http, 200, _}} = Connections.access_token(c2)
+      assert %Connection{status: "active"} = Connections.get_connection(c2.id, user.id)
+    end
+
+    test "renaming a provider's slug follows its connections, and reconnect finds the same row" do
+      user = insert_verified_user()
+      p = insert_provider(user, slug: "github")
+      c = insert_connection(user, provider: p, account_email: "octocat")
+      assert c.provider == "github"
+
+      assert {:ok, p2} = Connections.update_provider(p, %{"slug" => "github-org"})
+      assert %Connection{provider: "github-org"} = Connections.get_connection(c.id, user.id)
+
+      c2 = insert_connection(user, provider: p2, account_email: "octocat")
+      assert c2.id == c.id
+      assert c2.env_key == c.env_key
+      assert [_] = Connections.list_connections(user.id)
+    end
+
     test "a provider's own invalid-grant spelling marks the connection revoked" do
       user = insert_verified_user()
       p = insert_provider(user)

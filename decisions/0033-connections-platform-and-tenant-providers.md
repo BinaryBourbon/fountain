@@ -79,11 +79,14 @@ with effort:
      client id and secret.
    - `mcp`: the tenant enters the server's URL and nothing else.
      `Fountain.Connections.McpDiscovery` follows the chain above, and
-     registers a client where there is a `registration_endpoint`. The
-     registered client is stored on the provider and reused for another
-     server behind the same issuer (RFC 7591 clients are per authorization
-     server, not per resource). A server without registration is saved
-     without a client, and the console asks the tenant to paste one.
+     registers a client where there is a `registration_endpoint`. Every
+     provider registers its own client, even behind an issuer another
+     provider already registered at: a registration names exactly one
+     redirect URI, and the redirect URI is derived from the provider id
+     (decision 3), so a shared client would carry the wrong callback for
+     every provider but the first and a conforming authorization server
+     would refuse it. A server without registration is saved without a
+     client, and the console asks the tenant to paste one.
    Both kinds are driven by one OAuth client, `Fountain.Connections.OAuth`,
    which reads everything that differs per provider from the row: PKCE
    (S256; always for `mcp`, which also sends the RFC 8707 `resource`

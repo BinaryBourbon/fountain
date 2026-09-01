@@ -52,9 +52,9 @@ PKCE with S256, and it sends the `resource` parameter (RFC 8707) so the
 token binds to the server you named.
 
 The authorization server chooses the client's auth method. A public client
-comes back with no secret and `token_endpoint_auth: none`. Fountain reuses a
-client it registered for you at the same authorization server. A second
-server behind the same issuer gets no second registration.
+comes back with no secret and `token_endpoint_auth: none`. Each provider
+registers its own client, because a registration names one callback URL and
+each provider has its own.
 
 ## 2. Connect
 

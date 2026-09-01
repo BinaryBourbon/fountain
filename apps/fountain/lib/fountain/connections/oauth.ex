@@ -200,12 +200,16 @@ defmodule Fountain.Connections.OAuth do
              [url: p.token_url, form: form, headers: [accept: "application/json"]] ++ opts
            ) do
         {:ok, %{status: status, body: body}} when status in 200..299 ->
-          decode_token_body(body)
+          case decode_token_body(body) do
+            {:ok, decoded} ->
+              if error_body?(decoded), do: token_error(status, decoded), else: {:ok, decoded}
+
+            {:error, _} = err ->
+              err
+          end
 
         {:ok, %{status: status, body: body}} when status in 400..499 ->
-          if invalid_grant?(body),
-            do: {:error, :invalid_grant},
-            else: {:error, {:http, status, body}}
+          token_error(status, body)
 
         {:ok, %{status: status, body: body}} ->
           {:error, {:http, status, body}}
@@ -214,6 +218,19 @@ defmodule Fountain.Connections.OAuth do
           {:error, reason}
       end
     end
+  end
+
+  # Not every provider signals failure on the status line: Slack answers
+  # HTTP 200 with `{"ok": false, "error": "invalid_refresh_token"}` and says
+  # to inspect `ok`; GitHub answers 200 with `error=bad_refresh_token`. A
+  # body that carries an error and no token is an error, whatever the status.
+  defp error_body?(%{"access_token" => access}) when is_binary(access) and access != "", do: false
+  defp error_body?(%{"ok" => ok}) when ok in [false, "false"], do: true
+  defp error_body?(%{"error" => e}) when is_binary(e) and e != "", do: true
+  defp error_body?(_), do: false
+
+  defp token_error(status, body) do
+    if invalid_grant?(body), do: {:error, :invalid_grant}, else: {:error, {:http, status, body}}
   end
 
   # GitHub answers a form-encoded body unless asked for JSON, and some
