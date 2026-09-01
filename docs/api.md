@@ -353,6 +353,48 @@ and vault that holds a secret of that name. A conversation-scoped token
 cannot reach these routes. They need a full-scope key.
 <!-- vale STE.IngForms = YES -->
 
+## Connections
+
+Limited access. These routes answer only when the credential broker is on
+for the account. Elsewhere they answer 404 `connections_not_enabled`. Read
+[Connections](catalog/connections/index.md) for what a connection is.
+
+```
+GET    /api/connections                    # the account's connections, with provider, provider_id and status
+GET    /api/connections/providers          # where to send the owner to connect one
+GET    /api/connections/:id
+DELETE /api/connections/:id                # revoke at the provider, then forget the token
+```
+
+A status is `active`, `revoked` or `expired`. To connect an account needs a
+browser and a session, so it is not an API operation.
+
+### Connection providers
+
+```
+GET    /api/connection-providers               # Google, then the account's own
+POST   /api/connection-providers               # define an oauth2 provider, or discover an mcp one from its URL
+GET    /api/connection-providers/:id           # `google` is the platform provider
+PATCH  /api/connection-providers/:id           # a blank client_secret keeps the stored one
+DELETE /api/connection-providers/:id           # deletes the provider and every connection on it
+POST   /api/connection-providers/:id/discover  # run MCP discovery again
+```
+
+A `POST` with `kind: oauth2` takes the account's own app registration. The
+authorize and token URLs, the scopes, the client id and secret, the token
+endpoint auth, `pkce`, `env_key` and `token_hosts`. A `POST` with
+`kind: mcp` takes `mcp_url` alone. Fountain fetches the server's metadata
+chain and registers a client where it can. Pass `client_id` and
+`client_secret` for a server with no registration. A discovery failure
+answers 422 with `error: discovery_failed` and a `detail`.
+
+Every URL must be `https` and public. The response carries `redirect_uri`,
+to register at the service, and `connect_url`, where the owner connects.
+The client secret is write-only. A `PATCH` or `DELETE` on the platform provider
+answers 404. All of these routes need a key with full scope. Read
+[Connect a service with your own OAuth app](guides/connect/own-oauth-app.md)
+and [Connect a remote MCP server](guides/connect/remote-mcp-server.md).
+
 ## Bulk apply
 
 ```

@@ -688,7 +688,7 @@ defmodule Fountain.Conversations.ConversationServer do
         bindings = broker_bindings(conv.user_id)
 
         {merged, bindings, connection_keys} =
-          add_connection_secrets(conv.user_id, merge_secrets(env, vault, dek), bindings)
+          add_connection_secrets(conv.user_id, merge_secrets(env, vault, dek), bindings, agent)
 
         {secrets, brokered} = split_brokered(conv.user_id, merged, bindings)
 
@@ -1528,9 +1528,11 @@ defmodule Fountain.Conversations.ConversationServer do
   # server they run). Only for brokered tenants — without the broker the
   # token would have to enter the sandbox in the clear, which is the thing
   # connections exist to avoid.
-  defp add_connection_secrets(user_id, merged, bindings) do
+  defp add_connection_secrets(user_id, merged, bindings, agent) do
     if Fountain.Broker.enabled_for?(user_id) do
+      connections = active_connections_by_id(user_id)
       synthetic = Fountain.Connections.synthetic_secrets(user_id)
+      remote_hosts = remote_connection_hosts(agent, connections)
 
       {merged, bindings, keys} =
         Enum.reduce(synthetic, {merged, bindings, []}, fn {key, token}, {m, b, keys} ->
@@ -1540,7 +1542,7 @@ defmodule Fountain.Conversations.ConversationServer do
             b =
               if Map.has_key?(b, key),
                 do: b,
-                else: Map.put(b, key, connection_bindings(key))
+                else: Map.put(b, key, connection_bindings(user_id, key, remote_hosts))
 
             {Map.put(m, key, token), b, [key | keys]}
           end
@@ -1552,8 +1554,13 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp connection_bindings(key) do
-    Enum.map(Fountain.Connections.implicit_hosts(key), fn host ->
+  # The provider's own hosts, plus the host of every remote MCP server the
+  # agent attaches with this connection (#1186): the broker attaches the
+  # bearer to exactly those and nothing else.
+  defp connection_bindings(user_id, key, remote_hosts) do
+    (Fountain.Connections.implicit_hosts(user_id, key) ++ Map.get(remote_hosts, key, []))
+    |> Enum.uniq()
+    |> Enum.map(fn host ->
       %Fountain.SecretBindings.Binding{
         key: key,
         host: host,
@@ -1563,6 +1570,17 @@ defmodule Fountain.Conversations.ConversationServer do
       }
     end)
   end
+
+  defp active_connections_by_id(user_id) do
+    user_id
+    |> Fountain.Connections.active_connections()
+    |> Map.new(&{&1.id, &1})
+  end
+
+  defp remote_connection_hosts(%{mcp_servers: servers}, connections) when is_map(servers),
+    do: Fountain.Connections.McpServers.remote_hosts(servers, connections)
+
+  defp remote_connection_hosts(_agent, _connections), do: %{}
 
   # Re-read the brokered connection tokens; a rotated one is swapped into
   # `brokered` and the caller re-prepares the vault. A refresh that fails
@@ -1590,12 +1608,19 @@ defmodule Fountain.Conversations.ConversationServer do
   defp with_connection_servers(nil, _state), do: nil
 
   defp with_connection_servers(%{mcp_servers: servers} = agent, state) when is_map(servers) do
-    token = if Fountain.Broker.enabled_for?(state.user_id), do: state.callback_token
+    brokered = Fountain.Broker.enabled_for?(state.user_id)
+    token = if brokered, do: state.callback_token
+    connections = if brokered, do: active_connections_by_id(state.user_id), else: %{}
 
     %{
       agent
       | mcp_servers:
-          Fountain.Connections.McpServers.resolve(servers, state.conversation_id, token)
+          Fountain.Connections.McpServers.resolve(
+            servers,
+            state.conversation_id,
+            token,
+            connections
+          )
     }
   end
 

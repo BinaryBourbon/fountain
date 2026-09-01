@@ -464,6 +464,51 @@ upgrade, is in
   where everything lives; the README licence section links it. The decision
   is the PostHog/Sentry shape: the product site is the project site, `/docs`
   is the manual, the repo README is the front page, no second domain.
+
+- **Bring your own OAuth provider, and connect a remote MCP server by URL**
+  (#1186, ADR 0033). Connections were Google-only with Fountain's own OAuth
+  client; now Google is the one *platform* provider and every other service
+  is a provider the tenant defines on *Account → Connections*:
+  - **`oauth2`**: register an app at the service (GitHub, Slack, Notion,
+    Linear… presets fill the endpoints), paste the redirect URI the console
+    shows (`/connections/<provider id>/callback`) and the client id and
+    secret. Scopes, PKCE, the client-auth method, the env var the token is
+    brokered under (`GITHUB_ACCESS_TOKEN` from the slug) and the hosts the
+    broker attaches it to are all yours to set.
+  - **`mcp`**: paste a remote MCP server's URL and nothing else. Fountain
+    follows the MCP authorization spec — `401` → RFC 9728 protected-resource
+    metadata → RFC 8414 authorization-server metadata — runs a PKCE code
+    flow with the RFC 8707 `resource` parameter, and registers a client by
+    RFC 7591 dynamic registration where the server offers it (reused for a
+    second server behind the same authorization server). No client id is
+    typed anywhere; a server without registration takes a pasted one.
+  - An agent attaches a remote server with a connection —
+    `{"linear": {"type": "http", "url": "https://mcp.linear.app/mcp", "connection": "<id>"}}` —
+    and the sandbox calls it with a placeholder bearer the egress broker
+    swaps for the real token on that host only. A stdio server that reads
+    the env var needs nothing new. The agent form's *Connected account*
+    server type gained the optional URL.
+  - Refresh follows the provider: rotating refresh tokens are stored, no
+    `expires_in` means non-expiring, and a provider that issues no refresh
+    token leaves the connection **`expired`** (a new status) when the token
+    lapses, with a *Reconnect* button. Revoke is RFC 7009 where the
+    provider has a revoke URL.
+  - Every tenant-supplied URL is https-only and may not resolve into the
+    cluster (`Fountain.Connections.UrlGuard`), at save time and at every
+    fetch, including the URLs discovery gets back from the server.
+  - API: `GET/POST /api/connection-providers`,
+    `GET/PATCH/DELETE /api/connection-providers/:id`,
+    `POST /api/connection-providers/:id/discover`; connections carry
+    `provider_id`. SDK 1.8.0: `client.connections.providers` (list, get,
+    create, update, delete, discover); `connections.providers()` the method
+    became `connections.providers.list()`.
+  - Audit: `connection_provider.created` / `.updated` / `.deleted`,
+    `connection.expired`. Never a client secret or a token.
+  - Docs: *Connect a service with your own OAuth app*, *Connect a remote MCP
+    server*, and a catalog page per platform provider. ADR 0019 gains the
+    rotating-secret contract and the per-conversation vault that #1178 owed.
+  Only for accounts the egress broker is on for, as before.
+
 - **Connections: sign in to Google once, and agents get Gmail without ever
   holding the credential** (#1178). For accounts the egress broker is on for,
   the console's new *Account → Connections* page runs Google's

@@ -64,6 +64,9 @@ nav:
       - Sandbox errors: troubleshooting/sandbox-errors.md
       - Pods restart or never go ready: troubleshooting/pods-restarting.md
       - Nobody can log in: troubleshooting/nobody-can-log-in.md
+  - Connect a service:
+      - Connect a service with your own OAuth app: guides/connect/own-oauth-app.md
+      - Connect a remote MCP server: guides/connect/remote-mcp-server.md
   - Configuration reference: configuration.md
   - Catalog:
       - Overview: catalog/index.md
@@ -80,6 +83,8 @@ nav:
       - fountain-buzz: catalog/mcp-servers/fountain-buzz.md
       - fountain-comms: catalog/mcp-servers/fountain-comms.md
       - fountain-gmail: catalog/mcp-servers/fountain-gmail.md
+      - Connections: catalog/connections/index.md
+      - google (connection): catalog/connections/google.md
       - Agents: catalog/agents/index.md
       - fountain-contributor (agent): catalog/agents/fountain-contributor.md
   - Sandbox providers:

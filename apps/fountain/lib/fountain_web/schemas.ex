@@ -3741,8 +3741,20 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         id: %Schema{type: :string, format: :uuid},
-        provider: %Schema{type: :string, enum: ["google"]},
-        account_email: %Schema{type: :string, description: "The connected account."},
+        provider: %Schema{
+          type: :string,
+          description: "The provider's slug: `google`, or a tenant provider's."
+        },
+        provider_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "The tenant provider (#1186); null for the platform provider."
+        },
+        account_email: %Schema{
+          type: :string,
+          description: "The connected account: an address, or the label the provider gave."
+        },
         scopes: %Schema{type: :array, items: %Schema{type: :string}},
         env_key: %Schema{
           type: :string,
@@ -3751,10 +3763,11 @@ defmodule FountainWeb.Schemas do
         },
         status: %Schema{
           type: :string,
-          enum: ["active", "revoked"],
+          enum: ["active", "revoked", "expired"],
           description:
             "`revoked` once the tenant cut it or the provider refused the refresh token; " <>
-              "the row stays so the console can say why the tools stopped. Reconnect to replace it."
+              "`expired` when the access token lapsed and the provider issued no refresh token. " <>
+              "The row stays so the console can say why the tools stopped. Reconnect to replace it."
         },
         expires_at: %Schema{
           type: :string,
@@ -3772,40 +3785,144 @@ defmodule FountainWeb.Schemas do
 
   list_response(ConnectionListResponse, of: Connection)
 
-  defmodule ConnectionProvidersResponse do
+  defmodule ConnectionProvider do
     @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
-      title: "ConnectionProvidersResponse",
+      title: "ConnectionProvider",
       description:
-        "Which providers this deployment can connect, and the URL that starts each flow.",
+        "Where a connection's tokens come from (#1186): the platform provider " <>
+          "(Google, `platform: true`, id `google`), a tenant's own OAuth app at a " <>
+          "service (`kind: oauth2`), or a remote MCP server whose authorization " <>
+          "Fountain discovered (`kind: mcp`). The client secret is never returned.",
       type: :object,
       properties: %{
-        data: %Schema{
+        id: %Schema{type: :string, description: "A uuid, or `google`."},
+        slug: %Schema{type: :string},
+        name: %Schema{type: :string},
+        kind: %Schema{type: :string, enum: ["oauth2", "mcp"]},
+        platform: %Schema{type: :boolean, description: "True for Google, which has no row."},
+        configured: %Schema{
+          type: :boolean,
+          description: "True when the provider has a client Fountain can start a flow with."
+        },
+        authorize_url: %Schema{type: :string, nullable: true},
+        token_url: %Schema{type: :string, nullable: true},
+        revoke_url: %Schema{type: :string, nullable: true},
+        userinfo_url: %Schema{type: :string, nullable: true},
+        account_label_path: %Schema{
+          type: :string,
+          nullable: true,
+          description: "A dotted path into the userinfo body that names the account."
+        },
+        scopes: %Schema{type: :array, items: %Schema{type: :string}},
+        client_id: %Schema{type: :string, nullable: true},
+        has_client_secret: %Schema{type: :boolean},
+        token_endpoint_auth: %Schema{
+          type: :string,
+          enum: ["client_secret_post", "client_secret_basic", "none"]
+        },
+        pkce: %Schema{type: :boolean},
+        env_key: %Schema{
+          type: :string,
+          description: "The env var a connection's access token is brokered under."
+        },
+        token_hosts: %Schema{
           type: :array,
-          items: %Schema{
-            type: :object,
-            properties: %{
-              provider: %Schema{type: :string},
-              configured: %Schema{
-                type: :boolean,
-                description: "False when the deployment has no OAuth client for it."
-              },
-              scopes: %Schema{type: :array, items: %Schema{type: :string}},
-              env_key: %Schema{type: :string},
-              connect_url: %Schema{
-                type: :string,
-                description:
-                  "Where to send the account owner, in a browser signed in to the console, " <>
-                    "to connect an account. The flow ends back on the Connections page."
-              }
-            },
-            required: [:provider, :configured, :scopes, :env_key, :connect_url]
-          }
-        }
+          items: %Schema{type: :string},
+          description: "The hosts the brokered token is attached to as a bearer."
+        },
+        mcp_url: %Schema{type: :string, nullable: true},
+        issuer: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The authorization server discovery found (`mcp`)."
+        },
+        client_source: %Schema{
+          type: :string,
+          nullable: true,
+          enum: ["dcr", "manual", nil],
+          description: "`dcr` when the client came from RFC 7591 registration."
+        },
+        registration_endpoint: %Schema{type: :string, nullable: true},
+        redirect_uri: %Schema{
+          type: :string,
+          description: "The callback to register at the service."
+        },
+        connect_url: %Schema{
+          type: :string,
+          description:
+            "Where to send the account owner, in a browser signed in to the console, " <>
+              "to connect an account."
+        },
+        created_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        updated_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },
-      required: [:data]
+      required: [
+        :id,
+        :slug,
+        :name,
+        :kind,
+        :platform,
+        :configured,
+        :scopes,
+        :env_key,
+        :token_hosts,
+        :redirect_uri,
+        :connect_url
+      ]
+    })
+  end
+
+  list_response(ConnectionProviderListResponse, of: ConnectionProvider)
+
+  defmodule ConnectionProviderRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConnectionProviderRequest",
+      description:
+        "`kind: oauth2` needs `name`, `authorize_url`, `token_url`, `client_id` and " <>
+          "`client_secret` (unless `token_endpoint_auth` is `none`). `kind: mcp` " <>
+          "needs `mcp_url`; the rest comes from discovery. `slug` defaults from the " <>
+          "name or the server host, `env_key` from the slug (`GITHUB_ACCESS_TOKEN`).",
+      type: :object,
+      properties: %{
+        kind: %Schema{type: :string, enum: ["oauth2", "mcp"]},
+        slug: %Schema{type: :string},
+        name: %Schema{type: :string},
+        authorize_url: %Schema{type: :string},
+        token_url: %Schema{type: :string},
+        revoke_url: %Schema{type: :string, nullable: true},
+        userinfo_url: %Schema{type: :string, nullable: true},
+        account_label_path: %Schema{type: :string, nullable: true},
+        scopes: %Schema{type: :array, items: %Schema{type: :string}},
+        client_id: %Schema{type: :string},
+        client_secret: %Schema{type: :string, description: "Write-only."},
+        token_endpoint_auth: %Schema{
+          type: :string,
+          enum: ["client_secret_post", "client_secret_basic", "none"]
+        },
+        pkce: %Schema{type: :boolean},
+        env_key: %Schema{type: :string},
+        token_hosts: %Schema{type: :array, items: %Schema{type: :string}},
+        mcp_url: %Schema{type: :string}
+      },
+      example: %{
+        kind: "oauth2",
+        slug: "github",
+        name: "GitHub",
+        authorize_url: "https://github.com/login/oauth/authorize",
+        token_url: "https://github.com/login/oauth/access_token",
+        userinfo_url: "https://api.github.com/user",
+        account_label_path: "login",
+        scopes: ["repo", "read:user"],
+        client_id: "Iv1.abc",
+        client_secret: "…",
+        token_hosts: ["api.github.com"]
+      }
     })
   end
 end

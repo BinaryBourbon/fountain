@@ -98,3 +98,5 @@ and the egress broker attaches the real token as a bearer on requests to
 your own on the Credential bindings page, and the broker sends the token
 there instead. Fountain uploads a rotated token to the broker at the start
 of the next turn. Read [Where a secret comes from](../../concepts/secrets.md).
+A provider you define yourself works the same way. Read
+[Connections](../connections/index.md).

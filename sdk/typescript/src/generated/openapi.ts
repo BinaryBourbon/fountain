@@ -507,6 +507,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/connection-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List connection providers
+         * @description The platform provider (Google) followed by the tenant's own. Each carries the redirect URI to register at the service and the env var its tokens are brokered under. Only for accounts the egress broker is on for (ADR 0019); 404 otherwise.
+         */
+        get: operations["FountainWeb.ConnectionProviderController.index"];
+        put?: never;
+        /**
+         * Define a connection provider
+         * @description `kind: oauth2` takes the tenant's own app registration: authorize and token URLs, scopes, client id and secret. `kind: mcp` takes only `mcp_url`: Fountain fetches the server's protected-resource metadata (RFC 9728), the authorization server's metadata (RFC 8414) and registers a client there (RFC 7591) where it can; pass `client_id` and `client_secret` for a server without registration. Every URL must be https and public.
+         */
+        post: operations["FountainWeb.ConnectionProviderController.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vaults": {
         parameters: {
             query?: never;
@@ -534,7 +558,7 @@ export interface paths {
         };
         /**
          * List connectable providers
-         * @description The providers this deployment has an OAuth client for, the scopes each asks for, the env var its token is brokered under, and the console URL that starts the flow (a browser signed in as the account owner).
+         * @description Every provider this account can connect — Google, and the tenant's own (#1186) — with the scopes each asks for, the env var its token is brokered under, and the console URL that starts the flow (a browser signed in as the account owner). The same list as `GET /api/connection-providers`.
          */
         get: operations["FountainWeb.ConnectionController.providers"];
         put?: never;
@@ -1609,6 +1633,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/connection-providers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a connection provider */
+        get: operations["FountainWeb.ConnectionProviderController.show"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a connection provider
+         * @description Deletes the provider and every connection on it, revoking each at the provider first (best effort). The platform provider cannot be deleted.
+         */
+        delete: operations["FountainWeb.ConnectionProviderController.delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a connection provider
+         * @description Any field but `kind`. A blank or absent `client_secret` keeps the stored one. The platform provider cannot be edited.
+         */
+        patch: operations["FountainWeb.ConnectionProviderController.update"];
+        trace?: never;
+    };
     "/api/admin/users/{id}/sandbox-limit": {
         parameters: {
             query?: never;
@@ -2165,6 +2214,26 @@ export interface paths {
          * @description Needs the current password on top of the bearer token, and `full` scope — a sandbox's per-conversation token must not be able to rotate the account password. Browser sessions are signed out; API keys are **not** revoked, which the response states outright (`api_keys_revoked: false`). If you are rotating because something leaked, revoke keys yourself at `DELETE /api/auth/api-keys/{id}`.
          */
         post: operations["FountainWeb.AccountSecurityController.api_change_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connection-providers/{id}/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run MCP discovery again
+         * @description For an `mcp` provider: fetch the server's metadata chain again and update the endpoints. The registered client is kept while the server names the same authorization server.
+         */
+        post: operations["FountainWeb.ConnectionProviderController.discover"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3746,7 +3815,7 @@ export interface components {
          * @description A provider account the tenant signed in to once, whose credential Fountain holds (#1178). Agents get the capability, never the token: an agent's `mcp_servers` names the connection (`{"gmail": {"connection": "<id>"}}`) and Fountain serves the Gmail tools; and the access token is brokered under `env_key` for an MCP server the tenant runs. Only for accounts the egress broker is on for.
          */
         Connection: {
-            /** @description The connected account. */
+            /** @description The connected account: an address, or the label the provider gave. */
             account_email: string;
             /** Format: date-time */
             created_at?: string;
@@ -3759,16 +3828,21 @@ export interface components {
             expires_at?: string | null;
             /** Format: uuid */
             id: string;
-            /** @enum {string} */
-            provider: "google";
+            /** @description The provider's slug: `google`, or a tenant provider's. */
+            provider: string;
+            /**
+             * Format: uuid
+             * @description The tenant provider (#1186); null for the platform provider.
+             */
+            provider_id?: string | null;
             /** Format: date-time */
             revoked_at?: string | null;
             scopes: string[];
             /**
-             * @description `revoked` once the tenant cut it or the provider refused the refresh token; the row stays so the console can say why the tools stopped. Reconnect to replace it.
+             * @description `revoked` once the tenant cut it or the provider refused the refresh token; `expired` when the access token lapsed and the provider issued no refresh token. The row stays so the console can say why the tools stopped. Reconnect to replace it.
              * @enum {string}
              */
-            status: "active" | "revoked";
+            status: "active" | "revoked" | "expired";
             /** Format: date-time */
             updated_at?: string;
         };
@@ -3792,6 +3866,10 @@ export interface components {
         /** TeamScheduleResponse */
         TeamScheduleResponse: {
             data: components["schemas"]["TeamSchedule"];
+        };
+        /** ConnectionProviderListResponse */
+        ConnectionProviderListResponse: {
+            data: components["schemas"]["ConnectionProvider"][];
         };
         /**
          * DeviceAuthResponse
@@ -3967,6 +4045,49 @@ export interface components {
              */
             secret: string;
         };
+        /**
+         * ConnectionProviderRequest
+         * @description `kind: oauth2` needs `name`, `authorize_url`, `token_url`, `client_id` and `client_secret` (unless `token_endpoint_auth` is `none`). `kind: mcp` needs `mcp_url`; the rest comes from discovery. `slug` defaults from the name or the server host, `env_key` from the slug (`GITHUB_ACCESS_TOKEN`).
+         * @example {
+         *       "account_label_path": "login",
+         *       "authorize_url": "https://github.com/login/oauth/authorize",
+         *       "client_id": "Iv1.abc",
+         *       "client_secret": "…",
+         *       "kind": "oauth2",
+         *       "name": "GitHub",
+         *       "scopes": [
+         *         "repo",
+         *         "read:user"
+         *       ],
+         *       "slug": "github",
+         *       "token_hosts": [
+         *         "api.github.com"
+         *       ],
+         *       "token_url": "https://github.com/login/oauth/access_token",
+         *       "userinfo_url": "https://api.github.com/user"
+         *     }
+         */
+        ConnectionProviderRequest: {
+            account_label_path?: string | null;
+            authorize_url?: string;
+            client_id?: string;
+            /** @description Write-only. */
+            client_secret?: string;
+            env_key?: string;
+            /** @enum {string} */
+            kind?: "oauth2" | "mcp";
+            mcp_url?: string;
+            name?: string;
+            pkce?: boolean;
+            revoke_url?: string | null;
+            scopes?: string[];
+            slug?: string;
+            /** @enum {string} */
+            token_endpoint_auth?: "client_secret_post" | "client_secret_basic" | "none";
+            token_hosts?: string[];
+            token_url?: string;
+            userinfo_url?: string | null;
+        };
         /** AdminSuspendRequest */
         AdminSuspendRequest: {
             suspended: boolean;
@@ -4073,21 +4194,6 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
-        };
-        /**
-         * ConnectionProvidersResponse
-         * @description Which providers this deployment can connect, and the URL that starts each flow.
-         */
-        ConnectionProvidersResponse: {
-            data: {
-                /** @description False when the deployment has no OAuth client for it. */
-                configured: boolean;
-                /** @description Where to send the account owner, in a browser signed in to the console, to connect an account. The flow ends back on the Connections page. */
-                connect_url: string;
-                env_key: string;
-                provider: string;
-                scopes: string[];
-            }[];
         };
         /** AdminUserResponse */
         AdminUserResponse: {
@@ -4361,6 +4467,55 @@ export interface components {
         /** VaultListResponse */
         VaultListResponse: {
             data: components["schemas"]["Vault"][];
+        };
+        /**
+         * ConnectionProvider
+         * @description Where a connection's tokens come from (#1186): the platform provider (Google, `platform: true`, id `google`), a tenant's own OAuth app at a service (`kind: oauth2`), or a remote MCP server whose authorization Fountain discovered (`kind: mcp`). The client secret is never returned.
+         */
+        ConnectionProvider: {
+            /** @description A dotted path into the userinfo body that names the account. */
+            account_label_path?: string | null;
+            authorize_url?: string | null;
+            client_id?: string | null;
+            /**
+             * @description `dcr` when the client came from RFC 7591 registration.
+             * @enum {string|null}
+             */
+            client_source?: "dcr" | "manual" | null;
+            /** @description True when the provider has a client Fountain can start a flow with. */
+            configured: boolean;
+            /** @description Where to send the account owner, in a browser signed in to the console, to connect an account. */
+            connect_url: string;
+            /** Format: date-time */
+            created_at?: string | null;
+            /** @description The env var a connection's access token is brokered under. */
+            env_key: string;
+            has_client_secret?: boolean;
+            /** @description A uuid, or `google`. */
+            id: string;
+            /** @description The authorization server discovery found (`mcp`). */
+            issuer?: string | null;
+            /** @enum {string} */
+            kind: "oauth2" | "mcp";
+            mcp_url?: string | null;
+            name: string;
+            pkce?: boolean;
+            /** @description True for Google, which has no row. */
+            platform: boolean;
+            /** @description The callback to register at the service. */
+            redirect_uri: string;
+            registration_endpoint?: string | null;
+            revoke_url?: string | null;
+            scopes: string[];
+            slug: string;
+            /** @enum {string} */
+            token_endpoint_auth?: "client_secret_post" | "client_secret_basic" | "none";
+            /** @description The hosts the brokered token is attached to as a bearer. */
+            token_hosts: string[];
+            token_url?: string | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+            userinfo_url?: string | null;
         };
         /** SupportReportListResponse */
         SupportReportListResponse: {
@@ -5714,6 +5869,96 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.ConnectionProviderController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionProviderListResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Connections are not enabled for this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConnectionProviderController.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Provider */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionProviderRequest"];
+            };
+        };
+        responses: {
+            /** @description Provider */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionProvider"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Connections are not enabled for this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Validation or discovery failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.VaultController.index": {
         parameters: {
             query?: never;
@@ -5783,7 +6028,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConnectionProvidersResponse"];
+                    "application/json": components["schemas"]["ConnectionProviderListResponse"];
                 };
             };
             /** @description Missing or invalid key */
@@ -8687,6 +8932,141 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.ConnectionProviderController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id, or `google` */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionProvider"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConnectionProviderController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConnectionProviderController.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Provider */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionProviderRequest"];
+            };
+        };
+        responses: {
+            /** @description Provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionProvider"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.AdminController.set_sandbox_limit": {
         parameters: {
             query?: never;
@@ -10139,6 +10519,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthError"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConnectionProviderController.discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionProvider"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found, or not an mcp provider */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Discovery failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

@@ -115,7 +115,10 @@ config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}
 # above: an unstubbed call fails loudly.
 config :fountain, :google_oauth_client_id, "google-test-client-id"
 config :fountain, :google_oauth_client_secret, "google-test-client-secret"
-config :fountain, :google_oauth_req_options, plug: {Req.Test, Fountain.Connections.Google}
+config :fountain, :connections_req_options, plug: {Req.Test, Fountain.Connections.OAuth}
+# Discovery and the OAuth client refuse private hosts; the Req.Test stub
+# answers for any host, so the resolution check is off here (#1186).
+config :fountain, :connections_allow_private_hosts, true
 config :fountain, :gmail_req_options, plug: {Req.Test, Fountain.Connections.Gmail}
 
 # Product analytics (`Fountain.Analytics`). Capture is inert without a project

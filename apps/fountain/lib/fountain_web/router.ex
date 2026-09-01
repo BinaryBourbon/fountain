@@ -359,6 +359,20 @@ defmodule FountainWeb.Router do
     delete "/:id", ConnectionController, :delete
   end
 
+  # Connection providers (#1186): where a tenant's connections get their
+  # tokens — their own OAuth app, or a discovered MCP authorization server.
+  # Full scope: a provider holds a client secret and names where a token goes.
+  scope "/api/connection-providers", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/", ConnectionProviderController, :index
+    post "/", ConnectionProviderController, :create
+    get "/:id", ConnectionProviderController, :show
+    patch "/:id", ConnectionProviderController, :update
+    delete "/:id", ConnectionProviderController, :delete
+    post "/:id/discover", ConnectionProviderController, :discover
+  end
+
   # Secret bindings (ADR 0019 gate 1b). Full scope for the same reason as
   # runners: a conversation-scoped token must not be able to redirect the
   # account's credentials to another host.

@@ -385,7 +385,7 @@ defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
 
       {:ok, view, _html} = live(conn, ~p"/agents/#{agent.id}/edit")
       html = view |> element("button", "+ Add server") |> render_click()
-      assert html =~ "Connected account (Gmail)"
+      assert html =~ "Connected account"
 
       # Switching the type reveals the connection select.
       html =

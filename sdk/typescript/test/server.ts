@@ -55,6 +55,20 @@ export interface FakeConversation {
   turns: { turn_number: number; status: string }[];
 }
 
+const GOOGLE_PROVIDER = {
+  id: "google",
+  slug: "google",
+  name: "Google (Gmail)",
+  kind: "oauth2",
+  platform: true,
+  configured: true,
+  scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.modify"],
+  env_key: "GOOGLE_ACCESS_TOKEN",
+  token_hosts: ["gmail.googleapis.com", "www.googleapis.com"],
+  redirect_uri: "https://fountain.test/connections/google/callback",
+  connect_url: "https://fountain.test/connections/google/start",
+};
+
 export class FakeFountain {
   agents: Record<string, unknown>[] = [
     { id: "11111111-1111-1111-1111-111111111111", name: "reposage", runtime: "claude", model: "opus" },
@@ -66,6 +80,8 @@ export class FakeFountain {
   ];
   /** Connections (#1178), as `GET /api/connections` lists them. */
   connections: Record<string, unknown>[] = [];
+  /** Tenant connection providers (#1186); Google is always listed first. */
+  providers: Record<string, unknown>[] = [];
   /** Secrets by `${collection}:${parentId}` → key → value. Never read back out. */
   readonly secrets = new Map<string, Map<string, string>>();
   /** agent_id → the teammate row `/api/team` returns. */
@@ -212,20 +228,40 @@ export class FakeFountain {
 
     if (path.startsWith("/api/team")) return this.team(req, res, path, url, body);
 
-    // Connections (#1178): list / providers / one / delete. Enveloped like
-    // the real controller. No create — that is a browser round trip.
-    if (path === "/api/connections/providers") {
-      return json(res, 200, {
-        data: [
-          {
-            provider: "google",
-            configured: true,
-            scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.modify"],
-            env_key: "GOOGLE_ACCESS_TOKEN",
-            connect_url: "https://fountain.test/connections/google/start",
-          },
-        ],
-      });
+    // Connection providers (#1186): Google plus the tenant's own. A create
+    // with `kind: mcp` stands in for discovery.
+    if (path === "/api/connection-providers" || path === "/api/connections/providers") {
+      if (req.method === "POST") {
+        const input = (body ?? {}) as Record<string, unknown>;
+        const created = {
+          ...GOOGLE_PROVIDER,
+          ...input,
+          id: `prov-${this.providers.length + 1}`,
+          platform: false,
+          configured: true,
+          client_source: input.kind === "mcp" ? "dcr" : "manual",
+          issuer: input.kind === "mcp" ? "https://auth.test" : null,
+          has_client_secret: true,
+          client_secret: undefined,
+        };
+        this.providers.push(created);
+        return json(res, 201, created);
+      }
+      return json(res, 200, { data: [GOOGLE_PROVIDER, ...this.providers] });
+    }
+    const provider = /^\/api\/connection-providers\/([^/]+)(\/discover)?$/.exec(path);
+    if (provider) {
+      if (provider[1] === "google") return json(res, 200, GOOGLE_PROVIDER);
+      const found = this.providers.find((p) => p.id === provider[1]);
+      if (!found) return json(res, 404, { error: "not_found" });
+      if (req.method === "DELETE") {
+        this.providers = this.providers.filter((p) => p !== found);
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      if (req.method === "PATCH") Object.assign(found, body ?? {});
+      return json(res, 200, found);
     }
     if (path === "/api/connections") return json(res, 200, { data: this.connections });
     const connection = /^\/api\/connections\/([^/]+)$/.exec(path);
