@@ -16,6 +16,15 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **The quickstart installs on Linux.** The page offered only `brew install`,
+  and Homebrew on Linux refuses to install any formula, even one that only
+  downloads a prebuilt binary, until a C compiler is present. Walked on a
+  fresh Ubuntu 24.04 host, the first command failed with "No developer tools
+  installed". The page now gives the release binary for Linux and names the
+  compiler requirement for anyone who prefers Homebrew there.
+
 ## [0.15.0] — 2026-09-01
 
 ### Upgrade notes
