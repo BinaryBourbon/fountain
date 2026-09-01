@@ -45,9 +45,23 @@ server supplies the control plane and sandbox provider.
 
 ## Install and authenticate the CLI
 
+On macOS, install the CLI with Homebrew.
+
 ```sh
 brew install BinaryBourbon/tap/fountain
 ```
+
+On Linux, Homebrew needs a C compiler before it installs a formula,
+`build-essential` on Debian and Ubuntu. The release binary has no such need.
+
+```sh
+curl -fsSLo fountain \
+  https://github.com/BinaryBourbon/fountain/releases/latest/download/fountain-linux-amd64
+chmod +x fountain
+sudo mv fountain /usr/local/bin/
+```
+
+Use `fountain-linux-arm64` on an ARM machine.
 
 Point the CLI at the server you chose.
 
