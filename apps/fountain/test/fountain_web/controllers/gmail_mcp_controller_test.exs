@@ -225,6 +225,21 @@ defmodule FountainWeb.GmailMcpControllerTest do
     assert rpc(ctx.conn, ctx.raw_key, ctx.conv, theirs, "tools/list") |> json_response(404)
   end
 
+  test "400 for a connection on another platform provider: these are Gmail tools (#1299)", ctx do
+    slack = insert_connection(ctx.user, provider: "slack", account_email: "jake")
+
+    agent =
+      insert_agent(
+        user_id: ctx.user.id,
+        mcp_servers: %{"slack" => %{"connection" => slack.id}}
+      )
+
+    conv = insert_conversation(%{user_id: ctx.user.id, agent: agent, status: "idle"})
+
+    body = rpc(ctx.conn, ctx.raw_key, conv, slack, "tools/list") |> json_response(400)
+    assert body["error"] =~ "Google connections only"
+  end
+
   test "403 for an account the broker is not on for", ctx do
     Application.put_env(:fountain, :broker_tenants, [])
 

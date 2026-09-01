@@ -2,7 +2,7 @@ defmodule Fountain.ConnectionsTest do
   use Fountain.DataCase, async: true
 
   alias Fountain.{Connections, Crypto}
-  alias Fountain.Connections.{Connection, Google, McpServers, OAuth, Provider}
+  alias Fountain.Connections.{Connection, Google, McpServers, OAuth, Platform, Provider}
 
   describe "connect/4" do
     test "stores the grant encrypted, active, under the provider's env key" do
@@ -195,6 +195,79 @@ defmodule Fountain.ConnectionsTest do
       assert params["state"] == "st"
       assert params["redirect_uri"] == "https://f.example/connections/google/callback"
       assert params["scope"] =~ "gmail.modify"
+      assert params["scope"] =~ "auth/calendar"
+    end
+  end
+
+  describe "the other platform providers (#1299)" do
+    test "a slack exchange lifts authed_user, needs no refresh token, labels via auth.test" do
+      slack = Platform.get("slack")
+
+      Req.Test.stub(OAuth, fn conn ->
+        case conn.request_path do
+          "/api/oauth.v2.access" ->
+            Req.Test.json(conn, %{
+              "ok" => true,
+              "app_id" => "A1",
+              "authed_user" => %{
+                "id" => "U1",
+                "access_token" => "xoxp-99",
+                "scope" => "channels:history,chat:write",
+                "token_type" => "user"
+              }
+            })
+
+          "/api/auth.test" ->
+            assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer xoxp-99"]
+            Req.Test.json(conn, %{"ok" => true, "user" => "jake", "team" => "goat"})
+        end
+      end)
+
+      assert {:ok, grant} = OAuth.exchange_code(slack, "code", "https://f.example/cb")
+      assert grant.access_token == "xoxp-99"
+      assert grant.refresh_token == nil
+      assert grant.expires_at == nil
+      assert grant.scopes == ["channels:history", "chat:write"]
+      assert grant.account_email == "jake"
+    end
+
+    test "a platform provider whose token expires still insists on a refresh token" do
+      microsoft = Platform.get("microsoft")
+
+      Req.Test.stub(OAuth, fn conn ->
+        Req.Test.json(conn, %{"access_token" => "graph-1", "expires_in" => 3600})
+      end)
+
+      assert {:error, :no_refresh_token} =
+               OAuth.exchange_code(microsoft, "code", "https://f.example/cb")
+    end
+
+    test "the same label on two platform providers is two connections, not one" do
+      user = insert_verified_user()
+
+      google = insert_connection(user, account_email: "me@example.com")
+      slack = insert_connection(user, provider: "slack", account_email: "me@example.com")
+
+      assert google.id != slack.id
+      assert google.provider_id == nil and slack.provider_id == nil
+      assert slack.provider == "slack"
+      assert slack.env_key == "SLACK_ACCESS_TOKEN"
+      assert length(Connections.list_connections(user.id)) == 2
+
+      # reconnecting the slack account replaces the slack row only
+      again = insert_connection(user, provider: "slack", account_email: "me@example.com")
+      assert again.id == slack.id
+      assert length(Connections.list_connections(user.id)) == 2
+    end
+
+    test "provider_for and implicit_hosts read the registry through the slug" do
+      user = insert_verified_user()
+      conn = insert_connection(user, provider: "microsoft", account_email: "me@corp.example")
+
+      assert %Provider{slug: "microsoft", user_id: nil} = Connections.provider_for(conn)
+
+      assert Connections.implicit_hosts(user.id, "MICROSOFT_ACCESS_TOKEN") ==
+               ["graph.microsoft.com"]
     end
   end
 

@@ -39,7 +39,8 @@ defmodule FountainWeb.GmailMcpController do
          %Conversations.Conversation{} = conv <- get_conv(conv_id, user),
          :ok <- agent_names?(conv, connection_id),
          %Connections.Connection{} = connection <-
-           Connections.get_connection(connection_id, user.id) || :no_connection do
+           Connections.get_connection(connection_id, user.id) || :no_connection,
+         :ok <- google_connection?(connection) do
       {:ok, %{connection: connection, audit: audit_fn(connection, conv, user)}}
     else
       :no_conv -> {:error, 404, "conversation not found"}
@@ -48,6 +49,17 @@ defmodule FountainWeb.GmailMcpController do
       {:error, _, _} = err -> err
     end
   end
+
+  # These are Gmail tools: another provider's token (#1299) would be sent to
+  # the wrong API and fail confusingly. Its connection attaches by URL + env
+  # key instead; say so where the model can read it.
+  defp google_connection?(%Connections.Connection{provider: "google"}), do: :ok
+
+  defp google_connection?(_),
+    do:
+      {:error, 400,
+       "these tools serve Google connections only; attach this connection to a " <>
+         "remote MCP server or use its brokered env key"}
 
   defp get_conv(conv_id, user),
     do: Conversations.get_conversation(conv_id, user.id) || :no_conv

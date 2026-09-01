@@ -6,7 +6,9 @@ defmodule Fountain.Connections.OAuth do
   here touches the database, and the provider must already carry its
   plaintext `client_secret` (`Fountain.Connections.unlock_provider/1`).
 
-  What differs per provider is data on the record, not code here:
+  What differs per provider is data on the record, not code here — except
+  the two platform quirks `Fountain.Connections.Platform` owns (extra
+  authorize parameters, and Slack's nested token response):
 
     * PKCE (S256) when `pkce` is set — always for `mcp` providers, which also
       send the `resource` parameter (RFC 8707) so the token is bound to the
@@ -24,7 +26,7 @@ defmodule Fountain.Connections.OAuth do
   again at the moment it is fetched, not only when it was saved.
   """
 
-  alias Fountain.Connections.{Provider, UrlGuard}
+  alias Fountain.Connections.{Platform, Provider, UrlGuard}
 
   @type grant :: %{
           refresh_token: String.t() | nil,
@@ -59,7 +61,7 @@ defmodule Fountain.Connections.OAuth do
 
     query =
       base
-      |> Map.merge(Provider.authorize_params(p))
+      |> Map.merge(Platform.authorize_params(p))
       |> Map.merge(pkce_params(p, verifier))
       |> Map.merge(resource_params(p))
       |> URI.encode_query()
@@ -129,11 +131,18 @@ defmodule Fountain.Connections.OAuth do
 
   # Google issues an hour-long access token and, on a repeat consent, no
   # refresh token unless the tenant removes the app first: a connection
-  # without one would be dead in an hour, so the platform provider insists.
-  # A tenant provider takes what it gets; a missing refresh token there is
-  # the provider's design, and the connection goes `expired` when the token does.
+  # without one would be dead in an hour, so a platform provider insists —
+  # but only when the token expires at all. Slack's user tokens carry no
+  # expiry and no refresh token unless the app opts in to rotation, and are
+  # good until revoked. A tenant provider takes what it gets; a missing
+  # refresh token there is the provider's design, and the connection goes
+  # `expired` when the token does.
   defp require_refresh_token(%Provider{user_id: nil}, body) do
-    if is_binary(refresh_token(body)), do: :ok, else: {:error, :no_refresh_token}
+    expiring? = is_integer(body["expires_in"]) or is_binary(body["expires_in"])
+
+    if is_binary(refresh_token(body)) or not expiring?,
+      do: :ok,
+      else: {:error, :no_refresh_token}
   end
 
   defp require_refresh_token(_p, _body), do: :ok
@@ -202,6 +211,9 @@ defmodule Fountain.Connections.OAuth do
         {:ok, %{status: status, body: body}} when status in 200..299 ->
           case decode_token_body(body) do
             {:ok, decoded} ->
+              # Reshaped before the error check: Slack's success body has no
+              # top-level access_token until authed_user is lifted out.
+              decoded = Platform.normalize_token_body(p, decoded)
               if error_body?(decoded), do: token_error(status, decoded), else: {:ok, decoded}
 
             {:error, _} = err ->

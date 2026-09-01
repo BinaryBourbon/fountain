@@ -20,7 +20,14 @@ defmodule Fountain.Connections.ProviderTest do
       assert {:ok, %Provider{client_secret: "shh"}} = Connections.unlock_provider(p)
 
       assert [_] = Connections.list_providers(user.id)
-      assert [%Provider{slug: "google", user_id: nil}, ^p] = Connections.all_providers(user.id)
+
+      assert [
+               %Provider{slug: "google", user_id: nil},
+               %Provider{slug: "microsoft", user_id: nil},
+               %Provider{slug: "slack", user_id: nil},
+               ^p
+             ] = Connections.all_providers(user.id)
+
       assert Connections.redirect_uri(p) =~ "/connections/#{p.id}/callback"
     end
 

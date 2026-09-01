@@ -16,7 +16,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
   use FountainWeb, :live_view
 
   alias Fountain.{Broker, Connections}
-  alias Fountain.Connections.Provider
+  alias Fountain.Connections.{Platform, Provider}
   alias FountainWeb.{Audited, ConnectionProviderJSON}
 
   @blank_form %{
@@ -39,7 +39,9 @@ defmodule FountainWeb.ConnectionsLive.Index do
 
   # A few well-known app registrations, so a tenant can pick one and paste
   # only the client id and secret. Suggestions, not a catalog: any provider
-  # is a matter of typing its endpoints.
+  # is a matter of typing its endpoints. Slack left this list when it became
+  # a platform provider (#1299) — its slug is reserved now, and the platform
+  # row is the one that works without an app registration.
   @presets [
     %{
       "slug" => "github",
@@ -50,18 +52,6 @@ defmodule FountainWeb.ConnectionsLive.Index do
       "account_label_path" => "login",
       "scopes" => "repo read:user",
       "token_hosts" => "api.github.com",
-      "pkce" => "false"
-    },
-    %{
-      "slug" => "slack",
-      "name" => "Slack",
-      "authorize_url" => "https://slack.com/oauth/v2/authorize",
-      "token_url" => "https://slack.com/api/oauth.v2.access",
-      "revoke_url" => "https://slack.com/api/auth.revoke",
-      "userinfo_url" => "https://slack.com/api/users.identity",
-      "account_label_path" => "user.email",
-      "scopes" => "",
-      "token_hosts" => "slack.com",
       "pkce" => "false"
     },
     %{
@@ -434,8 +424,9 @@ defmodule FountainWeb.ConnectionsLive.Index do
           </button>
         </div>
         <p class="text-xs text-[var(--color-text-secondary)]">
-          Google uses Fountain's own OAuth client. For any other service, register an app there
-          with the redirect URI shown here, then paste its client id and secret.
+          Google, Microsoft and Slack use Fountain's own OAuth clients. For any other service,
+          register an app there with the redirect URI shown here, then paste its client id and
+          secret.
         </p>
 
         <div
@@ -490,7 +481,9 @@ defmodule FountainWeb.ConnectionsLive.Index do
                 data-role={"connect-#{p.slug}"}
                 class="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700"
               >
-                Connect {if Provider.platform?(p), do: "a Google account", else: "an account"}
+                Connect {if Provider.platform?(p),
+                  do: "a #{Platform.short_name(p)} account",
+                  else: "an account"}
               </a>
               <form
                 :if={configured?(p) and asks_label?(p)}
@@ -516,7 +509,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
                 :if={!configured?(p) and Provider.platform?(p)}
                 class="text-xs text-[var(--color-text-secondary)]"
               >
-                Not configured on this deployment (<code class="font-mono">GOOGLE_OAUTH_CLIENT_ID</code>).
+                Not configured on this deployment (<code class="font-mono">{Platform.client_env_var(p)}</code>).
               </span>
               <span :if={!configured?(p) and !Provider.platform?(p)} class="text-xs text-red-700">
                 No client yet: edit and paste a client id and secret.
@@ -825,7 +818,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
           <div class="flex gap-2 shrink-0">
             <a
               :if={c.status == "expired"}
-              href={~p"/connections/#{c.provider_id || "google"}/start?label=#{c.account_email}"}
+              href={~p"/connections/#{c.provider_id || c.provider}/start?label=#{c.account_email}"}
               data-role="reconnect"
               class="rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700"
             >

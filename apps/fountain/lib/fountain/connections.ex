@@ -6,11 +6,12 @@ defmodule Fountain.Connections do
   hands an agent a capability rather than a credential.
 
   Where the tokens come from is a `Fountain.Connections.Provider` (#1186):
-  Google, the one platform provider with Fountain's own OAuth client, or a
-  provider the tenant defined — their own app registration at a service
-  (`oauth2`), or a remote MCP server whose authorization server Fountain
-  discovered and registered with (`mcp`). One OAuth client
-  (`Fountain.Connections.OAuth`) serves every kind.
+  a platform provider with Fountain's own OAuth client (Google, Microsoft,
+  Slack — `Fountain.Connections.Platform`, #1299), or a provider the tenant
+  defined — their own app registration at a service (`oauth2`), or a remote
+  MCP server whose authorization server Fountain discovered and registered
+  with (`mcp`). One OAuth client (`Fountain.Connections.OAuth`) serves
+  every kind.
 
   A connection reaches an agent three ways, all only for accounts the egress
   broker is on for (`Fountain.Broker.enabled_for?/1`):
@@ -47,7 +48,7 @@ defmodule Fountain.Connections do
   import Ecto.Query, warn: false
 
   alias Fountain.{Audit, Crypto, Repo}
-  alias Fountain.Connections.{Connection, Google, McpDiscovery, OAuth, Provider}
+  alias Fountain.Connections.{Connection, McpDiscovery, OAuth, Platform, Provider}
 
   # How close to expiry a token is considered stale. A turn may run for a
   # while on the token it started with, so refresh well ahead.
@@ -65,25 +66,27 @@ defmodule Fountain.Connections do
     Repo.all(from p in Provider, where: p.user_id == ^user_id, order_by: [asc: p.name])
   end
 
-  @doc "Every provider the tenant can connect: Google first, then their own."
+  @doc "Every provider the tenant can connect: the platform ones first, then their own."
   @spec all_providers(String.t()) :: [Provider.t()]
   def all_providers(user_id) when is_binary(user_id),
-    do: [Google.provider() | list_providers(user_id)]
+    do: Platform.all() ++ list_providers(user_id)
 
   @doc """
-  A provider by id: `"google"` is the platform provider, anything else a
-  tenant row. Nil for a row that is not the tenant's.
+  A provider by id: a platform slug (`"google"`, `"microsoft"`, `"slack"`)
+  is the platform provider, anything else a tenant row. Nil for a row that
+  is not the tenant's.
   """
   @spec get_provider(String.t(), String.t()) :: Provider.t() | nil
-  def get_provider("google", _user_id), do: Google.provider()
-
   def get_provider(id, user_id) when is_binary(id) and is_binary(user_id) do
-    if valid_uuid?(id), do: Repo.get_by(Provider, id: id, user_id: user_id)
+    Platform.get(id) || if valid_uuid?(id), do: Repo.get_by(Provider, id: id, user_id: user_id)
   end
 
-  @doc "The provider a connection's tokens come from. Google for the platform row."
+  @doc """
+  The provider a connection's tokens come from. A platform connection has
+  no provider row — its `provider` slug names the registry entry.
+  """
   @spec provider_for(Connection.t()) :: Provider.t()
-  def provider_for(%Connection{provider_id: nil}), do: Google.provider()
+  def provider_for(%Connection{provider_id: nil, provider: slug}), do: Platform.get(slug)
 
   # Ownership established by the connection, which was fetched tenant-scoped.
   def provider_for(%Connection{provider_id: id}), do: Repo.get!(Provider, id)
@@ -312,8 +315,14 @@ defmodule Fountain.Connections do
           {:ok, Connection.t()} | {:error, Ecto.Changeset.t() | atom()}
   def connect(user_id, provider, grant, opts \\ [])
 
-  def connect(user_id, "google", grant, opts),
-    do: connect(user_id, Google.provider(), grant, opts)
+  def connect(user_id, slug, grant, opts) when is_binary(slug),
+    do:
+      connect(
+        user_id,
+        Platform.get(slug) || raise("unknown platform provider #{slug}"),
+        grant,
+        opts
+      )
 
   def connect(user_id, %Provider{} = provider, grant, opts)
       when is_binary(user_id) and is_map(grant) do
@@ -323,8 +332,9 @@ defmodule Fountain.Connections do
 
       # Keyed on the provider row, not its slug: the slug is editable and
       # denormalized, and a lookup through a stale one would miss the
-      # existing connection and duplicate it on reconnect.
-      existing = existing_connection(user_id, provider_id, label)
+      # existing connection and duplicate it on reconnect. Platform
+      # connections have no row, so their (reserved) slug is the key.
+      existing = existing_connection(user_id, provider_id, provider.slug, label)
 
       attrs = %{
         user_id: user_id,
@@ -345,16 +355,19 @@ defmodule Fountain.Connections do
     end
   end
 
-  # The platform provider has no row: its connections carry a null
-  # `provider_id`, which `Repo.get_by` cannot express.
-  defp existing_connection(user_id, nil, label) do
+  # A platform provider has no row: its connections carry a null
+  # `provider_id` (which `Repo.get_by` cannot express) and are told apart
+  # by slug — the same label on two platform providers is two connections.
+  defp existing_connection(user_id, nil, slug, label) do
     Repo.one(
       from c in Connection,
-        where: c.user_id == ^user_id and is_nil(c.provider_id) and c.account_email == ^label
+        where:
+          c.user_id == ^user_id and is_nil(c.provider_id) and c.provider == ^slug and
+            c.account_email == ^label
     )
   end
 
-  defp existing_connection(user_id, provider_id, label) do
+  defp existing_connection(user_id, provider_id, _slug, label) do
     Repo.get_by(Connection, user_id: user_id, provider_id: provider_id, account_email: label)
   end
 

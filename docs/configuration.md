@@ -113,8 +113,15 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 |---|---|---|---|
 | `GITHUB_OAUTH_CLIENT_ID` | — | — | Turns the GitHub sign-in button on. Unset, Fountain hides the button, and email and password auth still works. |
 | `GITHUB_OAUTH_CLIENT_SECRET` | — | — | |
-| `GOOGLE_OAUTH_CLIENT_ID` | — | — | Turns the Google connection on, for accounts the egress broker is on for. A tenant connects Gmail once on the Connections page, and Fountain keeps the refresh token. Register a Web client in Google Cloud with the redirect URI `<PUBLIC_URL>/connections/google/callback`, and enable the Gmail API. Unset, the page says the feature is not configured. |
+| `GOOGLE_OAUTH_CLIENT_ID` | — | — | Turns the Google connection on, for accounts the egress broker is on for. A tenant connects Gmail and Google Calendar once on the Connections page, and Fountain keeps the refresh token. Register a Web client in Google Cloud with the redirect URI `<PUBLIC_URL>/connections/google/callback`, and enable the Gmail and Calendar APIs. Unset, the page says the feature is not configured. |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | — | — | |
+| `GOOGLE_OAUTH_SCOPES` | the defaults in the catalog | — | The scopes the Google provider asks for, space-separated. Use it when your app verification does not cover a default scope. A scope you do not request is a product that does not light up, not an error. |
+| `MICROSOFT_OAUTH_CLIENT_ID` | — | — | Turns the Microsoft connection on: Outlook mail, calendar and Teams chat through one sign-in, brokered to `graph.microsoft.com`. Register a web app in Microsoft Entra on the `common` endpoint, with the redirect URI `<PUBLIC_URL>/connections/microsoft/callback`. Unset, the page says the provider is not configured. |
+| `MICROSOFT_OAUTH_CLIENT_SECRET` | — | — | |
+| `MICROSOFT_OAUTH_SCOPES` | the defaults in the catalog | — | The scopes the Microsoft provider asks for, space-separated. Keep `offline_access` in the list: without it, Microsoft issues no refresh token. |
+| `SLACK_OAUTH_CLIENT_ID` | — | — | Turns the Slack connection on: a user token per workspace, brokered to `slack.com`. Create a Slack app with the redirect URL `<PUBLIC_URL>/connections/slack/callback`. Unset, the page says the provider is not configured. |
+| `SLACK_OAUTH_CLIENT_SECRET` | — | — | |
+| `SLACK_OAUTH_USER_SCOPES` | the defaults in the catalog | — | The user scopes the Slack provider asks for, space-separated. These are `user_scope` values, not bot scopes. |
 
 ## Payment
 

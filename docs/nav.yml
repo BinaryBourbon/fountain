@@ -85,6 +85,8 @@ nav:
       - fountain-gmail: catalog/mcp-servers/fountain-gmail.md
       - Connections: catalog/connections/index.md
       - google (connection): catalog/connections/google.md
+      - microsoft (connection): catalog/connections/microsoft.md
+      - slack (connection): catalog/connections/slack.md
       - Agents: catalog/agents/index.md
       - fountain-contributor (agent): catalog/agents/fountain-contributor.md
   - Sandbox providers:

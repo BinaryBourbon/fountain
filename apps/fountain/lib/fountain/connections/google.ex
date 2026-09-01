@@ -1,18 +1,19 @@
 defmodule Fountain.Connections.Google do
   @moduledoc """
-  The one platform provider (#1178, #1186): Google, from Fountain's own OAuth
-  client (`GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`). Since
-  #1186 the OAuth flow itself is `Fountain.Connections.OAuth`, driven by the
-  `Fountain.Connections.Provider` struct `provider/0` builds from config;
-  this module is the handful of facts the console and the catalog ask for.
+  The Google platform provider's facts (#1178), for the console and the
+  catalog. Since #1186 the OAuth flow is `Fountain.Connections.OAuth`,
+  driven by the `Fountain.Connections.Provider` struct
+  `Fountain.Connections.Platform.google/0` builds from config; since #1299
+  Google is one platform provider among several, and this module is a thin
+  reading of the registry.
 
   Unset, `configured?/0` is false and the console shows the feature as not
   available on this deployment.
   """
 
-  alias Fountain.Connections.{OAuth, Provider}
+  alias Fountain.Connections.{OAuth, Platform}
 
-  def provider, do: Provider.google()
+  def provider, do: Platform.google()
 
   def slug, do: "google"
   def scopes, do: provider().scopes

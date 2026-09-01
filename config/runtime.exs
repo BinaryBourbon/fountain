@@ -736,19 +736,46 @@ if github_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID") do
     client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
 end
 
-# Google OAuth client for connections (#1178): a tenant signs in to Google
-# once in the console and Fountain holds the refresh token. Not the sign-in
-# provider — that is GitHub above. Absent stays absent, so the console says
-# the feature is not configured rather than sending anyone to Google with
-# an empty client id.
-case System.get_env("GOOGLE_OAUTH_CLIENT_ID") do
-  blank when blank in [nil, ""] ->
-    :ok
+# OAuth clients for the platform connection providers (#1178, #1299): a
+# tenant signs in to Google, Microsoft or Slack once in the console and
+# Fountain holds the refresh token. Not the sign-in provider — that is
+# GitHub above. Absent stays absent, so the console says a provider is not
+# configured rather than sending anyone to a consent screen with an empty
+# client id. The env var names stay literal here for the reference guard.
+platform_oauth_clients = [
+  {"GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", :google_oauth_client_id,
+   :google_oauth_client_secret},
+  {"MICROSOFT_OAUTH_CLIENT_ID", "MICROSOFT_OAUTH_CLIENT_SECRET", :microsoft_oauth_client_id,
+   :microsoft_oauth_client_secret},
+  {"SLACK_OAUTH_CLIENT_ID", "SLACK_OAUTH_CLIENT_SECRET", :slack_oauth_client_id,
+   :slack_oauth_client_secret}
+]
 
-  google_client_id ->
-    config :fountain,
-      google_oauth_client_id: google_client_id,
-      google_oauth_client_secret: System.get_env("GOOGLE_OAUTH_CLIENT_SECRET")
+for {id_var, secret_var, id_key, secret_key} <- platform_oauth_clients do
+  case System.get_env(id_var) do
+    blank when blank in [nil, ""] ->
+      :ok
+
+    client_id ->
+      config :fountain, [{id_key, client_id}, {secret_key, System.get_env(secret_var)}]
+  end
+end
+
+# The scopes each platform provider asks for, space-separated, overriding
+# the defaults in Fountain.Connections.Platform. The lever for app
+# verification: a deployment whose Google app is not verified for a scope
+# simply does not request it, and the provider's products light up to match.
+platform_oauth_scopes = [
+  {"GOOGLE_OAUTH_SCOPES", :google_oauth_scopes},
+  {"MICROSOFT_OAUTH_SCOPES", :microsoft_oauth_scopes},
+  {"SLACK_OAUTH_USER_SCOPES", :slack_oauth_user_scopes}
+]
+
+for {var, key} <- platform_oauth_scopes do
+  case System.get_env(var) do
+    blank when blank in [nil, ""] -> :ok
+    scopes -> config :fountain, [{key, String.split(scopes)}]
+  end
 end
 
 # Stripe (§5.2)

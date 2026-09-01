@@ -18,6 +18,25 @@ upgrade, is in
 
 ### Added
 
+- **Two more platform connection providers: Microsoft and Slack** (#1299).
+  The Connections page and `GET /api/connections/providers` now list three
+  platform providers. One Microsoft sign-in covers Outlook mail, calendar and
+  Teams chat, brokered to `graph.microsoft.com` under
+  `MICROSOFT_ACCESS_TOKEN`; a Slack connection holds a user token per
+  workspace, brokered to `slack.com` under `SLACK_ACCESS_TOKEN`. Each is
+  configured by its own `<SLUG>_OAUTH_CLIENT_ID` / `_SECRET` pair and listed
+  as not configured until the operator sets them. The Google provider now
+  also requests the Calendar scope, so one Google sign-in covers Gmail and
+  Calendar; `include_granted_scopes` was already sent, so an existing
+  connection keeps its grants and reconnecting adds the new scope. Operators
+  can override any platform provider's scope list
+  (`GOOGLE_OAUTH_SCOPES`, `MICROSOFT_OAUTH_SCOPES`,
+  `SLACK_OAUTH_USER_SCOPES`) — the lever for app-verification coverage.
+  The Fountain-served Gmail tools now refuse a connection from another
+  provider with a readable error; a Microsoft or Slack connection attaches
+  to a remote MCP server by URL, or to a stdio server through its brokered
+  env key. ADR 0033 records why these three clear the platform bar.
+
 - **A focused launch page at `/launch`.** The homepage remains the canonical
   product page; this unlisted campaign page makes the shorter argument for a
   developer arriving from a launch announcement. It leads with ready machines

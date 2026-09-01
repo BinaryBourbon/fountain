@@ -20,11 +20,16 @@ goes to.
 |---|---|---|
 | Who owns the OAuth client. | The operator of the instance. | You. |
 | Where you define it. | Instance configuration. | The Connections page, or `POST /api/connection-providers`. |
-| Which exist. | [Google](google.md), with the id `google`. | As many as you define. |
+| Which exist. | [Google](google.md), [Microsoft](microsoft.md) and [Slack](slack.md), with their slugs as ids. | As many as you define. |
 
-Fountain owns one OAuth client, for Google. It cannot own an app at every
-service, and a restricted scope needs verification of each app anyway. So
-every other service is a tenant provider.
+Fountain owns an OAuth client for each platform provider. It cannot own an
+app at every service, and a restricted scope needs verification of each app
+anyway. So every other service is a tenant provider.
+
+One platform connection covers several products. The Google account carries
+Gmail and Calendar. The Microsoft account carries Outlook mail, calendar
+and Teams chat. The granted scopes on a connection say which products you
+consented to.
 
 ## The two kinds of tenant provider
 
@@ -78,4 +83,6 @@ refresh token replaces the stored one.
 
 ## Entries
 
-- [Google](google.md), the platform provider.
+- [Google](google.md), a platform provider. Gmail and Calendar.
+- [Microsoft](microsoft.md), a platform provider. Outlook mail, calendar and Teams chat.
+- [Slack](slack.md), a platform provider. A user token per workspace.
