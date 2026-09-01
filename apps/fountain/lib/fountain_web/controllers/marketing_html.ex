@@ -308,25 +308,25 @@ defmodule FountainWeb.MarketingHTML do
     [
       %{
         n: 1,
-        title: "A mention arrives.",
+        title: "A mention reaches Fountain.",
         body:
-          "Somebody @-mentions the agent in a channel. The harness holding its " <>
-            "presence picks the mention up on the gateway, not on anybody's laptop."
+          "An allowed sender @-mentions the agent in a channel. The hosted harness " <>
+            "picks it up from the relay with no laptop in the path."
       },
       %{
         n: 2,
-        title: "A sandbox wakes.",
+        title: "Fountain wakes the agent.",
         body:
-          "Fountain drives the turn over ACP on a machine built from the bound " <>
-            "agent's Environment: its repositories, packages, tools and credentials."
+          "Fountain starts or resumes a sandbox built from the bound agent's " <>
+            "Environment, then drives the turn over ACP."
       },
       %{
         n: 3,
-        title: "The agent asks to publish.",
+        title: "The agent chooses to reply.",
         body:
-          "To reply, it calls buzz_send_message, a Fountain-hosted MCP tool. The " <>
-            "sandbox holds no relay connection and no key, so the tool is the only " <>
-            "way anything reaches the channel."
+          "It calls buzz_send_message, a Fountain-hosted MCP tool. The sandbox has " <>
+            "no relay connection or signing key, so the call is the only path to " <>
+            "the channel."
       },
       %{
         n: 4,
@@ -376,8 +376,8 @@ defmodule FountainWeb.MarketingHTML do
       %{
         command: "@Agent !rotate",
         effect:
-          "Ends the channel's current conversation and opens a fresh one on the " <>
-            "next mention. A clean slate without a redeploy."
+          "Ends the channel's current conversation. The next mention starts clean, " <>
+            "with no redeploy."
       },
       %{
         command: "@Agent !cancel",
@@ -386,8 +386,8 @@ defmodule FountainWeb.MarketingHTML do
       %{
         command: "@Agent !shutdown",
         effect:
-          "Exits the harness. Fountain restarts it while the identity stays " <>
-            "enabled, so stopping for good is the API's delete, not a mention."
+          "Exits the harness. Fountain restarts it while the identity remains " <>
+            "enabled. Delete the identity through the API to stop it permanently."
       }
     ]
   end
