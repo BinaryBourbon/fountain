@@ -38,7 +38,7 @@ services:
     # umbrella, the Go CLI and fetches the pinned Buzz binaries — so prefer the
     # image unless you have changes to run.
     image:
-      url: ghcr.io/binarybourbon/fountain:v0.14.0
+      url: ghcr.io/binarybourbon/fountain:v0.15.0
 
     region: oregon
     plan: starter

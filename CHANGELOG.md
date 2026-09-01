@@ -30,6 +30,156 @@ upgrade, is in
   probe means the entry keeps its stale date, so the claim stays honest.
   Suggestions, not an allowlist: any URL still discovers.
 
+### Fixed
+
+- **The quickstart installs on Linux.** The page offered only `brew install`,
+  and Homebrew on Linux refuses to install any formula, even one that only
+  downloads a prebuilt binary, until a C compiler is present. Walked on a
+  fresh Ubuntu 24.04 host, the first command failed with "No developer tools
+  installed". The page now gives the release binary for Linux and names the
+  compiler requirement for anyone who prefers Homebrew there.
+
+## [0.15.0] — 2026-09-01
+
+### Upgrade notes
+
+- **Three migrations, all additive.** `connection_providers` (#1187),
+  `conversations.caller_tools` (#1203) and `oauth_device_grants` (#1309). No
+  column is dropped, so a rolling deploy across this boundary is seamless.
+- **The CLI's `auth login` changed its default.** On a terminal it runs the
+  browser (device) flow; email + password remains when stdin is a pipe or
+  with `--password`, and `--api-key` takes a pasted key. A device login needs
+  the server at 0.15.0 (`POST /api/auth/device`); against an older server the
+  CLI says so and `--password` or `--api-key` still work. An older CLI
+  against a 0.15.0 server keeps working with email + password.
+- **The default app URLs moved.** Unset `CONVERSATIONS_APP_URL` and
+  `TEAM_APP_URL` now resolve to
+  `https://fountain-conversations.demo.managoat.com/` and
+  `https://fountain-team.demo.managoat.com/`; the `jakegaylor.com` builds
+  are retired. A self-host that relied on the defaults must add the new
+  origin to `API_CORS_ORIGINS` and, if it registered the hosted app in
+  `OAUTH_CLIENTS`, update the redirect URI. Operators pointing the variables
+  at their own builds are unaffected.
+- **Compose users: take the new `docker-compose.yml`.** It forwards eighteen
+  variables the old one silently dropped (see Fixed). `SECRET_KEY_BASE` and
+  `MASTER_SECRETS_KEY` are commented out in `.env.compose.example`; keep the
+  values you appended.
+- **New env vars, all optional and inert when unset.** `BRAND_ASSETS_URL`
+  (a directory of seven brand files on any static host; must be an absolute
+  http(s) URL or boot raises), `MICROSOFT_OAUTH_CLIENT_ID` / `_SECRET` and
+  `SLACK_OAUTH_CLIENT_ID` / `_SECRET` (platform connection providers, the
+  same shape as Google), and `GOOGLE_OAUTH_SCOPES`, `MICROSOFT_OAUTH_SCOPES`,
+  `SLACK_OAUTH_USER_SCOPES` (scope overrides). The Google provider now also
+  asks for the Calendar scope; an existing connection keeps its grants and
+  picks it up on reconnect.
+- **`PUBLIC_URL` gains two fallbacks**, `RENDER_EXTERNAL_URL` and
+  `https://$FLY_APP_NAME.fly.dev`. Your own `PUBLIC_URL` still wins, and a
+  blank one no longer shadows the fallbacks.
+- **The OpenAI-compatible endpoints are off unless flagged.**
+  `/v1/chat/completions` and `/v1/models` answer 404
+  `openai_compat_not_enabled` until `FEATURE_FLAGS_ON=openai_compat`.
+- **The Firecracker runner backend is opt-in** (`fountain runner --backend
+  firecracker`; Linux, `/dev/kvm`, `CAP_NET_ADMIN`). `--backend process` is
+  unchanged. A tenant in `BROKER_TENANTS` cannot launch on any runner.
+- **TypeScript SDK 1.8.0 to 1.13.0.** One breaking change:
+  `client.connections.providers()` became `client.connections.providers.list()`
+  and returns full `ConnectionProvider` rows (1.13.0).
+- No route was removed; every router change in the range is an addition.
+
+### Added
+
+- **The CLI signs in through the browser, and takes a pasted key**
+  (#1305, #1307, #1309, #1310). `fountain auth login` on a terminal now runs
+  an RFC 8628 device flow: the CLI prints a short `XXXX-XXXX` code and the
+  console URL, opens it where it can, and polls until the account approves
+  the device on the console's new `/device` page. The key it saves is a
+  full-scope API key in the same shape `POST /api/auth/token` returns. It
+  works for every account, which is the point: an account created with *Sign
+  up with GitHub* has no password, and the email + password exchange died
+  with a bare 401 for it. `--device` forces the flow, `--password` forces the
+  email + password prompt (piped stdin still reads a password, so scripts are
+  unchanged), and `--api-key` prompts for a key created on the console's API
+  keys page, verifies it against `GET /api/auth/me` and saves it. A password
+  401 on a terminal offers the browser flow. Server side: `POST
+  /api/auth/device` (public, rate-limited) and `POST /api/auth/device/token`
+  with the RFC 8628 error vocabulary, `oauth_device_grants` holding a hashed
+  device code with a fifteen-minute expiry and single use, pruned by
+  `OAuth.prune_expired`; approval and denial audit as `oauth.device_approved`
+  and `oauth.device_denied`. In the OpenAPI spec and SDK 1.12.0's generated
+  types. The 401 stays uniform on purpose (#324): the server never says which
+  auth method an account has.
+
+- **A first-agent quickstart at `/docs/quickstart`** (#1304). Choose the
+  hosted server or a `docker compose up`, put an inference key under Account,
+  then Inference keys, `fountain apply` the manifest in
+  `examples/quickstart/fountain.yml`, and run one turn against Fountain's own
+  public repository. `docs/index.md` and the README point here first.
+
+- **Two more unlisted campaign pages, `/oss-launch` and `/buzz-launch`**
+  (#1302, #1303, #1306, #1308, #1311, #1312, #1313, #1314, #1315, #1316,
+  #1318). `/oss-launch` makes the open-source engine's argument from the
+  engineer's chair outward: the deployment paths (compose, Render, Fly,
+  Kubernetes, Coolify), the manifest and first SDK run, a system map of
+  protocols in, runtimes, sandboxes and credential-bound systems, and what
+  telemetry stays on the instance. `/buzz-launch` sells hosted Buzz agents
+  from one fact, that the agent's body should outlive the laptop, and every
+  claim on it is the marketing register of a sentence in
+  `docs/integrations/buzz.md`. Both are unlisted like `/launch`; off the
+  marketing site they redirect to `/docs/open-source` and
+  `/docs/integrations/buzz`.
+
+- **Open Graph and Twitter cards on every page** (#1193). A link to the
+  landing page, a docs page or the sign-in page unfurls with a title, a
+  description and a 1200-by-630 card. `FountainWeb.OpenGraph` builds `og:url`
+  and `og:image` from `PUBLIC_URL`, not the request host, and the card
+  carries no product name, so a `PRODUCT_NAME` deployment reuses it. On an
+  instance that is not the marketing site the description states what the
+  page is and carries none of the pitch.
+
+- **Bring your own OAuth provider, and connect a remote MCP server by URL**
+  (#1186, ADR 0033). Connections were Google-only with Fountain's own OAuth
+  client; now Google is the one *platform* provider and every other service
+  is a provider the tenant defines on *Account → Connections*:
+  - **`oauth2`**: register an app at the service (GitHub, Slack, Notion,
+    Linear… presets fill the endpoints), paste the redirect URI the console
+    shows (`/connections/<provider id>/callback`) and the client id and
+    secret. Scopes, PKCE, the client-auth method, the env var the token is
+    brokered under (`GITHUB_ACCESS_TOKEN` from the slug) and the hosts the
+    broker attaches it to are all yours to set.
+  - **`mcp`**: paste a remote MCP server's URL and nothing else. Fountain
+    follows the MCP authorization spec — `401` → RFC 9728 protected-resource
+    metadata → RFC 8414 authorization-server metadata — runs a PKCE code
+    flow with the RFC 8707 `resource` parameter, and registers a client by
+    RFC 7591 dynamic registration where the server offers it (reused for a
+    second server behind the same authorization server). No client id is
+    typed anywhere; a server without registration takes a pasted one.
+  - An agent attaches a remote server with a connection —
+    `{"linear": {"type": "http", "url": "https://mcp.linear.app/mcp", "connection": "<id>"}}` —
+    and the sandbox calls it with a placeholder bearer the egress broker
+    swaps for the real token on that host only. A stdio server that reads
+    the env var needs nothing new. The agent form's *Connected account*
+    server type gained the optional URL.
+  - Refresh follows the provider: rotating refresh tokens are stored, no
+    `expires_in` means non-expiring, and a provider that issues no refresh
+    token leaves the connection **`expired`** (a new status) when the token
+    lapses, with a *Reconnect* button. Revoke is RFC 7009 where the
+    provider has a revoke URL.
+  - Every tenant-supplied URL is https-only and may not resolve into the
+    cluster (`Fountain.Connections.UrlGuard`), at save time and at every
+    fetch, including the URLs discovery gets back from the server.
+  - API: `GET/POST /api/connection-providers`,
+    `GET/PATCH/DELETE /api/connection-providers/:id`,
+    `POST /api/connection-providers/:id/discover`; connections carry
+    `provider_id`. SDK 1.13.0: `client.connections.providers` (list, get,
+    create, update, delete, discover); `connections.providers()` the method
+    became `connections.providers.list()`.
+  - Audit: `connection_provider.created` / `.updated` / `.deleted`,
+    `connection.expired`. Never a client secret or a token.
+  - Docs: *Connect a service with your own OAuth app*, *Connect a remote MCP
+    server*, and a catalog page per platform provider. ADR 0019 gains the
+    rotating-secret contract and the per-conversation vault that #1178 owed.
+  Only for accounts the egress broker is on for, as before.
+
 - **Two more platform connection providers: Microsoft and Slack** (#1299).
   The Connections page and `GET /api/connections/providers` now list three
   platform providers. One Microsoft sign-in covers Outlook mail, calendar and
@@ -69,7 +219,7 @@ upgrade, is in
   statement rather than an FAQ, and its two other blocks moved whole: the
   security answers (`security_answers/0`, with every limit still stated beside
   the answer it limits, and the "what we do not have" list still with them)
-  and the objections, now `build_faq/0`. `/self-hosted` section 08 moved the
+  and the objections, now `build_faq/0`. The questions on `/self-hosted` moved the
   same way, still `self_host_faq/0`. Both pages link back to their section by
   anchor rather than repeating the copy, and the suite asserts those anchors
   exist. On a deployment that bills, a billing section reads the same price
@@ -161,9 +311,144 @@ upgrade, is in
   unchanged. Needs Linux, `/dev/kvm` and `CAP_NET_ADMIN`; the base image is
   yours to build, and the runners guide has the recipe. Egress policy is
   still not advertised on runners, because capabilities belong to the adapter
-  rather than to one runner. See ADR 0036.
+  rather than to one runner, and for a tenant in `BROKER_TENANTS` that is a
+  blocker rather than a downgrade: no runner, process or microVM, can host
+  the conversation, and the launch fails with `backend_lacks_network_policy`
+  before a sandbox exists (#1226). See ADR 0036.
+
+- **Search over the manual, at `/docs` (#1009).** A field at the top of the
+  sidebar filters every page title and every heading as you type, with arrow
+  keys and Enter to jump. The index is the manual's structure, not its prose,
+  and is built at compile time, so there is no search service, no request and
+  no asset pipeline behind it. Since #1008 `/docs` is the only place the
+  manual is published, which left it as the one copy with no way to search.
+
+- **A case study, `/case-studies/self-healing-infrastructure`.** A Kubernetes
+  estate that answers its own alerts. Prometheus fires, a webhook opens a
+  Fountain conversation, and the agent reads the cluster through a read-only
+  API, names the commit that broke it, and opens one minimal pull request. It
+  cannot merge that pull request, and the page is mostly about why: the
+  identity it pushes as is one GitHub refuses to let approve its own work. The
+  numbers are counted from one production estate over a stated window, 78
+  incidents in fifteen days, and the page quotes the agent's own root-cause
+  paragraph rather than a summary of it. Like `/integrations`, `/built-with`
+  and `/self-hosted`, it is sales copy, so an instance that is not the
+  marketing site redirects into the manual.
+
+- **A landing page for running it yourself, `/self-hosted`.** The case for
+  an instance of your own, next to the case for ours: the bring-up in five
+  commands, the three licences and what each one asks of you, four rungs of
+  ownership down to the case where no third-party account is left in the loop,
+  and the four costs that land on the operator instead. The middle of it is
+  the inversion worth a page: the three features the hosted platform rations
+  are an env var on an instance of your own. Like `/integrations` and
+  `/built-with`, it is sales copy, so an instance that is not the marketing
+  site redirects to the manual's own `Self-host Fountain`.
+
+- **A gallery of the applications built on the API, `/built-with`.**
+  Twelve products, grouped by who they are for: a researcher that returns
+  cited briefs, an analyst that runs Python on a CSV, repository question-answering with file-and-line citations, a fleet
+  coordinator, a shared dev workbench, a DNS desk behind an approval gate, an
+  SRE on a cron, two config-audit products, a blind model bake-off, and the
+  team and conversation clients. Each card carries a live link and a source
+  link, and the suite checks that every entry names an absolute URL and a
+  repository, so no card can sell something nobody can open. The homepage
+  carries a band naming them all. Off the marketing site the page redirects
+  to the manual's build guide.
+
+- **An integrations page on the marketing site, `/integrations`.** The
+  protocols Fountain answers (AG-UI, the Agent Client Protocol, OpenAI chat
+  completions, MCP, its own REST API and webhooks, and Buzz over Nostr), what
+  already speaks each one, a snippet for each shape of builder, and the
+  runtimes, models, sandboxes and brokered services behind the door. Data
+  first: every link into the manual is checked by the suite, and the broker
+  presets are read from the same catalog the console offers. Off the marketing
+  site it redirects to the manual's own list, as `/` serves a plain front
+  door there.
+
+- **Tool bridge on `/v1/chat/completions` and AG-UI (#1202).** A request's
+  `tools` are offered to the agent beside its own, through one more
+  Fountain-served MCP server (`POST /api/mcp/caller/:conversation_id`). When
+  the agent calls one, the completion ends with `finish_reason: "tool_calls"`
+  (AG-UI: `TOOL_CALL_*` then `RUN_FINISHED` with `stopReason: "tool_calls"`)
+  while the turn stays open; the next request's `role: "tool"` messages
+  answer it and the turn resumes. A `user` message while calls are pending
+  is 409 `tool_calls_pending`; an unanswered call expires on the permission
+  deadline. The sandbox's own tools still never come back as tool calls.
+  ADR 0035 decision 4 amended. `examples/deepagents-contractor` gains
+  `FountainAgent.as_model()` for `create_agent`.
+
+- **LangChain and Deep Agents example.** `examples/deepagents-contractor`:
+  a Deep Agent orchestrator whose subagents are Fountain agents, over the
+  OpenAI-compatible API. `fountain_langchain.py` makes one agent a
+  `CompiledSubAgent`, a LangChain tool or a bare runnable, keyed to the
+  LangGraph `thread_id` so one thread keeps one sandbox per agent. Docs page
+  `docs/integrations/langchain.md`.
+
+- **OpenAI-compatible chat completions (alpha, flag `openai_compat`).**
+  `POST /v1/chat/completions` and
+  `GET /v1/models`, where the `model` is one of the tenant's agents (by name
+  or id), so any gateway (LiteLLM, Portkey, Kong, Cloudflare AI Gateway) or
+  base-URL chat client (Open WebUI, LibreChat, the `openai` SDK, `curl`)
+  drives a Fountain agent with no plugin. The thread is the conversation:
+  `X-Fountain-Thread`, else the request's `user` field, binds to channel
+  `openai:<key>`; only the newest user message is sent as the prompt, the
+  system prompt rides along with the first one, and a request with neither
+  key is a 400. `stream: true` streams `chat.completion.chunk` deltas
+  (`content` for the reply, `reasoning_content` for thinking, tool use and
+  provisioning stages) ending with `[DONE]`; `stream: false` blocks for the
+  turn. Tool calls are never emitted, `usage` is zeros, a busy thread is 409
+  with `Retry-After`. ADR 0035; `docs/integrations/openai-compatible.md`.
+  Off by default on the hosted platform: 404 `openai_compat_not_enabled`
+  until the flag is on (`FEATURE_FLAGS_ON=openai_compat` self-hosted). A
+  runnable client on the stock `openai` package is in `examples/openai-chat`.
+  The TypeScript SDK's generated types follow. #1198
+
+- **Agent config versions over the API.** `GET /api/agents/:id/versions`
+  lists an agent's config history newest first and
+  `GET /api/agents/:id/versions/:version` returns one version with its full
+  config; both are read-only (rollback stays a console action). Every
+  conversation now reports the version it launched under as
+  `agent_version_id` plus the resolved `agent_version` number (null for
+  conversations that predate versioning; the number is resolved on the
+  conversation list and get endpoints). The account export fetches version
+  history in one query instead of one per agent. The TypeScript SDK's
+  generated types follow (SDK 1.9.0). #1051
+
+- **`BRAND_ASSETS_URL`.** A deployment can serve its own app icon, favicons
+  and Open Graph card from any static host instead of the files in the
+  release image: point the variable at a directory holding the seven files
+  `Fountain.Brand.assets/0` names and the chrome links them, the card
+  unfurls with them and the CSP admits the origin on `img-src`. Unset,
+  nothing changes. Changing a brand's pixels no longer means rebuilding the
+  engine.
 
 ### Changed
+
+- **The marketing site is set on paper** (#1258, #1260). Every page the
+  marketing controller serves renders under `data-skin="paper"`: hairline
+  rules, no corners, no shadows, a serif for headings, old-style figures for
+  measured numbers, and one royal-purple accent that is also the brand.
+  `?skin=classic` is the way back while the look is being decided. The manual
+  and the console keep the console's tokens. A `BRAND_ASSETS_URL` bundle
+  gains a seventh file, `mark-mono.png`, a one-colour mark on a transparent
+  ground that the paper chrome uses.
+
+- **The demo suite lives at `*.demo.managoat.com`, and Reflex leaves
+  `/built-with`** (#1247, #1248). Every app on `/built-with` moved into the
+  managoat org and from `*.inevitable.fyi` and GitHub Pages to
+  `<repo>.demo.managoat.com`. `Fountain.Apps`'s defaults for
+  `CONVERSATIONS_APP_URL` and `TEAM_APP_URL` follow
+  (`https://fountain-conversations.demo.managoat.com/`,
+  `https://fountain-team.demo.managoat.com/`), as do the hermes plugin and
+  SDK 1.11.1's `DEFAULT_APP_URL`. Reflex is its own product rather than a
+  demo, so the gallery counts twelve. See the upgrade notes if your instance
+  relied on the old defaults.
+
+- **Docs headings** (#1239). The catalog and integration pages' `## At a
+  glance` is `## Summary` (the `#at-a-glance` anchor is gone), and *Wire up
+  observability* is *Configure observability* at the same slug.
+
 - **The Open Graph card carries the current product promise.** Link previews
   now lead with ready machines and their wake-work-park lifecycle instead of
   the retired "Have the conversation" headline. The 1200-by-630 card uses the
@@ -274,28 +559,6 @@ upgrade, is in
   anybody who needs more to `/self-hosted`, which now names that as the second
   reason to go there.
 
-- **The homepage answers the security review.** A builder cannot ship an agent
-  without somebody asking where the customer data goes and what the model can
-  see, and the material for that answer was three feature bullets scattered
-  across the page. `/` now carries a section written to be forwarded whole.
-  Seven questions, each answered with the mechanism rather than the intention,
-  and each answer that has a limit carrying it in the same breath: the
-  per-account AES-256-GCM key and the write-only rule, the fact that a secret
-  reaches the process environment and never the model's context, the 8-byte
-  literal match that redacts a log row before it is written and what that match
-  misses, the `_unsafe_` convention and the cross-tenant suite that enforces
-  it, what the audit trail records and for how long, `ask` and the runtimes
-  that cannot enforce it, and the two ways to keep everything inside your own
-  perimeter with the runner's trusted-mode caveat beside them.
-
-  It ends with **What we do not have**, on the page rather than in week three
-  of somebody's review. No SOC 2, no ISO 27001, no HIPAA posture, no DPA, no
-  sub-processor list, no penetration test, no single sign-on, and an egress
-  broker that runs for one account and is not yet a thing you can turn on. Each
-  row was verified absent from the repository. The suite pins every question,
-  every limit and all five absences, so a row cannot quietly go missing and the
-  broker cannot be upgraded to a general claim by accident.
-
 - **Two snippets on the marketing site were not runnable.** The homepage's SDK
   call printed `run.output`, which is not a field on `RunResult`; a reader who
   pasted it got `undefined`. It now prints `run.text` and passes a
@@ -338,113 +601,6 @@ upgrade, is in
   the manual's `The console, the apps, and the API` name all three as well;
   that page counted two.
 
-### Added
-
-- **Search over the manual, at `/docs` (#1009).** A field at the top of the
-  sidebar filters every page title and every heading as you type, with arrow
-  keys and Enter to jump. The index is the manual's structure, not its prose,
-  and is built at compile time, so there is no search service, no request and
-  no asset pipeline behind it. Since #1008 `/docs` is the only place the
-  manual is published, which left it as the one copy with no way to search.
-
-- **A case study, `/case-studies/self-healing-infrastructure`.** A Kubernetes
-  estate that answers its own alerts. Prometheus fires, a webhook opens a
-  Fountain conversation, and the agent reads the cluster through a read-only
-  API, names the commit that broke it, and opens one minimal pull request. It
-  cannot merge that pull request, and the page is mostly about why: the
-  identity it pushes as is one GitHub refuses to let approve its own work. The
-  numbers are counted from one production estate over a stated window, 78
-  incidents in fifteen days, and the page quotes the agent's own root-cause
-  paragraph rather than a summary of it. Like `/integrations`, `/built-with`
-  and `/self-hosted`, it is sales copy, so an instance that is not the
-  marketing site redirects into the manual.
-
-- **A landing page for running it yourself, `/self-hosted`.** The case for
-  an instance of your own, next to the case for ours: the bring-up in five
-  commands, the three licences and what each one asks of you, four rungs of
-  ownership down to the case where no third-party account is left in the loop,
-  and the four costs that land on the operator instead. The middle of it is
-  the inversion worth a page: the three features the hosted platform rations
-  are an env var on an instance of your own. Like `/integrations` and
-  `/built-with`, it is sales copy, so an instance that is not the marketing
-  site redirects to the manual's own `Self-host Fountain`.
-
-- **A gallery of the applications built on the API, `/built-with`.**
-  Thirteen products, grouped by who they are for: a researcher that returns
-  cited briefs, an analyst that runs Python on a CSV, a personal assistant you
-  text, repository question-answering with file-and-line citations, a fleet
-  coordinator, a shared dev workbench, a DNS desk behind an approval gate, an
-  SRE on a cron, two config-audit products, a blind model bake-off, and the
-  team and conversation clients. Each card carries a live link and a source
-  link, and the suite checks that every entry names an absolute URL and a
-  repository, so no card can sell something nobody can open. The homepage
-  carries a band naming them all. Off the marketing site the page redirects
-  to the manual's build guide.
-
-- **An integrations page on the marketing site, `/integrations`.** The
-  protocols Fountain answers (AG-UI, the Agent Client Protocol, OpenAI chat
-  completions, MCP, its own REST API and webhooks, and Buzz over Nostr), what
-  already speaks each one, a snippet for each shape of builder, and the
-  runtimes, models, sandboxes and brokered services behind the door. Data
-  first: every link into the manual is checked by the suite, and the broker
-  presets are read from the same catalog the console offers. Off the marketing
-  site it redirects to the manual's own list, as `/` serves a plain front
-  door there.
-
-- **Tool bridge on `/v1/chat/completions` and AG-UI (#1202).** A request's
-  `tools` are offered to the agent beside its own, through one more
-  Fountain-served MCP server (`POST /api/mcp/caller/:conversation_id`). When
-  the agent calls one, the completion ends with `finish_reason: "tool_calls"`
-  (AG-UI: `TOOL_CALL_*` then `RUN_FINISHED` with `stopReason: "tool_calls"`)
-  while the turn stays open; the next request's `role: "tool"` messages
-  answer it and the turn resumes. A `user` message while calls are pending
-  is 409 `tool_calls_pending`; an unanswered call expires on the permission
-  deadline. The sandbox's own tools still never come back as tool calls.
-  ADR 0035 decision 4 amended. `examples/deepagents-contractor` gains
-  `FountainAgent.as_model()` for `create_agent`.
-
-- **LangChain and Deep Agents example.** `examples/deepagents-contractor`:
-  a Deep Agent orchestrator whose subagents are Fountain agents, over the
-  OpenAI-compatible API. `fountain_langchain.py` makes one agent a
-  `CompiledSubAgent`, a LangChain tool or a bare runnable, keyed to the
-  LangGraph `thread_id` so one thread keeps one sandbox per agent. Docs page
-  `docs/integrations/langchain.md`.
-- **OpenAI-compatible chat completions (alpha, flag `openai_compat`).**
-  `POST /v1/chat/completions` and
-  `GET /v1/models`, where the `model` is one of the tenant's agents (by name
-  or id), so any gateway (LiteLLM, Portkey, Kong, Cloudflare AI Gateway) or
-  base-URL chat client (Open WebUI, LibreChat, the `openai` SDK, `curl`)
-  drives a Fountain agent with no plugin. The thread is the conversation:
-  `X-Fountain-Thread`, else the request's `user` field, binds to channel
-  `openai:<key>`; only the newest user message is sent as the prompt, the
-  system prompt rides along with the first one, and a request with neither
-  key is a 400. `stream: true` streams `chat.completion.chunk` deltas
-  (`content` for the reply, `reasoning_content` for thinking, tool use and
-  provisioning stages) ending with `[DONE]`; `stream: false` blocks for the
-  turn. Tool calls are never emitted, `usage` is zeros, a busy thread is 409
-  with `Retry-After`. ADR 0035; `docs/integrations/openai-compatible.md`.
-  Off by default on the hosted platform: 404 `openai_compat_not_enabled`
-  until the flag is on (`FEATURE_FLAGS_ON=openai_compat` self-hosted). A
-  runnable client on the stock `openai` package is in `examples/openai-chat`.
-  The TypeScript SDK's generated types follow. #1198
-- **Agent config versions over the API.** `GET /api/agents/:id/versions`
-  lists an agent's config history newest first and
-  `GET /api/agents/:id/versions/:version` returns one version with its full
-  config; both are read-only (rollback stays a console action). Every
-  conversation now reports the version it launched under as
-  `agent_version_id` plus the resolved `agent_version` number (null for
-  conversations that predate versioning; the number is resolved on the
-  conversation list and get endpoints). The account export fetches version
-  history in one query instead of one per agent. The TypeScript SDK's
-  generated types follow (SDK 1.9.0). #1051
-- **`BRAND_ASSETS_URL`.** A deployment can serve its own app icon, favicons
-  and Open Graph card from any static host instead of the files in the
-  release image: point the variable at a directory holding the six files
-  `Fountain.Brand.assets/0` names and the chrome links them, the card
-  unfurls with them and the CSP admits the origin on `img-src`. Unset,
-  nothing changes. Changing a brand's pixels no longer means rebuilding the
-  engine.
-
 ### Removed
 
 - **`.sops.public-key`.** ADR 0032 deleted `.sops.yaml` because the only
@@ -457,6 +613,56 @@ upgrade, is in
   repo root implies a workflow that does not exist.
 
 ### Fixed
+
+- **`interrupt` wakes a dead conversation server before answering 404**
+  (#1179, #1180). A `running` conversation can outlive its GenServer (a
+  deploy, a Horde rebalance), and `POST .../interrupt` answered
+  `{:error, :not_running}` for it, indistinguishable from a conversation that
+  does not exist, so a stuck autonomous turn sat `running` for hours with no
+  way to end it. Interrupt now mirrors `send_prompt`'s wake-on-miss: if the
+  row says `running`, it wakes the server, which reattaches to a live session
+  or closes the orphaned turn itself.
+
+- **The stylesheet URL carries its content hash, so a deploy cannot land on
+  a cached one** (#1259). `/assets/tokens.css` was served with a four-hour
+  max-age under an unchanging URL, and #1258 shipped correct markup against a
+  stale sheet, so the homepage rendered with the ink tokens undefined. The
+  layout links `tokens.css?v=<hash>` computed at compile time, and a guard
+  fails if the bare path returns. Applies to the console as well as the site.
+
+- **Compose forwards the variables the guides tell you to set** (#1215,
+  #1216, #1217). `API_CORS_ORIGINS`, `OAUTH_CLIENTS`, `CONVERSATIONS_APP_URL`
+  and `TEAM_APP_URL` were read by `config/runtime.exs`, documented, and passed
+  to the container by nothing, so following the deploy guide changed nothing
+  and the Conversations app failed CORS; the three features `/self-hosted`
+  says you switch on (`FEATURE_FLAGS_ON`, the AgentMail and AgentPhone keys,
+  every `BROKER_*` variable, eighteen in all) were in the same state.
+  `docker-compose.yml` forwards all of them, the four app-facing keys as bare
+  `KEY` so unset keeps the default and `KEY=` still means "no such app".
+  `.env.compose.example` ships `SECRET_KEY_BASE` and `MASTER_SECRETS_KEY`
+  commented out, because the quick start appends both and the blank line
+  above left two copies. The deploy guide names Docker with Compose v2,
+  openssl and reachable ghcr.io as prerequisites, waits for `healthy` before
+  the probe, and has a teardown. Guards assert every `>> .env` line in
+  `docs/` and every variable `rationed_features/0` names is forwarded.
+
+- **A transient Sprites timeout while writing the runtime's config no longer
+  fails the conversation.** The first filesystem call into a freshly created
+  sprite timed out once in prod (`Req.TransportError{reason: :timeout}`) and
+  `Claude.write_config/2` crashed on it, marking the sandbox and conversation
+  `failed` at the very step the provision `with` had marked best-effort. The
+  `.mcp.json` and settings writes (and gemini's) are idempotent and now retry
+  through `Fountain.Retry` like every other sandbox write; a write that still
+  fails returns `{:error, {:runtime_config, path, reason}}`, which the fresh
+  provision treats as a real failure (an agent must not run without its MCP
+  servers under a `provision/done`) and the wake path logs and continues.
+
+- **`fountain run` says why a turn failed.** A `turn`/`failed` event carries
+  the runtime's reason, and the CLI printed only `turn failed`. It prints the
+  reason now, and when the reason is the runtime's "Authentication required"
+  (what a sandbox reports when the account has no inference credential, the
+  quickstart step most easily skipped) it names the fix: add one under
+  Account, then Inference keys. The exit code is unchanged.
 
 - **The session title no longer opens a phantom "(background task follow-up)"
   turn after every claude turn** (#1300). The claude adapter generates the
@@ -483,6 +689,7 @@ upgrade, is in
   `PUBLIC_URL` is yours, and a CLI or SDK pointed at your instance
   (`FOUNTAIN_BASE_URL`, `fountain auth login`, `baseUrl`) keeps pointing
   there. Only the compile-time fallback changed.
+
 - Connections are opt-in: without `GOOGLE_OAUTH_CLIENT_ID` /
   `GOOGLE_OAUTH_CLIENT_SECRET` the *Connections* page lists no provider and
   nothing else changes. One migration adds the `connections` table.
@@ -495,50 +702,6 @@ upgrade, is in
   where everything lives; the README licence section links it. The decision
   is the PostHog/Sentry shape: the product site is the project site, `/docs`
   is the manual, the repo README is the front page, no second domain.
-
-- **Bring your own OAuth provider, and connect a remote MCP server by URL**
-  (#1186, ADR 0033). Connections were Google-only with Fountain's own OAuth
-  client; now Google is the one *platform* provider and every other service
-  is a provider the tenant defines on *Account → Connections*:
-  - **`oauth2`**: register an app at the service (GitHub, Slack, Notion,
-    Linear… presets fill the endpoints), paste the redirect URI the console
-    shows (`/connections/<provider id>/callback`) and the client id and
-    secret. Scopes, PKCE, the client-auth method, the env var the token is
-    brokered under (`GITHUB_ACCESS_TOKEN` from the slug) and the hosts the
-    broker attaches it to are all yours to set.
-  - **`mcp`**: paste a remote MCP server's URL and nothing else. Fountain
-    follows the MCP authorization spec — `401` → RFC 9728 protected-resource
-    metadata → RFC 8414 authorization-server metadata — runs a PKCE code
-    flow with the RFC 8707 `resource` parameter, and registers a client by
-    RFC 7591 dynamic registration where the server offers it (reused for a
-    second server behind the same authorization server). No client id is
-    typed anywhere; a server without registration takes a pasted one.
-  - An agent attaches a remote server with a connection —
-    `{"linear": {"type": "http", "url": "https://mcp.linear.app/mcp", "connection": "<id>"}}` —
-    and the sandbox calls it with a placeholder bearer the egress broker
-    swaps for the real token on that host only. A stdio server that reads
-    the env var needs nothing new. The agent form's *Connected account*
-    server type gained the optional URL.
-  - Refresh follows the provider: rotating refresh tokens are stored, no
-    `expires_in` means non-expiring, and a provider that issues no refresh
-    token leaves the connection **`expired`** (a new status) when the token
-    lapses, with a *Reconnect* button. Revoke is RFC 7009 where the
-    provider has a revoke URL.
-  - Every tenant-supplied URL is https-only and may not resolve into the
-    cluster (`Fountain.Connections.UrlGuard`), at save time and at every
-    fetch, including the URLs discovery gets back from the server.
-  - API: `GET/POST /api/connection-providers`,
-    `GET/PATCH/DELETE /api/connection-providers/:id`,
-    `POST /api/connection-providers/:id/discover`; connections carry
-    `provider_id`. SDK 1.8.0: `client.connections.providers` (list, get,
-    create, update, delete, discover); `connections.providers()` the method
-    became `connections.providers.list()`.
-  - Audit: `connection_provider.created` / `.updated` / `.deleted`,
-    `connection.expired`. Never a client secret or a token.
-  - Docs: *Connect a service with your own OAuth app*, *Connect a remote MCP
-    server*, and a catalog page per platform provider. ADR 0019 gains the
-    rotating-secret contract and the per-conversation vault that #1178 owed.
-  Only for accounts the egress broker is on for, as before.
 
 - **Connections: sign in to Google once, and agents get Gmail without ever
   holding the credential** (#1178). For accounts the egress broker is on for,
@@ -576,17 +739,6 @@ upgrade, is in
 
 ### Fixed
 
-- **A transient Sprites timeout while writing the runtime's config no longer
-  fails the conversation.** The first filesystem call into a freshly created
-  sprite timed out once in prod (`Req.TransportError{reason: :timeout}`) and
-  `Claude.write_config/2` crashed on it, marking the sandbox and conversation
-  `failed` at the very step the provision `with` had marked best-effort. The
-  `.mcp.json` and settings writes (and gemini's) are idempotent and now retry
-  through `Fountain.Retry` like every other sandbox write; a write that still
-  fails returns `{:error, {:runtime_config, path, reason}}`, which the fresh
-  provision treats as a real failure (an agent must not run without its MCP
-  servers under a `provision/done`) and the wake path logs and continues.
-
 - **Brokered sandboxes now trust the egress broker's MITM certificate across
   the Python and Rust toolchains, not only Node.** A brokered `uv sync`,
   `uv python install`, `pip install` or `cargo fetch` failed with
@@ -597,16 +749,19 @@ upgrade, is in
   to the full system CA bundle (real roots plus the broker CA — never the
   broker CA alone, which would break non-brokered hosts like PyPI), and
   `UV_NATIVE_TLS=1` so uv reads that store instead of its bundled webpki roots.
+
 - **The environment edit page no longer 500s when a `packages` value is a
   string instead of a list.** `packages` is a free map, and manifests had
   stored a version string under a manager the provisioner does not read
   (`"node" => "24"`), which `Enum.join/2` refused. A non-list value now
   renders as-is and round-trips as a one-item list.
+
 - **A refused Agent Vault create is checked against the vault list before
   it fails a prepare** (#1184). The vault answered 500 for a duplicate name
   where the contract says 409, which failed every reattach of a brokered
   conversation after its first idle; `ensure_vault` now consults the list
   on a refused create and proceeds when the vault is there.
+
 - **`gmail_search` no longer 500s** (#1183): Gmail's multi-valued query
   params (`metadataHeaders`, `labelIds`) are encoded as repeated keys.
 
