@@ -45,6 +45,11 @@ upgrade, is in
   source is managoat/managoat_acp. The peer, the permission policy and the
   block normaliser behave as they did; hexdocs.pm/managoat_acp now carries
   the comparison against the other two ACP packages.
+- **`managoat_sandbox` comes from hex** (#1345, ADR 0037), the fifth:
+  `apps/managoat_sandbox` is gone, the pin is `{:managoat_sandbox, "~> 0.1.0"}`
+  in both `apps/fountain` and `apps/managoat_runner` (the one library that
+  depends on it, which is what lets runner graduate next), the source is
+  managoat/managoat_sandbox with its Sprites client pinned to hex `0.2.0`.
 
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`
