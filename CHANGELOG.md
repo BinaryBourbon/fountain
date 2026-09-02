@@ -207,6 +207,17 @@ upgrade, is in
   event or option changed, and `ConversationServer.callback_api_key_opts/0`
   still answers for the tests that pin it. The pin drops from 4,498 to
   4,348.
+- **Sprite environment assembly and the runtime file writes have left
+  `ConversationServer`** (#1372, tracker #1369). `Fountain.Conversations.SpriteEnv`
+  turns rows and decrypted secrets into the sandbox's ordered env list, with
+  the one precedence rule (a vault wins over an environment) stated there
+  and the list registered for redaction before it is returned.
+  `Fountain.Conversations.Provisioning` gains the steps the server carried
+  itself: creating the sandbox, recording its URL, the setup script, the
+  runtime config, the instructions file and the runtime's own preparation.
+  Sixteen functions, same bodies, no behaviour change; the brokered
+  placeholders reach the env through one argument, which is the seam the
+  egress move (#1373) uses next. The pin drops from 4,348 to 4,168.
 
 ### Added
 

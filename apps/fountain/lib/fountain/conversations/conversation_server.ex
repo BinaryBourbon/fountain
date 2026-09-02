@@ -17,13 +17,19 @@ defmodule Fountain.Conversations.ConversationServer do
     Accounts,
     Agents,
     Conversations,
-    Crypto,
     Environments,
-    InferenceCredentials,
     Vaults
   }
 
-  alias Fountain.Conversations.{CallbackKey, Conversation, HomeCheckpoint, Lifecycle, McpServers}
+  alias Fountain.Conversations.{
+    CallbackKey,
+    Conversation,
+    HomeCheckpoint,
+    Lifecycle,
+    McpServers,
+    Provisioning,
+    SpriteEnv
+  }
 
   # How often the sandbox lifetime bounds are evaluated. A minute is far finer
   # than the bounds themselves (an hour, a day), so the cost of the tick is
@@ -682,12 +688,17 @@ defmodule Fountain.Conversations.ConversationServer do
 
     vault = if conv.vault_id, do: Vaults._unsafe_get_vault(conv.vault_id)
 
-    case load_tenant_state(conv.user_id) do
+    case SpriteEnv.load_tenant_state(conv.user_id) do
       {:ok, dek, inference_creds} ->
         bindings = broker_bindings(conv.user_id)
 
         {merged, bindings, connection_keys} =
-          add_connection_secrets(conv.user_id, merge_secrets(env, vault, dek), bindings, agent)
+          add_connection_secrets(
+            conv.user_id,
+            SpriteEnv.merge_secrets(env, vault, dek),
+            bindings,
+            agent
+          )
 
         {secrets, brokered} = split_brokered(conv.user_id, merged, bindings)
 
@@ -722,17 +733,6 @@ defmodule Fountain.Conversations.ConversationServer do
         {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
         Conversations.update_conversation(conv, %{status: "failed"})
         {:stop, :normal, state}
-    end
-  end
-
-  # Load the per-tenant DEK and decrypted inference credentials. Both are
-  # held in GenServer state for the conversation lifetime; the DEK is used
-  # for ad-hoc decryption (vaults, environments) and the credentials map
-  # is passed to runtime modules via build_sprite_env.
-  defp load_tenant_state(user_id) when is_binary(user_id) do
-    with {:ok, dek} <- Crypto.load_tenant_key(user_id),
-         {:ok, creds} <- InferenceCredentials.decrypted_for_user(user_id, dek) do
-      {:ok, dek, creds}
     end
   end
 
@@ -843,7 +843,7 @@ defmodule Fountain.Conversations.ConversationServer do
                state.conversation_id
              ),
            :ok <- discard_interrupted_attempt(provider, sandbox, interrupted?) do
-        create_sandbox_handle(provider, sandbox)
+        Provisioning.create_sandbox_handle(provider, sandbox)
       end
 
     case handle_result do
@@ -858,7 +858,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
         # Looked up once, here, because it is stable for the sandbox's life and
         # the agent needs it in its environment before the first turn runs.
-        sandbox_url = record_sandbox_url(sandbox, handle)
+        sandbox_url = Provisioning.record_sandbox_url(sandbox, handle)
 
         # The broker session is minted before the env is built, because the
         # env carries it; the CA is installed before anything dials out,
@@ -869,12 +869,12 @@ defmodule Fountain.Conversations.ConversationServer do
              # not be written would otherwise run without them and report
              # `provision/done`. The runtimes retry the write themselves.
              :ok <-
-               write_runtime_config(
+               Provisioning.write_runtime_config(
                  handle,
                  state.runtime_module,
                  with_connection_servers(agent, state)
                ),
-             _ = write_instructions(handle, runtime, agent),
+             _ = Provisioning.write_instructions(handle, runtime, agent),
              # The file is the machine's; the conversation's identity travels as
              # process env on every spawn (`Fountain.Conversations.Identity`).
              _ =
@@ -893,7 +893,13 @@ defmodule Fountain.Conversations.ConversationServer do
                  brokered?(state)
                ),
              :ok <-
-               prepare_runtime_sprite(handle, runtime, state.runtime_module, agent, sprite_env) do
+               Provisioning.prepare_runtime_sprite(
+                 handle,
+                 runtime,
+                 state.runtime_module,
+                 agent,
+                 sprite_env
+               ) do
           {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
           publish_stage(state.conversation_id, "provision", "done")
 
@@ -975,7 +981,7 @@ defmodule Fountain.Conversations.ConversationServer do
                  sprite_env,
                  conv_id
                ) do
-          run_setup_script(handle, env, sprite_env, conv_id)
+          Provisioning.run_setup_script(handle, env, sprite_env, conv_id)
         end
     end
   end
@@ -1113,7 +1119,7 @@ defmodule Fountain.Conversations.ConversationServer do
       # next turn's tools authenticate. Idempotent for an agent without one.
       # Best effort here, like the CA below: the turn's own failure says more
       # than a refused wake would.
-      case write_runtime_config(
+      case Provisioning.write_runtime_config(
              handle,
              state.runtime_module,
              with_connection_servers(agent, state)
@@ -1141,7 +1147,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
       # Same for the agent's system prompt: an edit reaches the existing
       # computer on its next wake (#848).
-      write_instructions(handle, conv.runtime || (agent && agent.runtime) || "claude", agent)
+      Provisioning.write_instructions(
+        handle,
+        conv.runtime || (agent && agent.runtime) || "claude",
+        agent
+      )
 
       # Normally the wake path already flipped suspended → ready under the
       # quota reservation; this covers the reaper parking the row mid-wake.
@@ -1461,30 +1471,19 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
+  # The server's half of `SpriteEnv.build/4`: unpack what the state holds and
+  # hand it over. The name stays because the tests and the comments that say
+  # "build_sprite_env registers the secrets" still mean this call.
   defp build_sprite_env(state, agent, env, secrets, sandbox_url \\ nil) do
-    state
-    |> do_build_sprite_env(agent, env, secrets, sandbox_url)
-    |> tap(fn sprite_env ->
-      # Register before anything can log. Provisioning writes output from its
-      # very first step, and the secrets are already in the sprite by then.
-      Fountain.Conversations.Redaction.put(state.conversation_id, sprite_env)
-    end)
-  end
-
-  defp do_build_sprite_env(state, agent, env, secrets, sandbox_url) do
-    (state.runtime_module.default_env(agent, state.env_credentials) || []) ++
-      CallbackKey.env(state.callback_token) ++
-      conversation_env(state.conversation_id) ++
-      sandbox_id_env(state.sandbox_id) ++
-      sandbox_url_env(sandbox_url) ++
-      otel_propagation_env() ++
-      git_author_env() ++
-      if(env,
-        do: Enum.map(env.env_vars, fn {k, v} -> {to_string(k), to_string(v)} end),
-        else: []
-      ) ++
-      Enum.map(secrets, fn {k, v} -> {k, v} end) ++
-      broker_env(state)
+    SpriteEnv.build(agent, env, secrets,
+      runtime_module: state.runtime_module,
+      env_credentials: state.env_credentials,
+      callback_token: state.callback_token,
+      conversation_id: state.conversation_id,
+      sandbox_id: state.sandbox_id,
+      sandbox_url: sandbox_url,
+      brokered: broker_env(state)
+    )
   end
 
   # ── sprite environment and egress (ADR 0019 gate 1a) ──────────────────────
@@ -1764,178 +1763,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp apply_egress_policy(handle, _env, conv_id, true),
     do: Fountain.Conversations.Provisioning.apply_broker_floor(handle, conv_id)
-
-  # The sandbox's own HTTP endpoint, so an agent asked "what's the URL?" can
-  # answer. Without it the agent has no way to know: the platform assigns the
-  # URL outside the sandbox, and inside it the hostname is just "sprite".
-  #
-  # `SANDBOX_URL` rather than `SPRITE_URL` because the value is provider-
-  # neutral; a provider that has no such endpoint simply sets nothing, and an
-  # unset variable is the honest answer to "no URL".
-  defp sandbox_url_env(nil), do: []
-  defp sandbox_url_env(url) when is_binary(url), do: [{"SANDBOX_URL", url}]
-
-  # Best-effort, and deliberately not fatal: a sandbox with no reportable URL
-  # is still a working sandbox. Stored on the row so the API and the UI can
-  # show it without a provider round trip.
-  defp record_sandbox_url(sandbox, handle) do
-    case Managoat.Sandbox.public_url(handle) do
-      {:ok, url} ->
-        meta = Map.put(sandbox.provider_meta || %{}, "public_url", url)
-        {:ok, _} = Conversations.update_sandbox(sandbox, %{provider_meta: meta})
-        url
-
-      {:error, :unsupported} ->
-        nil
-
-      {:error, reason} ->
-        Logger.warning("could not read the sandbox URL for #{handle.name}: #{inspect(reason)}")
-        nil
-    end
-  rescue
-    # The URL is a convenience; provisioning is not. An adapter that raises
-    # here — a provider SDK surprise, a probe against a sandbox that has not
-    # settled — must not cost the user their conversation.
-    error ->
-      Logger.warning("sandbox URL lookup raised for #{handle.name}: #{inspect(error)}")
-      nil
-  end
-
-  # Inject the current conversation ID so the bundled fountain skill can
-  # propagate it as X-Fountain-Parent-Conversation-Id when spawning children.
-  defp conversation_env(nil), do: []
-
-  defp conversation_env(conv_id) when is_binary(conv_id),
-    do: [{"FOUNTAIN_CONVERSATION_ID", conv_id}]
-
-  # The machine's own id, so the bundled fountain skill can put a child
-  # conversation onto this same sandbox (`sandbox_id` on the create, ADR 0023).
-  # Machine-scoped, not conversation-scoped: every conversation on the sandbox
-  # sees the same value, so unlike the conversation id it may live on the disk.
-  defp sandbox_id_env(nil), do: []
-
-  defp sandbox_id_env(sandbox_id) when is_binary(sandbox_id),
-    do: [{"FOUNTAIN_SANDBOX_ID", sandbox_id}]
-
-  @doc false
-  def git_author_env do
-    [
-      {"GIT_AUTHOR_NAME", "AoD"},
-      {"GIT_AUTHOR_EMAIL", "aod@local"},
-      {"GIT_COMMITTER_NAME", "AoD"},
-      {"GIT_COMMITTER_EMAIL", "aod@local"}
-    ]
-  end
-
-  # Env secrets first, vault overrides last — vault wins on key collision.
-  # Same merged map feeds repositories[].secret_key resolution.
-  defp merge_secrets(env, vault, dek) do
-    env_secrets = if env, do: Environments.decrypted_env(env, dek), else: %{}
-    vault_secrets = if vault, do: Vaults.decrypted_env(vault, dek), else: %{}
-    Map.merge(env_secrets, vault_secrets)
-  end
-
-  # Inject the W3C trace context as TRACEPARENT into the sprite env when
-  # we're inside an active OTel span. claude / codex / gemini / opencode
-  # all read TRACEPARENT and tag their API calls into the trace, so a
-  # turn span has every model API request as a child.
-  defp otel_propagation_env do
-    case Fountain.Telemetry.current_traceparent() do
-      nil -> []
-      tp -> [{"TRACEPARENT", tp}]
-    end
-  end
-
-  defp run_setup_script(_handle, nil, _sprite_env, _conv_id), do: :ok
-  defp run_setup_script(_handle, %{setup_script: ""}, _sprite_env, _conv_id), do: :ok
-
-  defp run_setup_script(handle, %{setup_script: script}, sprite_env, conv_id) do
-    Fountain.Telemetry.span(
-      [:setup_script],
-      %{conv_id: conv_id, script_size: byte_size(script)},
-      fn ->
-        publish_stage(conv_id, "setup", "started")
-
-        case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
-               env: sprite_env,
-               stderr_to_stdout: true,
-               timeout: 120_000
-             ) do
-          {:ok, output, code} ->
-            Conversations.log!(%{
-              conversation_id: conv_id,
-              kind: "output",
-              stream: "stdout",
-              stage: "setup",
-              data: output
-            })
-
-            if code == 0 do
-              publish_stage(conv_id, "setup", "done", %{exit_code: code})
-              {:ok, %{outcome: :ok, exit_code: code}}
-            else
-              publish_stage(conv_id, "setup", "failed", %{exit_code: code})
-              {{:error, {:setup_exit, code}}, %{outcome: :failed, exit_code: code}}
-            end
-
-          {:error, reason} ->
-            publish_stage(conv_id, "setup", "failed", %{reason: inspect(reason)})
-            {{:error, {:setup_unreachable, reason}}, %{outcome: :failed, reason: inspect(reason)}}
-        end
-      end
-    )
-  end
-
-  defp write_runtime_config(handle, runtime_module, agent) do
-    Code.ensure_loaded(runtime_module)
-
-    if function_exported?(runtime_module, :write_config, 2) do
-      runtime_module.write_config(handle, agent)
-    else
-      :ok
-    end
-  end
-
-  # The agent's `system` prompt, into the runtime's user-level instructions
-  # file (#848). Best-effort: a sandbox that refuses the write still runs,
-  # on the CLI's default persona, and says so in the log.
-  defp write_instructions(handle, runtime, agent) do
-    case Managoat.Runtimes.Instructions.write(handle, runtime, agent) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.warning(
-          "could not write agent instructions for #{inspect(agent && agent.name)} (#{runtime}): #{inspect(reason)}"
-        )
-
-        :ok
-    end
-  end
-
-  defp prepare_runtime_sprite(handle, runtime, runtime_module, agent, sprite_env) do
-    Code.ensure_loaded(runtime_module)
-
-    with :ok <- prepare_acp_adapter(handle, runtime, sprite_env) do
-      if function_exported?(runtime_module, :prepare_sandbox, 3) do
-        runtime_module.prepare_sandbox(handle, agent, sprite_env)
-      else
-        :ok
-      end
-    end
-  end
-
-  # The adapter is an npm install, so it has to happen here rather than at
-  # spawn: by the time a turn runs, the network policy has been applied and the
-  # install would fail in a way that reads as a protocol bug. Keyed on the
-  # conversation's runtime, matching the spawn decision in kick_turn/4.
-  defp prepare_acp_adapter(handle, runtime, sprite_env) do
-    if Managoat.Runtimes.ACP.enabled?(runtime) do
-      Managoat.Runtimes.ACP.install(handle, runtime, sprite_env)
-    else
-      :ok
-    end
-  end
 
   @impl true
   def handle_call({:send_prompt, prompt, images}, _from, state) do
@@ -3208,13 +3035,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
         :ok
     end
-  end
-
-  defp create_sandbox_handle(provider, sandbox) do
-    Managoat.Sandbox.Retry.with_backoff(
-      fn -> Managoat.Sandbox.create(provider, sandbox.sprite_name) end,
-      label: "sprite create #{sandbox.sprite_name}"
-    )
   end
 
   @doc """

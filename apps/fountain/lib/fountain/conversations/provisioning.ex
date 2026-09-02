@@ -17,6 +17,15 @@ defmodule Fountain.Conversations.Provisioning do
   Each step is a no-op when the corresponding field is empty, so legacy
   environments with bare config (just a name) provision instantly.
 
+  Since #1372 the steps the server used to carry itself live here too, in
+  the section at the end: creating the sandbox (`create_sandbox_handle/2`),
+  recording its URL on the row (`record_sandbox_url/2`), step 5
+  (`run_setup_script/4`), step 6 (`write_runtime_config/3`), the agent's
+  instructions file (`write_instructions/3`) and the runtime's own
+  preparation once the pipeline is done (`prepare_runtime_sprite/5`, which
+  installs the ACP adapter first). The environment they are handed is
+  `Fountain.Conversations.SpriteEnv`'s.
+
   Everything here talks to the sandbox through `Managoat.Sandbox`; nothing
   provider-shaped (rule structs, checkpoint streams) appears at this level.
   """
@@ -653,6 +662,137 @@ defmodule Fountain.Conversations.Provisioning do
 
   @doc false
   def shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''") <> "'"
+
+  # ── the machine, its URL and the runtime's files (#1372) ──────────────────
+  #
+  # The steps ConversationServer used to carry itself: creating the sandbox,
+  # recording its URL, the user's setup script and the files the runtime
+  # needs before its first turn. Same bodies, now beside the pipeline they
+  # are steps of.
+
+  def create_sandbox_handle(provider, sandbox) do
+    Managoat.Sandbox.Retry.with_backoff(
+      fn -> Managoat.Sandbox.create(provider, sandbox.sprite_name) end,
+      label: "sprite create #{sandbox.sprite_name}"
+    )
+  end
+
+  # Best-effort, and deliberately not fatal: a sandbox with no reportable URL
+  # is still a working sandbox. Stored on the row so the API and the UI can
+  # show it without a provider round trip.
+  def record_sandbox_url(sandbox, handle) do
+    case Managoat.Sandbox.public_url(handle) do
+      {:ok, url} ->
+        meta = Map.put(sandbox.provider_meta || %{}, "public_url", url)
+        {:ok, _} = Conversations.update_sandbox(sandbox, %{provider_meta: meta})
+        url
+
+      {:error, :unsupported} ->
+        nil
+
+      {:error, reason} ->
+        Logger.warning("could not read the sandbox URL for #{handle.name}: #{inspect(reason)}")
+        nil
+    end
+  rescue
+    # The URL is a convenience; provisioning is not. An adapter that raises
+    # here — a provider SDK surprise, a probe against a sandbox that has not
+    # settled — must not cost the user their conversation.
+    error ->
+      Logger.warning("sandbox URL lookup raised for #{handle.name}: #{inspect(error)}")
+      nil
+  end
+
+  def run_setup_script(_handle, nil, _sprite_env, _conv_id), do: :ok
+  def run_setup_script(_handle, %{setup_script: ""}, _sprite_env, _conv_id), do: :ok
+
+  def run_setup_script(handle, %{setup_script: script}, sprite_env, conv_id) do
+    Fountain.Telemetry.span(
+      [:setup_script],
+      %{conv_id: conv_id, script_size: byte_size(script)},
+      fn ->
+        publish_stage(conv_id, "setup", "started")
+
+        case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
+               env: sprite_env,
+               stderr_to_stdout: true,
+               timeout: 120_000
+             ) do
+          {:ok, output, code} ->
+            Conversations.log!(%{
+              conversation_id: conv_id,
+              kind: "output",
+              stream: "stdout",
+              stage: "setup",
+              data: output
+            })
+
+            if code == 0 do
+              publish_stage(conv_id, "setup", "done", %{exit_code: code})
+              {:ok, %{outcome: :ok, exit_code: code}}
+            else
+              publish_stage(conv_id, "setup", "failed", %{exit_code: code})
+              {{:error, {:setup_exit, code}}, %{outcome: :failed, exit_code: code}}
+            end
+
+          {:error, reason} ->
+            publish_stage(conv_id, "setup", "failed", %{reason: inspect(reason)})
+            {{:error, {:setup_unreachable, reason}}, %{outcome: :failed, reason: inspect(reason)}}
+        end
+      end
+    )
+  end
+
+  def write_runtime_config(handle, runtime_module, agent) do
+    Code.ensure_loaded(runtime_module)
+
+    if function_exported?(runtime_module, :write_config, 2) do
+      runtime_module.write_config(handle, agent)
+    else
+      :ok
+    end
+  end
+
+  # The agent's `system` prompt, into the runtime's user-level instructions
+  # file (#848). Best-effort: a sandbox that refuses the write still runs,
+  # on the CLI's default persona, and says so in the log.
+  def write_instructions(handle, runtime, agent) do
+    case Managoat.Runtimes.Instructions.write(handle, runtime, agent) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "could not write agent instructions for #{inspect(agent && agent.name)} (#{runtime}): #{inspect(reason)}"
+        )
+
+        :ok
+    end
+  end
+
+  def prepare_runtime_sprite(handle, runtime, runtime_module, agent, sprite_env) do
+    Code.ensure_loaded(runtime_module)
+
+    with :ok <- prepare_acp_adapter(handle, runtime, sprite_env) do
+      if function_exported?(runtime_module, :prepare_sandbox, 3) do
+        runtime_module.prepare_sandbox(handle, agent, sprite_env)
+      else
+        :ok
+      end
+    end
+  end
+
+  # The adapter is an npm install, so it has to happen here rather than at
+  # spawn: by the time a turn runs, the network policy has been applied and the
+  # install would fail in a way that reads as a protocol bug. Keyed on the
+  # conversation's runtime, matching the spawn decision in kick_turn/4.
+  def prepare_acp_adapter(handle, runtime, sprite_env) do
+    if Managoat.Runtimes.ACP.enabled?(runtime) do
+      Managoat.Runtimes.ACP.install(handle, runtime, sprite_env)
+    else
+      :ok
+    end
+  end
 
   defp publish_stage(conv_id, stage, status, meta \\ %{}) do
     Conversations.publish_stage(conv_id, stage, status, meta)
