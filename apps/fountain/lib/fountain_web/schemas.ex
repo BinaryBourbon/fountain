@@ -1216,6 +1216,65 @@ defmodule FountainWeb.Schemas do
   item_response(SandboxResponse, of: SandboxDetail)
   list_response(SandboxListResponse, of: SandboxDetail)
 
+  defmodule SandboxExecRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxExecRequest",
+      description: "A command to run on a ready sandbox and wait for.",
+      type: :object,
+      properties: %{
+        command: %Schema{
+          type: :string,
+          minLength: 1,
+          description: "The program, as `exec` finds it: `git`, `bash`."
+        },
+        args: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          description: "Its arguments, as separate words; nothing is shell-parsed."
+        },
+        cwd: %Schema{
+          type: :string,
+          nullable: true,
+          description: "Working directory. The runtime's home when omitted."
+        },
+        timeout_ms: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: 600_000,
+          nullable: true,
+          description:
+            "How long to wait; 60000 by default, 600000 at most. Past it the command is killed and the answer is 504."
+        }
+      },
+      required: [:command]
+    })
+  end
+
+  defmodule SandboxExecResult do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxExecResult",
+      type: :object,
+      properties: %{
+        output: %Schema{
+          type: :string,
+          description: "stdout and stderr, interleaved as they arrived."
+        },
+        exit_code: %Schema{type: :integer},
+        duration_ms: %Schema{type: :integer, minimum: 0},
+        truncated: %Schema{type: :boolean, description: "True when the output was cut at 1 MB."}
+      },
+      required: [:output, :exit_code, :duration_ms, :truncated]
+    })
+  end
+
+  item_response(SandboxExecResponse, of: SandboxExecResult)
+
   defmodule EnvironmentRequest do
     @moduledoc false
     require OpenApiSpex

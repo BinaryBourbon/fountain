@@ -16,6 +16,24 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **A look inside a ready sandbox over the API**.
+  `POST /api/sandboxes/:id/exec` runs one command on a `ready` sandbox the
+  caller owns and waits for it — `{command, args?, cwd?, timeout_ms?}` in,
+  `{output, exit_code, duration_ms, truncated}` out, output cut at 1 MB,
+  timeout 60 s by default and 600 s at most (`504 exec_timeout` past it).
+  `GET /api/sandboxes/:id/files?path=` answers one file's bytes, at most
+  4 MB, with `X-Fountain-Truncated` when cut; `404 file_not_found`, `422
+  not_a_file`. Both refuse a sandbox that is not `ready` with `409
+  sandbox_not_ready` rather than wake it, run while a conversation on the
+  machine is mid-turn (reading the tree as the agent works is the point),
+  take a full-scope key only, and audit sizes and exit codes — never the
+  command, the path or the bytes (ADR 0013). The first caller is Salon's
+  Changes panel, which until now had to get a diff out through a hook in
+  the sandbox; a client on any runtime can now ask the machine directly.
+  `Fountain.Conversations.SandboxCommands` is the seam.
+
 ### Changed
 
 - **The ACP peer, the permission policy and the block normaliser are now

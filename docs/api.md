@@ -620,6 +620,8 @@ several conversations.
 GET    /api/sandboxes          # list (?status=ready,suspended)
 GET    /api/sandboxes/:id
 DELETE /api/sandboxes/:id      # reset a persistent sandbox
+POST   /api/sandboxes/:id/exec        # run a command on a ready sandbox and wait ({command, args?, cwd?, timeout_ms?})
+GET    /api/sandboxes/:id/files?path= # one file's bytes from a ready sandbox
 ```
 
 Each sandbox carries `status`, `mode`, `provider` and `url`. It also carries
@@ -634,6 +636,41 @@ machine for the same agent, environment and vault. The response is `204`.
 An ephemeral sandbox, or one that is already `terminated` or `failed`, gets
 `422 sandbox_not_resettable`. While a conversation on the sandbox runs a
 turn, the request gets `409 sandbox_mid_turn`.
+
+`POST /api/sandboxes/:id/exec` runs one command on a `ready` sandbox you own
+and waits for it. Send `{"command": "git", "args": ["diff", "main"], "cwd":
+"/home/sprite/work/app", "timeout_ms": 30000}`. Arguments go as separate
+words and nothing is shell-parsed; for a pipeline run `bash` with `-lc` and
+the script. The answer is `{data: {output, exit_code, duration_ms,
+truncated}}`, where `output` is stdout and stderr interleaved as they
+arrived, cut at 1 MB with `truncated: true`. A non-zero exit is still a
+`200`; the code is in the body. `timeout_ms` defaults to 60000 and cannot
+exceed 600000; a command that outlives it is killed, and the answer is
+`504 exec_timeout`.
+
+`GET /api/sandboxes/:id/files?path=/absolute/path` answers one file's bytes
+as `application/octet-stream`, at most 4 MB; a longer file is cut and the
+answer carries `X-Fountain-Truncated: true`. Nothing at the path is `404
+file_not_found`; a directory or an unreadable entry is `422 not_a_file`; a
+relative path is `400 invalid_path`.
+
+Four rules hold for both. The sandbox must be `ready`: a suspended one is
+not woken by a look, and the answer is `409 sandbox_not_ready` with the
+status. That is a prompt's job, and the next one does it. A conversation
+mid-turn does **not** block the call, because reading the tree while the
+agent works is the point; a command that changes the tree changes it under
+the agent, exactly as a prompt could, so a client that wants only to look
+runs only what looks. Both need a full-scope key: a sandbox's own
+per-conversation token gets `403`, so a machine cannot run commands on the
+account's other machines. And both are audited (`sandbox.exec`,
+`sandbox.file_read`) with sizes, the exit code and the duration, never the
+command line, the path or the bytes — the same rule as the rest of the
+trail ([ADR 0013](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0013-audit-trail.md)).
+
+A transport failure between Fountain and the sandbox is `502
+sandbox_exec_failed`. On a brokered account the command runs inside the
+sandbox's own egress policy: `git fetch` from it reaches GitHub the way the
+agent's does, with the bound credential, and nothing else.
 
 Three other requests retire a persistent sandbox, because each one moves the
 identity that the sandbox belongs to. A `PATCH /api/agents/:id` with a new

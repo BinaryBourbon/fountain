@@ -275,6 +275,47 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # A command needs a live machine; a parked one is not woken for a look —
+  # the caller's next prompt wakes it, and the command then answers.
+  def call(conn, {:error, {:sandbox_not_ready, status}}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "sandbox_not_ready",
+      message:
+        "the sandbox is #{status}, not ready; a command needs a live machine, and a " <>
+          "suspended one is woken by a prompt, not by this route",
+      status: status
+    })
+  end
+
+  def call(conn, {:error, :exec_timeout}) do
+    conn
+    |> put_status(:gateway_timeout)
+    |> json(%{error: "exec_timeout", message: "the command did not finish within timeout_ms"})
+  end
+
+  def call(conn, {:error, {:sandbox_exec_failed, reason}}) do
+    conn
+    |> put_status(:bad_gateway)
+    |> json(%{
+      error: "sandbox_exec_failed",
+      message: "the sandbox did not run the command: #{inspect(reason)}"
+    })
+  end
+
+  def call(conn, {:error, :file_not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "file_not_found", message: "nothing is at that path on the sandbox"})
+  end
+
+  def call(conn, {:error, :not_a_file}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "not_a_file", message: "the path is a directory, or not readable"})
+  end
+
   def call(conn, {:error, :invalid_sandbox_mode}) do
     conn
     |> put_status(:unprocessable_entity)

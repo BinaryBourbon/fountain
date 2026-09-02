@@ -445,6 +445,17 @@ defmodule FountainWeb.Router do
   # The team's SSE stream (#810). Declared before the JSON team routes so
   # `/team/stream` is not swallowed by `/team/:agent_id`; no `:accepts_json`
   # for the same reason as the conversation stream below.
+  # A look inside a ready machine: run a command and wait, or read one
+  # file. Full scope, unlike the sandbox reads beside the conversations
+  # below — a sandbox's own per-conversation token must not run commands on
+  # the account's other machines.
+  scope "/api", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    post "/sandboxes/:id/exec", SandboxController, :exec
+    get "/sandboxes/:id/files", SandboxController, :file
+  end
+
   scope "/api", FountainWeb do
     pipe_through :api
 
