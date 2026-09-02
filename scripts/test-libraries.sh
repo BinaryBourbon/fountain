@@ -30,9 +30,14 @@ shopt -s nullglob
 apps=(apps/managoat_*/)
 shopt -u nullglob
 
+# Zero apps is the steady state since every library graduated to its own
+# repository (#1345): nothing to run, nothing to export, and the coverage
+# job's `libs=(apps/managoat_*/)` count is zero too, so the merge still
+# balances. A future library reappearing under apps/managoat_* is picked up
+# again with no change here.
 if [ "${#apps[@]}" -eq 0 ]; then
-  echo "no library apps under apps/managoat_*" >&2
-  exit 1
+  echo "no library apps under apps/managoat_*; every library is on hex (see CONTRIBUTING.md, \"Graduating a library\")"
+  exit 0
 fi
 
 for dir in "${apps[@]}"; do

@@ -1,12 +1,12 @@
 ExUnit.start()
 
-# `mix test` at the umbrella root runs every app's suite in one VM, and
-# apps/managoat_runner/test/test_helper.exs names Managoat.Runner.Host.Local
-# as the runner host (the library has no config of its own, and no default
-# host on purpose). Application env survives into this run, so name
-# Fountain's host again here or every runner-presence test sees a daemon
-# registered in a Registry that Fountain.Runners never looks in. Same value
-# as config/config.exs; a no-op when this suite runs on its own.
+# The managoat_runner library has no config of its own and no default host on
+# purpose; its own test helper names Managoat.Runner.Host.Local. While it was
+# an umbrella app, `mix test` at the root ran its suite in this VM first and
+# that value survived into Fountain's run, so Fountain's host is named again
+# here. It is on hex now (#1345) and its suite no longer runs here, which
+# makes this a no-op, kept for the day a library reappears under apps/.
+# Same value as config/config.exs.
 Application.put_env(:managoat_runner, :host, Fountain.Runners.Host)
 
 # Only set sandbox mode when the Repo is actually running (integration tests).

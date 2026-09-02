@@ -43,10 +43,10 @@ RUN mix local.hex --force \
 COPY mix.exs mix.lock coverage.exs ./
 COPY config ./config
 COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
-# One line per umbrella library app (decisions/0037): the umbrella loads every
-# child's mix.exs to resolve deps, so a missing one fails `mix deps.get` here.
-# umbrella_layout_test.exs checks that every apps/managoat_* has its line.
-COPY apps/managoat_runner/mix.exs ./apps/managoat_runner/mix.exs
+# One line per umbrella library app (decisions/0037), when there is one: the
+# umbrella loads every child's mix.exs to resolve deps, so a missing one fails
+# `mix deps.get` here. Every managoat_* library has graduated to hex (#1345),
+# so there is none today; umbrella_layout_test.exs checks any future one.
 
 RUN mix deps.get --only prod \
  && mix deps.compile

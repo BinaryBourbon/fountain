@@ -9,7 +9,9 @@ defmodule Fountain.UmbrellaLayoutTest do
   `Fountain.SomeModule` in a string or a comment, reads `:fountain`
   configuration, or emits telemetry under Fountain's prefix, and each of
   those would come back as a surprise on graduation day. This test walks the
-  directories so the miss lands here, on the PR that introduced it.
+  directories so the miss lands here, on the PR that introduced it. Every
+  library has graduated (#1345), so today it walks nothing; it stays for the
+  next one.
 
   It also pins the mechanics that silently degrade rather than fail: a
   library whose `mix.exs` is not `COPY`d in the Dockerfile's deps layer
@@ -30,9 +32,11 @@ defmodule Fountain.UmbrellaLayoutTest do
              |> Enum.filter(&File.dir?/1)
              |> Enum.sort()
 
-  test "there is at least one library app, or this test guards nothing" do
-    assert @libraries != [], "no apps/managoat_* directory; decisions/0037 says there is one"
-  end
+  # No "at least one library" assertion: since #1345 every library has
+  # graduated to its own managoat/managoat_<name> repository and the umbrella
+  # holds none, which is the steady state. The rules above still apply to
+  # any library that starts life here later; with zero directories this
+  # module defines no tests and the suite is unaffected.
 
   for lib <- @libraries do
     name = Path.basename(lib)

@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner. All eight."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
@@ -63,7 +63,12 @@ dependency on it became the hex requirement in the same PR, since an
 (managoat/managoat_docs, hex 0.1.0, 2026-09-02; the package carries `lib/`
 only, nothing from Fountain's `docs/` or the fixture manual under `test/`),
 `managoat_broker` (managoat/managoat_broker, hex 0.1.0, 2026-09-02; the two
-x509 dialyzer ignores travelled with it). The
+x509 dialyzer ignores travelled with it), `managoat_runner`
+(managoat/managoat_runner, hex 0.1.0, 2026-09-02, last because it depends on
+`managoat_sandbox`, whose Fountain-side PR switched runner's dependency to
+the hex release first). All eight have graduated; the umbrella holds no
+library app, and `umbrella_layout_test.exs` and `scripts/test-libraries.sh`
+guard the next one. The
 tracker is #1334. Each PR that extracts or graduates a library updates this
 block.
 
@@ -123,9 +128,11 @@ time, in this order and with these rules.
 `{:managoat_<name>, in_umbrella: true}`. The umbrella resolves dependencies
 between its apps at compile time, so a seam that is not real fails to compile
 before a second repository exists. A library graduates to a repository
-`managoat/<name>` when its public surface has stopped moving; the dependency
-line then becomes a git tag, then a hex requirement. The recipe for
-graduating is a deliverable of its own (#1345) and is written once.
+`managoat/managoat_<name>` (the same string as the hex package) when its
+public surface has stopped moving; the dependency line then becomes a hex
+requirement (`~> 0.1.0`, patch-level while everything is 0.x). The recipe
+for graduating is `scripts/graduate-library.sh` plus
+`templates/managoat-library/` (#1345), written once and run eight times.
 
 **Namespace.** Modules are `Managoat.<Name>`; hex packages are
 `managoat_<name>`. No library module carries the `Fountain` prefix.

@@ -39,13 +39,15 @@ fountain/                  umbrella root
       test/fountain/       context unit tests (async: true, DataCase)
       test/fountain_web/   controller/LiveView integration tests
       test/support/        DataCase, ConnCase, factory.ex
-    managoat_*/            component libraries being extracted from the server
+    (managoat_*/)          the component libraries extracted from the server
                            (ADR 0037, tracker #1334): Apache-2.0, Managoat.*
-                           namespace, no reference back into Fountain. Each is
-                           an in_umbrella dep of fountain until it graduates to
-                           a managoat/<name> repo. See CONTRIBUTING.md.
-      Graduated (#1345): on hex, pinned "~> 0.1.0" in apps/fountain/mix.exs,
-      source in the repo managoat/managoat_<name>, no directory here:
+                           namespace, no reference back into Fountain. Each
+                           began as an in_umbrella app here and all eight have
+                           graduated (#1345): on hex, pinned "~> 0.1.0" in
+                           apps/fountain/mix.exs, source in the repository
+                           managoat/managoat_<name>, no directory here. A
+                           future one starts as an app again; CONTRIBUTING.md
+                           has both recipes.
         managoat_substitution  Managoat.Substitution, the ${VAR} engine
         managoat_mcp_auth      Managoat.McpAuth, RFC 9728/8414/7591 MCP
                                authorization discovery with the SSRF guard
@@ -77,13 +79,12 @@ fountain/                  umbrella root
                                Managoat.Broker.Store; fountain implements the
                                store over broker_sessions and runs it beside
                                the Agent Vault client (BROKER_LISTEN_PORT)
-      managoat_runner/         Managoat.Runner: the self-hosted runner wire
+        managoat_runner        Managoat.Runner, the self-hosted runner wire
                                protocol (Connection), the sandbox adapter over
                                it, the sandbox-name shape and the FakeDaemon,
-                               behind the Managoat.Runner.Host behaviour.
-                               Fountain.Runners.Host implements it over Horde;
-                               the runners table, placement and presence stay
-                               in fountain.
+                               behind Managoat.Runner.Host; Fountain.Runners.Host
+                               implements it over Horde, and the runners
+                               table, placement and presence stay here
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is
