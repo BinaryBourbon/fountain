@@ -3432,7 +3432,13 @@ defmodule FountainWeb.Schemas do
         },
         expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },
-      required: [:id, :name, :prefix, :created_at]
+      # These four are what `show/2` always renders. The list used to read
+      # [:id, :name, :prefix, :created_at] — copied from ApiKey below, naming
+      # three properties this schema does not have. Nothing caught it because
+      # openapi-typescript drops a required name with no property, so the
+      # generated client just had every field optional. The SDK contract
+      # projection refuses to build such a schema, which is how it surfaced.
+      required: [:id, :email, :role, :email_verified]
     })
   end
 

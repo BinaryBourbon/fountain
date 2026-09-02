@@ -264,6 +264,52 @@ PR is the only place the new version is exercised against Fountain; do not
 skip its gates. Merges into a library repository are yours once its CI is
 green, because its `main` is what publishes.
 
+## Changing the API
+
+The server's OpenAPI document is the wire contract, and four clients live in
+this repository against it. A schema change that reaches only one of them is
+the failure mode this section exists to prevent, so the checks are arranged to
+fail in the PR that makes the change rather than in somebody's application
+months later.
+
+If you touched `apps/fountain/lib/fountain_web/schemas.ex`, a controller's
+`operation/2`, or the router, rebuild the contract first:
+
+```bash
+scripts/sdk-contract/build.sh
+git diff --stat sdk/contract/contract.json
+```
+
+An empty diff means the wire did not move and you are done. A non-empty diff
+is the list of what every client now has to agree with. Work through it:
+
+```bash
+cd sdk/typescript && npm run generate && npm run verify-contract
+cd sdk/python     && python3 scripts/verify_contract.py
+cd sdk/elixir     && mix contract.verify
+swift test --filter ContractTests        # from the repository root
+```
+
+Each verifier reads `sdk/contract/contract.json` and its own manifest under
+`sdk/contract/manifests/`, and names itself and the exact field, operation or
+enum value that no longer lines up. Fix the client, then update its manifest
+to describe what it now depends on. `sdk/contract/README.md` is the reference
+for the manifest format and for what each of the five checks means.
+
+Two things that are not optional:
+
+- **A new endpoint needs a decision.** `scripts/sdk-contract/build.sh --check`
+  fails when an operation is neither claimed by a manifest nor matched in
+  `sdk/contract/omissions.json`. Either wire it into a client, or add it to the
+  allowlist with one line saying why no client needs it.
+- **Commit `sdk/contract/contract.json`.** It is committed so the Swift job,
+  which has no Elixir toolchain, can check against it. `dist/openapi.json` is
+  the rebuilt input and stays ignored.
+
+Do not bump an SDK's version because the contract moved. Merging a version bump
+publishes that SDK, so a version moves when its own public surface changes.
+Label a PR `sdk-no-release` where the distinction needs saying out loud.
+
 ## Pull requests
 
 Every change goes through a PR and the CI gate must pass. Do not push directly
