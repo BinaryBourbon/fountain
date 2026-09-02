@@ -1,34 +1,15 @@
 defmodule Fountain.SandboxSkills do
   @moduledoc """
-  Materialize an agent's skills onto its sprite at provision time.
+  The skills every Fountain sandbox gets, and the call that mounts them with
+  the agent's own.
 
-  Each entry in `skills` is one of:
-
-    * `%{"name" => name, "content" => skill_md}` — inline. Written
-      directly to `<runtime.skills_root>/<name>/SKILL.md`.
-    * `%{"source" => "owner/repo", "ref" => optional, "name" => optional}` —
-      github. Installed via the [skills.sh](https://skills.sh) CLI on the
-      sprite: `npx -y skills@latest add <source>[@<ref>] --global --agent
-      <runtime-agent> --yes [--skill <name>]`. A `ref` (tag, branch, or sha)
-      pins the install; without one the repo's default branch is used at
-      spawn time. Each runtime declares its own `skills_sh_agent` so the
-      CLI writes to the right on-disk layout.
-
-  The bundled `fountain` skill at `priv/sprite_skills/fountain/SKILL.md` is
-  always prepended as an inline skill — it's how the per-conversation callback
-  API gets discovered inside the sprite.
-
-  This must run before the network policy locks the sprite down: github
-  installs hit npm + GitHub. Inside `mount/3` the github installs run
-  before the inline writes — a blocking exec waits until the sandbox is
-  fully ready, which is the readiness gate the file-write endpoints
-  silently need too.
+  The mechanism — inline `SKILL.md` writes under the runtime's skills root,
+  skills.sh installs for github sources, the shell allow-list — is
+  `Managoat.Runtimes.Skills`. What is Fountain's is the content: the bundled
+  skills under `priv/sprite_skills/`, prepended to every agent's list so the
+  per-conversation callback API and the team set-up Q&A are discoverable
+  inside the sprite.
   """
-
-  require Logger
-
-  alias Fountain.Runtimes
-  alias Managoat.Sandbox
 
   @bundle_root "sprite_skills"
   @fountain_skill_name "fountain"
@@ -37,135 +18,26 @@ defmodule Fountain.SandboxSkills do
   @bundled_skills [@fountain_skill_name, "create-team"]
 
   @doc """
-  Mount `skills` (a list of inline/github maps) on the sandbox behind
-  `handle` for the named runtime. The bundled `fountain` skill is always
-  prepended.
+  Mount `skills` (a list of inline/github maps, the agent's `skills` field)
+  on the sandbox behind `handle` for the named runtime. The bundled skills
+  are always prepended.
   """
-  def mount(handle, runtime, skills) when is_binary(runtime) do
-    case Runtimes.for_runtime(runtime) do
-      {:ok, mod} -> mount(handle, mod, skills)
-      {:error, _} = err -> err
-    end
+  @spec mount(Managoat.Sandbox.Handle.t(), String.t() | module(), [map()] | nil) ::
+          :ok | {:error, String.t()}
+  def mount(handle, runtime, skills) do
+    Managoat.Runtimes.Skills.install(handle, bundled() ++ (skills || []), runtime: runtime)
   end
 
-  def mount(handle, runtime_module, skills) when is_atom(runtime_module) do
-    skills_root = runtime_module.skills_root()
-    sh_agent = runtime_module.skills_sh_agent()
-
-    all = bundled_inline_skills() ++ normalize(skills || [])
-
-    {inline, github} =
-      Enum.split_with(all, fn s -> is_binary(s["content"]) end)
-
-    # Github installs first, inline writes second: a blocking exec waits for
-    # the sandbox to be running, so by the time we touch the file-write
-    # endpoints they're definitely up. (Not strictly required after the
-    # SDK URL fix, but cheap defense against future readiness regressions.)
-    install_github_skills(handle, sh_agent, github)
-    write_inline_skills(handle, skills_root, inline)
-    :ok
-  end
-
-  defp normalize(skills) do
-    skills
-    |> Enum.map(fn entry ->
-      Map.new(entry, fn
-        {k, v} when is_atom(k) -> {Atom.to_string(k), v}
-        {k, v} -> {k, v}
-      end)
-    end)
-  end
-
+  @doc """
+  The bundled skills as inline entries, in the order they are mounted.
+  """
+  @spec bundled() :: [%{String.t() => String.t()}]
   # sobelow_skip ["Traversal.FileModule"] — fixed path assembled from
   # priv_dir and a module attribute; no user input.
-  # sobelow_skip ["Traversal.FileModule"] — fixed path assembled from
-  # priv_dir and a module attribute; no user input.
-  defp bundled_inline_skills do
+  def bundled do
     Enum.map(@bundled_skills, fn name ->
       %{"name" => name, "content" => File.read!(Path.join([priv_dir(), name, "SKILL.md"]))}
     end)
-  end
-
-  defp write_inline_skills(_handle, _root, []), do: :ok
-
-  defp write_inline_skills(handle, root, inline) do
-    Enum.each(inline, fn %{"name" => name, "content" => content} ->
-      # write_file/4 creates the `<root>/<name>` directory atomically with
-      # the file write, so we don't need a separate mkdir round-trip (each
-      # one was another opportunity for the same readiness race).
-      path = Path.join([root, name, "SKILL.md"])
-
-      case Sandbox.write_file(handle, path, content) do
-        :ok ->
-          :ok
-
-        {:error, reason} ->
-          Logger.warning("inline skill write failed for #{name} at #{path}: #{inspect(reason)}")
-      end
-    end)
-  end
-
-  defp install_github_skills(_handle, _agent_id, []), do: :ok
-
-  defp install_github_skills(handle, agent_id, github) do
-    safe_agent = safe_token!(agent_id)
-
-    Enum.each(github, fn entry ->
-      cmd = github_install_cmd(entry, safe_agent)
-
-      case Sandbox.exec(handle, "bash", ["-lc", cmd],
-             stderr_to_stdout: true,
-             timeout: 120_000
-           ) do
-        {:ok, _output, 0} ->
-          :ok
-
-        {:ok, output, code} ->
-          Logger.warning(
-            "skills.sh install failed (#{code}) for #{inspect(entry)}: #{String.slice(output, 0, 500)}"
-          )
-
-        {:error, reason} ->
-          Logger.warning("skills.sh install failed for #{inspect(entry)}: #{inspect(reason)}")
-      end
-    end)
-  end
-
-  # Build the skills.sh install command for one github entry. `@ref` pins
-  # the fetch to a tag/branch/sha (skills.sh resolves `owner/repo@ref`).
-  # Every interpolated value passes the safe_token! allow-list separately —
-  # `@` itself is never accepted inside a token.
-  @doc false
-  def github_install_cmd(entry, safe_agent) do
-    source = safe_token!(entry["source"])
-
-    pinned =
-      case entry["ref"] do
-        nil -> source
-        "" -> source
-        ref -> source <> "@" <> safe_token!(ref)
-      end
-
-    "npx -y skills@latest add #{pinned} --global --agent #{safe_agent} --yes" <>
-      case entry["name"] do
-        nil -> ""
-        "" -> ""
-        name -> " --skill #{safe_token!(name)}"
-      end
-  end
-
-  # Allow-list quoting guard for values interpolated into `bash -lc`.
-  # Permits `[A-Za-z0-9._/-]` which is the full set needed for owner/repo
-  # identifiers, skill names, and the short `--agent` strings the runtimes
-  # declare. Anything else raises rather than silently passing through —
-  # we never want a `;` or `$` smuggled into a shelled-out command.
-  @doc false
-  def safe_token!(value) when is_binary(value) do
-    if Regex.match?(~r{\A[A-Za-z0-9._/-]+\z}, value) do
-      value
-    else
-      raise ArgumentError, "unsafe skill token (rejected by allow-list): #{inspect(value)}"
-    end
   end
 
   defp priv_dir do

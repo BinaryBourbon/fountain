@@ -11,7 +11,7 @@ defmodule Fountain.Connections.McpServerCatalog do
   That definition is what unblocked #932: "supported" as an opinion is an
   assertion nobody can verify, which CLAUDE.md forbids in docs.
 
-  Suggestions, not an allowlist — the `Fountain.Runtimes.Model` philosophy.
+  Suggestions, not an allowlist — the `Managoat.Runtimes.Model` philosophy.
   Nothing gates on membership: any URL a tenant pastes into the console or
   `POST /api/connection-providers` is discovered the same way. The list
   feeds the preset chips on the console's *Connect a remote MCP server*

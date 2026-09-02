@@ -91,12 +91,7 @@ apps/fountain/test/fountain/release_without_pubsub_test.exs	523
 apps/fountain/test/fountain/runners/placement_test.exs	727
 apps/fountain/test/fountain/runners_test.exs	2240
 apps/fountain/test/fountain/runtime_config_test.exs	40
-apps/fountain/test/fountain/runtimes/acp_test.exs	0
-apps/fountain/test/fountain/runtimes/claude_test.exs	38
-apps/fountain/test/fountain/runtimes/instructions_test.exs	0
 apps/fountain/test/fountain/runtimes/legacy_blocks_test.exs	0
-apps/fountain/test/fountain/runtimes/model_test.exs	0
-apps/fountain/test/fountain/runtimes_test.exs	0
 apps/fountain/test/fountain/sandbox_bounds_config_test.exs	23
 apps/fountain/test/fountain/sandbox_skills_test.exs	0
 apps/fountain/test/fountain/search_test.exs	1502

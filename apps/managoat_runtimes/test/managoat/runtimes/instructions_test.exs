@@ -1,8 +1,8 @@
-defmodule Fountain.Runtimes.InstructionsTest do
+defmodule Managoat.Runtimes.InstructionsTest do
   use ExUnit.Case, async: true
   use Mimic
 
-  alias Fountain.Runtimes.Instructions
+  alias Managoat.Runtimes.Instructions
 
   setup :verify_on_exit!
 
@@ -15,7 +15,7 @@ defmodule Fountain.Runtimes.InstructionsTest do
     # Under the runtime's *own* HOME, which is /tmp for these two. The earlier
     # version of this test asserted /home/sprite for both — the same wrong
     # answer the code gave, so it pinned the bug instead of catching it.
-    # `Fountain.Runtimes.LayoutTest` now checks the agreement rather than the
+    # `Managoat.Runtimes.LayoutTest` now checks the agreement rather than the
     # literal.
     assert Instructions.path("opencode") == "/tmp/.config/opencode/AGENTS.md"
     assert Instructions.path("gemini") == "/tmp/.gemini/GEMINI.md"

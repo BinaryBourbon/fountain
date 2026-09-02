@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.Gemini.SessionStoreTest do
+defmodule Managoat.Runtimes.Gemini.SessionStoreTest do
   @moduledoc """
   The Elixir half of the #659 workaround: that the script is installed where the
   turn-end call looks for it, and that a failing sandbox never costs a turn.
@@ -6,7 +6,7 @@ defmodule Fountain.Runtimes.Gemini.SessionStoreTest do
   use ExUnit.Case, async: true
   use Mimic
 
-  alias Fountain.Runtimes.Gemini.SessionStore
+  alias Managoat.Runtimes.Gemini.SessionStore
 
   setup :verify_on_exit!
 

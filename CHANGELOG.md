@@ -27,6 +27,21 @@ upgrade, is in
 
 ### Changed
 
+- **Runtime provisioning is a library, `managoat_runtimes`** (#1368, ADR
+  0037): how claude, codex, gemini and opencode get into a sandbox and come
+  up speaking ACP — the behaviour and dispatcher, the pinned adapter table
+  and install, `Layout`, `Instructions`, `Quirks`, the `provider/model_id`
+  parser, the skills mechanism, gemini's session-store workaround and the
+  `FakeRuntime` — is `apps/managoat_runtimes` as `Managoat.Runtimes`, the
+  provisioning half that #1339 left behind when the ACP peer left. The
+  behaviour reads the agent as a plain map, not `%Agent{}`. What stays:
+  the model suggestion catalog (`Fountain.Agents.ModelCatalog`, new), the
+  bundled skill content (`Fountain.SandboxSkills.bundled/0`), the
+  permission-ask timeout read (`Fountain.Conversations.Lifecycle.ask_timeout_ms/0`,
+  the one thing in there that read Fountain's configuration), `LegacyBlocks`
+  and `InferenceCredentials`. Nothing a sandbox receives changed: the same
+  files land in the same places with the same env vars, and the
+  conversation-server provisioning tests pass unchanged.
 - **`managoat_substitution` comes from hex** (#1345, ADR 0037). The first
   library to graduate: `apps/managoat_substitution` is gone,
   `apps/fountain/mix.exs` pins `{:managoat_substitution, "~> 0.1.0"}`, and

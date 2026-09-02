@@ -3,7 +3,7 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
   import Phoenix.LiveViewTest
 
-  alias Fountain.Runtimes.Model
+  alias Fountain.Agents.ModelCatalog
 
   describe "index" do
     test "renders agent list for authenticated user", %{conn: conn} do
@@ -136,7 +136,7 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
       assert html =~ ~s(list="model-options")
 
-      for model <- Model.suggestions("claude") do
+      for model <- ModelCatalog.suggestions("claude") do
         assert has_element?(view, ~s(datalist#model-options option[value="#{model}"]))
       end
 

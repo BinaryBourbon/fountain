@@ -1310,7 +1310,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp attempt_session_attach(state, running_turn, session, matched_by) do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    acp? = Fountain.Runtimes.ACP.enabled?(conv.runtime)
+    acp? = Managoat.Runtimes.ACP.enabled?(conv.runtime)
 
     case Managoat.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
       {:ok, idle_command} when acp? and is_nil(running_turn.acp_prompt_id) ->
@@ -1900,7 +1900,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # file (#848). Best-effort: a sandbox that refuses the write still runs,
   # on the CLI's default persona, and says so in the log.
   defp write_instructions(handle, runtime, agent) do
-    case Fountain.Runtimes.Instructions.write(handle, runtime, agent) do
+    case Managoat.Runtimes.Instructions.write(handle, runtime, agent) do
       :ok ->
         :ok
 
@@ -1930,8 +1930,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # install would fail in a way that reads as a protocol bug. Keyed on the
   # conversation's runtime, matching the spawn decision in kick_turn/4.
   defp prepare_acp_adapter(handle, runtime, sprite_env) do
-    if Fountain.Runtimes.ACP.enabled?(runtime) do
-      Fountain.Runtimes.ACP.install(handle, runtime, sprite_env)
+    if Managoat.Runtimes.ACP.enabled?(runtime) do
+      Managoat.Runtimes.ACP.install(handle, runtime, sprite_env)
     else
       :ok
     end
@@ -2002,14 +2002,14 @@ defmodule Fountain.Conversations.ConversationServer do
           turn_id: turn.id,
           name: name,
           arguments: arguments,
-          timeout_ms: Fountain.Runtimes.ACP.ask_timeout_ms()
+          timeout_ms: Fountain.Conversations.Lifecycle.ask_timeout_ms()
         })
 
         timer =
           Process.send_after(
             self(),
             {:caller_tool_timeout, call_id},
-            Fountain.Runtimes.ACP.ask_timeout_ms()
+            Fountain.Conversations.Lifecycle.ask_timeout_ms()
           )
 
         entry = %{
@@ -2369,14 +2369,14 @@ defmodule Fountain.Conversations.ConversationServer do
       # The agent's own list, verbatim. A client must never offer an option
       # that is not on it.
       options: options,
-      timeout_ms: Fountain.Runtimes.ACP.ask_timeout_ms()
+      timeout_ms: Fountain.Conversations.Lifecycle.ask_timeout_ms()
     })
 
     timer =
       Process.send_after(
         self(),
         {:permission_timeout, request_id},
-        Fountain.Runtimes.ACP.ask_timeout_ms()
+        Fountain.Conversations.Lifecycle.ask_timeout_ms()
       )
 
     {:noreply, %{state | permission_timer: timer}}
@@ -2463,7 +2463,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # pinned to a credential this fix disabled.
   def handle_info(
         {:acp, ref, {:failed, {:oauth_org_not_allowed, detail}}},
-        %{current_command_ref: ref, runtime_module: Fountain.Runtimes.Claude} = state
+        %{current_command_ref: ref, runtime_module: Managoat.Runtimes.Claude} = state
       ) do
     Logger.warning("conv #{state.conversation_id}: Claude OAuth token refused by org: #{detail}")
 
@@ -2473,7 +2473,7 @@ defmodule Fountain.Conversations.ConversationServer do
     state = broker_switch_to_api_key(state)
 
     fallback_env =
-      Fountain.Runtimes.Claude.fall_back_to_api_key(state.sprite_env, state.env_credentials)
+      Managoat.Runtimes.Claude.fall_back_to_api_key(state.sprite_env, state.env_credentials)
 
     switched? = fallback_env != state.sprite_env
 
@@ -3298,7 +3298,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # (`_unsafe_create_turn_on_sandbox/3`); this one exists so the API door gets
   # a refusal to render rather than an `:ok` followed by a refused stage.
   defp capacity_gate(state, conv) do
-    capacity = Fountain.Runtimes.ACP.concurrency(conv.runtime)
+    capacity = Managoat.Runtimes.ACP.concurrency(conv.runtime)
 
     if Conversations._unsafe_sandbox_at_capacity?(state.sandbox_id, conv.id, capacity),
       do: {:error, :sandbox_at_capacity},
@@ -3321,7 +3321,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # The machine may be shared (ADR 0023). For a runtime that takes one turn
     # at a time the insert is checked under the sandbox's lock, so two
     # conversations prompting the same machine at once cannot both start.
-    capacity = Fountain.Runtimes.ACP.concurrency(conv.runtime)
+    capacity = Managoat.Runtimes.ACP.concurrency(conv.runtime)
 
     case Conversations._unsafe_create_turn_on_sandbox(attrs, state.sandbox_id, capacity) do
       {:ok, turn} ->
@@ -3386,7 +3386,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # Keyed on the conversation's runtime, not the agent: a conversation
     # outlives its agent (deletion nilifies agent_id), and for a supported
     # runtime the legacy spawn path no longer exists to fall back to.
-    acp? = Fountain.Runtimes.ACP.enabled?(conv.runtime)
+    acp? = Managoat.Runtimes.ACP.enabled?(conv.runtime)
 
     # The connection outlives the turn (#817). If a peer from an earlier turn
     # is still idle on this machine, this turn rides it — no spawn, no
@@ -3449,16 +3449,16 @@ defmodule Fountain.Conversations.ConversationServer do
     # refuses a name that has no module, so a conversation whose runtime lacks
     # an ACP adapter cannot start in the first place. It is kept because the
     # turn machinery it leads to — the log budget, stdin handling, exit codes —
-    # is shared, and `Fountain.Test.FakeRuntime` still drives it here.
+    # is shared, and `Managoat.Runtimes.Testing.FakeRuntime` still drives it here.
     {cmd, args, build_opts} =
       if acp? do
-        {c, a} = Fountain.Runtimes.ACP.command(conv.runtime)
+        {c, a} = Managoat.Runtimes.ACP.command(conv.runtime)
         # The ACP `cwd` is validated in band by the agent CLI against the real
         # filesystem, so it must be the path a process inside the sandbox sees
         # — identity on hosted providers, the mapped directory on a runner
         # (ADR 0022).
         acp_cwd =
-          Managoat.Sandbox.host_path(state.handle, Fountain.Runtimes.ACP.cwd(conv.runtime))
+          Managoat.Sandbox.host_path(state.handle, Managoat.Runtimes.ACP.cwd(conv.runtime))
 
         {c, a, stdin?: true, dir: acp_cwd}
       else
@@ -3557,11 +3557,11 @@ defmodule Fountain.Conversations.ConversationServer do
                     cwd: cwd,
                     images: images,
                     mcp_servers:
-                      Fountain.Runtimes.ACP.mcp_servers(with_connection_servers(agent, state)) ++
+                      Managoat.Runtimes.ACP.mcp_servers(with_connection_servers(agent, state)) ++
                         McpServers.fountain_served(conv, state.callback_token),
                     model:
                       agent &&
-                        Fountain.Runtimes.Model.acp_model(
+                        Managoat.Runtimes.Model.acp_model(
                           conv.runtime || agent.runtime,
                           agent.model
                         ),
@@ -3944,7 +3944,7 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
     if conv.runtime == "gemini" do
-      Fountain.Runtimes.Gemini.SessionStore.consolidate(handle, conv.runtime_session_id)
+      Managoat.Runtimes.Gemini.SessionStore.consolidate(handle, conv.runtime_session_id)
     end
 
     :ok

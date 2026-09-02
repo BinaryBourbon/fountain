@@ -1,55 +1,48 @@
 defmodule Fountain.SandboxSkillsTest do
   use ExUnit.Case, async: true
+  use Mimic
 
   alias Fountain.SandboxSkills
 
-  describe "github_install_cmd/2" do
-    test "unpinned source installs from the default branch" do
-      cmd = SandboxSkills.github_install_cmd(%{"source" => "owner/repo"}, "claude")
+  setup :verify_on_exit!
 
-      assert cmd == "npx -y skills@latest add owner/repo --global --agent claude --yes"
-    end
+  @handle %Managoat.Sandbox.Handle{provider: :sprites, name: "skills-test"}
 
-    test "ref pins the source as owner/repo@ref" do
-      cmd =
-        SandboxSkills.github_install_cmd(
-          %{"source" => "owner/repo", "ref" => "v1.2.0"},
-          "claude"
-        )
+  test "bundled/0 is the API skill then the team set-up skill, read from priv" do
+    assert [
+             %{"name" => "fountain", "content" => api},
+             %{"name" => "create-team", "content" => team}
+           ] =
+             SandboxSkills.bundled()
 
-      assert cmd == "npx -y skills@latest add owner/repo@v1.2.0 --global --agent claude --yes"
-    end
+    assert api =~ "FOUNTAIN_CONVERSATION_ID"
+    assert team =~ "team"
+  end
 
-    test "empty ref is treated as unpinned" do
-      cmd = SandboxSkills.github_install_cmd(%{"source" => "owner/repo", "ref" => ""}, "claude")
+  test "mount/3 prepends the bundled skills to the agent's own and installs through the library" do
+    test = self()
 
-      assert cmd == "npx -y skills@latest add owner/repo --global --agent claude --yes"
-    end
+    stub(Managoat.Sandbox, :write_file, fn @handle, path, _body ->
+      send(test, {:wrote, path})
+      :ok
+    end)
 
-    test "name adds the --skill flag alongside a ref" do
-      cmd =
-        SandboxSkills.github_install_cmd(
-          %{"source" => "owner/repo", "ref" => "abc123", "name" => "my-skill"},
-          "claude"
-        )
+    reject(&Managoat.Sandbox.exec/4)
 
-      assert cmd ==
-               "npx -y skills@latest add owner/repo@abc123 --global --agent claude --yes --skill my-skill"
-    end
+    assert :ok = SandboxSkills.mount(@handle, "claude", [%{"name" => "mine", "content" => "# m"}])
 
-    test "shell-unsafe ref raises instead of reaching the command" do
-      assert_raise ArgumentError, fn ->
-        SandboxSkills.github_install_cmd(
-          %{"source" => "owner/repo", "ref" => "main; rm -rf /"},
-          "claude"
-        )
-      end
-    end
+    assert_receive {:wrote, "/home/sprite/.claude/skills/fountain/SKILL.md"}
+    assert_receive {:wrote, "/home/sprite/.claude/skills/create-team/SKILL.md"}
+    assert_receive {:wrote, "/home/sprite/.claude/skills/mine/SKILL.md"}
+  end
 
-    test "shell-unsafe source raises" do
-      assert_raise ArgumentError, fn ->
-        SandboxSkills.github_install_cmd(%{"source" => "owner/repo$(whoami)"}, "claude")
-      end
-    end
+  test "a nil skills list mounts the bundled skills alone" do
+    test = self()
+    stub(Managoat.Sandbox, :write_file, fn _h, path, _b -> send(test, {:wrote, path}) && :ok end)
+
+    assert :ok = SandboxSkills.mount(@handle, "codex", nil)
+    assert_receive {:wrote, "/home/sprite/.codex/skills/fountain/SKILL.md"}
+    assert_receive {:wrote, "/home/sprite/.codex/skills/create-team/SKILL.md"}
+    refute_receive {:wrote, _}
   end
 end

@@ -5,8 +5,9 @@ defmodule FountainWeb.AgentsLive.Form do
   alias Fountain.{Agents, AvatarGenerator, Environments, InferenceCredentials}
   alias Fountain.Agents.Agent
   alias Managoat.ACP.Permissions
-  alias Fountain.Runtimes.ACP
-  alias Fountain.Runtimes.Model
+  alias Managoat.Runtimes.ACP
+  alias Managoat.Runtimes.Model
+  alias Fountain.Agents.ModelCatalog
 
   @impl true
   def mount(params, _session, socket) do
@@ -196,7 +197,7 @@ defmodule FountainWeb.AgentsLive.Form do
   defp unknown_model?(model) do
     case Model.split(model) do
       {nil, nil} -> false
-      {provider, _id} -> Model.known_provider?(provider) and not Model.known?(model)
+      {provider, _id} -> Model.known_provider?(provider) and not ModelCatalog.known?(model)
     end
   end
 
@@ -728,7 +729,7 @@ defmodule FountainWeb.AgentsLive.Form do
             required
           />
           <datalist id="model-options">
-            <option :for={m <- Model.suggestions(@form["runtime"])} value={m}></option>
+            <option :for={m <- ModelCatalog.suggestions(@form["runtime"])} value={m}></option>
           </datalist>
         </div>
         <.error_msg field="model" errors={@errors} />

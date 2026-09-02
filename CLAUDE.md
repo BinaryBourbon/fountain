@@ -42,12 +42,12 @@ fountain/                  umbrella root
     (managoat_*/)          the component libraries extracted from the server
                            (ADR 0037, tracker #1334): Apache-2.0, Managoat.*
                            namespace, no reference back into Fountain. Each
-                           began as an in_umbrella app here and all eight have
-                           graduated (#1345): on hex, pinned "~> 0.1.0" in
+                           begins as an in_umbrella app here; the eight below
+                           have graduated (#1345): on hex, pinned "~> 0.1.0" in
                            apps/fountain/mix.exs, source in the repository
-                           managoat/managoat_<name>, no directory here. A
-                           future one starts as an app again; CONTRIBUTING.md
-                           has both recipes.
+                           managoat/managoat_<name>, no directory here.
+                           managoat_runtimes (after them) is the one app
+                           still here. CONTRIBUTING.md has both recipes.
         managoat_substitution  Managoat.Substitution, the ${VAR} engine
         managoat_mcp_auth      Managoat.McpAuth, RFC 9728/8414/7591 MCP
                                authorization discovery with the SSRF guard
@@ -58,9 +58,9 @@ fountain/                  umbrella root
         managoat_acp           Managoat.ACP, the client-side ACP session
                                (Peer), Protocol, Permissions, Blocks, Usage,
                                Tracer and the ScriptedAgent behind a writer
-                               callback; Fountain.Runtimes.ACP (provisioning,
-                               initialize_params/0, ask_timeout_ms/0),
-                               LegacyBlocks and Conversations.Blocks stay here
+                               callback; the provisioning half is
+                               managoat_runtimes (below); LegacyBlocks and
+                               Conversations.Blocks stay here
         managoat_sandbox       Managoat.Sandbox, the sandbox behaviour, the
                                Sprites/E2B/Daytona adapters, Retry, the Fake
                                and the conformance case; the "which providers
@@ -85,6 +85,21 @@ fountain/                  umbrella root
                                behind Managoat.Runner.Host; Fountain.Runners.Host
                                implements it over Horde, and the runners
                                table, placement and presence stay here
+    managoat_runtimes/     Managoat.Runtimes, the ninth library and the one
+                           still an in_umbrella app here (#1368; it graduates
+                           by the same recipe): how claude/codex/gemini/
+                           opencode get into a sandbox speaking ACP. The
+                           behaviour and for_runtime/1 (the agent is a plain
+                           map, not %Agent{}), the pinned ACP adapter table
+                           and install, Layout, Instructions, Quirks, the
+                           provider/model_id parser (Model), Skills and the
+                           FakeRuntime. The model suggestion catalog
+                           (Fountain.Agents.ModelCatalog), the bundled skill
+                           content (Fountain.SandboxSkills), the
+                           permission-ask timeout read
+                           (Conversations.Lifecycle.ask_timeout_ms/0),
+                           LegacyBlocks and InferenceCredentials stay in
+                           fountain.
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is

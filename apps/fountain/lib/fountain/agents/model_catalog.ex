@@ -1,35 +1,16 @@
-defmodule Fountain.Runtimes.Model do
+defmodule Fountain.Agents.ModelCatalog do
   @moduledoc """
-  Translation between `agent.model` — always stored in canonical
-  `provider/model_id` form — and what each runtime's CLI actually accepts.
+  The curated model suggestions the agent form offers and `/api/catalog`
+  serves, per runtime.
 
-  Only opencode is multi-provider: it takes the canonical string verbatim
-  (`opencode run --model anthropic/claude-sonnet-4-6`) and reads the prefix
-  to pick which API key to export. The other three CLIs each talk to one
-  provider and want the bare id:
-
-      claude --model claude-sonnet-4-6
-      codex  --model gpt-5.3-codex      # also spelled -m
-      gemini --model gemini-3.1-pro-preview   # also spelled -m
-
-  `Fountain.Agents.Agent` rejects a model whose prefix doesn't match its
-  runtime at write time (via `provider_for_runtime/1`), so by the time a
-  spawn reaches `build_command/5` stripping the prefix is always correct.
-  Before #553 those three runtimes ignored the field entirely, so an
-  `openai/gpt-5` agent on the claude runtime looked configured and quietly
-  ran whatever the CLI defaulted to.
-
-  This module also owns the curated model catalog (`suggestions/1`,
-  `providers/0`) that the agent form offers and the changeset validates the
-  provider half against — see the comment on `@catalog` for what is gated and
-  what deliberately is not.
+  Product data, not a rule: these are **suggestions, not an allowlist**.
+  `Fountain.Agents.Agent` accepts any model id under a known provider, and
+  the parsing it validates with (`split/1`, `provider_for_runtime/1`,
+  `known_provider?/1`) is the library's, `Managoat.Runtimes.Model`. What this
+  module adds is the list, and the reason it is only a list is below.
   """
 
-  @provider_by_runtime %{
-    "claude" => "anthropic",
-    "codex" => "openai",
-    "gemini" => "google"
-  }
+  alias Managoat.Runtimes.Model
 
   # Curated, deliberately short suggestion list — newest first per provider.
   #
@@ -107,16 +88,9 @@ defmodule Fountain.Runtimes.Model do
     )
   }
 
-  # Stable order for the UI: the single-provider runtimes in the order they
-  # appear in @provider_by_runtime, so an opencode datalist reads the same way
-  # every render.
-  @provider_order ~w(anthropic openai google)
-
   @doc "Providers Fountain can export inference credentials for, in display order."
-  def providers, do: @provider_order
-
-  @doc "Whether `provider` is one Fountain can export credentials for."
-  def known_provider?(provider), do: provider in @provider_order
+  @spec providers() :: [String.t()]
+  defdelegate providers, to: Model
 
   @doc """
   Suggested canonical `provider/model_id` strings for a runtime — the
@@ -127,16 +101,18 @@ defmodule Fountain.Runtimes.Model do
   These are suggestions, not an allowlist. `Agent.changeset/2` accepts any
   model id under a known provider.
   """
+  @spec suggestions(String.t() | nil) :: [String.t()]
   def suggestions(runtime) do
-    case provider_for_runtime(runtime) do
-      nil -> Enum.flat_map(@provider_order, &suggestions_for_provider/1)
+    case Model.provider_for_runtime(runtime) do
+      nil -> Enum.flat_map(Model.providers(), &suggestions_for_provider/1)
       provider -> suggestions_for_provider(provider)
     end
   end
 
   @doc "Whether a canonical model string is one of the curated suggestions."
+  @spec known?(String.t() | nil) :: boolean()
   def known?(model) do
-    case split(model) do
+    case Model.split(model) do
       {nil, nil} -> false
       {provider, id} -> id in Map.get(@catalog, provider, [])
     end
@@ -145,68 +121,4 @@ defmodule Fountain.Runtimes.Model do
   defp suggestions_for_provider(provider) do
     @catalog |> Map.fetch!(provider) |> Enum.map(&"#{provider}/#{&1}")
   end
-
-  @doc """
-  The single provider a runtime's CLI can reach, or `nil` for a
-  multi-provider runtime (opencode) that accepts any prefix.
-  """
-  def provider_for_runtime(runtime) when is_binary(runtime),
-    do: Map.get(@provider_by_runtime, runtime)
-
-  def provider_for_runtime(_runtime), do: nil
-
-  @doc """
-  Split a canonical `provider/model_id` into its two halves.
-
-  Returns `{nil, nil}` for anything not in canonical form — callers treat
-  that as "no model to pass", never as something to guess at.
-  """
-  def split(model) when is_binary(model) do
-    case String.split(model, "/", parts: 2) do
-      [provider, id] when provider != "" and id != "" -> {provider, id}
-      _ -> {nil, nil}
-    end
-  end
-
-  def split(_model), do: {nil, nil}
-
-  @doc "Provider half of a canonical model string, or `nil`."
-  def provider(model), do: model |> split() |> elem(0)
-
-  @doc "Model-id half of a canonical model string, or `nil`."
-  def id(model), do: model |> split() |> elem(1)
-
-  @doc """
-  `["--model", "<bare id>"]` for the single-provider CLIs, or `[]` when the
-  agent carries no parseable model. All three spell the long flag the same
-  way, so one helper covers them.
-  """
-  def model_args(%{model: model}) do
-    case id(model) do
-      nil -> []
-      id -> ["--model", id]
-    end
-  end
-
-  def model_args(_agent), do: []
-
-  @doc """
-  The id to pin over ACP (`session/set_model` or the `model` config option).
-
-  A single-provider runtime names its models bare (`claude-sonnet-4-6`); a
-  multi-provider one (opencode) only knows them by the canonical
-  `provider/model_id`, and a bare id is "model not found" there — after which
-  opencode quietly falls back to its own default over its own gateway, and
-  the provider the tenant configured is never called. Measured live on
-  2026-08-25 with the egress broker's log in front of it.
-  """
-  def acp_model(runtime, model) when is_binary(runtime) do
-    case {provider_for_runtime(runtime), split(model)} do
-      {_, {nil, nil}} -> nil
-      {nil, _} -> model
-      {_provider, {_, id}} -> id
-    end
-  end
-
-  def acp_model(_runtime, model), do: id(model)
 end

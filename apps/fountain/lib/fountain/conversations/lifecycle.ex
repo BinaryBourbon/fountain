@@ -67,6 +67,29 @@ defmodule Fountain.Conversations.Lifecycle do
     )
   end
 
+  @doc """
+  How long a held `ask` waits for a human before it is denied (#940).
+
+  Read from `:permission_ask_timeout_seconds`; the default and the parsing
+  are the ACP library's (`Managoat.ACP.Permissions.ask_timeout_ms/1`). Must
+  sit under `idle_timeout_seconds/0`: a held request suppresses only the idle
+  verdict, so one that outlived the idle bound would be resolved by the
+  max-lifetime ceiling instead — which destroys the sandbox rather than
+  parking it (0017). The timeout has to fire first for an unanswered prompt
+  to cost a turn rather than the agent's memory; `lifecycle_test.exs` pins
+  the bound.
+
+  Lived on `Fountain.Runtimes.ACP` until that module left for
+  `Managoat.Runtimes` (#1368); it is the one thing there that read Fountain's
+  configuration, and it belongs with the bound it has to stay under.
+  """
+  @spec ask_timeout_ms() :: pos_integer()
+  def ask_timeout_ms do
+    :fountain
+    |> Application.get_env(:permission_ask_timeout_seconds)
+    |> Managoat.ACP.Permissions.ask_timeout_ms()
+  end
+
   defp to_seconds(nil, _unit), do: nil
   defp to_seconds(0, _unit), do: nil
   defp to_seconds(n, unit) when is_integer(n) and n > 0, do: n * unit

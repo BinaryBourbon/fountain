@@ -1,13 +1,13 @@
-defmodule Fountain.Runtimes.Quirks do
+defmodule Managoat.Runtimes.Quirks do
   @moduledoc """
   Every workaround Fountain carries on a runtime's behalf, the defect that
   justifies it, and the condition under which it is deleted.
 
   ## Why a registry rather than comments
 
-  The comments already exist, and they are good ones — `Fountain.Runtimes.ACP`
+  The comments already exist, and they are good ones — `Managoat.Runtimes.ACP`
   spends forty lines on how gemini's session store erases a session in the act
-  of loading it, and `Fountain.Runtimes.Claude` explains exactly why MCP
+  of loading it, and `Managoat.Runtimes.Claude` explains exactly why MCP
   servers go in as files. Both end with some version of "delete this when
   upstream lands."
 
@@ -16,7 +16,7 @@ defmodule Fountain.Runtimes.Quirks do
   only as the next person reasoning about a system that is stranger than it
   needs to be. Worse is the version where the upstream fix lands and the
   workaround now *conflicts* with it — the case
-  `Fountain.Runtimes.Claude`'s moduledoc already anticipates, where a fixed
+  `Managoat.Runtimes.Claude`'s moduledoc already anticipates, where a fixed
   session-scoped channel plus our file-based provisioning would register every
   MCP server twice.
 
@@ -33,7 +33,7 @@ defmodule Fountain.Runtimes.Quirks do
   `OPENAI_API_KEY` looks like one and is not: that is codex's documented auth
   mechanism, no upstream fix would remove it, and there is no condition under
   which we stop doing it. It belongs to the irreducible tier described in
-  `Fountain.Runtimes`. The test for a quirk is whether you can state what
+  `Managoat.Runtimes`. The test for a quirk is whether you can state what
   would have to change for the code to be deleted. If you cannot, it is not a
   workaround — it is just how that runtime works.
 
@@ -78,7 +78,7 @@ defmodule Fountain.Runtimes.Quirks do
       """,
       upstream: "https://github.com/agentclientprotocol/claude-agent-acp/issues/883",
       measured_against: "claude-agent-acp 0.66–0.70, reproduced standalone",
-      implemented_by: {Fountain.Runtimes.Claude, :write_config, 2},
+      implemented_by: {Managoat.Runtimes.Claude, :write_config, 2},
       reprobe: """
       Run a conversation with an MCP server declared on the agent, with
       `write_config/2` stubbed out, and check the model can call an
@@ -88,7 +88,7 @@ defmodule Fountain.Runtimes.Quirks do
       `session/new`'s `mcpServers` launches stdio servers. Then drop
       `Claude.write_config/2` in the same PR that confirms it — leaving both
       paths on registers every server twice, which is the failure
-      `Fountain.Runtimes.Gemini` already had and fixed by writing to one
+      `Managoat.Runtimes.Gemini` already had and fixed by writing to one
       place only.
       """
     },
@@ -109,7 +109,7 @@ defmodule Fountain.Runtimes.Quirks do
       """,
       upstream: "https://github.com/google-gemini/gemini-cli/issues/28775",
       measured_against: "gemini-cli 0.53.0 through 0.56.0, verified live in both directions",
-      implemented_by: {Fountain.Runtimes.Gemini.SessionStore, :install, 1},
+      implemented_by: {Managoat.Runtimes.Gemini.SessionStore, :install, 1},
       reprobe: """
       Five consecutive turns inside one wall-clock minute with the consolidation
       disabled. The collision is bucketed by minute, so spacing turns out hides
@@ -117,9 +117,9 @@ defmodule Fountain.Runtimes.Quirks do
       """,
       delete_when: """
       `session/load` stops appending a `$set` that replaces the transcript it
-      is loading. Delete `Fountain.Runtimes.Gemini.SessionStore`, its call in
+      is loading. Delete `Managoat.Runtimes.Gemini.SessionStore`, its call in
       `Gemini.prepare_sandbox/3`, the per-turn `consolidate/2` call, and the
-      mechanism section of `Fountain.Runtimes.ACP`'s moduledoc.
+      mechanism section of `Managoat.Runtimes.ACP`'s moduledoc.
       """
     },
     %{
@@ -135,7 +135,7 @@ defmodule Fountain.Runtimes.Quirks do
       """,
       upstream: {:none, "a sprite base-image decision on our side, not a defect in opencode"},
       measured_against: "sprite base image as of 2026-08-22",
-      implemented_by: {Fountain.Runtimes.OpenCode, :prepare_sandbox, 3},
+      implemented_by: {Managoat.Runtimes.OpenCode, :prepare_sandbox, 3},
       reprobe: "`command -v opencode` on a fresh sandbox before provisioning runs.",
       delete_when: """
       opencode ships in the sprite base image at a version we choose. Note
@@ -160,7 +160,7 @@ defmodule Fountain.Runtimes.Quirks do
       """,
       upstream: {:none, "sprite base-image filesystem permissions, ours to change"},
       measured_against: "sprite base image as of 2026-08-22",
-      implemented_by: {Fountain.Runtimes.Layout, :home_env, 1},
+      implemented_by: {Managoat.Runtimes.Layout, :home_env, 1},
       reprobe: """
       As the sprite user on a live sandbox: `touch /home/sprite/.probe.tmp &&
       mv /home/sprite/.probe.tmp /home/sprite/.probe`. A clean rename means
@@ -168,7 +168,7 @@ defmodule Fountain.Runtimes.Quirks do
       """,
       delete_when: """
       The sprite user can rename across /home/sprite. Then both rows in
-      `Fountain.Runtimes.Layout` take the image's own home and `home_env/1`
+      `Managoat.Runtimes.Layout` take the image's own home and `home_env/1`
       returns `[]` for every runtime — no other change is needed, which is
       the point of deriving the paths from it.
       """
@@ -188,7 +188,7 @@ defmodule Fountain.Runtimes.Quirks do
       """,
       upstream: {:none, "sprite base-image PATH, ours to change"},
       measured_against: "verified on a live sprite 2026-08-10, node v24.18.0",
-      implemented_by: {Fountain.Runtimes.ACP, :install, 3},
+      implemented_by: {Managoat.Runtimes.ACP, :install, 3},
       reprobe: """
       `npm install -g <anything with a bin>` on a fresh sandbox, then
       `command -v` it without the symlink.

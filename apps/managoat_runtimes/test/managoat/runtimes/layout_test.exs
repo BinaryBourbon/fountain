@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.LayoutTest do
+defmodule Managoat.Runtimes.LayoutTest do
   @moduledoc """
   The layout table, and the agreement it exists to enforce.
 
@@ -11,9 +11,9 @@ defmodule Fountain.Runtimes.LayoutTest do
   """
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes
-  alias Fountain.Runtimes.Instructions
-  alias Fountain.Runtimes.Layout
+  alias Managoat.Runtimes
+  alias Managoat.Runtimes.Instructions
+  alias Managoat.Runtimes.Layout
 
   test "every runtime in the dispatcher has a layout row, and vice versa" do
     assert Layout.runtimes() == ["claude", "codex", "gemini", "opencode"]
@@ -66,7 +66,7 @@ defmodule Fountain.Runtimes.LayoutTest do
     # ACP hands this to the agent in `session/new`; it must not have drifted
     # back into a second copy.
     for runtime <- Layout.runtimes() do
-      assert Fountain.Runtimes.ACP.cwd(runtime) == Layout.cwd(runtime)
+      assert Managoat.Runtimes.ACP.cwd(runtime) == Layout.cwd(runtime)
     end
   end
 

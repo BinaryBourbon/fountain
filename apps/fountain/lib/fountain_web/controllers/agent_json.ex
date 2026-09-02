@@ -19,7 +19,7 @@ defmodule FountainWeb.AgentJSON do
       # asks this before it opens a session (#702) — the alternative was a
       # hardcoded runtime list in the Go CLI, which would go stale the day a
       # held-back runtime is converted.
-      acp: Fountain.Runtimes.ACP.enabled?(a.runtime),
+      acp: Managoat.Runtimes.ACP.enabled?(a.runtime),
       sandbox_provider: a.sandbox_provider,
       sandbox_mode: a.sandbox_mode,
       environment_id: a.environment_id,

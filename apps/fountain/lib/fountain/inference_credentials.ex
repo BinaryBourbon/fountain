@@ -169,7 +169,7 @@ defmodule Fountain.InferenceCredentials do
   """
   @spec missing_for_model(binary(), String.t() | nil) :: nil | {String.t(), [atom()]}
   def missing_for_model(user_id, model) when is_binary(user_id) do
-    provider = Fountain.Runtimes.Model.provider(model)
+    provider = Managoat.Runtimes.Model.provider(model)
 
     case credentials_for_provider(provider) do
       [] ->

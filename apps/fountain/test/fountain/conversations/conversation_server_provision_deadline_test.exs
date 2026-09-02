@@ -43,7 +43,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     args = [
       conversation_id: conv.id,
       sandbox_id: conv.sandbox_id,
-      runtime_module: Fountain.Test.FakeRuntime
+      runtime_module: Managoat.Runtimes.Testing.FakeRuntime
     ]
 
     {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
@@ -89,7 +89,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     args = [
       conversation_id: conv.id,
       sandbox_id: conv.sandbox_id,
-      runtime_module: Fountain.Test.FakeRuntime
+      runtime_module: Managoat.Runtimes.Testing.FakeRuntime
     ]
 
     {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
@@ -120,7 +120,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     args = [
       conversation_id: conv.id,
       sandbox_id: conv.sandbox_id,
-      runtime_module: Fountain.Test.FakeRuntime
+      runtime_module: Managoat.Runtimes.Testing.FakeRuntime
     ]
 
     {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)

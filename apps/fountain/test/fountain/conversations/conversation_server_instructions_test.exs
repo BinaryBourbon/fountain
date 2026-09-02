@@ -2,7 +2,7 @@ defmodule Fountain.Conversations.ConversationServerInstructionsTest do
   @moduledoc """
   The agent's `system` prompt must reach the sandbox (#848).
 
-  #849 wired `Fountain.Runtimes.Instructions.write/3` into provision and
+  #849 wired `Managoat.Runtimes.Instructions.write/3` into provision and
   reattach; #850 — branched before #849 landed — removed both call sites in
   its squash-merge and nothing failed, because the only tests were
   module-level. Every agent provisioned after that ran on the CLI's default
@@ -40,7 +40,7 @@ defmodule Fountain.Conversations.ConversationServerInstructionsTest do
   end
 
   defp assert_instructions_written do
-    path = Fountain.Runtimes.Instructions.path("gemini")
+    path = Managoat.Runtimes.Instructions.path("gemini")
     assert is_binary(path)
 
     assert_receive {:wrote, ^path, data}, 2_000

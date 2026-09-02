@@ -1,7 +1,7 @@
-defmodule Fountain.Runtimes.ACPConcurrencyTest do
+defmodule Managoat.Runtimes.ACPConcurrencyTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes.ACP
+  alias Managoat.Runtimes.ACP
 
   # ADR 0023 step 4: how many turns one sandbox takes at once is a property
   # of the runtime, not of the machine.

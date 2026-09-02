@@ -15,7 +15,8 @@ defmodule FountainWeb.CatalogController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Agents.Agent
-  alias Fountain.Runtimes.Model
+  alias Fountain.Agents.ModelCatalog
+  alias Managoat.Runtimes.Model
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -42,7 +43,7 @@ defmodule FountainWeb.CatalogController do
     json(conn, %{
       data: %{
         runtimes: runtimes,
-        models: Map.new(runtimes, &{&1, Model.suggestions(&1)}),
+        models: Map.new(runtimes, &{&1, ModelCatalog.suggestions(&1)}),
         model_providers: Model.providers(),
         sandbox_providers: %{
           enabled: Enum.map(Fountain.SandboxProviders.enabled_providers(), &Atom.to_string/1),
