@@ -64,6 +64,12 @@ fountain/                  umbrella root
                                checks as a case template. docs/, nav.yml,
                                Fountain.Help, the prose gates and the /docs
                                controller stay in fountain.
+      managoat_oauth/          Managoat.OAuth: the OAuth 2.0 code+PKCE and
+                               device-grant state machine, its two schemas and
+                               migration, as a `use` macro over the
+                               Managoat.OAuth.Host behaviour. Fountain.OAuth is
+                               the instance; Fountain.OAuth.Host mints the API
+                               key, checks the user and audits.
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is

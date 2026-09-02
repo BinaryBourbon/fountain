@@ -1,4 +1,13 @@
 defmodule Fountain.OAuthTest do
+  @moduledoc """
+  Fountain's side of the OAuth seam (#1343): `Fountain.OAuth` as an instance
+  of `Managoat.OAuth` over `Fountain.OAuth.Host`. The state machine itself
+  (every wrong grant, expiry, single use, the two orderings) is tested in
+  `apps/managoat_oauth`; what is tested here is what the host decides — a
+  token is an API key, a subject is a user who may hold one, the trail is
+  `Fountain.Audit` — and that the instance reads its clients from
+  `config :fountain, Fountain.OAuth`.
+  """
   use Fountain.DataCase, async: true
 
   alias Fountain.{Accounts, Audit, OAuth}
@@ -11,150 +20,86 @@ defmodule Fountain.OAuthTest do
     {verifier, Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)}
   end
 
-  defp request(challenge, over \\ %{}) do
-    Map.merge(
+  defp request(challenge) do
+    %{
+      "client_id" => @client,
+      "redirect_uri" => @redirect,
+      "code_challenge" => challenge,
+      "code_challenge_method" => "S256"
+    }
+  end
+
+  defp exchange(code, verifier, opts \\ []) do
+    OAuth.exchange(
       %{
+        "code" => code,
+        "code_verifier" => verifier,
         "client_id" => @client,
-        "redirect_uri" => @redirect,
-        "code_challenge" => challenge,
-        "code_challenge_method" => "S256"
+        "redirect_uri" => @redirect
       },
-      over
+      opts
     )
   end
 
-  describe "validate_request/1" do
-    test "accepts a registered client, exact redirect and S256 challenge" do
-      {_v, c} = pkce()
-      assert {:ok, %{id: @client}} = OAuth.validate_request(request(c))
-    end
+  test "the instance reads the registry from config :fountain, Fountain.OAuth" do
+    assert [%{id: @client, name: "Test App", redirect_uris: [@redirect, _]}] = OAuth.clients()
+    assert "https://app.test" in OAuth.redirect_origins()
+    assert %{id: @client} = OAuth.get_client(@client)
 
-    test "refuses what must never redirect" do
-      {_v, c} = pkce()
-
-      assert {:error, :unknown_client} =
-               OAuth.validate_request(request(c, %{"client_id" => "nope"}))
-
-      assert {:error, :redirect_uri_mismatch} =
-               OAuth.validate_request(
-                 request(c, %{"redirect_uri" => "https://app.test/callback?x=1"})
-               )
-
-      assert {:error, :redirect_uri_mismatch} =
-               OAuth.validate_request(request(c, %{"redirect_uri" => "https://evil.test/"}))
-
-      assert {:error, :unsupported_code_challenge_method} =
-               OAuth.validate_request(request(c, %{"code_challenge_method" => "plain"}))
-
-      assert {:error, :invalid_code_challenge} = OAuth.validate_request(request("short"))
-      assert {:error, :invalid_code_challenge} = OAuth.validate_request(request(nil))
-    end
+    assert %Managoat.OAuth.Config{repo: Fountain.Repo, host: Fountain.OAuth.Host} =
+             OAuth.__managoat_oauth__()
   end
 
-  describe "authorize/3 + exchange/2" do
-    test "the happy path mints a 30-day oauth:<client> API key that authenticates, once" do
+  describe "a code exchange mints an API key" do
+    test "named oauth:<client>, 30 days, full scope, that authenticates — and audits" do
       user = insert_verified_user()
       {verifier, challenge} = pkce()
 
-      assert {:ok, code} = OAuth.authorize(user.id, request(challenge), actor: "ui")
+      assert {:ok, code} =
+               OAuth.authorize(user.id, request(challenge), actor: "ui", request_ip: "9.9.9.9")
 
       assert {:ok, %{access_token: token, expires_in: ttl, api_key: key}} =
-               OAuth.exchange(%{
-                 "code" => code,
-                 "code_verifier" => verifier,
-                 "client_id" => @client,
-                 "redirect_uri" => @redirect
-               })
+               exchange(code, verifier, request_ip: "9.9.9.9")
 
       assert ttl == OAuth.token_ttl_seconds()
+      assert %Accounts.ApiKey{} = key
       assert key.name == "oauth:test-app"
       assert key.scopes == ["full"]
       assert DateTime.diff(key.expires_at, DateTime.utc_now()) > 29 * 24 * 3600
       assert {:ok, %{id: uid}, _} = Accounts.authenticate_api_key(token)
       assert uid == user.id
 
-      # single use
-      assert {:error, :invalid_grant} =
-               OAuth.exchange(%{
-                 "code" => code,
-                 "code_verifier" => verifier,
-                 "client_id" => @client,
-                 "redirect_uri" => @redirect
-               })
+      events = Audit.list_recent_for_user(user.id, 20)
+      authorized = Enum.find(events, &(&1.action == "oauth.authorized"))
+      assert authorized.actor == "ui"
+      assert authorized.request_ip == "9.9.9.9"
+      assert authorized.resource_type == "oauth_client"
+      assert authorized.metadata == %{"client_id" => @client, "redirect_uri" => @redirect}
 
+      minted = Enum.find(events, &(&1.action == "api_key.created"))
+      # The exchange has no session, so the mint's actor is the context default.
+      assert minted.actor == "self"
+      assert minted.request_ip == "9.9.9.9"
+    end
+
+    test "revoke/2 is revoking the API key" do
+      user = insert_verified_user()
+      {verifier, challenge} = pkce()
+      {:ok, code} = OAuth.authorize(user.id, request(challenge))
+      {:ok, %{access_token: token, api_key: key}} = exchange(code, verifier)
+
+      assert {:ok, _} = OAuth.revoke(key, actor: "api")
+      assert {:error, :revoked} = Accounts.authenticate_api_key(token)
       actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
-      assert "oauth.authorized" in actions
-      assert "api_key.created" in actions
-    end
-
-    test "every wrong grant is one answer" do
-      user = insert_verified_user()
-      {verifier, challenge} = pkce()
-      {:ok, code} = OAuth.authorize(user.id, request(challenge))
-
-      base = %{
-        "code" => code,
-        "code_verifier" => verifier,
-        "client_id" => @client,
-        "redirect_uri" => @redirect
-      }
-
-      assert {:error, :invalid_grant} =
-               OAuth.exchange(%{base | "code_verifier" => verifier <> "x"})
-
-      assert {:error, :invalid_grant} = OAuth.exchange(%{base | "client_id" => "other"})
-
-      assert {:error, :invalid_grant} =
-               OAuth.exchange(%{base | "redirect_uri" => "http://localhost:5173/"})
-
-      assert {:error, :invalid_grant} = OAuth.exchange(%{base | "code" => "not-a-code"})
-      assert {:error, :invalid_grant} = OAuth.exchange(Map.delete(base, "code_verifier"))
-      # None of those consumed the code.
-      assert {:ok, _} = OAuth.exchange(base)
-    end
-
-    test "an expired code is refused and pruned" do
-      user = insert_verified_user()
-      {verifier, challenge} = pkce()
-      {:ok, code} = OAuth.authorize(user.id, request(challenge))
-
-      Repo.update_all(Fountain.OAuth.AuthorizationCode,
-        set: [
-          expires_at: DateTime.add(DateTime.utc_now(), -1, :second) |> DateTime.truncate(:second)
-        ]
-      )
-
-      assert {:error, :invalid_grant} =
-               OAuth.exchange(%{
-                 "code" => code,
-                 "code_verifier" => verifier,
-                 "client_id" => @client,
-                 "redirect_uri" => @redirect
-               })
-
-      assert OAuth.prune_expired() >= 1
+      assert "api_key.revoked" in actions
     end
   end
 
-  describe "device authorization (#1305)" do
-    alias Fountain.OAuth.DeviceGrant
-
-    test "the happy path: start → approve in the console → poll mints a key, once" do
+  describe "a device grant mints an API key (#1305)" do
+    test "named CLI login, no expiry, full scope — and audits the approval" do
       user = insert_verified_user()
+      {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
 
-      assert {:ok, %{device_code: device_code, user_code: user_code} = grant} =
-               OAuth.start_device_grant()
-
-      assert grant.expires_in == 900
-      assert grant.interval == OAuth.device_interval_seconds()
-      # The display shape a human types back in, dash and all.
-      assert user_code =~ ~r/^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/
-
-      # Nobody has decided yet.
-      assert {:error, :authorization_pending} = OAuth.poll_device_grant(device_code)
-
-      # The approval page finds it however the human typed it.
-      assert {:ok, _} = OAuth.get_device_grant_for_approval(String.downcase(user_code))
       assert :ok = OAuth.approve_device_grant(user_code, user.id, actor: "ui")
 
       assert {:ok, %{access_token: token, api_key: key}} =
@@ -163,79 +108,59 @@ defmodule Fountain.OAuthTest do
       assert key.name =~ "CLI login"
       assert key.scopes == ["full"]
       assert is_nil(key.expires_at)
+      assert key.user_id == user.id
       assert {:ok, %{id: uid}, _} = Accounts.authenticate_api_key(token)
       assert uid == user.id
 
-      # Single use: the grant is consumed with the mint.
-      assert {:error, :invalid_grant} = OAuth.poll_device_grant(device_code)
-
-      actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
-      assert "oauth.device_approved" in actions
-      assert "api_key.created" in actions
+      events = Audit.list_recent_for_user(user.id, 20)
+      approved = Enum.find(events, &(&1.action == "oauth.device_approved"))
+      assert approved.actor == "ui"
+      assert approved.resource_type == "oauth_device_grant"
+      assert is_binary(approved.resource_id)
+      assert Enum.find(events, &(&1.action == "api_key.created")).actor == "api"
     end
 
-    test "polling faster than the interval gets slow_down" do
-      {:ok, %{device_code: device_code}} = OAuth.start_device_grant()
-
-      assert {:error, :authorization_pending} = OAuth.poll_device_grant(device_code)
-      assert {:error, :slow_down} = OAuth.poll_device_grant(device_code)
-    end
-
-    test "a denial reaches the polling CLI as access_denied and audits" do
+    test "a denial audits oauth.device_denied" do
       user = insert_verified_user()
       {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
 
       assert :ok = OAuth.deny_device_grant(user_code, user.id, actor: "ui")
       assert {:error, :access_denied} = OAuth.poll_device_grant(device_code)
 
-      # Decided is decided: no second opinion, in either direction.
-      assert {:error, :not_found} = OAuth.approve_device_grant(user_code, user.id)
-      assert {:error, :not_found} = OAuth.get_device_grant_for_approval(user_code)
-
       actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
       assert "oauth.device_denied" in actions
     end
 
-    test "an expired grant is expired_token to the poll, invisible to approval, and pruned" do
-      user = insert_verified_user()
-      {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
-
-      Repo.update_all(DeviceGrant,
-        set: [
-          expires_at: DateTime.add(DateTime.utc_now(), -1, :second) |> DateTime.truncate(:second)
-        ]
-      )
-
-      assert {:error, :expired_token} = OAuth.poll_device_grant(device_code)
-      assert {:error, :not_found} = OAuth.get_device_grant_for_approval(user_code)
-      assert {:error, :not_found} = OAuth.approve_device_grant(user_code, user.id)
-      assert OAuth.prune_expired() >= 1
-    end
-
-    test "an unknown device code is invalid_grant" do
-      assert {:error, :invalid_grant} = OAuth.poll_device_grant("not-a-code")
-    end
-
-    test "a suspended approver cannot collect a key" do
+    test "a suspended approver cannot collect a key, and the grant is not consumed" do
       user = insert_verified_user()
       {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
       assert :ok = OAuth.approve_device_grant(user_code, user.id)
 
-      {:ok, _, _} = Accounts.suspend_user(user, actor: "admin")
+      {:ok, suspended, _} = Accounts.suspend_user(user, actor: "admin")
+      assert {:error, :access_denied} = OAuth.poll_device_grant(device_code)
+
+      # Unsuspended, the same approval still mints: the refusal spent nothing.
+      {:ok, _} = Accounts.unsuspend_user(suspended)
+      assert {:ok, %{api_key: %Accounts.ApiKey{}}} = OAuth.poll_device_grant(device_code)
+    end
+
+    test "an unverified approver cannot collect a key" do
+      user = insert_user()
+      assert is_nil(user.email_verified_at)
+      {:ok, %{device_code: device_code, user_code: user_code}} = OAuth.start_device_grant()
+      assert :ok = OAuth.approve_device_grant(user_code, user.id)
 
       assert {:error, :access_denied} = OAuth.poll_device_grant(device_code)
     end
-
-    test "normalize_user_code strips the display shape" do
-      assert OAuth.normalize_user_code(" bcdf-ghjk ") == "BCDFGHJK"
-      assert OAuth.format_user_code("BCDFGHJK") == "BCDF-GHJK"
-    end
   end
 
-  test "pkce_verify is S256 and constant-shape" do
-    {v, c} = pkce()
-    assert OAuth.pkce_verify(v, c)
-    refute OAuth.pkce_verify(v <> "a", c)
-    refute OAuth.pkce_verify(nil, c)
+  describe "Fountain.OAuth.Host" do
+    test "subject_allowed?/1 answers for the three shapes of account" do
+      assert :ok = Fountain.OAuth.Host.subject_allowed?(insert_verified_user().id)
+      assert {:error, :not_eligible} = Fountain.OAuth.Host.subject_allowed?(insert_user().id)
+
+      assert {:error, :unknown_subject} =
+               Fountain.OAuth.Host.subject_allowed?(Ecto.UUID.generate())
+    end
   end
 end

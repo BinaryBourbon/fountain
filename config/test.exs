@@ -85,13 +85,14 @@ config :fountain, :migrate_on_boot, true
 config :fountain, Oban, testing: :manual
 
 # OAuth clients (#818) the controller tests register against.
-config :fountain, :oauth_clients, [
-  %{
-    id: "test-app",
-    name: "Test App",
-    redirect_uris: ["https://app.test/callback", "http://localhost:5173/"]
-  }
-]
+config :fountain, Fountain.OAuth,
+  clients: [
+    %{
+      id: "test-app",
+      name: "Test App",
+      redirect_uris: ["https://app.test/callback", "http://localhost:5173/"]
+    }
+  ]
 
 # Self-hosted runners (ADR 0022) are enabled by default in every other env —
 # there is no credential to be missing. Off here so the suite's assumptions

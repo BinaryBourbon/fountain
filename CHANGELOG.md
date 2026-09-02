@@ -33,6 +33,23 @@ upgrade, is in
   as before. `docs/`, `nav.yml`, `Fountain.Help`, the three prose gates and
   the `/docs` controller stay in Fountain.
 
+- **The OAuth authorization server is now the `managoat_oauth` library**
+  (#1343, ADR 0037). The authorization code + PKCE (S256) grant and the
+  device grant, their two schemas and a migration for a new consumer moved
+  from `Fountain.OAuth` to the Apache-2.0 `Managoat.OAuth` app, as a `use`
+  macro the way `Ecto.Repo` is: `Fountain.OAuth` is now an instance of it
+  and every controller keeps its call sites. What the library needs from
+  the platform is a `Managoat.OAuth.Host` behaviour with three callbacks
+  (may this subject hold a token, mint the token, record the audit event);
+  `Fountain.OAuth.Host` implements them over `Accounts.create_api_key/3`,
+  the suspended-or-unverified check and `Fountain.Audit`, so a token is
+  still an API key and the three `oauth.*` audit actions are unchanged.
+  The two tables keep their names, their `user_id` column and its foreign
+  key; no migration runs. The client registry moved from
+  `config :fountain, :oauth_clients` to `config :fountain, Fountain.OAuth,
+  clients:`, which `OAUTH_CLIENTS` still populates, so nothing changes for
+  an operator. No endpoint, parameter, error code or response shape changed.
+
 - **The self-hosted runner protocol is now the `managoat_runner` library**
   (#1341, ADR 0037). The `WebSock` connection process, the sandbox adapter
   that speaks to a runner daemon over it, the `runner-<32 hex>-<8 hex>` name
