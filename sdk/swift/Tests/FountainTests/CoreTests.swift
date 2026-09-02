@@ -29,7 +29,8 @@ import Testing
 
 @Test func sdkVersionMatchesServerVersion() throws {
   let packageRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-  let mix = try String(contentsOf: packageRoot.appendingPathComponent("mix.exs"), encoding: .utf8)
+  let mixData = try Data(contentsOf: packageRoot.appendingPathComponent("mix.exs"))
+  let mix = String(decoding: mixData, as: UTF8.self)
   let expression = try NSRegularExpression(pattern: #"version: \"([0-9]+\.[0-9]+\.[0-9]+)\""#)
   let fullRange = NSRange(mix.startIndex..<mix.endIndex, in: mix)
   let match = try #require(expression.firstMatch(in: mix, range: fullRange))
