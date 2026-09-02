@@ -44,7 +44,9 @@ fountain/                  umbrella root
                            namespace, no reference back into Fountain. Each is
                            an in_umbrella dep of fountain until it graduates to
                            a managoat/<name> repo. See CONTRIBUTING.md.
-      managoat_substitution/   Managoat.Substitution (${VAR} engine)
+      (managoat_substitution:  Managoat.Substitution, the ${VAR} engine, is on
+                               hex; repo managoat/managoat_substitution.
+                               Graduated under #1345, the first to leave.)
       managoat_sandbox/        Managoat.Sandbox: the sandbox behaviour, the
                                Sprites/E2B/Daytona adapters, Retry, the Fake
                                and the conformance case. The "which providers
@@ -210,8 +212,10 @@ Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => "plaintext"}, dek
 ## Substitution engine
 
 `Managoat.Substitution.apply(value, vars)` substitutes `${VAR}` references.
-It lives in `apps/managoat_substitution`, the first library extracted under
-ADR 0037; there is no `Fountain.Substitution` any more.
+It is the hex package `managoat_substitution`, the first library extracted
+under ADR 0037 and the first to graduate to its own repository
+(managoat/managoat_substitution, #1345); `apps/fountain/mix.exs` pins it at
+`~> 0.1.0`. There is no `Fountain.Substitution` any more.
 
 - `${VAR}` → value from `vars` map
 - `$$` → literal `$`

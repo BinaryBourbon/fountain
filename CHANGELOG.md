@@ -18,6 +18,12 @@ upgrade, is in
 
 ### Changed
 
+- **`managoat_substitution` comes from hex** (#1345, ADR 0037). The first
+  library to graduate: `apps/managoat_substitution` is gone,
+  `apps/fountain/mix.exs` pins `{:managoat_substitution, "~> 0.1.0"}`, and
+  the source is managoat/managoat_substitution, which publishes to hex from
+  its own CI. Nothing about `Managoat.Substitution` changed.
+
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`
   (the client-side session that outlives the turn), `Protocol`, `Blocks`,
