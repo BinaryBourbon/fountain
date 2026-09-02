@@ -5,7 +5,7 @@ import threading
 import time
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional
 
-from .errors import ConnectionError
+from .errors import ConnectionError, FountainError
 from .http import HttpClient, Response
 
 
@@ -120,17 +120,21 @@ def stream_path(
             for message in parse_sse(_response_lines(response)):
                 if stop and stop.is_set():
                     return
-                raw_id = message.get("id")
+                event = _decode_event(message)
+                if event is None:
+                    # A cut connection flushes a partial trailing message.
+                    # Holding the cursor back asks for that event again.
+                    continue
                 try:
-                    parsed_id = int(raw_id or "")
+                    parsed_id = int(message.get("id") or "")
                 except ValueError:
                     parsed_id = 0
                 if parsed_id > 0:
                     last_id = parsed_id
-                event = _decode_event(message)
-                if event is not None:
-                    yield event
-        except (ConnectionError, OSError, ValueError):
+                yield event
+        except (FountainError, OSError, ValueError) as error:
+            if isinstance(error, FountainError) and not _reconnectable(error):
+                raise
             if (stop and stop.is_set()) or (
                 deadline is not None and time.monotonic() >= deadline
             ):
@@ -161,6 +165,12 @@ def stream_events(
     return stream_path(
         http, "/api/conversations/%s/stream" % conversation_id, **options
     )
+
+
+def _reconnectable(error: FountainError) -> bool:
+    """A dropped connection or a 5xx is worth another attempt; a 4xx is not."""
+
+    return isinstance(error, ConnectionError) or 500 <= error.status < 600
 
 
 def _delay(

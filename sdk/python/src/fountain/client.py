@@ -118,9 +118,8 @@ class Fountain:
         **options: Any,
     ) -> Iterator[Dict[str, Any]]:
         selected = ",".join(streams) if isinstance(streams, list) else streams
-        return stream_path(
-            self.api, "/api/events/stream", streams=selected, blocks=True, **options
-        )
+        options.setdefault("blocks", True)
+        return stream_path(self.api, "/api/events/stream", streams=selected, **options)
 
     def refresh(self) -> None:
         self._resolver.clear()

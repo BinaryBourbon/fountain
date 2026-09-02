@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from fountain import (  # noqa: E402
+    AuthError,
     Fountain,
     QuotaExceededError,
     ResolutionError,
@@ -39,7 +40,10 @@ class State:
         self.fail = None
         self.events = []
         self.cut_first_stream = False
+        self.truncate_first_stream = False
         self.stream_count = 0
+        self.stream_failures = 0
+        self.stream_failure_status = 502
         self.hang_stream = False
 
     def event(self, **values):
@@ -84,6 +88,13 @@ class State:
                 {"turn_number": 1, "turn_id": "turn-1", "stop_reason": "end_turn"}
             ),
         )
+
+
+def _frame(event):
+    return (
+        "id: %s\nevent: %s\ndata: %s\n\n"
+        % (event["id"], event["kind"], json.dumps(event))
+    ).encode()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -151,8 +162,19 @@ class Handler(BaseHTTPRequestHandler):
             )
         if parsed.path == "/api/conversations/c-1/turns":
             return self._json(200, {"data": [{"turn_number": 1}]})
+        if parsed.path in ("/api/events/stream", "/api/team/stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if parsed.path == "/api/conversations/c-1/stream":
             self.state.stream_count += 1
+            if self.state.stream_failures > 0:
+                self.state.stream_failures -= 1
+                return self._json(
+                    self.state.stream_failure_status, {"error": "bad_gateway"}
+                )
             if self.state.hang_stream:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -163,13 +185,19 @@ class Handler(BaseHTTPRequestHandler):
             rows = [event for event in self.state.events if event["id"] > after]
             if self.state.cut_first_stream and self.state.stream_count == 1:
                 rows = rows[:2]
-            raw = b"".join(
-                (
-                    "id: %s\nevent: %s\ndata: %s\n\n"
-                    % (event["id"], event["kind"], json.dumps(event))
-                ).encode()
-                for event in rows
-            )
+            if self.state.truncate_first_stream and self.state.stream_count == 1:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                self.wfile.write(_frame(rows[0]))
+                # Cut after the id line, before its data lands: the shape a
+                # dropped connection leaves in the client's parser.
+                return self.wfile.write(
+                    (
+                        "id: %s\nevent: %s\ndata: " % (rows[1]["id"], rows[1]["kind"])
+                    ).encode()
+                )
+            raw = b"".join(_frame(event) for event in rows)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(raw)))
@@ -387,6 +415,63 @@ class ClientTests(unittest.TestCase):
             ]
             self.assertEqual(len(streams), 2)
             self.assertEqual(streams[1][4]["Last-Event-Id"], "2")
+
+    def test_stream_reconnects_through_a_transient_5xx(self):
+        with FakeFountain() as fake:
+            fake.state.stream_failures = 1
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            result = client.run("find it", agent="reposage").result()
+            self.assertEqual(result.text, "Found it.")
+            self.assertEqual(fake.state.stream_count, 2)
+
+    def test_stream_surfaces_a_4xx_instead_of_retrying_it(self):
+        with FakeFountain() as fake:
+            fake.state.stream_failures = 5
+            fake.state.stream_failure_status = 401
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            with self.assertRaises(AuthError):
+                client.run("find it", agent="reposage").result()
+            self.assertEqual(fake.state.stream_count, 1)
+
+    def test_a_truncated_final_message_is_replayed_not_skipped(self):
+        with FakeFountain() as fake:
+            fake.state.truncate_first_stream = True
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            result = client.run("find it", agent="reposage").result()
+            streams = [
+                request
+                for request in fake.state.requests
+                if request[1].endswith("/stream")
+            ]
+            # Event 2 arrived headless, so the cursor stays on event 1.
+            self.assertEqual(streams[1][4]["Last-Event-Id"], "1")
+            self.assertEqual(result.tools_used, ["Read"])
+            self.assertEqual(result.text, "Found it.")
+
+    def test_blocks_defaults_to_true_and_the_caller_can_turn_it_off(self):
+        with FakeFountain() as fake:
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            list(client.events(wait=False))
+            list(client.events(blocks=False, wait=False))
+            list(client.team.stream(blocks=False, wait=False))
+            queries = [
+                request[2]
+                for request in fake.state.requests
+                if request[1].endswith("/stream")
+            ]
+            self.assertEqual(queries[0]["blocks"], ["true"])
+            self.assertNotIn("blocks", queries[1])
+            self.assertNotIn("blocks", queries[2])
+
+    def test_a_finish_callback_registered_from_a_callback_fires_once(self):
+        with FakeFountain() as fake:
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            run = client.run("find it", agent="reposage")
+            calls = []
+            run._after_finish(lambda handle: handle._after_finish(calls.append))
+            run.result()
+            self.assertEqual(calls, [run])
+            self.assertEqual(run._on_finish, [])
 
     def test_run_timeout_leaves_the_agent_running(self):
         with FakeFountain() as fake:

@@ -91,6 +91,7 @@ class Run:
         self._error: Optional[BaseException] = None
         self._cursor = 0
         self._on_finish: List[Callable[["Run"], None]] = []
+        self._finish_lock = threading.Lock()
         threading.Thread(target=self._execute, name="fountain-run", daemon=True).start()
 
     def __iter__(self) -> Iterator[JsonObject]:
@@ -169,9 +170,11 @@ class Run:
         )
 
     def _after_finish(self, callback: Callable[["Run"], None]) -> None:
-        self._on_finish.append(callback)
-        if self._completed.is_set():
-            callback(self)
+        with self._finish_lock:
+            if not self._completed.is_set():
+                self._on_finish.append(callback)
+                return
+        callback(self)
 
     def _wait_until_open(self) -> None:
         self._opened.wait()
@@ -216,8 +219,10 @@ class Run:
             self._opened.set()
             self._events.close(error)
         finally:
-            self._completed.set()
-            for callback in self._on_finish:
+            with self._finish_lock:
+                self._completed.set()
+                callbacks, self._on_finish = self._on_finish, []
+            for callback in callbacks:
                 try:
                     callback(self)
                 except Exception:

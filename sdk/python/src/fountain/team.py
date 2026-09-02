@@ -109,9 +109,8 @@ class Team:
         **options: Any,
     ) -> Iterator[Dict[str, Any]]:
         selected = ",".join(streams) if isinstance(streams, list) else streams
-        return stream_path(
-            self._http, "/api/team/stream", streams=selected, blocks=True, **options
-        )
+        options.setdefault("blocks", True)
+        return stream_path(self._http, "/api/team/stream", streams=selected, **options)
 
     def _agent_id(self, agent: str) -> str:
         return str(self._resolver.resolve("/api/agents", "agent", agent)["id"])
