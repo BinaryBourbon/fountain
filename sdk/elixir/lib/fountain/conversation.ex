@@ -2,15 +2,18 @@ defmodule Fountain.Conversation do
   @moduledoc """
   A resumable conversation and its persistent sandbox session.
 
-  Its cursor table is owned by the process that creates the handle.
+  Its cursor is an `:atomics` reference: shared across processes like the ETS
+  table it replaced, but reclaimed with the handle. A table would have been
+  owned by the creating process, so a long-lived caller that resumes a
+  conversation per inbound message leaked one table per call.
   """
   alias Fountain.{Config, HTTP, Run, SSE}
   defstruct [:http, :id, :cursor]
 
   def new(http, id, cursor \\ 0) do
-    cursor_table = :ets.new(:fountain_conversation_cursor, [:set, :public])
-    :ets.insert(cursor_table, {:cursor, cursor})
-    %__MODULE__{http: http, id: id, cursor: cursor_table}
+    ref = :atomics.new(1, signed: false)
+    if is_integer(cursor) and cursor > 0, do: :atomics.put(ref, 1, cursor)
+    %__MODULE__{http: http, id: id, cursor: ref}
   end
 
   def url(value), do: Config.conversation_url(value.id, value.http.config)
@@ -35,12 +38,27 @@ defmodule Fountain.Conversation do
         opts
       )
 
-    spawn(fn ->
-      _ = Run.await(run)
-      update_cursor_value(value, Run.cursor(run))
-    end)
+    watch_cursor(value, run)
 
     run
+  end
+
+  # Advancing the cursor is bookkeeping nobody awaits, so it is supervised
+  # rather than linked, and both calls tolerate the run server going away: when
+  # the handle's owner exits first the server stops `:normal`, and an unguarded
+  # `GenServer.call` would then take this process down with a crash report for a
+  # write no caller wants. The TypeScript client swallows the same rejection.
+  defp watch_cursor(value, run) do
+    Task.Supervisor.start_child(FountainSdk.TaskSupervisor, fn ->
+      try do
+        _ = Run.await(run)
+        update_cursor_value(value, Run.cursor(run))
+      catch
+        :exit, _reason -> :ok
+      end
+    end)
+
+    :ok
   end
 
   def answer(value, request_id, option_id),
@@ -88,7 +106,7 @@ defmodule Fountain.Conversation do
       meta = if is_map(page), do: page["meta"] || %{}, else: %{}
       all = acc ++ events
 
-      if meta["has_more"] and is_integer(meta["next_cursor"]) do
+      if meta["has_more"] && is_integer(meta["next_cursor"]) do
         history_pages(value, meta["next_cursor"], limit, streams, all)
       else
         update_cursor(value, all)
@@ -122,8 +140,8 @@ defmodule Fountain.Conversation do
   end
 
   def cursor(value) do
-    case :ets.lookup(value.cursor, :cursor) do
-      [{:cursor, cursor}] when cursor > 0 -> {:ok, cursor}
+    case :atomics.get(value.cursor, 1) do
+      cursor when cursor > 0 -> {:ok, cursor}
       _ -> discover_cursor(value)
     end
   end
@@ -137,7 +155,7 @@ defmodule Fountain.Conversation do
           if is_integer(event["id"]), do: max(acc, event["id"]), else: acc
         end)
 
-      :ets.insert(value.cursor, {:cursor, cursor})
+      update_cursor_value(value, cursor)
       {:ok, cursor}
     rescue
       _ -> {:ok, 0}
@@ -163,20 +181,22 @@ defmodule Fountain.Conversation do
     if is_integer(id), do: update_cursor_value(value, id)
   end
 
-  defp update_cursor_value(value, id) when is_integer(id) do
-    try do
-      :ets.insert(value.cursor, {:cursor, max(current_cursor(value), id)})
-    rescue
-      ArgumentError -> :ok
+  # The cursor only moves forward, and two turns on one handle can report at
+  # once, so the bump is a compare-exchange rather than a read-then-write.
+  defp update_cursor_value(value, id) when is_integer(id) and id > 0 do
+    current = :atomics.get(value.cursor, 1)
+
+    if id > current do
+      case :atomics.compare_exchange(value.cursor, 1, current, id) do
+        :ok -> :ok
+        _raced -> update_cursor_value(value, id)
+      end
+    else
+      :ok
     end
   end
 
-  defp current_cursor(value) do
-    case :ets.lookup(value.cursor, :cursor) do
-      [{:cursor, cursor}] -> cursor
-      _ -> 0
-    end
-  end
+  defp update_cursor_value(_value, _id), do: :ok
 
   defp integer(value) when is_integer(value), do: value
 

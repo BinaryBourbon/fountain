@@ -122,8 +122,10 @@ defmodule Fountain.Team do
   def stream(value, opts \\ []),
     do: SSE.stream_path(value.http, "/api/team/stream", Keyword.put_new(opts, :blocks, true))
 
-  defp agent_id(value, agent),
-    do: Resolver.resolve_id(value.resolver, "/api/agents", "agent", agent)
+  defp agent_id(value, agent) do
+    with {:ok, item} <- Resolver.resolve(value.resolver, "/api/agents", "agent", agent),
+         do: {:ok, item["id"]}
+  end
 
   defp agent_id!(value, agent), do: ok!(agent_id(value, agent))
   defp ok!({:ok, value}), do: value
@@ -189,8 +191,10 @@ defmodule Fountain.TeamSchedules do
         do: {:ok, "/api/team/#{agent_id}/schedules" <> if(id, do: "/#{id}", else: "")}
       )
 
-  defp agent_id(value, agent),
-    do: Resolver.resolve_id(value.resolver, "/api/agents", "agent", agent)
+  defp agent_id(value, agent) do
+    with {:ok, item} <- Resolver.resolve(value.resolver, "/api/agents", "agent", agent),
+         do: {:ok, item["id"]}
+  end
 
   defp void({:ok, _}), do: :ok
   defp void(error), do: error

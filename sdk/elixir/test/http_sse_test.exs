@@ -115,7 +115,61 @@ defmodule Fountain.HttpSseTest do
         app_url: ""
       })
 
-    assert {:error, %Error{}} = HTTP.request(http, "GET", "https://attacker.example/collect")
+    assert {:error, %Error{} = error} =
+             HTTP.request(http, "GET", "https://attacker.example/collect")
+
+    # The guard is a caller mistake, not a transport failure. Reporting it as
+    # :connection would put it in the same bucket as "the network is down",
+    # which is the bucket callers are told to retry.
+    assert error.kind == :validation
+    refute Error.retryable?(error)
+  end
+
+  test "a connection that delivered events starts the retry budget over" do
+    calls = Agent.start_link(fn -> 0 end) |> elem(1)
+
+    server =
+      Fountain.TestServer.start(fn _request ->
+        call = Agent.get_and_update(calls, &{&1, &1 + 1})
+        body = "id: #{call + 1}\nevent: stage\ndata: {\"stage\":\"turn\"}\n\n"
+
+        # Three connections stream an event and then die; the fourth ends
+        # cleanly. With `max_retries: 1` a client that carried the attempt
+        # count across successful connections would give up on the second.
+        if call < 3,
+          do: {:abort, 200, [{"content-type", "text/event-stream"}], [{0, body}]},
+          else: {200, [{"content-type", "text/event-stream"}], body}
+      end)
+
+    on_exit(fn -> Fountain.TestServer.stop(server) end)
+    http = HTTP.new(%Fountain.Config{base_url: server.url, api_key: "key", app_url: ""})
+
+    events =
+      SSE.stream_path(http, "/stream", wait: false, max_retries: 1, retry_delay: 0)
+      |> Enum.to_list()
+
+    assert Enum.map(events, & &1["id"]) == [1, 2, 3, 4]
+    assert Agent.get(calls, & &1) == 4
+  end
+
+  test "a connection that delivered nothing still exhausts the retry budget" do
+    calls = Agent.start_link(fn -> 0 end) |> elem(1)
+
+    server =
+      Fountain.TestServer.start(fn _request ->
+        Agent.update(calls, &(&1 + 1))
+        {:abort, 200, [{"content-type", "text/event-stream"}], []}
+      end)
+
+    on_exit(fn -> Fountain.TestServer.stop(server) end)
+    http = HTTP.new(%Fountain.Config{base_url: server.url, api_key: "key", app_url: ""})
+
+    assert_raise Error, fn ->
+      SSE.stream_path(http, "/stream", wait: false, max_retries: 2, retry_delay: 0)
+      |> Enum.to_list()
+    end
+
+    assert Agent.get(calls, & &1) == 3
   end
 
   test "ordinary and SSE requests never follow redirects with bearer credentials" do

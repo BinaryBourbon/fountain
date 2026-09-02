@@ -3,7 +3,8 @@ defmodule Fountain.Run do
   A running turn. Work starts immediately and events are broadcast to every consumer.
 
   The run server is owned by the process that created the handle and is cleaned up when that
-  process exits. Pass the handle to consumers while its owner remains alive.
+  process exits. Pass the handle to consumers while its owner remains alive: a stream still open
+  when the owner exits raises a `%Fountain.Error{kind: :connection}` rather than blocking.
   """
   alias Fountain.{Error, HTTP}
   defstruct [:server, :http]
@@ -79,15 +80,26 @@ defmodule Fountain.Run do
 
   defp subscribe(server) do
     subscription_ref = make_ref()
+    # The server stops `:normal` as soon as the handle's owner exits, so a
+    # consumer iterating this stream from another process needs the monitor to
+    # learn the events stopped coming. Without it `next/1` blocks forever.
+    monitor = Process.monitor(server)
 
     case GenServer.call(server, {:subscribe, self(), subscription_ref}) do
       {:live, events} ->
-        %{server: server, subscription_ref: subscription_ref, queue: events, done: false}
+        %{
+          server: server,
+          subscription_ref: subscription_ref,
+          monitor: monitor,
+          queue: events,
+          done: false
+        }
 
       {:done, events, completion} ->
         %{
           server: server,
           subscription_ref: subscription_ref,
+          monitor: monitor,
           queue: events,
           done: completion
         }
@@ -107,10 +119,18 @@ defmodule Fountain.Run do
       {:fountain_run, server, subscription_ref, {:done, completion}}
       when server == state.server and subscription_ref == state.subscription_ref ->
         next(%{state | done: completion})
+
+      {:DOWN, monitor, :process, _pid, reason} when monitor == state.monitor ->
+        raise %Fountain.Error{
+          message: "the run ended before its stream did: #{inspect(reason)}",
+          kind: :connection
+        }
     end
   end
 
-  defp unsubscribe(%{server: server, subscription_ref: subscription_ref}) do
+  defp unsubscribe(%{server: server, subscription_ref: subscription_ref} = state) do
+    Process.demonitor(state.monitor, [:flush])
+
     if Process.alive?(server) do
       try do
         GenServer.call(server, {:unsubscribe, subscription_ref})

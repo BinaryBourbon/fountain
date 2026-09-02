@@ -25,7 +25,10 @@ defmodule Fountain.HTTP do
       if String.starts_with?(path, ["http://", "https://"]) do
         unless same_origin?(path, config.base_url),
           do:
-            raise(ArgumentError, "absolute request URLs must have the configured Fountain origin")
+            raise(Error,
+              message: "absolute request URLs must have the configured Fountain origin",
+              kind: :validation
+            )
 
         path
       else
@@ -94,6 +97,7 @@ defmodule Fountain.HTTP do
       {:error, reason} -> {:error, connection_error(method, url, reason)}
     end
   rescue
+    error in [Error] -> {:error, error}
     error -> {:error, connection_error(to_string(method), to_string(path), error)}
   end
 

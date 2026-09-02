@@ -5,7 +5,10 @@ defmodule FountainSdk.Application do
   @impl true
   def start(_type, _args) do
     Supervisor.start_link(
-      [{Finch, name: FountainSdk.Finch, pools: %{default: [protocols: [:http1]]}}],
+      [
+        {Finch, name: FountainSdk.Finch, pools: %{default: [protocols: [:http1]]}},
+        {Task.Supervisor, name: FountainSdk.TaskSupervisor}
+      ],
       strategy: :one_for_one,
       name: FountainSdk.Supervisor
     )

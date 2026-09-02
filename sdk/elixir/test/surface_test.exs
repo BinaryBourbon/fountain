@@ -409,6 +409,81 @@ defmodule Fountain.SurfaceTest do
          })
        ]}
 
+  test "a missing teammate is a resolution error, not a request for the whole team" do
+    owner = self()
+
+    server =
+      Fountain.TestServer.start(fn request ->
+        send(owner, {:unexpected, request})
+        json(200, %{"data" => []})
+      end)
+
+    on_exit(fn -> Fountain.TestServer.stop(server) end)
+    client = Fountain.new(api_key: "key", base_url: server.url, app_url: "")
+    schedules = client.team.schedules
+
+    # `GET /api/team/` routes to the index action, so a nil that survives
+    # resolution reads back every teammate on the account as if it were one.
+    for agent <- [nil, "", "   "] do
+      assert {:error, %Fountain.Error{kind: :resolution}} = Team.get(client.team, agent)
+      assert {:error, %Fountain.Error{kind: :resolution}} = Team.remove(client.team, agent)
+      assert {:error, %Fountain.Error{kind: :resolution}} = Team.rename(client.team, agent, "x")
+      assert {:error, %Fountain.Error{kind: :resolution}} = Team.history(client.team, agent)
+
+      assert {:error, %Fountain.Error{kind: :resolution}} =
+               Team.fresh_conversation(client.team, agent)
+
+      assert {:error, %Fountain.Error{kind: :resolution}} =
+               TeamSchedules.get(schedules, agent, "sch1")
+
+      assert {:error, %Fountain.Error{kind: :resolution}} =
+               TeamSchedules.create(schedules, agent, %{"cron" => "* * * * *"})
+    end
+
+    refute_receive {:unexpected, _}, 100
+  end
+
+  test "conversation handles do not leak an ETS table each" do
+    client = Fountain.new(api_key: "key", base_url: "http://127.0.0.1:1", app_url: "")
+    before = length(:ets.all())
+
+    # The table a handle used to allocate was owned by the calling process, so a
+    # GenServer that resumes a conversation per inbound message accumulated one
+    # per call until it hit the system limit.
+    handles = Enum.map(1..200, fn n -> Fountain.resume(client, "c#{n}") end)
+
+    assert length(handles) == 200
+    assert length(:ets.all()) - before < 50
+
+    refute Enum.any?(:ets.all(), fn table ->
+             :ets.info(table, :name) == :fountain_conversation_cursor
+           end)
+
+    assert {:ok, 9} = Conversation.cursor(Conversation.new(client.api, "seeded", 9))
+  end
+
+  test "a conversation cursor is shared with processes the handle is passed to" do
+    server =
+      Fountain.TestServer.start(fn _request ->
+        json(200, %{"data" => [%{"id" => 11}, %{"id" => 17}]})
+      end)
+
+    on_exit(fn -> Fountain.TestServer.stop(server) end)
+    client = Fountain.new(api_key: "key", base_url: server.url, app_url: "")
+    conversation = Fountain.resume(client, "c1")
+    parent = self()
+
+    # The cursor outlived the creating process only because the ETS table was
+    # public; an atomics ref has to stay just as shareable.
+    spawn(fn ->
+      {:ok, _} = Conversation.history(conversation)
+      send(parent, :read)
+    end)
+
+    assert_receive :read
+    assert {:ok, 17} = Conversation.cursor(conversation)
+  end
+
   defp json(status, value),
     do: {status, [{"content-type", "application/json"}], Jason.encode!(value)}
 

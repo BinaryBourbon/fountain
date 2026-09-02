@@ -240,6 +240,7 @@ defmodule Fountain.SSE do
         end)
 
       :ets.insert(parser, {:state, next_state, next_id})
+      :ets.insert(parser, {:progress, true})
     end
 
     headers = if last_id > 0, do: [{"last-event-id", Integer.to_string(last_id)}], else: []
@@ -285,7 +286,15 @@ defmodule Fountain.SSE do
           end
       end
 
+    progressed? = :ets.member(parser, :progress)
     :ets.delete(parser)
+
+    # A connection that delivered data proves the endpoint is reachable, so the
+    # retry budget starts over. Carrying the count forward kills a stream that
+    # has run for hours on its `max_retries`th lifetime disconnect, however much
+    # successful streaming sat in between. The TypeScript client resets the same
+    # counter the moment it has a 2xx response (sdk/typescript/src/sse.ts).
+    attempt = if progressed?, do: 0, else: attempt
 
     cond do
       result == :ok and not wait? ->

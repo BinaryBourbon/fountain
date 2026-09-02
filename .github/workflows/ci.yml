@@ -613,7 +613,20 @@ jobs:
         run: mix hex.audit
 
       # The Elixir SDK is a standalone Mix project. Keep its dependency graph
-      # and build artifacts separate from this umbrella's.
+      # and build artifacts separate from this umbrella's -- which also puts
+      # them outside the two caches above, so they need their own entry or
+      # every PR recompiles finch, mint, hpax, ex_doc and makeup from scratch
+      # on the critical path.
+      - name: Restore Elixir SDK cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: |
+            sdk/elixir/deps
+            sdk/elixir/_build
+          key: ${{ runner.os }}-sdk-elixir-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('sdk/elixir/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-sdk-elixir-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
       - name: Elixir SDK dependencies
         working-directory: sdk/elixir
         run: MIX_ENV=dev mix deps.get

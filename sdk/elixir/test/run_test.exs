@@ -142,6 +142,36 @@ defmodule Fountain.RunTest do
     assert reason in [:normal, :noproc]
   end
 
+  test "a stream held in another process raises instead of hanging when the run ends" do
+    parent = self()
+
+    owner =
+      spawn(fn ->
+        run = Run.new(%{}, fn -> Process.sleep(:infinity) end)
+        send(parent, {:run, run})
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive {:run, run}
+
+    consumer =
+      Task.async(fn ->
+        try do
+          {:finished, Enum.to_list(Run.stream(run))}
+        rescue
+          error -> {:raised, error}
+        end
+      end)
+
+    # The moduledoc invites passing the handle to consumers. When the owner goes
+    # away the server stops `:normal`, and without a monitor the consumer's
+    # `receive` waits on a mailbox nothing will ever post to again.
+    wait_for_subscribers(run.server, 1)
+    Process.exit(owner, :kill)
+
+    assert {:raised, %Error{kind: :connection}} = Task.await(consumer, 2_000)
+  end
+
   test "halting one live stream cannot duplicate queued events in a later subscription" do
     :persistent_term.put({Fountain.GatedRunTransport, :owner}, self())
     on_exit(fn -> :persistent_term.erase({Fountain.GatedRunTransport, :owner}) end)

@@ -40,6 +40,19 @@ defmodule Fountain.TestServer do
           end)
 
           :gen_tcp.send(socket, "0\r\n\r\n")
+
+        # A stream that dies mid-body: the chunks go out, the terminating
+        # zero-chunk never does. This is what a proxy reset or a deploy looks
+        # like to a client that has been reading happily for hours.
+        {:abort, status, headers, chunks} ->
+          send_head(socket, status, [{"transfer-encoding", "chunked"} | headers])
+
+          Enum.each(chunks, fn {delay, chunk} ->
+            Process.sleep(delay)
+            chunk = IO.iodata_to_binary(chunk)
+
+            :gen_tcp.send(socket, [Integer.to_string(byte_size(chunk), 16), "\r\n", chunk, "\r\n"])
+          end)
       end
     end
 
