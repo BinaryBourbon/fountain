@@ -175,6 +175,14 @@ upgrade, is in
   merged into the gate, a Dockerfile `COPY` per library, and a test that
   refuses a library which reaches back into Fountain).
 
+- **`ConversationServer` only shrinks** (#1370, tracker #1369). The first
+  step of refactoring the server by subtraction, the "not a rewrite" ADR
+  0037 promised: `conversation_server_size_test.exs` pins the file at its
+  current 4,498 lines and fails if it grows, and each later sub-issue lowers
+  the pin in the PR that moves a function family out. The section headers
+  now say what sits under them (`sprite environment and egress`, `turns`,
+  `permissions, reclaim and redaction`). No code moved.
+
 ### Added
 
 - **A native egress credential broker, selected by `BROKER_LISTEN_PORT`**
