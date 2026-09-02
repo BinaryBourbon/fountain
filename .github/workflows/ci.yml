@@ -701,7 +701,7 @@ jobs:
         run: python3 -m unittest discover -s sdk/python/tests -v
 
       - name: Python SDK compiles
-        run: python3 -m compileall -q sdk/python/src
+        run: python3 -m compileall -q sdk/python/src sdk/python/scripts
 
       # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
       # directly, so `npm test` needs nothing but the dev dependency on tsc —

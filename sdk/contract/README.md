@@ -71,9 +71,12 @@ What each verifier checks, in the same order, with the same messages:
 3. **Fields.** Every name under `required`, `optional` and `fields` is still a
    property of its schema. A renamed field fails here, and the message lists
    the properties the schema does have.
-4. **Requiredness.** A `required` name must still be required — the client
-   reads it without a guard. An `optional` name must still be optional — the
-   client omits it when sending.
+4. **Requiredness.** A `required` name must still be required; an `optional`
+   name must still be optional. On a response schema that reads as "the client
+   takes this field without a guard" and "the client copes when it is absent".
+   On a request schema it reads as "the client always sends this" and "the
+   client leaves this out when the caller gave nothing", which is the check
+   that guards the `default` trap below.
 5. **Enums.** The declared values must still be accepted. An entry written as
    a bare list is a subset check: the client handles these, the API may add
    more. `{"values": [...], "exhaustive": true}` demands equality, for the

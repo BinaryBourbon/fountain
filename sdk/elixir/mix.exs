@@ -10,6 +10,7 @@ defmodule FountainSdk.MixProject do
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       description: "Official Elixir SDK for Fountain",
       source_url: "https://github.com/BinaryBourbon/fountain",
       package: [
@@ -27,6 +28,12 @@ defmodule FountainSdk.MixProject do
 
   def application,
     do: [mod: {FountainSdk.Application, []}, extra_applications: [:logger, :ssl]]
+
+  def cli, do: [preferred_envs: ["contract.verify": :test]]
+
+  defp aliases do
+    ["contract.verify": ["test test/contract_test.exs"]]
+  end
 
   defp deps do
     [
