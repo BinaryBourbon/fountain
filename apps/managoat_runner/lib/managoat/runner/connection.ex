@@ -1,20 +1,31 @@
-defmodule Fountain.Runners.Connection do
+defmodule Managoat.Runner.Connection do
   @moduledoc """
-  The server end of one `fountain runner` socket (ADR 0022).
+  The server end of one runner daemon's socket.
 
-  A `WebSock` handler: it registers itself in `Fountain.RunnerRegistry` under
-  the runner's id, turns `call/3` requests from anywhere in the cluster into
-  JSON frames, matches the daemon's replies back to the callers, and forwards
-  the daemon's unsolicited `stream` frames to the owner of the command they
-  belong to as the standard `Managoat.Sandbox` owner messages.
+  A `WebSock` handler: it registers itself with the `Managoat.Runner.Host`
+  under the runner's id, turns `call/3` requests from anywhere the host can
+  route from into JSON frames, matches the daemon's replies back to the
+  callers, and forwards the daemon's unsolicited `stream` frames to the owner
+  of the command they belong to as the standard `Managoat.Sandbox` owner
+  messages.
+
+  The init map the host application hands `WebSockAdapter.upgrade/4`:
+
+      %{runner_id: "…", name: "mini", meta: %{...}, host: MyApp.RunnerHost}
+
+  `runner_id` is required. `name` is the runner's display name, used in log
+  lines and in the 4409 close reason. `meta` (default `%{}`) is opaque and is
+  handed to the host on `register/2` and `presence/3`. `host` overrides the
+  configured `Managoat.Runner.Host` for this connection; see
+  `Managoat.Runner.Config`.
 
   ## Wire protocol
 
-  Text frames, JSON objects. Fountain → daemon, one request per `id`:
+  Text frames, JSON objects. Platform → daemon, one request per `id`:
 
       {"id": 7, "op": "spawn", "name": "runner-…", "cmd": "…", "args": [...], ...}
 
-  Daemon → Fountain, one reply per request plus unsolicited stream frames:
+  Daemon → platform, one reply per request plus unsolicited stream frames:
 
       {"id": 7, "ok": true,  "result": {...}}
       {"id": 7, "ok": false, "error": "not_found", "detail": "…"}
@@ -41,7 +52,7 @@ defmodule Fountain.Runners.Connection do
 
   @behaviour WebSock
 
-  alias Fountain.Runners
+  alias Managoat.Runner.Config
 
   require Logger
 
@@ -51,7 +62,8 @@ defmodule Fountain.Runners.Connection do
   # ── caller API ─────────────────────────────────────────────────────────────
 
   @doc """
-  Send a request to the runner and wait for its reply.
+  Send a request to the runner and wait for its reply. The connection
+  process is found through the configured host's `whereis/1`.
 
   Options: `:timeout` (ms or `:infinity`, default #{@default_timeout});
   `:subscribe` — `{owner_pid, ref}` for `spawn`/`attach`, installed on the
@@ -65,7 +77,7 @@ defmodule Fountain.Runners.Connection do
   def call(runner_id, %{} = payload, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
 
-    case Runners.whereis(runner_id) do
+    case Config.host!().whereis(runner_id) do
       nil ->
         {:error, {:unavailable, :runner_offline}}
 
@@ -91,7 +103,7 @@ defmodule Fountain.Runners.Connection do
   @doc "Stop forwarding a session's frames to `ref`'s owner (this end only)."
   @spec unsubscribe(binary(), String.t(), reference()) :: :ok
   def unsubscribe(runner_id, session_id, ref) do
-    case Runners.whereis(runner_id) do
+    case Config.host!().whereis(runner_id) do
       nil -> :ok
       pid -> send(pid, {:unsubscribe, session_id, ref})
     end
@@ -102,27 +114,42 @@ defmodule Fountain.Runners.Connection do
   # ── WebSock ────────────────────────────────────────────────────────────────
 
   @impl WebSock
-  def init(%{runner_id: runner_id, user_id: user_id} = init) do
-    case Horde.Registry.register(Runners.registry(), {:runner, runner_id}, %{user_id: user_id}) do
-      {:ok, _} ->
+  def init(%{runner_id: runner_id} = init) do
+    host = Config.host!(init)
+    meta = Map.get(init, :meta, %{})
+    name = init[:name]
+
+    case host.register(runner_id, meta) do
+      :ok ->
         Process.send_after(self(), :heartbeat, @heartbeat_ms)
-        Logger.info("runner #{init[:name]} (#{runner_id}) connected for user #{user_id}")
-        Runners.broadcast_presence(user_id, runner_id, :online)
+        Logger.info("runner #{name} (#{runner_id}) connected #{inspect(meta)}")
+        host.presence(runner_id, :online, meta)
 
         {:ok,
          %{
            runner_id: runner_id,
-           user_id: user_id,
-           name: init[:name],
+           host: host,
+           meta: meta,
+           registered: true,
+           name: name,
            next_id: 1,
            pending: %{},
            subs: %{},
            owners: %{}
          }}
 
-      {:error, {:already_registered, _pid}} ->
-        {:stop, :normal, {4409, "a runner named #{init[:name]} is already connected"},
-         %{runner_id: runner_id, pending: %{}, subs: %{}, owners: %{}}}
+      {:error, :already_registered} ->
+        {:stop, :normal, {4409, "a runner named #{name} is already connected"},
+         %{
+           runner_id: runner_id,
+           host: host,
+           meta: meta,
+           registered: false,
+           name: name,
+           pending: %{},
+           subs: %{},
+           owners: %{}
+         }}
     end
   end
 
@@ -180,7 +207,7 @@ defmodule Fountain.Runners.Connection do
   end
 
   def handle_info(:heartbeat, state) do
-    Runners.touch(state.runner_id)
+    state.host.heartbeat(state.runner_id)
     Process.send_after(self(), :heartbeat, @heartbeat_ms)
     {:push, {:ping, ""}, state}
   end
@@ -220,12 +247,12 @@ defmodule Fountain.Runners.Connection do
     Logger.info("runner #{state[:name]} (#{state.runner_id}) disconnected: #{inspect(reason)}")
 
     # Only a registered connection was ever "online"; the 4409 duplicate
-    # above never was, and has no user_id in its state. Unregister before
-    # broadcasting so a subscriber that asks `online?/1` on receipt sees the
-    # truth rather than racing the registry's own DOWN handling.
-    if state[:user_id] do
-      Horde.Registry.unregister(Runners.registry(), {:runner, state.runner_id})
-      Runners.broadcast_presence(state.user_id, state.runner_id, :offline)
+    # above never was. Unregister before announcing so a subscriber that
+    # asks the host `whereis/1` on receipt sees the truth rather than racing
+    # the registry's own DOWN handling.
+    if state.registered do
+      state.host.unregister(state.runner_id)
+      state.host.presence(state.runner_id, :offline, state.meta)
     end
 
     Enum.each(state.pending, fn {_id, {from, ref, _sub}} ->

@@ -527,7 +527,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
     test "a limited environment on a backend that cannot enforce it fails before any sandbox exists",
          %{user: user} do
-      # `Fountain.Sandbox.Runner` does not advertise `:network_policy`, so this
+      # `Managoat.Runner.Adapter` does not advertise `:network_policy`, so this
       # pairing could only ever fail. It used to fail several steps into
       # provisioning, after a sandbox had been created and torn down, wearing
       # the shape of a transport error. Now it is refused up front, by name

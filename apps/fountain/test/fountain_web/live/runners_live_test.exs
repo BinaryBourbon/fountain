@@ -4,7 +4,7 @@ defmodule FountainWeb.RunnersLiveTest do
   import Phoenix.LiveViewTest
 
   alias Fountain.Runners
-  alias Fountain.Runners.FakeDaemon
+  alias Managoat.Runner.FakeDaemon
 
   test "lists runners with live status and forgets one", %{conn: conn} do
     user = insert_verified_user()
@@ -13,7 +13,7 @@ defmodule FountainWeb.RunnersLiveTest do
     {:ok, online} =
       Runners.register(user.id, %{"name" => "mini", "os" => "darwin", "arch" => "arm64"})
 
-    {:ok, daemon} = FakeDaemon.start(online.id, user.id, name: "mini")
+    {:ok, daemon} = FakeDaemon.start(online.id, meta: %{user_id: user.id}, name: "mini")
     on_exit(fn -> FakeDaemon.stop(daemon) end)
 
     conn = login_user(conn, user)

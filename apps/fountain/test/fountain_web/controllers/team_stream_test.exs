@@ -196,9 +196,12 @@ defmodule FountainWeb.TeamStreamTest do
 
     task = stream_async(key)
     Process.sleep(300)
-    {:ok, daemon} = Fountain.Runners.FakeDaemon.start(runner.id, user.id, name: "mini")
+
+    {:ok, daemon} =
+      Managoat.Runner.FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
+
     Process.sleep(100)
-    Fountain.Runners.FakeDaemon.stop(daemon)
+    Managoat.Runner.FakeDaemon.stop(daemon)
 
     conn = Task.await(task, 5_000)
     assert conn.resp_body =~ "event: team\ndata: {\"reason\":\"changed\"}"

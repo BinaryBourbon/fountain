@@ -7,7 +7,8 @@ defmodule FountainWeb.RunnerController do
       GET    /api/runners/ws     — the daemon's socket (WebSocket upgrade)
 
   The socket authenticates like every other `/api` route — a bearer API key,
-  full scope — and then hands the connection to `Fountain.Runners.Connection`.
+  full scope — and then hands the connection to `Managoat.Runner.Connection`
+  with `Fountain.Runners.Host` behind it.
   The daemon identifies itself in the query string (`name`, plus `hostname`,
   `os`, `arch`, `version`, `root` for the row) so registration happens
   before the upgrade and a bad request is an HTTP status, not a close code.
@@ -78,7 +79,7 @@ defmodule FountainWeb.RunnerController do
       "The `fountain runner` daemon's socket. Upgrades to a WebSocket over " <>
         "which Fountain sends sandbox requests and the daemon streams command " <>
         "output; the frame protocol is documented in " <>
-        "`Fountain.Runners.Connection` and in the self-hosted runners guide. " <>
+        "`Managoat.Runner.Connection` and in the self-hosted runners guide. " <>
         "Not for other clients: it is not a stream of anything.",
     parameters: [
       name: [
@@ -136,10 +137,12 @@ defmodule FountainWeb.RunnerController do
             message: "a runner named #{runner.name} is already connected for this account"
           })
         else
+          # `meta` is opaque to the library and comes back to
+          # Fountain.Runners.Host on online/0 and presence/3.
           WebSockAdapter.upgrade(
             conn,
-            Fountain.Runners.Connection,
-            %{runner_id: runner.id, user_id: user.id, name: runner.name},
+            Managoat.Runner.Connection,
+            %{runner_id: runner.id, name: runner.name, meta: %{user_id: user.id}},
             timeout: 120_000
           )
         end

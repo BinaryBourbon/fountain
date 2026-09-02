@@ -131,7 +131,8 @@ defmodule FountainWeb.TeamControllerTest do
                }
              } = entry["conversation"]["sandbox"]
 
-      {:ok, daemon} = Fountain.Runners.FakeDaemon.start(runner.id, user.id, name: "mini")
+      {:ok, daemon} =
+        Managoat.Runner.FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
 
       [entry] =
         conn
@@ -142,7 +143,7 @@ defmodule FountainWeb.TeamControllerTest do
 
       assert entry["presence"]["state"] == "online"
       assert entry["conversation"]["sandbox"]["runner"]["online"] == true
-      Fountain.Runners.FakeDaemon.stop(daemon)
+      Managoat.Runner.FakeDaemon.stop(daemon)
     end
 
     test "a pending conversation on a ready sandbox is online, not starting", %{

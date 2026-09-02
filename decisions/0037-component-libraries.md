@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337) and managoat_mcp_auth (#1338)."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338) and managoat_runner (#1341)."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: openai-codex/5.6, at: 2026-09-01T21:03:00-04:00 }
-verified: { by: openai-codex/5.6, at: 2026-09-01T21:03:00-04:00 }
+generated: { by: claude-fable/5.1, at: 2026-09-01T22:00:00-04:00 }
+verified: { by: claude-fable/5.1, at: 2026-09-01T22:00:00-04:00 }
 stale_after: 2026-12-01
 ---
 
@@ -18,13 +18,16 @@ stale_after: 2026-12-01
 (#1336, PR #1347, which also built the umbrella mechanics named below and
 the guard test, `umbrella_layout_test.exs`) and `managoat_sandbox` (#1337:
 the behaviour, the Sprites/E2B/Daytona adapters, `Retry`, the Fake and the
-conformance case; the runner adapter and the configured-providers policy
-stay in `fountain`), plus `managoat_mcp_auth` (#1338: the RFC 9728 / 8414 /
-7591 discovery chain and its SSRF URL guard; provider rows, the OAuth client,
-the Gmail tool server and the verified catalog stay in `fountain`). Not yet
-built: `managoat_acp` (#1339), `managoat_broker` (#1340), `managoat_runner`
-(#1341), `managoat_docs` (#1342), `managoat_oauth` (#1343) and the optional
-credits extraction (#1344). None has graduated to a repository (#1345). The
+conformance case; the configured-providers policy stays in `fountain`),
+`managoat_mcp_auth` (#1338: the RFC 9728 / 8414 / 7591 discovery chain and
+its SSRF URL guard; provider rows, the OAuth client, the Gmail tool server
+and the verified catalog stay in `fountain`) and `managoat_runner` (#1341:
+the runner wire protocol, the `WebSock` connection process, the sandbox
+adapter over it, the sandbox-name shape and the `FakeDaemon`, behind a
+`Managoat.Runner.Host` behaviour that `fountain` implements over Horde; the
+`runners` table, placement and presence stay in `fountain`). Not yet built:
+`managoat_acp` (#1339), `managoat_broker` (#1340), `managoat_docs` (#1342),
+`managoat_oauth` (#1343) and the optional credits extraction (#1344). None has graduated to a repository (#1345). The
 tracker is #1334. Each PR that extracts a library updates this block.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside

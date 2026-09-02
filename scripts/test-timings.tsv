@@ -103,8 +103,6 @@ apps/fountain/test/fountain/runtimes/instructions_test.exs	0
 apps/fountain/test/fountain/runtimes/legacy_blocks_test.exs	0
 apps/fountain/test/fountain/runtimes/model_test.exs	0
 apps/fountain/test/fountain/runtimes_test.exs	0
-apps/fountain/test/fountain/sandbox/runner_conformance_test.exs	63
-apps/fountain/test/fountain/sandbox/runner_host_path_test.exs	1
 apps/fountain/test/fountain/sandbox_bounds_config_test.exs	23
 apps/fountain/test/fountain/sandbox_skills_test.exs	0
 apps/fountain/test/fountain/search_test.exs	1502

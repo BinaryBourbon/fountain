@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Changed
 
+- **The self-hosted runner protocol is now the `managoat_runner` library**
+  (#1341, ADR 0037). The `WebSock` connection process, the sandbox adapter
+  that speaks to a runner daemon over it, the `runner-<32 hex>-<8 hex>` name
+  shape and the in-BEAM `FakeDaemon` moved from `Fountain.Runners.Connection`
+  and `Fountain.Sandbox.Runner` to the Apache-2.0 `Managoat.Runner` app. What
+  the library needs from the platform is a `Managoat.Runner.Host` behaviour
+  (register, unregister, whereis, online, heartbeat, presence);
+  `Fountain.Runners.Host` implements it over the Horde registry, the
+  `last_seen_at` stamp and the presence broadcast, and the library ships
+  `Managoat.Runner.Host.Local` over a plain `Registry` for a consumer without
+  a cluster. The wire protocol, the error taxonomy and every frame shape are
+  unchanged, so the Go daemon is untouched. Fountain still owns the `runners`
+  table, placement, presence and the socket's authentication.
+
 - **MCP authorization discovery is now the `managoat_mcp_auth` library**
   (#1338, ADR 0037). The RFC 9728 / 8414 / 7591 discovery chain and its SSRF
   URL guard moved from `Fountain.Connections` to the Apache-2.0

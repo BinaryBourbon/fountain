@@ -82,7 +82,8 @@ defmodule Fountain.Application do
           {Horde.Registry, [name: Fountain.BuzzRegistry, keys: :unique, members: :auto]},
           # Self-hosted runner sockets (ADR 0022): a `fountain runner` daemon
           # dials in and its connection process registers here under the
-          # runner id, so `Fountain.Sandbox.Runner` on any node can reach it.
+          # runner id (Fountain.Runners.Host), so `Managoat.Runner.Adapter`
+          # on any node can reach it.
           {Horde.Registry, [name: Fountain.RunnerRegistry, keys: :unique, members: :auto]},
           {Horde.DynamicSupervisor,
            [

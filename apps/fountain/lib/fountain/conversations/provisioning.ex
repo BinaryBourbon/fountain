@@ -277,7 +277,7 @@ defmodule Fountain.Conversations.Provisioning do
   Refuse a `limited` environment on a backend that cannot enforce one, before
   anything is provisioned.
 
-  Not every provider can hold egress. `Fountain.Sandbox.Runner` answers
+  Not every provider can hold egress. `Managoat.Runner.Adapter` answers
   `{:error, :not_supported}` and leaves `:network_policy` out of its
   `capabilities/0`; Sprites, E2B and Daytona all advertise it. The pairing has
   always failed closed — `apply_network_policy/3` turns the `:not_supported`
