@@ -59,7 +59,8 @@ Reach it the way you already work.
 - [**ACP**](integrations/acp.md), for an editor or a chat surface.
 - [**AG-UI**](integrations/openbot.md), for a coworker platform.
 - [**REST and SSE**](api.md), for your own code, with a
-  [TypeScript SDK](sdk.md), a [Swift SDK](swift-sdk.md) and a
+  [TypeScript SDK](sdk.md), an [Elixir SDK](elixir-sdk.md), a
+  [Swift SDK](swift-sdk.md) and a
   [CLI](cli.md) over them.
 
 What you build on top is yours. It can be a chat client whose contacts are
@@ -125,6 +126,7 @@ in full.
 - [CLI reference](cli.md), the `fountain` command surface
 - [API reference](api.md), REST endpoints and auth
 - [TypeScript SDK](sdk.md)
+- [Elixir SDK](elixir-sdk.md)
 - [Swift SDK](swift-sdk.md)
 - [Configuration reference](configuration.md), each environment variable
 - [Conversation states](reference/conversation-states.md)
