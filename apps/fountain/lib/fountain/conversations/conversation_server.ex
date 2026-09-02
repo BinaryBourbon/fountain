@@ -24,6 +24,7 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.Conversations.{
     CallbackKey,
     Conversation,
+    Egress,
     HomeCheckpoint,
     Lifecycle,
     McpServers,
@@ -690,20 +691,20 @@ defmodule Fountain.Conversations.ConversationServer do
 
     case SpriteEnv.load_tenant_state(conv.user_id) do
       {:ok, dek, inference_creds} ->
-        bindings = broker_bindings(conv.user_id)
+        bindings = Egress.bindings(conv.user_id)
 
         {merged, bindings, connection_keys} =
-          add_connection_secrets(
+          Egress.add_connection_secrets(
             conv.user_id,
             SpriteEnv.merge_secrets(env, vault, dek),
             bindings,
             agent
           )
 
-        {secrets, brokered} = split_brokered(conv.user_id, merged, bindings)
+        {secrets, brokered} = Egress.split_brokered(conv.user_id, merged, bindings)
 
         {env_creds, brokered, bindings} =
-          split_inference(conv.user_id, inference_creds, brokered, bindings)
+          Egress.split_inference(conv.user_id, inference_creds, brokered, bindings)
 
         state =
           %{
@@ -837,7 +838,7 @@ defmodule Fountain.Conversations.ConversationServer do
              ),
            :ok <-
              Fountain.Conversations.Provisioning.check_broker_support(
-               brokered?(state),
+               Egress.brokered?(state.user_id),
                provider,
                env,
                state.conversation_id
@@ -872,7 +873,12 @@ defmodule Fountain.Conversations.ConversationServer do
                Provisioning.write_runtime_config(
                  handle,
                  state.runtime_module,
-                 with_connection_servers(agent, state)
+                 Egress.with_connection_servers(
+                   agent,
+                   state.user_id,
+                   state.conversation_id,
+                   state.callback_token
+                 )
                ),
              _ = Provisioning.write_instructions(handle, runtime, agent),
              # The file is the machine's; the conversation's identity travels as
@@ -882,7 +888,7 @@ defmodule Fountain.Conversations.ConversationServer do
                  handle,
                  Fountain.Conversations.Identity.disk_env(sprite_env)
                ),
-             :ok <- broker_install_ca(state, handle),
+             :ok <- Egress.install_ca(state.broker, handle, state.conversation_id),
              :ok <-
                run_provisioning_pipeline(
                  handle,
@@ -890,7 +896,7 @@ defmodule Fountain.Conversations.ConversationServer do
                  sprite_env,
                  secrets,
                  state.conversation_id,
-                 brokered?(state)
+                 Egress.brokered?(state.user_id)
                ),
              :ok <-
                Provisioning.prepare_runtime_sprite(
@@ -927,7 +933,7 @@ defmodule Fountain.Conversations.ConversationServer do
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
             _ = Managoat.Sandbox.destroy(handle)
-            broker_release(state)
+            Egress.release(state.user_id, state.conversation_id)
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
             publish_stage(state.conversation_id, "provision", "failed", %{
@@ -962,7 +968,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp run_provisioning_pipeline(handle, env, sprite_env, secrets, conv_id, brokered?) do
     case attempt_warm_start(handle, env, conv_id) do
       :warm_started ->
-        apply_egress_policy(handle, env, conv_id, brokered?)
+        Egress.apply_policy(handle, env, conv_id, brokered?)
 
       :cold ->
         with :ok <-
@@ -972,7 +978,7 @@ defmodule Fountain.Conversations.ConversationServer do
                  sprite_env,
                  conv_id
                ),
-             :ok <- apply_egress_policy(handle, env, conv_id, brokered?),
+             :ok <- Egress.apply_policy(handle, env, conv_id, brokered?),
              :ok <-
                Fountain.Conversations.Provisioning.clone_repositories(
                  handle,
@@ -1122,7 +1128,12 @@ defmodule Fountain.Conversations.ConversationServer do
       case Provisioning.write_runtime_config(
              handle,
              state.runtime_module,
-             with_connection_servers(agent, state)
+             Egress.with_connection_servers(
+               agent,
+               state.user_id,
+               state.conversation_id,
+               state.callback_token
+             )
            ) do
         :ok -> :ok
         {:error, reason} -> Logger.warning("runtime config write on wake: #{inspect(reason)}")
@@ -1131,7 +1142,7 @@ defmodule Fountain.Conversations.ConversationServer do
       # A machine provisioned before its tenant was brokered has no CA yet;
       # on one that has it this is an idempotent rewrite. Best effort here:
       # the turn's own failure says more than a refused wake would.
-      case broker_install_ca(state, handle) do
+      case Egress.install_ca(state.broker, handle, state.conversation_id) do
         :ok -> :ok
         {:error, reason} -> Logger.warning("broker CA install on wake: #{inspect(reason)}")
       end
@@ -1471,6 +1482,8 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
+  # ── sprite environment and egress (ADR 0019 gate 1a) ──────────────────────
+
   # The server's half of `SpriteEnv.build/4`: unpack what the state holds and
   # hand it over. The name stays because the tests and the comments that say
   # "build_sprite_env registers the secrets" still mean this call.
@@ -1482,178 +1495,21 @@ defmodule Fountain.Conversations.ConversationServer do
       conversation_id: state.conversation_id,
       sandbox_id: state.sandbox_id,
       sandbox_url: sandbox_url,
-      brokered: broker_env(state)
+      brokered: Egress.sandbox_env(state.broker)
     )
   end
 
-  # ── sprite environment and egress (ADR 0019 gate 1a) ──────────────────────
-
-  defp brokered?(state), do: Fountain.Broker.enabled_for?(state.user_id)
-
-  # On a brokered conversation the catalog keys leave the secrets map here,
-  # before the MCP substitution and the env are built from it, so both see
-  # the placeholder and neither sees the value.
-  defp split_brokered(user_id, secrets, bindings) do
-    if Fountain.Broker.enabled_for?(user_id),
-      do: Fountain.Broker.split(secrets, bindings),
-      else: {secrets, %{}}
-  end
-
-  # A tenant's connections (#1178) contribute their access tokens as
-  # synthetic secrets, brokered like inference keys: the sandbox gets a
-  # placeholder, the broker gets the value with an implicit bearer binding
-  # to the provider's hosts. A tenant's own secret of the same name wins,
-  # as does their own binding on it (which is how the token reaches an MCP
-  # server they run). Only for brokered tenants — without the broker the
-  # token would have to enter the sandbox in the clear, which is the thing
-  # connections exist to avoid.
-  defp add_connection_secrets(user_id, merged, bindings, agent) do
-    if Fountain.Broker.enabled_for?(user_id) do
-      connections = active_connections_by_id(user_id)
-      synthetic = Fountain.Connections.synthetic_secrets(user_id)
-      remote_hosts = remote_connection_hosts(agent, connections)
-
-      {merged, bindings, keys} =
-        Enum.reduce(synthetic, {merged, bindings, []}, fn {key, token}, {m, b, keys} ->
-          if Map.has_key?(m, key) do
-            {m, b, keys}
-          else
-            b =
-              if Map.has_key?(b, key),
-                do: b,
-                else: Map.put(b, key, connection_bindings(user_id, key, remote_hosts))
-
-            {Map.put(m, key, token), b, [key | keys]}
-          end
-        end)
-
-      {merged, bindings, Enum.sort(keys)}
-    else
-      {merged, bindings, []}
-    end
-  end
-
-  # The provider's own hosts, plus the host of every remote MCP server the
-  # agent attaches with this connection (#1186): the broker attaches the
-  # bearer to exactly those and nothing else.
-  defp connection_bindings(user_id, key, remote_hosts) do
-    (Fountain.Connections.implicit_hosts(user_id, key) ++ Map.get(remote_hosts, key, []))
-    |> Enum.uniq()
-    |> Enum.map(fn host ->
-      %Fountain.SecretBindings.Binding{
-        key: key,
-        host: host,
-        auth_type: "bearer",
-        headers: %{},
-        enabled: true
-      }
-    end)
-  end
-
-  defp active_connections_by_id(user_id) do
-    user_id
-    |> Fountain.Connections.active_connections()
-    |> Map.new(&{&1.id, &1})
-  end
-
-  defp remote_connection_hosts(%{mcp_servers: servers}, connections) when is_map(servers),
-    do: Fountain.Connections.McpServers.remote_hosts(servers, connections)
-
-  defp remote_connection_hosts(_agent, _connections), do: %{}
-
-  # Re-read the brokered connection tokens; a rotated one is swapped into
-  # `brokered` and the caller re-prepares the vault. A refresh that fails
-  # leaves the old token in place: the turn runs on it and, if it has
-  # expired, fails at the provider with a reason rather than silently here.
-  defp refresh_connection_secrets(%{connection_keys: []} = state), do: {state, false}
-
-  defp refresh_connection_secrets(%{connection_keys: keys, user_id: user_id} = state) do
-    fresh = user_id |> Fountain.Connections.synthetic_secrets() |> Map.take(keys)
-
-    rotated =
-      Enum.filter(fresh, fn {k, v} -> Map.get(state.brokered, k) != v end)
-
-    if rotated == [] do
-      {state, false}
-    else
-      {%{state | brokered: Map.merge(state.brokered, Map.new(rotated))}, true}
-    end
-  end
-
-  # An agent whose `mcp_servers` names a connection gets the entry rewritten
-  # into the Fountain-served server (#1178), authenticated by the
-  # conversation's callback token. Not for an unbrokered tenant: the entry
-  # is dropped and the agent runs without it.
-  defp with_connection_servers(nil, _state), do: nil
-
-  defp with_connection_servers(%{mcp_servers: servers} = agent, state) when is_map(servers) do
-    brokered = Fountain.Broker.enabled_for?(state.user_id)
-    token = if brokered, do: state.callback_token
-    connections = if brokered, do: active_connections_by_id(state.user_id), else: %{}
-
-    %{
-      agent
-      | mcp_servers:
-          Fountain.Connections.McpServers.resolve(
-            servers,
-            state.conversation_id,
-            token,
-            connections
-          )
-    }
-  end
-
-  defp with_connection_servers(agent, _state), do: agent
-
-  # Only read for a brokered tenant: for everyone else the table is rows
-  # nobody consults, and this path stays free of a query.
-  defp broker_bindings(user_id) do
-    if Fountain.Broker.enabled_for?(user_id),
-      do: Fountain.SecretBindings.enabled_by_key(user_id),
-      else: %{}
-  end
-
-  # Gate 3: the runtime is handed placeholders for its inference credentials
-  # and the broker gets the values, with an implicit binding to the provider's
-  # host. A tenant's own secret of the same name (already split above) wins
-  # over the inference credential, as it wins in the environment.
-  defp split_inference(user_id, inference_creds, brokered, bindings) do
-    if Fountain.Broker.enabled_for?(user_id) do
-      {env_creds, inference_brokered, implicit} =
-        Fountain.Broker.split_inference(inference_creds, bindings)
-
-      {env_creds, Map.merge(inference_brokered, brokered), Map.merge(implicit, bindings)}
-    else
-      {inference_creds, brokered, bindings}
-    end
-  end
-
-  defp broker_env(%{broker: nil}), do: []
-  defp broker_env(%{broker: session}), do: Fountain.Broker.sandbox_env(session)
-
-  # Mint (or re-mint) the conversation's proxy session. A no-op that returns
-  # the state untouched when the conversation is not brokered.
+  # Mint (or re-mint) the conversation's proxy session (`Egress.prepare/4`)
+  # and hold it. A no-op that returns the state untouched when the
+  # conversation is not brokered.
   defp broker_prepare(state) do
-    if brokered?(state) do
-      publish_stage(state.conversation_id, "broker", "started", %{
-        keys: state.brokered |> Map.keys() |> Enum.sort()
-      })
-
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings,
+    if Egress.brokered?(state.user_id) do
+      case Egress.prepare(state.conversation_id, state.brokered, state.broker_bindings,
              network: state.broker_network,
              user_id: state.user_id
            ) do
-        {:ok, session} ->
-          publish_stage(state.conversation_id, "broker", "done", %{
-            vault: session.vault,
-            expires_at: session.expires_at
-          })
-
-          {:ok, %{state | broker: session}}
-
-        {:error, reason} ->
-          publish_stage(state.conversation_id, "broker", "failed", %{reason: inspect(reason)})
-          {:error, reason}
+        {:ok, session} -> {:ok, %{state | broker: session}}
+        {:error, _} = error -> error
       end
     else
       {:ok, state}
@@ -1667,29 +1523,17 @@ defmodule Fountain.Conversations.ConversationServer do
   defp broker_switch_to_api_key(%{broker: nil} = state), do: state
 
   defp broker_switch_to_api_key(state) do
-    creds = Map.delete(state.inference_credentials, :claude_code_oauth_token)
-
-    {env_creds, inference_brokered, implicit} =
-      Fountain.Broker.split_inference(creds, state.broker_bindings)
-
-    brokered =
-      state.brokered
-      |> Map.delete("CLAUDE_CODE_OAUTH_TOKEN")
-      |> Map.merge(inference_brokered)
-
-    bindings =
-      state.broker_bindings |> Map.delete("CLAUDE_CODE_OAUTH_TOKEN") |> Map.merge(implicit)
+    {env_creds, brokered, bindings} =
+      Egress.drop_oauth_token(state.inference_credentials, state.brokered, state.broker_bindings)
 
     state = %{state | brokered: brokered, broker_bindings: bindings, env_credentials: env_creds}
 
-    case Fountain.Broker.prepare(state.conversation_id, brokered, bindings,
+    case Egress.reprepare(state.conversation_id, brokered, bindings, state.sprite_env,
            network: state.broker_network,
            user_id: state.user_id
          ) do
-      {:ok, session} ->
-        keys = Fountain.Broker.env_keys()
-        kept = Enum.reject(state.sprite_env, fn {k, _} -> to_string(k) in keys end)
-        %{state | broker: session, sprite_env: kept ++ Fountain.Broker.sandbox_env(session)}
+      {:ok, session, sprite_env} ->
+        %{state | broker: session, sprite_env: sprite_env}
 
       {:error, reason} ->
         Logger.warning(
@@ -1700,27 +1544,27 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp broker_install_ca(%{broker: nil}, _handle), do: :ok
-
-  defp broker_install_ca(state, handle),
-    do: Fountain.Conversations.Provisioning.install_broker_ca(handle, state.conversation_id)
-
   # A session near its end is replaced before the turn that would outlive it.
   # The env is rebuilt with the new token; everything else in it is unchanged.
   defp broker_refresh(%{broker: nil} = state), do: state
 
   defp broker_refresh(%{broker: session} = state) do
-    {state, rotated?} = refresh_connection_secrets(state)
+    {brokered, rotated?} =
+      Egress.refresh_connection_secrets(state.connection_keys, state.user_id, state.brokered)
+
+    state = %{state | brokered: brokered}
 
     if rotated? or Fountain.Broker.expiring?(session) do
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings,
+      case Egress.reprepare(
+             state.conversation_id,
+             state.brokered,
+             state.broker_bindings,
+             state.sprite_env,
              network: state.broker_network,
              user_id: state.user_id
            ) do
-        {:ok, fresh} ->
-          keys = Fountain.Broker.env_keys()
-          kept = Enum.reject(state.sprite_env, fn {k, _} -> to_string(k) in keys end)
-          %{state | broker: fresh, sprite_env: kept ++ Fountain.Broker.sandbox_env(fresh)}
+        {:ok, fresh, sprite_env} ->
+          %{state | broker: fresh, sprite_env: sprite_env}
 
         {:error, reason} ->
           # The turn runs on the old token, and fails at the proxy if it has
@@ -1735,34 +1579,6 @@ defmodule Fountain.Conversations.ConversationServer do
       state
     end
   end
-
-  # The vault and every session in it go when the conversation's sandbox
-  # does. Best effort and off the caller's path: a broker that is down at
-  # teardown must not keep a sandbox alive, and the vault is idempotently
-  # recreated on the next provision anyway.
-  defp broker_release(state) do
-    if brokered?(state) do
-      conv_id = state.conversation_id
-
-      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
-        case Fountain.Broker.release(conv_id) do
-          :ok ->
-            :ok
-
-          {:error, reason} ->
-            Logger.warning("broker release for conv #{conv_id}: #{inspect(reason)}")
-        end
-      end)
-    end
-
-    :ok
-  end
-
-  defp apply_egress_policy(handle, env, conv_id, false),
-    do: Fountain.Conversations.Provisioning.apply_network_policy(handle, env, conv_id)
-
-  defp apply_egress_policy(handle, _env, conv_id, true),
-    do: Fountain.Conversations.Provisioning.apply_broker_floor(handle, conv_id)
 
   @impl true
   def handle_call({:send_prompt, prompt, images}, _from, state) do
@@ -1909,7 +1725,7 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       state = drop_connection(state, "terminated")
       if state.handle, do: _ = Managoat.Sandbox.destroy(state.handle)
-      broker_release(state)
+      Egress.release(state.user_id, state.conversation_id)
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
       {:ok, _} =
@@ -2863,7 +2679,7 @@ defmodule Fountain.Conversations.ConversationServer do
     state = drop_connection(state, "reclaimed")
 
     if state.handle, do: _ = Managoat.Sandbox.destroy(state.handle)
-    broker_release(state)
+    Egress.release(state.user_id, state.conversation_id)
 
     if state.sandbox_id do
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
@@ -3377,7 +3193,14 @@ defmodule Fountain.Conversations.ConversationServer do
                     cwd: cwd,
                     images: images,
                     mcp_servers:
-                      Managoat.Runtimes.ACP.mcp_servers(with_connection_servers(agent, state)) ++
+                      Managoat.Runtimes.ACP.mcp_servers(
+                        Egress.with_connection_servers(
+                          agent,
+                          state.user_id,
+                          state.conversation_id,
+                          state.callback_token
+                        )
+                      ) ++
                         McpServers.fountain_served(conv, state.callback_token),
                     model:
                       agent &&

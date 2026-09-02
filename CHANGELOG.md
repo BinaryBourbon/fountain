@@ -229,6 +229,17 @@ upgrade, is in
   Sixteen functions, same bodies, no behaviour change; the brokered
   placeholders reach the env through one argument, which is the seam the
   egress move (#1373) uses next. The pin drops from 4,348 to 4,168.
+- **Egress brokerage and the connection secrets have left
+  `ConversationServer`** (#1373, tracker #1369). `Fountain.Conversations.Egress`
+  holds everything ADR 0019 wired into a conversation: the split rules
+  (bindings, connection tokens, catalog keys, inference credentials), the
+  proxy session's mint, re-prepare and release, the CA install and the
+  network floor. It calls the `Fountain.Broker` facade and
+  `Fountain.Connections`; the server keeps the session and its placeholders
+  in state and three short wrappers that apply what comes back. Seventeen
+  functions, same bodies, no behaviour, stage or log change. The Agent Vault
+  client's deletion now touches one file beside the facade. The pin drops
+  from 4,168 to 3,991.
 
 ### Added
 
