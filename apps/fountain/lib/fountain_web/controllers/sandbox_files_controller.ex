@@ -1,0 +1,177 @@
+defmodule FountainWeb.SandboxFilesController do
+  @moduledoc """
+  A sandbox's disk, read-only: a directory listing, one file and `git diff`
+  (ADR 0039). What an app that watches an agent work needs once the
+  transcript is not enough — and deliberately not exec.
+
+  Full scope only: a sandbox's own `sprite` token must not be able to read
+  another sandbox of the same tenant, whose disk holds a different vault.
+  """
+  use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
+
+  alias Fountain.Conversations
+  alias Fountain.Conversations.Sandbox
+  alias Fountain.SandboxFiles
+  alias FountainWeb.Schemas
+
+  action_fallback FountainWeb.FallbackController
+
+  plug OpenApiSpex.Plug.CastAndValidate, replace_params: false
+
+  tags(["Sandboxes"])
+
+  @path_param [
+    in: :query,
+    type: :string,
+    required: false,
+    description:
+      "In-sandbox path, absolute or relative to the agent's working directory " <>
+        "(`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and " <>
+        "`/tmp/opencode-workspace` for the others). Confined to those directories: " <>
+        "anything else is `422 path_outside_sandbox`."
+  ]
+
+  @max_bytes_param [
+    in: :query,
+    type: :integer,
+    required: false,
+    description:
+      "How many bytes to return, at most #{SandboxFiles.max_max_bytes()} " <>
+        "(default #{SandboxFiles.default_max_bytes()}). `truncated` says whether " <>
+        "the content stopped short."
+  ]
+
+  @not_ready {"Sandbox is not ready", "application/json", Schemas.Error}
+  @unreachable {"Sandbox provider unreachable", "application/json", Schemas.Error}
+
+  operation(:index,
+    summary: "List a directory on a sandbox",
+    description:
+      "The entries of one directory, directories first then by name. Without `path`, " <>
+        "the agent's working directory. Only a `ready` sandbox answers " <>
+        "(`409 sandbox_not_ready`): a parked one is not woken for a read. " <>
+        "Full scope.",
+    parameters: [sandbox_id: [in: :path, type: :string, required: true], path: @path_param],
+    responses: [
+      ok: {"Directory listing", "application/json", Schemas.SandboxListingResponse},
+      not_found: {"No such sandbox or path", "application/json", Schemas.Error},
+      conflict: @not_ready,
+      unprocessable_entity:
+        {"Not a directory, or outside the sandbox", "application/json", Schemas.Error},
+      service_unavailable: @unreachable
+    ]
+  )
+
+  def index(conn, %{"sandbox_id" => id} = params) do
+    with {:ok, sandbox} <- fetch(conn, id),
+         {:ok, listing} <- SandboxFiles.list(sandbox, params["path"]) do
+      json(conn, %{data: listing})
+    end
+  end
+
+  operation(:show,
+    summary: "Read a file on a sandbox",
+    description:
+      "The bytes of one file, redacted: every value of the sandbox's environment and " <>
+        "vault is replaced with `[REDACTED]`, as in the transcript. `content` is the text " <>
+        "when it is valid UTF-8 (`encoding: utf-8`) and base64 otherwise " <>
+        "(`encoding: base64`). `size` is the whole file; `truncated` says whether `content` " <>
+        "stopped at `max_bytes`. Full scope.",
+    parameters: [
+      sandbox_id: [in: :path, type: :string, required: true],
+      path: Keyword.put(@path_param, :required, true),
+      max_bytes: @max_bytes_param
+    ],
+    responses: [
+      ok: {"File", "application/json", Schemas.SandboxFileResponse},
+      not_found: {"No such sandbox or path", "application/json", Schemas.Error},
+      conflict: @not_ready,
+      unprocessable_entity:
+        {"A directory, unreadable, or outside the sandbox", "application/json", Schemas.Error},
+      service_unavailable: @unreachable
+    ]
+  )
+
+  def show(conn, %{"sandbox_id" => id} = params) do
+    # `path` is required by the operation, so CastAndValidate has already
+    # refused a request without one.
+    with {:ok, sandbox} <- fetch(conn, id),
+         {:ok, file} <-
+           SandboxFiles.read(sandbox, params["path"], max_bytes: integer(params["max_bytes"])) do
+      json(conn, %{data: file})
+    end
+  end
+
+  operation(:diff,
+    summary: "git diff on a sandbox",
+    description:
+      "`git diff` of the repository containing `path` (default: the agent's working " <>
+        "directory), redacted like a file read. `staged=true` compares the index " <>
+        "(`--cached`); `ref` compares against a commit, branch or tag " <>
+        "(`422 invalid_ref` for a malformed one, `404 ref_not_found` for an unknown one). " <>
+        "A directory outside any repository is `422 not_a_repository`. Full scope.",
+    parameters: [
+      sandbox_id: [in: :path, type: :string, required: true],
+      path: @path_param,
+      staged: [
+        in: :query,
+        type: :boolean,
+        required: false,
+        description: "Diff the index (`--cached`)."
+      ],
+      ref: [
+        in: :query,
+        type: :string,
+        required: false,
+        description: "A commit, branch or tag to diff against instead of HEAD."
+      ],
+      max_bytes: @max_bytes_param
+    ],
+    responses: [
+      ok: {"Diff", "application/json", Schemas.SandboxDiffResponse},
+      not_found: {"No such sandbox, path or ref", "application/json", Schemas.Error},
+      conflict: @not_ready,
+      unprocessable_entity:
+        {"Not a repository, bad ref, or outside the sandbox", "application/json", Schemas.Error},
+      service_unavailable: @unreachable
+    ]
+  )
+
+  def diff(conn, %{"sandbox_id" => id} = params) do
+    with {:ok, sandbox} <- fetch(conn, id),
+         {:ok, diff} <-
+           SandboxFiles.diff(sandbox, params["path"],
+             staged: boolean(params["staged"]),
+             ref: params["ref"],
+             max_bytes: integer(params["max_bytes"])
+           ) do
+      json(conn, %{data: diff})
+    end
+  end
+
+  # Ownership: the scoped get_sandbox establishes it; SandboxFiles trusts
+  # the row it is handed.
+  defp fetch(conn, id) do
+    case Conversations.get_sandbox(id, conn.assigns.current_user.id) do
+      %Sandbox{} = sandbox -> {:ok, sandbox}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  # CastAndValidate has already checked the shapes; `replace_params: false`
+  # leaves the raw strings in `params`, so read them back leniently.
+  defp integer(nil), do: nil
+  defp integer(n) when is_integer(n), do: n
+
+  defp integer(s) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, ""} -> n
+      _ -> nil
+    end
+  end
+
+  defp boolean(true), do: true
+  defp boolean("true"), do: true
+  defp boolean(_), do: false
+end

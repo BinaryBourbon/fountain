@@ -644,7 +644,53 @@ a reset. Fountain destroys the machine, keeps the conversations, and builds a
 new machine on the next prompt. A request also gets `409 sandbox_mid_turn`
 while a conversation on one of those sandboxes runs a turn.
 
+### Files and git diff
+
+Three read-only requests show the disk of a sandbox. An app that watches an
+agent uses them when the transcript is not enough. There is no request that
+runs a command. To run a command, send a prompt.
+
+```
+GET /api/sandboxes/:id/files?path=src           # list a directory
+GET /api/sandboxes/:id/file?path=src/app.ex     # read a file
+GET /api/sandboxes/:id/diff?path=repo&staged=true&ref=main
+```
+
+All three need a key with the `full` scope. The `sprite` key that a sandbox
+holds gets `403 insufficient_scope`. A `path` is absolute, or relative to the
+current directory of the agent. That directory is `/home/sprite` for claude
+and codex, `/tmp/gemini-workspace` for gemini, and `/tmp/opencode-workspace`
+for opencode. A path must stay in `/home/sprite` or in that directory.
+Any other path gets `422 path_outside_sandbox`. Fountain reads a `ready`
+sandbox only. A parked sandbox gets `409 sandbox_not_ready` and stays parked.
+A path that does not exist gets `404 path_not_found`.
+
+`files` lists one directory, directories first, then by name. Without `path`,
+it lists the current directory of the agent. Each entry has a `name`, a
+`type` and a `size`. The `type` is `file`, `directory`, `symlink` or `other`.
+The response holds at most 2000 entries. `truncated` is `true` when the
+directory holds more. A path that is a file gets `422 not_a_directory`.
+
+`file` returns one file. `size` is the size of the whole file. `content`
+holds at most `max_bytes` of it. The default is 262144 and the limit is
+4194304. `truncated` is `true` when `content` stops before the end.
+`encoding` is `utf-8` when `content` is the text itself. It is `base64` when
+the bytes are not valid UTF-8. A path that is a directory gets
+`422 is_a_directory`.
+
+`diff` returns `git diff` of the repository that holds `path`. `repo_root` is
+the top directory of that repository. `staged=true` compares the index
+(`--cached`). `ref` compares against one commit, branch or tag. A `ref` with
+a flag or a range gets `422 invalid_ref`. A `ref` that git does not know gets
+`404 ref_not_found`. A directory outside a repository gets
+`422 not_a_repository`. `max_bytes` and `truncated` work as for `file`.
+
+Fountain redacts every response. Each value of the environment and the vault
+of the sandbox reads `[REDACTED]`, as it does in the transcript. Values
+shorter than eight bytes stay as they are.
+
 ## Search
+
 
 This is full-text search across the caller's conversations. A command palette
 uses it, to jump to a message.

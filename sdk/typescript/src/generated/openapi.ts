@@ -1228,6 +1228,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandboxes/{sandbox_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a directory on a sandbox
+         * @description The entries of one directory, directories first then by name. Without `path`, the agent's working directory. Only a `ready` sandbox answers (`409 sandbox_not_ready`): a parked one is not woken for a read. Full scope.
+         */
+        get: operations["FountainWeb.SandboxFilesController.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/stream": {
         parameters: {
             query?: never;
@@ -2099,6 +2119,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandboxes/{sandbox_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * git diff on a sandbox
+         * @description `git diff` of the repository containing `path` (default: the agent's working directory), redacted like a file read. `staged=true` compares the index (`--cached`); `ref` compares against a commit, branch or tag (`422 invalid_ref` for a malformed one, `404 ref_not_found` for an unknown one). A directory outside any repository is `422 not_a_repository`. Full scope.
+         */
+        get: operations["FountainWeb.SandboxFilesController.diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/account/onboarding": {
         parameters: {
             query?: never;
@@ -2200,6 +2240,26 @@ export interface paths {
         patch: operations["FountainWeb.VaultController.update (2)"];
         trace?: never;
     };
+    "/api/sandboxes/{sandbox_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a file on a sandbox
+         * @description The bytes of one file, redacted: every value of the sandbox's environment and vault is replaced with `[REDACTED]`, as in the transcript. `content` is the text when it is valid UTF-8 (`encoding: utf-8`) and base64 otherwise (`encoding: base64`). `size` is the whole file; `truncated` says whether `content` stopped at `max_bytes`. Full scope.
+         */
+        get: operations["FountainWeb.SandboxFilesController.show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/password": {
         parameters: {
             query?: never;
@@ -2285,6 +2345,24 @@ export interface components {
             email: string;
             /** Format: password */
             password: string;
+        };
+        /**
+         * SandboxFile
+         * @description One file on a sandbox, redacted: the sandbox's environment and vault values read `[REDACTED]`.
+         */
+        SandboxFile: {
+            content: string;
+            /**
+             * @description `utf-8` when `content` is the text itself; `base64` when it is not valid UTF-8.
+             * @enum {string}
+             */
+            encoding: "utf-8" | "base64";
+            /** @description The file read, absolute. */
+            path: string;
+            /** @description The whole file, in bytes. */
+            size: number;
+            /** @description True when `content` stopped at `max_bytes` before the end of the file. */
+            truncated: boolean;
         };
         /**
          * TeamSchedule
@@ -2449,6 +2527,10 @@ export interface components {
         BuzzIdentityListResponse: {
             data: components["schemas"]["BuzzIdentity"][];
         };
+        /** SandboxDiffResponse */
+        SandboxDiffResponse: {
+            data: components["schemas"]["SandboxDiff"];
+        };
         /**
          * BuzzIdentity
          * @description A hosted Buzz agent: a Nostr identity (key held server-side in a vault) bound to a Fountain agent. Its harness runs on the gateway (ADR 0020).
@@ -2572,6 +2654,24 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+        };
+        /**
+         * SandboxDiff
+         * @description `git diff` of a repository on a sandbox, redacted like a file.
+         */
+        SandboxDiff: {
+            /** @description Unified diff, no colour. */
+            diff: string;
+            /** @description The directory the diff was asked for, absolute. */
+            path: string;
+            /** @description The revision diffed against, or null for HEAD. */
+            ref?: string | null;
+            /** @description The repository's top-level directory. */
+            repo_root: string;
+            /** @description True when the index was diffed (`--cached`). */
+            staged: boolean;
+            /** @description True when `diff` stopped at `max_bytes` before the end. */
+            truncated: boolean;
         };
         /** VerifyEmailResponse */
         VerifyEmailResponse: {
@@ -3097,6 +3197,10 @@ export interface components {
             email: string;
             message: string;
         };
+        /** SandboxListingResponse */
+        SandboxListingResponse: {
+            data: components["schemas"]["SandboxListing"];
+        };
         /** SandboxListResponse */
         SandboxListResponse: {
             data: components["schemas"]["SandboxDetail"][];
@@ -3414,6 +3518,17 @@ export interface components {
         EnvironmentListResponse: {
             data: components["schemas"]["Environment"][];
         };
+        /**
+         * SandboxEntry
+         * @description One entry of a directory on a sandbox (ADR 0039).
+         */
+        SandboxEntry: {
+            name: string;
+            /** @description Bytes, for a regular file; null otherwise. */
+            size?: number | null;
+            /** @enum {string} */
+            type: "file" | "directory" | "symlink" | "other";
+        };
         /** ApiKeyListResponse */
         ApiKeyListResponse: {
             data: components["schemas"]["ApiKey"][];
@@ -3709,6 +3824,17 @@ export interface components {
             response_body?: string | null;
             /** @description null when the request never got a response. */
             status_code?: number | null;
+        };
+        /**
+         * SandboxListing
+         * @description A directory on a sandbox, directories first then by name.
+         */
+        SandboxListing: {
+            entries: components["schemas"]["SandboxEntry"][];
+            /** @description The directory listed, absolute. */
+            path: string;
+            /** @description True when the directory holds more entries than were returned. */
+            truncated: boolean;
         };
         /** AgentUpdate */
         AgentUpdate: {
@@ -4317,6 +4443,10 @@ export interface components {
                 /** Format: uuid */
                 target_user_id?: string | null;
             }[];
+        };
+        /** SandboxFileResponse */
+        SandboxFileResponse: {
+            data: components["schemas"]["SandboxFile"];
         };
         /**
          * Environment
@@ -7869,6 +7999,67 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.SandboxFilesController.index": {
+        parameters: {
+            query?: {
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                sandbox_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directory listing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxListingResponse"];
+                };
+            };
+            /** @description No such sandbox or path */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox is not ready */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not a directory, or outside the sandbox */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox provider unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.EventsController.stream": {
         parameters: {
             query?: {
@@ -10147,6 +10338,73 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.SandboxFilesController.diff": {
+        parameters: {
+            query?: {
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                path?: string;
+                /** @description Diff the index (`--cached`). */
+                staged?: boolean;
+                /** @description A commit, branch or tag to diff against instead of HEAD. */
+                ref?: string;
+                /** @description How many bytes to return, at most 4194304 (default 262144). `truncated` says whether the content stopped short. */
+                max_bytes?: number;
+            };
+            header?: never;
+            path: {
+                sandbox_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Diff */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxDiffResponse"];
+                };
+            };
+            /** @description No such sandbox, path or ref */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox is not ready */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not a repository, bad ref, or outside the sandbox */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox provider unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.OnboardingController.show": {
         parameters: {
             query?: never;
@@ -10477,6 +10735,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangesetError"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxFilesController.show": {
+        parameters: {
+            query: {
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                path: string;
+                /** @description How many bytes to return, at most 4194304 (default 262144). `truncated` says whether the content stopped short. */
+                max_bytes?: number;
+            };
+            header?: never;
+            path: {
+                sandbox_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxFileResponse"];
+                };
+            };
+            /** @description No such sandbox or path */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox is not ready */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A directory, unreadable, or outside the sandbox */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox provider unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

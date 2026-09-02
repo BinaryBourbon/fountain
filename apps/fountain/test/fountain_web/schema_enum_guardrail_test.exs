@@ -45,6 +45,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # wire carries strings.
   @derived %{
     {FountainWeb.Schemas.Connection, "status"} => {Fountain.Connections.Connection, :statuses},
+    # Sandbox files (ADR 0039): what the listing script classifies an entry
+    # as, and how a file's bytes travel.
+    {FountainWeb.Schemas.SandboxEntry, "type"} => {Fountain.SandboxFiles, :entry_types},
+    {FountainWeb.Schemas.SandboxFile, "encoding"} => {Fountain.SandboxFiles, :encodings},
     # Connection providers (#1186): the kinds, the client-auth methods and
     # where a client came from are the provider schema's own lists.
     {FountainWeb.Schemas.ConnectionProvider, "kind"} => {Fountain.Connections.Provider, :kinds},

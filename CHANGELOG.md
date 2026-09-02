@@ -24,6 +24,17 @@ upgrade, is in
   `scripts/graduate-library.sh`, which moves an `apps/managoat_<name>` app to
   `managoat/managoat_<name>` with its history. CONTRIBUTING.md has the
   recipe, the ordering rule and the cost.
+- **A sandbox's files and `git diff` over the API** (ADR 0039). Three
+  read-only requests for the apps that watch an agent work:
+  `GET /api/sandboxes/:id/files` lists a directory, `/file` returns one
+  file's bytes (text or base64, capped by `max_bytes`), and `/diff` returns
+  `git diff` with `staged` and `ref`. Full scope only, confined to
+  `/home/sprite` and the runtime's workspace, redacted like the transcript,
+  and never waking a parked sandbox (`409 sandbox_not_ready`). Built over
+  the seam's existing `exec`, so every provider — the self-hosted runner
+  included — is covered without an adapter change. There is deliberately
+  no exec endpoint; the ADR says why. The SDK gains `sandboxFiles`,
+  `sandboxFile` and `sandboxDiff` (1.15.0).
 
 ### Changed
 

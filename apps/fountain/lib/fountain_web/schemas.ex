@@ -144,6 +144,109 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule SandboxEntry do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxEntry",
+      description: "One entry of a directory on a sandbox (ADR 0039).",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string},
+        type: %Schema{type: :string, enum: Fountain.SandboxFiles.entry_types()},
+        size: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "Bytes, for a regular file; null otherwise."
+        }
+      },
+      required: [:name, :type]
+    })
+  end
+
+  defmodule SandboxListing do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxListing",
+      description: "A directory on a sandbox, directories first then by name.",
+      type: :object,
+      properties: %{
+        path: %Schema{type: :string, description: "The directory listed, absolute."},
+        entries: %Schema{type: :array, items: SandboxEntry},
+        truncated: %Schema{
+          type: :boolean,
+          description: "True when the directory holds more entries than were returned."
+        }
+      },
+      required: [:path, :entries, :truncated]
+    })
+  end
+
+  defmodule SandboxFile do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxFile",
+      description:
+        "One file on a sandbox, redacted: the sandbox's environment and vault values " <>
+          "read `[REDACTED]`.",
+      type: :object,
+      properties: %{
+        path: %Schema{type: :string, description: "The file read, absolute."},
+        size: %Schema{type: :integer, description: "The whole file, in bytes."},
+        truncated: %Schema{
+          type: :boolean,
+          description: "True when `content` stopped at `max_bytes` before the end of the file."
+        },
+        encoding: %Schema{
+          type: :string,
+          enum: Fountain.SandboxFiles.encodings(),
+          description:
+            "`utf-8` when `content` is the text itself; `base64` when it is not valid UTF-8."
+        },
+        content: %Schema{type: :string}
+      },
+      required: [:path, :size, :truncated, :encoding, :content]
+    })
+  end
+
+  defmodule SandboxDiff do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxDiff",
+      description: "`git diff` of a repository on a sandbox, redacted like a file.",
+      type: :object,
+      properties: %{
+        path: %Schema{
+          type: :string,
+          description: "The directory the diff was asked for, absolute."
+        },
+        repo_root: %Schema{type: :string, description: "The repository's top-level directory."},
+        staged: %Schema{
+          type: :boolean,
+          description: "True when the index was diffed (`--cached`)."
+        },
+        ref: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The revision diffed against, or null for HEAD."
+        },
+        diff: %Schema{type: :string, description: "Unified diff, no colour."},
+        truncated: %Schema{
+          type: :boolean,
+          description: "True when `diff` stopped at `max_bytes` before the end."
+        }
+      },
+      required: [:path, :repo_root, :staged, :diff, :truncated]
+    })
+  end
+
   defmodule TurnUsage do
     @moduledoc false
     require OpenApiSpex
@@ -1215,6 +1318,9 @@ defmodule FountainWeb.Schemas do
   list_response(EnvironmentListResponse, of: Environment)
   item_response(SandboxResponse, of: SandboxDetail)
   list_response(SandboxListResponse, of: SandboxDetail)
+  item_response(SandboxListingResponse, of: SandboxListing)
+  item_response(SandboxFileResponse, of: SandboxFile)
+  item_response(SandboxDiffResponse, of: SandboxDiff)
 
   defmodule EnvironmentRequest do
     @moduledoc false
