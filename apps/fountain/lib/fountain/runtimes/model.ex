@@ -60,7 +60,7 @@ defmodule Fountain.Runtimes.Model do
   # The catalog therefore stays advice, and the honest guarantee is made at the
   # other end: when the provider does refuse a model, the peer names that as
   # the kind of failure and the tenant reads the provider's own sentence, which
-  # names the replacement. See `Fountain.Runtimes.ACP.Peer`'s
+  # names the replacement. See `Managoat.ACP.Peer`'s
   # `model_unavailable?/1` and its handler in `ConversationServer`.
   #
   # Every id below was checked with a real inference call on 2026-08-22, per

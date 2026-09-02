@@ -1,22 +1,74 @@
-defmodule Fountain.Runtimes.ACP.Peer do
+defmodule Managoat.ACP.Peer.State do
+  @moduledoc false
+  defstruct [
+    :owner,
+    :owner_mon,
+    :writer,
+    :ref,
+    :prompt,
+    :mode,
+    :session_id,
+    :cwd,
+    :started_mono,
+    images: [],
+    mcp_servers: [],
+    model: nil,
+    client_capabilities: nil,
+    # The effective per-tool permission policy for this turn (#939). Already
+    # merged and clamped by `Permissions.effective/2` before it gets here —
+    # the peer applies it, it does not resolve it.
+    permission_policy: %{},
+    # `ask`: the JSON-RPC id of a `session/request_permission` the agent is
+    # still blocked on, with the options it offered. One at a time — the
+    # agent cannot proceed until it is answered — so a single slot is
+    # enough. nil whenever nothing is outstanding.
+    pending_permission: nil,
+    buffer: "",
+    next_id: 1,
+    pending: %{},
+    phase: :initializing,
+    replay_discard?: false,
+    # Both set from opts in `init/1`; the defaults live on the peer module.
+    replay_quiet_ms: nil,
+    replay_max_ms: nil,
+    replay_result: nil,
+    replay_last_ms: nil,
+    replay_until_ms: nil,
+    capabilities: %{},
+    auth_methods: [],
+    authenticated?: false,
+    # `attach: prompt_id` mode: joined a turn already in flight, so replayed
+    # responses to ids we never sent are expected, and the first chunk may
+    # start mid-line.
+    attached?: false,
+    drop_partial_line?: false
+  ]
+end
+
+defmodule Managoat.ACP.Peer do
   @moduledoc """
   One ACP connection, for as many turns as its owner sends it.
 
-  Gate 2 of [0014](decisions/0014-agent-client-protocol.md), widened by #817.
   The peer drives `initialize` → (`session/new` | `session/resume` |
-  `session/load`) → `session/prompt` over the sprite's stdio, translates
-  nothing itself, and — once the prompt is answered — waits in `:idle` for
-  the next `prompt/3` rather than ending. The connection ends when the owner
-  calls `close/1`, when the owner dies, or when a write fails.
+  `session/load`) → `session/prompt` over whatever transport the host gives
+  it (`Managoat.ACP.Transport`), translates nothing itself, and — once the
+  prompt is answered — waits in `:idle` for the next `prompt/3` rather than
+  ending. The connection ends when the owner calls `close/1`, when the owner
+  dies, or when a write fails.
 
-  ## Why this is not in `ConversationServer`
+  Built as gate 2 of Fountain's ADR 0014 and widened by #817; the issue
+  numbers below are that repository's, kept because each one is a measured
+  agent behaviour the code is shaped around.
 
-  0014 says it outright: "This is a new GenServer sitting beside a
-  `ConversationServer` that is already 2,088 lines. If the peer lands inside
-  that module, this ADR has been implemented wrongly." The server owns the
-  sprite, the turn row and the log budget; the peer owns a protocol
-  conversation with states and a correlation table. They fail differently and
-  should not share a mailbox.
+  ## Why this is its own process
+
+  The host owns the sandbox (or port, or socket), the turn record and the
+  output budget; the peer owns a protocol conversation with states and a
+  correlation table. They fail differently and should not share a mailbox.
+  A protocol bug here must fail a *turn*, so the peer is deliberately
+  unlinked from its owner in both directions and monitored instead: linking
+  would make it take down an owner that is also holding a sandbox handle and
+  a tenant's secrets.
 
   ## Lifetime is the wake, not the turn
 
@@ -28,37 +80,32 @@ defmodule Fountain.Runtimes.ACP.Peer do
   "Allow for Session" grant; and ACP allows `session/update` *out of turn*,
   which a client that stops reading at the prompt response never sees.
 
-  So the peer now outlives its prompt. After the prompt's response it reports
-  `{:done, stop, usage}` exactly as before and moves to `:idle`, where the
-  owner may send the next turn with `prompt/3` on the same connection — no
-  second `initialize`, no `session/resume`, no model pin. Updates that arrive
-  while idle are still reported as `{:lines, "acp", …}`; an autonomous cycle
-  (a background task's follow-up) is marked at its end by `{:cycle_end, kind}`
-  when the adapter's `usage_update` carries an origin from its autonomous set.
-  The owner decides what a turn is; the peer only parses the protocol.
+  So the peer outlives its prompt. After the prompt's response it reports
+  `{:done, stop, usage}` and moves to `:idle`, where the owner may send the
+  next turn with `prompt/3` on the same connection — no second `initialize`,
+  no `session/resume`, no model pin. Updates that arrive while idle are still
+  reported as `{:lines, "acp", …}`; an autonomous cycle (a background task's
+  follow-up) is marked at its end by `{:cycle_end, kind}` when the adapter's
+  `usage_update` carries an origin from its autonomous set. The owner decides
+  what a turn is; the peer only parses the protocol.
 
-  What stays scoped to the turn is the *server's* accounting — the turn row,
-  the log budget, `busy?` — and what bounds the connection is the owner: it
-  closes the peer with `close/1` when the sandbox stops being its own (idle
-  park, terminate, release, server shutdown), never at turn end. The durable
-  identity is still `conversation.runtime_session_id`, handed to
-  `session/resume` on the next wake. The economics 0014 protects are
-  unchanged: a parked sprite has no peer.
-
-  The peer is deliberately unlinked from its owner in both directions and
-  monitored instead. A protocol bug here must fail a *turn*; linking would make
-  it take down a `ConversationServer` that is also holding a sprite handle and
-  a tenant's secrets.
+  What stays scoped to the turn is the *owner's* accounting — its turn
+  record, its output budget, its notion of busy — and what bounds the
+  connection is the owner: it closes the peer with `close/1` when the
+  transport stops being its own (the sandbox is parked or destroyed, the
+  owner shuts down), never at turn end. The durable identity is the session
+  id the agent returned, which the owner keeps and hands to `session/resume`
+  on the next connection.
 
   ## Resumption, and why `session/load` is the unhappy path
 
   `session/resume` restores context and returns. `session/load` "**MUST** replay
   the entire conversation to the Client in the form of `session/update`
-  notifications" before responding — and we already hold that history as
-  `log_events` rows, so persisting the replay would duplicate the whole
-  transcript into the database and onto the SSE stream on every turn after the
-  first. While a `session/load` is outstanding the peer runs in replay-discard
-  mode and drops updates on the floor.
+  notifications" before responding — and an owner that persists what the
+  peer reports already holds that history, so relaying the replay would
+  duplicate the whole transcript on every turn after the first. While a
+  `session/load` is outstanding the peer runs in replay-discard mode and
+  drops updates on the floor.
 
   **The response is not the end of the replay, and we do not treat it as one.**
   Gemini answers `session/load` before replaying — its `streamHistory` is a
@@ -75,9 +122,9 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   ## Reattaching after a restart
 
-  A deploy restarts every `ConversationServer`, and with it every peer — but
-  the adapter in the sprite is a detachable session that keeps running,
-  mid-turn, with a `session/prompt` still outstanding. `attach: prompt_id`
+  A deploy restarts every owner, and with it every peer — but an adapter in
+  a sandbox is a detachable session that keeps running, mid-turn, with a
+  `session/prompt` still outstanding. `attach: prompt_id`
   starts a peer for that turn without a handshake: it joins the stream already
   in flight, answers the agent's requests (a `session/request_permission`
   nobody answers is a turn that never ends), and closes the turn on the
@@ -87,29 +134,30 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   The prompt id has to come from the caller because it is the only way to
   tell the prompt's answer from a replayed handshake response; the peer
-  reports `{:prompt_sent, id}` the moment it writes the prompt so the server
+  reports `{:prompt_sent, id}` the moment it writes the prompt so the owner
   can persist it for exactly this purpose. Without it a reattached turn cannot
   be resumed at all, and the caller orphans it instead.
 
-  Sprites replays the **tail** of the session buffer (measured: one 16 KiB
-  chunk, starting mid-line — not from the beginning), so an attached peer
-  drops the partial first line and the server de-duplicates the replayed
-  lines it already holds by content, not by byte count.
+  A sandbox that replays its buffer on attach replays the **tail** (Sprites,
+  measured: one 16 KiB chunk, starting mid-line — not from the beginning), so
+  an attached peer drops the partial first line and leaves de-duplicating the
+  replayed lines to the owner, by content, not by byte count.
 
   ## What it sends back
 
-  Everything goes to the owner as `{:acp, ref, payload}` so the server can keep
-  its existing invariants — the log budget, the redaction pass and the replay
-  skip all live on the server's persistence path, and a peer writing rows
-  directly would bypass all three.
+  Everything goes to the owner as `{:acp, ref, payload}` — the peer persists
+  nothing and writes nothing but protocol. An owner keeps its own invariants
+  (an output budget, a redaction pass, replay de-duplication) on its own
+  persistence path, and a peer writing rows directly would bypass them all.
+  The README lists every payload and what an owner is expected to do with it.
   """
 
   use GenServer
 
   require Logger
 
-  alias Fountain.Runtimes.ACP
-  alias Fountain.Runtimes.ACP.{Protocol, Usage}
+  alias Managoat.ACP.Peer.State
+  alias Managoat.ACP.{Permissions, Protocol, Usage}
 
   # How long the replay has to stay quiet before we believe it is over, and how
   # long we will wait for that in total. See `handle_response(:load_session, …)`.
@@ -122,7 +170,10 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # follow-up, not the answer to a prompt.
   @autonomous_origins ~w(task-notification peer coordinator observer observer-activity)
 
-  @typedoc "What the peer reports upward. `ref` is the sprite command's ref."
+  @typedoc """
+  What the peer reports upward, as `{:acp, ref, payload}`. `ref` is whatever
+  the owner passed as `:ref`.
+  """
   @type payload ::
           {:lines, stream :: String.t(), data :: String.t()}
           | {:session, String.t()}
@@ -131,70 +182,52 @@ defmodule Fountain.Runtimes.ACP.Peer do
           | {:handshake_ms, non_neg_integer(), method :: String.t()}
           | {:done, stop_reason :: String.t(), usage :: map() | nil}
           | {:cycle_end, kind :: String.t()}
+          | {:permission_ask, request_id :: String.t(), tool :: String.t() | nil,
+             options :: [map()]}
+          | {:permission_denied, tool :: String.t() | nil, verdict :: String.t()}
           | {:failed, term()}
-
-  defmodule State do
-    @moduledoc false
-    defstruct [
-      :owner,
-      :owner_mon,
-      :command,
-      :ref,
-      :prompt,
-      :mode,
-      :session_id,
-      :cwd,
-      :started_mono,
-      images: [],
-      mcp_servers: [],
-      model: nil,
-      # The effective per-tool permission policy for this turn (#939). Already
-      # merged and clamped by `Permissions.effective/2` before it gets here —
-      # the peer applies it, it does not resolve it.
-      permission_policy: %{},
-      # `ask`: the JSON-RPC id of a `session/request_permission` the agent is
-      # still blocked on, with the options it offered. One at a time — the
-      # agent cannot proceed until it is answered — so a single slot is
-      # enough. nil whenever nothing is outstanding.
-      pending_permission: nil,
-      buffer: "",
-      next_id: 1,
-      pending: %{},
-      phase: :initializing,
-      replay_discard?: false,
-      # Both set from opts in `init/1`; the defaults live on the outer module.
-      replay_quiet_ms: nil,
-      replay_max_ms: nil,
-      replay_result: nil,
-      replay_last_ms: nil,
-      replay_until_ms: nil,
-      capabilities: %{},
-      auth_methods: [],
-      authenticated?: false,
-      # `attach: prompt_id` mode: joined a turn already in flight, so replayed
-      # responses to ids we never sent are expected, and the first chunk may
-      # start mid-line.
-      attached?: false,
-      drop_partial_line?: false
-    ]
-  end
 
   # ── public api ────────────────────────────────────────────────────────────
 
   @doc """
   Start a peer and send its first turn.
 
-  Required opts: `:owner`, `:command`, `:ref`, `:prompt`, `:mode`,
-  `:session_id`, `:cwd`.
+  Required: `:owner` (the pid reports go to, monitored), `:writer` (a
+  `t:Managoat.ACP.Transport.writer/0`), `:ref` (echoed in every report),
+  `:prompt`, `:mode` (`:run` opens a session with `session/new`; `:continue`
+  resumes `:session_id` with `session/resume` or `session/load`) and
+  `:session_id` (`nil` for `:run`).
+
+  Optional: `:cwd` (default `"/home/sprite"`), `:images` (`[%{media_type:,
+  data:}]`, raw bytes), `:mcp_servers` (already in ACP's shape), `:model`
+  (pinned through `session/set_config_option` or `session/set_model` when the
+  agent advertises either), `:permission_policy` (see
+  `Managoat.ACP.Permissions`), `:pending_permission` (a held request handed
+  back on reattach), `:client_capabilities` (default
+  `Managoat.ACP.Protocol.default_client_capabilities/0`), `:replay_quiet_ms`
+  and `:replay_max_ms` (the `session/load` window), and `:attach`.
 
   `attach: prompt_id` skips the handshake and resumes a turn whose
   `session/prompt` (with that JSON-RPC id) is already outstanding on the
-  attached command — see the moduledoc. `:session_id` must be the live
-  session's id so `cancel/1` still works.
-  """
-  def start(opts), do: GenServer.start(__MODULE__, opts)
+  transport — see the moduledoc. `:session_id` must be the live session's id
+  so `cancel/1` still works.
 
-  @doc "Feed a stdout chunk from the sprite. Chunks respect no message boundary."
+  The peer is started unlinked (`GenServer.start/2`): the owner monitors it,
+  it monitors the owner, and neither takes the other down.
+  """
+  @spec start(keyword()) :: GenServer.on_start()
+  def start(opts) do
+    _ = writer!(opts)
+    GenServer.start(__MODULE__, opts)
+  end
+
+  @doc """
+  Feed a chunk of inbound bytes. Chunks respect no message boundary.
+
+  The host calls this from wherever its bytes arrive — a sandbox's stdout
+  message, a port's data message, a socket frame.
+  """
+  @spec stdout(pid(), binary()) :: :ok
   def stdout(pid, data), do: GenServer.cast(pid, {:stdout, data})
 
   @doc """
@@ -215,9 +248,9 @@ defmodule Fountain.Runtimes.ACP.Peer do
   @doc """
   Close the connection cleanly.
 
-  The owner calls this when the sandbox stops being its own — idle park,
-  terminate, release, its own shutdown. The peer stops with `:normal`; the
-  sprite command is the owner's to stop. Safe to call on a peer that has
+  The owner calls this when the transport stops being its own — the sandbox
+  is parked or destroyed, the owner shuts down. The peer stops with
+  `:normal`; the transport is the owner's to stop. Safe to call on a peer that has
   already gone.
   """
   @spec close(pid()) :: :ok
@@ -269,7 +302,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
     state = %State{
       owner: owner,
       owner_mon: Process.monitor(owner),
-      command: Keyword.fetch!(opts, :command),
+      writer: writer!(opts),
       ref: Keyword.fetch!(opts, :ref),
       prompt: Keyword.fetch!(opts, :prompt),
       mode: Keyword.fetch!(opts, :mode),
@@ -280,6 +313,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
       permission_policy: Keyword.get(opts, :permission_policy) || %{},
       pending_permission: restore_pending(Keyword.get(opts, :pending_permission)),
       model: Keyword.get(opts, :model),
+      client_capabilities:
+        Keyword.get(opts, :client_capabilities) || Protocol.default_client_capabilities(),
       replay_quiet_ms: Keyword.get(opts, :replay_quiet_ms, @replay_quiet_ms),
       replay_max_ms: Keyword.get(opts, :replay_max_ms, @replay_max_ms),
       started_mono: System.monotonic_time(:millisecond)
@@ -302,15 +337,35 @@ defmodule Fountain.Runtimes.ACP.Peer do
     end
   end
 
+  # Checked at start rather than at the first write, so a host that passes
+  # the old `command:` option (or nothing) fails on `start/1` with a message
+  # naming the seam, not mid-handshake with a badfun.
+  defp writer!(opts) do
+    case Keyword.get(opts, :writer) do
+      writer when is_function(writer, 1) ->
+        writer
+
+      other ->
+        raise ArgumentError,
+              "Managoat.ACP.Peer.start/1 needs writer: (iodata -> :ok | {:error, term}), " <>
+                "got #{inspect(other)}; see Managoat.ACP.Transport"
+    end
+  end
+
   @impl true
   def handle_continue(:initialize, state) do
-    send_request(state, :initialize, "initialize", ACP.initialize_params())
+    send_request(
+      state,
+      :initialize,
+      "initialize",
+      Protocol.initialize_params(state.client_capabilities)
+    )
     |> noreply()
   end
 
   @impl true
   def handle_cast({:stdout, data}, %State{drop_partial_line?: true} = state) do
-    # The replay starts wherever the sprite's buffer happens to start, which is
+    # The replay starts wherever the sandbox's buffer happens to start, which is
     # mid-line unless we are lucky. A fragment that does not open a JSON object
     # can only be the tail of a line we cannot parse: drop through its newline.
     # A chunk with no newline yet is the same fragment still arriving.
@@ -348,7 +403,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   def handle_cast({:deny_permission, request_id}, state) do
     case state.pending_permission do
       %{request_id: ^request_id, id: id, options: options} ->
-        outcome = Fountain.Permissions.deny_outcome(options)
+        outcome = Permissions.deny_outcome(options)
 
         state
         |> write(Protocol.response(id, %{outcome: outcome}))
@@ -401,8 +456,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   @impl true
   def handle_info({:DOWN, mon, :process, _pid, _reason}, %State{owner_mon: mon} = state) do
-    # The server is gone; there is nobody to report to and the sprite command
-    # is its property, not ours.
+    # The owner is gone; there is nobody to report to and the transport is
+    # its property, not ours.
     {:stop, :normal, state}
   end
 
@@ -465,7 +520,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # stream every protocol client filters out: `?streams=acp,stage` drops it,
   # and `fountain acp` treats it as the adapter's own noise. So the warning was
   # invisible to exactly the surfaces that had no other way to know — the
-  # server turns this into a stage event, which every surface renders.
+  # owner turns this into a stage event, which every surface renders.
   defp handle_message({:error_response, _id, error}, %State{phase: :setting_model} = state) do
     state
     |> report_model_rejected(error)
@@ -523,26 +578,26 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # `session/request_permission` is the channel gate 3 exists to use. Gate 2
   # answered it with a constant auto-allow, which was parity with the legacy
   # path's `--dangerously-skip-permissions` and friends. #939 made that a
-  # policy: `Fountain.Permissions` decides per tool, and `auto_allow` — still
-  # the default — keeps the old ladder verbatim, so this is parity until
-  # someone writes a policy.
+  # policy: `Permissions` decides per tool, and `auto_allow` — still the
+  # default — keeps the old ladder verbatim, so this is parity until someone
+  # writes a policy.
   #
   # Answering *something* is not optional: the agent blocks on this request, and
-  # a blocked agent is a turn in flight, which disarms idle reclaim and bills
-  # the sprite to the ceiling.
+  # a blocked agent is a turn in flight, which for a metered sandbox means a
+  # bill that runs to the ceiling.
   #
   # The verdict is reported to the owner so a denial reaches the audit trail
   # (0013 — in the context, tool and verdict, never values). Allows are not
   # recorded: a turn makes dozens of tool calls, and a row each would make the
   # trail a transcript.
   defp handle_message({:request, id, "session/request_permission", params}, state) do
-    tool = Fountain.Permissions.tool_name(params)
-    verdict = Fountain.Permissions.verdict_for_request(state.permission_policy, params)
+    tool = Permissions.tool_name(params)
+    verdict = Permissions.verdict_for_request(state.permission_policy, params)
 
     cond do
       held?(state, id) ->
         # The replay of a request this peer already holds, which is what a
-        # reattach reads out of the sprite's buffer (#967). Raising it again
+        # reattach reads out of the sandbox's buffer (#967). Raising it again
         # would publish a second card for one question, and — because the id a
         # client answers with is minted per hold — would leave the card someone
         # is actually looking at unanswerable. The agent is still blocked on
@@ -558,7 +613,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
         write(
           state,
           Protocol.response(id, %{
-            outcome: Fountain.Permissions.outcome(state.permission_policy, params)
+            outcome: Permissions.outcome(state.permission_policy, params)
           })
         )
     end
@@ -641,7 +696,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # - answering from a stale card would land on whatever request is open *now*,
   #   approving a tool the person never saw.
   #
-  # So Fountain mints the public id: the adapter's own id, a dot, and eight
+  # So the peer mints the public id: the adapter's own id, a dot, and eight
   # random bytes. The adapter id stays in front because a transcript is read
   # beside adapter logs, and `restore_pending/1` reads it back to answer with
   # the id the agent is actually blocked on. A stale card now misses and gets
@@ -660,10 +715,10 @@ defmodule Fountain.Runtimes.ACP.Peer do
     state = %{state | capabilities: caps, auth_methods: Map.get(result, "authMethods") || []}
 
     # Labelled with the session-setup call we are about to make, not with the
-    # server's idea of the mode: `kick_turn` persists a generated session id
-    # before the first turn spawns, so by the time this lands the server cannot
-    # tell a `session/new` from a resume. A resume and a new session pay
-    # different prices, and averaging them hides whichever is the problem.
+    # owner's idea of the mode: an owner may persist a generated session id
+    # before the first turn spawns, and by the time this lands cannot tell a
+    # `session/new` from a resume. A resume and a new session pay different
+    # prices, and averaging them hides whichever is the problem.
     method = if state.mode == :run, do: "session/new", else: resume_method(state)
 
     report(
@@ -777,7 +832,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   # The provider retired the model, or never had it, or this key cannot reach
   # it. Google's is the one that prompted this (#970), and it is the awkward
-  # shape: the model was in Fountain's own catalog, `session/set_model`
+  # shape: the model was in the host's own catalog, `session/set_model`
   # accepted it (google's listing endpoint still advertises models it has
   # retired), and the refusal arrived only when the turn called it.
   #
@@ -826,7 +881,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # a first-in-the-list fallback picked it. It happened to return ok, but the
   # name is an interactive login and a headless sandbox cannot complete one; an
   # agent that *blocked* on it would leave a turn in flight forever, which
-  # disarms idle reclaim and bills the sprite to its ceiling. Getting away with
+  # disarms idle reclaim and bills the sandbox to its ceiling. Getting away with
   # it once is not evidence.
   #
   # Nothing needs the fallback. Of the four runtimes, only gemini requires
@@ -932,7 +987,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
       true ->
         state
         |> persist("stderr", [
-          "fountain: this runtime does not expose model selection over ACP; ",
+          "acp: this runtime does not expose model selection over ACP; ",
           "#{state.model} was not applied and its default is in use\n"
         ])
         |> send_prompt()
@@ -960,7 +1015,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
     id = state.next_id
     state = send_request(%{state | phase: :prompting}, :prompt, "session/prompt", params)
 
-    # Reported after the write so the server never persists an id for a prompt
+    # Reported after the write so the owner never persists an id for a prompt
     # that did not go out. Reattach reads it back — see the moduledoc.
     if state.phase == :failed, do: state, else: tap(state, &report(&1, {:prompt_sent, id}))
   end
@@ -968,8 +1023,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # ACP carries images in the prompt itself, so the legacy dance — write the
   # bytes to a temp file in the sandbox, then append the paths to the prompt and
   # hope the model reaches for its Read tool — is not needed. `data` here is raw
-  # binary (already decoded by `FountainWeb.PromptImages`), and the protocol
-  # wants base64.
+  # binary (already decoded by the host), and the protocol wants base64.
   #
   # The adapter advertises `promptCapabilities.image`; we send images
   # unconditionally because the alternative is dropping a user's attachment
@@ -994,14 +1048,15 @@ defmodule Fountain.Runtimes.ACP.Peer do
     {tag, %{state | pending: pending}}
   end
 
-  # `Managoat.Sandbox.write_stdin/2` is total by contract: a runtime that has
-  # already gone yields {:error, :command_exited} rather than exiting this
+  # The writer is total by contract (`Managoat.ACP.Transport`): a transport
+  # that has already gone yields `{:error, reason}` rather than exiting this
   # process — #603, and being mid-turn is exactly the condition that made
-  # that an orphaned turn rather than an error.
+  # that an orphaned turn rather than an error. A sandbox writer answers
+  # `{:error, :command_exited}` there; the peer reports whatever it gets.
   defp write(%State{phase: :failed} = state, _iodata), do: state
 
   defp write(state, iodata) do
-    case Managoat.Sandbox.write_stdin(state.command, iodata) do
+    case state.writer.(iodata) do
       :ok -> state
       {:error, reason} -> fail(state, {:acp_write_failed, reason})
     end
@@ -1051,7 +1106,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # Prefer an option the agent itself marked as an allow. `optionId` is opaque
   # and adapter-defined, so picking by `kind` is the only portable choice.
   # A held request handed back on reattach (#940). Stored as a string-keyed map
-  # on the turn row; the peer works in atoms. The JSON-RPC id has to come back
+  # by the owner; the peer works in atoms. The JSON-RPC id has to come back
   # as the integer the agent sent, because that is what it is blocked on.
   # The adapter's own JSON-RPC id, back out of the minted `request_id` (see
   # `mint_request_id/1`): everything before the last dot. A response has to

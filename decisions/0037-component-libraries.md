@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343) and managoat_broker (#1340)."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339)."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: claude-fable/5.1, at: 2026-09-02T00:40:00-04:00 }
-verified: { by: claude-fable/5.1, at: 2026-09-02T00:40:00-04:00 }
+generated: { by: claude-fable/5.1, at: 2026-09-02T02:30:00-04:00 }
+verified: { by: claude-fable/5.1, at: 2026-09-02T02:30:00-04:00 }
 stale_after: 2026-12-01
 ---
 
@@ -42,8 +42,15 @@ ported rather than rebased; `CONNECT` and absolute-form forward proxy, the
 derived CA, the header injector, behind a `Managoat.Broker.Store` behaviour
 that `fountain` implements over the `broker_sessions` table; `fountain` runs
 it beside the Agent Vault client, selected by `BROKER_LISTEN_PORT`, until
-the deployment flips). Not yet built: `managoat_acp` (#1339) and the optional credits
-extraction (#1344). None has graduated to a repository (#1345). The
+the deployment flips) and `managoat_acp` (#1339: the client-side ACP
+session that outlives the turn, the JSON-RPC framing, the permission policy,
+the block normaliser, usage accounting, the tracer and a `ScriptedAgent`,
+behind a writer callback rather than a sandbox dependency; runtime
+provisioning, `LegacyBlocks`, the stream-keyed `Conversations.Blocks`
+dispatcher and the tool bridge stay in `fountain`; its README carries the
+comparison against `acpex` and `agent_client_protocol`). Not yet built: the
+optional credits extraction (#1344). None has graduated to a repository
+(#1345). The
 tracker is #1334. Each PR that extracts a library updates this block.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
@@ -121,7 +128,10 @@ extracted it is its own Elastic-licensed repository.
 
 - standalone: `managoat_substitution`, `managoat_mcp_auth`,
   `managoat_broker`, `managoat_docs`, `managoat_oauth`;
-- `managoat_acp` depends on `managoat_sandbox`;
+- `managoat_acp` stands alone (transport is a callback; decided
+  2026-09-02 in #1339 — the peer takes a writer function and is fed bytes
+  by its owner, so the sandbox is the host's business, and this line as
+  first written was a guess made before the peer was read);
 - `managoat_runner` depends on `managoat_sandbox`;
 - `fountain` depends on every library, and nothing depends on `fountain`.
 

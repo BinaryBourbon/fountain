@@ -1,7 +1,7 @@
-defmodule Fountain.PermissionsTest do
+defmodule Managoat.ACP.PermissionsTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Permissions
+  alias Managoat.ACP.Permissions
 
   defp req(options, tool \\ nil) do
     params = %{"options" => options}
@@ -237,14 +237,21 @@ defmodule Fountain.PermissionsTest do
                Permissions.outcome(%{"default" => "ask"}, req([allow_always(), reject_once()]))
     end
 
-    test "the timeout sits under the idle bound, or an unanswered prompt costs the disk" do
-      # Lifecycle.check/4 suppresses only the idle verdict while a turn is in
-      # flight, and per 0017 the idle bound suspends while the ceiling
-      # destroys. A timeout at or above the idle bound would mean an
-      # unanswered prompt is resolved by the ceiling instead — burning the
-      # whole lifetime and taking the agent's memory with it (#649).
-      assert Permissions.ask_timeout_ms() <
-               Fountain.Conversations.Lifecycle.idle_timeout_seconds() * 1000
+    test "ask_timeout_ms/1 turns the host's configured seconds into milliseconds" do
+      # The host reads its own configuration and passes the value; the
+      # library owns the default and the parsing. Whether the result sits
+      # under the host's idle-reclaim bound is the host's test to write.
+      assert Permissions.ask_timeout_ms(nil) == 300_000
+      assert Permissions.ask_timeout_ms() == 300_000
+      assert Permissions.ask_timeout_ms(30) == 30_000
+      assert Permissions.ask_timeout_ms("45") == 45_000
+    end
+
+    test "a misconfigured timeout is the default, never \"never deny\"" do
+      assert Permissions.ask_timeout_ms(0) == 300_000
+      assert Permissions.ask_timeout_ms(-5) == 300_000
+      assert Permissions.ask_timeout_ms("soon") == 300_000
+      assert Permissions.ask_timeout_ms(:infinity) == 300_000
     end
 
     test "is stricter than allow and looser than deny" do

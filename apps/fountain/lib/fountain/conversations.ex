@@ -1229,7 +1229,7 @@ defmodule Fountain.Conversations do
   @doc """
   Record a turn's end-of-turn token usage (#827): stamp `usage` on the turn
   and add its `input` / `output` to the conversation's running sums, in one
-  transaction. `usage` is the normalised map `Fountain.Runtimes.ACP.Usage`
+  transaction. `usage` is the normalised map `Managoat.ACP.Usage`
   produces (`%{"input" => n, "output" => n, ...}`); nil records nothing.
 
   Once per turn, by the ConversationServer when the `session/prompt`
@@ -2677,7 +2677,7 @@ defmodule Fountain.Conversations do
   defp resolve_permission_policy(policy, agent) when is_map(policy) do
     with :ok <- validate_policy_shape(policy),
          :ok <- check_runtime_asks(policy, agent),
-         :ok <- Fountain.Permissions.check_narrows(agent.permission_policy, policy) do
+         :ok <- Managoat.ACP.Permissions.check_narrows(agent.permission_policy, policy) do
       {:ok, policy}
     end
   end
@@ -2687,7 +2687,7 @@ defmodule Fountain.Conversations do
   # A launch cannot be protected by a policy the runtime never consults. Refused
   # rather than accepted-and-ignored — see `ACP.asks_permission?/1`, measured.
   defp check_runtime_asks(policy, agent) do
-    if not Fountain.Permissions.needs_enforcement?(policy) or
+    if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
          Fountain.Runtimes.ACP.asks_permission?(agent.runtime) do
       :ok
     else
@@ -2701,10 +2701,10 @@ defmodule Fountain.Conversations do
         not is_binary(tool) or tool == "" ->
           {:error, :permission_policy_invalid}
 
-        verdict not in Fountain.Permissions.verdicts() ->
+        verdict not in Managoat.ACP.Permissions.verdicts() ->
           {:error, :permission_policy_invalid}
 
-        not Fountain.Permissions.buildable?(verdict) ->
+        not Managoat.ACP.Permissions.buildable?(verdict) ->
           {:error, {:permission_policy_unbuilt, verdict}}
 
         true ->

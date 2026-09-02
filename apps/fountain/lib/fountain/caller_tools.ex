@@ -38,7 +38,7 @@ defmodule Fountain.CallerTools do
      (`answer_caller_tools/2`); the MCP handler returns them to the agent and
      the controller streams the rest of the turn. A `user` message while
      calls are pending is refused (409 `tool_calls_pending`).
-  5. **Clock.** A parked call has a deadline (`Fountain.Permissions`'s ask
+  5. **Clock.** A parked call has a deadline (`Managoat.ACP.Permissions`'s ask
      timeout). On expiry the agent gets an error result ("the caller did not
      answer"), the turn continues, and the stream records it. A turn that
      ends with calls still parked resolves them the same way.

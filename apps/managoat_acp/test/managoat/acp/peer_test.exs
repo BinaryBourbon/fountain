@@ -1,28 +1,32 @@
-defmodule Fountain.Runtimes.ACP.PeerTest do
+defmodule Managoat.ACP.PeerTest do
   @moduledoc """
-  Drives a real peer against a scripted agent.
+  Drives a real peer against a hand-scripted agent, one frame at a time.
 
-  The sprite side is a Mimic stub on `Sprites.write/2` that forwards whatever
-  the peer writes to the test process, so every assertion here is about bytes
-  that would actually have gone down the pipe.
+  The transport is the writer function the peer takes (`Managoat.ACP.Transport`):
+  here it forwards whatever the peer writes to the test process, so every
+  assertion is about bytes that would actually have gone down the pipe, and
+  the test feeds the agent's replies back through `Peer.stdout/2`. No
+  process is stubbed and nothing is global, which is what lets the suite
+  run async — and is the acceptance test for the transport seam: a peer test
+  that needed a sandbox stub would mean the seam was not cut.
+
+  `Managoat.ACP.Testing.ScriptedAgent` drives whole turns; these tests want
+  the individual frames, so they script by hand.
   """
 
-  use ExUnit.Case, async: false
-  use Mimic
+  use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes.ACP.Peer
-
-  setup :set_mimic_global
+  alias Managoat.ACP.Peer
 
   setup do
     test = self()
 
-    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _command, data ->
+    writer = fn data ->
       send(test, {:wrote, IO.iodata_to_binary(data)})
       :ok
-    end)
+    end
 
-    {:ok, ref: make_ref(), command: %Managoat.Sandbox.Command{provider: :sprites, ref: :fake}}
+    {:ok, ref: make_ref(), writer: writer}
   end
 
   defp start_peer(ctx, opts) do
@@ -30,7 +34,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       Peer.start(
         [
           owner: self(),
-          command: ctx.command,
+          writer: ctx.writer,
           ref: ctx.ref,
           prompt: "do the thing",
           mode: :run,
@@ -492,20 +496,73 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
                        {:acp_error, :initialize, %{"message" => "oauth_org_not_allowed"}}}}
     end
 
-    test "a stdin write failure fails the turn rather than exiting the peer", ctx do
-      # #603: the SDK write is a bare GenServer.call underneath, and the command
-      # process stops :normal the moment the runtime's exit frame arrives. The
-      # adapter's write_stdin/2 turns that into {:error, :command_exited}; the
-      # peer must report it, because a peer that dies silently leaves a turn
-      # with no terminator at all. (The exit-to-error catch itself is pinned in
-      # the adapter's own tests.)
-      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, _d ->
-        {:error, :command_exited}
-      end)
-
-      start_peer(ctx, [])
+    test "a write failure fails the turn rather than exiting the peer", ctx do
+      # #603: a sandbox's write is a bare GenServer.call underneath, and the
+      # command process stops :normal the moment the runtime's exit frame
+      # arrives. The sandbox writer turns that into {:error, :command_exited};
+      # the peer must report it, because a peer that dies silently leaves a
+      # turn with no terminator at all. (The exit-to-error catch itself is
+      # pinned in the sandbox adapter's own tests; here the writer is total
+      # by contract and the peer's half is what is under test.)
+      start_peer(ctx, writer: fn _iodata -> {:error, :command_exited} end)
 
       assert_receive {:acp, _ref, {:failed, {:acp_write_failed, :command_exited}}}
+    end
+
+    test "a write failure mid-prompt reports the same failure and writes nothing more", ctx do
+      # The shape the owner relies on today: the runtime exits while a turn
+      # is in flight, the next write fails, the owner sees exactly one
+      # {:failed, {:acp_write_failed, reason}} and can close the turn.
+      test = self()
+
+      {:ok, agent} = Agent.start_link(fn -> :ok end)
+
+      writer = fn data ->
+        case Agent.get(agent, & &1) do
+          :ok ->
+            send(test, {:wrote, IO.iodata_to_binary(data)})
+            :ok
+
+          {:error, _} = error ->
+            send(test, {:refused, IO.iodata_to_binary(data)})
+            error
+        end
+      end
+
+      pid = start_peer(ctx, writer: writer)
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+      %{"method" => "session/prompt"} = next_write()
+
+      # The runtime goes away; the next thing the peer has to write fails.
+      Agent.update(agent, fn _ -> {:error, :command_exited} end)
+      Peer.cancel(pid)
+
+      assert_receive {:refused, line}
+      assert line =~ "session/cancel"
+      assert_receive {:acp, _ref, {:failed, {:acp_write_failed, :command_exited}}}
+
+      # Failed is terminal: nothing else reaches the writer, and a second
+      # failure is not reported twice.
+      Peer.cancel(pid)
+      refute_receive {:refused, _}, 50
+      refute_receive {:acp, _ref, {:failed, _}}, 50
+      assert {:error, {:not_idle, :failed}} = Peer.prompt(pid, "again")
+    end
+
+    test "start/1 refuses to start without a writer, naming the seam", ctx do
+      assert_raise ArgumentError, ~r/writer: \(iodata -> :ok/, fn ->
+        Peer.start(
+          owner: self(),
+          command: :the_old_option,
+          ref: ctx.ref,
+          prompt: "p",
+          mode: :run,
+          session_id: nil
+        )
+      end
     end
   end
 
@@ -1018,7 +1075,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
     {:ok, pid} =
       Peer.start(
         owner: owner,
-        command: ctx.command,
+        writer: ctx.writer,
         ref: ctx.ref,
         prompt: "p",
         mode: :run,
@@ -1027,6 +1084,12 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
         images: [],
         mcp_servers: []
       )
+
+    # Prove the peer is up and past its handshake write before the owner
+    # goes: a peer that had already died would make this exit loudly with
+    # its reason, where a bare monitor would only ever report :noproc.
+    _ = :sys.get_state(pid)
+    assert_receive {:wrote, _initialize}
 
     monitor = Process.monitor(pid)
     Process.exit(owner, :kill)

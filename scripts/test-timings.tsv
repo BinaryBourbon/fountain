@@ -91,12 +91,6 @@ apps/fountain/test/fountain/release_without_pubsub_test.exs	523
 apps/fountain/test/fountain/runners/placement_test.exs	727
 apps/fountain/test/fountain/runners_test.exs	2240
 apps/fountain/test/fountain/runtime_config_test.exs	40
-apps/fountain/test/fountain/runtimes/acp/blocks_test.exs	0
-apps/fountain/test/fountain/runtimes/acp/peer_mcp_test.exs	0
-apps/fountain/test/fountain/runtimes/acp/peer_test.exs	953
-apps/fountain/test/fountain/runtimes/acp/protocol_test.exs	0
-apps/fountain/test/fountain/runtimes/acp/tracer_test.exs	0
-apps/fountain/test/fountain/runtimes/acp/usage_test.exs	0
 apps/fountain/test/fountain/runtimes/acp_test.exs	0
 apps/fountain/test/fountain/runtimes/claude_test.exs	38
 apps/fountain/test/fountain/runtimes/instructions_test.exs	0

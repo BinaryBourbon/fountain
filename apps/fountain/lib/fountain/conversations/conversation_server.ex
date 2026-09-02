@@ -1414,9 +1414,13 @@ defmodule Fountain.Conversations.ConversationServer do
   # No tracer: the turn span belongs to a previous BEAM lifetime.
   defp reattach_acp_peer(state, running_turn, conv) do
     {:ok, peer} =
-      Fountain.Runtimes.ACP.Peer.start(
+      Managoat.ACP.Peer.start(
         owner: self(),
-        command: state.current_command,
+        # The transport seam (Managoat.ACP.Transport): the peer writes through
+        # this function and never sees the sandbox. `write_stdin/2` is total —
+        # a runtime that has already exited answers {:error, :command_exited},
+        # which the peer reports as {:failed, {:acp_write_failed, _}}.
+        writer: fn iodata -> Managoat.Sandbox.write_stdin(state.current_command, iodata) end,
         ref: state.current_command_ref,
         prompt: running_turn.prompt,
         mode: :continue,
@@ -2000,7 +2004,7 @@ defmodule Fountain.Conversations.ConversationServer do
         {:reply, {:error, :no_pending_permission}, state}
 
       peer ->
-        case Fountain.Runtimes.ACP.Peer.answer_permission(peer, request_id, option_id) do
+        case Managoat.ACP.Peer.answer_permission(peer, request_id, option_id) do
           :ok ->
             {:reply, :ok, resolve_permission(state, request_id, "answered", option_id)}
 
@@ -2023,14 +2027,14 @@ defmodule Fountain.Conversations.ConversationServer do
           turn_id: turn.id,
           name: name,
           arguments: arguments,
-          timeout_ms: Fountain.Permissions.ask_timeout_ms()
+          timeout_ms: Fountain.Runtimes.ACP.ask_timeout_ms()
         })
 
         timer =
           Process.send_after(
             self(),
             {:caller_tool_timeout, call_id},
-            Fountain.Permissions.ask_timeout_ms()
+            Fountain.Runtimes.ACP.ask_timeout_ms()
           )
 
         entry = %{
@@ -2212,7 +2216,7 @@ defmodule Fountain.Conversations.ConversationServer do
         %{current_command_ref: ref, acp_peer: peer} = state
       )
       when is_pid(peer) do
-    Fountain.Runtimes.ACP.Peer.stdout(peer, data)
+    Managoat.ACP.Peer.stdout(peer, data)
     {:noreply, maybe_emit_first_output(state)}
   end
 
@@ -2255,7 +2259,7 @@ defmodule Fountain.Conversations.ConversationServer do
         # suppresses at most one arrival, so a legitimate later repeat survives.
         {:noreply, %{state | replay_dedup: MapSet.delete(state.replay_dedup, data)}}
 
-      stream == "acp" and Fountain.Runtimes.ACP.Protocol.session_metadata?(data) ->
+      stream == "acp" and Managoat.ACP.Protocol.session_metadata?(data) ->
         if is_nil(state.current_turn) do
           # No turn to attach it to, and not worth opening one: dropped.
           {:noreply, state}
@@ -2390,14 +2394,14 @@ defmodule Fountain.Conversations.ConversationServer do
       # The agent's own list, verbatim. A client must never offer an option
       # that is not on it.
       options: options,
-      timeout_ms: Fountain.Permissions.ask_timeout_ms()
+      timeout_ms: Fountain.Runtimes.ACP.ask_timeout_ms()
     })
 
     timer =
       Process.send_after(
         self(),
         {:permission_timeout, request_id},
-        Fountain.Permissions.ask_timeout_ms()
+        Fountain.Runtimes.ACP.ask_timeout_ms()
       )
 
     {:noreply, %{state | permission_timer: timer}}
@@ -2798,7 +2802,7 @@ defmodule Fountain.Conversations.ConversationServer do
     tool = pending_tool(state)
 
     if outcome != "answered" and state.acp_peer do
-      Fountain.Runtimes.ACP.Peer.deny_permission(state.acp_peer, request_id)
+      Managoat.ACP.Peer.deny_permission(state.acp_peer, request_id)
     end
 
     state =
@@ -3389,7 +3393,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # an agent that stops its tool calls and one that is shot mid-write. This is
   # the other reason stdin stays open on the ACP path.
   defp interrupt_turn(state) do
-    if state.acp_peer, do: Fountain.Runtimes.ACP.Peer.cancel(state.acp_peer)
+    if state.acp_peer, do: Managoat.ACP.Peer.cancel(state.acp_peer)
     # EOF before the handle goes: a detachable session survives its client
     # disconnecting, so closing the WebSocket alone would leave the adapter —
     # and whatever background task it was running — alive on the machine.
@@ -3692,7 +3696,7 @@ defmodule Fountain.Conversations.ConversationServer do
               # — `session/update` carries the id and status the tracer keys on
               # (#637). The legacy path traces nothing: its only tracer was a
               # parser over claude's dialect, deleted with that path.
-              stream_tracer = if acp?, do: Fountain.Runtimes.ACP.Tracer.new(turn_span)
+              stream_tracer = if acp?, do: Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")
 
               {peer, peer_mon} =
                 if acp? do
@@ -4011,7 +4015,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # attached peer's replayed lines were matched by content before this.
     tracer =
       if stream == "acp" do
-        Fountain.Runtimes.ACP.Tracer.handle_line(new_state.stream_tracer, data)
+        Managoat.ACP.Tracer.handle_line(new_state.stream_tracer, data)
       else
         new_state.stream_tracer
       end
@@ -4024,7 +4028,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # the agent rather than read off a policy frozen on the conversation row, so
   # tightening an agent tightens the conversations already running under it.
   defp effective_permission_policy(conv, agent) do
-    Fountain.Permissions.effective(agent && agent.permission_policy, conv.permission_policy)
+    Managoat.ACP.Permissions.effective(agent && agent.permission_policy, conv.permission_policy)
   end
 
   # Ownership is already established: this server exists for this conversation.
@@ -4034,9 +4038,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp start_acp_peer(command, prompt, mode, runtime_session_id, opts) do
     {:ok, peer} =
-      Fountain.Runtimes.ACP.Peer.start(
+      Managoat.ACP.Peer.start(
         owner: self(),
-        command: command,
+        # See reattach_acp_peer/3 for the writer's contract.
+        writer: fn iodata -> Managoat.Sandbox.write_stdin(command, iodata) end,
         ref: command.ref,
         prompt: prompt,
         mode: mode,
@@ -4059,7 +4064,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # Called on every way a turn can end; ACP turns are the only ones that
   # trace, so nil is the legacy case.
   defp finalize_tracer(nil), do: :ok
-  defp finalize_tracer(tracer), do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
+  defp finalize_tracer(tracer), do: Managoat.ACP.Tracer.finalize(tracer)
 
   # The turn's OTel span. Opened explicitly (not via Telemetry.span) because a
   # turn finishes asynchronously, in a later handler; the context is carried in
@@ -4174,7 +4179,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     started_mono = System.monotonic_time(:millisecond)
 
-    case Fountain.Runtimes.ACP.Peer.prompt(state.acp_peer, prompt, images) do
+    case Managoat.ACP.Peer.prompt(state.acp_peer, prompt, images) do
       :ok ->
         OpenTelemetry.Tracer.set_current_span(previous_span)
 
@@ -4187,7 +4192,7 @@ defmodule Fountain.Conversations.ConversationServer do
               runtime: conv.runtime,
               first_output?: false
             },
-            stream_tracer: Fountain.Runtimes.ACP.Tracer.new(turn_span)
+            stream_tracer: Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")
         }
 
       {:error, reason} ->
@@ -4295,7 +4300,7 @@ defmodule Fountain.Conversations.ConversationServer do
       | current_turn: turn,
         current_turn_span: turn_span,
         turn_metrics: nil,
-        stream_tracer: Fountain.Runtimes.ACP.Tracer.new(turn_span)
+        stream_tracer: Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")
     })
   end
 

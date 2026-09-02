@@ -5,7 +5,7 @@ defmodule Fountain.Runtimes.ACP do
   Gate 2 of [0014](decisions/0014-agent-client-protocol.md). This module is the
   *provisioning* side of the ACP path — which adapter, which version, how it
   gets into the sprite — and it deliberately holds no protocol state. The
-  session lives in `Fountain.Runtimes.ACP.Peer`, which outlives the turn and
+  session lives in `Managoat.ACP.Peer`, which outlives the turn and
   is closed when the sandbox wake ends (#817).
 
   ## The only path
@@ -179,7 +179,7 @@ defmodule Fountain.Runtimes.ACP do
     # either: it decides permission inside its own server and never offers the
     # protocol's channel. So a policy is unenforceable here, and #939's
     # premise — "the request arrives on every shippable runtime" — held for
-    # claude and codex but never for this one. `Fountain.Permissions` refuses
+    # claude and codex but never for this one. `Managoat.ACP.Permissions` refuses
     # the policy at the door rather than let it read as protection (#956).
     "opencode" => %{
       bin: "opencode",
@@ -482,15 +482,32 @@ defmodule Fountain.Runtimes.ACP do
   declares nothing, so a well-behaved adapter never asks; the peer still
   answers anything that arrives, because an unanswered request blocks the agent
   and a blocked agent bills.
+
+  The library's default is exactly this (`Managoat.ACP.Protocol`), so the
+  peer is not passed anything; this function exists for the callers that read
+  the params directly, and so the capabilities Fountain declares are written
+  down here, where 0014 and 0016 are.
   """
   @spec initialize_params() :: map()
   def initialize_params do
-    %{
-      protocolVersion: 1,
-      clientCapabilities: %{
-        fs: %{readTextFile: false, writeTextFile: false},
-        terminal: false
-      }
-    }
+    Managoat.ACP.Protocol.initialize_params(Managoat.ACP.Protocol.default_client_capabilities())
+  end
+
+  @doc """
+  How long a held `ask` waits for a human before it is denied (#940).
+
+  Read from `:permission_ask_timeout_seconds`; the default and the parsing
+  are the library's (`Managoat.ACP.Permissions.ask_timeout_ms/1`). Must sit
+  under `Lifecycle.idle_timeout_seconds/0`: a held request suppresses only
+  the idle verdict, so one that outlived the idle bound would be resolved by
+  the max-lifetime ceiling instead — which destroys the sandbox rather than
+  parking it (0017). The timeout has to fire first for an unanswered prompt to
+  cost a turn rather than the agent's memory; `acp_test.exs` pins the bound.
+  """
+  @spec ask_timeout_ms() :: pos_integer()
+  def ask_timeout_ms do
+    :fountain
+    |> Application.get_env(:permission_ask_timeout_seconds)
+    |> Managoat.ACP.Permissions.ask_timeout_ms()
   end
 end

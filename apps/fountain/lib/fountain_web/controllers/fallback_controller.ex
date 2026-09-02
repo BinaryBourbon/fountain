@@ -88,7 +88,7 @@ defmodule FountainWeb.FallbackController do
       error: "permission_policy_invalid",
       message:
         "permission_policy must map a tool title or ACP kind to one of " <>
-          Enum.join(Fountain.Permissions.verdicts(), ", ")
+          Enum.join(Managoat.ACP.Permissions.verdicts(), ", ")
     })
   end
 

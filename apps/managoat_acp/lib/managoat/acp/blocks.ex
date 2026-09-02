@@ -1,19 +1,17 @@
-defmodule Fountain.Runtimes.ACP.Blocks do
+defmodule Managoat.ACP.Blocks do
   @moduledoc """
-  Translate ACP messages into the block maps the conversation view renders.
+  Translate ACP messages into the block maps a transcript renders.
 
   This is the module that replaces a hand-written dialect parser, and the
-  reason it lives here rather than in a view is the whole point of
-  [0014](decisions/0014-agent-client-protocol.md): the four proprietary
-  formats used to be parsed in the render path, where a vendor's point release
-  becomes a rendering bug. The ACP path parses on the server, in a module with
-  its own tests, and every client — the API's `?blocks=true` included — reads
-  one parse.
+  reason it lives beside the peer rather than in a view is the point of
+  Fountain's ADR 0014: four proprietary output formats used to be parsed in
+  the render path, where a vendor's point release becomes a rendering bug.
+  The ACP path parses once, in a module with its own tests, and every client
+  reads one parse.
 
-  The block shapes are not ours to choose — they are what `show.ex` already
-  renders, so that the ACP path and the legacy path can be compared on one
-  screen without the UI moving. Emitting anything else would defeat gate 2's
-  only real experiment.
+  The block shapes are a wire contract, not a choice made here: they are what
+  the transcript renderers already draw, so a client can render an ACP
+  transcript and a legacy one with one code path. The README lists them.
 
   | ACP `session/update` | block |
   |---|---|
@@ -35,8 +33,9 @@ defmodule Fountain.Runtimes.ACP.Blocks do
 
   ## Tool calls thread on one id
 
-  `pair_tool_results/1` in `show.ex` exists because three of the four dialects
-  emit a tool call and its result as unrelated top-level events. ACP threads
+  A renderer's tool-pairing pass exists because three of the four legacy
+  dialects emit a tool call and its result as unrelated top-level events. ACP
+  threads
   them on `toolCallId` by construction, so the pairing pass gets the ids it
   wants for free — we map `tool_call` → `:tool_use` with `:id` and
   `tool_call_update` → `:tool_result` with `:tool_id`, and the existing pass
@@ -48,16 +47,16 @@ defmodule Fountain.Runtimes.ACP.Blocks do
   tool card several times per call.
   """
 
-  alias Fountain.Runtimes.ACP.Protocol
+  alias Managoat.ACP.Protocol
 
   @terminal_statuses ~w(completed failed cancelled)
 
   @doc """
   Translate one stored ndjson line into blocks.
 
-  This is the entry point the render path uses: `log_events` rows hold the raw
-  protocol, exactly as the legacy path holds raw stdout, so what is on disk is
-  what the adapter actually said.
+  This is the entry point a render path uses: an owner stores the raw
+  protocol line the peer reported, so what is on disk is what the adapter
+  actually said.
   """
   @spec from_line(String.t()) :: [map()]
   def from_line(line) do
@@ -94,7 +93,7 @@ defmodule Fountain.Runtimes.ACP.Blocks do
         summary: tool_summary(call),
         # Exactly what the agent offered, in its order. A client must never
         # synthesise an option that is not on this list — the same fail-closed
-        # rule `Fountain.Permissions` follows server-side.
+        # rule `Managoat.ACP.Permissions` follows on the answering side.
         options: Enum.filter(Map.get(params, "options") || [], &is_map/1)
       }
     ]
@@ -162,7 +161,7 @@ defmodule Fountain.Runtimes.ACP.Blocks do
   # ACP content blocks are the same shape used by MCP: a tagged map, or a list
   # of them. Only `text` has a rendering here; an image arriving in an assistant
   # chunk is named rather than dropped silently, because a blank block in the
-  # transcript reads as a bug in Fountain.
+  # transcript reads as a bug in the client.
   defp content_text(content) when is_list(content) do
     content |> Enum.map(&content_text/1) |> Enum.reject(&(&1 == "")) |> Enum.join("")
   end

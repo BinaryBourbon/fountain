@@ -1,16 +1,17 @@
-defmodule Fountain.Permissions do
+defmodule Managoat.ACP.Permissions do
   @moduledoc """
   What answers `session/request_permission`, per tool.
 
-  Gate 3 of [0014](decisions/0014-agent-client-protocol.md), built in #939.
+  Gate 3 of Fountain's ADR 0014, built in #939; the issue numbers here are
+  that repository's.
 
-  Every runtime Fountain ships used to run with its safety rail removed by a
-  vendor flag. Three of those four flags went with the legacy spawn path
+  Every runtime the platform shipped used to run with its safety rail removed
+  by a vendor flag. Three of those four flags went with the legacy spawn path
   (#671-#675); what replaced them was this module's predecessor — a constant in
-  `ACP.Peer` that answered every request by picking `allow_always`, else
-  `allow_once`, else whatever was offered first. The rail was still off, but it
-  was off in one function we own, which is what made it a policy problem rather
-  than a fork-four-CLIs problem.
+  `Managoat.ACP.Peer` that answered every request by picking `allow_always`,
+  else `allow_once`, else whatever was offered first. The rail was still off,
+  but it was off in one function we own, which is what made it a policy
+  problem rather than a fork-four-CLIs problem.
 
   ## The shape
 
@@ -66,7 +67,7 @@ defmodule Fountain.Permissions do
   `optionId` the agent never advertised would at best error and at worst select
   something unrelated.
 
-  ## Fountain does not remember an answer, and "always" often does not either
+  ## The client does not remember an answer, and "always" often does not either
 
   An answer is relayed to the peer and forgotten. Every "remember this"
   semantic belongs to the agent, and each of the three that ask implements it
@@ -79,10 +80,10 @@ defmodule Fountain.Permissions do
   | codex | "Allow for Session" lives in the codex process, so it lasts exactly one turn. "Allow Commands Starting With …" (`accept_execpolicy_amendment`) is written to disk and holds. |
   | opencode | Never asks, so there is nothing to grant (#959). |
 
-  Two consequences worth holding on to. **codex's session grant is ours, not
-  a defect**: one ACP connection per turn (0014) tears that process down at
-  turn end, which is the same lever as #817. And **every grant dies with the
-  sandbox**, so a `Lifecycle` reclaim silently resets consent.
+  Two consequences worth holding on to. **codex's session grant is the
+  client's, not a defect**: a connection that ends at turn end tears that
+  process down, which is the same lever as #817. And **every grant dies with
+  the sandbox**, so a sandbox reclaim silently resets consent.
 
   claude's exception is upstream and is a prompt loop no clicking resolves
   (anthropics/claude-code#88919). A shell redirect to a path outside the
@@ -94,8 +95,15 @@ defmodule Fountain.Permissions do
   writes nothing outside its cwd.**
 
   None of this is worked around here. #996 is where the question of whether
-  Fountain should own grants at all is being decided; a matcher written before
-  that decision would be a second permission authority arriving by accident.
+  the client should own grants at all is being decided; a matcher written
+  before that decision would be a second permission authority arriving by
+  accident.
+
+  ## Configuration
+
+  None. The policy is an argument, and `ask_timeout_ms/1` takes the
+  configured number of seconds as its argument too — the host reads its own
+  configuration and passes it, so the library never reads anyone's.
   """
 
   @auto_allow "auto_allow"
@@ -115,25 +123,28 @@ defmodule Fountain.Permissions do
   # ACP's `toolCall.kind` vocabulary, in the protocol's own order.
   @tool_kinds ~w(read edit delete move search execute think fetch switch_mode other)
 
-  # Well under `Lifecycle.idle_timeout_seconds/0` (60 minutes by default), and
+  # Well under a typical idle-reclaim bound (Fountain's is 60 minutes), and
   # deliberately so: a held request suppresses only the idle verdict, so one
   # that outlived the idle bound would be resolved by the max-lifetime ceiling
-  # instead — which destroys the sandbox rather than parking it (0017). The
-  # timeout has to fire first for an unanswered prompt to cost a turn rather
-  # than the agent's memory.
+  # instead — which destroys the sandbox rather than parking it. The timeout
+  # has to fire first for an unanswered prompt to cost a turn rather than the
+  # agent's memory.
   @default_ask_timeout_seconds 300
 
   @doc """
-  How long a held `ask` waits for a human before it is denied.
+  How long a held `ask` waits for a human before it is denied, in
+  milliseconds, from a configured number of seconds.
 
-  Deny on expiry is the only safe default. Configurable with
-  `:permission_ask_timeout_seconds`; a value at or above the idle bound is a
-  misconfiguration, for the reason in the comment above this function.
+  Deny on expiry is the only safe default. `configured` is whatever the host
+  read from its own configuration: a positive integer, a numeric string, or
+  `nil` for the default (#{@default_ask_timeout_seconds} seconds). Anything
+  else is the default too — a misconfiguration must not become "never deny".
+  A value at or above the host's idle-reclaim bound is a misconfiguration,
+  for the reason in the comment above this function.
   """
-  @spec ask_timeout_ms() :: pos_integer()
-  def ask_timeout_ms do
-    :fountain
-    |> Application.get_env(:permission_ask_timeout_seconds, @default_ask_timeout_seconds)
+  @spec ask_timeout_ms(term()) :: pos_integer()
+  def ask_timeout_ms(configured \\ nil) do
+    configured
     |> to_positive_seconds(@default_ask_timeout_seconds)
     |> Kernel.*(1000)
   end
@@ -194,9 +205,8 @@ defmodule Fountain.Permissions do
 
   `auto_allow` everywhere is what the peer would do with no policy at all, so it
   needs nothing from the runtime. Anything else has to reach the agent as an
-  answer to `session/request_permission` — which is why a runtime that never
-  sends one refuses such a policy at the door
-  (`Fountain.Runtimes.ACP.asks_permission?/1`).
+  answer to `session/request_permission` — which is why a host that knows a
+  runtime never sends one should refuse such a policy at the door.
   """
   @spec needs_enforcement?(map() | nil) :: boolean()
   def needs_enforcement?(policy) do
@@ -348,7 +358,7 @@ defmodule Fountain.Permissions do
   @doc """
   The tool a permission request is about, as the transcript labels it.
 
-  Mirrors `ACP.Blocks.tool_name/1` so a policy key is the string a user reads on
+  Mirrors `Managoat.ACP.Blocks`' tool naming so a policy key is the string a user reads on
   the tool card. `nil` when the request carries no tool call at all, which falls
   through to the policy's default.
   """

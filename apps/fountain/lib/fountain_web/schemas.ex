@@ -223,7 +223,7 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           additionalProperties: %Schema{
             type: :string,
-            enum: Fountain.Permissions.buildable_verdicts()
+            enum: Managoat.ACP.Permissions.buildable_verdicts()
           },
           description:
             "The per-launch permission override this conversation was started with, or " <>
@@ -374,7 +374,7 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           additionalProperties: %Schema{
             type: :string,
-            enum: Fountain.Permissions.buildable_verdicts()
+            enum: Managoat.ACP.Permissions.buildable_verdicts()
           },
           description:
             "Per-launch permission override (#939). Keys are matched against the tool " <>
@@ -623,7 +623,7 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           additionalProperties: %Schema{
             type: :string,
-            enum: Fountain.Permissions.buildable_verdicts()
+            enum: Managoat.ACP.Permissions.buildable_verdicts()
           },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>
@@ -935,7 +935,7 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           additionalProperties: %Schema{
             type: :string,
-            enum: Fountain.Permissions.buildable_verdicts()
+            enum: Managoat.ACP.Permissions.buildable_verdicts()
           },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>
@@ -1053,7 +1053,7 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           additionalProperties: %Schema{
             type: :string,
-            enum: Fountain.Permissions.buildable_verdicts()
+            enum: Managoat.ACP.Permissions.buildable_verdicts()
           },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>

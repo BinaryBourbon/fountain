@@ -1,7 +1,7 @@
-defmodule Fountain.Runtimes.ACP.TracerTest do
+defmodule Managoat.ACP.TracerTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes.ACP.Tracer
+  alias Managoat.ACP.Tracer
 
   # The OTel SDK is prod-only (mix.exs); under test the API renders every span
   # call a no-op. What these tests can and do hold is the tracer's bookkeeping —
