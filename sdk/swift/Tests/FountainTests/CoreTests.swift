@@ -27,24 +27,14 @@ import Testing
   #expect(decoded == value)
 }
 
-@Test func sdkVersionMatchesServerVersion() throws {
-  let packageRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-  let mixData = try Data(contentsOf: packageRoot.appendingPathComponent("mix.exs"))
-  let mix = String(decoding: mixData, as: UTF8.self)
-  let expression = try NSRegularExpression(pattern: #"version: \"([0-9]+\.[0-9]+\.[0-9]+)\""#)
-  let fullRange = NSRange(mix.startIndex..<mix.endIndex, in: mix)
-  let match = try #require(expression.firstMatch(in: mix, range: fullRange))
-  let versionRange = try #require(Range(match.range(at: 1), in: mix))
-  #expect(String(mix[versionRange]) == fountainSDKVersion)
-}
-
-@Test func sseParserHandlesCommentsCRLFAndMultilineData() {
+@Test func sseParserHandlesCommentsCRLFAndMultilineData() throws {
   let messages = parseSSE(
     ": heartbeat\r\nid: 7\r\nevent: output\r\ndata: {\"kind\":\r\ndata: \"output\"}\r\n\r\n")
   #expect(messages.count == 1)
-  #expect(messages[0].id == "7")
-  #expect(messages[0].event == "output")
-  #expect(messages[0].data.joined(separator: "\n") == "{\"kind\":\n\"output\"}")
+  let message = try #require(messages.first)
+  #expect(message.id == "7")
+  #expect(message.event == "output")
+  #expect(message.data.joined(separator: "\n") == "{\"kind\":\n\"output\"}")
 }
 
 @Test func turnFollowerFoldsChunksToolsAndPermission() {

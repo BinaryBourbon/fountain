@@ -17,8 +17,7 @@ func parseSSE(_ text: String) -> [SSEMessage] {
     if !current.data.isEmpty || current.id != nil { messages.append(current) }
     current = SSEMessage()
   }
-  for rawLine in text.components(separatedBy: "\n") {
-    let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
+  for line in text.split(omittingEmptySubsequences: false, whereSeparator: { $0.isNewline }) {
     if line.isEmpty {
       flush()
       continue
