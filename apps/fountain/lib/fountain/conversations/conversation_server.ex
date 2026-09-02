@@ -1512,7 +1512,7 @@ defmodule Fountain.Conversations.ConversationServer do
       broker_env(state)
   end
 
-  # ── Egress credential brokerage (ADR 0019 gate 1a) ─────────────────────────
+  # ── sprite environment and egress (ADR 0019 gate 1a) ──────────────────────
 
   defp brokered?(state), do: Fountain.Broker.enabled_for?(state.user_id)
 
@@ -2753,7 +2753,7 @@ defmodule Fountain.Conversations.ConversationServer do
     {:noreply, %{state | replay_dedup: MapSet.new()}}
   end
 
-  # ── sandbox lifetime ──────────────────────────────────────────────────────
+  # ── permissions, reclaim and redaction ────────────────────────────────────
 
   def handle_info(:lifecycle_check, state) do
     schedule_lifecycle_check()
@@ -3172,7 +3172,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp redact(nil), do: nil
   defp redact(_present), do: "[REDACTED]"
 
-  # ── helpers ───────────────────────────────────────────────────────────────
+  # ── turns ─────────────────────────────────────────────────────────────────
 
   # A runtime session lives in the sandbox filesystem, so it cannot follow the
   # conversation onto a freshly provisioned one. Until #778 a wake that took
