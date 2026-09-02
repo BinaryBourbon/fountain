@@ -41,6 +41,14 @@ export type VaultPatch = S["VaultUpdate"];
 export type ConversationRecord = S["Conversation"];
 /** A machine, with the conversations on it. */
 export type SandboxRecord = S["SandboxDetail"];
+/** One directory on a sandbox, directories first (ADR 0039). */
+export type SandboxListing = S["SandboxListing"];
+/** One entry of a `SandboxListing`. */
+export type SandboxEntry = S["SandboxEntry"];
+/** One file on a sandbox, redacted; `content` is text or base64 per `encoding`. */
+export type SandboxFile = S["SandboxFile"];
+/** `git diff` of a repository on a sandbox, redacted. */
+export type SandboxDiff = S["SandboxDiff"];
 /** One prompt and everything the agent did in response. */
 export type Turn = S["Turn"];
 /** One row of a conversation's log feed. */

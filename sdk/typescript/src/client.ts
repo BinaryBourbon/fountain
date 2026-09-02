@@ -11,6 +11,9 @@ import type {
   Catalog,
   ConversationRecord,
   LogEvent,
+  SandboxDiff,
+  SandboxFile,
+  SandboxListing,
   SandboxRecord,
   SearchHit,
 } from "./types.ts";
@@ -226,6 +229,48 @@ export class Fountain {
    */
   async resetSandbox(id: string): Promise<void> {
     await this.api.request("DELETE", `/api/sandboxes/${id}`);
+  }
+
+  /**
+   * The entries of one directory on a sandbox, directories first then by
+   * name (ADR 0039). `path` is absolute or relative to the agent's working
+   * directory; omit it for that directory itself.
+   *
+   * The three disk reads — this, `sandboxFile` and `sandboxDiff` — are the
+   * whole of what the API offers on a disk; there is no exec, and to run a
+   * command you send a prompt. They need a `full`-scope key, answer only for
+   * a `ready` sandbox (a parked one is not woken: `sandbox_not_ready`), are
+   * confined to `/home/sprite` and the runtime's workspace
+   * (`path_outside_sandbox`), and come back redacted — the sandbox's
+   * environment and vault values read `[REDACTED]`, as in the transcript.
+   */
+  async sandboxFiles(id: string, path?: string): Promise<SandboxListing> {
+    return this.api.data<SandboxListing>("GET", `/api/sandboxes/${id}/files`, { query: { path } });
+  }
+
+  /**
+   * One file on a sandbox. `content` is the text when `encoding` is `utf-8`
+   * and base64 otherwise; `size` is the whole file and `truncated` says
+   * whether `content` stopped at `maxBytes` (default 256 KiB, at most 4 MiB).
+   */
+  async sandboxFile(id: string, path: string, opts: { maxBytes?: number } = {}): Promise<SandboxFile> {
+    return this.api.data<SandboxFile>("GET", `/api/sandboxes/${id}/file`, {
+      query: { path, max_bytes: opts.maxBytes },
+    });
+  }
+
+  /**
+   * `git diff` of the repository containing `path` on a sandbox (default:
+   * the agent's working directory). `staged` diffs the index; `ref` diffs
+   * against a commit, branch or tag instead of HEAD.
+   */
+  async sandboxDiff(
+    id: string,
+    opts: { path?: string; staged?: boolean; ref?: string; maxBytes?: number } = {},
+  ): Promise<SandboxDiff> {
+    return this.api.data<SandboxDiff>("GET", `/api/sandboxes/${id}/diff`, {
+      query: { path: opts.path, staged: opts.staged, ref: opts.ref, max_bytes: opts.maxBytes },
+    });
   }
 
   /** Full-text search across the caller's conversations. */

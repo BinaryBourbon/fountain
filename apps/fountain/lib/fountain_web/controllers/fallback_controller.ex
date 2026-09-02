@@ -275,6 +275,78 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # Sandbox files (ADR 0039). A read never wakes a parked sandbox: 409 with
+  # the status, and the caller decides whether a prompt is worth the wake.
+  def call(conn, {:error, {:sandbox_not_ready, status}}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "sandbox_not_ready",
+      message: "the sandbox is #{status}; files are read from a ready one only",
+      status: status
+    })
+  end
+
+  # A path the disk does not have. 404 like a missing sandbox: the caller
+  # asked for something by name and it is not there.
+  def call(conn, {:error, :path_not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "path_not_found"})
+  end
+
+  def call(conn, {:error, :ref_not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "ref_not_found", message: "no such commit, branch or tag"})
+  end
+
+  # The path is there but is the wrong kind of thing for the operation, or
+  # git has no repository at it. The atom is the message.
+  def call(conn, {:error, reason})
+      when reason in [
+             :not_a_directory,
+             :is_a_directory,
+             :path_unreadable,
+             :not_a_repository,
+             :invalid_ref,
+             :invalid_path
+           ] do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: to_string(reason), message: sandbox_files_message(reason)})
+  end
+
+  def call(conn, {:error, :path_outside_sandbox}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "path_outside_sandbox",
+      message: "path must be under the sandbox home or the agent's working directory"
+    })
+  end
+
+  # The command itself failed — git refusing a repository it does not own,
+  # a filesystem error. Its output travels, redacted, because the exit code
+  # alone sends the caller guessing.
+  def call(conn, {:error, {:sandbox_command_failed, code, output}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "sandbox_command_failed", exit_code: code, output: output})
+  end
+
+  # The provider did not answer (transport, timeout, runner offline).
+  # Nothing changed; retry.
+  def call(conn, {:error, {:sandbox_unreachable, _reason}}) do
+    conn
+    |> put_resp_header("retry-after", "10")
+    |> put_status(:service_unavailable)
+    |> json(%{
+      error: "sandbox_unreachable",
+      message: "could not reach the sandbox; retry shortly"
+    })
+  end
+
   def call(conn, {:error, :invalid_sandbox_mode}) do
     conn
     |> put_status(:unprocessable_entity)
@@ -367,6 +439,16 @@ defmodule FountainWeb.FallbackController do
     |> put_status(:unprocessable_entity)
     |> json(%{error: to_string(reason)})
   end
+
+  defp sandbox_files_message(:not_a_directory), do: "path is not a directory"
+  defp sandbox_files_message(:is_a_directory), do: "path is a directory; list it with /files"
+  defp sandbox_files_message(:path_unreadable), do: "the sandbox user cannot read that path"
+  defp sandbox_files_message(:not_a_repository), do: "no git repository contains that path"
+
+  defp sandbox_files_message(:invalid_ref),
+    do: "ref must name one commit, branch or tag; no flags and no ranges"
+
+  defp sandbox_files_message(:invalid_path), do: "path must be valid UTF-8 without NUL bytes"
 
   defp sandbox_not_resettable_message("ephemeral"),
     do: "only a persistent sandbox resets; an ephemeral one ends with its conversation"

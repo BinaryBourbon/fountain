@@ -10,6 +10,22 @@ server releases.
 
 ---
 
+## [1.15.0] — 2026-09-02
+
+### Added
+
+- A sandbox's disk, read-only (ADR 0039), beside `sandboxes()`,
+  `sandbox(id)` and `resetSandbox(id)`: `sandboxFiles(id, path?)` lists a
+  directory, `sandboxFile(id, path, { maxBytes })` returns one file
+  (`content` is text or base64 per `encoding`, with `size` and
+  `truncated`), and `sandboxDiff(id, { path, staged, ref, maxBytes })`
+  returns `git diff`. The reads need a `full`-scope key, answer only for a
+  `ready` sandbox (`sandbox_not_ready` otherwise — a parked one is not
+  woken), are confined to `/home/sprite` and the runtime's workspace, and
+  come back redacted like the transcript. There is no exec, by decision.
+  Types `SandboxRecord`, `SandboxListing`, `SandboxEntry`, `SandboxFile`
+  and `SandboxDiff` are exported.
+
 ## [1.14.0] — 2026-09-01
 
 ### Added

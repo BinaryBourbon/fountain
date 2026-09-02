@@ -396,6 +396,18 @@ defmodule FountainWeb.Router do
     get "/egress", ConversationController, :egress, as: :conversation_egress
   end
 
+  # A sandbox's disk, read-only (ADR 0039): a listing, a file, `git diff`.
+  # Full scope for the same reason as the egress log: a sandbox's own
+  # `sprite` token must not read another sandbox of the tenant, whose disk
+  # was built from a different vault.
+  scope "/api/sandboxes/:sandbox_id", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/files", SandboxFilesController, :index, as: :sandbox_files
+    get "/file", SandboxFilesController, :show, as: :sandbox_file
+    get "/diff", SandboxFilesController, :diff, as: :sandbox_diff
+  end
+
   # The daemon's socket skips content negotiation like the SSE routes do: a
   # WebSocket client sends no JSON `Accept`, and the upgrade is not a JSON
   # response.
