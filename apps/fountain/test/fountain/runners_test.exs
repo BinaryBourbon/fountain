@@ -2,7 +2,7 @@ defmodule Fountain.RunnersTest do
   use Fountain.DataCase, async: true
 
   alias Fountain.Runners
-  alias Fountain.Runners.FakeDaemon
+  alias Managoat.Runner.FakeDaemon
 
   describe "register/3" do
     test "the first connection of a name inserts a row and audits it" do
@@ -104,7 +104,7 @@ defmodule Fountain.RunnersTest do
       assert Runners.for_sandbox(hosted) == nil
       assert Runners.sandbox_online?(hosted)
 
-      {:ok, daemon} = FakeDaemon.start(runner.id, user.id, name: "mini")
+      {:ok, daemon} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
       assert %{online: true} = Runners.for_sandbox(sandbox)
       assert Runners.sandbox_online?(sandbox)
       FakeDaemon.stop(daemon)
@@ -119,7 +119,7 @@ defmodule Fountain.RunnersTest do
       {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
       Runners.subscribe(user.id)
 
-      {:ok, daemon} = FakeDaemon.start(runner.id, user.id, name: "mini")
+      {:ok, daemon} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
       assert_receive {:runner_online, id}
       assert id == runner.id
 
@@ -137,7 +137,7 @@ defmodule Fountain.RunnersTest do
       assert {:error, :no_runner_online} = Runners.pick_runner(user.id)
       assert {:error, :no_runner_online} = Runners.mint_sandbox_name(user.id)
 
-      {:ok, daemon} = FakeDaemon.start(runner.id, user.id, name: "mini")
+      {:ok, daemon} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
       assert Runners.online?(runner)
       assert {:ok, %{id: picked}} = Runners.pick_runner(user.id)
       assert picked == runner.id
@@ -158,8 +158,8 @@ defmodule Fountain.RunnersTest do
         set: [connected_at: DateTime.add(new.connected_at, -60, :second)]
       )
 
-      {:ok, d1} = FakeDaemon.start(old.id, user.id, name: "old")
-      {:ok, d2} = FakeDaemon.start(new.id, user.id, name: "new")
+      {:ok, d1} = FakeDaemon.start(old.id, meta: %{user_id: user.id}, name: "old")
+      {:ok, d2} = FakeDaemon.start(new.id, meta: %{user_id: user.id}, name: "new")
 
       on_exit(fn ->
         FakeDaemon.stop(d1)
@@ -176,17 +176,22 @@ defmodule Fountain.RunnersTest do
     test "a second connection for the same runner is refused" do
       user = insert_verified_user()
       {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
-      {:ok, d1} = FakeDaemon.start(runner.id, user.id, name: "mini")
+      {:ok, d1} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
       on_exit(fn -> FakeDaemon.stop(d1) end)
 
       Process.flag(:trap_exit, true)
-      assert {:error, :normal} = FakeDaemon.start(runner.id, user.id, name: "mini")
+
+      assert {:error, :normal} =
+               FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
     end
 
     test "deleting a runner disconnects its live socket" do
       user = insert_verified_user()
       {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
-      {:ok, %{socket: socket}} = FakeDaemon.start(runner.id, user.id, name: "mini")
+
+      {:ok, %{socket: socket}} =
+        FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
+
       Process.unlink(socket)
       ref = Process.monitor(socket)
 

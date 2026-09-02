@@ -1,13 +1,17 @@
-defmodule Fountain.Runners.FakeDaemon do
+defmodule Managoat.Runner.FakeDaemon do
   @moduledoc """
-  An in-BEAM stand-in for the `fountain runner` daemon, speaking the exact
-  wire protocol `Fountain.Runners.Connection` speaks, so the adapter and the
+  An in-BEAM stand-in for the runner daemon, speaking the exact wire
+  protocol `Managoat.Runner.Connection` speaks, so the adapter and the
   connection process are exercised end to end without a Go binary or a
   network.
 
+  It lives under `lib/`, not `test/support`, for the same reason
+  `Managoat.Sandbox.Fake` does: a host application's tests and any
+  consumer's tests drive it, so it is compiled in every environment.
+
   Two processes:
 
-    * a **socket** process running `Fountain.Runners.Connection` as a
+    * a **socket** process running `Managoat.Runner.Connection` as a
       `WebSock` handler would — it *is* the registered connection process:
       messages from callers reach it as `handle_info/2`, frames from the
       daemon reach it as `handle_in/2`, and pushed frames go to the daemon;
@@ -19,80 +23,44 @@ defmodule Fountain.Runners.FakeDaemon do
 
   `start/2` connects a daemon for `runner_id`; `stop/1` disconnects it (the
   socket process exits, so callers see the disconnected errors). It is the
-  executable form of the protocol description in `Connection`'s moduledoc
-  and of ADR 0022's wire section — the Go daemon must agree with it.
+  executable form of the protocol description in `Connection`'s moduledoc —
+  the Go daemon must agree with it.
   """
 
-  alias Fountain.Runners.Connection
-
-  # ── socket runtime ─────────────────────────────────────────────────────────
-
-  defmodule Socket do
-    @moduledoc false
-    use GenServer
-
-    def start_link(init) do
-      GenServer.start_link(__MODULE__, init)
-    end
-
-    @impl true
-    def init(%{daemon: daemon} = init) do
-      case Connection.init(Map.drop(init, [:daemon])) do
-        {:ok, state} -> {:ok, %{daemon: daemon, state: state}}
-        {:stop, reason, _detail, _state} -> {:stop, reason}
-      end
-    end
-
-    @impl true
-    def handle_info({:daemon_frame, text}, s) do
-      Connection.handle_in({text, [opcode: :text]}, s.state) |> after_callback(s)
-    end
-
-    def handle_info(msg, s) do
-      Connection.handle_info(msg, s.state) |> after_callback(s)
-    end
-
-    @impl true
-    def terminate(reason, s) do
-      Connection.terminate(reason, s.state)
-    end
-
-    defp after_callback({:ok, state}, s), do: {:noreply, %{s | state: state}}
-
-    defp after_callback({:push, frames, state}, s) do
-      frames
-      |> List.wrap()
-      |> Enum.each(fn
-        {:text, text} -> send(s.daemon, {:socket_frame, IO.iodata_to_binary(text)})
-        _control -> :ok
-      end)
-
-      {:noreply, %{s | state: state}}
-    end
-
-    defp after_callback({:stop, reason, _detail, state}, s),
-      do: {:stop, reason, %{s | state: state}}
-  end
+  alias Managoat.Runner.Config
+  alias Managoat.Runner.Connection
+  alias Managoat.Runner.FakeDaemon.Socket
 
   # ── daemon ─────────────────────────────────────────────────────────────────
 
   @doc """
   Connect a fake daemon for the runner. Returns `{:ok, %{socket: pid, daemon: pid}}`.
-  The socket process registers in the runner registry, so `Runners.online?/1`
-  flips to true.
+  The socket process registers with the host, so `whereis/1` finds it.
+
+  Options: `:name` (the runner's display name, default `"fake"`), `:meta`
+  (the opaque map handed to the host, default `%{}`) and `:host` (a
+  `Managoat.Runner.Host` for this connection, overriding the configured one).
   """
-  def start(runner_id, user_id, opts \\ []) do
+  def start(runner_id, opts \\ []) do
     daemon = spawn_link(fn -> daemon_loop(%{sandboxes: %{}, sessions: %{}, socket: nil}) end)
 
-    case Socket.start_link(%{
-           runner_id: runner_id,
-           user_id: user_id,
-           name: Keyword.get(opts, :name, "fake"),
-           daemon: daemon
-         }) do
+    init = %{
+      runner_id: runner_id,
+      name: Keyword.get(opts, :name, "fake"),
+      meta: Keyword.get(opts, :meta, %{}),
+      daemon: daemon
+    }
+
+    init =
+      case Keyword.get(opts, :host) do
+        nil -> init
+        host -> Map.put(init, :host, host)
+      end
+
+    case Socket.start_link(init) do
       {:ok, socket} ->
         send(daemon, {:socket, socket})
-        wait_registered(runner_id, 50)
+        wait_registered(Config.host!(init), runner_id, 50)
         {:ok, %{socket: socket, daemon: daemon}}
 
       {:error, reason} ->
@@ -132,14 +100,14 @@ defmodule Fountain.Runners.FakeDaemon do
     :ok
   end
 
-  defp wait_registered(_runner_id, 0), do: :ok
+  defp wait_registered(_host, _runner_id, 0), do: :ok
 
-  defp wait_registered(runner_id, n) do
-    if Fountain.Runners.online?(runner_id) do
+  defp wait_registered(host, runner_id, n) do
+    if host.whereis(runner_id) != nil do
       :ok
     else
       Process.sleep(10)
-      wait_registered(runner_id, n - 1)
+      wait_registered(host, runner_id, n - 1)
     end
   end
 
@@ -151,7 +119,7 @@ defmodule Fountain.Runners.FakeDaemon do
       {:socket_frame, text} ->
         req = Jason.decode!(text)
         {reply, state} = handle(req, state)
-        if reply, do: push(state, Map.put(reply, "id", req["id"]))
+        push(state, Map.put(reply, "id", req["id"]))
         daemon_loop(state)
 
       {:session_frame, frame} ->
@@ -400,4 +368,58 @@ defmodule Fountain.Runners.FakeDaemon do
     send(daemon, {:session_done, session_id, code})
     exit(:normal)
   end
+end
+
+defmodule Managoat.Runner.FakeDaemon.Socket do
+  @moduledoc """
+  The socket process of a `Managoat.Runner.FakeDaemon`: it runs
+  `Managoat.Runner.Connection` as a `WebSock` handler would, and is the
+  registered connection process. Frames the connection pushes go to the
+  daemon process; frames the daemon sends arrive as `handle_in/2`.
+  """
+  use GenServer
+
+  alias Managoat.Runner.Connection
+
+  def start_link(init) do
+    GenServer.start_link(__MODULE__, init)
+  end
+
+  @impl true
+  def init(%{daemon: daemon} = init) do
+    case Connection.init(Map.drop(init, [:daemon])) do
+      {:ok, state} -> {:ok, %{daemon: daemon, state: state}}
+      {:stop, reason, _detail, _state} -> {:stop, reason}
+    end
+  end
+
+  @impl true
+  def handle_info({:daemon_frame, text}, s) do
+    Connection.handle_in({text, [opcode: :text]}, s.state) |> after_callback(s)
+  end
+
+  def handle_info(msg, s) do
+    Connection.handle_info(msg, s.state) |> after_callback(s)
+  end
+
+  @impl true
+  def terminate(reason, s) do
+    Connection.terminate(reason, s.state)
+  end
+
+  defp after_callback({:ok, state}, s), do: {:noreply, %{s | state: state}}
+
+  defp after_callback({:push, frames, state}, s) do
+    frames
+    |> List.wrap()
+    |> Enum.each(fn
+      {:text, text} -> send(s.daemon, {:socket_frame, IO.iodata_to_binary(text)})
+      _control -> :ok
+    end)
+
+    {:noreply, %{s | state: state}}
+  end
+
+  defp after_callback({:stop, reason, _detail, state}, s),
+    do: {:stop, reason, %{s | state: state}}
 end

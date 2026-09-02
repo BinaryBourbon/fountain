@@ -305,8 +305,8 @@ stdin stdin_close detach list_sessions attach`. The errors are the contract's
 codes: `not_found`, `command_exited`, `not_supported`, `invalid`,
 `unavailable` and `write_failed`.
 
-`Fountain.Runners.Connection` is the server end, and `cli/internal/runner` is
-the daemon. `Fountain.Runners.FakeDaemon` is a daemon inside the BEAM that the
+`Managoat.Runner.Connection` is the server end, and `cli/internal/runner` is
+the daemon. `Managoat.Runner.FakeDaemon` is a daemon inside the BEAM that the
 conformance suite runs against. It is the executable description that both ends
 must agree with.
 

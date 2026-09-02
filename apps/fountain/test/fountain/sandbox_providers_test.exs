@@ -41,7 +41,7 @@ defmodule Fountain.SandboxProvidersTest do
       assert is_atom(Managoat.Sandbox.adapter_for(String.to_existing_atom(provider)))
     end
 
-    assert Managoat.Sandbox.adapter_for(:runner) == Fountain.Sandbox.Runner
+    assert Managoat.Sandbox.adapter_for(:runner) == Managoat.Runner.Adapter
   end
 
   test "a provider is enabled only when its credential is configured" do

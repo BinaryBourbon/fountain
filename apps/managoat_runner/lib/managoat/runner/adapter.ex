@@ -1,14 +1,14 @@
-defmodule Fountain.Sandbox.Runner do
+defmodule Managoat.Runner.Adapter do
   @moduledoc """
   The self-hosted runner adapter: `Managoat.Sandbox` implemented as RPCs to a
-  `fountain runner` daemon on a machine the user owns (ADR 0022).
+  runner daemon on a machine the user owns.
 
-  Everything runner-shaped lives here and in `Fountain.Runners.Connection`:
-  the name → runner-id routing (`runner-<32 hex>-<8 hex>`), the request
-  vocabulary, and the offline/disconnected/timeout errors, all of which are
-  `{:unavailable, _}` — transient in the taxonomy, so a wake retries and a
-  parked directory on a switched-off machine is never mistaken for
-  `:not_found`.
+  Everything runner-shaped lives here and in `Managoat.Runner.Connection`:
+  the name → runner-id routing (`runner-<32 hex>-<8 hex>`, see
+  `Managoat.Runner.Names`), the request vocabulary, and the
+  offline/disconnected/timeout errors, all of which are `{:unavailable, _}` —
+  transient in the taxonomy, so a wake retries and a parked directory on a
+  switched-off machine is never mistaken for `:not_found`.
 
   Capability notes:
 
@@ -23,8 +23,9 @@ defmodule Fountain.Sandbox.Runner do
 
   @behaviour Managoat.Sandbox
 
-  alias Fountain.Runners
-  alias Fountain.Runners.Connection
+  alias Managoat.Runner.Config
+  alias Managoat.Runner.Connection
+  alias Managoat.Runner.Names
   alias Managoat.Sandbox.Command
   alias Managoat.Sandbox.Handle
   alias Managoat.Sandbox.NetworkPolicy
@@ -75,8 +76,8 @@ defmodule Fountain.Sandbox.Runner do
     # only ever destroys names it *sees*. One online runner refusing to list
     # refuses the whole view: a partial listing that looks whole is the worst
     # shape of wrong for a function that decides what to delete.
-    Runners.online_runner_ids()
-    |> Enum.reduce_while({:ok, MapSet.new()}, fn {runner_id, _user_id}, {:ok, acc} ->
+    Config.host!().online()
+    |> Enum.reduce_while({:ok, MapSet.new()}, fn {runner_id, _meta}, {:ok, acc} ->
       case Connection.call(runner_id, %{op: "list"}) do
         {:ok, %{"names" => names}} when is_list(names) ->
           {:cont, {:ok, MapSet.union(acc, MapSet.new(names))}}
@@ -285,7 +286,7 @@ defmodule Fountain.Sandbox.Runner do
   Resolve a sandbox path to the real directory on the runner machine.
 
   `/home/sprite` (and paths under it) map to the sandbox directory the
-  daemon reports; a path the agent CLI validates in band — the ACP `cwd` —
+  daemon reports; a path an agent CLI validates in band — the ACP `cwd` —
   must be that real one, not the literal `/home/sprite`, which does not exist
   on the machine. Other absolute paths (`/tmp/...`) are already real and pass
   through. Falls back to the input if the daemon cannot be reached — the
@@ -311,7 +312,7 @@ defmodule Fountain.Sandbox.Runner do
   @doc "The runner id a sandbox name routes to."
   @spec runner_id(String.t()) :: {:ok, binary()} | {:error, {:invalid, term()}}
   def runner_id(name) do
-    case Runners.parse_sandbox_name(name) do
+    case Names.parse(name) do
       {:ok, id} -> {:ok, id}
       :error -> {:error, {:invalid, {:not_a_runner_sandbox_name, name}}}
     end

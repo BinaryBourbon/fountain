@@ -175,16 +175,23 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
 config :fountain, :oauth_clients, []
 
 # The sandbox adapter map (Managoat.Sandbox, decisions/0037): the three
-# adapters the library ships plus Fountain's own self-hosted runner (ADR
-# 0022). Static, so it lives here rather than in runtime.exs. Which of these
-# a deployment may *use* is Fountain.SandboxProviders' question; the
-# library answers only which module serves a provider atom.
+# adapters the sandbox library ships plus the self-hosted runner's, from the
+# runner library (ADR 0022). Static, so it lives here rather than in
+# runtime.exs. Which of these a deployment may *use* is
+# Fountain.SandboxProviders' question; the library answers only which module
+# serves a provider atom.
 config :managoat_sandbox,
   adapters: %{
     sprites: Managoat.Sandbox.Sprites,
     e2b: Managoat.Sandbox.E2B,
     daytona: Managoat.Sandbox.Daytona,
-    runner: Fountain.Sandbox.Runner
+    runner: Managoat.Runner.Adapter
   }
+
+# What the runner library needs from this platform (Managoat.Runner.Host):
+# the Horde registry, the last_seen_at stamp and the presence broadcast,
+# all behind Fountain.Runners.Host. The library has no default host on
+# purpose.
+config :managoat_runner, host: Fountain.Runners.Host
 
 import_config "#{config_env()}.exs"

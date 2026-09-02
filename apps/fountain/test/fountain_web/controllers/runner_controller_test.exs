@@ -2,7 +2,7 @@ defmodule FountainWeb.RunnerControllerTest do
   use FountainWeb.ConnCase, async: true
 
   alias Fountain.Runners
-  alias Fountain.Runners.FakeDaemon
+  alias Managoat.Runner.FakeDaemon
 
   setup %{conn: conn} do
     user = insert_verified_user()
@@ -14,7 +14,7 @@ defmodule FountainWeb.RunnerControllerTest do
     test "lists the user's runners with live online status", %{conn: conn, user: user} do
       {:ok, offline} = Runners.register(user.id, %{"name" => "laptop", "os" => "darwin"})
       {:ok, online} = Runners.register(user.id, %{"name" => "mini", "hostname" => "mini.local"})
-      {:ok, daemon} = FakeDaemon.start(online.id, user.id, name: "mini")
+      {:ok, daemon} = FakeDaemon.start(online.id, meta: %{user_id: user.id}, name: "mini")
       on_exit(fn -> FakeDaemon.stop(daemon) end)
 
       other = insert_verified_user()

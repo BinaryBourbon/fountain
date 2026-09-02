@@ -12,7 +12,7 @@ defmodule Fountain.Runners.PlacementTest do
 
   alias Fountain.Conversations
   alias Fountain.Runners
-  alias Fountain.Runners.FakeDaemon
+  alias Managoat.Runner.FakeDaemon
 
   setup do
     previous = Application.get_env(:fountain, :runners_enabled)
@@ -44,7 +44,7 @@ defmodule Fountain.Runners.PlacementTest do
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, sandbox_provider: "runner")
     {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
-    {:ok, daemon} = FakeDaemon.start(runner.id, user.id, name: "mini")
+    {:ok, daemon} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
     on_exit(fn -> FakeDaemon.stop(daemon) end)
 
     assert {:ok, conv} =

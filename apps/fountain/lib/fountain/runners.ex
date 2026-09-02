@@ -12,18 +12,23 @@ defmodule Fountain.Runners do
       a runner id to the connection process currently holding its socket.
       A runner is *online* exactly while such a process is registered.
 
-  The adapter (`Fountain.Sandbox.Runner`) only ever asks the registry; the
-  UI and API read the rows and ask `online?/1`. Sandbox names on this
-  provider carry the runner id (`runner-<32 hex>-<8 hex>`) because the
-  sandbox contract hands adapters nothing but the name — see
-  `mint_sandbox_name/1` / `parse_sandbox_name/1`.
+  The protocol, the connection process and the adapter are the
+  `managoat_runner` library (`Managoat.Runner.*`, decisions/0037); what it
+  needs from this platform is `Fountain.Runners.Host`, and the adapter only
+  ever asks that host. The UI and API read the rows and ask `online?/1`.
+  Sandbox names on this provider carry the runner id
+  (`runner-<32 hex>-<8 hex>`, `Managoat.Runner.Names`) because the sandbox
+  contract hands adapters nothing but the name — see `mint_sandbox_name/1`
+  / `parse_sandbox_name/1`.
   """
 
   import Ecto.Query, warn: false
 
   alias Fountain.Audit
   alias Fountain.Repo
+  alias Fountain.Runners.Host
   alias Fountain.Runners.Runner
+  alias Managoat.Runner.Names
 
   @registry Fountain.RunnerRegistry
 
@@ -123,12 +128,7 @@ defmodule Fountain.Runners do
 
   @doc "The connection process holding the runner's socket, or nil."
   @spec whereis(binary()) :: pid() | nil
-  def whereis(runner_id) do
-    case Horde.Registry.lookup(@registry, {:runner, runner_id}) do
-      [{pid, _}] -> pid
-      [] -> nil
-    end
-  end
+  def whereis(runner_id), do: Host.whereis(runner_id)
 
   @doc "Whether the runner has a live connection right now."
   @spec online?(Runner.t() | binary()) :: boolean()
@@ -138,10 +138,8 @@ defmodule Fountain.Runners do
   @doc "The ids of every runner currently connected, cluster-wide, with owner."
   @spec online_runner_ids() :: [{binary(), binary()}]
   def online_runner_ids do
-    @registry
-    |> Horde.Registry.select([
-      {{{:runner, :"$1"}, :_, %{user_id: :"$2"}}, [], [{{:"$1", :"$2"}}]}
-    ])
+    Host.online()
+    |> Enum.map(fn {runner_id, %{user_id: user_id}} -> {runner_id, user_id} end)
     |> Enum.uniq()
   end
 
@@ -251,29 +249,11 @@ defmodule Fountain.Runners do
 
   @doc "The sandbox name shape for a runner id: `runner-<32 hex>-<8 hex>`."
   @spec sandbox_name_for(binary()) :: String.t()
-  def sandbox_name_for(runner_id) do
-    short = Ecto.UUID.generate() |> binary_part(0, 8)
-    "runner-#{String.replace(runner_id, "-", "")}-#{short}"
-  end
+  def sandbox_name_for(runner_id), do: Names.for_runner(runner_id)
 
   @doc "Recover the runner id (as a dashed UUID) from a sandbox name."
   @spec parse_sandbox_name(String.t()) :: {:ok, binary()} | :error
-  def parse_sandbox_name("runner-" <> rest) do
-    with <<hex::binary-size(32), "-", _short::binary>> <- rest,
-         {:ok, uuid} <- hex |> dashed() |> Ecto.UUID.cast() do
-      {:ok, uuid}
-    else
-      _ -> :error
-    end
-  end
-
-  def parse_sandbox_name(_), do: :error
-
-  defp dashed(
-         <<a::binary-size(8), b::binary-size(4), c::binary-size(4), d::binary-size(4),
-           e::binary-size(12)>>
-       ),
-       do: "#{a}-#{b}-#{c}-#{d}-#{e}"
+  def parse_sandbox_name(name), do: Names.parse(name)
 
   # ── audit ──────────────────────────────────────────────────────────────────
 
