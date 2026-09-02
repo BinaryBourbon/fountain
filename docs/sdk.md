@@ -445,12 +445,14 @@ tarball. A package that a person sends by hand has no such attestation.
 
 ## Other languages
 
-Elixir has its own [SDK](elixir-sdk.md), and so does
-[Swift](swift-sdk.md). For a different language, use one of two worked
-references. They show how to follow a turn through the log feed.
+Elixir has its own [SDK](elixir-sdk.md), and so do
+[Python](python-sdk.md) and [Swift](swift-sdk.md). For a different language,
+use one of two worked references. They show how to follow a turn through the
+log feed.
 
-- **Python.** The [Hermes plugin](integrations/hermes.md)'s `tools.py`, which
-  polls `/events?blocks=true`.
+- **Python.** The SDK follows SSE, while the
+  [Hermes plugin](integrations/hermes.md)'s `tools.py` is a smaller polling
+  reference over `/events?blocks=true`.
 - **Go.** The [`fountain` CLI](cli.md)'s `fountain run`, which streams SSE.
 
 These references implement the rules that the TypeScript SDK implements. Keep

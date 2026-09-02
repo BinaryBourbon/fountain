@@ -1,0 +1,79 @@
+name: Publish Python SDK
+
+# PyPI trusted publishing is the only publisher. A push to main that changes
+# sdk/python asks PyPI whether its version already exists, then builds and
+# publishes only a new one. Configure the PyPI project for this repository,
+# this workflow filename, and the `pypi` environment before the first release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/python/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825a76410c181273ba90b1 # v5
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.9"
+
+      - name: Read release state
+        id: release
+        working-directory: sdk/python
+        run: |
+          if python -c 'import tomllib' 2>/dev/null; then
+            version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          else
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/fountain-agent-sdk/${version}/json")
+          case "$code" in
+            200) needed=no; published=true ;;
+            404) needed=yes; published=false ;;
+            *) echo "PyPI version check returned HTTP $code" >&2; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          echo "fountain-agent-sdk $version already on PyPI: $published"
+
+      - name: Test
+        if: steps.release.outputs.needed == 'yes'
+        run: python -m unittest discover -s sdk/python/tests -v
+
+      - name: Build
+        if: steps.release.outputs.needed == 'yes'
+        run: |
+          python -m pip install --disable-pip-version-check build
+          python -m build sdk/python
+
+      - name: Publish
+        if: steps.release.outputs.needed == 'yes'
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
+        with:
+          packages-dir: sdk/python/dist/
+
+      - name: Say what happened
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          NEEDED: ${{ steps.release.outputs.needed }}
+        run: |
+          if [ "$NEEDED" = yes ]; then
+            echo "Published fountain-agent-sdk $VERSION to PyPI." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "fountain-agent-sdk $VERSION is already on PyPI; nothing to publish." >> "$GITHUB_STEP_SUMMARY"
+          fi

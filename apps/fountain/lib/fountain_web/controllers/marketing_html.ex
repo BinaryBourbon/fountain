@@ -805,13 +805,13 @@ defmodule FountainWeb.MarketingHTML do
         kind: :client,
         name: "REST, SSE and webhooks",
         long: "Fountain's own API",
-        surface: "/api, with a TypeScript SDK and a CLI",
+        surface: "/api, with TypeScript and Python SDKs and a CLI",
         direction: "Your code drives everything the console can, and more.",
         pitch:
           "Start and follow agents from your own code. Create a Conversation, send a " <>
             "prompt, stream the parsed blocks or receive a signed webhook when the turn " <>
             "ends. Sign in with Fountain gives browser apps an OAuth flow. The apps this " <>
-            "project ships use the same public API and TypeScript SDK.",
+            "project ships use the same public API and SDKs.",
         docs: "/docs/api",
         docs_label: "The API reference",
         works_with: [
@@ -823,6 +823,7 @@ defmodule FountainWeb.MarketingHTML do
           %{name: "Team", slug: nil, note: "the team messenger, on the same public API"},
           %{name: "Workbench", slug: nil, note: "the shared engineering workbench"},
           %{name: "TypeScript", slug: "typescript", note: "@agentshit/fountain-sdk on npm"},
+          %{name: "Python", slug: "python", note: "fountain-agent-sdk on PyPI"},
           %{name: "Go", slug: "go", note: "the fountain CLI, and its source"},
           %{
             name: "GitHub Actions",
@@ -1516,8 +1517,8 @@ defmodule FountainWeb.MarketingHTML do
           "Free to run in your own instance, and your changes stay yours. The one thing it forbids is selling this code to third parties as a hosted service."
       },
       %{
-        part: "The CLI and the SDK",
-        scope: "cli/, sdk/typescript",
+        part: "The CLI and the SDKs",
+        scope: "cli/, sdk/typescript, sdk/python",
         licence: "Apache-2.0",
         means:
           "Ship them inside a closed product. An application that calls your instance takes on no obligation at all."

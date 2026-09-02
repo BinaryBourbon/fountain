@@ -5,7 +5,8 @@ returns JSON.
 
 !!! tip "Do you write a script, and not an integration?"
 
-    The [TypeScript](sdk.md) and [Swift](swift-sdk.md) SDKs put one `run`
+    The [TypeScript](sdk.md), [Python](python-sdk.md) and
+    [Swift](swift-sdk.md) SDKs put one `run`
     call over the conversation endpoints below.
 
     Reach for the raw API when you need a surface the SDKs do not wrap, or a

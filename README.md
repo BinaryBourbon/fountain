@@ -85,12 +85,14 @@ code actually reaches for.
 | **Web UI** (`/dashboard`) | Getting started, managing agents, environments, vaults, keys and audit visually |
 | **REST API** (`/api/*`) | Scripting, CI/CD pipelines, integrating Fountain into your own tools |
 | **CLI** (`fountain`) | Local workflows, manifest-driven `apply`, shell scripting |
-| **TypeScript, Elixir and Swift SDKs** | Running an agent from your own code: `run(prompt, agent: ..., vault: ...)` |
+| **TypeScript, Python, Elixir and Swift SDKs** | Running an agent from your own code: `run(prompt, agent: ..., vault: ...)` |
 
 The CLI and the SDKs are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
 
 ```bash
 npm install @agentshit/fountain-sdk
+# or
+pip install fountain-agent-sdk
 # After its first Hex release, add {:fountain_sdk, "~> 0.1.0"} to mix.exs
 ```
 
@@ -123,11 +125,24 @@ run = Fountain.run(client, "Upgrade us to Phoenix 1.8 and open a PR", agent: "re
 IO.puts(result.text)
 ```
 
+```python
+from fountain import Fountain
+
+run = Fountain().run(
+    "Upgrade us to Phoenix 1.8 and open a PR",
+    agent="reposage",
+    vault="github-bot",
+).result()
+
+print(run.text, run.url)
+```
+
 The sandbox is still there afterwards. A follow-up continues on the same
 machine, with the same checkout and the same session. See
-[`sdk/typescript/`](sdk/typescript/), [`sdk/elixir/`](sdk/elixir/),
-[`sdk/swift/`](sdk/swift/), or the
+[`sdk/typescript/`](sdk/typescript/), [`sdk/python/`](sdk/python/),
+[`sdk/elixir/`](sdk/elixir/), [`sdk/swift/`](sdk/swift/), or the
 [TypeScript](https://managoat.com/docs/sdk),
+[Python](https://managoat.com/docs/python-sdk),
 [Elixir](https://managoat.com/docs/elixir-sdk) and
 [Swift](https://managoat.com/docs/swift-sdk) SDK docs.
 
@@ -257,7 +272,7 @@ Fountain is not licensed as a single unit. The short version:
 |---|---|---|
 | The server (`apps/fountain`) | [AGPL-3.0-or-later](LICENSE) | Run it, modify it, host it. If you host a modified version, your users are entitled to your source |
 | [`ee/`](ee/) — Stripe billing and growth email | [Elastic Licence 2.0](ee/LICENSE) | Free to run in your own instance, changes stay yours. You may not offer it to third parties as a hosted service |
-| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript), [`sdk/elixir`](sdk/elixir), [`sdk/swift`](sdk/swift) | [Apache-2.0](cli/LICENSE) | Build on the API or ship a client in a proprietary product; follow the Apache license and notice terms when you redistribute it |
+| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript), [`sdk/python`](sdk/python), [`sdk/elixir`](sdk/elixir), [`sdk/swift`](sdk/swift) | [Apache-2.0](cli/LICENSE) | Build on the API or ship a client in a proprietary product; follow the Apache license and notice terms when you redistribute it |
 
 The client surfaces are permissive on purpose. Integrating with Fountain
 should never put a licence obligation on your application, and an AGPL SDK
