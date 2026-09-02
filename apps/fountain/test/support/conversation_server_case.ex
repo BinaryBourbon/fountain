@@ -44,34 +44,34 @@ defmodule Fountain.ConversationServerCase do
   @doc """
   Stub every external boundary a provision touches, on the happy path.
 
-  The whole sandbox seam is the `Fountain.Sandbox.Sprites` adapter — the
+  The whole sandbox seam is the `Managoat.Sandbox.Sprites` adapter — the
   server never names the SDK anymore. Returns the handle the stubbed
   `create/2` will hand back.
   """
   def stub_happy_sprite(name \\ "test-sprite") do
-    handle = Fountain.Sandbox.Sprites.build_handle(name)
+    handle = Managoat.Sandbox.Sprites.build_handle(name)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts -> {:ok, handle} end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _name, _opts -> {:ok, handle} end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
       {:ok, %{status: :running, raw: %{}}}
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _handle, _cmd, _args, _opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _handle, _cmd, _args, _opts ->
       {:ok, "", 0}
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _handle, _path, _data, _opts -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _handle -> {:ok, []} end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :apply_network_policy, fn _handle, _policy -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _handle, _path, _data, _opts -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _handle -> {:ok, []} end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :apply_network_policy, fn _handle, _policy -> :ok end)
 
     # A turn's spawn fails cleanly unless the test stubs it — mirroring the
     # pre-facade behavior where spawning against the fake sprite errored and
     # the turn was marked failed. Tests exercising turns re-stub spawn (and
     # write_stdin/close_stdin where their turn writes; the #603 tests rely on
     # the adapter's REAL write path, so those stay unstubbed here).
-    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _handle, _cmd, _args, _opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _handle, _cmd, _args, _opts ->
       {:error, {:unavailable, :spawn_not_stubbed}}
     end)
 

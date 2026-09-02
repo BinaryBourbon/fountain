@@ -80,8 +80,6 @@ sprites_token =
     token -> token
   end
 
-config :fountain, :sprites_token, sprites_token
-
 # SpritesClient has read :sprites_base_url from application env since it was
 # written, but nothing ever set it — so the default was the only value, and
 # pointing an instance at a different sandbox backend meant editing config and
@@ -98,8 +96,6 @@ sprites_base_url =
     url -> url
   end
 
-config :fountain, :sprites_base_url, sprites_base_url
-
 # Bounds every HTTP call to the Sprites API. Long-running commands
 # (package installs, clones) pass their own per-call :timeout and are not
 # affected by this.
@@ -113,7 +109,13 @@ sprites_timeout_ms =
               inspect(System.get_env("SPRITES_TIMEOUT_MS"))
   end
 
-config :fountain, :sprites_timeout_ms, sprites_timeout_ms
+# The adapters read their settings from the sandbox library's own otp_app
+# (Managoat.Sandbox.Config, decisions/0037); the environment variables are
+# unchanged, only the key they land on.
+config :managoat_sandbox, Managoat.Sandbox.Sprites,
+  token: sprites_token,
+  base_url: sprites_base_url,
+  timeout_ms: sprites_timeout_ms
 
 # ── sandbox providers ────────────────────────────────────────────────────────
 #
@@ -159,10 +161,11 @@ e2b_user =
     user -> user
   end
 
-config :fountain, :e2b_api_key, e2b_api_key
-config :fountain, :e2b_base_url, e2b_base_url
-config :fountain, :e2b_template, e2b_template
-config :fountain, :e2b_user, e2b_user
+config :managoat_sandbox, Managoat.Sandbox.E2B,
+  api_key: e2b_api_key,
+  base_url: e2b_base_url,
+  template: e2b_template,
+  user: e2b_user
 
 daytona_snapshot =
   case System.get_env("DAYTONA_SNAPSHOT") do
@@ -170,9 +173,10 @@ daytona_snapshot =
     snapshot -> snapshot
   end
 
-config :fountain, :daytona_api_key, daytona_api_key
-config :fountain, :daytona_api_url, daytona_api_url
-config :fountain, :daytona_snapshot, daytona_snapshot
+config :managoat_sandbox, Managoat.Sandbox.Daytona,
+  api_key: daytona_api_key,
+  api_url: daytona_api_url,
+  snapshot: daytona_snapshot
 
 # Egress credential brokerage (ADR 0019, gate 1a). Blank means off: no broker
 # call is made, and every conversation provisions exactly as it did before
@@ -629,9 +633,14 @@ config :fountain,
 # Checkpoints (#1073). Off by default: a Sprites checkpoint is scoped to the
 # sprite that made it (#654), so what it buys is rolling a persistent home
 # back to its last park — and every park adds one, with no retention yet.
-config :fountain,
-       :checkpoint_creation_enabled,
-       System.get_env("CHECKPOINT_CREATION_ENABLED", "false") == "true"
+checkpoint_creation_enabled = System.get_env("CHECKPOINT_CREATION_ENABLED", "false") == "true"
+
+config :fountain, :checkpoint_creation_enabled, checkpoint_creation_enabled
+
+# The Sprites adapter advertises the :checkpoint capability only while this
+# is on (a Sprites checkpoint is scoped to the sprite that made it, #654).
+config :managoat_sandbox, Managoat.Sandbox.Sprites,
+  checkpoint_creation_enabled: checkpoint_creation_enabled
 
 # Webhooks (#700). On by default; a deployment with no outbound HTTP egress
 # can switch dispatch off entirely. WEBHOOK_ALLOW_HTTP relaxes the https-only

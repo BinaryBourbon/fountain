@@ -138,7 +138,7 @@ defmodule Fountain.Conversations.SandboxModeTest do
     {:ok, _} = Conversations.update_sandbox(old, %{status: "ready"})
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
-    stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
+    stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
     assert {:ok, woken} = Conversations.wake_conversation(conv.id)
     refute woken.sandbox_id == old.id
@@ -154,7 +154,7 @@ defmodule Fountain.Conversations.SandboxModeTest do
     home = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
     {:ok, _} = Conversations.update_sandbox(home, %{status: "ready"})
     test = self()
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
 
     assert {:ok, _} = Agents.delete_agent(ctx.agent)
     assert_received :destroyed

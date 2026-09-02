@@ -90,12 +90,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       # The server reads command.ref, so the spawn result must be a command struct
       # rather than a bare pid.
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: make_ref()}}
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: make_ref()}}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello there")
 
@@ -125,12 +125,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # so the registry genuinely cannot resolve them.
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: make_ref()}}
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: make_ref()}}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "first prompt")
 
@@ -342,7 +342,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     test "a failed provision lands in the scrape as provision/failed", %{conv: conv} do
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _name, _opts ->
         {:error, :quota_exceeded}
       end)
 
@@ -364,12 +364,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       cmd_ref = make_ref()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: cmd_ref}}
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: cmd_ref}}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       before_body = scrape_body()
 
@@ -445,7 +445,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     test "a sprite that cannot be created marks both rows failed", %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _name, _opts ->
         {:error, :quota_exceeded}
       end)
 
@@ -464,7 +464,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
         {:error, :apt_failed}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn handle ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
         send(test_pid, {:destroyed, handle.name})
         :ok
       end)
@@ -535,9 +535,9 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       test_pid = self()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :create, fn name, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :create, fn name, _opts ->
         send(test_pid, {:created, name})
-        {:ok, Fountain.Sandbox.Sprites.build_handle(name)}
+        {:ok, Managoat.Sandbox.Sprites.build_handle(name)}
       end)
 
       limited =
@@ -614,13 +614,13 @@ defmodule Fountain.Conversations.ConversationServerTest do
     } do
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:error, {:unavailable, %Req.TransportError{reason: :nxdomain}}}
       end)
 
       # The whole point: the disk is still there, so nothing may route it to
       # the reaper's destroy pass.
-      Mimic.reject(&Fountain.Sandbox.Sprites.destroy/1)
+      Mimic.reject(&Managoat.Sandbox.Sprites.destroy/1)
 
       {_pid, ref, _} = start_server(conv)
       assert :normal = assert_stopped(ref)
@@ -639,7 +639,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     test "a 5xx from the provider is transient too", %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:error, {:unavailable, {:http, 503, %{}}}}
       end)
 
@@ -657,7 +657,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # replaced is replaced before the announcement.
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:error, {:unavailable, %Req.TransportError{reason: :nxdomain}}}
       end)
 
@@ -696,7 +696,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       sandbox: sandbox
     } do
       stub_happy_sprite()
-      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
       {_pid, ref, _} = start_server(conv)
       assert :normal = assert_stopped(ref)
@@ -717,12 +717,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       ref = make_ref()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
       {pid, ref}
@@ -849,7 +849,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # conversation reporting "running" in the API and UI indefinitely.
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
         {:error, :econnrefused}
       end)
 
@@ -876,11 +876,11 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       dead_on_write = spawn(fn -> receive(do: (_ -> exit(:normal))) end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
         ref = make_ref()
 
         {:ok,
-         %Fountain.Sandbox.Command{
+         %Managoat.Sandbox.Command{
            provider: :sprites,
            ref: ref,
            private: %Sprites.Command{ref: ref, pid: dead_on_write, tty_mode: false}
@@ -927,9 +927,9 @@ defmodule Fountain.Conversations.ConversationServerTest do
           end
         end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
         {:ok,
-         %Fountain.Sandbox.Command{
+         %Managoat.Sandbox.Command{
            provider: :sprites,
            ref: ref,
            private: %Sprites.Command{ref: ref, pid: exits_1_on_write, tty_mode: false}
@@ -1120,7 +1120,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
          %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()
       test = self()
-      Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
 
       {pid, ref, :alive} = start_server(conv)
       key_id = Conversations._unsafe_get_conversation!(conv.id).callback_api_key_id
@@ -1150,12 +1150,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       ref = make_ref()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
 

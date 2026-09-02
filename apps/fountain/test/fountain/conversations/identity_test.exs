@@ -2,7 +2,7 @@ defmodule Fountain.Conversations.IdentityTest do
   use ExUnit.Case, async: true
 
   alias Fountain.Conversations.Identity
-  alias Fountain.Sandbox.Session
+  alias Managoat.Sandbox.Session
 
   @conv "0b0f6e1a-4d4c-4c1a-9a2b-3c4d5e6f7a8b"
   @other "ffffffff-1111-4222-8333-444444444444"

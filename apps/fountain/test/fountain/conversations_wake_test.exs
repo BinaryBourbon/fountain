@@ -60,7 +60,7 @@ defmodule Fountain.ConversationsWakeTest do
 
       fake_client = %{}
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:ok, %{status: :running, raw: %{name: "test-sprite-alive"}}}
       end)
 
@@ -85,7 +85,7 @@ defmodule Fountain.ConversationsWakeTest do
       winner = spawn(fn -> Process.sleep(:infinity) end)
       test_pid = self()
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:ok, %{status: :running, raw: %{name: "test-sprite-race"}}}
       end)
 
@@ -115,13 +115,13 @@ defmodule Fountain.ConversationsWakeTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:ok, %{status: :suspended, raw: %{name: "test-sprite-parked"}}}
       end)
 
       # resume/1 is the explicit wake call (a probe on Sprites); the adapter
       # is the stubbing seam, so it needs its own stub here.
-      stub(Fountain.Sandbox.Sprites, :resume, fn handle -> {:ok, handle} end)
+      stub(Managoat.Sandbox.Sprites, :resume, fn handle -> {:ok, handle} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
@@ -149,7 +149,7 @@ defmodule Fountain.ConversationsWakeTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :unknown, raw: %{}}} end)
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :unknown, raw: %{}}} end)
 
       assert {:error, {:sandbox_quota_exceeded, _}} = Conversations.wake_conversation(conv.id)
       # Refused means still parked — the row must not be half-woken.
@@ -166,7 +166,7 @@ defmodule Fountain.ConversationsWakeTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, {:unavailable, :timeout}} end)
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, {:unavailable, :timeout}} end)
 
       assert {:error, :sprite_probe_failed} = Conversations.wake_conversation(conv.id)
       assert Repo.reload(sandbox).status == "suspended"
@@ -183,7 +183,7 @@ defmodule Fountain.ConversationsWakeTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:error, {:unavailable, %Req.TransportError{reason: :nxdomain}}}
       end)
 
@@ -203,7 +203,7 @@ defmodule Fountain.ConversationsWakeTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
@@ -242,7 +242,7 @@ defmodule Fountain.ConversationsWakeTest do
           status: "terminated"
         )
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
@@ -275,7 +275,7 @@ defmodule Fountain.ConversationsWakeTest do
 
       fake_client = %{}
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}

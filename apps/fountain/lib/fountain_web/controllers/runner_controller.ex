@@ -108,7 +108,7 @@ defmodule FountainWeb.RunnerController do
     user = conn.assigns.current_user
 
     cond do
-      not Fountain.Sandbox.enabled?(:runner) ->
+      not Fountain.SandboxProviders.enabled?(:runner) ->
         conn
         |> put_status(:not_found)
         |> json(%{error: "runners_disabled", message: "self-hosted runners are disabled here"})

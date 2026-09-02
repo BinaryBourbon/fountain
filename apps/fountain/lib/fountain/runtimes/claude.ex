@@ -105,7 +105,8 @@ defmodule Fountain.Runtimes.Claude do
   def write_config(_handle, _agent), do: :ok
 
   defp write_retrying(handle, path, body) do
-    case Fountain.Retry.with_backoff(fn -> Fountain.Sandbox.write_file(handle, path, body) end,
+    case Managoat.Sandbox.Retry.with_backoff(
+           fn -> Managoat.Sandbox.write_file(handle, path, body) end,
            label: "claude config write #{path}"
          ) do
       :ok -> :ok

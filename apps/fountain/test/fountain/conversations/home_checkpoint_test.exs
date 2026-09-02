@@ -38,9 +38,9 @@ defmodule Fountain.Conversations.HomeCheckpointTest do
       b = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
       gone = insert_conversation(user_id: user.id, sandbox: sandbox, status: "terminated")
 
-      stub(Fountain.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
+      stub(Managoat.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
 
-      stub(Fountain.Sandbox, :create_checkpoint, fn handle, opts ->
+      stub(Managoat.Sandbox, :create_checkpoint, fn handle, opts ->
         assert handle.name == sandbox.sprite_name
         assert opts[:comment] == "home park #{sandbox.id}"
         {:ok, "v7"}
@@ -65,8 +65,8 @@ defmodule Fountain.Conversations.HomeCheckpointTest do
     test "keeps the rest of provider_meta" do
       user = insert_verified_user()
       sandbox = home(user, %{provider_meta: %{"public_url" => "https://x.example"}})
-      stub(Fountain.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
-      stub(Fountain.Sandbox, :create_checkpoint, fn _handle, _opts -> {:ok, "v1"} end)
+      stub(Managoat.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
+      stub(Managoat.Sandbox, :create_checkpoint, fn _handle, _opts -> {:ok, "v1"} end)
 
       assert {:ok, "v1"} = HomeCheckpoint.on_park(sandbox)
       assert Repo.reload(sandbox).provider_meta["public_url"] == "https://x.example"
@@ -75,8 +75,8 @@ defmodule Fountain.Conversations.HomeCheckpointTest do
     test "an ephemeral sandbox is never checkpointed" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready", mode: "ephemeral")
-      stub(Fountain.Sandbox, :supports?, fn _provider, :checkpoint -> true end)
-      reject(&Fountain.Sandbox.create_checkpoint/2)
+      stub(Managoat.Sandbox, :supports?, fn _provider, :checkpoint -> true end)
+      reject(&Managoat.Sandbox.create_checkpoint/2)
 
       assert :skipped = HomeCheckpoint.on_park(sandbox)
       assert Repo.reload(sandbox).provider_meta == %{}
@@ -85,8 +85,8 @@ defmodule Fountain.Conversations.HomeCheckpointTest do
     test "a provider without checkpoints is skipped" do
       user = insert_verified_user()
       sandbox = home(user, %{provider: "e2b"})
-      stub(Fountain.Sandbox, :supports?, fn :e2b, :checkpoint -> false end)
-      reject(&Fountain.Sandbox.create_checkpoint/2)
+      stub(Managoat.Sandbox, :supports?, fn :e2b, :checkpoint -> false end)
+      reject(&Managoat.Sandbox.create_checkpoint/2)
 
       assert :skipped = HomeCheckpoint.on_park(sandbox)
     end
@@ -95,9 +95,9 @@ defmodule Fountain.Conversations.HomeCheckpointTest do
       user = insert_verified_user()
       sandbox = home(user)
       conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
-      stub(Fountain.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
+      stub(Managoat.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
 
-      stub(Fountain.Sandbox, :create_checkpoint, fn _handle, _opts ->
+      stub(Managoat.Sandbox, :create_checkpoint, fn _handle, _opts ->
         {:error, {:invalid, "checkpoints disabled for this sprite"}}
       end)
 

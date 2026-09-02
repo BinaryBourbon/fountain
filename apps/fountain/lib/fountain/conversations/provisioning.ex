@@ -17,16 +17,16 @@ defmodule Fountain.Conversations.Provisioning do
   Each step is a no-op when the corresponding field is empty, so legacy
   environments with bare config (just a name) provision instantly.
 
-  Everything here talks to the sandbox through `Fountain.Sandbox`; nothing
+  Everything here talks to the sandbox through `Managoat.Sandbox`; nothing
   provider-shaped (rule structs, checkpoint streams) appears at this level.
   """
 
   alias Fountain.Conversations
   alias Fountain.Environments.Environment
-  alias Fountain.Retry
-  alias Fountain.Sandbox
-  alias Fountain.Sandbox.Handle
-  alias Fountain.Sandbox.NetworkPolicy
+  alias Managoat.Sandbox.Retry
+  alias Managoat.Sandbox
+  alias Managoat.Sandbox.Handle
+  alias Managoat.Sandbox.NetworkPolicy
 
   require Logger
 
@@ -96,7 +96,7 @@ defmodule Fountain.Conversations.Provisioning do
   isn't gated on the checkpoint upload.
 
   The provider-specific mechanics (stream draining, id resolution) live in
-  the adapter; `Fountain.Sandbox.create_checkpoint/2` returns only when the
+  the adapter; `Managoat.Sandbox.create_checkpoint/2` returns only when the
   checkpoint durably exists, with its id.
   """
   def create_checkpoint(_handle, nil), do: {:error, :no_env}
@@ -470,7 +470,7 @@ defmodule Fountain.Conversations.Provisioning do
   Apply the env's networking config to the sandbox. `unrestricted` is a
   no-op (sandboxes are open by default). `limited` builds an allowlist from
   `networking_config.allowed_hosts: [...]` and applies it as a default-deny
-  `Fountain.Sandbox.NetworkPolicy` — an empty/absent allowlist therefore
+  `Managoat.Sandbox.NetworkPolicy` — an empty/absent allowlist therefore
   denies all egress. Translating that intent into provider mechanics
   (including Sprites' rules-empty-means-allow-all quirk) is the adapter's
   job.

@@ -8,12 +8,12 @@ defmodule Fountain.Runtimes.ClaudeTest do
   use Mimic
 
   alias Fountain.Runtimes.Claude
-  alias Fountain.Sandbox
+  alias Managoat.Sandbox
 
   setup :set_mimic_from_context
 
   setup do
-    Mimic.copy(Fountain.Sandbox)
+    Mimic.copy(Managoat.Sandbox)
     handle = %Sandbox.Handle{provider: :fake, name: "sb"}
     {:ok, handle: handle}
   end
@@ -31,7 +31,7 @@ defmodule Fountain.Runtimes.ClaudeTest do
   } do
     test = self()
 
-    Mimic.stub(Fountain.Sandbox, :write_file, fn _h, path, body ->
+    Mimic.stub(Managoat.Sandbox, :write_file, fn _h, path, body ->
       send(test, {:wrote, path, body})
       :ok
     end)
@@ -55,10 +55,10 @@ defmodule Fountain.Runtimes.ClaudeTest do
   test "a transient write error is retried, then the config lands", %{handle: handle} do
     # The first filesystem call into a freshly created sprite timed out once
     # in prod and, with no retry, failed the whole provision. Both writes are
-    # idempotent, so they go through Fountain.Retry.
+    # idempotent, so they go through Managoat.Sandbox.Retry.
     {:ok, calls} = Agent.start_link(fn -> 0 end)
 
-    Mimic.stub(Fountain.Sandbox, :write_file, fn _h, _path, _body ->
+    Mimic.stub(Managoat.Sandbox, :write_file, fn _h, _path, _body ->
       case Agent.get_and_update(calls, &{&1, &1 + 1}) do
         0 -> {:error, {:unavailable, %Req.TransportError{reason: :timeout}}}
         _ -> :ok
@@ -70,7 +70,7 @@ defmodule Fountain.Runtimes.ClaudeTest do
   end
 
   test "a write that keeps failing is a tagged error, not a crash", %{handle: handle} do
-    Mimic.stub(Fountain.Sandbox, :write_file, fn _h, _path, _body ->
+    Mimic.stub(Managoat.Sandbox, :write_file, fn _h, _path, _body ->
       {:error, {:unavailable, %Req.TransportError{reason: :timeout}}}
     end)
 

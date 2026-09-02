@@ -48,7 +48,7 @@ defmodule Fountain.Conversations.OrphanedHomeTest do
 
   defp expect_destroy do
     test = self()
-    stub(Fountain.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
   end
 
   describe "the agent's environment changes" do
@@ -352,7 +352,7 @@ defmodule Fountain.Conversations.OrphanedHomeTest do
 
   describe "a provider that cannot destroy" do
     test "the row still retires, so the reaper sees a terminal row", ctx do
-      stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> {:error, :boom} end)
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> {:error, :boom} end)
       old = home(ctx)
 
       assert {:ok, _} = Agents.update_agent(ctx.agent, %{"environment_id" => ctx.other_env.id})

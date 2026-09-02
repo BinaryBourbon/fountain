@@ -1,6 +1,6 @@
 defmodule Fountain.Sandbox.Runner do
   @moduledoc """
-  The self-hosted runner adapter: `Fountain.Sandbox` implemented as RPCs to a
+  The self-hosted runner adapter: `Managoat.Sandbox` implemented as RPCs to a
   `fountain runner` daemon on a machine the user owns (ADR 0022).
 
   Everything runner-shaped lives here and in `Fountain.Runners.Connection`:
@@ -21,14 +21,14 @@ defmodule Fountain.Sandbox.Runner do
       network; `apply_network_policy/2` refuses rather than pretending.
   """
 
-  @behaviour Fountain.Sandbox
+  @behaviour Managoat.Sandbox
 
   alias Fountain.Runners
   alias Fountain.Runners.Connection
-  alias Fountain.Sandbox.Command
-  alias Fountain.Sandbox.Handle
-  alias Fountain.Sandbox.NetworkPolicy
-  alias Fountain.Sandbox.Session
+  alias Managoat.Sandbox.Command
+  alias Managoat.Sandbox.Handle
+  alias Managoat.Sandbox.NetworkPolicy
+  alias Managoat.Sandbox.Session
 
   @impl true
   def provider, do: :runner

@@ -13,14 +13,14 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
     stub_happy_sprite()
     test_pid = self()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn handle ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
       send(test_pid, {:sprite_destroyed, handle.name})
       :ok
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :create, fn name, _opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :create, fn name, _opts ->
       send(test_pid, {:sprite_created, name})
-      {:ok, Fountain.Sandbox.Sprites.build_handle(name)}
+      {:ok, Managoat.Sandbox.Sprites.build_handle(name)}
     end)
 
     user = insert_verified_user()
@@ -43,7 +43,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
     stub_happy_sprite()
     test_pid = self()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _handle ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _handle ->
       send(test_pid, :sprite_destroyed)
       :ok
     end)
@@ -62,7 +62,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
 
   test "a destroy that fails does not block the rebuild" do
     stub_happy_sprite()
-    Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> {:error, :not_found} end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> {:error, :not_found} end)
 
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")

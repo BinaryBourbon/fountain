@@ -30,8 +30,8 @@ defmodule Fountain.Workers.SandboxReaperTest do
   end
 
   defp stub_sprites(names) do
-    stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:ok, MapSet.new(names)} end)
-    stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> :client end)
+    stub(Managoat.Sandbox.Sprites.Client, :list_all_names, fn -> {:ok, MapSet.new(names)} end)
+    stub(Managoat.Sandbox.Sprites.Client, :get!, fn -> :client end)
   end
 
   defp capture_destroys do
@@ -197,8 +197,8 @@ defmodule Fountain.Workers.SandboxReaperTest do
       sandbox = age_rows(sandbox, conv, 60 * 5)
 
       capture_destroys()
-      stub(Fountain.Sandbox, :supports?, fn :sprites, cap -> cap in [:suspend, :checkpoint] end)
-      stub(Fountain.Sandbox, :create_checkpoint, fn _handle, _opts -> {:ok, "v2"} end)
+      stub(Managoat.Sandbox, :supports?, fn :sprites, cap -> cap in [:suspend, :checkpoint] end)
+      stub(Managoat.Sandbox, :create_checkpoint, fn _handle, _opts -> {:ok, "v2"} end)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         capture_log(fn -> assert {1, 0} = SandboxReaper.sweep_abandoned_sandboxes() end)
@@ -218,8 +218,8 @@ defmodule Fountain.Workers.SandboxReaperTest do
       sandbox = age_rows(sandbox, conv, 60 * 5)
 
       capture_destroys()
-      stub(Fountain.Sandbox, :supports?, fn :sprites, cap -> cap in [:suspend, :checkpoint] end)
-      reject(&Fountain.Sandbox.create_checkpoint/2)
+      stub(Managoat.Sandbox, :supports?, fn :sprites, cap -> cap in [:suspend, :checkpoint] end)
+      reject(&Managoat.Sandbox.create_checkpoint/2)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         capture_log(fn -> assert {1, 0} = SandboxReaper.sweep_abandoned_sandboxes() end)
@@ -461,7 +461,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       # The quota fix needs no network, so it must not be held hostage to the
       # API being up. Returning an error lets Oban retry the rest.
       sandbox = insert_sandbox(status: "pending") |> age_sandbox(120)
-      stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:error, :nxdomain} end)
+      stub(Managoat.Sandbox.Sprites.Client, :list_all_names, fn -> {:error, :nxdomain} end)
 
       capture_log(fn ->
         # The adapter normalizes unknown transport reasons into the sandbox
@@ -477,7 +477,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       # view as complete would make every unlisted sprite look like it had
       # already been destroyed.
       sandbox = insert_sandbox(status: "terminated")
-      stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:error, :truncated} end)
+      stub(Managoat.Sandbox.Sprites.Client, :list_all_names, fn -> {:error, :truncated} end)
       capture_destroys()
 
       capture_log(fn -> assert {:error, :truncated} = perform_job(SandboxReaper, %{}) end)

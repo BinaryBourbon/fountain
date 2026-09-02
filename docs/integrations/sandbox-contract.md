@@ -1,11 +1,13 @@
 # The sandbox contract
 
 Each conversation runs in a sandbox, and each sandbox backend plugs into the
-same seam, the `Fountain.Sandbox` behaviour. There is one contract that a
-provider must meet, and it is executable.
+same seam, the `Managoat.Sandbox` behaviour. There is one contract that a
+provider must meet, and it is executable. The behaviour, the three hosted
+adapters and the conformance suite ship as the `managoat_sandbox` library
+(Apache-2.0) in the Fountain repository, under `apps/managoat_sandbox`.
 
 The behaviour's moduledoc specifies the callbacks, the capabilities and the
-error taxonomy. `Fountain.SandboxConformanceCase` is the conformance suite
+error taxonomy. `Managoat.Sandbox.ConformanceCase` is the conformance suite
 that each adapter must pass. It covers replay-from-start attach, total
 `write_stdin`, exactly one terminal frame for each command, `allow: []` as
 deny-all, and more.

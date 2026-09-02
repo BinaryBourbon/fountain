@@ -44,6 +44,13 @@ fountain/                  umbrella root
                            namespace, no reference back into Fountain. Each is
                            an in_umbrella dep of fountain until it graduates to
                            a managoat/<name> repo. See CONTRIBUTING.md.
+      managoat_substitution/   Managoat.Substitution (${VAR} engine)
+      managoat_sandbox/        Managoat.Sandbox: the sandbox behaviour, the
+                               Sprites/E2B/Daytona adapters, Retry, the Fake
+                               and the conformance case. The runner adapter
+                               (Fountain.Sandbox.Runner) and the "which
+                               providers are enabled here" policy
+                               (Fountain.SandboxProviders) stay in fountain.
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is

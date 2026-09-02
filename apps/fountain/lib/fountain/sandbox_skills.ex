@@ -28,7 +28,7 @@ defmodule Fountain.SandboxSkills do
   require Logger
 
   alias Fountain.Runtimes
-  alias Fountain.Sandbox
+  alias Managoat.Sandbox
 
   @bundle_root "sprite_skills"
   @fountain_skill_name "fountain"

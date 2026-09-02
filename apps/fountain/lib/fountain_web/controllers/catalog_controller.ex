@@ -45,8 +45,8 @@ defmodule FountainWeb.CatalogController do
         models: Map.new(runtimes, &{&1, Model.suggestions(&1)}),
         model_providers: Model.providers(),
         sandbox_providers: %{
-          enabled: Enum.map(Fountain.Sandbox.enabled_providers(), &Atom.to_string/1),
-          default: Atom.to_string(Fountain.Sandbox.default_provider())
+          enabled: Enum.map(Fountain.SandboxProviders.enabled_providers(), &Atom.to_string/1),
+          default: Atom.to_string(Fountain.SandboxProviders.default_provider())
         },
         package_managers: Fountain.Conversations.Provisioning.package_managers(),
         avatar: %{

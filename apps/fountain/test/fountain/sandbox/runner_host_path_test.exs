@@ -2,13 +2,13 @@ defmodule Fountain.Sandbox.RunnerHostPathTest do
   @moduledoc """
   The ACP `cwd` is validated in band by the agent CLI against the real
   filesystem, so on a runner it must be the sandbox's real directory, not the
-  literal `/home/sprite` (ADR 0022). `Fountain.Sandbox.host_path/2` resolves
+  literal `/home/sprite` (ADR 0022). `Managoat.Sandbox.host_path/2` resolves
   it; it is the identity on providers where sandbox paths are already real.
   """
   use Fountain.DataCase, async: true
 
   alias Fountain.Runners.FakeDaemon
-  alias Fountain.Sandbox
+  alias Managoat.Sandbox
 
   @runner_id "0f0e0d0c-0b0a-4908-8706-050403020100"
   @user_id "11111111-2222-4333-8444-555555555555"

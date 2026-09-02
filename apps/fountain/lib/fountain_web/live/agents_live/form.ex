@@ -27,7 +27,7 @@ defmodule FountainWeb.AgentsLive.Form do
      )
      |> assign(:credential_message, nil)
      |> assign(:envs, envs)
-     |> assign(:sandbox_providers, Fountain.Sandbox.enabled_providers())
+     |> assign(:sandbox_providers, Fountain.SandboxProviders.enabled_providers())
      |> assign(:action, action)
      |> assign(:agent, agent)
      |> assign(:form, agent_to_form(agent))
@@ -750,7 +750,9 @@ defmodule FountainWeb.AgentsLive.Form do
             name="agent[sandbox_provider]"
             class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
           >
-            <option value="">Instance default ({Fountain.Sandbox.default_provider()})</option>
+            <option value="">
+              Instance default ({Fountain.SandboxProviders.default_provider()})
+            </option>
             <option
               :for={p <- @sandbox_providers}
               value={p}
@@ -1393,13 +1395,13 @@ defmodule FountainWeb.AgentsLive.Form do
     provider =
       case provider_str do
         p when is_binary(p) and p != "" -> safe_provider(p)
-        _ -> Fountain.Sandbox.default_provider()
+        _ -> Fountain.SandboxProviders.default_provider()
       end
 
     env = provider && Enum.find(envs, &(&1.id == env_id))
 
     if env && env.networking_type == "limited" &&
-         not Fountain.Sandbox.supports?(provider, :network_policy) do
+         not Managoat.Sandbox.supports?(provider, :network_policy) do
       to_string(provider)
     end
   end
@@ -1409,7 +1411,7 @@ defmodule FountainWeb.AgentsLive.Form do
   # agent on a provider the operator has since switched off still shows the
   # pairing it will fail on.
   defp safe_provider(str) do
-    if str in Fountain.Sandbox.known_providers(), do: String.to_existing_atom(str)
+    if str in Fountain.SandboxProviders.known_providers(), do: String.to_existing_atom(str)
   end
 
   attr :missing, :any, required: true

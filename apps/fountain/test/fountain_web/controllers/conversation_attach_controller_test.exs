@@ -42,7 +42,7 @@ defmodule FountainWeb.ConversationAttachControllerTest do
   test "with a prompt, the first turn goes through the wake path", ctx do
     # A `ready` machine with no server: the prompt probes it and starts a
     # server, exactly as prompting a parked conversation does.
-    stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :running, raw: %{}}} end)
+    stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :running, raw: %{}}} end)
     stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
     data =

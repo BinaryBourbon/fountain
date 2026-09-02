@@ -6,7 +6,7 @@ defmodule Fountain.Runtimes.InstructionsTest do
 
   setup :verify_on_exit!
 
-  @handle %Fountain.Sandbox.Handle{provider: :sprites, name: "fountain-test"}
+  @handle %Managoat.Sandbox.Handle{provider: :sprites, name: "fountain-test"}
 
   test "each ACP runtime has a user-level instructions file; unknown runtimes none" do
     assert Instructions.path("claude") == "/home/sprite/.claude/CLAUDE.md"
@@ -25,7 +25,7 @@ defmodule Fountain.Runtimes.InstructionsTest do
   end
 
   test "writes the prompt verbatim, with a provenance header, to the runtime's file" do
-    expect(Fountain.Sandbox.Sprites, :write_file, fn @handle,
+    expect(Managoat.Sandbox.Sprites, :write_file, fn @handle,
                                                      "/home/sprite/.claude/CLAUDE.md",
                                                      body,
                                                      _opts ->
@@ -43,7 +43,7 @@ defmodule Fountain.Runtimes.InstructionsTest do
   end
 
   test "a blank or missing prompt writes nothing" do
-    reject(&Fountain.Sandbox.Sprites.write_file/4)
+    reject(&Managoat.Sandbox.Sprites.write_file/4)
     assert :ok = Instructions.write(@handle, "claude", %{name: "x", system: "   \n"})
     assert :ok = Instructions.write(@handle, "claude", %{name: "x", system: nil})
     assert :ok = Instructions.write(@handle, "claude", nil)
@@ -51,7 +51,7 @@ defmodule Fountain.Runtimes.InstructionsTest do
   end
 
   test "a refused write is reported, not raised" do
-    expect(Fountain.Sandbox.Sprites, :write_file, fn _h, _p, _b, _o -> {:error, :boom} end)
+    expect(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _b, _o -> {:error, :boom} end)
     assert {:error, :boom} = Instructions.write(@handle, "codex", %{name: "x", system: "hi"})
   end
 end

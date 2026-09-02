@@ -27,7 +27,7 @@ defmodule Fountain.Conversations.Identity do
     * **A session names its conversation.** `tag_command/3` wraps the spawn as
       `env FOUNTAIN_CONVERSATION_ID=<id> <cmd> <args…>`, so the tag is in the
       command line every provider reports for a detachable session
-      (`Fountain.Sandbox.Session.command`) *and* the process gets the variable
+      (`Managoat.Sandbox.Session.command`) *and* the process gets the variable
       from the same line. No argv is added to the adapter itself, which would
       reject it.
 
@@ -39,7 +39,7 @@ defmodule Fountain.Conversations.Identity do
       contract, and a session that carries someone else's tag is never taken.
   """
 
-  alias Fountain.Sandbox.Session
+  alias Managoat.Sandbox.Session
 
   @tag_key "FOUNTAIN_CONVERSATION_ID"
 

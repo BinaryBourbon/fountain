@@ -33,7 +33,7 @@ defmodule Fountain.Conversations.ConversationServerInstructionsTest do
   defp capture_writes do
     test = self()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _handle, path, data, _opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _handle, path, data, _opts ->
       send(test, {:wrote, path, data})
       :ok
     end)

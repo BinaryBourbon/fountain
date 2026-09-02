@@ -49,17 +49,17 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     test = self()
     ref = make_ref()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
       send(test, {:spawned, cmd, args, opts})
-      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c ->
       send(test, :stdin_closed)
       :ok
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, data ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, data ->
       send(test, {:wrote, IO.iodata_to_binary(data)})
       :ok
     end)
@@ -860,19 +860,19 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       test = self()
       ref = make_ref()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _c, _a, _o ->
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _c, _a, _o ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, data ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, data ->
         send(test, {:wrote, IO.iodata_to_binary(data)})
         :ok
       end)
 
       # Nothing should be written into the sandbox filesystem for an ACP turn.
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, path, _contents, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, path, _contents, _opts ->
         send(test, {:fs_write, path})
         :ok
       end)
@@ -930,25 +930,25 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       test = self()
       ref = make_ref()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
-        {:ok, [%Fountain.Sandbox.Session{id: "9350"}]}
+      Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _h ->
+        {:ok, [%Managoat.Sandbox.Session{id: "9350"}]}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, "9350", _opts ->
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      Mimic.stub(Managoat.Sandbox.Sprites, :attach, fn _h, "9350", _opts ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, data ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, data ->
         send(test, {:wrote, IO.iodata_to_binary(data)})
         :ok
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c ->
         send(test, :stdin_closed)
         :ok
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :stop_command, fn _c ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :stop_command, fn _c ->
         send(test, :command_stopped)
         :ok
       end)

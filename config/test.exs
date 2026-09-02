@@ -13,6 +13,7 @@ config :fountain, FountainWeb.Endpoint,
 
 config :fountain, :skip_rehydrate, true
 config :fountain, :checkpoint_creation_enabled, false
+config :managoat_sandbox, Managoat.Sandbox.Sprites, checkpoint_creation_enabled: false
 
 # Skip the Ueberauth plug so tests can set :ueberauth_auth/:ueberauth_failure
 # directly without triggering a real OAuth network round-trip.
@@ -58,9 +59,9 @@ config :fountain, :rate_limit_test_isolation, true
 # ownership; keep it off here (Fountain.Funnel is tested directly).
 config :fountain, :funnel_poller_enabled, false
 
-# Fountain.Retry sleeps between attempts; 1ms keeps retry-path tests fast
-# without changing the retry logic under test.
-config :fountain, :retry_base_ms, 1
+# Managoat.Sandbox.Retry sleeps between attempts; 1ms keeps retry-path tests
+# fast without changing the retry logic under test.
+config :managoat_sandbox, Managoat.Sandbox.Retry, base_ms: 1
 
 # The registry settle window (#800) is a real-time wait; keep tests brisk.
 config :fountain, :conversation_registry_settle_ms, 150

@@ -17,12 +17,12 @@ defmodule Fountain.Runtimes.ACP.PeerMcpTest do
   setup do
     test = self()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _command, data ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _command, data ->
       send(test, {:wrote, IO.iodata_to_binary(data)})
       :ok
     end)
 
-    {:ok, ref: make_ref(), command: %Fountain.Sandbox.Command{provider: :sprites, ref: :fake}}
+    {:ok, ref: make_ref(), command: %Managoat.Sandbox.Command{provider: :sprites, ref: :fake}}
   end
 
   @fs %{name: "fs", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "."]}

@@ -10,10 +10,10 @@ defmodule Fountain.Conversations.SandboxURLTest do
   use Fountain.DataCase, async: true
 
   alias Fountain.Conversations
-  alias Fountain.Sandbox
+  alias Managoat.Sandbox
 
   setup do
-    Fountain.Sandbox.Fake.reset()
+    Managoat.Sandbox.Fake.reset()
     user = insert_verified_user()
     {:ok, user: user}
   end
@@ -23,7 +23,7 @@ defmodule Fountain.Conversations.SandboxURLTest do
     # a deployment target), so this goes through the adapter directly — the
     # facade's dispatch is covered by the providers below.
     test "an adapter that advertises :public_url reports one" do
-      alias Fountain.Sandbox.Fake
+      alias Managoat.Sandbox.Fake
 
       name = "url-test-#{System.unique_integer([:positive])}"
       {:ok, handle} = Fake.create(name, [])

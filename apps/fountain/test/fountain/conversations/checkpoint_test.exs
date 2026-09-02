@@ -21,8 +21,8 @@ defmodule Fountain.Conversations.CheckpointTest do
   # stubs below, so these fixtures keep pinning the shapes the library
   # really returns.
   defp handle(name \\ "s") do
-    Mimic.stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{token: "test"} end)
-    Fountain.Sandbox.Sprites.build_handle(name)
+    Mimic.stub(Managoat.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{token: "test"} end)
+    Managoat.Sandbox.Sprites.build_handle(name)
   end
 
   # Verbatim from a live sprite (2026-08-10). The id appears only inside `data`.

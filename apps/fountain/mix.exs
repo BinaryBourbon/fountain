@@ -52,6 +52,7 @@ defmodule Fountain.MixProject do
       # requirement. umbrella_layout_test.exs checks every apps/managoat_*
       # directory is listed here.
       {:managoat_substitution, in_umbrella: true},
+      {:managoat_sandbox, in_umbrella: true},
       {:sentry, "~> 13.3"},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.5"},
@@ -71,11 +72,6 @@ defmodule Fountain.MixProject do
       {:bandit, "~> 1.5"},
       {:remote_ip, "~> 1.2"},
       {:oban, "~> 2.19"},
-      # Upstream, at the tag. The `ravi-hq` fork this used to pin existed for
-      # the filesystem URL fix (/v1/sprites/<name>/fs/*) and the
-      # attach_session URL fix; both are upstream as of v0.2.0, and the fork
-      # branched before the exit-frame fixes that #880 needed.
-      {:sprites, github: "superfly/sprites-ex", tag: "v0.2.0"},
       {:open_api_spex, "~> 3.21"},
       {:libcluster, "~> 3.4"},
       {:horde, "~> 0.10.0"},

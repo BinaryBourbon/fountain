@@ -4,12 +4,12 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
   alias Fountain.Conversations.Provisioning
 
-  # Full-stack: Provisioning -> Fountain.Sandbox facade -> real Sprites
+  # Full-stack: Provisioning -> Managoat.Sandbox facade -> real Sprites
   # adapter -> stubbed SDK, so the provider-quirk pins below still assert
   # the exact wire shapes Sprites receives.
   defp sandbox_handle(name \\ "test-sprite") do
-    stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{token: "test"} end)
-    Fountain.Sandbox.Sprites.build_handle(name)
+    stub(Managoat.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{token: "test"} end)
+    Managoat.Sandbox.Sprites.build_handle(name)
   end
 
   describe "apply_network_policy/3 — limited networking" do
@@ -143,13 +143,13 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
       stub(Fountain.Broker, :proxy_host, fn -> "broker.example" end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :apply_network_policy, fn _handle, policy ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :apply_network_policy, fn _handle, policy ->
         send(test, {:policy, policy})
         :ok
       end)
 
       assert :ok = Provisioning.apply_broker_floor(sandbox_handle(), conv.id)
-      assert_received {:policy, %Fountain.Sandbox.NetworkPolicy{allow: ["broker.example"]}}
+      assert_received {:policy, %Managoat.Sandbox.NetworkPolicy{allow: ["broker.example"]}}
 
       assert [started, done] = stage_events(conv.id, "network")
       assert %{"type" => "broker"} = Jason.decode!(started.data)
@@ -164,12 +164,12 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, path, data, opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, path, data, opts ->
         send(test, {:wrote, path, data, opts})
         :ok
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _h, cmd, args, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, cmd, args, _opts ->
         send(test, {:exec, cmd, args})
         {:ok, "Updating certificates... 1 added", 0}
       end)
@@ -194,9 +194,9 @@ defmodule Fountain.Conversations.ProvisioningTest do
       test = self()
 
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _h, _cmd, [_, script], _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _cmd, [_, script], _opts ->
         send(test, {:script, script})
         {:ok, "", 0}
       end)
@@ -215,8 +215,8 @@ defmodule Fountain.Conversations.ProvisioningTest do
       conv = insert_conversation()
 
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
-      Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _h, _c, _a, _o -> {:ok, "no sudo", 1} end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _c, _a, _o -> {:ok, "no sudo", 1} end)
 
       assert {:error, {:broker, :ca_install_exit, 1, "no sudo"}} =
                Provisioning.install_broker_ca(sandbox_handle(), conv.id)
@@ -231,7 +231,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
       env = insert_env(%{"networking_type" => "limited"})
       conv = insert_conversation()
 
-      refute Fountain.Sandbox.supports?(:runner, :network_policy)
+      refute Managoat.Sandbox.supports?(:runner, :network_policy)
 
       assert {:error, {:network_policy, :unsupported_by_backend}} =
                Provisioning.check_network_policy_support(:runner, env, conv.id)
@@ -250,7 +250,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
       env = insert_env(%{"networking_type" => "limited"})
       conv = insert_conversation()
 
-      assert Fountain.Sandbox.supports?(:sprites, :network_policy)
+      assert Managoat.Sandbox.supports?(:sprites, :network_policy)
       assert :ok = Provisioning.check_network_policy_support(:sprites, env, conv.id)
       assert stage_events(conv.id, "network") == []
     end

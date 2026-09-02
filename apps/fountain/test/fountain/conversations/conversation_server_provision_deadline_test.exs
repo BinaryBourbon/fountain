@@ -104,7 +104,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     test_pid = self()
 
     # Count every sprite creation across all processes (global mode).
-    Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _name, _opts ->
       send(test_pid, :sprite_created)
       {:ok, handle}
     end)

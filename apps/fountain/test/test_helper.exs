@@ -7,14 +7,14 @@ if Process.whereis(Fountain.Repo) do
 end
 
 # Mimic copies modules so tests can stub/expect their functions. The sandbox
-# seam is Fountain.Sandbox.Sprites (the adapter behind the Fountain.Sandbox
-# facade); the raw SDK copies below it exist only for the adapter's own unit
-# tests and the full-stack provisioning/checkpoint pins.
-Mimic.copy(Fountain.Sandbox)
-Mimic.copy(Fountain.Sandbox.Sprites)
+# seam is Managoat.Sandbox.Sprites (the adapter behind the Managoat.Sandbox
+# facade, from apps/managoat_sandbox); the raw SDK copies below it exist for
+# the full-stack provisioning/checkpoint pins. The adapters' own unit tests
+# live in the library and copy what they stub in its test_helper.
+Mimic.copy(Managoat.Sandbox)
+Mimic.copy(Managoat.Sandbox.Sprites)
 Mimic.copy(Fountain.AvatarGenerator)
-Mimic.copy(Fountain.Sandbox.Sprites.Client)
-Mimic.copy(Fountain.Sandbox.Daytona.LogStream)
+Mimic.copy(Managoat.Sandbox.Sprites.Client)
 Mimic.copy(Sprites)
 Mimic.copy(Sprites.Filesystem)
 Mimic.copy(Horde.DynamicSupervisor)

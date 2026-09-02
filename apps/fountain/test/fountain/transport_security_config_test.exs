@@ -36,10 +36,16 @@ defmodule Fountain.TransportSecurityConfigTest do
     {:ok, base: Map.put(@base, "MASTER_SECRETS_KEY", key)}
   end
 
-  defp read_prod(env) do
+  defp read_prod(env), do: read_all(env)[:fountain]
+
+  # The Sprites adapter reads its settings from the sandbox library's otp_app
+  # (Managoat.Sandbox.Config), not from :fountain.
+  defp read_sprites(env), do: read_all(env)[:managoat_sandbox][Managoat.Sandbox.Sprites]
+
+  defp read_all(env) do
     for k <- @vars, do: System.delete_env(k)
     System.put_env(env)
-    Config.Reader.read!(@runtime_exs, env: :prod)[:fountain]
+    Config.Reader.read!(@runtime_exs, env: :prod)
   end
 
   describe "over https" do
@@ -132,8 +138,8 @@ defmodule Fountain.TransportSecurityConfigTest do
 
   describe "SPRITES_BASE_URL" do
     test "defaults to the hosted endpoint", %{base: base} do
-      config = read_prod(Map.put(base, "PUBLIC_URL", "https://f.example.com"))
-      assert config[:sprites_base_url] == "https://api.sprites.dev"
+      config = read_sprites(Map.put(base, "PUBLIC_URL", "https://f.example.com"))
+      assert config[:base_url] == "https://api.sprites.dev"
     end
 
     test "can be repointed", %{base: base} do
@@ -143,9 +149,9 @@ defmodule Fountain.TransportSecurityConfigTest do
           "PUBLIC_URL" => "https://f.example.com",
           "SPRITES_BASE_URL" => "http://sprites.internal:8080"
         })
-        |> read_prod()
+        |> read_sprites()
 
-      assert config[:sprites_base_url] == "http://sprites.internal:8080"
+      assert config[:base_url] == "http://sprites.internal:8080"
     end
   end
 end

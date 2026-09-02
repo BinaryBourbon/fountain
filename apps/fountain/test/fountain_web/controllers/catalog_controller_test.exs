@@ -16,7 +16,7 @@ defmodule FountainWeb.CatalogControllerTest do
     assert Enum.all?(data["models"]["opencode"], &String.contains?(&1, "/"))
     assert data["model_providers"] == Fountain.Runtimes.Model.providers()
     assert is_list(data["sandbox_providers"]["enabled"])
-    assert data["sandbox_providers"]["default"] in Fountain.Sandbox.known_providers()
+    assert data["sandbox_providers"]["default"] in Fountain.SandboxProviders.known_providers()
     assert data["package_managers"] == ["apt", "npm"]
 
     assert data["avatar"] == %{

@@ -304,7 +304,7 @@ to divide that word first.
 
 ## How to test a platform against it
 
-`Fountain.SandboxConformanceCase` is a real test suite, and not a checklist.
+`Managoat.Sandbox.ConformanceCase` is a real test suite, and not a checklist.
 An in-memory reference adapter passes it in full, and it pins each semantic
 above, the byte-exact replay test with them.
 

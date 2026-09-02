@@ -402,7 +402,7 @@ defmodule Fountain.Runtimes.ACP do
     "$bin" --version >/dev/null
     """
 
-    case Fountain.Sandbox.exec(handle, "bash", ["-lc", script],
+    case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
            env: sprite_env,
            timeout: 180_000
          ) do

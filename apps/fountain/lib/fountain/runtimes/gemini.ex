@@ -88,8 +88,8 @@ defmodule Fountain.Runtimes.Gemini do
     # Idempotent, so a transport blip on a fresh sprite is retried; a write
     # that still fails is reported, not swallowed — the agent would otherwise
     # start with none of its servers and no record of why.
-    case Fountain.Retry.with_backoff(
-           fn -> Fountain.Sandbox.write_file(handle, @settings, payload) end,
+    case Managoat.Sandbox.Retry.with_backoff(
+           fn -> Managoat.Sandbox.write_file(handle, @settings, payload) end,
            label: "gemini config write"
          ) do
       :ok -> :ok
@@ -117,7 +117,7 @@ defmodule Fountain.Runtimes.Gemini do
     # be on disk before the first turn ends, since that is when it first runs.
     _ = Fountain.Runtimes.Gemini.SessionStore.install(handle)
 
-    case Fountain.Sandbox.exec(handle, "bash", ["-lc", script],
+    case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
            env: sprite_env,
            timeout: 30_000
          ) do
