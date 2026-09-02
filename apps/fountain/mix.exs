@@ -51,6 +51,7 @@ defmodule Fountain.MixProject do
       # repository once its surface stops moving; the line then becomes a hex
       # requirement. umbrella_layout_test.exs checks every apps/managoat_*
       # directory is listed here.
+      {:managoat_mcp_auth, in_umbrella: true},
       {:managoat_substitution, in_umbrella: true},
       {:managoat_sandbox, in_umbrella: true},
       {:sentry, "~> 13.3"},

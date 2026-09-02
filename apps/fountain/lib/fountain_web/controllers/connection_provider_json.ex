@@ -2,7 +2,8 @@ defmodule FountainWeb.ConnectionProviderJSON do
   @moduledoc "JSON views for connection providers (#1186). Never a client secret."
 
   alias Fountain.Connections
-  alias Fountain.Connections.{OAuth, Provider, UrlGuard}
+  alias Fountain.Connections.{OAuth, Provider}
+  alias Managoat.McpAuth.UrlGuard
 
   def index(%{providers: providers}), do: %{data: Enum.map(providers, &summary/1)}
 

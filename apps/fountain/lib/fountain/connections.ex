@@ -48,7 +48,8 @@ defmodule Fountain.Connections do
   import Ecto.Query, warn: false
 
   alias Fountain.{Audit, Crypto, Repo}
-  alias Fountain.Connections.{Connection, McpDiscovery, OAuth, Platform, Provider}
+  alias Fountain.Connections.{Connection, OAuth, Platform, Provider}
+  alias Managoat.McpAuth
 
   # How close to expiry a token is considered stale. A turn may run for a
   # while on the token it started with, so refresh well ahead.
@@ -181,7 +182,7 @@ defmodule Fountain.Connections do
   # registration is never shared between providers: it names one redirect
   # URI, this provider's, and a conforming AS refuses any other.
   defp discovered_attrs(_user_id, mcp_url, redirect_uri, attrs) do
-    with {:ok, md} <- McpDiscovery.discover(mcp_url) do
+    with {:ok, md} <- McpAuth.discover(mcp_url) do
       host = URI.parse(mcp_url).host
       manual? = present?(attrs["client_id"]) and attrs["client_source"] != "dcr"
 
@@ -199,7 +200,10 @@ defmodule Fountain.Connections do
             {:ok, %{}}
 
           is_binary(md["registration_endpoint"]) ->
-            McpDiscovery.register(md, redirect_uri)
+            McpAuth.register(md, redirect_uri,
+              client_name: "Fountain",
+              client_uri: Fountain.PublicUrl.base()
+            )
 
           true ->
             {:ok, %{"client_source" => nil}}
