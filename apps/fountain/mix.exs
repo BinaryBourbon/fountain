@@ -58,7 +58,7 @@ defmodule Fountain.MixProject do
       {:managoat_oauth, "~> 0.1.0"},
       {:managoat_runner, in_umbrella: true},
       {:managoat_substitution, "~> 0.1.0"},
-      {:managoat_sandbox, in_umbrella: true},
+      {:managoat_sandbox, "~> 0.1.0"},
       {:sentry, "~> 13.3"},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.5"},

@@ -59,11 +59,12 @@ fountain/                  umbrella root
                                callback; Fountain.Runtimes.ACP (provisioning,
                                initialize_params/0, ask_timeout_ms/0),
                                LegacyBlocks and Conversations.Blocks stay here
-      managoat_sandbox/        Managoat.Sandbox: the sandbox behaviour, the
+        managoat_sandbox       Managoat.Sandbox, the sandbox behaviour, the
                                Sprites/E2B/Daytona adapters, Retry, the Fake
-                               and the conformance case. The "which providers
+                               and the conformance case; the "which providers
                                are enabled here" policy
-                               (Fountain.SandboxProviders) stays in fountain.
+                               (Fountain.SandboxProviders) stays here.
+                               apps/managoat_runner takes it from hex too.
       managoat_runner/         Managoat.Runner: the self-hosted runner wire
                                protocol (Connection), the sandbox adapter over
                                it, the sandbox-name shape and the FakeDaemon,

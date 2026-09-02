@@ -47,8 +47,11 @@ defmodule Managoat.Runner.MixProject do
     [
       # The behaviour, Handle, Command, Session, NetworkPolicy and the
       # conformance case. The direction runner -> sandbox is the one
-      # decisions/0037 pins.
-      {:managoat_sandbox, in_umbrella: true},
+      # decisions/0037 pins. From hex since managoat_sandbox graduated
+      # (#1345): the umbrella resolves it the same way apps/fountain does,
+      # and `mix hex.build` for this app succeeds inside the umbrella, which
+      # is what lets it graduate next.
+      {:managoat_sandbox, "~> 0.1.0"},
       # The WebSock behaviour only. The adapter that mounts a handler on a
       # Plug connection (websock_adapter) belongs to the host application.
       {:websock, "~> 0.5"},
