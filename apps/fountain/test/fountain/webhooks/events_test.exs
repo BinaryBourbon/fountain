@@ -24,7 +24,8 @@ defmodule Fountain.Webhooks.EventsTest do
     "lib/fountain/conversations/provisioning.ex",
     "lib/fountain/conversations/egress.ex",
     "lib/fountain/conversations/turn_machine.ex",
-    "lib/fountain/conversations/pending.ex"
+    "lib/fountain/conversations/pending.ex",
+    "lib/fountain/conversations/lifecycle.ex"
   ]
 
   # publish_stage(<anything>, "<stage>", "<status>"
