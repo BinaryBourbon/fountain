@@ -1,0 +1,181 @@
+defmodule Fountain.Broker.Native.Sessions do
+  @moduledoc """
+  The native broker's session store: Fountain's `Managoat.Broker.Store`.
+
+  `Fountain.Broker.Native.prepare/4` mints a session here for one
+  conversation: a random token, stored hashed; the `Managoat.Broker.Rule`s
+  the proxy may apply, with the credentials inside them, as one ciphertext
+  under the tenant's DEK (exactly as the environment and vault rows hold
+  the same values); the unmatched-host policy; a TTL; and a `meta` map with
+  the conversation and user ids for the request log. `lookup/1` is what the
+  proxy calls on every new sandbox connection, on whichever replica the
+  ingress chose: the raw token from the header in, the decrypted session
+  out, or `:error` for a token that is unknown, expired or undecryptable.
+
+  A session is not tenant-editable state and is not audited: it is
+  provisioning machinery, created and deleted with the sandbox it serves,
+  and the audit trail records the conversation's lifecycle instead.
+  """
+
+  @behaviour Managoat.Broker.Store
+
+  import Ecto.Query
+
+  alias Fountain.Broker
+  alias Fountain.Broker.Native.Session
+  alias Fountain.Crypto
+  alias Fountain.Repo
+  alias Managoat.Broker.Rule
+
+  require Logger
+
+  @aad "fountain.broker.rules"
+  @schemes %{
+    "bearer" => :bearer,
+    "basic" => :basic,
+    "api_key" => :api_key,
+    "custom" => :custom,
+    "substitute" => :substitute,
+    "passthrough" => :passthrough
+  }
+
+  @doc """
+  Mint a session. Returns the plaintext token exactly once; only its hash
+  is stored. Expired sessions are swept on the way.
+  """
+  @spec create(%{
+          conversation_id: String.t(),
+          user_id: String.t(),
+          rules: [Rule.t()],
+          unmatched_host_policy: :passthrough | :deny,
+          meta: map(),
+          ttl_seconds: pos_integer()
+        }) :: {:ok, Broker.session()} | {:error, term()}
+  def create(%{conversation_id: conv_id, user_id: user_id} = attrs) do
+    sweep_expired()
+
+    with {:ok, dek} <- Crypto.load_tenant_key(user_id) do
+      token = "fb_" <> Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+      expires_at = DateTime.add(DateTime.utc_now(), attrs.ttl_seconds, :second)
+
+      changeset =
+        Session.changeset(%Session{}, %{
+          token_hash: hash(token),
+          conversation_id: conv_id,
+          user_id: user_id,
+          rules_ciphertext: Crypto.encrypt(encode_rules(attrs.rules), dek, @aad),
+          unmatched_host_policy:
+            Atom.to_string(Map.get(attrs, :unmatched_host_policy, :passthrough)),
+          meta: Map.get(attrs, :meta, %{}),
+          expires_at: expires_at
+        })
+
+      case Repo.insert(changeset) do
+        {:ok, _} ->
+          {:ok, %{token: token, vault: Broker.vault_name(conv_id), expires_at: expires_at}}
+
+        {:error, changeset} ->
+          {:error, {:broker, :session, changeset}}
+      end
+    end
+  end
+
+  @impl Managoat.Broker.Store
+  def lookup(token) when is_binary(token) do
+    case Repo.get_by(Session, token_hash: hash(token)) do
+      nil ->
+        :error
+
+      %Session{} = session ->
+        if DateTime.compare(session.expires_at, DateTime.utc_now()) == :lt,
+          do: :error,
+          else: decrypt(session)
+    end
+  end
+
+  @doc "Delete every session of a conversation. Its tokens stop working at once."
+  @spec release(String.t()) :: :ok
+  def release(conversation_id) when is_binary(conversation_id) do
+    Repo.delete_all(from(s in Session, where: s.conversation_id == ^conversation_id))
+    :ok
+  end
+
+  @doc "Delete sessions past their end. Returns how many."
+  @spec sweep_expired() :: non_neg_integer()
+  def sweep_expired do
+    now = DateTime.utc_now()
+    {n, _} = Repo.delete_all(from(s in Session, where: s.expires_at < ^now))
+    n
+  end
+
+  defp decrypt(%Session{} = s) do
+    with {:ok, dek} <- Crypto.load_tenant_key(s.user_id),
+         {:ok, json} <- Crypto.decrypt(s.rules_ciphertext, dek, @aad),
+         {:ok, rules} <- decode_rules(json) do
+      {:ok,
+       %Managoat.Broker.Session{
+         rules: rules,
+         unmatched_host_policy: String.to_existing_atom(s.unmatched_host_policy),
+         expires_at: s.expires_at,
+         meta: s.meta
+       }}
+    else
+      other ->
+        Logger.warning(
+          "broker: session #{s.id} for conv #{s.conversation_id} is unreadable: #{inspect(other)}"
+        )
+
+        :error
+    end
+  end
+
+  defp hash(token), do: :crypto.hash(:sha256, token)
+
+  # The rules as JSON. Schemes are strings and a basic credential's
+  # `{user, pass}` pair is a tagged object, so the round trip is exact.
+  defp encode_rules(rules) do
+    rules
+    |> Enum.map(fn %Rule{} = r ->
+      %{
+        "name" => r.name,
+        "pattern" => r.pattern,
+        "scheme" => Atom.to_string(r.scheme),
+        "credential" => encode_credential(r.credential),
+        "header" => r.header,
+        "prefix" => r.prefix,
+        "template" => r.template,
+        "placeholder" => r.placeholder
+      }
+    end)
+    |> Jason.encode!()
+  end
+
+  defp encode_credential({user, pass}) when is_binary(user) and is_binary(pass),
+    do: %{"basic" => [user, pass]}
+
+  defp encode_credential(other), do: other
+
+  defp decode_rules(json) do
+    with {:ok, list} when is_list(list) <- Jason.decode(json) do
+      {:ok, Enum.map(list, &decode_rule/1)}
+    else
+      _ -> {:error, :bad_rules}
+    end
+  end
+
+  defp decode_rule(map) do
+    %Rule{
+      name: map["name"],
+      pattern: map["pattern"],
+      scheme: Map.fetch!(@schemes, map["scheme"]),
+      credential: decode_credential(map["credential"]),
+      header: map["header"],
+      prefix: map["prefix"] || "",
+      template: map["template"] || %{},
+      placeholder: map["placeholder"]
+    }
+  end
+
+  defp decode_credential(%{"basic" => [user, pass]}), do: {user, pass}
+  defp decode_credential(other), do: other
+end

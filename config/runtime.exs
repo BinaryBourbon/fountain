@@ -178,9 +178,12 @@ config :managoat_sandbox, Managoat.Sandbox.Daytona,
   api_url: daytona_api_url,
   snapshot: daytona_snapshot
 
-# Egress credential brokerage (ADR 0019, gate 1a). Blank means off: no broker
-# call is made, and every conversation provisions exactly as it did before
-# the feature existed. The same "" counts-as-unset rule as SPRITES_TOKEN.
+# Egress credential brokerage (ADR 0019). Blank means off: no broker call is
+# made, nothing listens, and every conversation provisions exactly as it did
+# before the feature existed. The same "" counts-as-unset rule as
+# SPRITES_TOKEN. Two backends, one at a time (#1340): BROKER_URL selects the
+# Agent Vault client, BROKER_LISTEN_PORT the native proxy run inside this
+# application; both need BROKER_PROXY_URL, the address a sandbox dials.
 blank_to_nil = fn
   blank when blank in [nil, ""] -> nil
   value -> value
@@ -190,8 +193,29 @@ broker_url = blank_to_nil.(System.get_env("BROKER_URL"))
 broker_token = blank_to_nil.(System.get_env("BROKER_TOKEN"))
 broker_proxy_url = blank_to_nil.(System.get_env("BROKER_PROXY_URL"))
 
+broker_listen_port =
+  case System.get_env("BROKER_LISTEN_PORT") do
+    blank when blank in [nil, ""] ->
+      nil
+
+    raw ->
+      case Integer.parse(raw) do
+        {n, ""} when n in 1..65_535 -> n
+        _ -> raise "BROKER_LISTEN_PORT must be a port number between 1 and 65535"
+      end
+  end
+
+if broker_url && broker_listen_port do
+  raise "BROKER_URL and BROKER_LISTEN_PORT are both set: one broker backend at a time. " <>
+          "BROKER_URL selects the Agent Vault client, BROKER_LISTEN_PORT the native proxy."
+end
+
 if broker_url && (is_nil(broker_token) || is_nil(broker_proxy_url)) do
   raise "BROKER_URL is set, so BROKER_TOKEN and BROKER_PROXY_URL must be set too"
+end
+
+if broker_listen_port && is_nil(broker_proxy_url) do
+  raise "BROKER_LISTEN_PORT is set, so BROKER_PROXY_URL must be set too"
 end
 
 broker_tenants =
@@ -214,6 +238,7 @@ broker_session_ttl =
 
 config :fountain, :broker_url, broker_url
 config :fountain, :broker_token, broker_token
+config :fountain, :broker_listen_port, broker_listen_port
 config :fountain, :broker_proxy_url, broker_proxy_url
 config :fountain, :broker_tenants, broker_tenants
 config :fountain, :broker_session_ttl_seconds, broker_session_ttl

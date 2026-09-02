@@ -49,6 +49,17 @@ upgrade, is in
   `config :fountain, :oauth_clients` to `config :fountain, Fountain.OAuth,
   clients:`, which `OAUTH_CLIENTS` still populates, so nothing changes for
   an operator. No endpoint, parameter, error code or response shape changed.
+- **The native egress credential proxy is the `managoat_broker` library**
+  (#1340, ADR 0037, ADR 0019 §8). The proxy PR #1148 built inside the
+  server (`CONNECT` and absolute-form forward proxy, the derived root CA
+  and per-host leaves, the header injector, the SSRF guard) is ported
+  onto `main` as the Apache-2.0 `Managoat.Broker` app, behind a
+  `Managoat.Broker.Store` behaviour: a token in, a session of rules with
+  the credentials resolved out. `Fountain.Broker` is now a facade over two
+  backends, `Fountain.Broker.AgentVault` (the vendor client, moved
+  unchanged) and `Fountain.Broker.Native` (the library, with a
+  `broker_sessions` table as its store); every public function keeps its
+  name and arity, so the 24 call sites are untouched.
 
 - **The self-hosted runner protocol is now the `managoat_runner` library**
   (#1341, ADR 0037). The `WebSock` connection process, the sandbox adapter
@@ -98,6 +109,19 @@ upgrade, is in
   refuses a library which reaches back into Fountain).
 
 ### Added
+
+- **A native egress credential broker, selected by `BROKER_LISTEN_PORT`**
+  (#1340, ADR 0019). Fountain can now run the egress proxy itself instead of
+  an Agent Vault instance: set `BROKER_LISTEN_PORT` (and `BROKER_PROXY_URL`,
+  the address a sandbox dials) and every replica listens, mints a session
+  per conversation into the new `broker_sessions` table (token hashed,
+  rules encrypted under the tenant key) and attaches credentials at the
+  proxy. `BROKER_URL` still selects Agent Vault; setting both is a boot
+  error. Every other `BROKER_*` variable keeps its meaning. On the native
+  backend the request log is one log line per request and
+  `GET /api/conversations/:id/egress` returns an empty page; a stored log
+  is still owed. Merging this changes nothing on a deployment that sets
+  `BROKER_URL`; the flip is a deployment change.
 
 - **A verified registry of remote MCP servers** (#1322). Fountain now ships
   a list of ten remote MCP servers (Linear, Sentry, Notion, Asana,

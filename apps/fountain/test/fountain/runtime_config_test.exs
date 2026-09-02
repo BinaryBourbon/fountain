@@ -210,4 +210,68 @@ defmodule Fountain.RuntimeConfigTest do
       assert cfg[:public_url] == "http://localhost:4000"
     end
   end
+
+  describe "the egress broker backends (ADR 0019, #1340)" do
+    @broker_vars ~w(BROKER_URL BROKER_TOKEN BROKER_LISTEN_PORT BROKER_PROXY_URL)
+
+    setup %{base: base} do
+      on_exit(fn -> for k <- @broker_vars, do: System.delete_env(k) end)
+      # The broker block is read before PUBLIC_URL is checked, so a raise
+      # asserted below is the broker's; the passing cases need a base URL.
+      {:ok, base: Map.put(base, "PUBLIC_URL", "https://fountain.example.com")}
+    end
+
+    test "BROKER_LISTEN_PORT selects the native backend and needs BROKER_PROXY_URL", %{
+      base: base
+    } do
+      cfg =
+        read_prod_config(
+          Map.merge(base, %{
+            "BROKER_LISTEN_PORT" => "14322",
+            "BROKER_PROXY_URL" => "http://broker.example:14322"
+          })
+        )
+
+      assert cfg[:broker_listen_port] == 14_322
+      assert cfg[:broker_url] == nil
+      assert cfg[:broker_proxy_url] == "http://broker.example:14322"
+
+      System.delete_env("BROKER_PROXY_URL")
+
+      assert_raise RuntimeError, ~r/BROKER_LISTEN_PORT is set, so BROKER_PROXY_URL/, fn ->
+        read_prod_config(Map.put(base, "BROKER_LISTEN_PORT", "14322"))
+      end
+    end
+
+    test "a port that is not a port is refused by name", %{base: base} do
+      for bad <- ["0", "70000", "fourteen"] do
+        assert_raise RuntimeError, ~r/BROKER_LISTEN_PORT must be a port number/, fn ->
+          read_prod_config(
+            Map.merge(base, %{"BROKER_LISTEN_PORT" => bad, "BROKER_PROXY_URL" => "http://b"})
+          )
+        end
+      end
+    end
+
+    test "both backends at once is a boot error", %{base: base} do
+      assert_raise RuntimeError, ~r/one broker backend at a time/, fn ->
+        read_prod_config(
+          Map.merge(base, %{
+            "BROKER_URL" => "http://agent-vault:14321",
+            "BROKER_TOKEN" => "t",
+            "BROKER_LISTEN_PORT" => "14322",
+            "BROKER_PROXY_URL" => "http://broker.example:14322"
+          })
+        )
+      end
+    end
+
+    test "blank means neither backend", %{base: base} do
+      cfg =
+        read_prod_config(Map.merge(base, %{"BROKER_URL" => "", "BROKER_LISTEN_PORT" => ""}))
+
+      assert cfg[:broker_listen_port] == nil
+      assert cfg[:broker_url] == nil
+    end
+  end
 end

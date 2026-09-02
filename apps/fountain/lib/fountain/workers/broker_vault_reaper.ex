@@ -9,6 +9,11 @@ defmodule Fountain.Workers.BrokerVaultReaper do
   this pass, daily, deletes the ones whose conversation ended long enough
   ago, and any vault of ours whose conversation no longer exists at all.
 
+  On the native backend (#1340) there are no vaults: the same pass sweeps
+  the expired rows out of `broker_sessions`, which `release/1` and each
+  `prepare/4` also do, so this is the backstop for a conversation that
+  never released.
+
   A no-op when the broker is not configured.
   """
 
@@ -42,20 +47,25 @@ defmodule Fountain.Workers.BrokerVaultReaper do
           kept: non_neg_integer()
         }
   def run(opts \\ []) do
-    if Broker.configured?() do
-      now = Keyword.get(opts, :now) || DateTime.utc_now()
-      cutoff = DateTime.add(now, -Broker.log_retention_hours() * 3600, :second)
+    case Broker.backend() do
+      :agent_vault ->
+        now = Keyword.get(opts, :now) || DateTime.utc_now()
+        cutoff = DateTime.add(now, -Broker.log_retention_hours() * 3600, :second)
 
-      case Keyword.get(opts, :vaults) || vaults() do
-        {:error, reason} ->
-          Logger.warning("broker vault reaper: could not list vaults: #{inspect(reason)}")
-          %{deleted: 0, failed: 0, kept: 0}
+        case Keyword.get(opts, :vaults) || vaults() do
+          {:error, reason} ->
+            Logger.warning("broker vault reaper: could not list vaults: #{inspect(reason)}")
+            %{deleted: 0, failed: 0, kept: 0}
 
-        names ->
-          names |> Enum.filter(&Broker.conversation_id_for_vault/1) |> reap(cutoff)
-      end
-    else
-      %{deleted: 0, failed: 0, kept: 0}
+          names ->
+            names |> Enum.filter(&Broker.conversation_id_for_vault/1) |> reap(cutoff)
+        end
+
+      :native ->
+        %{deleted: Fountain.Broker.Native.Sessions.sweep_expired(), failed: 0, kept: 0}
+
+      nil ->
+        %{deleted: 0, failed: 0, kept: 0}
     end
   end
 

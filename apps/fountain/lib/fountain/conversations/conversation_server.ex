@@ -1662,7 +1662,8 @@ defmodule Fountain.Conversations.ConversationServer do
       })
 
       case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings,
-             network: state.broker_network
+             network: state.broker_network,
+             user_id: state.user_id
            ) do
         {:ok, session} ->
           publish_stage(state.conversation_id, "broker", "done", %{
@@ -1704,7 +1705,8 @@ defmodule Fountain.Conversations.ConversationServer do
     state = %{state | brokered: brokered, broker_bindings: bindings, env_credentials: env_creds}
 
     case Fountain.Broker.prepare(state.conversation_id, brokered, bindings,
-           network: state.broker_network
+           network: state.broker_network,
+           user_id: state.user_id
          ) do
       {:ok, session} ->
         keys = Fountain.Broker.env_keys()
@@ -1734,7 +1736,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
     if rotated? or Fountain.Broker.expiring?(session) do
       case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings,
-             network: state.broker_network
+             network: state.broker_network,
+             user_id: state.user_id
            ) do
         {:ok, fresh} ->
           keys = Fountain.Broker.env_keys()
