@@ -60,7 +60,7 @@ defmodule Fountain.MixProject do
       {:managoat_mcp_auth, "~> 0.1.0"},
       {:managoat_oauth, "~> 0.1.0"},
       {:managoat_runner, "~> 0.1.0"},
-      {:managoat_runtimes, in_umbrella: true},
+      {:managoat_runtimes, "~> 0.1.0"},
       {:managoat_substitution, "~> 0.1.0"},
       {:managoat_sandbox, "~> 0.1.0"},
       {:sentry, "~> 13.3"},

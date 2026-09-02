@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, runtime provisioning, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340), managoat_acp (#1339) and managoat_runtimes (#1368). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner; managoat_runtimes is the one still in the umbrella."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, runtime provisioning, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340), managoat_acp (#1339) and managoat_runtimes (#1368). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner, managoat_runtimes. All nine."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
@@ -74,11 +74,14 @@ only, nothing from Fountain's `docs/` or the fixture manual under `test/`),
 x509 dialyzer ignores travelled with it), `managoat_runner`
 (managoat/managoat_runner, hex 0.1.0, 2026-09-02, last because it depends on
 `managoat_sandbox`, whose Fountain-side PR switched runner's dependency to
-the hex release first). All eight of those have graduated; `managoat_runtimes`
-(#1368) is the one library app in the umbrella, on its way out by the same
-recipe, and `umbrella_layout_test.exs` and `scripts/test-libraries.sh` guard
-it. The tracker is #1334. Each PR that extracts or graduates a library updates
-this block.
+the hex release first), `managoat_runtimes` (managoat/managoat_runtimes, hex
+0.1.0, 2026-09-02, the same day it was extracted: its two dependencies were
+already hex releases, and the package carries `priv/` for the gemini
+session-store script, which is what taught `scripts/graduate-library.sh` to
+keep a library's extra package files). All nine have graduated; the umbrella
+holds no library app, and `umbrella_layout_test.exs` and
+`scripts/test-libraries.sh` guard the next one. The tracker is #1334. Each PR
+that extracts or graduates a library updates this block.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names
