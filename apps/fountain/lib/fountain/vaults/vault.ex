@@ -5,6 +5,8 @@ defmodule Fountain.Vaults.Vault do
   alias Fountain.Accounts.User
   alias Fountain.Vaults.VaultSecret
 
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 

@@ -151,7 +151,7 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :fresh_provision, :stop],
         [:fountain, :reattach, :stop],
         # The provisioning sub-steps those two are made of (#537):
-        # ConversationServer.run_setup_script/4 and Conversations.Provisioning
+        # Conversations.Provisioning (run_setup_script/4 moved there in #1372)
         [:fountain, :setup_script, :stop],
         [:fountain, :packages, :stop],
         [:fountain, :network_policy, :stop],
