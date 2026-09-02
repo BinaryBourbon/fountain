@@ -16,6 +16,36 @@ permissions:
   contents: read
 
 jobs:
+  minimum-version:
+    name: Elixir 1.15 / OTP 26 compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      MIX_ENV: test
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Elixir 1.15 and OTP 26
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.15.8"
+          otp-version: "26.2.5"
+
+      - name: Install dependencies
+        working-directory: sdk/elixir
+        run: mix deps.get
+
+      - name: Compile with warnings as errors
+        working-directory: sdk/elixir
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        working-directory: sdk/elixir
+        run: mix test
+
   gate:
     name: A shipped change has a releasable version
     runs-on: ubuntu-24.04

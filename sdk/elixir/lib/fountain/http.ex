@@ -13,7 +13,7 @@ defmodule Fountain.HTTP do
   def new(%Config{} = config, opts \\ []) do
     %__MODULE__{
       config: config,
-      transport: Keyword.get(opts, :transport, Fountain.HTTP.Inets),
+      transport: Keyword.get(opts, :transport, Fountain.HTTP.Finch),
       timeout: Keyword.get(opts, :timeout, 30_000)
     }
   end
@@ -223,113 +223,103 @@ defmodule Fountain.HTTP do
     }
 end
 
-defmodule Fountain.HTTP.Inets do
+defmodule Fountain.HTTP.Finch do
   @moduledoc false
 
+  @finch FountainSdk.Finch
+
   def request(method, url, headers, body, timeout) do
-    ensure_started()
-    request = request_tuple(method, url, headers, body)
-    options = http_options(url, timeout)
+    request = Finch.build(method_atom(method), url, headers, body)
+    request_ref = Finch.async_request(request, @finch, request_options(timeout))
 
-    case :httpc.request(method_atom(method), request, options, body_format: :binary) do
-      {:ok, {{_version, status, _reason}, response_headers, response_body}} ->
-        {:ok, status, normalize_headers(response_headers), response_body}
-
-      {:error, reason} ->
-        {:error, reason}
+    try do
+      receive_response(request_ref, deadline(timeout), nil, [], [])
+    rescue
+      error ->
+        Finch.cancel_async_request(request_ref)
+        {:error, error}
     end
+  rescue
+    error -> {:error, error}
   end
 
   def stream(method, url, headers, timeout, on_chunk) do
-    ensure_started()
-    request = {String.to_charlist(url), char_headers(headers)}
+    request = Finch.build(method_atom(method), url, headers)
+    accumulator = %{status: nil, headers: [], body: []}
 
-    options = http_options(url, timeout)
-
-    case :httpc.request(method_atom(method), request, options,
-           sync: false,
-           stream: :self,
-           body_format: :binary
+    case Finch.stream_while(
+           request,
+           @finch,
+           accumulator,
+           &stream_chunk(&1, &2, on_chunk),
+           request_options(timeout)
          ) do
-      {:ok, id} -> receive_stream(id, on_chunk, 200, [])
-      {:error, reason} -> {:error, reason}
-    end
-  end
+      {:ok, %{status: status, headers: response_headers, body: body}} ->
+        response_body =
+          if status in 200..299,
+            do: nil,
+            else: body |> Enum.reverse() |> IO.iodata_to_binary()
 
-  defp receive_stream(id, on_chunk, status, headers) do
-    receive do
-      {:http, {^id, :stream_start, response_headers}} ->
-        receive_stream(id, on_chunk, status, normalize_headers(response_headers))
+        {:ok, status, response_headers, response_body}
 
-      {:http, {^id, :stream, chunk}} ->
-        on_chunk.(IO.iodata_to_binary(chunk))
-        receive_stream(id, on_chunk, status, headers)
-
-      {:http, {^id, :stream_end, response_headers}} ->
-        {:ok, status, normalize_headers(response_headers) ++ headers, nil}
-
-      {:http, {^id, {{_version, response_status, _reason}, response_headers, body}}} ->
-        {:ok, response_status, normalize_headers(response_headers), IO.iodata_to_binary(body)}
-
-      {:http, {^id, {:error, reason}}} ->
+      {:error, reason, _accumulator} ->
         {:error, reason}
+    end
+  rescue
+    error -> {:error, error}
+  end
 
-      {:fountain_cancel_stream, requester} ->
-        :httpc.cancel_request(id)
-        send(requester, {:fountain_stream_cancelled, self()})
-        {:error, :cancelled}
+  defp receive_response(request_ref, deadline, status, headers, body) do
+    receive do
+      {^request_ref, {:status, response_status}} ->
+        receive_response(request_ref, deadline, response_status, headers, body)
+
+      {^request_ref, {:headers, response_headers}} ->
+        receive_response(request_ref, deadline, status, headers ++ response_headers, body)
+
+      {^request_ref, {:data, chunk}} ->
+        receive_response(request_ref, deadline, status, headers, [chunk | body])
+
+      {^request_ref, :done} ->
+        {:ok, status, headers, body |> Enum.reverse() |> IO.iodata_to_binary()}
+
+      {^request_ref, {:error, reason}} ->
+        {:error, reason}
+    after
+      remaining(deadline) ->
+        Finch.cancel_async_request(request_ref)
+        {:error, :timeout}
     end
   end
 
-  defp request_tuple(method, url, headers, nil) when method in ["POST", "PUT", "PATCH"],
-    do: {String.to_charlist(url), char_headers(headers), ~c"application/json", ""}
+  defp stream_chunk({:status, status}, accumulator, _on_chunk),
+    do: {:cont, %{accumulator | status: status}}
 
-  defp request_tuple(_method, url, headers, nil),
-    do: {String.to_charlist(url), char_headers(headers)}
+  defp stream_chunk({:headers, headers}, accumulator, _on_chunk),
+    do: {:cont, %{accumulator | headers: accumulator.headers ++ headers}}
 
-  defp request_tuple(_method, url, headers, body),
-    do: {String.to_charlist(url), char_headers(headers), ~c"application/json", body}
+  defp stream_chunk({:trailers, headers}, accumulator, _on_chunk),
+    do: {:cont, %{accumulator | headers: accumulator.headers ++ headers}}
 
-  defp char_headers(headers),
-    do:
-      Enum.map(headers, fn {key, value} ->
-        {String.to_charlist(key), String.to_charlist(value)}
-      end)
-
-  defp normalize_headers(headers),
-    do: Enum.map(headers, fn {key, value} -> {to_string(key), to_string(value)} end)
-
-  defp finite_timeout(:infinity), do: 30_000
-  defp finite_timeout(timeout), do: timeout
-
-  defp http_options(url, timeout) do
-    base =
-      if timeout == :infinity,
-        do: [timeout: :infinity, autoredirect: false, autoretry: 0],
-        else: [
-          timeout: timeout,
-          connect_timeout: finite_timeout(timeout),
-          autoredirect: false,
-          autoretry: 0
-        ]
-
-    case URI.parse(url) do
-      %URI{scheme: "https", host: host} ->
-        ssl = [
-          verify: :verify_peer,
-          cacerts: :public_key.cacerts_get(),
-          server_name_indication: String.to_charlist(host),
-          customize_hostname_check: [
-            match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
-          ]
-        ]
-
-        Keyword.put(base, :ssl, ssl)
-
-      _ ->
-        base
-    end
+  defp stream_chunk({:data, chunk}, %{status: status} = accumulator, on_chunk)
+       when status in 200..299 do
+    on_chunk.(chunk)
+    {:cont, accumulator}
   end
+
+  defp stream_chunk({:data, chunk}, accumulator, _on_chunk),
+    do: {:cont, %{accumulator | body: [chunk | accumulator.body]}}
+
+  defp request_options(:infinity), do: [receive_timeout: :infinity, request_timeout: :infinity]
+
+  defp request_options(timeout),
+    do: [pool_timeout: timeout, receive_timeout: timeout, request_timeout: timeout]
+
+  defp deadline(:infinity), do: :infinity
+  defp deadline(timeout), do: System.monotonic_time(:millisecond) + timeout
+
+  defp remaining(:infinity), do: :infinity
+  defp remaining(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
 
   defp method_atom("GET"), do: :get
   defp method_atom("POST"), do: :post
@@ -337,9 +327,4 @@ defmodule Fountain.HTTP.Inets do
   defp method_atom("PATCH"), do: :patch
   defp method_atom("DELETE"), do: :delete
   defp method_atom("HEAD"), do: :head
-
-  defp ensure_started do
-    :inets.start()
-    :ssl.start()
-  end
 end

@@ -152,10 +152,14 @@ defmodule Fountain.HttpSseTest do
 
     server =
       Fountain.TestServer.start(fn _request ->
-        Agent.update(calls, &(&1 + 1))
+        call = Agent.get_and_update(calls, fn count -> {count + 1, count + 1} end)
 
-        {503, [{"content-type", "application/json"}, {"retry-after", "0"}],
-         Jason.encode!(%{"error" => "provisioning"})}
+        if call == 1 do
+          {503, [{"content-type", "application/json"}, {"retry-after", "0"}],
+           Jason.encode!(%{"error" => "provisioning"})}
+        else
+          {200, [{"content-type", "application/json"}], Jason.encode!(%{"data" => "retried"})}
+        end
       end)
 
     on_exit(fn -> Fountain.TestServer.stop(server) end)
@@ -218,5 +222,41 @@ defmodule Fountain.HttpSseTest do
 
     messages = self() |> Process.info(:messages) |> elem(1)
     refute Enum.any?(messages, &match?({:fountain_sse, _, _}, &1))
+  end
+
+  test "HTTP streaming applies transport backpressure while a chunk consumer is blocked" do
+    chunks = List.duplicate({0, :binary.copy("x", 4_096)}, 512)
+
+    server =
+      Fountain.TestServer.start(fn _request ->
+        {:stream, 200, [{"content-type", "text/event-stream"}], chunks}
+      end)
+
+    on_exit(fn -> Fountain.TestServer.stop(server) end)
+    http = HTTP.new(%Fountain.Config{base_url: server.url, api_key: "key", app_url: ""})
+    parent = self()
+
+    worker =
+      spawn(fn ->
+        result =
+          HTTP.stream(http, "GET", "/stream", [timeout: :infinity], fn _chunk ->
+            unless Process.get(:consumer_released) do
+              send(parent, {:consumer_blocked, self()})
+
+              receive do
+                :release_consumer -> Process.put(:consumer_released, true)
+              end
+            end
+          end)
+
+        send(parent, {:stream_result, result})
+      end)
+
+    assert_receive {:consumer_blocked, ^worker}, 1_000
+    Process.sleep(50)
+    assert {:message_queue_len, 0} = Process.info(worker, :message_queue_len)
+
+    send(worker, :release_consumer)
+    assert_receive {:stream_result, :ok}, 2_000
   end
 end

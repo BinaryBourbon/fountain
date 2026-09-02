@@ -25,11 +25,13 @@ defmodule FountainSdk.MixProject do
     ]
   end
 
-  def application, do: [extra_applications: [:logger, :inets, :ssl, :public_key]]
+  def application,
+    do: [mod: {FountainSdk.Application, []}, extra_applications: [:logger, :ssl]]
 
   defp deps do
     [
       {:jason, "~> 1.4"},
+      {:finch, "~> 0.23.0"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
