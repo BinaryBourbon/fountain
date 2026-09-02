@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "BYO inference credentials per tenant"
-description: "Tenants supply their own inference provider credentials, encrypted with the per-tenant DEK; Fountain holds no platform inference keys and pays nothing for inference."
+description: "Tenants supply their own inference provider credentials, encrypted with the per-tenant DEK; Fountain holds no platform inference keys and pays nothing for inference. Amended by 0038: Fountain holds platform keys and runs a tenant with no credential on them, metered against credits; the tenant's own credential still wins."
 tags: [secrets, inference, billing]
 status: stable
 adr: "0008"
