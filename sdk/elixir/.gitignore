@@ -1,0 +1,7 @@
+/_build/
+/deps/
+/doc/
+/cover/
+erl_crash.dump
+*.ez
+fountain_sdk-*.tar

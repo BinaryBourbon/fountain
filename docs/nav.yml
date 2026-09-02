@@ -120,6 +120,7 @@ nav:
       - API: api.md
       - Webhooks: reference/webhooks.md
       - TypeScript SDK: sdk.md
+      - Elixir SDK: elixir-sdk.md
       - Conversation states: reference/conversation-states.md
       - Glossary: reference/glossary.md
       - Feature status: reference/feature-status.md

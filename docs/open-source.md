@@ -7,7 +7,7 @@ This page says what is open, what is not, and where each thing lives.
 
 | Name | What it is |
 |---|---|
-| **Fountain** | The server, the CLI, the SDK and this manual. The name of the project. |
+| **Fountain** | The server, the CLI, the SDKs and this manual. The name of the project. |
 | **Managoat** | The instance that the maintainer runs at `managoat.com`. It runs the same code that you can run. |
 
 The hosted instance has a different name so that "self-host Fountain" and
@@ -19,7 +19,7 @@ The hosted instance has a different name so that "self-host Fountain" and
 |---|---|---|
 | The server (`apps/fountain`) | [AGPL-3.0-or-later](https://github.com/BinaryBourbon/fountain/blob/main/LICENSE) | Run it, change it, host it. If you host a changed version, your users have a right to your source. |
 | `ee/` (credits, Stripe and the credit emails) | [Elastic Licence 2.0](https://github.com/BinaryBourbon/fountain/blob/main/ee/LICENSE) | Free to run in your own instance. You may not offer it to third parties as a hosted service. |
-| `cli/` and `sdk/typescript` | [Apache-2.0](https://github.com/BinaryBourbon/fountain/blob/main/cli/LICENSE) | Build on the API and ship the CLI inside a closed product, with no obligations. |
+| `cli/`, `sdk/typescript` and `sdk/elixir` | [Apache-2.0](https://github.com/BinaryBourbon/fountain/blob/main/cli/LICENSE) | Build on the API or ship a client in a closed product. Keep the required license and notices when you redistribute it. |
 
 The client parts are permissive on purpose. A connection to Fountain must
 never put a licence obligation on your application.
@@ -43,7 +43,8 @@ holds the third-party attribution.
 | The reasons behind the design | `decisions/` in the repo. The ADRs are not on this site. |
 | The hosted instance | [managoat.com](https://managoat.com) |
 | The CLI | `brew install BinaryBourbon/tap/fountain`, or the [CLI reference](cli.md). |
-| The SDK | `@agentshit/fountain-sdk` on npm, or the [SDK reference](sdk.md). |
+| The TypeScript SDK | `@agentshit/fountain-sdk` on npm, or the [TypeScript reference](sdk.md). |
+| The Elixir SDK | The [`sdk/elixir`](https://github.com/BinaryBourbon/fountain/tree/main/sdk/elixir) source, or the [Elixir reference](elixir-sdk.md). When published, its Hex name is `fountain_sdk`. |
 
 There is no separate project website. The manual you read now is the project
 site, and the repo README is its front page. One copy of each stays correct.
