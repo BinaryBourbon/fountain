@@ -48,14 +48,15 @@ defmodule Managoat.Sandbox.MixProject do
 
   defp deps do
     [
-      # Upstream, at the tag. The `ravi-hq` fork this used to pin existed for
-      # the filesystem URL fix (/v1/sprites/<name>/fs/*) and the
-      # attach_session URL fix; both are upstream as of v0.2.0, and the fork
-      # branched before the exit-frame fixes that #880 needed.
-      #
-      # A git dependency is what keeps this package off hex (decisions/0037):
-      # graduation needs a hex release of sprites-ex or a vendored client.
-      {:sprites, github: "superfly/sprites-ex", tag: "v0.2.0"},
+      # The hex release, pinned exactly. hex 0.2.0 is byte-identical to the
+      # superfly/sprites-ex tag v0.2.0 this used to pin as a git dependency
+      # (which is what kept the package off hex; decisions/0037). 0.2.2 changes
+      # the close-frame contract: a stream that closes without an exit frame
+      # becomes `{:error, _, :closed_before_exit}` rather than `{:exit, _, 0}`,
+      # which the adapter and the conformance suite must be revisited for
+      # before the requirement is loosened. Do not widen this to `~> 0.2`
+      # without that work.
+      {:sprites, "0.2.0"},
       {:req, "~> 0.5"},
       {:jason, "~> 1.2"},
       # Test / dev
