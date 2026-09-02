@@ -36,6 +36,10 @@ upgrade, is in
   graduate, the same way: `apps/managoat_mcp_auth` is gone, the pin is
   `{:managoat_mcp_auth, "~> 0.1.0"}`, the source is
   managoat/managoat_mcp_auth.
+- **`managoat_oauth` comes from hex** (#1345, ADR 0037), the third:
+  `apps/managoat_oauth` is gone, the pin is `{:managoat_oauth, "~> 0.1.0"}`,
+  the source is managoat/managoat_oauth (its own CI runs the suite against
+  a Postgres of its own). `Fountain.OAuth` still `use`s it the same way.
 
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`

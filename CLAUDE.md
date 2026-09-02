@@ -49,6 +49,10 @@ fountain/                  umbrella root
         managoat_substitution  Managoat.Substitution, the ${VAR} engine
         managoat_mcp_auth      Managoat.McpAuth, RFC 9728/8414/7591 MCP
                                authorization discovery with the SSRF guard
+        managoat_oauth         Managoat.OAuth, the OAuth 2.0 code+PKCE and
+                               device-grant state machine as a `use` macro
+                               over Managoat.OAuth.Host; Fountain.OAuth is the
+                               instance, Fountain.OAuth.Host mints the API key
       managoat_sandbox/        Managoat.Sandbox: the sandbox behaviour, the
                                Sprites/E2B/Daytona adapters, Retry, the Fake
                                and the conformance case. The "which providers
@@ -68,12 +72,6 @@ fountain/                  umbrella root
                                checks as a case template. docs/, nav.yml,
                                Fountain.Help, the prose gates and the /docs
                                controller stay in fountain.
-      managoat_oauth/          Managoat.OAuth: the OAuth 2.0 code+PKCE and
-                               device-grant state machine, its two schemas and
-                               migration, as a `use` macro over the
-                               Managoat.OAuth.Host behaviour. Fountain.OAuth is
-                               the instance; Fountain.OAuth.Host mints the API
-                               key, checks the user and audits.
       managoat_acp/            Managoat.ACP: the client-side ACP session
                                (Peer), Protocol, Permissions, Blocks, Usage,
                                Tracer and the ScriptedAgent, behind a writer
