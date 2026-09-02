@@ -1,0 +1,62 @@
+name: Python SDK release gate
+
+# A shipped Python SDK change needs a new version before it reaches main. Test
+# changes alone do not. The first release has no base version and passes.
+
+on:
+  pull_request:
+    paths:
+      - "sdk/python/**"
+      - ".github/workflows/python-sdk-release-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: A shipped change has a releasable version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825a76410c181273ba90b1 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Check the version and changelog
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          base=$(git merge-base "refs/remotes/origin/${BASE_REF}" HEAD)
+          changed=$(git diff --name-only "$base" HEAD -- \
+            sdk/python/src sdk/python/pyproject.toml sdk/python/README.md sdk/python/LICENSE)
+          if [ -z "$changed" ]; then
+            echo "Only Python SDK tests or release notes changed."
+            exit 0
+          fi
+
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' sdk/python/pyproject.toml)
+          base_version=$(git show "$base:sdk/python/pyproject.toml" 2>/dev/null | \
+            sed -n 's/^version = "\(.*\)"/\1/p' || true)
+          if [ -n "$base_version" ] && [ "$version" = "$base_version" ]; then
+            echo "::error::The shipped Python SDK changed without a version bump from $base_version." >&2
+            exit 1
+          fi
+          if ! grep -q "^## $version$" sdk/python/CHANGELOG.md; then
+            echo "::error::sdk/python/CHANGELOG.md has no heading for $version." >&2
+            exit 1
+          fi
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            "https://pypi.org/pypi/fountain-agent-sdk/${version}/json")
+          case "$code" in
+            200)
+              echo "::error::fountain-agent-sdk $version already exists on PyPI." >&2
+              exit 1
+              ;;
+            404) ;;
+            *) echo "::error::PyPI version check returned HTTP $code." >&2; exit 1 ;;
+          esac
+          echo "fountain-agent-sdk $version is ready to publish."

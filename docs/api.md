@@ -5,8 +5,8 @@ returns JSON.
 
 !!! tip "Do you write a script, and not an integration?"
 
-    The [TypeScript SDK](sdk.md) is one call over the conversation endpoints
-    below, `fountain.run(prompt, { agent, vault })`.
+    The [TypeScript](sdk.md) and [Python](python-sdk.md) SDKs put one `run`
+    call over the conversation endpoints below.
 
     Reach for the raw API when you need a surface the SDK does not wrap, or a
     language nobody wrote it in.
@@ -664,8 +664,9 @@ runs only what looks. Both need a full-scope key: a sandbox's own
 per-conversation token gets `403`, so a machine cannot run commands on the
 account's other machines. And both are audited (`sandbox.exec`,
 `sandbox.file_read`) with sizes, the exit code and the duration, never the
-command line, the path or the bytes — the same rule as the rest of the
-trail ([ADR 0013](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0013-audit-trail.md)).
+command line, the path or the bytes. The rest of the audit log has the same
+rule
+([ADR 0013](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0013-audit-trail.md)).
 
 A transport failure between Fountain and the sandbox is `502
 sandbox_exec_failed`. On a brokered account the command runs inside the

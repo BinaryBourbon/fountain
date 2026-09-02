@@ -85,12 +85,14 @@ code actually reaches for.
 | **Web UI** (`/dashboard`) | Getting started, managing agents, environments, vaults, keys and audit visually |
 | **REST API** (`/api/*`) | Scripting, CI/CD pipelines, integrating Fountain into your own tools |
 | **CLI** (`fountain`) | Local workflows, manifest-driven `apply`, shell scripting |
-| **TypeScript SDK** (`@agentshit/fountain-sdk`) | Running an agent from your own code: `fountain.run(prompt, { agent, vault })` |
+| **TypeScript and Python SDKs** | Running an agent from your own code: `fountain.run(...)` |
 
 The CLI and the SDK are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
 
 ```bash
 npm install @agentshit/fountain-sdk
+# or
+pip install fountain-agent-sdk
 ```
 
 ```ts
@@ -104,9 +106,23 @@ const run = await new Fountain().run("Upgrade us to Phoenix 1.8 and open a PR", 
 console.log(run.text, run.url);
 ```
 
-The sandbox is still there afterwards: `fountain.resume(run.conversationId).send("...")`
-continues on the same machine, with the same checkout and the same session.
-See [`sdk/typescript/`](sdk/typescript/) or the [SDK docs](https://managoat.com/docs/sdk).
+```python
+from fountain import Fountain
+
+run = Fountain().run(
+    "Upgrade us to Phoenix 1.8 and open a PR",
+    agent="reposage",
+    vault="github-bot",
+).result()
+
+print(run.text, run.url)
+```
+
+The sandbox is still there afterwards. A `resume(...).send(...)` continues on
+the same machine, with the same checkout and the same session.
+See [`sdk/typescript/`](sdk/typescript/), [`sdk/python/`](sdk/python/), or the
+[TypeScript](https://managoat.com/docs/sdk) and
+[Python](https://managoat.com/docs/python-sdk) SDK docs.
 
 ## Get started with the CLI
 
@@ -234,7 +250,7 @@ Fountain is not licensed as a single unit. The short version:
 |---|---|---|
 | The server (`apps/fountain`) | [AGPL-3.0-or-later](LICENSE) | Run it, modify it, host it. If you host a modified version, your users are entitled to your source |
 | [`ee/`](ee/) — Stripe billing and growth email | [Elastic Licence 2.0](ee/LICENSE) | Free to run in your own instance, changes stay yours. You may not offer it to third parties as a hosted service |
-| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript) | [Apache-2.0](cli/LICENSE) | Build on the API, ship the CLI inside a proprietary product, no obligations |
+| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript), [`sdk/python`](sdk/python) | [Apache-2.0](cli/LICENSE) | Build on the API, ship the CLI or either SDK inside a proprietary product, no obligations |
 
 The client surfaces are permissive on purpose. Integrating with Fountain
 should never put a licence obligation on your application, and an AGPL SDK

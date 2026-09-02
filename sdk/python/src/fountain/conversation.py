@@ -1,0 +1,151 @@
+"""A resumable conversation handle."""
+
+from typing import Any, Dict, Iterator, List, Optional, Union
+from urllib.parse import quote
+
+from .config import conversation_url
+from .http import HttpClient
+from .run import Run
+from .sse import stream_events
+
+
+class Conversation:
+    def __init__(self, http: HttpClient, conversation_id: str, cursor: int = 0) -> None:
+        self._http = http
+        self.id = conversation_id
+        self._cursor = cursor
+
+    @property
+    def url(self) -> str:
+        return conversation_url(self.id, self._http.config)
+
+    def get(self) -> Dict[str, Any]:
+        return self._http.data("GET", "/api/conversations/%s" % self.id)
+
+    def status(self) -> Optional[str]:
+        value = self.get().get("status")
+        return value if isinstance(value, str) else None
+
+    def turns(self) -> List[Dict[str, Any]]:
+        return self._http.list("/api/conversations/%s/turns" % self.id)
+
+    def send(
+        self,
+        prompt: str,
+        *,
+        images: Optional[List[Dict[str, Any]]] = None,
+        timeout: Optional[float] = None,
+        collect_events: bool = False,
+    ) -> Run:
+        body: Dict[str, Any] = {"prompt": prompt}
+        if images:
+            body["images"] = images
+
+        def plan() -> Any:
+            after = self.cursor()
+            turn_number = self.last_turn_number() + 1
+            self._http.request(
+                "POST", "/api/conversations/%s/prompts" % self.id, body=body
+            )
+            return self.get(), turn_number, after
+
+        run = Run(self._http, plan, timeout=timeout, collect_events=collect_events)
+
+        def keep_cursor(finished: Run) -> None:
+            self._cursor = max(self._cursor, finished.cursor)
+
+        run._after_finish(keep_cursor)
+        return run
+
+    def answer(self, request_id: str, option_id: str) -> None:
+        self._http.request(
+            "POST",
+            "/api/conversations/%s/requests/%s" % (self.id, quote(request_id, safe="")),
+            body={"option_id": option_id},
+        )
+
+    def mark_read(self) -> None:
+        self._http.request("POST", "/api/conversations/%s/read" % self.id)
+
+    def history(
+        self,
+        *,
+        streams: Optional[Union[List[str], str]] = None,
+        after: int = 0,
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        selected = ",".join(streams) if isinstance(streams, list) else streams
+        output: List[Dict[str, Any]] = []
+        cursor = after
+        while True:
+            page = self._http.request(
+                "GET",
+                "/api/conversations/%s/events" % self.id,
+                query={
+                    "after": cursor,
+                    "limit": limit,
+                    "blocks": "true",
+                    "streams": selected,
+                },
+            )
+            events = page.get("data", []) if isinstance(page, dict) else []
+            output.extend(events)
+            meta = page.get("meta", {}) if isinstance(page, dict) else {}
+            next_cursor = meta.get("next_cursor")
+            if not meta.get("has_more") or not isinstance(next_cursor, int):
+                break
+            cursor = next_cursor
+        if output and isinstance(output[-1].get("id"), int):
+            self._cursor = max(self._cursor, output[-1]["id"])
+        return output
+
+    def tree(self) -> Any:
+        return self._http.data("GET", "/api/conversations/%s/tree" % self.id)
+
+    def interrupt(self) -> None:
+        self._http.request("POST", "/api/conversations/%s/interrupt" % self.id)
+
+    def terminate(self) -> None:
+        self._http.request("POST", "/api/conversations/%s/terminate" % self.id)
+
+    def delete(self) -> None:
+        self._http.request("DELETE", "/api/conversations/%s" % self.id)
+
+    def events(self, **options: Any) -> Iterator[Dict[str, Any]]:
+        return stream_events(self._http, self.id, **options)
+
+    def event_page(self, after: int = 0, limit: int = 1000) -> Dict[str, Any]:
+        output = self._http.request(
+            "GET",
+            "/api/conversations/%s/events" % self.id,
+            query={"after": after, "limit": limit, "blocks": "true"},
+        )
+        meta = output.get("meta", {}) if isinstance(output, dict) else {}
+        return {
+            "events": output.get("data", []) if isinstance(output, dict) else [],
+            "next_cursor": meta.get("next_cursor")
+            if isinstance(meta.get("next_cursor"), int)
+            else after,
+            "has_more": bool(meta.get("has_more")),
+        }
+
+    def last_turn_number(self) -> int:
+        return max(
+            (int(turn.get("turn_number") or 0) for turn in self.turns()), default=0
+        )
+
+    def cursor(self) -> int:
+        if self._cursor > 0:
+            return self._cursor
+        last = 0
+        try:
+            for event in stream_events(
+                self._http, self.id, streams="stage", wait=False, max_retries=0
+            ):
+                event_id = event.get("id")
+                if isinstance(event_id, int):
+                    last = max(last, event_id)
+        except Exception:
+            return 0
+        self._cursor = last
+        return last

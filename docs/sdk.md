@@ -445,15 +445,16 @@ tarball. A package that a person sends by hand has no such attestation.
 
 ## Other languages
 
-There is no SDK for your language yet. There are two worked references for the
-part that is easy to get wrong, which is how to follow a turn through the log
-feed.
+Python has its own [SDK](python-sdk.md). For another language, there are two
+worked references for the part that is easy to get wrong, which is how to
+follow a turn through the log feed.
 
-- **Python.** The [Hermes plugin](integrations/hermes.md)'s `tools.py`, which
-  polls `/events?blocks=true`.
+- **Python.** The SDK follows SSE, while the
+  [Hermes plugin](integrations/hermes.md)'s `tools.py` is a smaller polling
+  reference over `/events?blocks=true`.
 - **Go.** The [`fountain` CLI](cli.md)'s `fountain run`, which streams SSE.
 
-The two of them implement the rules that the TypeScript SDK implements. Keep
+These references implement the rules that the TypeScript SDK implements. Keep
 your own turn's events, and no other. Keep the `text` blocks, and no other
 kind. Join the ACP chunks with nothing, and the legacy rows as paragraphs.
 Start a new paragraph after a tool call. Resume from the last event id when a
