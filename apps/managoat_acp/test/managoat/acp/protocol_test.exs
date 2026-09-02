@@ -1,7 +1,7 @@
-defmodule Fountain.Runtimes.ACP.ProtocolTest do
+defmodule Managoat.ACP.ProtocolTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes.ACP.Protocol
+  alias Managoat.ACP.Protocol
 
   describe "feed/2 framing" do
     test "returns whole messages and keeps the incomplete tail" do

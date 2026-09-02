@@ -316,8 +316,10 @@ defmodule Fountain.ConversationsStartTest do
       assert {:ok, conv} = launch(ctx, agent, nil)
       assert conv.permission_policy == nil
 
-      effective = Fountain.Permissions.effective(agent.permission_policy, conv.permission_policy)
-      assert Fountain.Permissions.verdict_for(effective, "Bash") == "auto_deny"
+      effective =
+        Managoat.ACP.Permissions.effective(agent.permission_policy, conv.permission_policy)
+
+      assert Managoat.ACP.Permissions.verdict_for(effective, "Bash") == "auto_deny"
     end
 
     test "a launch may narrow the agent's policy", ctx do
@@ -326,9 +328,11 @@ defmodule Fountain.ConversationsStartTest do
       assert {:ok, conv} = launch(ctx, agent, %{"Bash" => "auto_deny"})
       assert conv.permission_policy == %{"Bash" => "auto_deny"}
 
-      effective = Fountain.Permissions.effective(agent.permission_policy, conv.permission_policy)
-      assert Fountain.Permissions.verdict_for(effective, "Bash") == "auto_deny"
-      assert Fountain.Permissions.verdict_for(effective, "Read") == "auto_allow"
+      effective =
+        Managoat.ACP.Permissions.effective(agent.permission_policy, conv.permission_policy)
+
+      assert Managoat.ACP.Permissions.verdict_for(effective, "Bash") == "auto_deny"
+      assert Managoat.ACP.Permissions.verdict_for(effective, "Read") == "auto_allow"
     end
 
     test "a launch may not widen it, and the error names the tool", ctx do

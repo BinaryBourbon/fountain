@@ -3,7 +3,7 @@ defmodule Fountain.Runtimes.LegacyBlocks do
   Translate stored legacy-dialect stdout lines into the block maps the
   conversation view renders.
 
-  This is the twin of `Fountain.Runtimes.ACP.Blocks`, for the `stdout` stream:
+  This is the twin of `Managoat.ACP.Blocks`, for the `stdout` stream:
   the four hand-written parsers that used to be 24 `event_blocks/2` clauses
   inside the LiveView render path (#642). Getting them out of `show.ex` was
   ADR 0014's original complaint — a vendor's point release becoming our

@@ -1,50 +1,55 @@
-defmodule Fountain.Runtimes.ACP.Tracer do
+defmodule Managoat.ACP.Tracer do
   @moduledoc """
   Turns `session/update` notifications into OTel tool spans, for every runtime.
 
-  The claude-only `Fountain.Runtimes.Claude.StreamTracer` bridged one dialect
-  into the turn span; three of four runtimes produced no tool-level traces at
-  all, and nobody noticed because the gap is invisible from inside a
-  conversation (#637). ACP's `tool_call` / `tool_call_update` carry an id and a
-  status for every runtime, which is exactly what a tracer keys on — so this
-  module is dialect-free and one per protocol, not one per agent.
+  Fountain's claude-only stream tracer bridged one dialect into the turn
+  span; three of four runtimes produced no tool-level traces at all, and
+  nobody noticed because the gap is invisible from inside a conversation
+  (#637). ACP's `tool_call` / `tool_call_update` carry an id and a status for
+  every runtime, which is exactly what a tracer keys on — so this module is
+  dialect-free and one per protocol, not one per agent.
+
+  Span and attribute names carry a prefix, `new/2`'s `:prefix` option,
+  `"acp"` by default. The names below are written with it.
 
   Span mapping:
 
-  - **`tool_call`** opens a `fountain.tool_use` child span, keyed by
+  - **`tool_call`** opens a `<prefix>.tool_use` child span, keyed by
     `toolCallId`, named by the same title-then-kind preference the render path
     uses (`Blocks`).
   - **`tool_call_update`** with a terminal status closes the matching span;
     `failed` and `cancelled` mark it as an error. Non-terminal updates are
     progress, not an outcome, and touch nothing.
   - **`agent_message_chunk` / `agent_thought_chunk`** accumulate byte counts,
-    surfaced at `finalize/1` as `fountain.text_bytes` /
-    `fountain.thinking_bytes` on the turn span. Chunks are per-delta and a turn
-    produces hundreds; one span event each — what the legacy tracer did per
-    assistant *message* — would blow through OTel's default event limit on the
-    first real turn.
+    surfaced at `finalize/1` as `<prefix>.text_bytes` /
+    `<prefix>.thinking_bytes` on the turn span. Chunks are per-delta and a
+    turn produces hundreds; one span event each — what the legacy tracer did
+    per assistant *message* — would blow through OTel's default event limit
+    on the first real turn.
   - **`finalize/1`** closes any span still open as `abandoned` (the runtime
     exited or was interrupted before the matching update) and writes the
     accumulated totals.
 
   ## What the legacy tracer had that this one drops, on purpose
 
-  Cost and token usage (`fountain.total_cost_usd`, `fountain.input_tokens`,
-  …) came from claude's proprietary `result` event. ACP's `session/prompt`
-  response carries a stop reason and no usage block, so those attributes do
-  not exist on this path — dropped explicitly rather than silently (#637). If
-  ops dashboards need them back, the source would be per-runtime again and
-  belongs in a follow-up, not hidden in here.
+  Cost and token usage came from claude's proprietary `result` event. ACP's
+  `session/prompt` response carries a stop reason and, at protocol v1, an
+  unstable usage block that `Managoat.ACP.Usage` reads at turn end; the
+  tracer does not put it on the span — dropped explicitly rather than
+  silently (#637). If a dashboard needs it back, the source is the `:done`
+  report, not this module.
 
   All functions no-op on `nil`, so the caller keeps a `nil` tracer for turns
-  that trace nothing, without branching.
+  that trace nothing, without branching. The OpenTelemetry *API* is the only
+  dependency: with no SDK started every span call is a no-op.
   """
 
   require OpenTelemetry.Tracer, as: Tracer
 
-  alias Fountain.Runtimes.ACP.Protocol
+  alias Managoat.ACP.Protocol
 
   defstruct turn_span_ctx: nil,
+            prefix: "acp",
             open_tool_spans: %{},
             text_bytes: 0,
             thinking_bytes: 0,
@@ -54,9 +59,17 @@ defmodule Fountain.Runtimes.ACP.Tracer do
 
   @terminal_statuses ~w(completed failed cancelled)
 
-  @doc "Create a tracer attached to `turn_span_ctx`."
-  @spec new(term()) :: t()
-  def new(turn_span_ctx), do: %__MODULE__{turn_span_ctx: turn_span_ctx}
+  @doc """
+  Create a tracer attached to `turn_span_ctx`.
+
+  `prefix:` names the spans and attributes (`<prefix>.tool_use`,
+  `<prefix>.tool_name`, …); the default is `"acp"`. A host with dashboards
+  built on another prefix passes its own.
+  """
+  @spec new(term(), keyword()) :: t()
+  def new(turn_span_ctx, opts \\ []) do
+    %__MODULE__{turn_span_ctx: turn_span_ctx, prefix: Keyword.get(opts, :prefix, "acp")}
+  end
 
   @doc """
   Feed one stored protocol line — the same ndjson the `acp` log stream holds.
@@ -84,13 +97,13 @@ defmodule Fountain.Runtimes.ACP.Tracer do
 
   def finalize(%__MODULE__{} = tracer) do
     Tracer.set_current_span(tracer.turn_span_ctx)
-    Tracer.set_attribute("fountain.text_bytes", tracer.text_bytes)
-    Tracer.set_attribute("fountain.thinking_bytes", tracer.thinking_bytes)
-    Tracer.set_attribute("fountain.tool_calls", tracer.tool_calls)
+    Tracer.set_attribute(attr(tracer, "text_bytes"), tracer.text_bytes)
+    Tracer.set_attribute(attr(tracer, "thinking_bytes"), tracer.thinking_bytes)
+    Tracer.set_attribute(attr(tracer, "tool_calls"), tracer.tool_calls)
 
     Enum.each(tracer.open_tool_spans, fn {_id, span_ctx} ->
       Tracer.set_current_span(span_ctx)
-      Tracer.set_attribute("fountain.tool_status", "abandoned")
+      Tracer.set_attribute(attr(tracer, "tool_status"), "abandoned")
       Tracer.set_status(OpenTelemetry.status(:error, "turn ended with open tool call"))
       Tracer.end_span(span_ctx)
     end)
@@ -121,11 +134,11 @@ defmodule Fountain.Runtimes.ACP.Tracer do
       Tracer.set_current_span(tracer.turn_span_ctx)
 
       span_ctx =
-        Tracer.start_span("fountain.tool_use", %{
+        Tracer.start_span(attr(tracer, "tool_use"), %{
           attributes: %{
-            "fountain.tool_name" => tool_name(update),
-            "fountain.tool_id" => id,
-            "fountain.tool_kind" => Map.get(update, "kind", "")
+            attr(tracer, "tool_name") => tool_name(update),
+            attr(tracer, "tool_id") => id,
+            attr(tracer, "tool_kind") => Map.get(update, "kind", "")
           }
         })
 
@@ -148,7 +161,7 @@ defmodule Fountain.Runtimes.ACP.Tracer do
 
       {span_ctx, remaining} ->
         Tracer.set_current_span(span_ctx)
-        Tracer.set_attribute("fountain.tool_status", status)
+        Tracer.set_attribute(attr(tracer, "tool_status"), status)
 
         if status != "completed" do
           Tracer.set_status(OpenTelemetry.status(:error, "tool #{status}"))
@@ -171,6 +184,8 @@ defmodule Fountain.Runtimes.ACP.Tracer do
   defp update_span(tracer, _update), do: tracer
 
   # ── helpers ───────────────────────────────────────────────────────────────
+
+  defp attr(%__MODULE__{prefix: prefix}, name), do: prefix <> "." <> name
 
   # Same preference as the render path: the human title, then ACP's coarse
   # kind, never an empty name.

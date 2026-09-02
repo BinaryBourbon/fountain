@@ -1,7 +1,7 @@
-defmodule Fountain.Runtimes.ACP.UsageTest do
+defmodule Managoat.ACP.UsageTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes.ACP.Usage
+  alias Managoat.ACP.Usage
 
   test "the `usage` object, with the cache fields when present" do
     assert Usage.from_prompt_result(%{

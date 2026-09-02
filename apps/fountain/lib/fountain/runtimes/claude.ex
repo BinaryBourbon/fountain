@@ -14,7 +14,7 @@ defmodule Fountain.Runtimes.Claude do
   ## MCP servers are provisioned, not delivered over ACP (#837)
 
   ACP defines a session-scoped channel for MCP servers (`session/new`'s
-  `mcpServers`), and `Fountain.Runtimes.ACP.Peer` sends the agent's servers
+  `mcpServers`), and `Managoat.ACP.Peer` sends the agent's servers
   there correctly (pinned by `peer_mcp_test.exs`). But `claude-agent-acp`
   (measured on 0.66–0.70) never launches stdio servers passed that way —
   reproduced standalone, upstream bug

@@ -86,15 +86,15 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     # it — so publishing it in the spec would advertise a value every request
     # carrying it gets a 422 for.
     {FountainWeb.Schemas.Agent, "permission_policy.{}"} =>
-      {Fountain.Permissions, :buildable_verdicts},
+      {Managoat.ACP.Permissions, :buildable_verdicts},
     {FountainWeb.Schemas.ConversationCreateRequest, "permission_policy.{}"} =>
-      {Fountain.Permissions, :buildable_verdicts},
+      {Managoat.ACP.Permissions, :buildable_verdicts},
     {FountainWeb.Schemas.AgentRequest, "permission_policy.{}"} =>
-      {Fountain.Permissions, :buildable_verdicts},
+      {Managoat.ACP.Permissions, :buildable_verdicts},
     {FountainWeb.Schemas.AgentUpdate, "permission_policy.{}"} =>
-      {Fountain.Permissions, :buildable_verdicts},
+      {Managoat.ACP.Permissions, :buildable_verdicts},
     {FountainWeb.Schemas.Conversation, "permission_policy.{}"} =>
-      {Fountain.Permissions, :buildable_verdicts},
+      {Managoat.ACP.Permissions, :buildable_verdicts},
     {FountainWeb.Schemas.Conversation, "status"} => {Conversation, :statuses},
     {FountainWeb.Schemas.Conversation, "source"} => {Conversation, :sources},
     {FountainWeb.Schemas.ConversationTreeNode, "status"} => {Conversation, :statuses},

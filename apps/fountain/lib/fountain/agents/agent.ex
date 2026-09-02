@@ -47,7 +47,7 @@ defmodule Fountain.Agents.Agent do
     # Per-tool permission policy (#939): %{"default" => "auto_allow",
     # "Bash" => "auto_deny"}. Empty means no opinion, which resolves to
     # auto_allow — what every agent does today. A launch may supply its own,
-    # but only to narrow this one; see Fountain.Permissions.
+    # but only to narrow this one; see Managoat.ACP.Permissions.
     field :permission_policy, :map, default: %{}
     field :avatar_media_type, :string
     field :conversation_count, :integer, virtual: true, default: 0
@@ -190,7 +190,7 @@ defmodule Fountain.Agents.Agent do
   defp runtime_errors(changeset, policy) do
     runtime = Ecto.Changeset.get_field(changeset, :runtime)
 
-    if not Fountain.Permissions.needs_enforcement?(policy) or
+    if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
          Fountain.Runtimes.ACP.asks_permission?(runtime) do
       []
     else
@@ -207,14 +207,14 @@ defmodule Fountain.Agents.Agent do
       not is_binary(tool) or tool == "" ->
         [permission_policy: "tool names must be non-empty strings"]
 
-      verdict not in Fountain.Permissions.verdicts() ->
+      verdict not in Managoat.ACP.Permissions.verdicts() ->
         [
           permission_policy:
             "#{tool}: unknown verdict #{inspect(verdict)} " <>
-              "(one of #{Enum.join(Fountain.Permissions.verdicts(), ", ")})"
+              "(one of #{Enum.join(Managoat.ACP.Permissions.verdicts(), ", ")})"
         ]
 
-      not Fountain.Permissions.buildable?(verdict) ->
+      not Managoat.ACP.Permissions.buildable?(verdict) ->
         [permission_policy: "#{tool}: #{verdict} is not built yet — see #940"]
 
       true ->

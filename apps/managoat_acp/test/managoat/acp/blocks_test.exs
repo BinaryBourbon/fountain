@@ -1,7 +1,7 @@
-defmodule Fountain.Runtimes.ACP.BlocksTest do
+defmodule Managoat.ACP.BlocksTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes.ACP.Blocks
+  alias Managoat.ACP.Blocks
 
   defp update(map), do: Blocks.from_update(%{"update" => map})
 

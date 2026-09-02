@@ -1019,7 +1019,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       # What the previous peer persisted for this turn: the peer's own
       # re-encoding of the line, which is what a fresh peer produces again.
       {:notification, "session/update", params} =
-        Fountain.Runtimes.ACP.Protocol.classify_line(String.trim_trailing(already, "\n"))
+        Managoat.ACP.Protocol.classify_line(String.trim_trailing(already, "\n"))
 
       Conversations.log!(%{
         conversation_id: conv.id,
@@ -1027,10 +1027,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
         kind: "output",
         stream: "acp",
         stage: "turn",
-        data:
-          IO.iodata_to_binary(
-            Fountain.Runtimes.ACP.Protocol.notification("session/update", params)
-          )
+        data: IO.iodata_to_binary(Managoat.ACP.Protocol.notification("session/update", params))
       })
 
       pid = start_reattached(conv)

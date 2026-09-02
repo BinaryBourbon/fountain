@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.ACP.Protocol do
+defmodule Managoat.ACP.Protocol do
   @moduledoc """
   Framing and JSON-RPC 2.0 encoding for the Agent Client Protocol.
 
@@ -6,8 +6,8 @@ defmodule Fountain.Runtimes.ACP.Protocol do
   module owns the bytes, which is the part worth testing exhaustively and the
   part that has nothing to do with sprites.
 
-  ACP is newline-delimited JSON over stdio. The sprite hands us stdout in
-  arbitrary chunks that respect no message boundary at all: one chunk can carry
+  ACP is newline-delimited JSON over stdio. A transport hands the peer bytes
+  in arbitrary chunks that respect no message boundary at all: one chunk can carry
   three messages and half of a fourth, and the other half arrives later. So
   framing has to carry a buffer across calls — `feed/2` returns the messages it
   could complete plus whatever tail it could not, and the caller hands that tail
@@ -23,6 +23,7 @@ defmodule Fountain.Runtimes.ACP.Protocol do
   """
 
   @jsonrpc "2.0"
+  @protocol_version 1
 
   @typedoc "A framed message, already classified."
   @type message ::
@@ -56,8 +57,8 @@ defmodule Fountain.Runtimes.ACP.Protocol do
   @doc """
   Classify one already-framed line.
 
-  Exposed for the render path, which reads lines back out of `log_events` and
-  has no buffer to carry.
+  Exposed for a render path that reads stored lines back and has no buffer
+  to carry.
   """
   @spec classify_line(String.t()) :: message()
   def classify_line(line) do
@@ -79,8 +80,8 @@ defmodule Fountain.Runtimes.ACP.Protocol do
   `session_info_update` about a second *after* the prompt response — out of
   turn. Metadata is nothing the agent said or ran, so it must not be read as
   "the agent is talking out of turn": it opens no autonomous turn and holds
-  none open (#1300). Exposed for `ConversationServer`, which classifies the
-  peer's reported lines.
+  none open (#1300). Exposed for an owner that classifies the peer's reported
+  lines.
   """
   @spec session_metadata?(String.t()) :: boolean()
   def session_metadata?(line) when is_binary(line) do
@@ -142,6 +143,34 @@ defmodule Fountain.Runtimes.ACP.Protocol do
   @doc "JSON-RPC's method-not-found code."
   @spec method_not_found() :: integer()
   def method_not_found, do: -32_601
+
+  @doc """
+  The client capabilities the peer declares unless told otherwise: none.
+
+  `fs/*` and `terminal/*` are client-implemented, and a client that declares
+  them has to service them against wherever the agent is running. Declaring
+  nothing means a well-behaved adapter never asks; the peer still answers
+  anything that arrives with `method_not_found/0`, because an unanswered
+  request blocks the agent.
+  """
+  @spec default_client_capabilities() :: map()
+  def default_client_capabilities do
+    %{fs: %{readTextFile: false, writeTextFile: false}, terminal: false}
+  end
+
+  @doc """
+  The `initialize` params for `client_capabilities`.
+
+  `protocolVersion` is `#{@protocol_version}`, the current version at
+  [agentclientprotocol.com](https://agentclientprotocol.com/protocol/initialization);
+  the spec bumps it only for breaking changes, and new capabilities are not
+  breaking. The peer sends this on `handle_continue(:initialize)` with the
+  capabilities its owner passed (`default_client_capabilities/0` by default).
+  """
+  @spec initialize_params(map()) :: map()
+  def initialize_params(client_capabilities) when is_map(client_capabilities) do
+    %{protocolVersion: @protocol_version, clientCapabilities: client_capabilities}
+  end
 
   defp line(map), do: [Jason.encode_to_iodata!(map), "\n"]
 end

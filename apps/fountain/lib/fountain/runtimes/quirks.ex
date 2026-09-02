@@ -70,7 +70,7 @@ defmodule Fountain.Runtimes.Quirks do
       summary: "claude's MCP servers are provisioned as files, not sent over ACP",
       why: """
       ACP defines a session-scoped channel for MCP servers (`session/new`'s
-      `mcpServers`) and `Fountain.Runtimes.ACP.Peer` sends the agent's servers
+      `mcpServers`) and `Managoat.ACP.Peer` sends the agent's servers
       there correctly. claude-agent-acp never launches stdio servers passed
       that way, so the session-scoped path delivers nothing. We write a
       project `.mcp.json` plus `enableAllProjectMcpServers` instead, which the

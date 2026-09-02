@@ -18,6 +18,25 @@ upgrade, is in
 
 ### Changed
 
+- **The ACP peer, the permission policy and the block normaliser are now
+  the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`
+  (the client-side session that outlives the turn), `Protocol`, `Blocks`,
+  `Tracer`, `Usage` and `Fountain.Permissions` moved to the Apache-2.0
+  `Managoat.ACP` app. The one thing the peer needed from the sandbox was a
+  way to write bytes, so the library takes a writer function instead of a
+  sandbox command (`Managoat.ACP.Transport`) and depends on nothing but
+  `jason` and the OpenTelemetry API; `ConversationServer` passes a writer
+  that wraps `Managoat.Sandbox.write_stdin/2` and keeps feeding stdout
+  through `Peer.stdout/2`. No protocol behaviour, timer, replay rule or
+  report shape changed. The library ships
+  `Managoat.ACP.Testing.ScriptedAgent`, an in-BEAM agent, and its own suite
+  runs async with no stubs. `Fountain.Runtimes.ACP` (which adapter, how it
+  gets into the sandbox, `initialize_params/0`, and now the
+  `permission_ask_timeout_seconds` read as `ask_timeout_ms/0`),
+  `LegacyBlocks`, `Conversations.Blocks` and the tool bridge stay in
+  Fountain. The library README compares the package with `acpex` and
+  `agent_client_protocol` and recommends publishing it as it is.
+
 - **The embedded manual, its renderer and its guardrails are now the
   `managoat_docs` library** (#1342, ADR 0037). `Fountain.Docs.Compiler`
   (the `nav.yml` parser and the snippet/admonition/link dialect) and

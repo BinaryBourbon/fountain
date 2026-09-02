@@ -4,7 +4,7 @@ defmodule Fountain.Conversations.Blocks do
   seam between what the runtime wrote and what a transcript shows.
 
   Keyed on the event's *stream*, not the conversation's runtime: the `acp`
-  stream is parsed by `Fountain.Runtimes.ACP.Blocks`, the legacy `stdout`
+  stream is parsed by `Managoat.ACP.Blocks`, the legacy `stdout`
   dialects by `Fountain.Runtimes.LegacyBlocks` for the runtime that wrote
   them. The per-agent ACP flag can flip between turns, and the turns before
   it flipped must keep rendering through the parser that produced them
@@ -37,7 +37,7 @@ defmodule Fountain.Conversations.Blocks do
   because the two arrive as separate events.
   """
 
-  alias Fountain.Runtimes.{ACP, LegacyBlocks}
+  alias Fountain.Runtimes.LegacyBlocks
 
   @kinds ~w(text thinking tool_use tool_result init result error raw permission_request)
 
@@ -49,7 +49,7 @@ defmodule Fountain.Conversations.Blocks do
   def for_event(%{stream: "acp", data: data}, _runtime) when is_binary(data) do
     data
     |> String.split("\n", trim: true)
-    |> Enum.flat_map(&ACP.Blocks.from_line/1)
+    |> Enum.flat_map(&Managoat.ACP.Blocks.from_line/1)
   end
 
   def for_event(%{data: data}, runtime) when is_binary(data) do

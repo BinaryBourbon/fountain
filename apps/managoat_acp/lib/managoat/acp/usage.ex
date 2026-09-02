@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.ACP.Usage do
+defmodule Managoat.ACP.Usage do
   @moduledoc """
   The end-of-turn token figure, normalised from a `session/prompt` response
   (#827).
@@ -13,9 +13,9 @@ defmodule Fountain.Runtimes.ACP.Usage do
     * `_meta.inputTokens` / `_meta.outputTokens` — where an adapter put it
       before the field had a name.
 
-  The result is Fountain's shape, string-keyed for the jsonb column:
-  `%{"input" => n, "output" => n}` plus `"cache_read"` / `"cache_write"`
-  when reported. `nil` when the response carries neither — a turn without a
+  The result is one flat, string-keyed map (so it can go straight into a
+  JSON column): `%{"input" => n, "output" => n}` plus `"cache_read"` /
+  `"cache_write"` when reported. `nil` when the response carries neither — a turn without a
   usage, not a zero one.
 
   Deliberately *not* derived from the `usage_update` notifications that

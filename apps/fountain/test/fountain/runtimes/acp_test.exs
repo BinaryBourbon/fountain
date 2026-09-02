@@ -167,6 +167,26 @@ defmodule Fountain.Runtimes.ACPTest do
     end
   end
 
+  describe "ask_timeout_ms/0" do
+    test "the timeout sits under the idle bound, or an unanswered prompt costs the disk" do
+      # Lifecycle.check/4 suppresses only the idle verdict while a turn is in
+      # flight, and per 0017 the idle bound suspends while the ceiling
+      # destroys. A timeout at or above the idle bound would mean an
+      # unanswered prompt is resolved by the ceiling instead — burning the
+      # whole lifetime and taking the agent's memory with it (#649).
+      assert ACP.ask_timeout_ms() <
+               Fountain.Conversations.Lifecycle.idle_timeout_seconds() * 1000
+    end
+
+    test "is the library's default when nothing is configured" do
+      # The config read is Fountain's; the default and the parsing are the
+      # library's (Managoat.ACP.Permissions.ask_timeout_ms/1). This pins that
+      # the two agree rather than each carrying a five-minute literal.
+      configured = Application.get_env(:fountain, :permission_ask_timeout_seconds)
+      assert ACP.ask_timeout_ms() == Managoat.ACP.Permissions.ask_timeout_ms(configured)
+    end
+  end
+
   describe "initialize_params/0" do
     test "declares no filesystem or terminal capability" do
       params = ACP.initialize_params()

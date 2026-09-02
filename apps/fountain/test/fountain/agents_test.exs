@@ -486,7 +486,7 @@ defmodule Fountain.AgentsTest do
     test "defaults to an empty map, which means auto_allow" do
       agent = insert_agent(user_id: insert_verified_user().id)
       assert agent.permission_policy == %{}
-      assert Fountain.Permissions.verdict_for(agent.permission_policy, "Bash") == "auto_allow"
+      assert Managoat.ACP.Permissions.verdict_for(agent.permission_policy, "Bash") == "auto_allow"
     end
 
     test "accepts a per-tool map with a default" do

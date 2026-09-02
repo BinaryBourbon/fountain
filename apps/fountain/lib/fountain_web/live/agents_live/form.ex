@@ -4,7 +4,7 @@ defmodule FountainWeb.AgentsLive.Form do
 
   alias Fountain.{Agents, AvatarGenerator, Environments, InferenceCredentials}
   alias Fountain.Agents.Agent
-  alias Fountain.Permissions
+  alias Managoat.ACP.Permissions
   alias Fountain.Runtimes.ACP
   alias Fountain.Runtimes.Model
 
