@@ -98,7 +98,8 @@ Fountain's database-free subsystems were extracted as Apache-2.0 libraries
 under the `Managoat.*` namespace (decisions/0037, tracker #1334). Each
 started as an app in this umbrella, `apps/managoat_<name>`, and graduated to
 a `managoat/managoat_<name>` repository once its surface stopped moving; all
-eight have (#1345), so the umbrella holds none today. A new one starts the
+nine have (#1345; managoat_runtimes, #1368, by the same recipe), so the
+umbrella holds none today. A new one starts the
 same way. The model to copy is the last extraction as merged,
 `git show 1b848031 -- apps/managoat_substitution` (#1347, the smallest), or
 `managoat/managoat_substitution` on GitHub minus what the graduation

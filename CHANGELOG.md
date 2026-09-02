@@ -38,6 +38,13 @@ upgrade, is in
 
 ### Changed
 
+- **`managoat_runtimes` comes from hex** (#1368, #1345, ADR 0037), the
+  ninth library to graduate and the last in the umbrella:
+  `apps/managoat_runtimes` is gone, the pin is
+  `{:managoat_runtimes, "~> 0.1.0"}`, the source is
+  managoat/managoat_runtimes, which publishes to hex from its own CI. The
+  umbrella again holds no library app. Nothing about `Managoat.Runtimes`
+  changed.
 - **Runtime provisioning is a library, `managoat_runtimes`** (#1368, ADR
   0037): how claude, codex, gemini and opencode get into a sandbox and come
   up speaking ACP — the behaviour and dispatcher, the pinned adapter table
