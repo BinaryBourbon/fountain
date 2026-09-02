@@ -98,7 +98,7 @@ RUN mix compile \
 # (ADR 0020): buzz-acp runs `fountain acp`, which talks HTTP/SSE back to this
 # same server. Built for the image's target arch (both amd64 and arm64).
 
-FROM golang:1.26-bookworm AS gocli
+FROM golang:1.27-bookworm AS gocli
 WORKDIR /src
 COPY cli/go.mod cli/go.sum ./
 RUN go mod download
