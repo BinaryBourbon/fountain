@@ -46,7 +46,6 @@ COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
 # One line per umbrella library app (decisions/0037): the umbrella loads every
 # child's mix.exs to resolve deps, so a missing one fails `mix deps.get` here.
 # umbrella_layout_test.exs checks that every apps/managoat_* has its line.
-COPY apps/managoat_acp/mix.exs ./apps/managoat_acp/mix.exs
 COPY apps/managoat_broker/mix.exs ./apps/managoat_broker/mix.exs
 COPY apps/managoat_docs/mix.exs ./apps/managoat_docs/mix.exs
 COPY apps/managoat_runner/mix.exs ./apps/managoat_runner/mix.exs
