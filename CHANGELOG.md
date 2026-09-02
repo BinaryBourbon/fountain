@@ -260,6 +260,15 @@ upgrade, is in
   spawn, the peer and the connection. Twenty-four functions and twelve
   report handlers moved; no stage, log line, telemetry event, timer or
   audit event changed. The pin drops from 3,991 to 3,322.
+- **What a turn waits on has left `ConversationServer`** (#1375, tracker
+  #1369). `Fountain.Conversations.Pending` is the parked caller-tool calls
+  with their deadlines and the permission request's timeout, as one value,
+  with the functions that add, answer, deny, expire and drain it and return
+  the reply, the turn row and the next value. The server's five
+  `handle_call` clauses, the two timeout handlers and the ask are each a
+  call into it; the GenServer messages, the stage events and the audit of a
+  denial are unchanged, and `Fountain.CallerTools` still owns the wire
+  shapes. The pin drops from 3,322 to 3,192.
 
 ### Added
 

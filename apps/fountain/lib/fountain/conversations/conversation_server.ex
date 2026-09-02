@@ -28,6 +28,7 @@ defmodule Fountain.Conversations.ConversationServer do
     HomeCheckpoint,
     Lifecycle,
     McpServers,
+    Pending,
     Provisioning,
     SpriteEnv,
     TurnMachine
@@ -1615,92 +1616,60 @@ defmodule Fountain.Conversations.ConversationServer do
     {:reply, :ok, interrupt_turn(state)}
   end
 
-  # First answer wins. The web apps and an editor (#708) are peer clients of
-  # this door, not fallbacks for one another, so a second answer to the same
-  # request is "too late" rather than an error in the caller.
+  # First answer wins (`Pending.answer_permission/6`): the web apps and an
+  # editor (#708) are peer clients of this door, not fallbacks for one
+  # another, so a second answer to the same request is "too late" rather
+  # than an error in the caller.
   def handle_call({:answer_permission, request_id, option_id}, _from, state) do
-    case state.acp_peer do
-      nil ->
-        {:reply, {:error, :no_pending_permission}, state}
+    {reply, turn, pending} =
+      Pending.answer_permission(
+        Pending.from_state(state),
+        state.conversation_id,
+        state.current_turn,
+        state.acp_peer,
+        request_id,
+        option_id
+      )
 
-      peer ->
-        case Managoat.ACP.Peer.answer_permission(peer, request_id, option_id) do
-          :ok ->
-            {:reply, :ok, resolve_permission(state, request_id, "answered", option_id)}
-
-          {:error, reason} ->
-            {:reply, {:error, reason}, state}
-        end
-    end
+    {:reply, reply, %{Pending.into_state(state, pending) | current_turn: turn}}
   end
 
+  # A call needs a turn to belong to, and the client following that turn is
+  # the only party that can answer.
   def handle_call({:park_caller_tool, name, arguments, waiter}, _from, state) do
     case state.current_turn do
       nil ->
         {:reply, {:error, :no_turn}, state}
 
       turn ->
-        call_id = "call_" <> (Ecto.UUID.generate() |> String.replace("-", ""))
-
-        publish_stage(state.conversation_id, "caller_tool", "started", %{
-          call_id: call_id,
-          turn_id: turn.id,
-          name: name,
-          arguments: arguments,
-          timeout_ms: Fountain.Conversations.Lifecycle.ask_timeout_ms()
-        })
-
-        timer =
-          Process.send_after(
-            self(),
-            {:caller_tool_timeout, call_id},
-            Fountain.Conversations.Lifecycle.ask_timeout_ms()
+        {call_id, pending} =
+          Pending.park(
+            Pending.from_state(state),
+            state.conversation_id,
+            turn,
+            name,
+            arguments,
+            waiter
           )
 
-        entry = %{
-          id: call_id,
-          name: name,
-          arguments: arguments,
-          turn_id: turn.id,
-          waiter: waiter,
-          timer: timer,
-          result: nil,
-          parked_at: System.monotonic_time(:millisecond)
-        }
-
-        {:reply, {:ok, call_id}, put_in(state.caller_calls[call_id], entry)}
+        {:reply, {:ok, call_id}, Pending.into_state(state, pending)}
     end
   end
 
   def handle_call({:await_caller_tool, call_id, waiter}, _from, state) do
-    case state.caller_calls[call_id] do
-      nil -> {:reply, {:error, :unknown_call}, state}
-      %{result: nil} -> {:reply, :pending, put_in(state.caller_calls[call_id].waiter, waiter)}
-      %{result: result} -> {:reply, {:ok, result}, state}
-    end
+    {reply, pending} = Pending.await(Pending.from_state(state), call_id, waiter)
+    {:reply, reply, Pending.into_state(state, pending)}
   end
 
   def handle_call(:pending_caller_calls, _from, state) do
-    {:reply, pending_caller_calls_of(state), state}
+    {:reply, Pending.calls(Pending.from_state(state)), state}
   end
 
   def handle_call({:answer_caller_tools, answers}, _from, state) do
-    matched =
-      state.caller_calls
-      |> Map.values()
-      |> Enum.filter(&(is_nil(&1.result) and Map.has_key?(answers, &1.id)))
+    {reply, pending} =
+      Pending.answer_calls(Pending.from_state(state), state.conversation_id, answers)
 
-    if matched == [] do
-      {:reply, {:error, :no_pending_calls}, state}
-    else
-      state =
-        Enum.reduce(matched, state, fn call, state ->
-          resolve_caller_tool(state, call.id, "answered", {:ok, Map.fetch!(answers, call.id)})
-        end)
-
-      turn_id = matched |> List.first() |> Map.fetch!(:turn_id)
-      {:reply, {:ok, %{turn_id: turn_id, remaining: pending_caller_calls_of(state)}}, state}
-    end
+    {:reply, reply, Pending.into_state(state, pending)}
   end
 
   def handle_call(:terminate_conv, _from, state) do
@@ -1880,13 +1849,16 @@ defmodule Fountain.Conversations.ConversationServer do
   # The caller never answered a parked tool call (#1202). The agent gets an
   # error result and carries on; the stream records the outcome.
   def handle_info({:caller_tool_timeout, call_id}, state) do
-    {:noreply,
-     resolve_caller_tool(
-       state,
-       call_id,
-       "timeout",
-       {:error, "the caller did not answer within the deadline"}
-     )}
+    pending =
+      Pending.resolve_call(
+        Pending.from_state(state),
+        state.conversation_id,
+        call_id,
+        "timeout",
+        {:error, "the caller did not answer within the deadline"}
+      )
+
+    {:noreply, Pending.into_state(state, pending)}
   end
 
   # #655: the org has refused this account's Claude OAuth token. The machine
@@ -2133,110 +2105,41 @@ defmodule Fountain.Conversations.ConversationServer do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  # The one place a held request stops being held, whoever ended it: an answer,
-  # the timeout, or the turn ending. Cancels the timer, clears the turn's
-  # `pending_permission`, and publishes the resolution so a card can close.
-  #
-  # `state: "done"` for every outcome, including a deny and a timeout. The stage
-  # and its status are the Prometheus counter's only tags and there is an alert
-  # on them — a timeout emitting `failed` would page someone for a policy doing
-  # exactly what it was told.
+  # The permission request's end, whichever way (`Pending.resolve_permission/7`):
+  # the turn row and the timer are the server's to hold.
   defp resolve_permission(state, request_id, outcome, option_id) do
-    if state.permission_timer, do: Process.cancel_timer(state.permission_timer)
+    {turn, pending} =
+      Pending.resolve_permission(
+        Pending.from_state(state),
+        state.conversation_id,
+        state.current_turn,
+        state.acp_peer,
+        request_id,
+        outcome,
+        option_id
+      )
 
-    # Read before the clear below wipes it.
-    tool = pending_tool(state)
-
-    if outcome != "answered" and state.acp_peer do
-      Managoat.ACP.Peer.deny_permission(state.acp_peer, request_id)
-    end
-
-    state =
-      case state.current_turn do
-        nil ->
-          state
-
-        turn ->
-          {:ok, turn} = Conversations._unsafe_update_turn(turn, %{pending_permission: nil})
-          %{state | current_turn: turn}
-      end
-
-    publish_stage(state.conversation_id, "request", "done", %{
-      request_id: request_id,
-      outcome: outcome,
-      option_id: option_id
-    })
-
-    if outcome != "answered" do
-      Conversations.record_permission_denied(state.conversation_id, tool, outcome)
-    end
-
-    %{state | permission_timer: nil}
+    %{Pending.into_state(state, pending) | current_turn: turn}
   end
 
-  defp pending_tool(%{current_turn: %{pending_permission: %{"tool" => tool}}}), do: tool
-  defp pending_tool(_state), do: nil
-
-  # Resolve whatever is held, if anything. The turn row is the source of truth
-  # rather than the timer, so this is also correct for a request raised by a
-  # previous BEAM lifetime and reattached to.
+  # Resolve whatever is held, if anything, as the turn ends.
   defp resolve_pending_permission(state, outcome) do
-    case state.current_turn do
-      %{pending_permission: %{"request_id" => request_id}} ->
-        resolve_permission(state, request_id, outcome, nil)
+    {turn, pending} =
+      Pending.resolve_pending_permission(
+        Pending.from_state(state),
+        state.conversation_id,
+        state.current_turn,
+        state.acp_peer,
+        outcome
+      )
 
-      _ ->
-        state
-    end
+    %{Pending.into_state(state, pending) | current_turn: turn}
   end
 
-  # The one place a parked caller-tool call stops being parked (#1202): an
-  # answer, the deadline, or the turn ending. Cancels the timer, hands the
-  # result to whoever is waiting, keeps it for a waiter that asks later, and
-  # says so on the stream. `done` for every outcome, as `request` does.
-  defp resolve_caller_tool(state, call_id, outcome, result) do
-    case state.caller_calls[call_id] do
-      %{result: nil} = call ->
-        if call.timer, do: Process.cancel_timer(call.timer)
-        if is_pid(call.waiter), do: send(call.waiter, {:caller_tool_result, call_id, result})
-
-        publish_stage(state.conversation_id, "caller_tool", "done", %{
-          call_id: call_id,
-          turn_id: call.turn_id,
-          name: call.name,
-          outcome: outcome
-        })
-
-        put_in(state.caller_calls[call_id], %{call | result: result, timer: nil, waiter: nil})
-
-      _ ->
-        state
-    end
-  end
-
-  # Everything still parked when the turn ends: the agent gave up waiting, or
-  # the turn was cut. Resolved as errors, then the whole registry is dropped —
-  # a kept result belongs to a turn that is over.
+  # Everything still parked when the turn ends (`Pending.drop_calls/3`).
   defp drop_caller_tools(state, outcome) do
-    state =
-      Enum.reduce(pending_caller_calls_of(state), state, fn call, state ->
-        resolve_caller_tool(
-          state,
-          call.id,
-          outcome,
-          {:error, "the turn ended before the caller answered"}
-        )
-      end)
-
-    %{state | caller_calls: %{}}
-  end
-
-  defp pending_caller_calls_of(state) do
-    state.caller_calls
-    |> Map.values()
-    |> Enum.filter(&is_nil(&1.result))
-    |> Enum.sort_by(& &1.parked_at)
-    |> Enum.map(&Map.take(&1, [:id, :name, :arguments, :turn_id]))
+    pending = Pending.drop_calls(Pending.from_state(state), state.conversation_id, outcome)
+    Pending.into_state(state, pending)
   end
 
   # The absolute lifetime ceiling measures a continuous run, not calendar age:
@@ -2947,54 +2850,21 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp apply_effect(state, {:drop_connection, why}), do: drop_connection(state, why)
 
-  # `ask`: the agent is blocked and a human has to answer (#940).
-  #
-  # Three things happen, and the order matters. The pending request is persisted
-  # on the turn first, so a deploy landing a millisecond later can still be
-  # answered; then the stage event goes out; then the timeout is armed.
-  #
-  # The timeout is not optional and it is not a tidiness measure.
-  # `Lifecycle.check/4` suppresses only the *idle* verdict while a turn is in
-  # flight, so an unanswered request would sail past the idle bound and be
-  # resolved by the max-lifetime ceiling — and per 0017 the idle bound suspends
-  # while the ceiling destroys. Left alone, a prompt nobody answers does not
-  # hang forever; it burns the whole lifetime and then takes the agent's memory
-  # with it (#649).
+  # `ask`: the agent is blocked and a human has to answer (#940). The request
+  # goes on the turn row first, then the stage, then the timeout
+  # (`Pending.ask/6`); the server holds the row and the timer.
   defp ask_permission(state, request_id, tool, options) do
-    pending = %{
-      "request_id" => request_id,
-      "tool" => tool,
-      "options" => options,
-      "asked_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-    }
-
-    state =
-      case state.current_turn do
-        nil ->
-          state
-
-        turn ->
-          {:ok, turn} = Conversations._unsafe_update_turn(turn, %{pending_permission: pending})
-          %{state | current_turn: turn}
-      end
-
-    publish_stage(state.conversation_id, "request", "started", %{
-      request_id: request_id,
-      tool: tool,
-      # The agent's own list, verbatim. A client must never offer an option
-      # that is not on it.
-      options: options,
-      timeout_ms: Fountain.Conversations.Lifecycle.ask_timeout_ms()
-    })
-
-    timer =
-      Process.send_after(
-        self(),
-        {:permission_timeout, request_id},
-        Fountain.Conversations.Lifecycle.ask_timeout_ms()
+    {turn, pending} =
+      Pending.ask(
+        Pending.from_state(state),
+        state.conversation_id,
+        state.current_turn,
+        request_id,
+        tool,
+        options
       )
 
-    %{state | permission_timer: timer}
+    %{Pending.into_state(state, pending) | current_turn: turn}
   end
 
   # ── the connection (#817) ─────────────────────────────────────────────────
