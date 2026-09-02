@@ -86,6 +86,9 @@
                # the turn state machine (#1374): the server's own code, called
                # only from its callbacks, under the ownership init established
                "lib/fountain/conversations/turn_machine.ex",
+               # what a turn waits on (#1375): the same, writing the same turn
+               # row the server owns, called only from its callbacks
+               "lib/fountain/conversations/pending.ex",
                # system-level sweeps, run with no user in scope
                "lib/fountain/conversations/rehydrator.ex",
                "lib/fountain/workers/",
