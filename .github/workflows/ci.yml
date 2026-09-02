@@ -695,6 +695,14 @@ jobs:
       - name: Hermes plugin tests
         run: python3 -m unittest discover -s integrations/hermes/tests -v
 
+      # The Python SDK is deliberately stdlib-only, so its source tests run
+      # on the same interpreter without an install step.
+      - name: Python SDK tests
+        run: python3 -m unittest discover -s sdk/python/tests -v
+
+      - name: Python SDK compiles
+        run: python3 -m compileall -q sdk/python/src
+
       # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
       # directly, so `npm test` needs nothing but the dev dependency on tsc —
       # which is also what enforces `erasableSyntaxOnly`, the setting that

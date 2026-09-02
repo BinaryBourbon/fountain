@@ -63,6 +63,9 @@ priv/plts/
 # Python (integrations/hermes)
 __pycache__/
 *.pyc
+/sdk/python/build/
+/sdk/python/dist/
+/sdk/python/src/*.egg-info/
 
 # Build output of scripts/build-pages-tombstone.py.
 /_pages_tombstone/
