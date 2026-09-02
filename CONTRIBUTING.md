@@ -239,11 +239,15 @@ way an umbrella app did.
 **Ordering: a library that depends on another graduates after it.** Hex
 refuses `in_umbrella` dependencies, so the dependency must be on hex first.
 `managoat_runner` depends on `managoat_sandbox` and is the worked example:
-sandbox graduates and its Fountain-side PR merges; a one-line Fountain PR
-changes `apps/managoat_runner/mix.exs` from
-`{:managoat_sandbox, in_umbrella: true}` to `{:managoat_sandbox, "~> 0.1.0"}`
-(the umbrella resolves it from hex like Fountain does, and `mix hex.build`
-for runner now succeeds inside the umbrella); then runner graduates.
+sandbox graduates to hex; sandbox's Fountain-side PR deletes
+`apps/managoat_sandbox` **and, in the same PR**, changes
+`apps/managoat_runner/mix.exs` from `{:managoat_sandbox, in_umbrella: true}`
+to `{:managoat_sandbox, "~> 0.1.0"}`, because an `in_umbrella` dependency on
+an app that no longer exists cannot resolve, so the switch cannot be a PR of
+its own after the deletion. The umbrella then resolves it from hex like
+Fountain does, `mix hex.build` for runner succeeds inside the umbrella (that
+PR's gate), the runner conformance suite still passes; then runner
+graduates.
 
 **The cost that starts on graduation day.** A change across the seam is two
 PRs: a bump in the library (its gate insists), then a pin in Fountain. The
