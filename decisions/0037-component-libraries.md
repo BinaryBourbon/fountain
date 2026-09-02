@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
@@ -61,8 +61,9 @@ hexdocs now carries the README's comparison against `acpex` and
 dependency on it became the hex requirement in the same PR, since an
 `in_umbrella` dependency on a deleted app cannot resolve), `managoat_docs`
 (managoat/managoat_docs, hex 0.1.0, 2026-09-02; the package carries `lib/`
-only, nothing from Fountain's `docs/` or the fixture manual under `test/`).
-The
+only, nothing from Fountain's `docs/` or the fixture manual under `test/`),
+`managoat_broker` (managoat/managoat_broker, hex 0.1.0, 2026-09-02; the two
+x509 dialyzer ignores travelled with it). The
 tracker is #1334. Each PR that extracts or graduates a library updates this
 block.
 
