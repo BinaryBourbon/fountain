@@ -150,10 +150,10 @@ defmodule Fountain.Accounts.Deletion do
     # :sprites, which "destroyed" E2B/Daytona/runner sandboxes against the
     # wrong adapter.
     provider = Fountain.Conversations.sandbox_provider_atom(sandbox)
-    handle = Fountain.Sandbox.build_handle(provider, name)
+    handle = Managoat.Sandbox.build_handle(provider, name)
 
     result =
-      case Fountain.Sandbox.destroy(handle) do
+      case Managoat.Sandbox.destroy(handle) do
         :ok ->
           true
 

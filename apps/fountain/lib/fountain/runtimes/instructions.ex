@@ -47,14 +47,14 @@ defmodule Fountain.Runtimes.Instructions do
   when the sandbox refused the write (the caller logs and carries on — a
   missing persona is not a reason to fail a provision).
   """
-  @spec write(Fountain.Sandbox.Handle.t(), String.t() | nil, map() | nil) ::
+  @spec write(Managoat.Sandbox.Handle.t(), String.t() | nil, map() | nil) ::
           :ok | {:error, term()}
   def write(_handle, _runtime, nil), do: :ok
 
   def write(handle, runtime, %{system: system} = agent) do
     with path when is_binary(path) <- path(runtime),
          prompt when is_binary(prompt) <- blank_to_nil(system) do
-      Fountain.Sandbox.write_file(handle, path, render(agent, prompt))
+      Managoat.Sandbox.write_file(handle, path, render(agent, prompt))
     else
       _ -> :ok
     end

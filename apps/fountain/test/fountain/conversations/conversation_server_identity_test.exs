@@ -7,7 +7,7 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
   # conversation's process rather than the head of the sandbox's list.
   use Fountain.ConversationServerCase
 
-  alias Fountain.Sandbox.Session
+  alias Managoat.Sandbox.Session
 
   setup do
     user = insert_verified_user()
@@ -20,14 +20,14 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
     test = self()
     ref = make_ref()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
       send(test, {:spawned, cmd, args, opts})
-      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, _data -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, _data -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
     ref
   end
 
@@ -122,13 +122,13 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
       ref = stub_turn_boundary()
       test = self()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _h ->
         {:ok, [tagged("theirs", other_conv.id), tagged("ours", conv.id)]}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, id, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :attach, fn _h, id, _opts ->
         send(test, {:attached, id})
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
       end)
 
       {pid, _mon, :alive} = start_server(conv)
@@ -154,11 +154,11 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
       _ref = stub_turn_boundary()
       test = self()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _h ->
         {:ok, [tagged("theirs", other_conv.id)]}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, id, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :attach, fn _h, id, _opts ->
         send(test, {:attached, id})
         {:error, :should_not_be_called}
       end)
@@ -184,13 +184,13 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
       ref = stub_turn_boundary()
       test = self()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _h ->
         {:ok, [%Session{id: "legacy", command: "claude-agent-acp"}]}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, id, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :attach, fn _h, id, _opts ->
         send(test, {:attached, id})
-        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
       end)
 
       {pid, _mon, :alive} = start_server(conv)

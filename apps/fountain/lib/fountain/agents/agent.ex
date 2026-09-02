@@ -148,13 +148,13 @@ defmodule Fountain.Agents.Agent do
   defp validate_sandbox_provider(changeset) do
     validate_change(changeset, :sandbox_provider, fn :sandbox_provider, value ->
       cond do
-        value not in Fountain.Sandbox.known_providers() ->
+        value not in Fountain.SandboxProviders.known_providers() ->
           [
             sandbox_provider:
-              "must be one of: " <> Enum.join(Fountain.Sandbox.known_providers(), ", ")
+              "must be one of: " <> Enum.join(Fountain.SandboxProviders.known_providers(), ", ")
           ]
 
-        not Fountain.Sandbox.enabled?(String.to_existing_atom(value)) ->
+        not Fountain.SandboxProviders.enabled?(String.to_existing_atom(value)) ->
           [sandbox_provider: "is not configured on this instance"]
 
         true ->

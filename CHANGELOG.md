@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Changed
 
+- **The sandbox seam is a library, `managoat_sandbox`** (#1337, ADR 0037).
+  `Fountain.Sandbox` (the behaviour, the facade and the error taxonomy), the
+  Sprites, E2B and Daytona adapters, `Fountain.Retry`, the in-memory Fake
+  and the conformance suite are now `Managoat.Sandbox.*` in
+  `apps/managoat_sandbox`, Apache-2.0, with no change in behaviour. The
+  adapters read their settings from the library's own otp_app
+  (`config :managoat_sandbox, Managoat.Sandbox.Sprites, ...`), populated by
+  `config/runtime.exs` from the same environment variables as before, so
+  nothing changes for an operator. The self-hosted runner adapter stays in
+  Fountain and implements the behaviour from outside the library, and the
+  "which providers are usable on this deployment" policy is now
+  `Fountain.SandboxProviders`. The Fake and the conformance case ship in the
+  library's `lib/` so a consumer can run the suite against an adapter of its
+  own.
 - **The first component library, `managoat_substitution`** (#1336, ADR
   0037). Fountain's database-free subsystems are being extracted as
   Apache-2.0 libraries under the `Managoat.*` namespace, first as apps in

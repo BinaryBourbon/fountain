@@ -100,9 +100,13 @@ Each starts as an app in this umbrella, `apps/managoat_<name>`, and graduates
 to a `managoat/<name>` repository once its surface stops moving.
 `apps/managoat_substitution` is the model; copy it. A new one needs:
 
-- `apps/managoat_<name>/mix.exs` with the four umbrella path lines
-  (`build_path`, `config_path`, `deps_path`, `lockfile`), `package` metadata
-  with `licenses: ["Apache-2.0"]`, and its own `test_coverage` threshold.
+- `apps/managoat_<name>/mix.exs` with the three umbrella path lines
+  (`build_path`, `deps_path`, `lockfile`) and deliberately **no**
+  `config_path`: `config/runtime.exs` calls Fountain modules, so a library
+  pointed at it cannot boot from its own directory. The library's tests must
+  pass with no config at all (set what they need in `test/test_helper.exs`
+  or per test). Plus `package` metadata with `licenses: ["Apache-2.0"]`, and
+  its own `test_coverage` threshold.
 - `LICENSE` (Apache-2.0, copy `cli/LICENSE`), `README.md`, `.formatter.exs`,
   `test/test_helper.exs`.
 - A line in `apps/fountain/mix.exs`: `{:managoat_<name>, in_umbrella: true}`.

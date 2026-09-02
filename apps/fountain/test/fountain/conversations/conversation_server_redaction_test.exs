@@ -35,7 +35,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     :sys.replace_state(pid, fn state ->
       %{
         state
-        | handle: %Fountain.Sandbox.Handle{
+        | handle: %Managoat.Sandbox.Handle{
             provider: :sprites,
             name: "test-sprite",
             private: %Sprites.Sprite{

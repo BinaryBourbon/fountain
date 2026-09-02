@@ -945,7 +945,7 @@ defmodule Fountain.Conversations.ConversationServer do
         else
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
-            _ = Fountain.Sandbox.destroy(handle)
+            _ = Managoat.Sandbox.destroy(handle)
             broker_release(state)
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
@@ -1112,7 +1112,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # crash loop (one node, restarting) without guessing.
   defp do_reattach(state, conv, sandbox, agent, env, secrets) do
     handle =
-      Fountain.Sandbox.build_handle(
+      Managoat.Sandbox.build_handle(
         Fountain.Conversations.sandbox_provider_atom(sandbox),
         sandbox.sprite_name
       )
@@ -1120,8 +1120,8 @@ defmodule Fountain.Conversations.ConversationServer do
     # A broker failure lands in the transient arm below: it says nothing
     # about the sandbox, and the next wake mints again.
     with {:ok, _info} <-
-           Fountain.Retry.with_backoff(
-             fn -> Fountain.Sandbox.get(handle) end,
+           Managoat.Sandbox.Retry.with_backoff(
+             fn -> Managoat.Sandbox.get(handle) end,
              label: "sprite lookup on wake"
            ),
          {:ok, state} <- broker_prepare(state) do
@@ -1266,7 +1266,8 @@ defmodule Fountain.Conversations.ConversationServer do
       # not be touched (ADR 0023, #1058).
       reap_orphan_sessions(state)
     else
-      case Fountain.Retry.with_backoff(fn -> Fountain.Sandbox.list_sessions(state.handle) end,
+      case Managoat.Sandbox.Retry.with_backoff(
+             fn -> Managoat.Sandbox.list_sessions(state.handle) end,
              label: "session list on reattach"
            ) do
         {:ok, sessions} ->
@@ -1302,7 +1303,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # leftover adapter sessions (#817). Matched by tag; a session tagged for
   # another conversation, or untagged, is left alone.
   defp reap_orphan_sessions(state) do
-    case Fountain.Sandbox.list_sessions(state.handle) do
+    case Managoat.Sandbox.list_sessions(state.handle) do
       {:ok, sessions} ->
         mine =
           Enum.filter(
@@ -1311,8 +1312,8 @@ defmodule Fountain.Conversations.ConversationServer do
           )
 
         Enum.each(mine, fn session ->
-          case Fountain.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
-            {:ok, command} -> Fountain.Sandbox.stop_command(command)
+          case Managoat.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
+            {:ok, command} -> Managoat.Sandbox.stop_command(command)
             _ -> :ok
           end
         end)
@@ -1336,14 +1337,14 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     acp? = Fountain.Runtimes.ACP.enabled?(conv.runtime)
 
-    case Fountain.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
+    case Managoat.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
       {:ok, idle_command} when acp? and is_nil(running_turn.acp_prompt_id) ->
         # The previous peer died before it wrote `session/prompt` (or the turn
         # predates the column). The adapter is sitting idle in its handshake
         # with nothing to answer, and no peer can pick that up: the ids it
         # would need are gone with the process. Stop it — otherwise it lingers
         # as a session the next reattach could bind to — and orphan the turn.
-        Fountain.Sandbox.stop_command(idle_command)
+        Managoat.Sandbox.stop_command(idle_command)
         mark_orphan(state, running_turn, "acp_prompt_not_sent")
         state
 
@@ -1796,7 +1797,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # is still a working sandbox. Stored on the row so the API and the UI can
   # show it without a provider round trip.
   defp record_sandbox_url(sandbox, handle) do
-    case Fountain.Sandbox.public_url(handle) do
+    case Managoat.Sandbox.public_url(handle) do
       {:ok, url} ->
         meta = Map.put(sandbox.provider_meta || %{}, "public_url", url)
         {:ok, _} = Conversations.update_sandbox(sandbox, %{provider_meta: meta})
@@ -1873,7 +1874,7 @@ defmodule Fountain.Conversations.ConversationServer do
       fn ->
         publish_stage(conv_id, "setup", "started")
 
-        case Fountain.Sandbox.exec(handle, "bash", ["-lc", script],
+        case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
                env: sprite_env,
                stderr_to_stdout: true,
                timeout: 120_000
@@ -2098,7 +2099,7 @@ defmodule Fountain.Conversations.ConversationServer do
       {:stop, :normal, :ok, %{state | handle: nil}}
     else
       state = drop_connection(state, "terminated")
-      if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
+      if state.handle, do: _ = Managoat.Sandbox.destroy(state.handle)
       broker_release(state)
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
@@ -2891,7 +2892,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # SandboxReaper.expired?/2 must agree with this — change both together.
   # The provider tag for telemetry: read off the live handle, which was
   # built from the sandbox row's provider column.
-  defp provider(%{handle: %Fountain.Sandbox.Handle{provider: provider}}), do: provider
+  defp provider(%{handle: %Managoat.Sandbox.Handle{provider: provider}}), do: provider
   defp provider(_state), do: :sprites
 
   defp sandbox_clock_start(sandbox), do: sandbox.last_resumed_at || sandbox.inserted_at
@@ -2981,7 +2982,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # the meter. Ordering matters — a row marked suspended with the backend
   # still running would be invisible to every reclaim pass.
   defp suspend_sandbox(%{handle: nil}), do: :ok
-  defp suspend_sandbox(state), do: Fountain.Sandbox.suspend(state.handle)
+  defp suspend_sandbox(state), do: Managoat.Sandbox.suspend(state.handle)
 
   defp park_sandbox(state, reason \\ :idle) do
     Logger.info(
@@ -3052,7 +3053,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     state = drop_connection(state, "reclaimed")
 
-    if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
+    if state.handle, do: _ = Managoat.Sandbox.destroy(state.handle)
     broker_release(state)
 
     if state.sandbox_id do
@@ -3211,9 +3212,9 @@ defmodule Fountain.Conversations.ConversationServer do
         "interrupted attempt; destroying it before provisioning again"
     )
 
-    handle = Fountain.Sandbox.build_handle(provider, sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(provider, sandbox.sprite_name)
 
-    case Fountain.Sandbox.destroy(handle) do
+    case Managoat.Sandbox.destroy(handle) do
       :ok ->
         :ok
 
@@ -3228,8 +3229,8 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp create_sandbox_handle(provider, sandbox) do
-    Fountain.Retry.with_backoff(
-      fn -> Fountain.Sandbox.create(provider, sandbox.sprite_name) end,
+    Managoat.Sandbox.Retry.with_backoff(
+      fn -> Managoat.Sandbox.create(provider, sandbox.sprite_name) end,
       label: "sprite create #{sandbox.sprite_name}"
     )
   end
@@ -3389,8 +3390,8 @@ defmodule Fountain.Conversations.ConversationServer do
     # EOF before the handle goes: a detachable session survives its client
     # disconnecting, so closing the WebSocket alone would leave the adapter —
     # and whatever background task it was running — alive on the machine.
-    if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
-    if state.current_command, do: Fountain.Sandbox.stop_command(state.current_command)
+    if state.current_command, do: Managoat.Sandbox.close_stdin(state.current_command)
+    if state.current_command, do: Managoat.Sandbox.stop_command(state.current_command)
     state = cancel_autonomous_quiet(state)
 
     {:ok, _turn} =
@@ -3597,7 +3598,7 @@ defmodule Fountain.Conversations.ConversationServer do
         # — identity on hosted providers, the mapped directory on a runner
         # (ADR 0022).
         acp_cwd =
-          Fountain.Sandbox.host_path(state.handle, Fountain.Runtimes.ACP.cwd(conv.runtime))
+          Managoat.Sandbox.host_path(state.handle, Fountain.Runtimes.ACP.cwd(conv.runtime))
 
         {c, a, stdin?: true, dir: acp_cwd}
       else
@@ -3665,7 +3666,7 @@ defmodule Fountain.Conversations.ConversationServer do
         ]
         |> then(&if cwd, do: Keyword.put(&1, :dir, cwd), else: &1)
 
-      case Fountain.Sandbox.spawn(state.handle, cmd, args, spawn_opts) do
+      case Managoat.Sandbox.spawn(state.handle, cmd, args, spawn_opts) do
         {:ok, command} ->
           # write_stdin/2 is total by contract — a runtime that exits before
           # reading its prompt yields {:error, :command_exited} rather than
@@ -3989,8 +3990,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # The legacy stdin dance, unchanged and lifted out so the ACP branch above
   # reads as one condition rather than a nested `if`.
   defp write_prompt_and_close(command, payload) do
-    case Fountain.Sandbox.write_stdin(command, payload) do
-      :ok -> Fountain.Sandbox.close_stdin(command)
+    case Managoat.Sandbox.write_stdin(command, payload) do
+      :ok -> Managoat.Sandbox.close_stdin(command)
       {:error, reason} -> {:error, reason}
     end
   end
@@ -4221,10 +4222,10 @@ defmodule Fountain.Conversations.ConversationServer do
       end
 
     state = cancel_autonomous_quiet(state)
-    if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
+    if state.current_command, do: Managoat.Sandbox.close_stdin(state.current_command)
     consolidate_gemini_session(state)
     stop_acp_peer(state)
-    if state.current_command, do: Fountain.Sandbox.stop_command(state.current_command)
+    if state.current_command, do: Managoat.Sandbox.stop_command(state.current_command)
 
     _ = why
 
@@ -4476,7 +4477,7 @@ defmodule Fountain.Conversations.ConversationServer do
     |> Enum.map(fn {%{media_type: mt, data: data}, idx} ->
       ext = media_type_to_ext(mt)
       path = "/tmp/aod_turn_#{turn_id}_#{idx}.#{ext}"
-      Fountain.Sandbox.write_file(handle, path, data)
+      Managoat.Sandbox.write_file(handle, path, data)
       {path, mt}
     end)
   end

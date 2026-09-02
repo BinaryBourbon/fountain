@@ -48,8 +48,6 @@ defmodule Fountain.AsyncGlobalConfigGuardrailTest do
     "apps/fountain/test/fountain/audit_guardrail_test.exs",
     # :broker_allow_unenforced — read while provisioning a brokered sandbox.
     "apps/fountain/test/fountain/conversations/provisioning_test.exs",
-    # :sprites_public_urls — read by the sandbox URL lookup.
-    "apps/fountain/test/fountain/sandbox/sprites_test.exs",
     # :webhook_allow_http — read when a webhook URL is validated.
     "apps/fountain/test/fountain/webhooks/url_test.exs",
     # :webhooks_enabled — read on every webhook dispatch.

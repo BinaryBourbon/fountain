@@ -97,7 +97,7 @@ defmodule Fountain.Runtimes.OpenCode do
     fi
     """
 
-    case Fountain.Sandbox.exec(handle, "bash", ["-lc", install_script],
+    case Managoat.Sandbox.exec(handle, "bash", ["-lc", install_script],
            env: sprite_env,
            timeout: 120_000
          ) do

@@ -5,7 +5,7 @@ defmodule Fountain.Sandbox.RunnerConformanceTest do
   process and the JSON framing are all real; only the machine is not.
   """
 
-  use Fountain.SandboxConformanceCase,
+  use Managoat.Sandbox.ConformanceCase,
     adapter: Fountain.Sandbox.Runner,
     name: {Fountain.Runners, :sandbox_name_for, ["0f0e0d0c-0b0a-4908-8706-050403020100"]},
     fixtures: %{

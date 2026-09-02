@@ -185,7 +185,7 @@ defmodule Fountain.Quotas do
   Returns `:ok`, or `{:error, {:sandbox_quota_exceeded, %{count: n, limit: n}}}`.
 
   Call this immediately before creating a sandbox row — every row precedes a
-  `Fountain.Sandbox.create/3`, so guarding row creation guards sandbox
+  `Managoat.Sandbox.create/3`, so guarding row creation guards sandbox
   creation at the provider.
   """
   @spec check_sandbox_quota(binary(), keyword()) ::

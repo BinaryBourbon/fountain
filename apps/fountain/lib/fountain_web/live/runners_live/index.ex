@@ -20,7 +20,7 @@ defmodule FountainWeb.RunnersLive.Index do
      socket
      |> assign(:page_title, "Runners")
      |> assign(:user_id, user.id)
-     |> assign(:enabled, Fountain.Sandbox.enabled?(:runner))
+     |> assign(:enabled, Fountain.SandboxProviders.enabled?(:runner))
      |> assign(:base_url, Fountain.PublicUrl.base())
      |> load_runners()}
   end

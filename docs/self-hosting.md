@@ -109,6 +109,6 @@ Here is what a self-hosted instance does not yet cover.
 
 - **A sandbox backend is a dependency somebody else runs.** Sprites, E2B and
   Daytona are all services. Self-hosted Daytona narrows the gap. The contract
-  that a new backend must satisfy is executable code, `Fountain.Sandbox` and
+  that a new backend must satisfy is executable code, `Managoat.Sandbox` and
   its conformance suite, and
   [the sandbox contract](integrations/sandbox-contract.md) writes it down.

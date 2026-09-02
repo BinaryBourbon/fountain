@@ -569,7 +569,7 @@ defmodule Fountain.Analytics do
       "version" => version(),
       "environment" => env(),
       "sandbox_providers" =>
-        Enum.map_join(Fountain.Sandbox.enabled_providers(), ",", &to_string/1)
+        Enum.map_join(Fountain.SandboxProviders.enabled_providers(), ",", &to_string/1)
     }
   rescue
     _ -> %{"name" => instance(), "version" => version(), "environment" => env()}

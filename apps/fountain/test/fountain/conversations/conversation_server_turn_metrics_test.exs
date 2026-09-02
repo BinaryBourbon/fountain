@@ -57,12 +57,12 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
     stub_happy_sprite()
     ref = make_ref()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+      {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
     {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
     {pid, ref}
@@ -138,7 +138,7 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
       capture_turn_completed()
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
         {:error, :econnrefused}
       end)
 

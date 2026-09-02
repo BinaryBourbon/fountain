@@ -19,8 +19,8 @@
   summary: [threshold: 85],
   ignore_modules: [
     Fountain.Application,
-    Fountain.Sandbox.Fake,
-    Fountain.Sandbox.Daytona.LogStream,
+    Managoat.Sandbox.Fake,
+    Managoat.Sandbox.Daytona.LogStream,
     Fountain.Repo,
     Fountain.Mailer,
     Fountain.Release,

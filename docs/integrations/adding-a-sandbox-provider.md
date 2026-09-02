@@ -1,13 +1,17 @@
 # Add a sandbox provider
 
 Fountain runs a conversation on a pluggable sandbox backend, behind the
-`Fountain.Sandbox` behaviour. Today those are Sprites, E2B, Daytona and the
+`Managoat.Sandbox` behaviour. Today those are Sprites, E2B, Daytona and the
 self-hosted runner. This page is the practical checklist for another one.
+The behaviour and the three hosted adapters are the `managoat_sandbox`
+library, in `apps/managoat_sandbox`. The runner adapter lives in Fountain and
+implements the behaviour from outside the library, which is the shape a new
+adapter can take too.
 
 Three places hold the contract itself.
 [ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md)
-holds the *why* behind the shape of the seam. The `Fountain.Sandbox` moduledoc
-is the contract. `Fountain.SandboxConformanceCase` is the executable form of
+holds the *why* behind the shape of the seam. The `Managoat.Sandbox` moduledoc
+is the contract. `Managoat.Sandbox.ConformanceCase` is the executable form of
 it. When one of those disagrees with this page, it wins.
 
 For the same territory from the platform's side of the table, read
@@ -76,25 +80,29 @@ AgentCreate and AgentUpdate, and the `SANDBOX_PROVIDER` boot check in
 `config/runtime.exs`. Budget for those edits.
 
 1. **Adapter modules**, under
-   `apps/fountain/lib/fountain/sandbox/<provider>/`. You need the adapter,
-   with `@behaviour Fountain.Sandbox`, an API client, and whatever stream or
+   `apps/managoat_sandbox/lib/managoat/sandbox/<provider>/`. You need the
+   adapter, with `@behaviour Managoat.Sandbox`, an API client, and whatever stream or
    command-server processes the provider needs. Keep the provider's secrets
    out of an inspection of `Handle.private`. The struct already excludes
    `private` from Inspect, so do not defeat that. Normalize each error into
    the taxonomy in the behaviour moduledoc, in an `errors.ex`. That is
    `:not_found`, `{:unavailable,_}`, `{:denied,_}`, `{:rate_limited,_}` and
-   the rest, because `Fountain.Retry` keys retryability off those shapes.
-2. **Register it.** Add the atom to `known_providers/0`, the module to
-   `@default_adapters`, and a `credential_present?/1` clause. "On" is exactly
-   "you registered the adapter AND the credential is there". There is no
-   other switch. The provider select in the agent form appears on its own,
-   once a second provider is on.
-3. **Config.** Add the env vars to `config/runtime.exs`. You need
+   the rest, because `Managoat.Sandbox.Retry` keys retryability off those
+   shapes.
+2. **Register it.** Add the module to the adapter map in `config/config.exs`
+   (`config :managoat_sandbox, adapters: ...`). Then add the atom to
+   `Fountain.SandboxProviders.known_providers/0` and a `credential_present?/1`
+   clause in the same module. "On" is exactly "you registered the adapter AND
+   the credential is there". There is no other switch. The provider select in
+   the agent form appears on its own, once a second provider is on.
+3. **Config.** Add the env vars to `config/runtime.exs`, written to
+   `config :managoat_sandbox, Managoat.Sandbox.<Provider>, ...`. The adapter
+   reads them through `Managoat.Sandbox.Config`. You need
    `<PROVIDER>_API_KEY`, and a base URL and image knobs, where blank equals
    unset. Then add rows to `docs/configuration.md`, `.env.example`,
    `.env.compose.example` and `docker-compose.yml`.
 4. **Conformance.** Add a test with
-   `use Fountain.SandboxConformanceCase, adapter: ...` and Req.Test stubs for
+   `use Managoat.Sandbox.ConformanceCase, adapter: ...` and Req.Test stubs for
    the provider API. Where a sandbox name has to carry a route, mint the
    names with `name: {Mod, :fun, args}`, the way the runner adapter does.
    This is the gate that catches contract drift. It covers exec-never-raises,

@@ -46,7 +46,7 @@ defmodule Fountain.Runtimes.Codex do
   def prepare_sandbox(handle, _agent, sprite_env) do
     case List.keyfind(sprite_env, "OPENAI_API_KEY", 0) do
       {"OPENAI_API_KEY", key} when is_binary(key) and key != "" ->
-        case Fountain.Sandbox.spawn(handle, "codex", ["login", "--with-api-key"],
+        case Managoat.Sandbox.spawn(handle, "codex", ["login", "--with-api-key"],
                owner: self(),
                stdin: true,
                env: sprite_env
@@ -56,9 +56,9 @@ defmodule Fountain.Runtimes.Codex do
             # key — a missing binary, a bad flag — would otherwise exit whoever
             # is provisioning, rather than returning an error they can report.
             # write_stdin/2 is total by contract, so that exposure stays closed.
-            case Fountain.Sandbox.write_stdin(command, key <> "\n") do
+            case Managoat.Sandbox.write_stdin(command, key <> "\n") do
               :ok ->
-                Fountain.Sandbox.close_stdin(command)
+                Managoat.Sandbox.close_stdin(command)
 
                 receive do
                   {:exit, %{ref: ref}, 0} when ref == command.ref ->

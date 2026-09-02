@@ -66,9 +66,9 @@ defmodule Fountain.Runtimes.Gemini.SessionStore do
   with `HOME=/tmp` on the sprite and `/tmp` is writable there without the ACL
   surprises `/home/sprite` has.
   """
-  @spec install(Fountain.Sandbox.Handle.t()) :: :ok | {:error, term()}
+  @spec install(Managoat.Sandbox.Handle.t()) :: :ok | {:error, term()}
   def install(handle) do
-    Fountain.Sandbox.write_file(handle, @script_path, @script)
+    Managoat.Sandbox.write_file(handle, @script_path, @script)
   end
 
   @doc """
@@ -82,11 +82,11 @@ defmodule Fountain.Runtimes.Gemini.SessionStore do
   Runs with `HOME=/tmp` to match `Gemini.default_env/2`; the script resolves the
   chats directory from `HOME` exactly as gemini does.
   """
-  @spec consolidate(Fountain.Sandbox.Handle.t(), String.t() | nil) :: :ok
+  @spec consolidate(Managoat.Sandbox.Handle.t(), String.t() | nil) :: :ok
   def consolidate(_handle, session_id) when session_id in [nil, ""], do: :ok
 
   def consolidate(handle, session_id) do
-    case Fountain.Sandbox.exec(handle, "node", [@script_path, session_id],
+    case Managoat.Sandbox.exec(handle, "node", [@script_path, session_id],
            env: [{"HOME", "/tmp"}],
            timeout: 15_000
          ) do

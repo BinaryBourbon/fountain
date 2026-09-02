@@ -17,12 +17,12 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
   setup do
     test = self()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _command, data ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _command, data ->
       send(test, {:wrote, IO.iodata_to_binary(data)})
       :ok
     end)
 
-    {:ok, ref: make_ref(), command: %Fountain.Sandbox.Command{provider: :sprites, ref: :fake}}
+    {:ok, ref: make_ref(), command: %Managoat.Sandbox.Command{provider: :sprites, ref: :fake}}
   end
 
   defp start_peer(ctx, opts) do
@@ -499,7 +499,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       # peer must report it, because a peer that dies silently leaves a turn
       # with no terminator at all. (The exit-to-error catch itself is pinned in
       # the adapter's own tests.)
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, _d ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, _d ->
         {:error, :command_exited}
       end)
 

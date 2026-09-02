@@ -22,7 +22,7 @@ defmodule FountainWeb.SandboxResetControllerTest do
       )
 
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox: home, status: "idle")
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, user: user, raw_key: raw_key, agent: agent, home: home, conv: conv}
   end
 

@@ -6,7 +6,7 @@ defmodule Fountain.Runners.Connection do
   the runner's id, turns `call/3` requests from anywhere in the cluster into
   JSON frames, matches the daemon's replies back to the callers, and forwards
   the daemon's unsolicited `stream` frames to the owner of the command they
-  belong to as the standard `Fountain.Sandbox` owner messages.
+  belong to as the standard `Managoat.Sandbox` owner messages.
 
   ## Wire protocol
 

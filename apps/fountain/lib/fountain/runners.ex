@@ -1,7 +1,7 @@
 defmodule Fountain.Runners do
   @moduledoc """
   Self-hosted runners: machines the user owns that run the `fountain runner`
-  daemon and serve the `Fountain.Sandbox` contract for that user (ADR 0022).
+  daemon and serve the `Managoat.Sandbox` contract for that user (ADR 0022).
 
   Two kinds of state live here and they are deliberately separate:
 
@@ -240,7 +240,7 @@ defmodule Fountain.Runners do
 
   @doc """
   Mint a sandbox name on the user's current runner. The runner id rides in the
-  name because `Fountain.Sandbox` hands an adapter nothing else.
+  name because `Managoat.Sandbox` hands an adapter nothing else.
   """
   @spec mint_sandbox_name(binary()) :: {:ok, String.t()} | {:error, :no_runner_online}
   def mint_sandbox_name(user_id) do

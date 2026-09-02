@@ -994,14 +994,14 @@ defmodule Fountain.Runtimes.ACP.Peer do
     {tag, %{state | pending: pending}}
   end
 
-  # `Fountain.Sandbox.write_stdin/2` is total by contract: a runtime that has
+  # `Managoat.Sandbox.write_stdin/2` is total by contract: a runtime that has
   # already gone yields {:error, :command_exited} rather than exiting this
   # process — #603, and being mid-turn is exactly the condition that made
   # that an orphaned turn rather than an error.
   defp write(%State{phase: :failed} = state, _iodata), do: state
 
   defp write(state, iodata) do
-    case Fountain.Sandbox.write_stdin(state.command, iodata) do
+    case Managoat.Sandbox.write_stdin(state.command, iodata) do
       :ok -> state
       {:error, reason} -> fail(state, {:acp_write_failed, reason})
     end

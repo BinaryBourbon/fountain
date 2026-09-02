@@ -174,4 +174,17 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
 # OAuth clients (#818): none by default; dev/test/runtime set them.
 config :fountain, :oauth_clients, []
 
+# The sandbox adapter map (Managoat.Sandbox, decisions/0037): the three
+# adapters the library ships plus Fountain's own self-hosted runner (ADR
+# 0022). Static, so it lives here rather than in runtime.exs. Which of these
+# a deployment may *use* is Fountain.SandboxProviders' question; the
+# library answers only which module serves a provider atom.
+config :managoat_sandbox,
+  adapters: %{
+    sprites: Managoat.Sandbox.Sprites,
+    e2b: Managoat.Sandbox.E2B,
+    daytona: Managoat.Sandbox.Daytona,
+    runner: Fountain.Sandbox.Runner
+  }
+
 import_config "#{config_env()}.exs"

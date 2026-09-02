@@ -10,13 +10,13 @@ defmodule Fountain.Runtimes.Gemini.SessionStoreTest do
 
   setup :verify_on_exit!
 
-  defp handle, do: %Fountain.Sandbox.Handle{provider: :sprites, name: "test-sprite", private: %{}}
+  defp handle, do: %Managoat.Sandbox.Handle{provider: :sprites, name: "test-sprite", private: %{}}
 
   describe "install/1" do
     test "writes the real script to the path consolidate/2 runs" do
       test = self()
 
-      Mimic.expect(Fountain.Sandbox, :write_file, fn _h, path, body ->
+      Mimic.expect(Managoat.Sandbox, :write_file, fn _h, path, body ->
         send(test, {:wrote, path, body})
         :ok
       end)
@@ -36,7 +36,7 @@ defmodule Fountain.Runtimes.Gemini.SessionStoreTest do
     test "runs the script for the session, with gemini's HOME" do
       test = self()
 
-      Mimic.expect(Fountain.Sandbox, :exec, fn _h, cmd, args, opts ->
+      Mimic.expect(Managoat.Sandbox, :exec, fn _h, cmd, args, opts ->
         send(test, {:exec, cmd, args, opts[:env]})
         {:ok, ~s({"kept":1,"removed":1}), 0}
       end)
@@ -51,20 +51,20 @@ defmodule Fountain.Runtimes.Gemini.SessionStoreTest do
     end
 
     test "does nothing without a session id" do
-      Mimic.reject(&Fountain.Sandbox.exec/4)
+      Mimic.reject(&Managoat.Sandbox.exec/4)
       assert :ok = SessionStore.consolidate(handle(), nil)
       assert :ok = SessionStore.consolidate(handle(), "")
     end
 
     test "a non-zero exit does not fail the turn that just succeeded" do
-      Mimic.expect(Fountain.Sandbox, :exec, fn _h, _c, _a, _o -> {:ok, "boom", 1} end)
+      Mimic.expect(Managoat.Sandbox, :exec, fn _h, _c, _a, _o -> {:ok, "boom", 1} end)
       assert :ok = SessionStore.consolidate(handle(), "sess-abc")
     end
 
     test "an unreachable sandbox does not fail the turn either" do
       # Losing the consolidation costs the *next* turn its history, which is
       # bad; failing this turn on top of that would be worse.
-      Mimic.expect(Fountain.Sandbox, :exec, fn _h, _c, _a, _o -> {:error, :unavailable} end)
+      Mimic.expect(Managoat.Sandbox, :exec, fn _h, _c, _a, _o -> {:error, :unavailable} end)
       assert :ok = SessionStore.consolidate(handle(), "sess-abc")
     end
   end

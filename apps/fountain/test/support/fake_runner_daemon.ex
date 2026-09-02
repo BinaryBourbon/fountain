@@ -13,7 +13,7 @@ defmodule Fountain.Runners.FakeDaemon do
       daemon reach it as `handle_in/2`, and pushed frames go to the daemon;
     * the **daemon** process, which implements the ops. Sandboxes are maps
       of files; commands speak the same scripted vocabulary as
-      `Fountain.Sandbox.Fake` (`out:`, `err:`, `exit:`, `stay`, `drop`) and
+      `Managoat.Sandbox.Fake` (`out:`, `err:`, `exit:`, `stay`, `drop`) and
       run as real processes emitting real frames; sessions journal every
       frame and `attach` replays from byte zero.
 
@@ -352,7 +352,7 @@ defmodule Fountain.Runners.FakeDaemon do
   defp ok(result), do: %{"ok" => true, "result" => result}
   defp error(code, detail \\ nil), do: %{"ok" => false, "error" => code, "detail" => detail}
 
-  # The scripted vocabulary shared with Fountain.Sandbox.Fake.
+  # The scripted vocabulary shared with Managoat.Sandbox.Fake.
   defp script(args) do
     Enum.map(args, fn
       "out:" <> d -> {:stdout, d}

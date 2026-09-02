@@ -81,7 +81,7 @@ the machine, so one active conversation keeps the machine up for all of them.
 
 ## One seam, four backends
 
-Each backend plugs into the same seam, `Fountain.Sandbox`. The contract is
+Each backend plugs into the same seam, `Managoat.Sandbox`. The contract is
 executable, and not merely described. The behaviour specifies callbacks,
 capabilities and an error taxonomy. A conformance suite that each adapter must
 pass covers four things. It covers replay-from-start attach, total

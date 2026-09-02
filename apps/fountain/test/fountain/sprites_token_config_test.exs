@@ -6,8 +6,9 @@ defmodule Fountain.SpritesTokenConfigTest do
   docker-compose.yml passes `${SPRITES_TOKEN:-}` and .env.compose.example
   ships the key blank, so the compose quick-start delivers a present-but-empty
   variable. Stored verbatim, `""` is truthy and defeats the
-  `Application.get_env(:fountain, :sprites_token) || raise` guard in
-  `Fountain.Sandbox.Sprites.Client.get!/0` — the operator's first conversation then
+  `token || raise` guard in `Managoat.Sandbox.Sprites.Client.get!/0` (the
+  adapter reads its settings from the sandbox library's otp_app, which this
+  file populates) — the operator's first conversation then
   fails with an opaque 401 from sprites.dev instead of the message written
   for exactly that case.
   """
@@ -44,7 +45,10 @@ defmodule Fountain.SpritesTokenConfigTest do
   defp read_prod(env) do
     System.delete_env("SPRITES_TOKEN")
     System.put_env(env)
-    Config.Reader.read!(@runtime_exs, env: :prod)[:fountain][:sprites_token]
+
+    Config.Reader.read!(@runtime_exs, env: :prod)[:managoat_sandbox][Managoat.Sandbox.Sprites][
+      :token
+    ]
   end
 
   test "a blank SPRITES_TOKEN is stored as nil, so the SpritesClient guard fires", %{base: base} do

@@ -5,7 +5,7 @@ defmodule Fountain.Workers.SandboxReaper do
   ## What leaks, and how
 
   Both destroy call sites in `ConversationServer` discard the result —
-  `_ = Fountain.Sandbox.destroy(handle)` — and then mark the row `terminated` or
+  `_ = Managoat.Sandbox.destroy(handle)` — and then mark the row `terminated` or
   `failed` regardless. So any destroy that fails for a transient reason leaves a
   sprite alive with a database row that says it is gone, and nothing ever looks
   again. This does not need a hard BEAM crash; the ordinary path is enough.
@@ -280,7 +280,7 @@ defmodule Fountain.Workers.SandboxReaper do
 
     with :suspend <- Lifecycle.idle_action(provider),
          :ok <-
-           Fountain.Sandbox.suspend(Fountain.Sandbox.build_handle(provider, sandbox.sprite_name)) do
+           Managoat.Sandbox.suspend(Managoat.Sandbox.build_handle(provider, sandbox.sprite_name)) do
       park(sandbox)
       :parked
     else
@@ -363,7 +363,7 @@ defmodule Fountain.Workers.SandboxReaper do
   defp destroy(sandbox_id, sprite_name, provider) do
     # build_handle/2 is pure — we already know the sandbox exists (it came
     # out of the listing), so there is nothing to look up first.
-    case Fountain.Sandbox.destroy(Fountain.Sandbox.build_handle(provider, sprite_name)) do
+    case Managoat.Sandbox.destroy(Managoat.Sandbox.build_handle(provider, sprite_name)) do
       :ok ->
         Logger.info("reaper: destroyed leaked sprite #{sprite_name} (sandbox #{sandbox_id})")
         true
@@ -418,13 +418,13 @@ defmodule Fountain.Workers.SandboxReaper do
   # what to delete is the worst possible shape of wrong, so adapters return
   # {:error, :truncated} rather than a partial view.
   defp list_by_provider do
-    [:sprites | Fountain.Sandbox.enabled_providers()]
+    [:sprites | Fountain.SandboxProviders.enabled_providers()]
     |> Enum.uniq()
     |> Map.new(fn provider -> {provider, safe_list(provider)} end)
   end
 
   defp safe_list(provider) do
-    Fountain.Sandbox.list_all_names(provider)
+    Managoat.Sandbox.list_all_names(provider)
   rescue
     e -> {:error, e}
   end

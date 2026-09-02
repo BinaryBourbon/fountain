@@ -20,11 +20,11 @@ defmodule Fountain.ConversationsStartTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:ok, %{status: :suspended, raw: %{}}}
       end)
 
-      stub(Fountain.Sandbox.Sprites, :resume, fn _handle ->
+      stub(Managoat.Sandbox.Sprites, :resume, fn _handle ->
         {:error, {:unavailable, :timeout}}
       end)
 

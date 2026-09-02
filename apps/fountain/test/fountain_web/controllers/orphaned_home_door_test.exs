@@ -38,7 +38,7 @@ defmodule FountainWeb.OrphanedHomeDoorTest do
       )
 
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox: home, status: "idle")
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
     {:ok,

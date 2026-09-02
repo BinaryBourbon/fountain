@@ -39,7 +39,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
 
   test "destroys the sprite, retires the row, keeps the conversations", ctx do
     test = self()
-    stub(Fountain.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
 
     assert {:ok, sandbox} = Conversations.reset_sandbox(ctx.home, actor: "api")
     assert sandbox.status == "terminated"
@@ -55,7 +55,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "every conversation's transcript says the machine was reset", ctx do
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
 
     for conv <- [ctx.a, ctx.b] do
@@ -68,7 +68,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "a live server on the home is told the machine is gone, and nothing else", ctx do
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     test = self()
 
     # Stand in for conversation A's ConversationServer: registered under its
@@ -112,7 +112,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert {:error, {:sandbox_not_resettable, "ephemeral"}} =
              Conversations.reset_sandbox(ephemeral)
 
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, gone} = Conversations.reset_sandbox(ctx.home)
 
     assert {:error, {:sandbox_not_resettable, "terminated"}} =
@@ -120,13 +120,13 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "the row retires even when the provider refuses the destroy", ctx do
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> {:error, :boom} end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> {:error, :boom} end)
     assert {:ok, sandbox} = Conversations.reset_sandbox(ctx.home)
     assert sandbox.status == "terminated"
   end
 
   test "the next prompt builds a fresh home on the same identity", ctx do
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(ctx.home)
 
     assert {:ok, woken} = Conversations.wake_conversation(ctx.a.id)
@@ -142,7 +142,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "records sandbox.reset with the actor", ctx do
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(ctx.home, actor: "api", request_ip: "10.0.0.1")
 
     assert [event] =

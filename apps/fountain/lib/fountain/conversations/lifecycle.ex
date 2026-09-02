@@ -142,7 +142,7 @@ defmodule Fountain.Conversations.Lifecycle do
   """
   @spec idle_action(atom()) :: :suspend | :destroy
   def idle_action(provider) when is_atom(provider) do
-    if Fountain.Sandbox.supports?(provider, :suspend), do: :suspend, else: :destroy
+    if Managoat.Sandbox.supports?(provider, :suspend), do: :suspend, else: :destroy
   end
 
   @doc """

@@ -58,7 +58,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
 
       # The whole point of decisions/0017: the sprite's disk holds the agent's
       # memory, and the idle bound must not destroy it.
-      reject(&Fountain.Sandbox.Sprites.destroy/1)
+      reject(&Managoat.Sandbox.Sprites.destroy/1)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -166,11 +166,11 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
 
       # A provider without the :suspend capability cannot park with the disk
       # preserved; the idle bound degrades to the destroy arm.
-      stub(Fountain.Sandbox.Sprites, :capabilities, fn ->
+      stub(Managoat.Sandbox.Sprites, :capabilities, fn ->
         MapSet.new([:network_policy, :attach])
       end)
 
-      stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -193,11 +193,11 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       stub_reattach()
       test = self()
 
-      stub(Fountain.Sandbox.Sprites, :suspend, fn _handle ->
+      stub(Managoat.Sandbox.Sprites, :suspend, fn _handle ->
         {:error, {:unavailable, :timeout}}
       end)
 
-      stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -224,7 +224,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       stub_reattach()
 
       test = self()
-      stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
 
       with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -260,7 +260,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       # last_resumed_at when the sandbox has been through a suspend/wake.
       {conv, sandbox} = aged_conversation(60 * 48)
       stub_reattach()
-      reject(&Fountain.Sandbox.Sprites.destroy/1)
+      reject(&Managoat.Sandbox.Sprites.destroy/1)
 
       resumed_at = DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.truncate(:second)
 

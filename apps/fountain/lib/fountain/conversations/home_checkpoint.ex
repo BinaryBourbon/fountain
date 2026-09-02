@@ -25,7 +25,7 @@ defmodule Fountain.Conversations.HomeCheckpoint do
 
   alias Fountain.Conversations
   alias Fountain.Conversations.Sandbox
-  alias Fountain.Retry
+  alias Managoat.Sandbox.Retry
 
   require Logger
 
@@ -38,8 +38,8 @@ defmodule Fountain.Conversations.HomeCheckpoint do
   def on_park(%Sandbox{mode: "persistent", sprite_name: name} = sandbox) when is_binary(name) do
     provider = Conversations.sandbox_provider_atom(sandbox)
 
-    if Fountain.Sandbox.supports?(provider, :checkpoint) do
-      create(sandbox, Fountain.Sandbox.build_handle(provider, name))
+    if Managoat.Sandbox.supports?(provider, :checkpoint) do
+      create(sandbox, Managoat.Sandbox.build_handle(provider, name))
     else
       :skipped
     end
@@ -63,7 +63,7 @@ defmodule Fountain.Conversations.HomeCheckpoint do
         # Retried: a duplicate checkpoint from a lost-response retry costs
         # storage, a missing one costs the state the park was meant to keep.
         case Retry.with_backoff(
-               fn -> Fountain.Sandbox.create_checkpoint(handle, comment: comment) end,
+               fn -> Managoat.Sandbox.create_checkpoint(handle, comment: comment) end,
                label: "home checkpoint"
              ) do
           {:ok, id} -> {{:ok, id}, %{outcome: :ok, checkpoint_id: id}}

@@ -67,7 +67,7 @@ defmodule Fountain.OpsGauges do
       )
       |> Map.new()
 
-    for provider <- Fountain.Sandbox.known_providers(), status <- @live_statuses do
+    for provider <- Fountain.SandboxProviders.known_providers(), status <- @live_statuses do
       :telemetry.execute(
         [:fountain, :sandboxes_by_provider],
         %{count: Map.get(counts, {provider, status}, 0)},

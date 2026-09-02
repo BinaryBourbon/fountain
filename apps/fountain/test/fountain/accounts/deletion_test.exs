@@ -20,7 +20,7 @@ defmodule Fountain.Accounts.DeletionTest do
   setup :set_mimic_global
 
   setup do
-    stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
     stub(Fountain.Conversations.ConversationServer, :whereis, fn _ -> nil end)
     :ok
   end
@@ -117,7 +117,7 @@ defmodule Fountain.Accounts.DeletionTest do
 
       test = self()
 
-      stub(Fountain.Sandbox.Sprites, :destroy, fn handle ->
+      stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
         send(test, {:destroyed, handle.name}) && :ok
       end)
 
@@ -136,7 +136,7 @@ defmodule Fountain.Accounts.DeletionTest do
 
       test = self()
 
-      stub(Fountain.Sandbox.Sprites, :destroy, fn handle ->
+      stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
         send(test, {:destroyed, handle.name}) && :ok
       end)
 
@@ -149,7 +149,7 @@ defmodule Fountain.Accounts.DeletionTest do
     test "already-terminal sandboxes are not touched again" do
       user = insert_verified_user()
       insert_sandbox(user_id: user.id, status: "terminated")
-      reject(&Fountain.Sandbox.Sprites.destroy/1)
+      reject(&Managoat.Sandbox.Sprites.destroy/1)
 
       capture_log(fn -> assert {:ok, %{sprites_destroyed: 0}} = Deletion.delete_user(user) end)
     end
@@ -160,7 +160,7 @@ defmodule Fountain.Accounts.DeletionTest do
       # leave the person unable to leave.
       user = insert_verified_user()
       insert_sandbox(user_id: user.id, status: "ready")
-      stub(Fountain.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
 
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 
@@ -170,7 +170,7 @@ defmodule Fountain.Accounts.DeletionTest do
     test "the sandbox row is marked terminated so the reaper can finish the job" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      stub(Fountain.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
 
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 

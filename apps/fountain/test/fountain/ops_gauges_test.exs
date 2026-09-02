@@ -74,7 +74,7 @@ defmodule Fountain.OpsGaugesTest do
                     %{provider: "sprites", status: "suspended"}}
 
     # Zeros for every provider Fountain knows, so a series exists from boot.
-    for provider <- Fountain.Sandbox.known_providers() do
+    for provider <- Fountain.SandboxProviders.known_providers() do
       assert_receive {:telemetry, [:fountain, :sandboxes_by_provider], %{count: _},
                       %{provider: ^provider, status: "pending"}}
     end

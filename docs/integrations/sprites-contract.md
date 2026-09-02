@@ -1,12 +1,12 @@
 # The Sprites transport reference
 
 This page documents the **Sprites adapter's** transport contract. It covers
-each endpoint that `Fountain.Sandbox.Sprites` calls, the semantics it depends
+each endpoint that `Managoat.Sandbox.Sprites` calls, the semantics it depends
 on, and the operational assumptions it makes.
 
 [The sandbox contract](sandbox-contract.md) is the provider-neutral contract
-that each backend must meet. That is the `Fountain.Sandbox` behaviour and its
-conformance suite, `Fountain.SandboxConformanceCase`, which the
+that each backend must meet. That is the `Managoat.Sandbox` behaviour and its
+conformance suite, `Managoat.Sandbox.ConformanceCase`, which the
 [E2B](e2b.md) and [Daytona](daytona.md) adapters also satisfy. To evaluate a
 new backend, start there. This page is the reference for what the first
 backend provides.

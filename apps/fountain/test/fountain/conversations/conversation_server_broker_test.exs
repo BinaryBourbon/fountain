@@ -49,14 +49,14 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
     test = self()
     ref = make_ref()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
       send(test, {:spawned, cmd, args, opts})
-      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, _data -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, _data -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
     ref
   end
 
@@ -143,17 +143,17 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         :ok
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :apply_network_policy, fn _h, policy ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :apply_network_policy, fn _h, policy ->
         send(test, {:policy, policy})
         :ok
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, path, data, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, path, data, _opts ->
         send(test, {:wrote, path, data})
         :ok
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _h, _cmd, args, _opts ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _cmd, args, _opts ->
         send(test, {:exec, args})
         {:ok, "", 0}
       end)
@@ -191,7 +191,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       refute Enum.any?(file_env, fn {_, v} -> String.contains?(v, "av_sess_conv") end)
 
       # The floor: the broker's host, and nothing else, whatever the env said.
-      assert_receive {:policy, %Fountain.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
+      assert_receive {:policy, %Managoat.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
 
       # The CA, in the OS trust store.
       assert_receive {:wrote, "/tmp/agent-vault-ca.crt", "PEM"}, 2_000
@@ -215,7 +215,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
 
       stub(Fountain.Broker, :preflight, fn -> {:error, {:broker, :unreachable, :econnrefused}} end)
 
-      reject(Fountain.Sandbox.Sprites, :create, 2)
+      reject(Managoat.Sandbox.Sprites, :create, 2)
       reject(Fountain.Broker, :prepare, 4)
 
       {_pid, _mon, :stopped} = start_server(conv)
@@ -294,7 +294,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         {:ok, @session}
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :apply_network_policy, fn _h, policy ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :apply_network_policy, fn _h, policy ->
         send(test, {:policy, policy})
         :ok
       end)
@@ -306,7 +306,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
                      2_000
 
       # The sandbox's own policy is still the floor, whatever the environment listed.
-      assert_receive {:policy, %Fountain.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
+      assert_receive {:policy, %Managoat.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
       assert_receive {:spawned, _, _, _}, 2_000
     end
 
@@ -329,7 +329,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         :ok
       end)
 
-      Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _h ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h ->
         send(test, :destroyed)
         :ok
       end)

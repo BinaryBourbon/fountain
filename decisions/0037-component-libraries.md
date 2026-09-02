@@ -1,25 +1,29 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Nothing is extracted yet; #1336 (managoat_substitution) is the first and proves the mechanics."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336) and managoat_sandbox (#1337)."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: human:jhgaylor, at: 2026-09-01T18:00:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-09-01T18:00:00-04:00 }
+generated: { by: human:jhgaylor, at: 2026-09-01T20:30:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-09-01T20:30:00-04:00 }
 stale_after: 2026-12-01
 ---
 
 # 0037 — Component libraries, extracted umbrella-first under the Managoat namespace
 
-**Status:** Accepted, 2026-09-01. **Built so far: nothing.** No library
-exists at the time of writing; the tracker is #1334 and the first extraction
-is #1336 (`managoat_substitution`), whose job is to settle the umbrella
-mechanics this ADR names below. The guard that pins the dependency direction
-is also not yet built and is part of #1336. Each PR that extracts a library
-updates this block.
+**Status:** Accepted, 2026-09-01. **Built so far:** `managoat_substitution`
+(#1336, PR #1347, which also built the umbrella mechanics named below and
+the guard test, `umbrella_layout_test.exs`) and `managoat_sandbox` (#1337:
+the behaviour, the Sprites/E2B/Daytona adapters, `Retry`, the Fake and the
+conformance case; the runner adapter and the configured-providers policy
+stay in `fountain`). Not yet built: `managoat_mcp_auth` (#1338),
+`managoat_acp` (#1339), `managoat_broker` (#1340), `managoat_runner`
+(#1341), `managoat_docs` (#1342), `managoat_oauth` (#1343) and the optional
+credits extraction (#1344). None has graduated to a repository (#1345). The
+tracker is #1334. Each PR that extracts a library updates this block.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names

@@ -2120,9 +2120,9 @@ defmodule Fountain.Conversations do
   # is the caller's decision — agent delete terminates them, a reset keeps
   # them.
   defp _unsafe_retire_home(%Sandbox{} = sandbox) do
-    handle = Fountain.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
-    case Fountain.Sandbox.destroy(handle) do
+    case Managoat.Sandbox.destroy(handle) do
       :ok ->
         :ok
 
@@ -2840,8 +2840,8 @@ defmodule Fountain.Conversations do
   defp probe_reusable_sandbox(%{status: status, sprite_name: name} = sandbox, sandbox_id) do
     provider = sandbox_provider_atom(sandbox)
 
-    if provider != Fountain.Sandbox.default_provider() and
-         not Fountain.Sandbox.enabled?(provider) do
+    if provider != Fountain.SandboxProviders.default_provider() and
+         not Fountain.SandboxProviders.enabled?(provider) do
       Logger.warning(
         "sandbox #{sandbox_id} is on disabled provider #{provider}; refusing to wake or retire"
       )
@@ -2853,7 +2853,7 @@ defmodule Fountain.Conversations do
   end
 
   defp probe_sandbox(provider, name, status, sandbox_id) do
-    case Fountain.Sandbox.get(Fountain.Sandbox.build_handle(provider, name)) do
+    case Managoat.Sandbox.get(Managoat.Sandbox.build_handle(provider, name)) do
       {:ok, _info} ->
         {:reuse, sandbox_id}
 
@@ -2897,12 +2897,12 @@ defmodule Fountain.Conversations do
   # pinned to a provider whose credentials were since removed fails here
   # with an error the API/UI can explain.
   defp resolve_sandbox_provider(%Agents.Agent{sandbox_provider: nil}),
-    do: {:ok, Fountain.Sandbox.default_provider()}
+    do: {:ok, Fountain.SandboxProviders.default_provider()}
 
   defp resolve_sandbox_provider(%Agents.Agent{sandbox_provider: value}) do
     provider = String.to_existing_atom(value)
 
-    if Fountain.Sandbox.enabled?(provider) do
+    if Fountain.SandboxProviders.enabled?(provider) do
       {:ok, provider}
     else
       {:error, {:sandbox_provider_disabled, provider}}
@@ -2942,9 +2942,9 @@ defmodule Fountain.Conversations do
   # sandbox.
   defp resume_and_wake(sandbox) do
     handle =
-      Fountain.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+      Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
-    case Fountain.Sandbox.resume(handle) do
+    case Managoat.Sandbox.resume(handle) do
       {:ok, _handle} ->
         update_sandbox(sandbox, %{
           status: "ready",

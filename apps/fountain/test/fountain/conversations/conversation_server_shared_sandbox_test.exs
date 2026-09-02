@@ -36,14 +36,14 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
     test = self()
     ref = make_ref()
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
       send(test, {:spawned, cmd, args, opts})
-      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
     end)
 
-    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, _data -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
-    Mimic.stub(Fountain.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, _data -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
     ref
   end
 
@@ -115,7 +115,7 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       %{a: a, b: b, sandbox: sandbox} = shared_machine("claude")
       stub_happy_sprite()
       test = self()
-      Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
 
       {pid_a, ref_a} = start(a)
       assert :ok = GenServer.call(pid_a, :terminate_conv)
@@ -138,7 +138,7 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
     test "an idle conversation does not park a machine another one is using" do
       %{a: a, b: b, sandbox: sandbox} = shared_machine("claude")
       stub_happy_sprite()
-      reject(&Fountain.Sandbox.Sprites.destroy/1)
+      reject(&Managoat.Sandbox.Sprites.destroy/1)
       turn = insert_turn(b, %{status: "running", prompt: "long", started_at: now()})
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
@@ -170,8 +170,8 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       %{a: a, sandbox: sandbox} = shared_machine("claude")
       {:ok, _} = Conversations.update_sandbox(sandbox, %{mode: "persistent"})
       stub_happy_sprite()
-      reject(&Fountain.Sandbox.Sprites.destroy/1)
-      Mimic.stub(Fountain.Sandbox.Sprites, :suspend, fn _h -> :ok end)
+      reject(&Managoat.Sandbox.Sprites.destroy/1)
+      Mimic.stub(Managoat.Sandbox.Sprites, :suspend, fn _h -> :ok end)
 
       with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref} = start(a)

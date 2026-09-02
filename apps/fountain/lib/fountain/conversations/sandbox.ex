@@ -77,7 +77,7 @@ defmodule Fountain.Conversations.Sandbox do
     |> validate_required([:sprite_name, :status, :provider, :mode, :user_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:mode, @modes)
-    |> validate_inclusion(:provider, Fountain.Sandbox.known_providers())
+    |> validate_inclusion(:provider, Fountain.SandboxProviders.known_providers())
     # One live home per identity. Surfaced under `:home` so a launch that
     # lost the race to create it can tell and attach to the winner instead.
     |> unique_constraint(:home,

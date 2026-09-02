@@ -34,11 +34,11 @@ defmodule Fountain.Conversations.WakePolicyTest do
   end
 
   defp stub_parked_sprite do
-    stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+    stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
       {:ok, %{status: :suspended, raw: %{name: "test-sprite-home"}}}
     end)
 
-    stub(Fountain.Sandbox.Sprites, :resume, fn handle -> {:ok, handle} end)
+    stub(Managoat.Sandbox.Sprites, :resume, fn handle -> {:ok, handle} end)
   end
 
   test "a prompt to one conversation wakes the parked home for that conversation alone" do
@@ -66,8 +66,8 @@ defmodule Fountain.Conversations.WakePolicyTest do
     assert Repo.reload(sandbox).status == "ready"
 
     # The machine is up. Waking A must reuse it: no resume, no new row.
-    reject(&Fountain.Sandbox.Sprites.resume/1)
-    stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :running, raw: %{}}} end)
+    reject(&Managoat.Sandbox.Sprites.resume/1)
+    stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :running, raw: %{}}} end)
 
     assert {:ok, woken} = Conversations.wake_conversation(a.id)
     assert woken.sandbox_id == sandbox.id

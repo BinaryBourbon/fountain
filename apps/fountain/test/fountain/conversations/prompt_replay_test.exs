@@ -33,7 +33,7 @@ defmodule Fountain.Conversations.PromptReplayTest do
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-    stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> :client end)
+    stub(Managoat.Sandbox.Sprites.Client, :get!, fn -> :client end)
     stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{}} end)
 
     test = self()

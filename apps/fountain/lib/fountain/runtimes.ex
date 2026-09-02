@@ -96,7 +96,7 @@ defmodule Fountain.Runtimes do
   provision time (e.g. claude's `~/.claude.json` for MCP servers).
   No-op by default.
   """
-  @callback write_config(handle :: Fountain.Sandbox.Handle.t(), agent :: %Agent{} | nil) ::
+  @callback write_config(handle :: Managoat.Sandbox.Handle.t(), agent :: %Agent{} | nil) ::
               :ok | {:error, term()}
 
   @doc """
@@ -126,7 +126,7 @@ defmodule Fountain.Runtimes do
   is `unrestricted`.
   """
   @callback prepare_sandbox(
-              handle :: Fountain.Sandbox.Handle.t(),
+              handle :: Managoat.Sandbox.Handle.t(),
               agent :: %Agent{} | nil,
               sprite_env :: [{String.t(), String.t()}]
             ) :: :ok | {:error, term()}
