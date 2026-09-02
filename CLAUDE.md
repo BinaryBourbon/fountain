@@ -57,6 +57,13 @@ fountain/                  umbrella root
                                Fountain.Runners.Host implements it over Horde;
                                the runners table, placement and presence stay
                                in fountain.
+      managoat_docs/           Managoat.Docs: the compile-time embedded manual
+                               (a `use` macro Fountain.Docs is one instance
+                               of), Managoat.Docs.Markdown (both render paths)
+                               and Managoat.Docs.GuardrailCase, the docs_test
+                               checks as a case template. docs/, nav.yml,
+                               Fountain.Help, the prose gates and the /docs
+                               controller stay in fountain.
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is
@@ -438,7 +445,12 @@ See `.env.example` for the full list. Key ones for local dev:
 ## Docs (`docs/`)
 
 `docs/` is the public manual, published at `/docs` and **nowhere else** — the
-markdown is embedded at compile time by `Fountain.Docs`. It used to be built as
+markdown is embedded at compile time by `Fountain.Docs`, which is one `use`
+line over the `managoat_docs` library (ADR 0037): the macro embeds the pages,
+`Managoat.Docs.Markdown` renders them (the sanitising pipeline `/help` and
+agent output share; it returns a binary, callers `Phoenix.HTML.raw/1` it),
+and `docs_test.exs` gets its structural checks from
+`Managoat.Docs.GuardrailCase`. It used to be built as
 a MkDocs Material site and deployed to GitHub Pages as well; that copy was
 retired in #1008, so there is no `mkdocs.yml`, no `docs.yml` workflow and no
 `mkdocs build` step to keep green. A page reaches a reader through `/docs` or
@@ -478,14 +490,20 @@ Guardrails that trip people who only edit markdown:
   baked out of it, so a file outside the `COPY` list does not degrade to a
   broken link: `mix release` dies, no image is built, CI stays green and the
   deploy silently never happens (#884). `docs_test.exs` asserts the module's
-  `@external_resource` list against the Dockerfile, so adding a new
-  compile-time read fails there first.
+  `external_resources/0` (every `@external_resource` the `use` declared)
+  against the Dockerfile, so adding a new compile-time read fails there
+  first. A file outside `docs/` goes on the `extra_resources:` line of
+  `Fountain.Docs`, which is how `CHANGELOG.md` is declared.
 - **Links and anchors are checked by the suite, not by a site build.** Every
   internal `/docs` link must resolve to a page, and every `#anchor` to a
   heading on that page. `mkdocs build --strict` used to carry the link half of
   this on `main` only; `docs_test.exs` carries both, on every PR, and it is the
   stricter of the two — MkDocs never checked anchors. Run
-  `mix test apps/fountain/test/fountain/docs_test.exs`.
+  `mix test apps/fountain/test/fountain/docs_test.exs`. The checks themselves
+  are `Managoat.Docs.Checks`, functions returning failure messages, and
+  `GuardrailCase` is what turns them into the tests in that file; the
+  library runs the same template against a fixture manual, so a change to a
+  check is tested there before it runs against `docs/`.
 - **`python3 scripts/docs-style.py`** enforces the style sheet
   (`standards/voice-and-style.md`): no em dashes, no colon-introduced
   lists, no "simply"/"obviously"/"coming soon". It skips the backlog in

@@ -1,7 +1,7 @@
 defmodule FountainWeb.HelpLive.Show do
   @moduledoc """
   In-app docs. Each topic is a markdown file under `priv/help/<slug>.md`,
-  rendered via `FountainWeb.Markdown` (MDEx). Default topic is `quickstart`. The `/api/docs`
+  rendered via `Managoat.Docs.Markdown` (MDEx). Default topic is `quickstart`. The `/api/docs`
   Swagger UI is linked out separately as the API reference.
 
   Topic order + display names are hard-coded here so the nav stays
@@ -54,7 +54,7 @@ defmodule FountainWeb.HelpLive.Show do
   # Help topics are repo-controlled markdown (the trusted corpus), so they
   # render through the trusted path — same scrubbing as agent output (#323),
   # plus a sanitized <svg>/<figure> subset so authored diagrams draw.
-  defp render_markdown(text), do: FountainWeb.Markdown.to_trusted_html(text)
+  defp render_markdown(text), do: Managoat.Docs.Markdown.to_trusted_html(text)
 
   @impl true
   def render(assigns) do

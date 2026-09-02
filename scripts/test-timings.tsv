@@ -213,7 +213,6 @@ apps/fountain/test/fountain_web/live/liveview_reconciliation_test.exs	1255
 apps/fountain/test/fountain_web/live/runners_live_test.exs	347
 apps/fountain/test/fountain_web/live/secret_forms_live_test.exs	1435
 apps/fountain/test/fountain_web/live/verify_pending_live_test.exs	1888
-apps/fountain/test/fountain_web/markdown_test.exs	170
 apps/fountain/test/fountain_web/metrics_test.exs	1204
 apps/fountain/test/fountain_web/oauth_test.exs	0
 apps/fountain/test/fountain_web/plugs/audit_plug_test.exs	2076

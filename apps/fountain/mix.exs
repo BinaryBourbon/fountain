@@ -51,6 +51,7 @@ defmodule Fountain.MixProject do
       # repository once its surface stops moving; the line then becomes a hex
       # requirement. umbrella_layout_test.exs checks every apps/managoat_*
       # directory is listed here.
+      {:managoat_docs, in_umbrella: true},
       {:managoat_mcp_auth, in_umbrella: true},
       {:managoat_runner, in_umbrella: true},
       {:managoat_substitution, in_umbrella: true},
@@ -65,11 +66,6 @@ defmodule Fountain.MixProject do
       {:telemetry_metrics_prometheus_core, "~> 1.2"},
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
-      {:mdex, "~> 0.13.5"},
-      # Syntax highlighting for the docs corpus. Called directly rather than
-      # through MDEx's integration, which needs a NIF build an order of
-      # magnitude larger — see `FountainWeb.Markdown`.
-      {:lumis, "~> 0.7"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:remote_ip, "~> 1.2"},

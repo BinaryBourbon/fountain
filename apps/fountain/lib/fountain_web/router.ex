@@ -40,7 +40,7 @@ defmodule FountainWeb.Router do
   # and Phoenix/LiveView/d3 off CDNs and carries large inline scripts and
   # onclick handlers, so script-src needs 'unsafe-inline' plus the two CDN
   # hosts (a nonce scheme can't cover inline event handlers). That means this
-  # CSP does NOT block javascript: URLs — FountainWeb.Markdown filters those
+  # CSP does NOT block javascript: URLs — Managoat.Docs.Markdown filters those
   # at render time (#323). What it does pin down: no framing, no <object>,
   # no off-origin form posts, fetch/websocket restricted to self + the LV
   # socket, images to self + the data: URLs the image picker and avatars use.

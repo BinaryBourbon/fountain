@@ -1,15 +1,33 @@
-defmodule Fountain.Docs.Compiler do
+defmodule Managoat.Docs.Compiler do
   @moduledoc """
-  Pure functions `Fountain.Docs` runs at compile time to turn the authoring
-  dialect in `docs/` into plain markdown. Split out because a module cannot
-  call its own functions from its own body — and so the transforms can be
-  tested directly.
+  Pure functions `use Managoat.Docs` runs at compile time to turn the
+  authoring dialect of a manual into plain markdown. Split out because a
+  module cannot call its own functions from its own body, and so the
+  transforms can be tested directly.
 
-  Covers exactly the dialect the docs use (see the `Fountain.Docs` moduledoc):
-  snippet includes, admonitions, and relative `.md` links. The syntax is
-  inherited from the MkDocs Material site these pages were published as until
-  #1008; this is not, and never was, a general MkDocs renderer.
+  Covers exactly the dialect a manual may use (see the `Managoat.Docs`
+  moduledoc): snippet includes, admonitions, and relative `.md` links. The
+  syntax is inherited from the MkDocs Material site Fountain's pages were
+  published as until they moved in-app; this is not, and never was, a
+  general MkDocs renderer.
+
+  Every function that produces a served path takes the manual's `mount`
+  (`"/docs"` for a manual served at `/docs`), because the only place that
+  path is known is the host's `use` line.
   """
+
+  @typedoc "`{title, file}` for a page, `{section_title, [{title, file}]}` for a section."
+  @type nav_entry :: {String.t(), String.t() | [{String.t(), String.t()}]}
+
+  @typedoc "One compiled page: its nav title and its preprocessed markdown."
+  @type page :: %{title: String.t(), body: String.t()}
+
+  @typedoc "One search-index entry: the page and the `h2`-`h6` headings on it."
+  @type index_entry :: %{
+          title: String.t(),
+          slug: String.t(),
+          headings: [%{id: String.t(), text: String.t()}]
+        }
 
   @doc ~S(`"index.md"` → `""`, `"integrations/index.md"` → `"integrations"`, else the rootname.)
   @spec slug_for(String.t()) :: String.t()
@@ -21,35 +39,35 @@ defmodule Fountain.Docs.Compiler do
   end
 
   @doc """
-  Parses the `nav:` block of `docs/nav.yml` into the shape `Fountain.Docs`
+  Parses the `nav:` block of a `nav.yml` into the shape `use Managoat.Docs`
   serves: `{title, file}` for a page and `{section_title, [{title, file}, ...]}`
   for a section, in document order.
 
-  Deliberately not a YAML parser, and it does not need to be — the nav is a
+  Deliberately not a YAML parser, and it does not need to be: the nav is a
   hand-written two-level list, and this reads the two line shapes it can take.
   What matters is the failure mode: a line it does not recognise **raises**
-  rather than being skipped. A page silently missing from `/docs` is exactly
-  the bug this parser exists to make impossible, so being unable to parse the
-  nav has to fail the compile, not shrink the site.
+  rather than being skipped. A page silently missing from the manual is
+  exactly the bug this parser exists to make impossible, so being unable to
+  parse the nav has to fail the compile, not shrink the site.
 
-  Two levels is the whole depth. The in-app sidebar at `/docs` renders exactly
-  a section and its pages, so a third tier raises here with a message that says
-  to flatten it. That includes a page indented past its siblings, which would
-  otherwise be quietly promoted into its grandparent section — the one silent
-  outcome this parser must not have.
+  Two levels is the whole depth. A sidebar that embeds this nav renders
+  exactly a section and its pages, so a third tier raises here with a message
+  that says to flatten it. That includes a page indented past its siblings,
+  which would otherwise be quietly promoted into its grandparent section, the
+  one silent outcome this parser must not have.
 
-  This replaced a hand-maintained copy of the nav in `Fountain.Docs`. Adding a
-  page to `docs/nav.yml` is now the whole change.
+  This replaced a hand-maintained copy of the nav in Fountain's docs module.
+  Adding a page to `nav.yml` is now the whole change.
   """
-  @spec parse_nav(String.t()) :: [{String.t(), String.t() | [{String.t(), String.t()}]}]
+  @spec parse_nav(String.t()) :: [nav_entry()]
   def parse_nav(yaml) do
     case String.split(yaml, ~r/^nav:\n/m, parts: 2) do
       [_before, block] -> block |> nav_lines() |> Enum.reduce([], &nav_entry/2) |> finish_nav()
-      _ -> raise ArgumentError, "docs/nav.yml has no `nav:` block"
+      _ -> raise ArgumentError, "nav.yml has no `nav:` block"
     end
   end
 
-  # The block runs until the first line that is neither blank nor indented —
+  # The block runs until the first line that is neither blank nor indented,
   # the next top-level key. Comments inside it are ignored rather than fatal.
   defp nav_lines(block) do
     block
@@ -63,26 +81,26 @@ defmodule Fountain.Docs.Compiler do
   # dropped again by `finish_nav/1`.
   defp nav_entry(line, acc) do
     case Regex.run(~r/^(\s+)- ([^:]+):\s*(\S+)?\s*$/, line) do
-      # `  - Setup: setup.md` — a top-level page.
+      # `  - Setup: setup.md`, a top-level page.
       [_, indent, title, file] when byte_size(indent) == 2 ->
         [{title, file} | acc]
 
-      # `  - Sandbox providers:` — a section header; its children follow.
+      # `  - Sandbox providers:`, a section header; its children follow.
       [_, indent, title] when byte_size(indent) == 2 ->
         [{title, [], nil} | acc]
 
-      # `      - Sprites: integrations/sprites.md` — a child of the section
+      # `      - Sprites: integrations/sprites.md`, a child of the section
       # currently being built.
       [_, indent, title, file] when byte_size(indent) > 2 ->
         add_child(acc, byte_size(indent), title, file, line)
 
-      # `      - Sandbox providers:` — a section inside a section, which this
+      # `      - Sandbox providers:`, a section inside a section, which this
       # parser has no shape for.
       [_, indent, _title] when byte_size(indent) > 2 ->
         raise ArgumentError, one_level_message("nested nav section", line)
 
       _ ->
-        raise ArgumentError, "unparsed docs/nav.yml nav line: #{inspect(line)}"
+        raise ArgumentError, "unparsed nav.yml nav line: #{inspect(line)}"
     end
   end
 
@@ -109,9 +127,9 @@ defmodule Fountain.Docs.Compiler do
     """
     #{what}: #{inspect(line)}
 
-    docs/nav.yml sections are one level deep. Fountain.Docs embeds this nav for
-    the in-app sidebar at /docs, which renders exactly two levels. Flatten this
-    into a sibling top-level section, or make it headings on a hub page.
+    nav.yml sections are one level deep. The manual embeds this nav for an
+    in-app sidebar that renders exactly two levels. Flatten this into a
+    sibling top-level section, or make it headings on a hub page.
     """
   end
 
@@ -125,7 +143,7 @@ defmodule Fountain.Docs.Compiler do
   end
 
   @doc "Flattens a nav (sections one level deep) to `{title, file}` pairs in order."
-  @spec flat_pages(list()) :: [{String.t(), String.t()}]
+  @spec flat_pages([nav_entry()]) :: [{String.t(), String.t()}]
   def flat_pages(nav) do
     Enum.flat_map(nav, fn
       {_section, children} when is_list(children) -> children
@@ -133,17 +151,24 @@ defmodule Fountain.Docs.Compiler do
     end)
   end
 
-  @doc "Snippets, then admonitions, then link rewriting."
-  @spec preprocess(String.t(), String.t(), String.t()) :: String.t()
-  def preprocess(text, file, root) do
+  @doc """
+  Snippets, then admonitions, then link rewriting. `file` is the page's path
+  relative to the docs directory (links resolve against its directory),
+  `root` is where snippet includes are read from, and `mount:` is the path
+  the manual is served at (default `"/docs"`).
+  """
+  @spec preprocess(String.t(), String.t(), String.t(), mount: String.t()) :: String.t()
+  def preprocess(text, file, root, opts \\ []) do
+    mount = Keyword.get(opts, :mount, "/docs")
+
     text
     |> expand_snippets(root)
     |> rewrite_admonitions()
-    |> rewrite_links(file)
+    |> rewrite_links(file, mount)
   end
 
   # `--8<-- "FILE"` on its own line → the file's contents, read relative to
-  # the repo root.
+  # the root.
   #
   # sobelow_skip ["Traversal.FileModule"] — runs at compile time only, on
   # snippet paths written in repo-controlled markdown; there is no user input.
@@ -216,7 +241,7 @@ defmodule Fountain.Docs.Compiler do
   # `[x](setup.md#backups)` → `[x](/docs/setup#backups)`, resolved against the
   # page's own directory so `../architecture.md` works from integrations/.
   @doc false
-  def rewrite_links(text, file) do
+  def rewrite_links(text, file, mount) do
     dir = Path.dirname(file)
 
     Regex.replace(~r/\]\((?!https?:)([^)\s#]+\.md)(#[^)]*)?\)/, text, fn _, target, anchor ->
@@ -226,28 +251,66 @@ defmodule Fountain.Docs.Compiler do
         |> String.trim_leading("/")
         |> slug_for()
 
-      "](#{path_for_slug(slug)}#{anchor})"
+      "](#{path_for_slug(slug, mount)}#{anchor})"
     end)
   end
 
-  @doc ~S(`""` → `"/docs"`, `"setup"` → `"/docs/setup"`.)
-  @spec path_for_slug(String.t()) :: String.t()
-  def path_for_slug(""), do: "/docs"
-  def path_for_slug(slug), do: "/docs/" <> slug
+  @doc ~S(With mount `"/docs"`: `""` → `"/docs"`, `"setup"` → `"/docs/setup"`.)
+  @spec path_for_slug(String.t(), String.t()) :: String.t()
+  def path_for_slug("", mount), do: mount
+  def path_for_slug(slug, mount), do: mount <> "/" <> slug
+
+  @doc """
+  Reads a nav file and every page it names into the shape `use Managoat.Docs`
+  stores: the parsed nav, the `slug => page` map, and the search index over
+  the rendered headings. Runs in the host module's body at compile time; the
+  host declares every path here as an `@external_resource`.
+  """
+  @spec compile(String.t(), String.t(), String.t(), String.t()) :: %{
+          nav: [nav_entry()],
+          pages: %{String.t() => page()},
+          search_index: [index_entry()]
+        }
+  def compile(root, docs_dir, nav_file, mount) do
+    nav = nav_file |> File.read!() |> parse_nav()
+
+    pages =
+      Map.new(flat_pages(nav), fn {title, file} ->
+        body = docs_dir |> Path.join(file) |> File.read!() |> preprocess(file, root, mount: mount)
+        {slug_for(file), %{title: title, body: body}}
+      end)
+
+    # The client-side search index: one pass over the pages, done at compile
+    # time like the rest. Headings only, not full text, since the embedded
+    # bodies can run to hundreds of KB after snippet expansion and this index
+    # has to be small enough to inline.
+    #
+    # Reuses `Managoat.Docs.Markdown.to_trusted_html/1`, the same rendering
+    # the guardrails treat as ground truth for anchor ids, so a heading's id
+    # here is guaranteed to be the id its own page renders, with no second
+    # slugging pass to drift from it.
+    search_index =
+      for {slug, %{title: title, body: body}} <- pages do
+        headings = body |> Managoat.Docs.Markdown.to_trusted_html() |> extract_headings()
+        %{title: title, slug: slug, headings: headings}
+      end
+
+    %{nav: nav, pages: pages, search_index: search_index}
+  end
 
   @doc """
   Pulls `{id, text}` for every `<h2>`–`<h6>` out of a page's **rendered**
-  HTML, in document order — the input is `FountainWeb.Markdown.to_trusted_html/1`
+  HTML, in document order. The input is `Managoat.Docs.Markdown.to_trusted_html/1`
   output, not markdown. `<h1>` is skipped; every page has exactly one, and it
   duplicates the nav title a search result already shows next to it.
 
   Reads the id comrak already assigned rather than re-deriving one from the
-  heading text. Slugging headings a second time is the exact trap #1008 names
-  a reason for: the old MkDocs build and comrak's `header_id_prefix`
+  heading text. Slugging headings a second time is a known trap: the MkDocs
+  build Fountain's pages came from and comrak's `header_id_prefix`
   extension picked different ids for *duplicate* headings on the same page
   (`-1` vs `_1`), and a search result is only useful if its anchor is the one
-  the page actually renders. `docs_test.exs` leans on the same rendered
-  output to check anchor links, for the same reason.
+  the page actually renders. The anchor guardrail leans on the same rendered
+  output, for the same reason.
   """
   @spec extract_headings(String.t()) :: [%{id: String.t(), text: String.t()}]
   def extract_headings(html) do
@@ -266,16 +329,14 @@ defmodule Fountain.Docs.Compiler do
 
   # Strips the inner markup a heading can carry (`## \`fountain apply\``
   # renders as `<code>` inside the `<h2>`) and unescapes the handful of
-  # entities comrak emits in text content. Not a general HTML-entity decoder
-  # — docs headings are plain prose plus inline code, and nothing in the
-  # corpus needs more than this (see the "small dialect" note in
-  # `Fountain.Docs`).
+  # entities comrak emits in text content. Not a general HTML-entity decoder:
+  # manual headings are plain prose plus inline code, and nothing needs more
+  # than this (see the "small dialect" note in `Managoat.Docs`).
   #
   # `&amp;` is decoded **last**, and the order is load-bearing: a heading
   # holding a literal `&lt;` renders as `&amp;lt;`, so decoding the ampersand
-  # first would leave `&lt;` for the next pass to turn into `<` — the one
-  # thing the escaping was there to prevent. Nothing in the corpus does this
-  # today; the order is what keeps it that way.
+  # first would leave `&lt;` for the next pass to turn into `<`, the one
+  # thing the escaping was there to prevent.
   defp heading_text(inner) do
     inner
     |> String.replace(~r/<[^>]*>/s, "")
