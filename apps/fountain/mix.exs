@@ -52,7 +52,7 @@ defmodule Fountain.MixProject do
       # requirement. umbrella_layout_test.exs checks every apps/managoat_*
       # directory is listed here.
       {:managoat_acp, "~> 0.1.0"},
-      {:managoat_broker, in_umbrella: true},
+      {:managoat_broker, "~> 0.1.0"},
       {:managoat_docs, "~> 0.1.0"},
       {:managoat_mcp_auth, "~> 0.1.0"},
       {:managoat_oauth, "~> 0.1.0"},

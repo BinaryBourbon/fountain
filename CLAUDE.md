@@ -71,6 +71,12 @@ fountain/                  umbrella root
                                and Managoat.Docs.GuardrailCase; docs/, nav.yml,
                                Fountain.Help, the prose gates and the /docs
                                controller stay here
+        managoat_broker        Managoat.Broker, the native egress credential
+                               proxy (CONNECT + absolute-form forward proxy,
+                               the derived CA, the header injector) behind
+                               Managoat.Broker.Store; fountain implements the
+                               store over broker_sessions and runs it beside
+                               the Agent Vault client (BROKER_LISTEN_PORT)
       managoat_runner/         Managoat.Runner: the self-hosted runner wire
                                protocol (Connection), the sandbox adapter over
                                it, the sandbox-name shape and the FakeDaemon,

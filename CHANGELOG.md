@@ -55,6 +55,10 @@ upgrade, is in
   the source is managoat/managoat_docs. `Fountain.Docs` is still the one
   `use` line, `/docs` and the guardrail tests render and check the manual
   exactly as before.
+- **`managoat_broker` comes from hex** (#1345, ADR 0037), the seventh:
+  `apps/managoat_broker` is gone, the pin is `{:managoat_broker, "~> 0.1.0"}`,
+  the source is managoat/managoat_broker. The native proxy still runs
+  beside the Agent Vault client, selected by `BROKER_LISTEN_PORT`.
 
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`
