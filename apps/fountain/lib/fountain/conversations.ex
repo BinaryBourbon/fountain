@@ -1217,13 +1217,29 @@ defmodule Fountain.Conversations do
   to the orphan sweep, so search coverage is by construction rather than
   by each ending remembering. A turn that already carries a `reply_text`
   keeps it.
+
+  The same write is where activation is decided (ADR 0038): a turn that ends
+  carrying a reply is handed to `Fountain.Activation.turn_replied/1`, which
+  does nothing unless it is the account's *first*. Same choke-point argument,
+  same best-effort contract — it cannot fail this update.
   """
   def _unsafe_update_turn(%Turn{} = turn, attrs) do
-    changeset = Turn.changeset(turn, attrs)
+    changeset =
+      turn
+      |> Turn.changeset(attrs)
+      |> maybe_put_reply_text(turn)
 
-    changeset
-    |> maybe_put_reply_text(turn)
-    |> Repo.update()
+    result = Repo.update(changeset)
+
+    # The write that *materialises* the reply, not every later update to a
+    # turn that already has one — a turn is written again after it ends, and
+    # activation happens once.
+    with {:ok, updated} <- result,
+         text when is_binary(text) <- Ecto.Changeset.get_change(changeset, :reply_text) do
+      Fountain.Activation.turn_replied(updated)
+    end
+
+    result
   end
 
   @doc """

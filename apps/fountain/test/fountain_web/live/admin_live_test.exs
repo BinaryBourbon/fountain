@@ -54,13 +54,49 @@ defmodule FountainWeb.AdminLiveTest do
       admin = insert_admin()
       stalled = insert_active_user()
       insert_agent(user_id: stalled.id)
+      insert_conversation(user_id: stalled.id)
       conn = login_user(conn, admin)
 
       {:ok, _lv, html} = live(conn, ~p"/admin")
 
-      # admin + stalled are both verified with no conversations
-      assert html =~ "2 verified users have never started a conversation"
+      # admin + stalled are both verified and neither has had a reply; the
+      # conversation that never answered is a start, not an activation.
+      assert html =~ "2 verified users have never had a reply"
+      assert html =~ "started a conversation and got nothing back: 1"
       assert html =~ "built an agent: 1"
+    end
+
+    test "shows time to first reply", %{conn: conn} do
+      admin = insert_admin()
+      conn = login_user(conn, admin)
+
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "Time to first reply"
+      assert html =~ "No account has had a reply yet."
+
+      user = insert_active_user()
+
+      Fountain.Repo.update!(
+        Ecto.Changeset.change(user,
+          email_verified_at:
+            DateTime.utc_now() |> DateTime.add(-48, :hour) |> DateTime.truncate(:second)
+        )
+      )
+
+      insert_turn(insert_conversation(user_id: user.id), %{
+        status: "completed",
+        reply_text: "the agent answered",
+        ended_at: DateTime.utc_now() |> DateTime.add(-46, :hour) |> DateTime.truncate(:second)
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "Time to first reply"
+      assert html =~ "median"
+      assert html =~ "p90"
+      assert html =~ "2h"
+      assert html =~ "within a day of verifying: 1 of"
     end
   end
 end

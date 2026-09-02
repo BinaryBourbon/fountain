@@ -64,7 +64,7 @@
     {
       "type": "bargauge",
       "title": "Users by lifecycle stage",
-      "description": "All-time totals, polled from Fountain.Funnel. Onboarded means the account holds an inference credential and an agent (#867), not that somebody clicked through the old wizard. Activated means a first conversation, counted as the union of a conversations row and a sandbox_provisioned usage event, because either one alone under-counts. Every replica polls the same database and reports the same number, so these use `max`; `sum` would multiply the funnel by the replica count.",
+      "description": "All-time totals, polled from Fountain.Funnel. Onboarded means the account holds an inference credential and an agent (#867), not that somebody clicked through the old wizard. Activated means the first conversation with a reply (ADR 0038), counted as the earliest turn carrying assistant text. A conversation that never answered does not count, and neither does the sandbox provisioned for one. Every replica polls the same database and reports the same number, so these use `max`; `sum` would multiply the funnel by the replica count.",
       "gridPos": {
         "h": 9,
         "w": 12,
@@ -229,7 +229,7 @@
     {
       "type": "stat",
       "title": "Activated / verified",
-      "description": "The conversion that matters most: a verified account that ever started a conversation.",
+      "description": "The conversion that matters most: a verified account that ever got a reply from an agent.",
       "gridPos": {
         "h": 4,
         "w": 3,
@@ -321,7 +321,7 @@
     {
       "type": "stat",
       "title": "Stalled after verifying",
-      "description": "Verified accounts that never started a conversation. The admin funnel page breaks the same number down further, into built an agent, built an environment, or built nothing.",
+      "description": "Verified accounts that never got a reply. The admin funnel page breaks the same number down further, into started a conversation and got nothing back, built an agent, built an environment, or built nothing. Time to first reply, the number ADR 0038 judges onboarding on, is on that page and in PostHog rather than here \u2014 a median makes a poor gauge.",
       "gridPos": {
         "h": 5,
         "w": 6,
