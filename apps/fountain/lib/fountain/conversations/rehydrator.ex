@@ -32,7 +32,8 @@ defmodule Fountain.Conversations.Rehydrator do
 
   require Logger
 
-  alias Fountain.{Agents, Conversations, Runtimes}
+  alias Fountain.{Agents, Conversations}
+  alias Managoat.Runtimes
   alias Fountain.Conversations.ConversationServer
 
   def run(opts \\ []) do

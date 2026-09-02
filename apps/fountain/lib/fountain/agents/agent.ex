@@ -4,7 +4,7 @@ defmodule Fountain.Agents.Agent do
 
   alias Fountain.Accounts.User
   alias Fountain.Environments.Environment
-  alias Fountain.Runtimes.Model
+  alias Managoat.Runtimes.Model
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
@@ -184,14 +184,14 @@ defmodule Fountain.Agents.Agent do
 
   # A policy the runtime will never consult is refused rather than stored. The
   # verdicts are carried by `session/request_permission`, and opencode does not
-  # send it — measured live, see `Fountain.Runtimes.ACP.asks_permission?/1`. An
+  # send it — measured live, see `Managoat.Runtimes.ACP.asks_permission?/1`. An
   # accepted-but-inert `auto_deny` is the worst of the three outcomes: it reads
   # like protection on every screen that shows it.
   defp runtime_errors(changeset, policy) do
     runtime = Ecto.Changeset.get_field(changeset, :runtime)
 
     if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
-         Fountain.Runtimes.ACP.asks_permission?(runtime) do
+         Managoat.Runtimes.ACP.asks_permission?(runtime) do
       []
     else
       [
@@ -283,7 +283,7 @@ defmodule Fountain.Agents.Agent do
 
   defp skill_errors(_entry, i), do: [skills: "entry #{i}: must be an object"]
 
-  # Mirrors SandboxSkills.safe_token!/1 — the ref is interpolated into the
+  # Mirrors Managoat.Runtimes.Skills.safe_token!/1 — the ref is interpolated into the
   # sprite-side install command, so reject anything outside the allow-list
   # at write time instead of failing the spawn later.
   defp valid_ref?(ref) when is_binary(ref), do: Regex.match?(~r{\A[A-Za-z0-9._/-]+\z}, ref)

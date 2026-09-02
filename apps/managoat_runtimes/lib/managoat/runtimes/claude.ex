@@ -1,9 +1,9 @@
-defmodule Fountain.Runtimes.Claude do
+defmodule Managoat.Runtimes.Claude do
   @moduledoc """
   Anthropic Claude runtime — provisioning only.
 
   Turns speak ACP through the pinned `claude-agent-acp` adapter
-  (`Fountain.Runtimes.ACP`); the CLI argv builder that used to live here went
+  (`Managoat.Runtimes.ACP`); the CLI argv builder that used to live here went
   with the legacy spawn path. What remains is the half ADR 0014 deliberately
   kept: how credentials, skills and MCP servers get into the sandbox.
 
@@ -31,15 +31,15 @@ defmodule Fountain.Runtimes.Claude do
 
   When the upstream bug is fixed, the session-scoped path will start working
   too; at that point drop this provisioning to avoid double-registration
-  (cf. the same lesson in `Fountain.Runtimes.Gemini`). Registered as
-  `:claude_mcp_via_files` in `Fountain.Runtimes.Quirks`, which carries the
+  (cf. the same lesson in `Managoat.Runtimes.Gemini`). Registered as
+  `:claude_mcp_via_files` in `Managoat.Runtimes.Quirks`, which carries the
   re-probe procedure and is guarded by a test that fails if this function
   disappears without the entry.
   """
 
-  @behaviour Fountain.Runtimes
+  @behaviour Managoat.Runtimes
 
-  alias Fountain.Runtimes.Layout
+  alias Managoat.Runtimes.Layout
 
   @runtime "claude"
 

@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.Instructions do
+defmodule Managoat.Runtimes.Instructions do
   @moduledoc """
   Deliver the agent's `system` prompt to the runtime (#848).
 
@@ -27,14 +27,14 @@ defmodule Fountain.Runtimes.Instructions do
   the table above against a hardcoded `/home/sprite`, so for those two the
   prompt was written where their CLI never looks: they ran on the default
   persona, silently, and the test pinned the wrong path alongside. The paths
-  now come from `Fountain.Runtimes.Layout`, which is also where the `HOME`
+  now come from `Managoat.Runtimes.Layout`, which is also where the `HOME`
   export is derived from, so the two cannot disagree again.
 
   The file carries a short header so a human (or the agent) reading it knows
   where it came from, then the prompt verbatim.
   """
 
-  alias Fountain.Runtimes.Layout
+  alias Managoat.Runtimes.Layout
 
   @doc "The user-level instructions file the runtime reads, or nil for a runtime we do not know."
   @spec path(String.t() | nil) :: String.t() | nil

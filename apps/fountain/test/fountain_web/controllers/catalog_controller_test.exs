@@ -12,9 +12,9 @@ defmodule FountainWeb.CatalogControllerTest do
     data = body["data"]
 
     assert data["runtimes"] == Fountain.Agents.Agent.runtimes()
-    assert data["models"]["claude"] == Fountain.Runtimes.Model.suggestions("claude")
+    assert data["models"]["claude"] == Fountain.Agents.ModelCatalog.suggestions("claude")
     assert Enum.all?(data["models"]["opencode"], &String.contains?(&1, "/"))
-    assert data["model_providers"] == Fountain.Runtimes.Model.providers()
+    assert data["model_providers"] == Fountain.Agents.ModelCatalog.providers()
     assert is_list(data["sandbox_providers"]["enabled"])
     assert data["sandbox_providers"]["default"] in Fountain.SandboxProviders.known_providers()
     assert data["package_managers"] == ["apt", "npm"]

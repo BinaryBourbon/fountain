@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.GeminiSessionConsolidateTest do
+defmodule Managoat.Runtimes.GeminiSessionConsolidateTest do
   @moduledoc """
   The gemini session-store workaround (#659), exercised as the script that
   actually runs — node against real files on disk, not a re-implementation.

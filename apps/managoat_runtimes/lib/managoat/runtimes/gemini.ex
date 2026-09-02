@@ -1,9 +1,9 @@
-defmodule Fountain.Runtimes.Gemini do
+defmodule Managoat.Runtimes.Gemini do
   @moduledoc """
   Google Gemini CLI runtime.
 
   Provisioning only. Gemini speaks ACP since #659, so a turn spawns
-  `gemini --acp` (`Fountain.Runtimes.ACP`) and the prompt, the model, the
+  `gemini --acp` (`Managoat.Runtimes.ACP`) and the prompt, the model, the
   session id and the MCP servers all travel over the protocol rather than in
   argv. This module is what remains: the workspace, the skills paths, the
   settings file and `GEMINI_API_KEY`.
@@ -30,9 +30,9 @@ defmodule Fountain.Runtimes.Gemini do
   Auth: `GEMINI_API_KEY` exported into the sprite.
   """
 
-  @behaviour Fountain.Runtimes
+  @behaviour Managoat.Runtimes
 
-  alias Fountain.Runtimes.Layout
+  alias Managoat.Runtimes.Layout
 
   @runtime "gemini"
 
@@ -40,7 +40,7 @@ defmodule Fountain.Runtimes.Gemini do
   # the noisy `[WARN] [MemoryDiscovery] EACCES at /home/sprite/.git`
   # message (gemini walks up from cwd looking for .git, and /home/sprite's
   # perms trip it).  Also gives MemoryDiscovery a real workspace root
-  # to anchor on instead of crawling /home. `Fountain.Runtimes.Layout` owns
+  # to anchor on instead of crawling /home. `Managoat.Runtimes.Layout` owns
   # the path, and the ACP session runs in the same place because it reads
   # the same row.
   @workdir Layout.cwd(@runtime)
@@ -66,7 +66,7 @@ defmodule Fountain.Runtimes.Gemini do
     # and most writes through), but rename across that boundary errors
     # out. /tmp side-steps it cleanly. Mirrors the same fix we needed
     # for opencode's `~/.opencode` access path. The path itself lives in
-    # `Fountain.Runtimes.Layout`, so the HOME gemini gets and the HOME
+    # `Managoat.Runtimes.Layout`, so the HOME gemini gets and the HOME
     # Fountain writes its config under are the same one by construction.
     base ++ Layout.home_env(@runtime)
   end
@@ -115,7 +115,7 @@ defmodule Fountain.Runtimes.Gemini do
 
     # The session-store workaround travels with the workspace (#659): it has to
     # be on disk before the first turn ends, since that is when it first runs.
-    _ = Fountain.Runtimes.Gemini.SessionStore.install(handle)
+    _ = Managoat.Runtimes.Gemini.SessionStore.install(handle)
 
     case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
            env: sprite_env,

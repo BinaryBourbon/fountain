@@ -1,12 +1,13 @@
-defmodule Fountain.Runtimes.ACP do
+defmodule Managoat.Runtimes.ACP do
   @moduledoc """
   Whether a turn speaks the Agent Client Protocol, and what to spawn if it does.
 
-  Gate 2 of [0014](decisions/0014-agent-client-protocol.md). This module is the
-  *provisioning* side of the ACP path — which adapter, which version, how it
-  gets into the sprite — and it deliberately holds no protocol state. The
-  session lives in `Managoat.ACP.Peer`, which outlives the turn and
-  is closed when the sandbox wake ends (#817).
+  This module is the *provisioning* side of the ACP path — which adapter,
+  which version, how it gets into the sprite — and it deliberately holds no
+  protocol state. The session lives in `Managoat.ACP.Peer`, which outlives the
+  turn and is closed by its owner when the sandbox wake ends. The issue
+  numbers in this file are Fountain's, where the path was built (ADR 0014
+  there is the decision record).
 
   ## The only path
 
@@ -72,7 +73,7 @@ defmodule Fountain.Runtimes.ACP do
   just a turn.
 
   **Resolved by reaching into that store on purpose** (#659, 2026-08-22).
-  `Fountain.Runtimes.Gemini.SessionStore` consolidates the chats directory at
+  `Managoat.Runtimes.Gemini.SessionStore` consolidates the chats directory at
   the end of every turn: keep the file with real content, delete the poisoned
   duplicates a load leaves behind, and park the survivor under a timestamp the
   recorder cannot produce. An earlier draft of this paragraph said Fountain
@@ -109,10 +110,8 @@ defmodule Fountain.Runtimes.ACP do
   in a PR that says why.
   """
 
-  alias Fountain.Agents.Agent
-
   # Per runtime: how ACP is reached. Where the agent *runs* is not here —
-  # that is layout, and it lives in `Fountain.Runtimes.Layout` alongside the
+  # that is layout, and it lives in `Managoat.Runtimes.Layout` alongside the
   # workspace each runtime's `prepare_sandbox/3` git-inits. This table used
   # to carry its own `cwd` copy, with a comment admitting the mirror.
   #
@@ -136,15 +135,15 @@ defmodule Fountain.Runtimes.ACP do
     # `sessionCapabilities`, so every turn after the first pays a full replay
     # that `Peer` discards. Its cwd matters more than the others' — gemini
     # walks up from it looking for a `.git` — and both that path and the
-    # `git init` that satisfies it now come from `Fountain.Runtimes.Layout`.
+    # `git init` that satisfies it now come from `Managoat.Runtimes.Layout`.
     # Shippable since #659. Gemini's own session store erases a session in the
     # act of loading it (google-gemini/gemini-cli#28775, still open on 0.56.0 —
     # the moduledoc has the mechanism), which held this entry back for eleven
-    # days. `Fountain.Runtimes.Gemini.SessionStore` consolidates the store at
+    # days. `Managoat.Runtimes.Gemini.SessionStore` consolidates the store at
     # the end of every turn so the load cannot collide with what it is loading.
     # Delete that module and this comment when upstream lands — the
     # condition, and the procedure for checking it, are recorded as
-    # `:gemini_session_store_consolidation` in `Fountain.Runtimes.Quirks`.
+    # `:gemini_session_store_consolidation` in `Managoat.Runtimes.Quirks`.
     "gemini" => %{
       bin: "gemini",
       args: ["--acp"],
@@ -220,9 +219,9 @@ defmodule Fountain.Runtimes.ACP do
   cannot share (`1`, see the adapter table). A runtime without an adapter
   entry has nothing to collide with and reads as `:unbounded`.
 
-  At capacity a turn is **refused**, not queued — `ConversationServer`
-  answers `{:error, :sandbox_at_capacity}` and the caller sends again when
-  the other turn ends.
+  At capacity a turn is **refused**, not queued — the host answers the
+  prompt with an error (`{:error, :sandbox_at_capacity}` in Fountain) and the
+  caller sends again when the other turn ends.
   """
   @spec concurrency(String.t()) :: :unbounded | pos_integer()
   def concurrency(runtime) when is_binary(runtime) do
@@ -300,7 +299,7 @@ defmodule Fountain.Runtimes.ACP do
   repo (gemini does) behaves differently depending on what we say here.
   """
   @spec cwd(String.t()) :: String.t()
-  def cwd(runtime), do: Fountain.Runtimes.Layout.cwd(runtime) || "/home/sprite"
+  def cwd(runtime), do: Managoat.Runtimes.Layout.cwd(runtime) || "/home/sprite"
 
   @doc """
   Whether this turn speaks ACP.
@@ -312,12 +311,12 @@ defmodule Fountain.Runtimes.ACP do
   ever be used again.
 
   Takes the runtime string, not the agent, because a conversation outlives
-  its agent (deleting one nilifies `agent_id`) and the conversation row
-  carries its own `runtime`. An `%Agent{}` is accepted for call sites that
-  have one.
+  its agent (deleting one nilifies its reference) and the conversation row
+  carries its own `runtime`. An agent map (`t:Managoat.Runtimes.agent/0`) is
+  accepted for call sites that have one.
   """
-  @spec enabled?(String.t() | Agent.t() | nil) :: boolean()
-  def enabled?(%Agent{runtime: runtime}), do: enabled?(runtime)
+  @spec enabled?(String.t() | Managoat.Runtimes.agent() | nil) :: boolean()
+  def enabled?(%{runtime: runtime}), do: enabled?(runtime)
   def enabled?(runtime) when is_binary(runtime), do: runtime in supported_runtimes()
   def enabled?(_), do: false
 
@@ -328,7 +327,7 @@ defmodule Fountain.Runtimes.ACP do
   about the turn, because under ACP the turn is carried by `session/prompt`
   over the connection rather than by the process's arguments. That difference
   is the entire architectural change, and it is why this does not implement the
-  `Fountain.Runtimes` behaviour.
+  `Managoat.Runtimes` behaviour.
   """
   @spec command(String.t()) :: {String.t(), [String.t()]}
   def command(runtime) do
@@ -346,13 +345,13 @@ defmodule Fountain.Runtimes.ACP do
   failing there reads as a protocol bug rather than a missing package.
 
   It does **not** run with the rest of the package installs, which an earlier
-  version of this paragraph claimed. `prepare_runtime_sprite/5` is called
-  after `run_provisioning_pipeline/5`, so this lands *after*
-  `Provisioning.apply_network_policy/3`. On the default `unrestricted`
-  environment that costs nothing. On a `limited` one the allowlist has to
-  include the npm registry, or the adapter install fails here — the same
-  exposure `Fountain.Runtimes.OpenCode.prepare_sandbox/3`'s `bun install` has,
-  for the same reason.
+  version of this paragraph claimed: the host calls it after its own
+  provisioning pipeline, so in Fountain this lands *after* the network policy
+  has been applied. On an unrestricted sandbox that costs nothing. On a
+  restricted one the allowlist has to include the npm registry, or the
+  adapter install fails here — the same exposure
+  `Managoat.Runtimes.OpenCode.prepare_sandbox/3`'s `bun install` has, for the
+  same reason.
 
   Idempotent on the exact pinned version: an image that already carries a
   different version is corrected rather than accepted, since "some adapter is
@@ -366,10 +365,10 @@ defmodule Fountain.Runtimes.ACP do
   install returns nothing. The spawn would then fail with `command not found`,
   which reads like a protocol bug and is not one.
 
-  Registered as `:npm_global_bin_off_path` in `Fountain.Runtimes.Quirks`.
+  Registered as `:npm_global_bin_off_path` in `Managoat.Runtimes.Quirks`.
 
   So we symlink into `/home/sprite/.local/bin`, which *is* on PATH. This is the
-  same shape as `Fountain.Runtimes.OpenCode.prepare_sandbox/3`, which hit the
+  same shape as `Managoat.Runtimes.OpenCode.prepare_sandbox/3`, which hit the
   identical problem with bun's global bin, and the absolute path is hardcoded
   for the same reason it is there: `~` resolves against whatever `HOME` the
   caller happens to have.
@@ -420,8 +419,9 @@ defmodule Fountain.Runtimes.ACP do
   @doc """
   An agent's MCP servers, in the shape `session/new` takes.
 
-  Fountain stores them as Claude's own config map — `%{name => %{"command" =>
-  …, "args" => […], "env" => %{…}}}`, or a `type`/`url` entry for HTTP and SSE.
+  The agent carries them as Claude's own config map — `%{name => %{"command"
+  => …, "args" => […], "env" => %{…}}}`, or a `type`/`url` entry for HTTP and
+  SSE.
   ACP takes an *array*, each entry carrying its own `name`, and — the detail
   that is easy to get silently wrong — **`env` and `headers` as arrays of
   `%{name, value}` rather than maps.** Passing a map there is accepted as JSON
@@ -436,8 +436,8 @@ defmodule Fountain.Runtimes.ACP do
   opencode's `opencode.json`) are gone. Gate 2 verified the protocol path
   live: server started, listed, called, env delivered.
   """
-  @spec mcp_servers(Agent.t() | nil) :: [map()]
-  def mcp_servers(%Agent{mcp_servers: servers}) when is_map(servers) and map_size(servers) > 0 do
+  @spec mcp_servers(Managoat.Runtimes.agent() | nil) :: [map()]
+  def mcp_servers(%{mcp_servers: servers}) when is_map(servers) and map_size(servers) > 0 do
     servers
     |> Enum.sort_by(fn {name, _} -> to_string(name) end)
     |> Enum.map(fn {name, entry} -> mcp_server(to_string(name), entry) end)
@@ -473,41 +473,25 @@ defmodule Fountain.Runtimes.ACP do
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
 
   @doc """
-  The `initialize` params we send.
+  The `initialize` params to send, for the client capabilities given.
 
-  **We declare no client filesystem or terminal capabilities.** `fs/*` and
-  `terminal/*` are client-implemented, and ours would have to service them
-  against the sprite rather than the Fountain server — 0014 names that as the
-  likeliest source of a security finding and 0016 makes it its own gate. Gate 2
-  declares nothing, so a well-behaved adapter never asks; the peer still
-  answers anything that arrives, because an unanswered request blocks the agent
-  and a blocked agent bills.
+  **The default declares no client filesystem or terminal capabilities.**
+  `fs/*` and `terminal/*` are client-implemented, and a platform's would have
+  to service them against the sandbox rather than the server — Fountain's
+  ADR 0014 names that as the likeliest source of a security finding and 0016
+  makes it its own gate. Declaring nothing means a well-behaved adapter never
+  asks; the peer still answers anything that arrives, because an unanswered
+  request blocks the agent and a blocked agent bills.
 
-  The library's default is exactly this (`Managoat.ACP.Protocol`), so the
-  peer is not passed anything; this function exists for the callers that read
-  the params directly, and so the capabilities Fountain declares are written
-  down here, where 0014 and 0016 are.
+  `Managoat.ACP.Protocol.default_client_capabilities/0` is exactly that
+  default, so a host that declares nothing passes the peer nothing and this
+  function exists for the callers that read the params directly. A host that
+  does service `fs/*` passes its own capabilities map instead.
   """
-  @spec initialize_params() :: map()
-  def initialize_params do
-    Managoat.ACP.Protocol.initialize_params(Managoat.ACP.Protocol.default_client_capabilities())
-  end
-
-  @doc """
-  How long a held `ask` waits for a human before it is denied (#940).
-
-  Read from `:permission_ask_timeout_seconds`; the default and the parsing
-  are the library's (`Managoat.ACP.Permissions.ask_timeout_ms/1`). Must sit
-  under `Lifecycle.idle_timeout_seconds/0`: a held request suppresses only
-  the idle verdict, so one that outlived the idle bound would be resolved by
-  the max-lifetime ceiling instead — which destroys the sandbox rather than
-  parking it (0017). The timeout has to fire first for an unanswered prompt to
-  cost a turn rather than the agent's memory; `acp_test.exs` pins the bound.
-  """
-  @spec ask_timeout_ms() :: pos_integer()
-  def ask_timeout_ms do
-    :fountain
-    |> Application.get_env(:permission_ask_timeout_seconds)
-    |> Managoat.ACP.Permissions.ask_timeout_ms()
+  @spec initialize_params(map()) :: map()
+  def initialize_params(
+        client_capabilities \\ Managoat.ACP.Protocol.default_client_capabilities()
+      ) do
+    Managoat.ACP.Protocol.initialize_params(client_capabilities)
   end
 end

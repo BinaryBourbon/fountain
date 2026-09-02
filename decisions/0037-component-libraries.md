@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner. All eight."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, runtime provisioning, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340), managoat_acp (#1339) and managoat_runtimes (#1368). Graduated to hex so far: managoat_substitution, managoat_mcp_auth, managoat_oauth, managoat_acp, managoat_sandbox, managoat_docs, managoat_broker, managoat_runner; managoat_runtimes is the one still in the umbrella."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: claude-fable/5.1, at: 2026-09-02T02:30:00-04:00 }
-verified: { by: claude-fable/5.1, at: 2026-09-02T03:00:00-04:00 }
+generated: { by: claude-fable/5.1, at: 2026-09-02T04:00:00-04:00 }
+verified: { by: claude-fable/5.1, at: 2026-09-02T04:00:00-04:00 }
 stale_after: 2026-12-01
 ---
 
@@ -48,8 +48,16 @@ the block normaliser, usage accounting, the tracer and a `ScriptedAgent`,
 behind a writer callback rather than a sandbox dependency; runtime
 provisioning, `LegacyBlocks`, the stream-keyed `Conversations.Blocks`
 dispatcher and the tool bridge stay in `fountain`; its README carries the
-comparison against `acpex` and `agent_client_protocol`). Not yet built: the
-optional credits extraction (#1344). **Graduated** (#1345, the recipe is
+comparison against `acpex` and `agent_client_protocol`) and
+`managoat_runtimes` (#1368: the provisioning half #1339 left behind — the
+`Managoat.Runtimes` behaviour and dispatcher, the pinned ACP adapter table
+and install, `Layout`, `Instructions`, `Quirks`, the `provider/model_id`
+parser, the skills mechanism, gemini's session-store workaround and the
+`FakeRuntime`, with the agent typed as a plain map; the model suggestion
+catalog (`Fountain.Agents.ModelCatalog`), the bundled skill content, the
+permission-ask timeout read (`Fountain.Conversations.Lifecycle`),
+`LegacyBlocks` and `InferenceCredentials` stay in `fountain`). Not yet
+built: the optional credits extraction (#1344). **Graduated** (#1345, the recipe is
 `scripts/graduate-library.sh` and the CONTRIBUTING section "Graduating a
 library"): `managoat_substitution` (managoat/managoat_substitution, hex
 0.1.0, 2026-09-02), `managoat_mcp_auth` (managoat/managoat_mcp_auth, hex
@@ -66,11 +74,11 @@ only, nothing from Fountain's `docs/` or the fixture manual under `test/`),
 x509 dialyzer ignores travelled with it), `managoat_runner`
 (managoat/managoat_runner, hex 0.1.0, 2026-09-02, last because it depends on
 `managoat_sandbox`, whose Fountain-side PR switched runner's dependency to
-the hex release first). All eight have graduated; the umbrella holds no
-library app, and `umbrella_layout_test.exs` and `scripts/test-libraries.sh`
-guard the next one. The
-tracker is #1334. Each PR that extracts or graduates a library updates this
-block.
+the hex release first). All eight of those have graduated; `managoat_runtimes`
+(#1368) is the one library app in the umbrella, on its way out by the same
+recipe, and `umbrella_layout_test.exs` and `scripts/test-libraries.sh` guard
+it. The tracker is #1334. Each PR that extracts or graduates a library updates
+this block.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names
@@ -154,6 +162,9 @@ extracted it is its own Elastic-licensed repository.
   by its owner, so the sandbox is the host's business, and this line as
   first written was a guess made before the peer was read);
 - `managoat_runner` depends on `managoat_sandbox`;
+- `managoat_runtimes` depends on `managoat_sandbox` (it writes files into
+  and runs commands on the sandbox) and `managoat_acp` (the `initialize`
+  params for the adapter it installed; decided 2026-09-02 in #1368);
 - `fountain` depends on every library, and nothing depends on `fountain`.
 
 A library holds no reference to `Fountain.*` or `FountainWeb.*`, reads no

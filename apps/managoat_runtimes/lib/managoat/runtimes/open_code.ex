@@ -1,11 +1,11 @@
-defmodule Fountain.Runtimes.OpenCode do
+defmodule Managoat.Runtimes.OpenCode do
   @moduledoc """
   Opencode runtime — provisioning only. A multi-provider front-end; the
   model is selected over ACP (`session/set_model` via the peer) rather than
   argv since the `opencode run` builder went with the legacy spawn path.
 
   Turns speak ACP through opencode's own `acp` subcommand
-  (`Fountain.Runtimes.ACP`), which starts a local HTTP server inside the
+  (`Managoat.Runtimes.ACP`), which starts a local HTTP server inside the
   sprite and drives it through opencode's SDK — a heavier process model than
   the stdio-only adapters, worth remembering when something hangs.
 
@@ -16,19 +16,19 @@ defmodule Fountain.Runtimes.OpenCode do
   the first session on a new sprite will install it (10–30s longer than
   the other runtimes). Subsequent turns on the same sprite are normal
   speed. Registered as `:opencode_absent_from_base_image` in
-  `Fountain.Runtimes.Quirks`.
+  `Managoat.Runtimes.Quirks`.
   """
 
-  @behaviour Fountain.Runtimes
+  @behaviour Managoat.Runtimes
 
-  alias Fountain.Runtimes.Layout
-  alias Fountain.Runtimes.Model
+  alias Managoat.Runtimes.Layout
+  alias Managoat.Runtimes.Model
 
   @runtime "opencode"
 
   # opencode insists on being inside a git repo, and the sprite user cannot
   # `git init` in /home/sprite (work-tree perms). The workspace lives under
-  # /tmp for that reason; `Fountain.Runtimes.Layout` owns the path, and the
+  # /tmp for that reason; `Managoat.Runtimes.Layout` owns the path, and the
   # ACP session runs in the same place because it reads the same row.
   @workdir Layout.cwd(@runtime)
 

@@ -1,24 +1,35 @@
-defmodule Fountain.Test.FakeRuntime do
+defmodule Managoat.Runtimes.Testing.FakeRuntime do
   @moduledoc """
-  A `Fountain.Runtimes` implementation for tests.
+  A `Managoat.Runtimes` implementation for tests.
 
-  `ConversationServer` takes its runtime module as a start argument, which is
-  the one dependency-injection seam the module already has. Using it avoids
-  stubbing four real runtime modules to test behaviour that has nothing to do
-  with which CLI is being driven.
+  A host that takes its runtime module as a start argument (Fountain's
+  conversation server does) can run its whole turn machinery against this
+  instead of stubbing four real runtime modules to test behaviour that has
+  nothing to do with which CLI is being driven.
 
-  Every callback records itself in the calling process so a test can assert what
-  the server asked the runtime to do.
+  Every callback records itself to an observer process so a test can assert
+  what the host asked the runtime to do. The observer is registered with
+  `observe/1` — the callbacks run in the host's process, not the test's, so
+  `self()` there is the wrong pid to report to.
+
+  Ships in `lib/`, like the other Managoat libraries' fakes, so a host's own
+  tests can use it without copying it.
   """
 
-  @behaviour Fountain.Runtimes
+  @behaviour Managoat.Runtimes
 
-  @doc "Where callbacks report to. Set by the test harness."
-  def observer, do: Application.get_env(:fountain, :test_observer)
+  @app :managoat_runtimes
+  @key :fake_runtime_observer
+
+  @doc "Register `pid` as the process every callback reports to."
+  @spec observe(pid()) :: :ok
+  def observe(pid) when is_pid(pid), do: Application.put_env(@app, @key, pid)
+
+  @doc "Where callbacks report to, or nil when no test has called `observe/1`."
+  @spec observer() :: pid() | nil
+  def observer, do: Application.get_env(@app, @key)
 
   defp report(msg) do
-    # The server runs in its own process, so self() here is the GenServer, not
-    # the test. Report to the pid the harness registered instead.
     if pid = observer(), do: send(pid, msg)
     :ok
   end
@@ -45,13 +56,13 @@ defmodule Fountain.Test.FakeRuntime do
   def skills_sh_agent, do: "fake"
 end
 
-defmodule Fountain.Test.FailingRuntime do
+defmodule Managoat.Runtimes.Testing.FailingRuntime do
   @moduledoc """
-  A runtime whose `prepare_sandbox/3` fails, for exercising the provisioning
-  failure path without having to make a Sprites call fail.
+  A runtime whose `prepare_sandbox/3` fails, for exercising a host's
+  provisioning failure path without having to make a sandbox call fail.
   """
 
-  @behaviour Fountain.Runtimes
+  @behaviour Managoat.Runtimes
 
   @impl true
   def build_command(_agent, prompt, _mode, _session_id, _opts), do: {"echo", [prompt], []}
@@ -72,14 +83,14 @@ defmodule Fountain.Test.FailingRuntime do
   def skills_sh_agent, do: "fake"
 end
 
-defmodule Fountain.Test.ConfigFailingRuntime do
+defmodule Managoat.Runtimes.Testing.ConfigFailingRuntime do
   @moduledoc """
   A runtime whose `write_config/2` fails: the sandbox never took the runtime's
-  config file. Provisioning must treat that as a failure rather than run the
-  agent without its MCP servers.
+  config file. A host's provisioning must treat that as a failure rather than
+  run the agent without its MCP servers.
   """
 
-  @behaviour Fountain.Runtimes
+  @behaviour Managoat.Runtimes
 
   @impl true
   def build_command(_agent, prompt, _mode, _session_id, _opts), do: {"echo", [prompt], []}

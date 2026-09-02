@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.QuirksTest do
+defmodule Managoat.Runtimes.QuirksTest do
   @moduledoc """
   The guardrail that makes the registry worth more than the comments it
   replaces.
@@ -12,8 +12,8 @@ defmodule Fountain.Runtimes.QuirksTest do
   """
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes.Layout
-  alias Fountain.Runtimes.Quirks
+  alias Managoat.Runtimes.Layout
+  alias Managoat.Runtimes.Quirks
 
   test "ids are unique" do
     ids = Enum.map(Quirks.all(), & &1.id)
@@ -93,9 +93,9 @@ defmodule Fountain.Runtimes.QuirksTest do
   test "codex's login is deliberately not recorded as a quirk" do
     # It is codex's documented auth mechanism, not a defect: no upstream fix
     # would remove it and there is no condition under which we stop. It
-    # belongs to the irreducible tier in `Fountain.Runtimes`. Recorded as a
+    # belongs to the irreducible tier in `Managoat.Runtimes`. Recorded as a
     # test so the next person to look at `Codex.prepare_sandbox/3` and reach
     # for this registry finds the reasoning rather than repeating it.
-    refute Enum.any?(Quirks.all(), &match?({Fountain.Runtimes.Codex, _, _}, &1.implemented_by))
+    refute Enum.any?(Quirks.all(), &match?({Managoat.Runtimes.Codex, _, _}, &1.implemented_by))
   end
 end

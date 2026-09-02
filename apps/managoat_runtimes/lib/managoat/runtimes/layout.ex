@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.Layout do
+defmodule Managoat.Runtimes.Layout do
   @moduledoc """
   Where a runtime keeps its files inside a sandbox — one table, derived
   everywhere else.
@@ -8,10 +8,10 @@ defmodule Fountain.Runtimes.Layout do
       <home>/<config_dir>/<leaf>
 
   and each runtime module used to restate its own half of that from memory.
-  `skills_root/0` derived it correctly; `Fountain.Runtimes.Instructions`
-  derived it again with `/home/sprite` hardcoded; `Fountain.Runtimes.Gemini`
-  and `Fountain.Runtimes.OpenCode` each named a workspace directory that
-  `Fountain.Runtimes.ACP`'s adapter table then named a second time — with a
+  `skills_root/0` derived it correctly; `Managoat.Runtimes.Instructions`
+  derived it again with `/home/sprite` hardcoded; `Managoat.Runtimes.Gemini`
+  and `Managoat.Runtimes.OpenCode` each named a workspace directory that
+  `Managoat.Runtimes.ACP`'s adapter table then named a second time — with a
   comment admitting the mirror.
 
   That duplication was not merely untidy, it was wrong: opencode and gemini
@@ -33,12 +33,15 @@ defmodule Fountain.Runtimes.Layout do
   This is layout only — where files go, and which on-disk dialect writes
   them. What goes *in* those files (credentials, MCP servers, the agent's
   prompt) stays with the runtime modules, and the imperative bootstrap each
-  runtime needs stays in its `prepare_sandbox/3`. See `Fountain.Runtimes`.
+  runtime needs stays in its `prepare_sandbox/3`. See `Managoat.Runtimes`.
   """
 
-  # The sprite image's own home directory. A runtime whose `home` matches
-  # inherits it and exports nothing; one that differs gets an explicit HOME
-  # (see `home_env/1`).
+  # The sandbox image's own home directory. `/home/sprite` is the convention
+  # `Managoat.Sandbox` documents (its `host_path/2` is the identity on the
+  # hosted providers and maps this directory on a self-hosted runner), not a
+  # host application's setting, so it is fixed here rather than taken as an
+  # argument. A runtime whose `home` matches inherits it and exports nothing;
+  # one that differs gets an explicit HOME (see `home_env/1`).
   @image_home "/home/sprite"
 
   @layouts %{
@@ -61,7 +64,7 @@ defmodule Fountain.Runtimes.Layout do
     # errors across /home/sprite's ACL boundary even though plain writes
     # succeed. The workspace is separate again because gemini walks up from
     # cwd looking for a `.git` and trips the same perms on /home/sprite;
-    # `Fountain.Runtimes.Gemini.prepare_sandbox/3` git-inits exactly this
+    # `Managoat.Runtimes.Gemini.prepare_sandbox/3` git-inits exactly this
     # directory.
     "gemini" => %{
       home: "/tmp",
@@ -129,7 +132,7 @@ defmodule Fountain.Runtimes.Layout do
 
   @doc """
   Absolute path the runtime's CLI scans for skills, written as
-  `<skills_root>/<name>/SKILL.md` by `Fountain.SandboxSkills`.
+  `<skills_root>/<name>/SKILL.md` by `Managoat.Runtimes.Skills`.
 
   Every runtime puts this directly under its config root; none of them has
   ever needed to differ, which is why it is derived rather than listed.
@@ -145,7 +148,7 @@ defmodule Fountain.Runtimes.Layout do
   @doc """
   The user-level instructions file the runtime reads at session start — where
   the agent's `system` prompt is delivered. See
-  `Fountain.Runtimes.Instructions`.
+  `Managoat.Runtimes.Instructions`.
   """
   @spec instructions_path(runtime()) :: String.t() | nil
   def instructions_path(runtime) do
@@ -160,7 +163,7 @@ defmodule Fountain.Runtimes.Layout do
   @doc """
   Working directory the agent runs in — the cwd handed to the ACP session,
   and the workspace a runtime's `prepare_sandbox/3` git-inits when it needs
-  one. Returns nil for a runtime we do not know; `Fountain.Runtimes.ACP.cwd/1`
+  one. Returns nil for a runtime we do not know; `Managoat.Runtimes.ACP.cwd/1`
   is where the fallback for that lives.
   """
   @spec cwd(runtime()) :: String.t() | nil

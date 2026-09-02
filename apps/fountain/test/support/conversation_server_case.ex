@@ -118,8 +118,8 @@ defmodule Fountain.ConversationServerCase do
   which the failure paths do — doesn't take the test process with it.
   """
   def start_server(conv, opts \\ []) do
-    runtime = Keyword.get(opts, :runtime, Fountain.Test.FakeRuntime)
-    Application.put_env(:fountain, :test_observer, self())
+    runtime = Keyword.get(opts, :runtime, Managoat.Runtimes.Testing.FakeRuntime)
+    Managoat.Runtimes.Testing.FakeRuntime.observe(self())
 
     args = [
       conversation_id: conv.id,

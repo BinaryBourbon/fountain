@@ -1,4 +1,4 @@
-defmodule Fountain.Runtimes.ClaudeTest do
+defmodule Managoat.Runtimes.ClaudeTest do
   @moduledoc """
   MCP servers are provisioned into the sandbox (project `.mcp.json` + an
   auto-approve setting) because the ACP session-scoped channel is broken
@@ -7,7 +7,7 @@ defmodule Fountain.Runtimes.ClaudeTest do
   use ExUnit.Case, async: true
   use Mimic
 
-  alias Fountain.Runtimes.Claude
+  alias Managoat.Runtimes.Claude
   alias Managoat.Sandbox
 
   setup :set_mimic_from_context

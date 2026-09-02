@@ -1,9 +1,9 @@
-defmodule Fountain.Runtimes.Codex do
+defmodule Managoat.Runtimes.Codex do
   @moduledoc """
   OpenAI Codex runtime — provisioning only.
 
   Turns speak ACP through the pinned `codex-acp` adapter
-  (`Fountain.Runtimes.ACP`); the `codex exec` argv builder — and with it the
+  (`Managoat.Runtimes.ACP`); the `codex exec` argv builder — and with it the
   resume-by-guessing `--last` flag, the worst thing this module shipped —
   went with the legacy spawn path. What remains is the half ADR 0014
   deliberately kept: credentials and skills.
@@ -13,9 +13,9 @@ defmodule Fountain.Runtimes.Codex do
   process env, and the adapter runs on the same store.
   """
 
-  @behaviour Fountain.Runtimes
+  @behaviour Managoat.Runtimes
 
-  alias Fountain.Runtimes.Layout
+  alias Managoat.Runtimes.Layout
 
   @runtime "codex"
 

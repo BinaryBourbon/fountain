@@ -1,7 +1,7 @@
-defmodule Fountain.Runtimes.Gemini.SessionStore do
+defmodule Managoat.Runtimes.Gemini.SessionStore do
   @moduledoc """
   A workaround, registered as `:gemini_session_store_consolidation` in
-  `Fountain.Runtimes.Quirks` — which carries the deletion condition and how
+  `Managoat.Runtimes.Quirks` — which carries the deletion condition and how
   to re-probe it. This whole module goes when gemini-cli#28775 lands.
 
   Keeps gemini's own chat-session store from erasing the session it is asked to
@@ -47,15 +47,16 @@ defmodule Fountain.Runtimes.Gemini.SessionStore do
 
   ## Lifetime
 
-  Delete this module, `priv/gemini-session-consolidate.js`, and the call in
-  `ConversationServer` when upstream lands. Nothing else depends on it.
+  Delete this module, `priv/gemini-session-consolidate.js`, and the host's
+  end-of-turn `consolidate/2` call when upstream lands. Nothing else depends
+  on it.
   """
 
   require Logger
 
   @script_path "/tmp/gemini-session-consolidate.js"
 
-  @source Path.join(:code.priv_dir(:fountain), "gemini-session-consolidate.js")
+  @source Path.join(:code.priv_dir(:managoat_runtimes), "gemini-session-consolidate.js")
   @external_resource @source
   @script File.read!(@source)
 

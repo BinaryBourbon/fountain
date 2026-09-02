@@ -1,10 +1,11 @@
-defmodule Fountain.Runtimes.ACPTest do
+defmodule Managoat.Runtimes.ACPTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Agents.Agent
-  alias Fountain.Runtimes.ACP
+  alias Managoat.Runtimes.ACP
 
-  defp agent(attrs), do: struct(Agent, attrs)
+  # The library reads the agent as a map (`t:Managoat.Runtimes.agent/0`), so
+  # a host's struct and a literal here are the same thing to it.
+  defp agent(attrs), do: Map.new(attrs)
 
   describe "enabled?/1" do
     test "a property of the runtime alone — agent, runtime string, or nil" do
@@ -167,33 +168,21 @@ defmodule Fountain.Runtimes.ACPTest do
     end
   end
 
-  describe "ask_timeout_ms/0" do
-    test "the timeout sits under the idle bound, or an unanswered prompt costs the disk" do
-      # Lifecycle.check/4 suppresses only the idle verdict while a turn is in
-      # flight, and per 0017 the idle bound suspends while the ceiling
-      # destroys. A timeout at or above the idle bound would mean an
-      # unanswered prompt is resolved by the ceiling instead — burning the
-      # whole lifetime and taking the agent's memory with it (#649).
-      assert ACP.ask_timeout_ms() <
-               Fountain.Conversations.Lifecycle.idle_timeout_seconds() * 1000
-    end
-
-    test "is the library's default when nothing is configured" do
-      # The config read is Fountain's; the default and the parsing are the
-      # library's (Managoat.ACP.Permissions.ask_timeout_ms/1). This pins that
-      # the two agree rather than each carrying a five-minute literal.
-      configured = Application.get_env(:fountain, :permission_ask_timeout_seconds)
-      assert ACP.ask_timeout_ms() == Managoat.ACP.Permissions.ask_timeout_ms(configured)
-    end
-  end
-
-  describe "initialize_params/0" do
-    test "declares no filesystem or terminal capability" do
+  describe "initialize_params/1" do
+    test "declares no filesystem or terminal capability by default" do
       params = ACP.initialize_params()
 
       assert params.clientCapabilities.terminal == false
       assert params.clientCapabilities.fs.readTextFile == false
       assert params.clientCapabilities.fs.writeTextFile == false
+    end
+
+    test "a host that services fs/* passes its own capabilities" do
+      caps = %{fs: %{readTextFile: true, writeTextFile: false}, terminal: false}
+      params = ACP.initialize_params(caps)
+
+      assert params.clientCapabilities == caps
+      assert params == Managoat.ACP.Protocol.initialize_params(caps)
     end
   end
 

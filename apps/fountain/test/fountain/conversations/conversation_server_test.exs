@@ -483,7 +483,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     } do
       stub_happy_sprite()
 
-      {_pid, ref, _} = start_server(conv, runtime: Fountain.Test.FailingRuntime)
+      {_pid, ref, _} = start_server(conv, runtime: Managoat.Runtimes.Testing.FailingRuntime)
       assert_stopped(ref)
 
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
@@ -499,7 +499,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # `provision/done`. Now it is a step like any other.
       stub_happy_sprite()
 
-      {_pid, ref, _} = start_server(conv, runtime: Fountain.Test.ConfigFailingRuntime)
+      {_pid, ref, _} = start_server(conv, runtime: Managoat.Runtimes.Testing.ConfigFailingRuntime)
       assert_stopped(ref)
 
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"

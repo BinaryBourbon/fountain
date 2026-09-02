@@ -78,7 +78,7 @@ prefix="$(npm config get prefix 2>&1)"
 echo "      npm prefix=${prefix}"
 
 # The measurement, not the setting. `--silent` is what hid the EACCES last
-# time, so it stays in, and Fountain.Runtimes.ACP installs with it.
+# time, so it stays in, and Managoat.Runtimes.ACP installs with it.
 if npm_out="$(timeout 300 npm install -g --no-progress --silent semver 2>&1)"; then
   if [ -x "${prefix}/bin/semver" ]; then
     pass "npm install -g"

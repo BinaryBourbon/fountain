@@ -10,7 +10,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
   use Fountain.ConversationServerCase
 
-  alias Fountain.Runtimes.ACP
+  alias Managoat.Runtimes.ACP
 
   defp acp_agent(user, runtime \\ "claude") do
     insert_agent(user_id: user.id, runtime: runtime)
@@ -29,7 +29,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   # behaviour (credential env mapping, #655) passes the real module — `conv`'s
   # `runtime` string alone is not enough, since `state.runtime_module` is
   # this arg, independent of it (see `start_server/2`).
-  defp start_acp_turn(conv, credentials \\ %{}, runtime \\ Fountain.Test.FakeRuntime) do
+  defp start_acp_turn(conv, credentials \\ %{}, runtime \\ Managoat.Runtimes.Testing.FakeRuntime) do
     stub_happy_sprite()
 
     Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
@@ -549,7 +549,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
         start_acp_turn(
           conv,
           %{claude_code_oauth_token: "oauth-token", anthropic_api_key: "api-key"},
-          Fountain.Runtimes.Claude
+          Managoat.Runtimes.Claude
         )
 
       # Drain turn 1's own spawn message — otherwise the `assert_receive` below
@@ -590,7 +590,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
             claude_code_oauth_token: "oauth-token-long-enough",
             anthropic_api_key: "api-key-long-enough"
           },
-          Fountain.Runtimes.Claude
+          Managoat.Runtimes.Claude
         )
 
       prompt_id = drive_to_prompt(pid, ref)
@@ -603,7 +603,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
     test "says so plainly when there is no api key to fall back to", %{conv: conv} do
       {pid, ref} =
-        start_acp_turn(conv, %{claude_code_oauth_token: "oauth-token"}, Fountain.Runtimes.Claude)
+        start_acp_turn(conv, %{claude_code_oauth_token: "oauth-token"}, Managoat.Runtimes.Claude)
 
       prompt_id = drive_to_prompt(pid, ref)
       oauth_error_reply(pid, ref, prompt_id)
@@ -1099,7 +1099,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     test "an agent advertising loadSession and no resume takes session/load", ctx do
       # Gemini's exact shape. `session/resume` would be cheaper and it is not
       # on offer, which is why Peer's replay-discard exists at all.
-      {pid, ref} = start_acp_turn(ctx.conv, %{}, Fountain.Test.FakeRuntime)
+      {pid, ref} = start_acp_turn(ctx.conv, %{}, Managoat.Runtimes.Testing.FakeRuntime)
       init = next_write()
       reply(pid, ref, init["id"], %{"agentCapabilities" => %{"loadSession" => true}})
 

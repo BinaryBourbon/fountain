@@ -1,7 +1,7 @@
-defmodule Fountain.RuntimesTest do
+defmodule Managoat.RuntimesTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Runtimes
+  alias Managoat.Runtimes
 
   describe "for_runtime/1" do
     test "returns {:ok, module} for known runtimes" do
