@@ -18,6 +18,21 @@ upgrade, is in
 
 ### Changed
 
+- **The embedded manual, its renderer and its guardrails are now the
+  `managoat_docs` library** (#1342, ADR 0037). `Fountain.Docs.Compiler`
+  (the `nav.yml` parser and the snippet/admonition/link dialect) and
+  `FountainWeb.Markdown` (both render paths: the sanitising one for agent
+  output and the trusted one for the manual and `/help`) moved to the
+  Apache-2.0 `Managoat.Docs` app, and the structural checks in
+  `docs_test.exs` (every page named and present, every link and anchor
+  resolving, every compile-time read `COPY`d into the image, every fenced
+  language baked) became `Managoat.Docs.GuardrailCase`, a case template any
+  Phoenix app with a `/docs` can `use`. `Fountain.Docs` is now one
+  `use Managoat.Docs` line naming the root, the nav, the mount, the
+  changelog include and the baked-language list; every page renders exactly
+  as before. `docs/`, `nav.yml`, `Fountain.Help`, the three prose gates and
+  the `/docs` controller stay in Fountain.
+
 - **The self-hosted runner protocol is now the `managoat_runner` library**
   (#1341, ADR 0037). The `WebSock` connection process, the sandbox adapter
   that speaks to a runner daemon over it, the `runner-<32 hex>-<8 hex>` name

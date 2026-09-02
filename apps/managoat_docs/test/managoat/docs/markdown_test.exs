@@ -1,7 +1,7 @@
-defmodule FountainWeb.MarkdownTest do
+defmodule Managoat.Docs.MarkdownTest do
   use ExUnit.Case, async: true
 
-  alias FountainWeb.Markdown
+  alias Managoat.Docs.Markdown
 
   describe "to_html/1 — safe URLs pass through" do
     test "https, http and mailto links survive" do
@@ -101,7 +101,7 @@ defmodule FountainWeb.MarkdownTest do
   describe "to_html/1 — raw HTML is neutralized" do
     test "block-level script tags are escaped, not emitted verbatim" do
       # A plain markdown-to-HTML call passes block-level raw HTML through
-      # unescaped — this was live XSS from agent output before #323.
+      # unescaped: this was live XSS from agent output before Fountain #323.
       html = Markdown.to_html("<script>alert(1)</script>")
       refute html =~ "<script>"
       assert html =~ "&lt;script&gt;"
@@ -297,69 +297,14 @@ end|
     end
   end
 
-  describe "the baked parser list" do
-    @root Path.expand("../../../..", __DIR__)
-
-    test "every language name is one Lumis knows, by id" do
+  describe "languages/0" do
+    test "every default language name is one Lumis knows, by id" do
       ids = MapSet.new(Lumis.available_languages(), & &1.id)
 
       for name <- Markdown.languages() do
         assert MapSet.member?(ids, name),
-               "#{name} is not a Lumis language id — the Dockerfile's cache step would fail the build"
+               "#{name} is not a Lumis language id; a host's Dockerfile cache step would fail"
       end
-    end
-
-    # Fences we accept rendering unhighlighted in-app, and why.
-    #
-    # `text`/`plain` and friends ask for no highlighting in the first place.
-    #
-    # `promql` asks for it and cannot have it: Lumis ships no PromQL parser
-    # (116 languages, none of them PromQL, and none aliasing to it), so there
-    # is nothing to bake and adding it to `@languages` would fail the sibling
-    # test above and break the Dockerfile's cache step. The fence still says
-    # `promql`, because the fence names the language rather than requesting a
-    # renderer, and renaming it to hide the gap would be a lie a future parser
-    # never undoes. (Until #1008 there was a second reason: the MkDocs build
-    # highlighted it, Pygments having a lexer.)
-    #
-    # This list is the difference between a gap that is known and one that is
-    # silent, which is the whole point of the test below. Adding to it means
-    # checking that Lumis really has no parser, not that baking one is
-    # inconvenient.
-    @unhighlightable ~w(text txt plain plaintext promql)
-
-    test "covers every language the docs corpus and in-app help fence" do
-      # The parsers ship in the image (see `@languages` in FountainWeb.Markdown);
-      # a fence in a language that is not baked renders unhighlighted in
-      # production and nowhere else, which is how it goes unnoticed.
-      baked = MapSet.new(Markdown.languages())
-      by_alias = Map.new(Lumis.available_languages(), &{&1.id, &1.id})
-
-      aliases =
-        for l <- Lumis.available_languages(), a <- l.aliases, into: by_alias, do: {a, l.id}
-
-      for {file, info} <- fenced_languages(), info not in @unhighlightable do
-        id = Map.get(aliases, info, info)
-
-        assert MapSet.member?(baked, id),
-               "#{file} fences ```#{info} (#{id}), which is not in FountainWeb.Markdown.languages()"
-      end
-    end
-
-    defp fenced_languages do
-      [
-        Path.wildcard(Path.join(@root, "docs/**/*.md")),
-        Path.wildcard(Path.join(@root, "apps/fountain/priv/help/**/*.md")),
-        [Path.join(@root, "CHANGELOG.md")]
-      ]
-      |> List.flatten()
-      |> Enum.filter(&File.exists?/1)
-      |> Enum.flat_map(fn file ->
-        ~r/^\s*```([a-zA-Z0-9_+-]+)\s*$/m
-        |> Regex.scan(File.read!(file))
-        |> Enum.map(fn [_, info] -> {Path.relative_to(file, @root), info} end)
-      end)
-      |> Enum.uniq()
     end
   end
 end

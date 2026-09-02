@@ -235,7 +235,7 @@ defmodule FountainWeb.LlmsController do
       title,
       "](",
       base,
-      Fountain.Docs.Compiler.path_for_slug(slug),
+      Fountain.Docs.path_for_slug(slug),
       "): ",
       blurb,
       "\n"
@@ -267,14 +267,14 @@ defmodule FountainWeb.LlmsController do
       "\n\n## ",
       title,
       " (`",
-      Fountain.Docs.Compiler.path_for_slug(slug),
+      Fountain.Docs.path_for_slug(slug),
       "`)\n\n",
       absolutize(body, base),
       "\n"
     ]
   end
 
-  # `Fountain.Docs.Compiler` rewrites a page's relative `.md` links to
+  # `Managoat.Docs.Compiler` rewrites a page's relative `.md` links to
   # root-relative `/docs/...` paths, which is right for the browser and wrong
   # here: `/llms-full.txt` is read as a detached string, with no page for a
   # relative link to be relative to. Give every in-page link the host back.

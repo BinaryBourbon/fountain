@@ -1,8 +1,11 @@
-defmodule FountainWeb.Markdown do
+defmodule Managoat.Docs.Markdown do
   @moduledoc """
-  Markdown → HTML for untrusted input (agent output), rendered through
-  [MDEx](https://hexdocs.pm/mdex) (comrak) with two holes closed that a plain
-  markdown-to-HTML call leaves open (#323):
+  Markdown → HTML, rendered through [MDEx](https://hexdocs.pm/mdex) (comrak),
+  on two paths that share one pipeline: `to_html/1` for untrusted input
+  (agent or user output) and `to_trusted_html/1` for an authored manual. Both
+  return a binary of HTML; a Phoenix caller wraps it in `Phoenix.HTML.raw/1`.
+  The untrusted path closes two holes that a plain markdown-to-HTML call
+  leaves open (Fountain #323):
 
   1. Raw HTML — an agent emitting `<img src=x onerror=...>` as its own
      paragraph must not become live markup.
@@ -31,44 +34,42 @@ defmodule FountainWeb.Markdown do
   @extension [table: true, strikethrough: true, tasklist: true]
 
   # Syntax highlighting theme for fenced code on the trusted path. Its near-black
-  # background (#0a0c10) is within a hair of the console's `--color-code-bg`, so
-  # a highlighted block sits on the same ground as the log viewer's.
+  # background (#0a0c10) suits a dark code ground; a host that wants another
+  # theme styles the block, since the colours are inline (see `highlight_code/1`).
   @theme "github_dark_high_contrast"
 
   # Lumis fetches a language's tree-sitter parser from a CDN the first time it
-  # sees one and caches it under its own `priv/`. A release can do neither: the
-  # deployment runs with `readOnlyRootFilesystem: true`, so the first request
-  # for a highlighted block fails to load the parser and the code renders
-  # plain — which is exactly what shipped in #879 and reached production.
+  # sees one and caches it under its own `priv/`. A release can do neither
+  # when the deployment runs with a read-only root filesystem: the first
+  # request for a highlighted block fails to load the parser and the code
+  # renders plain, which is exactly what shipped in Fountain #879 and reached
+  # production.
   #
-  # So the parsers are baked into the image instead: the Dockerfile caches this
-  # list into `deps/lumis/priv/lumis` before `mix release`, which copies it in
-  # like any other dependency's priv. Nothing is fetched at runtime.
-  #
-  # `markdown_test.exs` fails if the docs corpus grows a fence in a language
-  # this list does not name — a highlighter that quietly degrades is worse than
-  # one that is off, because nobody notices. Its `@unhighlightable` names the
-  # fences exempt from that rule, and why each one cannot be baked.
-  #
-  # `python` and `javascript` joined the list with the webhooks reference
-  # (#700), which carries a signature verifier in each. A receiver author
-  # reading an unhighlighted wall of HMAC code is the case this guard exists
-  # for. `toml` joined with the Fly guide, which is the first page here to
-  # quote a `fly.toml`; `ini` is a near miss for it and highlights the wrong
-  # things, so the fence names the real language and this list grew instead.
+  # So the parsers are baked into the image instead: the host's Dockerfile
+  # caches its list into `deps/lumis/priv/lumis` before `mix release`, which
+  # copies it in like any other dependency's priv. Nothing is fetched at
+  # runtime. This is the default list; a host names its own with
+  # `use Managoat.Docs, languages: [...]`, and `Managoat.Docs.GuardrailCase`
+  # fails if its manual grows a fence in a language the list does not name.
+  # A highlighter that quietly degrades is worse than one that is off,
+  # because nobody notices.
   @languages ~w(bash typescript javascript python json json5 yaml toml elixir ini)
 
   @doc """
-  The languages whose parsers are baked into the image — see `@languages`.
-
-  Called by the Dockerfile, before `mix release`.
+  The default list of languages whose parsers a host bakes into its image;
+  see `@languages`. A host's docs module returns its own list from
+  `languages/0` (the `languages:` option of `use Managoat.Docs`, this list
+  when the option is absent), and its Dockerfile passes that to
+  `Lumis.Languages.cache/1` before `mix release`.
   """
+  @spec languages() :: [String.t()]
   def languages, do: @languages
 
   @doc """
   Renders untrusted markdown to HTML with raw HTML neutralized and unsafe
-  link/image URLs removed.
+  link/image URLs removed. Returns a binary of HTML.
   """
+  @spec to_html(term()) :: String.t()
   def to_html(text) when is_binary(text) do
     # No syntax highlighting here: untrusted input gets the smallest renderer
     # surface that does the job, and agent output is read as prose, not code.
@@ -78,8 +79,8 @@ defmodule FountainWeb.Markdown do
   def to_html(_), do: ""
 
   @doc """
-  Renders **trusted** markdown (the in-repo docs corpus, compiled from
-  `docs/*.md` and reviewed in a PR) exactly like `to_html/1`, with one
+  Renders **trusted** markdown (an authored manual, compiled from files in
+  the repository and reviewed in a PR) exactly like `to_html/1`, with one
   addition: a `<figure>`/`<svg>` block is kept as real markup so hand-authored
   diagrams render, after scrubbing the script-bearing subset (`<script>`,
   `<style>`, `<foreignObject>`, `on*` handlers, and `javascript:`/`data:`/
@@ -91,15 +92,18 @@ defmodule FountainWeb.Markdown do
   highlighted.
 
   This is only ever fed authored documentation. Never pass agent- or
-  user-supplied markdown here; use `to_html/1` for that.
+  user-supplied markdown here; use `to_html/1` for that. Returns a binary
+  of HTML.
   """
+  @spec to_trusted_html(term()) :: String.t()
   def to_trusted_html(text) when is_binary(text) do
     # `unsafe: true` is what lets the kept figure/svg block through; every
     # other raw-HTML node has already been turned into text by the walk.
     # `header_id_prefix` gives every heading a GFM-style id (plus GitHub's
-    # empty self-link) so the docs' `#anchor` cross-links resolve (#765).
-    # `docs_test.exs` checks every one of them against these ids. Trusted path
-    # only: ids on agent output would be surface with no reader.
+    # empty self-link) so a manual's `#anchor` cross-links resolve (Fountain
+    # #765). `Managoat.Docs.Checks.anchors_resolve/1` checks every one of them
+    # against these ids. Trusted path only: ids on agent output would be
+    # surface with no reader.
     render(text, &trusted_nodes/1, [header_id_prefix: ""], unsafe: true)
   end
 
@@ -124,11 +128,23 @@ defmodule FountainWeb.Markdown do
       # comrak does not fail on markdown input; this is a defensive fallback
       # that still never emits the input as markup.
       {:error, _} ->
-        text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
+        escape(text)
     end
   end
 
-  # --- untrusted: every raw-HTML node is neutralized to text (#323) ---
+  # The five characters HTML text content has to escape; the same table
+  # `Phoenix.HTML.html_escape/1` uses, inlined so this library does not
+  # depend on Phoenix.
+  defp escape(text) do
+    text
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
+    |> String.replace("\"", "&quot;")
+    |> String.replace("'", "&#39;")
+  end
+
+  # --- untrusted: every raw-HTML node is neutralized to text (Fountain #323) ---
 
   defp sanitize(nodes) when is_list(nodes), do: Enum.flat_map(nodes, &sanitize/1)
 
@@ -221,7 +237,7 @@ defmodule FountainWeb.Markdown do
   # A raw-HTML block becomes a paragraph of text — the renderer escapes text
   # nodes, so the source displays instead of executing. A block that is
   # nothing but HTML comments is dropped: authored notes such as the one at
-  # the top of CHANGELOG.md are not content, and a comment carries nothing to
+  # the top of a changelog are not content, and a comment carries nothing to
   # neutralize. Anything trailing a comment on the same line (comrak folds it
   # into the same block) fails the whole-literal match and is escaped.
   defp neutralize_block(literal) do

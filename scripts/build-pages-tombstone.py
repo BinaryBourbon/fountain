@@ -13,7 +13,7 @@ https://managoat.com/docs. It is published once, by hand, from
 
 MkDocs served directory URLs, so `setup.md` was `/fountain/setup/` and
 `catalog/index.md` was `/fountain/catalog/`. That is exactly the mapping
-`Fountain.Docs.Compiler.slug_for/1` already makes, so the nav is the whole
+`Managoat.Docs.Compiler.slug_for/1` already makes, so the nav is the whole
 input: one redirect per page it names.
 
 An unknown path lands on `404.html`, which goes to the manual's home rather
@@ -98,7 +98,7 @@ def main():
         stale.unlink() if stale.is_file() else stale.rmdir()
     out.mkdir(exist_ok=True)
 
-    # This is a second parser for docs/nav.yml; Fountain.Docs.Compiler is the
+    # This is a second parser for docs/nav.yml; Managoat.Docs.Compiler is the
     # one that decides what /docs actually serves. They were verified to
     # produce the identical 79 pages plus the home slug when this was written.
     # If they ever disagree, this site sends readers from a live URL to a 404,

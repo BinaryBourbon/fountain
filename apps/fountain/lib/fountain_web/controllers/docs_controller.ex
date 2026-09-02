@@ -2,7 +2,7 @@ defmodule FountainWeb.DocsController do
   @moduledoc """
   Serves the public documentation manual at `/docs`. Content is embedded at
   compile time by `Fountain.Docs`; rendering goes through the sanitizing
-  `FountainWeb.Markdown` pipeline, same as `/help` (#323).
+  `Managoat.Docs.Markdown` pipeline, same as `/help` (#323).
 
   Public, like the marketing pages, and deliberately so: since the GitHub Pages
   copy was retired (#1008) this route is the only published manual, and the
@@ -23,7 +23,7 @@ defmodule FountainWeb.DocsController do
           nav: Fountain.Docs.nav(),
           slug: slug,
           title: page.title,
-          body_html: FountainWeb.Markdown.to_trusted_html(page.body),
+          body_html: Managoat.Docs.Markdown.to_trusted_html(page.body),
           search_index_json: Fountain.Docs.search_index_json()
         )
 

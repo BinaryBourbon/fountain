@@ -46,6 +46,7 @@ COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
 # One line per umbrella library app (decisions/0037): the umbrella loads every
 # child's mix.exs to resolve deps, so a missing one fails `mix deps.get` here.
 # umbrella_layout_test.exs checks that every apps/managoat_* has its line.
+COPY apps/managoat_docs/mix.exs ./apps/managoat_docs/mix.exs
 COPY apps/managoat_mcp_auth/mix.exs ./apps/managoat_mcp_auth/mix.exs
 COPY apps/managoat_runner/mix.exs ./apps/managoat_runner/mix.exs
 COPY apps/managoat_substitution/mix.exs ./apps/managoat_substitution/mix.exs
@@ -86,7 +87,7 @@ COPY sdk/typescript/examples ./sdk/typescript/examples
 # production environment that does not exist during a build. Prepending the
 # compiled ebin paths gives the same code without the config.
 RUN mix compile \
- && elixir -e 'Enum.each(Path.wildcard("_build/prod/lib/*/ebin"), &Code.prepend_path/1); {:ok, _} = Application.ensure_all_started(:lumis); {:ok, _} = Lumis.Languages.cache(FountainWeb.Markdown.languages())' \
+ && elixir -e 'Enum.each(Path.wildcard("_build/prod/lib/*/ebin"), &Code.prepend_path/1); {:ok, _} = Application.ensure_all_started(:lumis); {:ok, _} = Lumis.Languages.cache(Fountain.Docs.languages())' \
  && mix release fountain_server
 
 # ---
