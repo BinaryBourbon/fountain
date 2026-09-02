@@ -1459,7 +1459,7 @@ export interface paths {
         };
         /**
          * Connect a runner (WebSocket)
-         * @description The `fountain runner` daemon's socket. Upgrades to a WebSocket over which Fountain sends sandbox requests and the daemon streams command output; the frame protocol is documented in `Fountain.Runners.Connection` and in the self-hosted runners guide. Not for other clients: it is not a stream of anything.
+         * @description The `fountain runner` daemon's socket. Upgrades to a WebSocket over which Fountain sends sandbox requests and the daemon streams command output; the frame protocol is documented in `Managoat.Runner.Connection` and in the self-hosted runners guide. Not for other clients: it is not a stream of anything.
          */
         get: operations["FountainWeb.RunnerController.connect"];
         put?: never;
