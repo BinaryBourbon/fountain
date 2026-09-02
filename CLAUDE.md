@@ -53,6 +53,12 @@ fountain/                  umbrella root
                                device-grant state machine as a `use` macro
                                over Managoat.OAuth.Host; Fountain.OAuth is the
                                instance, Fountain.OAuth.Host mints the API key
+        managoat_acp           Managoat.ACP, the client-side ACP session
+                               (Peer), Protocol, Permissions, Blocks, Usage,
+                               Tracer and the ScriptedAgent behind a writer
+                               callback; Fountain.Runtimes.ACP (provisioning,
+                               initialize_params/0, ask_timeout_ms/0),
+                               LegacyBlocks and Conversations.Blocks stay here
       managoat_sandbox/        Managoat.Sandbox: the sandbox behaviour, the
                                Sprites/E2B/Daytona adapters, Retry, the Fake
                                and the conformance case. The "which providers
@@ -72,14 +78,6 @@ fountain/                  umbrella root
                                checks as a case template. docs/, nav.yml,
                                Fountain.Help, the prose gates and the /docs
                                controller stay in fountain.
-      managoat_acp/            Managoat.ACP: the client-side ACP session
-                               (Peer), Protocol, Permissions, Blocks, Usage,
-                               Tracer and the ScriptedAgent, behind a writer
-                               callback (Managoat.ACP.Transport) rather than
-                               a sandbox dependency. Fountain.Runtimes.ACP
-                               (provisioning, initialize_params/0,
-                               ask_timeout_ms/0), LegacyBlocks and
-                               Conversations.Blocks stay in fountain.
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is

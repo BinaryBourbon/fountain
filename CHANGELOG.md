@@ -40,6 +40,11 @@ upgrade, is in
   `apps/managoat_oauth` is gone, the pin is `{:managoat_oauth, "~> 0.1.0"}`,
   the source is managoat/managoat_oauth (its own CI runs the suite against
   a Postgres of its own). `Fountain.OAuth` still `use`s it the same way.
+- **`managoat_acp` comes from hex** (#1345, ADR 0037), the fourth:
+  `apps/managoat_acp` is gone, the pin is `{:managoat_acp, "~> 0.1.0"}`, the
+  source is managoat/managoat_acp. The peer, the permission policy and the
+  block normaliser behave as they did; hexdocs.pm/managoat_acp now carries
+  the comparison against the other two ACP packages.
 
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`
