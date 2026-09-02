@@ -148,7 +148,10 @@ stand_alone() {
       or die "mix.exs: \@source_url not found\n";
     s|links: %\{"GitHub" => \@source_url\}|links: %{"GitHub" => \@source_url, "Changelog" => "#{\@source_url}/blob/main/CHANGELOG.md"}|
       or die "mix.exs: links not found\n";
-    s|files: ~w\(lib mix\.exs README\.md LICENSE\)|files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE NOTICE)|
+    # A library may package more than lib/ (managoat_runtimes carries priv/,
+    # which Gemini.SessionStore embeds at compile time): keep whatever sits
+    # between lib and mix.exs, and add the files the template brings.
+    s|files: ~w\(lib (.*?)mix\.exs README\.md LICENSE\)|files: ~w(lib $1mix.exs README.md CHANGELOG.md LICENSE NOTICE)|
       or die "mix.exs: files not found\n";
     s|(\n[ \t]*package: package\(\),\n)|$1      source_url: \@source_url,\n      docs: docs(),\n      dialyzer: dialyzer(),\n|
       or die "mix.exs: package: line not found\n";
