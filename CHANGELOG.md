@@ -269,6 +269,16 @@ upgrade, is in
   call into it; the GenServer messages, the stage events and the audit of a
   denial are unchanged, and `Fountain.CallerTools` still owns the wire
   shapes. The pin drops from 3,322 to 3,192.
+- **The sandbox reclaim actions have joined the policy that decides them**
+  (#1376, tracker #1369). `Fountain.Conversations.Lifecycle` already held
+  the bounds (`check/4`, `idle_action/1`, `explain/1,2`); it now also holds
+  the consequence — the sandbox clock, the lifecycle tick, the two verdicts
+  with their suspend call, the park, the destroy and the cast that tells the
+  co-tenants on the machine. A reader of `idle_action/1` can see what
+  `:destroy` costs without opening another file. The server keeps the log
+  line, the connection drop and the `{:stop, :normal, …}` around each. No
+  stage, log line, telemetry event, timer or audit event changed. The pin
+  drops from 3,192 to 3,049.
 
 ### Added
 

@@ -89,6 +89,9 @@
                # what a turn waits on (#1375): the same, writing the same turn
                # row the server owns, called only from its callbacks
                "lib/fountain/conversations/pending.ex",
+               # the reclaim actions (#1376): the sandbox and rows of the
+               # conversation whose server called them, ownership as above
+               "lib/fountain/conversations/lifecycle.ex",
                # system-level sweeps, run with no user in scope
                "lib/fountain/conversations/rehydrator.ex",
                "lib/fountain/workers/",
