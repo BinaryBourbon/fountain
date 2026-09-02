@@ -24,9 +24,19 @@ defmodule Managoat.Docs.ChecksTest do
 
   # Writes `files` under <tmp>/docs, the Dockerfile at <tmp>/Dockerfile, and
   # defines a docs module over them. Options pass through to the `use` line.
+  #
+  # The directory name is random, not `System.unique_integer/1`: that integer
+  # is unique per VM, and two runs of this suite on one machine (a second
+  # worktree, or a run after one that was interrupted) reuse the same small
+  # numbers, so a "sound" manual landed in a directory a previous run had
+  # written `orphans/lost.md` into and failed the orphan check. It is also
+  # removed when the test ends, which the old shape never did (238 leftovers
+  # were in one developer's tmp dir when this was found).
   defp manual(files, opts \\ []) do
-    root = Path.join(System.tmp_dir!(), "managoat_docs_#{System.unique_integer([:positive])}")
+    suffix = 8 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+    root = Path.join(System.tmp_dir!(), "managoat_docs_#{suffix}")
     File.mkdir_p!(Path.join(root, "docs"))
+    on_exit(fn -> File.rm_rf!(root) end)
 
     for {name, body} <- files do
       path = Path.join([root, "docs", name])

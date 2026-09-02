@@ -59,10 +59,12 @@ defmodule Managoat.Broker.MixProject do
       {:x509, "~> 0.9"},
       {:telemetry, "~> 1.0"},
       # Test only: a real HTTPS origin behind the proxy, a WebSocket echo on
-      # it, and JSON for what the origin echoes back.
+      # it, and JSON for what the origin echoes back. jason is :dev as well
+      # because credo depends on it in :dev; with only :test here, Mix
+      # refuses the divergence once the library stands alone.
       {:bandit, "~> 1.5", only: :test},
       {:websock_adapter, "~> 0.5", only: :test},
-      {:jason, "~> 1.2", only: :test}
+      {:jason, "~> 1.2", only: [:dev, :test]}
     ]
   end
 
