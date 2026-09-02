@@ -247,6 +247,19 @@ upgrade, is in
   functions, same bodies, no behaviour, stage or log change. The Agent Vault
   client's deletion now touches one file beside the facade. The pin drops
   from 4,168 to 3,991.
+- **The turn is a state machine** (#1374, tracker #1369).
+  `Fountain.Conversations.TurnMachine` (the sub-issue's `Turn` is the
+  schema's name) holds the running turn, its span, its metrics and its
+  tracer as one value; `handle/3` takes a peer report and returns the next
+  value with a list of effects (persist these lines, open an autonomous
+  turn, re-arm the quiet timer, persist the session id, hold a permission
+  request, finish the turn, drop the connection), which `ConversationServer`
+  applies in order. Ending a turn, the interrupt, and everything a fresh
+  turn decides before the spawn (the row, the session plan, the argv, the
+  span, the failure before start) are its functions; the server keeps the
+  spawn, the peer and the connection. Twenty-four functions and twelve
+  report handlers moved; no stage, log line, telemetry event, timer or
+  audit event changed. The pin drops from 3,991 to 3,322.
 
 ### Added
 

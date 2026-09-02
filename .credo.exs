@@ -83,6 +83,9 @@
                "lib/fountain_web/live/admin_live/",
                # GenServer: ownership established at init/rehydrate
                "lib/fountain/conversations/conversation_server.ex",
+               # the turn state machine (#1374): the server's own code, called
+               # only from its callbacks, under the ownership init established
+               "lib/fountain/conversations/turn_machine.ex",
                # system-level sweeps, run with no user in scope
                "lib/fountain/conversations/rehydrator.ex",
                "lib/fountain/workers/",

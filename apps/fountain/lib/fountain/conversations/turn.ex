@@ -4,6 +4,8 @@ defmodule Fountain.Conversations.Turn do
 
   alias Fountain.Conversations.{Conversation, TurnImage}
 
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 

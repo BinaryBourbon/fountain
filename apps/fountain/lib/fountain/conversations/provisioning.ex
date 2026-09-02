@@ -794,6 +794,40 @@ defmodule Fountain.Conversations.Provisioning do
     end
   end
 
+  # The row's provider decides where the sandbox is created; adopt-on-
+  # already-exists is the adapter's job.
+  # A sandbox left behind by an interrupted attempt cannot be finished in
+  # place: `Sandbox.create` adopts an existing sprite by name, so a restarted
+  # server would re-run every step on a half-built machine — and the steps
+  # are not idempotent (`git clone` refuses a checkout that already exists,
+  # a setup script that starts services fails on the second start). Seen
+  # live when a deploy landed during an environment's `setup` stage: the
+  # restart re-provisioned onto the same sprite and died in `clone`. Tear the
+  # remnant down first; a sprite that is already gone is not an error.
+  def discard_interrupted_attempt(_provider, _sandbox, false), do: :ok
+
+  def discard_interrupted_attempt(provider, sandbox, true) do
+    Logger.warning(
+      "sandbox #{sandbox.id}: sprite #{sandbox.sprite_name} was left mid-provision by an " <>
+        "interrupted attempt; destroying it before provisioning again"
+    )
+
+    handle = Managoat.Sandbox.build_handle(provider, sandbox.sprite_name)
+
+    case Managoat.Sandbox.destroy(handle) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.info(
+          "sandbox #{sandbox.id}: discarding sprite #{sandbox.sprite_name} returned " <>
+            "#{inspect(reason)}; provisioning anyway"
+        )
+
+        :ok
+    end
+  end
+
   defp publish_stage(conv_id, stage, status, meta \\ %{}) do
     Conversations.publish_stage(conv_id, stage, status, meta)
   end
