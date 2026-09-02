@@ -97,9 +97,10 @@ Elastic Licence 2.0. You can run the code in your own instance at no cost, and
 your changes stay private. You must not offer that code to third parties as a
 hosted service.
 
-The `cli/` directory and the TypeScript and Elixir SDKs use the Apache Licence
-2.0. They do not impose copyleft on an application that calls the Fountain API.
-The Apache license and notice terms apply when you redistribute a client.
+The `cli/` directory and the TypeScript, Elixir and Swift SDKs use the Apache
+Licence 2.0. They do not impose copyleft on an application that calls the
+Fountain API. The Apache license and notice terms apply when you redistribute a
+client.
 
 Releases up to v0.12.0 used the MIT licence, and those releases stay MIT. The
 `NOTICE` file at the repository root records the change.

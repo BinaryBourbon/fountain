@@ -19,7 +19,7 @@ The hosted instance has a different name so that "self-host Fountain" and
 |---|---|---|
 | The server (`apps/fountain`) | [AGPL-3.0-or-later](https://github.com/BinaryBourbon/fountain/blob/main/LICENSE) | Run it, change it, host it. If you host a changed version, your users have a right to your source. |
 | `ee/` (credits, Stripe and the credit emails) | [Elastic Licence 2.0](https://github.com/BinaryBourbon/fountain/blob/main/ee/LICENSE) | Free to run in your own instance. You may not offer it to third parties as a hosted service. |
-| `cli/`, `sdk/typescript` and `sdk/elixir` | [Apache-2.0](https://github.com/BinaryBourbon/fountain/blob/main/cli/LICENSE) | Build on the API or ship a client in a closed product. Keep the required license and notices when you redistribute it. |
+| `cli/`, `sdk/typescript`, `sdk/elixir` and `sdk/swift` | [Apache-2.0](https://github.com/BinaryBourbon/fountain/blob/main/cli/LICENSE) | Build on the API or ship a client in a closed product. Keep the required license and notices when you redistribute it. |
 
 The client parts are permissive on purpose. A connection to Fountain must
 never put a licence obligation on your application.
@@ -45,6 +45,7 @@ holds the third-party attribution.
 | The CLI | `brew install BinaryBourbon/tap/fountain`, or the [CLI reference](cli.md). |
 | The TypeScript SDK | `@agentshit/fountain-sdk` on npm, or the [TypeScript reference](sdk.md). |
 | The Elixir SDK | The [`sdk/elixir`](https://github.com/BinaryBourbon/fountain/tree/main/sdk/elixir) source, or the [Elixir reference](elixir-sdk.md). When published, its Hex name is `fountain_sdk`. |
+| The Swift SDK | The [`sdk/swift`](https://github.com/BinaryBourbon/fountain/tree/main/sdk/swift) source, or the [Swift reference](swift-sdk.md). SwiftPM reads the `Package.swift` at the repository root. |
 
 There is no separate project website. The manual you read now is the project
 site, and the repo README is its front page. One copy of each stays correct.

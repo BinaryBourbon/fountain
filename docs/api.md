@@ -5,10 +5,10 @@ returns JSON.
 
 !!! tip "Do you write a script, and not an integration?"
 
-    The [TypeScript SDK](sdk.md) is one call over the conversation endpoints
-    below, `fountain.run(prompt, { agent, vault })`.
+    The [TypeScript](sdk.md) and [Swift](swift-sdk.md) SDKs put one `run`
+    call over the conversation endpoints below.
 
-    Reach for the raw API when you need a surface the SDK does not wrap, or a
+    Reach for the raw API when you need a surface the SDKs do not wrap, or a
     language nobody wrote it in.
 
 The authority is the OpenAPI spec that the server serves. It is always

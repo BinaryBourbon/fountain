@@ -445,8 +445,9 @@ tarball. A package that a person sends by hand has no such attestation.
 
 ## Other languages
 
-Elixir has its own [SDK](elixir-sdk.md). For a different language, use one of
-two worked references. They show how to follow a turn through the log feed.
+Elixir has its own [SDK](elixir-sdk.md), and so does
+[Swift](swift-sdk.md). For a different language, use one of two worked
+references. They show how to follow a turn through the log feed.
 
 - **Python.** The [Hermes plugin](integrations/hermes.md)'s `tools.py`, which
   polls `/events?blocks=true`.

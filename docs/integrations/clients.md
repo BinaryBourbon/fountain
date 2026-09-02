@@ -24,7 +24,7 @@ mail, OAuth, billing and error reports, read <!-- vale disable-line STE.IngForms
 | [LangChain and Deep Agents](langchain.md) (alpha) | The OpenAI-compatible API, from one Python file. | Your LangChain code. |
 | [Buzz](buzz.md) | A Nostr relay, hosted by Fountain. | The Buzz desktop, or `POST /api/buzz/agents`. |
 | [Agentic IDEs](../llm-integration.md) | `/skill` and the discovery endpoints. | The IDE. |
-| Your own code | The [HTTP API](../api.md), the [TypeScript](../sdk.md) or [Elixir](../elixir-sdk.md) SDK, the [CLI](../cli.md). | Wherever you want. |
+| Your own code | The [HTTP API](../api.md), the [TypeScript](../sdk.md), [Elixir](../elixir-sdk.md) or [Swift](../swift-sdk.md) SDK, the [CLI](../cli.md). | Wherever you want. |
 
 ## Over ACP
 
@@ -70,7 +70,8 @@ agent does the work in its own sandbox and reports back once.
 
 Everything that plugin does is available to you directly. Read the
 [API reference](../api.md), the [TypeScript SDK](../sdk.md), the
-[Elixir SDK](../elixir-sdk.md) and the [CLI reference](../cli.md).
+[Elixir SDK](../elixir-sdk.md), the [Swift SDK](../swift-sdk.md) and the
+[CLI reference](../cli.md).
 
 Do you build a chat surface of your own, the roster-and-threads app that
 everybody clones? [**Build a chat app**](../build/index.md) walks the whole

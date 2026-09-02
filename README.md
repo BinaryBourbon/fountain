@@ -77,7 +77,7 @@ applications built on this API.
 
 ## Four surfaces
 
-Every public feature lives on the first three; the SDK wraps the verbs most
+Every public feature lives on the first three; the SDKs wrap the verbs most
 code actually reaches for.
 
 | Surface | Use it when |
@@ -85,13 +85,23 @@ code actually reaches for.
 | **Web UI** (`/dashboard`) | Getting started, managing agents, environments, vaults, keys and audit visually |
 | **REST API** (`/api/*`) | Scripting, CI/CD pipelines, integrating Fountain into your own tools |
 | **CLI** (`fountain`) | Local workflows, manifest-driven `apply`, shell scripting |
-| **TypeScript and Elixir SDKs** | Running an agent from your own code: `run(prompt, agent: ..., vault: ...)` |
+| **TypeScript, Elixir and Swift SDKs** | Running an agent from your own code: `run(prompt, agent: ..., vault: ...)` |
 
-The CLI and the SDK are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
+The CLI and the SDKs are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
 
 ```bash
 npm install @agentshit/fountain-sdk
 # After its first Hex release, add {:fountain_sdk, "~> 0.1.0"} to mix.exs
+```
+
+For Swift Package Manager, add the repository's `main` branch until the next
+Fountain release supplies the first versioned Swift package:
+
+```swift
+.package(
+    url: "https://github.com/BinaryBourbon/fountain.git",
+    branch: "main"
+)
 ```
 
 ```ts
@@ -115,9 +125,11 @@ IO.puts(result.text)
 
 The sandbox is still there afterwards. A follow-up continues on the same
 machine, with the same checkout and the same session. See
-[`sdk/typescript/`](sdk/typescript/), [`sdk/elixir/`](sdk/elixir/), or the
-[TypeScript](https://managoat.com/docs/sdk) and
-[Elixir](https://managoat.com/docs/elixir-sdk) SDK docs.
+[`sdk/typescript/`](sdk/typescript/), [`sdk/elixir/`](sdk/elixir/),
+[`sdk/swift/`](sdk/swift/), or the
+[TypeScript](https://managoat.com/docs/sdk),
+[Elixir](https://managoat.com/docs/elixir-sdk) and
+[Swift](https://managoat.com/docs/swift-sdk) SDK docs.
 
 ## Get started with the CLI
 
@@ -245,7 +257,7 @@ Fountain is not licensed as a single unit. The short version:
 |---|---|---|
 | The server (`apps/fountain`) | [AGPL-3.0-or-later](LICENSE) | Run it, modify it, host it. If you host a modified version, your users are entitled to your source |
 | [`ee/`](ee/) — Stripe billing and growth email | [Elastic Licence 2.0](ee/LICENSE) | Free to run in your own instance, changes stay yours. You may not offer it to third parties as a hosted service |
-| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript), [`sdk/elixir`](sdk/elixir) | [Apache-2.0](cli/LICENSE) | Build on the API or ship a client in a proprietary product; follow the Apache license and notice terms when you redistribute it |
+| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript), [`sdk/elixir`](sdk/elixir), [`sdk/swift`](sdk/swift) | [Apache-2.0](cli/LICENSE) | Build on the API or ship a client in a proprietary product; follow the Apache license and notice terms when you redistribute it |
 
 The client surfaces are permissive on purpose. Integrating with Fountain
 should never put a licence obligation on your application, and an AGPL SDK

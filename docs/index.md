@@ -5,7 +5,7 @@ it. You send a prompt. You read the reply. Fountain operates the sandbox, and
 you do not.
 
 It is an API first. Your app reaches it over a protocol you already speak, or
-through the SDK. The person who uses your app need never learn that an agent
+through an SDK. The person who uses your app need never learn that an agent
 is there.
 
 !!! tip "In a hurry?"
@@ -59,7 +59,8 @@ Reach it the way you already work.
 - [**ACP**](integrations/acp.md), for an editor or a chat surface.
 - [**AG-UI**](integrations/openbot.md), for a coworker platform.
 - [**REST and SSE**](api.md), for your own code, with a
-  [TypeScript SDK](sdk.md), an [Elixir SDK](elixir-sdk.md) and a
+  [TypeScript SDK](sdk.md), an [Elixir SDK](elixir-sdk.md), a
+  [Swift SDK](swift-sdk.md) and a
   [CLI](cli.md) over them.
 
 What you build on top is yours. It can be a chat client whose contacts are
@@ -126,6 +127,7 @@ in full.
 - [API reference](api.md), REST endpoints and auth
 - [TypeScript SDK](sdk.md)
 - [Elixir SDK](elixir-sdk.md)
+- [Swift SDK](swift-sdk.md)
 - [Configuration reference](configuration.md), each environment variable
 - [Conversation states](reference/conversation-states.md)
 - [Glossary](reference/glossary.md), with the five overloaded words

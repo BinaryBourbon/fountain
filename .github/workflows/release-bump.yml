@@ -3,8 +3,9 @@ name: Release bump
 # Cuts a release in two halves, because main only takes pull requests.
 #
 # 1. "Run workflow" (Actions tab → "Release bump"; defaults to `patch`)
-#    bumps the version in both mix.exs files and the six self-host image
-#    pins on a `release/vX.Y.Z` branch and opens the PR. CI runs on it like
+#    bumps the version in both mix.exs files, the Swift SDK version source,
+#    and the six self-host image pins on a `release/vX.Y.Z` branch and opens
+#    the PR. CI runs on it like
 #    any other PR; the compose boot check knows the pinned image does not
 #    exist yet and skips.
 # 2. Merging that PR (`gh pr merge --squash --admin`, like every PR here)
@@ -145,15 +146,20 @@ jobs:
             exit 1
           fi
 
-      - name: Update mix.exs files
+      - name: Update server and Swift SDK versions
         run: |
           set -euo pipefail
           current='${{ steps.ver.outputs.current }}'
           next='${{ steps.ver.outputs.next }}'
-          # Only touch the umbrella and the fountain app. Hard-coded
-          # rather than `find` to avoid clobbering version: in deps.
+          # Only touch the umbrella, fountain app and Swift SDK constant.
+          # Hard-coded rather than `find` to avoid clobbering version: in deps.
           sed -i -E "s/version: \"${current}\"/version: \"${next}\"/" mix.exs
           sed -i -E "s/version: \"${current}\"/version: \"${next}\"/" apps/fountain/mix.exs
+          sed -i -E "s/public let fountainSDKVersion = \"${current}\"/public let fountainSDKVersion = \"${next}\"/" sdk/swift/Sources/Fountain/Fountain.swift
+          if ! grep -qF "public let fountainSDKVersion = \"${next}\"" sdk/swift/Sources/Fountain/Fountain.swift; then
+            echo "Swift SDK version bump failed: expected ${current} -> ${next}" >&2
+            exit 1
+          fi
           git diff --stat
 
       - name: Update self-host image pins
@@ -188,7 +194,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "${BRANCH}"
-          git add mix.exs apps/fountain/mix.exs \
+          git add mix.exs apps/fountain/mix.exs sdk/swift/Sources/Fountain/Fountain.swift \
             docker-compose.yml .env.compose.example render.yaml fly.toml \
             deploy/k8s/kustomization.yaml deploy/k8s/deployment.yaml
           # No [skip ci]: the PR is meant to run CI, and a main push whose
@@ -196,7 +202,7 @@ jobs:
           git commit -m "chore(release): ${TAG}"
           git push origin "${BRANCH}"
           cat > "${RUNNER_TEMP}/body.md" <<EOF
-          Version bump for ${TAG}: both \`mix.exs\` files and the six self-host image pins.
+          Version bump for ${TAG}: both \`mix.exs\` files, the Swift SDK version source, and the six self-host image pins.
 
           Merging this PR tags the squash commit \`${TAG}\` and dispatches \`release.yml\`, which builds the CLI binaries, publishes \`ghcr.io/binarybourbon/fountain:${TAG}\`, boots it through the documented quick start and creates the GitHub Release.
 
