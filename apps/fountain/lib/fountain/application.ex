@@ -96,7 +96,7 @@ defmodule Fountain.Application do
            ]},
           Fountain.Buzz.BootSweep,
           FountainWeb.Endpoint
-        ]
+        ] ++ broker_children()
 
     opts = [strategy: :one_for_one, name: Fountain.Supervisor]
 
@@ -112,6 +112,19 @@ defmodule Fountain.Application do
 
       err ->
         err
+    end
+  end
+
+  # The native egress proxy (ADR 0019, #1340) listens only when
+  # BROKER_LISTEN_PORT selects it; on Agent Vault or with brokerage off, no
+  # process here exists. Its request log is a telemetry handler attached
+  # before the listener takes a connection.
+  defp broker_children do
+    if Fountain.Broker.backend() == :native do
+      Fountain.Broker.Native.attach_telemetry()
+      [Fountain.Broker.Native.listener_spec()]
+    else
+      []
     end
   end
 

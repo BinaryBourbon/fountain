@@ -752,3 +752,49 @@ released with the conversation (the log is kept for
 `BROKER_LOG_RETENTION_HOURS`, then the reaper deletes it). Nothing in the
 rest of this decision depends on the per-tenant shape.
 
+## Amendment (2026-09-02): the broker is `managoat_broker`, run beside Agent Vault until the flip
+
+§8 chose Agent Vault as the first implementation and said the abstraction
+was worth building on the day there was a second broker. That day was
+PR #1148 (2026-08-25), a native proxy inside the server, closed to wait for
+the component-libraries plan ([0037](0037-component-libraries.md)). Decided
+2026-09-02 on #1340, built in two PRs:
+
+- **The broker is the `managoat_broker` library** (`Managoat.Broker`,
+  `apps/managoat_broker`, PR A): #1148's proxy, CA, certificate cache,
+  header injector and HTTP slice, ported onto `main` rather than rebased,
+  behind one behaviour, `Managoat.Broker.Store` (`lookup(token)` in, a
+  session of rules with the credentials resolved out). The library holds no
+  reference to Fountain, reads no configuration, and takes the listen port,
+  the store and the CA seed as start arguments. Its README lists what was
+  deliberately not ported from Agent Vault (path/query/body substitution,
+  WebSocket frame rewriting, auth rate limiting, body caps, IPv6 upstreams)
+  and adds header-value substitution so gate 3's inference placeholders are
+  replaced natively.
+- **Fountain runs it beside Agent Vault** (PR B). `Fountain.Broker` is a
+  facade over two backends with every public function's name and arity
+  unchanged: `Fountain.Broker.AgentVault` (the vendor client, selected by
+  `BROKER_URL`) and `Fountain.Broker.Native` (the library, selected by
+  `BROKER_LISTEN_PORT`; both set is a boot error). The native store is the
+  `broker_sessions` table: token hashed, rules as one ciphertext under the
+  tenant DEK, a TTL, and the conversation and user ids as the session's
+  `meta`, which the proxy hands back on every `[:managoat, :broker,
+  :request]` event so the log line names the conversation without the
+  library knowing what one is. The CA root is derived from a seed that is
+  itself HKDF-derived from the master key (`"managoat-broker-ca"`), so every
+  replica presents the same root and nothing is stored. Merging is inert
+  for the hosted deployment, which sets `BROKER_URL`.
+
+Still owed, in this order: the production flip (`BROKER_LISTEN_PORT` on the
+Fountain deployment, the Traefik `IngressRouteTCP` for the broker hostname
+pointed at the Fountain service, `BROKER_URL`/`BROKER_TOKEN` dropped, the
+`agent-vault` namespace and its CNPG cluster deleted), then a PR that
+deletes `Fountain.Broker.AgentVault`, `BROKER_URL`, `BROKER_TOKEN`,
+`BROKER_LOG_RETENTION_HOURS` and the vault reaper's Agent Vault branch.
+Gates 2, 3 and 4 are unchanged in what they require; on the native backend
+gate 4's stored request log behind `/api/conversations/:id/egress` is not
+built (the endpoint returns an empty page there), and the per-request
+telemetry with the conversation id is the half that exists. The status of
+this ADR stays Proposed until the flip has happened and the vendor client
+is gone.
+

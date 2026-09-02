@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342) and managoat_oauth (#1343)."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343) and managoat_broker (#1340)."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
@@ -31,13 +31,18 @@ its nav parser and dialect compiler, the markdown renderer with both its
 paths, and the `docs_test.exs` guardrails as `Managoat.Docs.GuardrailCase`;
 `Fountain.Docs` survives as one `use` line, and `docs/`, `nav.yml`,
 `Fountain.Help`, the prose gates and the `/docs` controller stay in
-`fountain`) and
+`fountain`),
 `managoat_oauth` (#1343: the authorization code + PKCE and device-grant
 state machine, its two schemas and a migration for a new consumer, as a
 `use` macro over a `Managoat.OAuth.Host` behaviour that mints the token,
 checks the subject and audits; `Fountain.OAuth` is the instance and
-`Fountain.OAuth.Host` keeps tokens as API keys). Not yet built:
-`managoat_acp` (#1339), `managoat_broker` (#1340) and the optional credits
+`Fountain.OAuth.Host` keeps tokens as API keys) and
+`managoat_broker` (#1340: the native egress credential proxy from PR #1148,
+ported rather than rebased; `CONNECT` and absolute-form forward proxy, the
+derived CA, the header injector, behind a `Managoat.Broker.Store` behaviour
+that `fountain` implements over the `broker_sessions` table; `fountain` runs
+it beside the Agent Vault client, selected by `BROKER_LISTEN_PORT`, until
+the deployment flips). Not yet built: `managoat_acp` (#1339) and the optional credits
 extraction (#1344). None has graduated to a repository (#1345). The
 tracker is #1334. Each PR that extracts a library updates this block.
 
