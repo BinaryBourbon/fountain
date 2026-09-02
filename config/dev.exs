@@ -27,33 +27,34 @@ config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
 
 # OAuth clients (#818): the standalone apps served by `bunx vite` locally.
-config :fountain, :oauth_clients, [
-  %{
-    id: "fountain-team",
-    name: "Fountain Team",
-    redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
-  },
-  %{
-    id: "fountain-conversations",
-    name: "Fountain Conversations",
-    redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
-  },
-  %{
-    id: "dns-desk",
-    name: "DNS Desk",
-    redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
-  },
-  %{
-    id: "fountain-workbench",
-    name: "Fountain Workbench",
-    redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
-  },
-  %{
-    id: "reflex",
-    name: "Reflex",
-    redirect_uris: ["http://localhost:5183/"]
-  }
-]
+config :fountain, Fountain.OAuth,
+  clients: [
+    %{
+      id: "fountain-team",
+      name: "Fountain Team",
+      redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+    },
+    %{
+      id: "fountain-conversations",
+      name: "Fountain Conversations",
+      redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+    },
+    %{
+      id: "dns-desk",
+      name: "DNS Desk",
+      redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+    },
+    %{
+      id: "fountain-workbench",
+      name: "Fountain Workbench",
+      redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+    },
+    %{
+      id: "reflex",
+      name: "Reflex",
+      redirect_uris: ["http://localhost:5183/"]
+    }
+  ]
 
 # Webhooks (#700): a local receiver is usually plain http on localhost. The
 # scheme rule relaxes here; the SSRF address checks do not, so a loopback

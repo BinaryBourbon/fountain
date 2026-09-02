@@ -126,7 +126,15 @@ defmodule Fountain.AuditGuardrailTest do
     {"connection provider delete", &__MODULE__.do_provider_delete/1,
      "connection_provider.deleted"},
     {"credit grant", &__MODULE__.do_credit_grant/1, "credit.granted"},
-    {"credit debit", &__MODULE__.do_credit_debit/1, "credit.burned"}
+    {"credit debit", &__MODULE__.do_credit_debit/1, "credit.burned"},
+    # OAuth (#1343). The state machine is the managoat_oauth library, which
+    # has no Repo call of its own to audit beside; it cannot complete any of
+    # these three mutations without calling Fountain.OAuth.Host.audit/3, and
+    # that is where the recording lives now. These entries are what prove the
+    # host still records them, whichever door the grant came through.
+    {"oauth authorize", &__MODULE__.do_oauth_authorize/1, "oauth.authorized"},
+    {"oauth device approve", &__MODULE__.do_oauth_device_approve/1, "oauth.device_approved"},
+    {"oauth device deny", &__MODULE__.do_oauth_device_deny/1, "oauth.device_denied"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -198,7 +206,10 @@ defmodule Fountain.AuditGuardrailTest do
           {Fountain.Team.Comms, :release_contact, 3},
           {Webhooks, :create_endpoint, 3},
           {Webhooks, :update_endpoint, 3},
-          {Webhooks, :delete_endpoint, 2}
+          {Webhooks, :delete_endpoint, 2},
+          {Fountain.OAuth, :authorize, 3},
+          {Fountain.OAuth, :approve_device_grant, 3},
+          {Fountain.OAuth, :deny_device_grant, 3}
         ] do
       # `Code.ensure_loaded?/1` first: `function_exported?/3` answers about
       # *loaded* modules, so on a seed where this test ran before anything had
@@ -648,5 +659,29 @@ defmodule Fountain.AuditGuardrailTest do
   def do_credit_debit(user) do
     {:ok, _} =
       Fountain.Credits.debit(user.id, 1, "burn_turn", idempotency_key: "guard-b-#{user.id}")
+  end
+
+  # The consent request the test client in config/test.exs accepts.
+  defp oauth_request do
+    verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+
+    %{
+      "client_id" => "test-app",
+      "redirect_uri" => "https://app.test/callback",
+      "code_challenge" => Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false),
+      "code_challenge_method" => "S256"
+    }
+  end
+
+  def do_oauth_authorize(user), do: {:ok, _} = Fountain.OAuth.authorize(user.id, oauth_request())
+
+  def do_oauth_device_approve(user) do
+    {:ok, %{user_code: code}} = Fountain.OAuth.start_device_grant()
+    :ok = Fountain.OAuth.approve_device_grant(code, user.id)
+  end
+
+  def do_oauth_device_deny(user) do
+    {:ok, %{user_code: code}} = Fountain.OAuth.start_device_grant()
+    :ok = Fountain.OAuth.deny_device_grant(code, user.id)
   end
 end

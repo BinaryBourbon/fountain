@@ -1347,7 +1347,7 @@ case System.get_env("OAUTH_CLIENTS") do
   json ->
     case Jason.decode(json) do
       {:ok, list} when is_list(list) ->
-        config :fountain, :oauth_clients, list
+        config :fountain, Fountain.OAuth, clients: list
 
       _ ->
         raise "OAUTH_CLIENTS must be a JSON array of {id, name, redirect_uris}"

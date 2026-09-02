@@ -48,6 +48,7 @@ COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
 # umbrella_layout_test.exs checks that every apps/managoat_* has its line.
 COPY apps/managoat_docs/mix.exs ./apps/managoat_docs/mix.exs
 COPY apps/managoat_mcp_auth/mix.exs ./apps/managoat_mcp_auth/mix.exs
+COPY apps/managoat_oauth/mix.exs ./apps/managoat_oauth/mix.exs
 COPY apps/managoat_runner/mix.exs ./apps/managoat_runner/mix.exs
 COPY apps/managoat_substitution/mix.exs ./apps/managoat_substitution/mix.exs
 COPY apps/managoat_sandbox/mix.exs ./apps/managoat_sandbox/mix.exs

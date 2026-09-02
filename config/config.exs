@@ -171,8 +171,11 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
   client_id: System.get_env("GITHUB_OAUTH_CLIENT_ID"),
   client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
 
-# OAuth clients (#818): none by default; dev/test/runtime set them.
-config :fountain, :oauth_clients, []
+# OAuth (#818, #1305): Fountain.OAuth is an instance of Managoat.OAuth
+# (decisions/0037). The library reads its repo and the public-client registry
+# from here, under the instance module, never from :fountain directly. No
+# clients by default; dev/test/runtime set them.
+config :fountain, Fountain.OAuth, repo: Fountain.Repo, clients: []
 
 # The sandbox adapter map (Managoat.Sandbox, decisions/0037): the three
 # adapters the sandbox library ships plus the self-hosted runner's, from the
