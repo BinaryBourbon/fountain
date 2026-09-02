@@ -23,6 +23,10 @@ upgrade, is in
   `apps/fountain/mix.exs` pins `{:managoat_substitution, "~> 0.1.0"}`, and
   the source is managoat/managoat_substitution, which publishes to hex from
   its own CI. Nothing about `Managoat.Substitution` changed.
+- **`managoat_mcp_auth` comes from hex** (#1345, ADR 0037), the second to
+  graduate, the same way: `apps/managoat_mcp_auth` is gone, the pin is
+  `{:managoat_mcp_auth, "~> 0.1.0"}`, the source is
+  managoat/managoat_mcp_auth.
 
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`

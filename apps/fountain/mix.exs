@@ -54,7 +54,7 @@ defmodule Fountain.MixProject do
       {:managoat_acp, in_umbrella: true},
       {:managoat_broker, in_umbrella: true},
       {:managoat_docs, in_umbrella: true},
-      {:managoat_mcp_auth, in_umbrella: true},
+      {:managoat_mcp_auth, "~> 0.1.0"},
       {:managoat_oauth, in_umbrella: true},
       {:managoat_runner, in_umbrella: true},
       {:managoat_substitution, "~> 0.1.0"},

@@ -44,9 +44,11 @@ fountain/                  umbrella root
                            namespace, no reference back into Fountain. Each is
                            an in_umbrella dep of fountain until it graduates to
                            a managoat/<name> repo. See CONTRIBUTING.md.
-      (managoat_substitution:  Managoat.Substitution, the ${VAR} engine, is on
-                               hex; repo managoat/managoat_substitution.
-                               Graduated under #1345, the first to leave.)
+      Graduated (#1345): on hex, pinned "~> 0.1.0" in apps/fountain/mix.exs,
+      source in the repo managoat/managoat_<name>, no directory here:
+        managoat_substitution  Managoat.Substitution, the ${VAR} engine
+        managoat_mcp_auth      Managoat.McpAuth, RFC 9728/8414/7591 MCP
+                               authorization discovery with the SSRF guard
       managoat_sandbox/        Managoat.Sandbox: the sandbox behaviour, the
                                Sprites/E2B/Daytona adapters, Retry, the Fake
                                and the conformance case. The "which providers
