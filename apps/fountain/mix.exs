@@ -53,7 +53,7 @@ defmodule Fountain.MixProject do
       # directory is listed here.
       {:managoat_acp, "~> 0.1.0"},
       {:managoat_broker, in_umbrella: true},
-      {:managoat_docs, in_umbrella: true},
+      {:managoat_docs, "~> 0.1.0"},
       {:managoat_mcp_auth, "~> 0.1.0"},
       {:managoat_oauth, "~> 0.1.0"},
       {:managoat_runner, in_umbrella: true},

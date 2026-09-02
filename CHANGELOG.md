@@ -50,6 +50,11 @@ upgrade, is in
   in both `apps/fountain` and `apps/managoat_runner` (the one library that
   depends on it, which is what lets runner graduate next), the source is
   managoat/managoat_sandbox with its Sprites client pinned to hex `0.2.0`.
+- **`managoat_docs` comes from hex** (#1345, ADR 0037), the sixth:
+  `apps/managoat_docs` is gone, the pin is `{:managoat_docs, "~> 0.1.0"}`,
+  the source is managoat/managoat_docs. `Fountain.Docs` is still the one
+  `use` line, `/docs` and the guardrail tests render and check the manual
+  exactly as before.
 
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`

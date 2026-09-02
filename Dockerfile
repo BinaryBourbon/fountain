@@ -47,7 +47,6 @@ COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
 # child's mix.exs to resolve deps, so a missing one fails `mix deps.get` here.
 # umbrella_layout_test.exs checks that every apps/managoat_* has its line.
 COPY apps/managoat_broker/mix.exs ./apps/managoat_broker/mix.exs
-COPY apps/managoat_docs/mix.exs ./apps/managoat_docs/mix.exs
 COPY apps/managoat_runner/mix.exs ./apps/managoat_runner/mix.exs
 
 RUN mix deps.get --only prod \
