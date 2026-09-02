@@ -59,6 +59,12 @@ upgrade, is in
   `apps/managoat_broker` is gone, the pin is `{:managoat_broker, "~> 0.1.0"}`,
   the source is managoat/managoat_broker. The native proxy still runs
   beside the Agent Vault client, selected by `BROKER_LISTEN_PORT`.
+- **`managoat_runner` comes from hex** (#1345, ADR 0037), the eighth and
+  last: `apps/managoat_runner` is gone, the pin is
+  `{:managoat_runner, "~> 0.1.0"}`, the source is managoat/managoat_runner.
+  The umbrella now holds no library app; every `managoat_*` package is on
+  hex from its own repository, and `scripts/test-libraries.sh` and
+  `umbrella_layout_test.exs` stay for the next one.
 
 - **The ACP peer, the permission policy and the block normaliser are now
   the `managoat_acp` library** (#1339, ADR 0037). `Fountain.Runtimes.ACP.Peer`
