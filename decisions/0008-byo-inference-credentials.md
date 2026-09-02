@@ -56,3 +56,15 @@ Concretely:
 - **Fields on `users` table.** Same data, no extra table. Rejected because it couples identity rows with secret blobs; `SELECT * FROM users` starts pulling encrypted ciphertext on every account read.
 - **Optional onboarding step, with a banner on the dashboard** instead of a required step. Rejected after weighing — the first conversation will fail without a credential, and "set up a provider" is a more honest first-run task than "click Continue and discover the failure later."
 - **Hybrid: Fountain keeps a fallback platform key, tenants override.** Rejected — the cost-attribution problem returns the moment any tenant doesn't override. Either tenants always pay or Fountain always pays; mixing produces neither benefit cleanly.
+
+## Amendment (2026-09-02): Fountain holds platform inference keys
+
+[0038](0038-onboarding-first-reply.md) decides that Fountain holds a set of
+platform inference keys and runs an account's agent on them when the account
+has no credential of its own, metered against the account's credit balance
+(0030, 0031). The premise above that "Fountain holds no platform inference
+keys and pays nothing for inference" no longer holds. What is unchanged: the
+per-tenant DEK and the BYO path, and the rule that the tenant's own
+credential wins whenever one is present. A deployment with no platform key
+behaves exactly as this ADR describes. Built by #1388; not built at the time
+of the amendment.
