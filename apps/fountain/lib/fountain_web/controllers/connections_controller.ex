@@ -21,6 +21,7 @@ defmodule FountainWeb.ConnectionsController do
   alias Fountain.{Broker, Connections}
   alias Fountain.Connections.{OAuth, Provider}
   alias FountainWeb.Audited
+  alias Managoat.McpAuth.UrlGuard
 
   @state_salt "connections:oauth_state"
   @state_max_age 600
@@ -153,7 +154,7 @@ defmodule FountainWeb.ConnectionsController do
   defp describe({:http, status, _body}), do: "the provider answered #{status}"
 
   defp describe({:unsafe_url, reason}),
-    do: "the provider's URL #{Connections.UrlGuard.message(reason)}"
+    do: "the provider's URL #{UrlGuard.message(reason)}"
 
   defp describe({:userinfo, :no_label, path}),
     do: "the account name was not at `#{path}` in the userinfo response"

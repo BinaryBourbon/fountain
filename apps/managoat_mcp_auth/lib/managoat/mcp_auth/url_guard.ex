@@ -1,12 +1,11 @@
-defmodule Fountain.Connections.UrlGuard do
+defmodule Managoat.McpAuth.UrlGuard do
   @moduledoc """
-  The one rule for a URL a tenant hands Fountain to fetch server-side
-  (#1186): `https`, a real hostname, and nothing that resolves into the
-  cluster. The OAuth client, MCP discovery and dynamic client registration
-  all `GET`/`POST` tenant-supplied addresses from inside the platform, which
-  is exactly the request an SSRF wants — so every one of them passes through
-  `check/1` first, and again on each use, since DNS can change between a
-  save and a fetch.
+  The one rule for a URL fetched server-side: `https`, a real hostname, and
+  nothing that resolves into the cluster. OAuth clients, MCP discovery and
+  dynamic client registration all `GET`/`POST` tenant-supplied addresses from
+  inside the platform, which is exactly the request an SSRF wants — so every
+  one of them passes through `check/1` first, and again on each use, since DNS
+  can change between a save and a fetch.
 
   Rejected: any scheme but `https`, an IP literal, `localhost` and the
   cluster-internal names, and a hostname that resolves only to loopback,
@@ -14,8 +13,9 @@ defmodule Fountain.Connections.UrlGuard do
   that does not resolve is also refused: nothing could be fetched from it,
   and a name that resolves later to something private is the trick.
 
-  `:connections_allow_private_hosts` (test only) turns the resolution check
-  off so a stub can stand in for a provider.
+  `:allow_private_hosts` can be passed to `check/2` to turn the resolution
+  check off so a local stub can stand in for a provider. Its default comes
+  from `config :managoat_mcp_auth, allow_private_hosts: false`.
   """
 
   @internal_hosts ~w(localhost localhost.localdomain internal kubernetes kubernetes.default metadata.google.internal metadata.google instance-data)
@@ -24,11 +24,13 @@ defmodule Fountain.Connections.UrlGuard do
           :not_https | :no_host | :ip_literal | :internal_host | :private_address | :unresolvable
 
   @doc "`:ok`, or `{:error, reason}` naming the rule the URL broke."
-  @spec check(String.t() | nil) :: :ok | {:error, reason()}
-  def check(url) when is_binary(url) do
+  @spec check(String.t() | nil, keyword()) :: :ok | {:error, reason()}
+  def check(url, opts \\ [])
+
+  def check(url, opts) when is_binary(url) and is_list(opts) do
     case URI.parse(url) do
       %URI{scheme: "https", host: host} when is_binary(host) and host != "" ->
-        check_host(String.downcase(host))
+        check_host(String.downcase(host), allow_private_hosts?(opts))
 
       %URI{scheme: "https"} ->
         {:error, :no_host}
@@ -38,17 +40,7 @@ defmodule Fountain.Connections.UrlGuard do
     end
   end
 
-  def check(_), do: {:error, :not_https}
-
-  @doc "The rule as a changeset validation on a URL field. Blank passes; `validate_required` owns that."
-  def validate(changeset, field) do
-    Ecto.Changeset.validate_change(changeset, field, fn ^field, url ->
-      case check(url) do
-        :ok -> []
-        {:error, reason} -> [{field, message(reason)}]
-      end
-    end)
-  end
+  def check(_, _opts), do: {:error, :not_https}
 
   @doc "Why a URL was refused, for a form or an API error."
   def message(:not_https), do: "must be an https URL"
@@ -58,7 +50,7 @@ defmodule Fountain.Connections.UrlGuard do
   def message(:private_address), do: "must not resolve to a private address"
   def message(:unresolvable), do: "does not resolve"
 
-  defp check_host(host) do
+  defp check_host(host, allow_private_hosts?) do
     cond do
       host in @internal_hosts or String.ends_with?(host, ".internal") or
           String.ends_with?(host, ".local") ->
@@ -67,7 +59,7 @@ defmodule Fountain.Connections.UrlGuard do
       ip_literal?(host) ->
         {:error, :ip_literal}
 
-      allow_private?() ->
+      allow_private_hosts? ->
         :ok
 
       true ->
@@ -117,5 +109,10 @@ defmodule Fountain.Connections.UrlGuard do
 
   defp private?(_), do: false
 
-  defp allow_private?, do: Application.get_env(:fountain, :connections_allow_private_hosts, false)
+  defp allow_private_hosts?(opts) do
+    case Keyword.fetch(opts, :allow_private_hosts) do
+      {:ok, allow?} -> allow?
+      :error -> Application.get_env(:managoat_mcp_auth, :allow_private_hosts, false)
+    end
+  end
 end

@@ -8,7 +8,7 @@ defmodule Fountain.Connections.Provider do
       an app on every provider, and the restricted scopes need per-app
       verification anyway, so the tenant's app is the only one that works.
     * `mcp` — a remote MCP server that implements the MCP authorization
-      spec. `Fountain.Connections.McpDiscovery` found its authorization
+      spec. `Managoat.McpAuth` found its authorization
       server, and registered a client there when the server offered RFC 7591
       registration; the tenant pasted one otherwise.
 
@@ -26,8 +26,8 @@ defmodule Fountain.Connections.Provider do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias Fountain.Connections.UrlGuard
   alias Fountain.Crypto
+  alias Managoat.McpAuth.UrlGuard
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
@@ -171,8 +171,19 @@ defmodule Fountain.Connections.Provider do
     Enum.reduce(
       [:authorize_url, :token_url, :revoke_url, :userinfo_url, :mcp_url, :issuer],
       changeset,
-      fn field, cs -> cs |> validate_length(field, max: 2048) |> UrlGuard.validate(field) end
+      fn field, cs -> cs |> validate_length(field, max: 2048) |> validate_url(field) end
     )
+  end
+
+  # The reusable guard deliberately has no Ecto dependency. This single
+  # changeset adapter belongs to the Fountain schema that consumes it.
+  defp validate_url(changeset, field) do
+    validate_change(changeset, field, fn ^field, url ->
+      case UrlGuard.check(url) do
+        :ok -> []
+        {:error, reason} -> [{field, UrlGuard.message(reason)}]
+      end
+    end)
   end
 
   # Where the token goes as a bearer. Hostnames only: a bare `*` (or any

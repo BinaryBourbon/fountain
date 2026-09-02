@@ -22,11 +22,12 @@ defmodule Fountain.Connections.OAuth do
     * The account label: `userinfo_url` + `account_label_path`, or nothing,
       in which case the caller names the account.
 
-  Every URL a tenant supplied is checked by `Fountain.Connections.UrlGuard`
+  Every URL a tenant supplied is checked by `Managoat.McpAuth.UrlGuard`
   again at the moment it is fetched, not only when it was saved.
   """
 
-  alias Fountain.Connections.{Platform, Provider, UrlGuard}
+  alias Fountain.Connections.{Platform, Provider}
+  alias Managoat.McpAuth.UrlGuard
 
   @type grant :: %{
           refresh_token: String.t() | nil,

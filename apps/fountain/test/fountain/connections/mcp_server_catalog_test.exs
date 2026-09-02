@@ -1,7 +1,8 @@
 defmodule Fountain.Connections.McpServerCatalogTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Connections.{McpServerCatalog, UrlGuard}
+  alias Fountain.Connections.McpServerCatalog
+  alias Managoat.McpAuth.UrlGuard
 
   test "every entry is well-formed" do
     for entry <- McpServerCatalog.entries() do

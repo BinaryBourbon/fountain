@@ -96,7 +96,7 @@ with effort:
      Notion, Linear) that fill the endpoints; the tenant pastes only the
      client id and secret.
    - `mcp`: the tenant enters the server's URL and nothing else.
-     `Fountain.Connections.McpDiscovery` follows the chain above, and
+     `Managoat.McpAuth` follows the chain above, and
      registers a client where there is a `registration_endpoint`. Every
      provider registers its own client, even behind an issuer another
      provider already registered at: a registration names exactly one
@@ -135,7 +135,7 @@ with effort:
    otherwise.
 
 5. **Tenant-supplied URLs are fetched server-side, so they are guarded.**
-   `Fountain.Connections.UrlGuard` allows `https` only, refuses IP literals,
+   `Managoat.McpAuth.UrlGuard` allows `https` only, refuses IP literals,
    `localhost` and the cluster-internal names, and resolves the hostname to
    refuse anything private, link-local, CGNAT or the metadata range — at
    save time and again at every fetch, because DNS changes. Discovery

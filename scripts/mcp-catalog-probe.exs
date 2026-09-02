@@ -12,10 +12,10 @@
 # probed-not-qualifying set noted in the catalog module (Stripe, Atlassian,
 # Intercom), or vetting a new entry before adding it.
 #
-# Why this is Elixir driving `McpDiscovery.discover/1` rather than the ~30
+# Why this is Elixir driving `Managoat.McpAuth.discover/1` rather than the ~30
 # lines of curl+jq the seed data was gathered with: the catalog's claim is
 # "discovery completes against this URL", and discovery is
-# `Fountain.Connections.McpDiscovery` — a parallel curl implementation would
+# `Managoat.McpAuth.Discovery` — a parallel curl implementation would
 # drift from it (the 401-challenge parse, the four AS metadata candidates,
 # the UrlGuard on every hop) and end up verifying a different claim.
 #
@@ -25,13 +25,14 @@
 # going stale is drift to report (re-date it), not a defect in the PR under
 # test.
 
-alias Fountain.Connections.{McpDiscovery, McpServerCatalog}
+alias Fountain.Connections.McpServerCatalog
+alias Managoat.McpAuth
 
 {:ok, _} = Application.ensure_all_started(:req)
 
 defmodule McpCatalogProbe do
   def probe(%{url: url} = entry) do
-    case McpDiscovery.discover(url) do
+    case McpAuth.discover(url) do
       {:ok, md} -> check_registration(entry, md)
       {:error, reason} -> {:drift, FountainWeb.ConnectionProviderJSON.describe(reason)}
     end

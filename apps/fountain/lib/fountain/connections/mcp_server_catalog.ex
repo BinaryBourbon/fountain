@@ -7,7 +7,7 @@ defmodule Fountain.Connections.McpServerCatalog do
   metadata → RFC 7591 registration where `dcr: true`) completed against
   `url` on `verified_on`*. No human judgement is in the claim —
   `scripts/mcp-catalog-probe.exs` re-runs the chain through
-  `Fountain.Connections.McpDiscovery.discover/1` itself and reports drift.
+  `Managoat.McpAuth.discover/1` itself and reports drift.
   That definition is what unblocked #932: "supported" as an opinion is an
   assertion nobody can verify, which CLAUDE.md forbids in docs.
 
@@ -39,7 +39,7 @@ defmodule Fountain.Connections.McpServerCatalog do
   #   * Intercom (https://mcp.intercom.com/mcp) — same.
   # Stripe sat on this list in #1322's seed data ("AS metadata has no
   # authorize endpoint") and turned out to qualify: the seed was a curl
-  # probe of one metadata path, while `McpDiscovery` tries the four RFC
+  # probe of one metadata path, while `Managoat.McpAuth` tries the four RFC
   # 8414/OIDC candidates and finds Stripe's at the issuer-path form. Which
   # is why the probe drives the production discovery code and not curl.
   @entries [

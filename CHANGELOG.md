@@ -18,6 +18,13 @@ upgrade, is in
 
 ### Changed
 
+- **MCP authorization discovery is now the `managoat_mcp_auth` library**
+  (#1338, ADR 0037). The RFC 9728 / 8414 / 7591 discovery chain and its SSRF
+  URL guard moved from `Fountain.Connections` to the Apache-2.0
+  `Managoat.McpAuth` app. Fountain still owns its provider rows, OAuth client,
+  Gmail tool server and verified server catalog; the extraction changes the
+  package boundary without changing discovery behaviour.
+
 - **The sandbox seam is a library, `managoat_sandbox`** (#1337, ADR 0037).
   `Fountain.Sandbox` (the behaviour, the facade and the error taxonomy), the
   Sprites, E2B and Daytona adapters, `Fountain.Retry`, the in-memory Fake
@@ -32,6 +39,7 @@ upgrade, is in
   `Fountain.SandboxProviders`. The Fake and the conformance case ship in the
   library's `lib/` so a consumer can run the suite against an adapter of its
   own.
+
 - **The first component library, `managoat_substitution`** (#1336, ADR
   0037). Fountain's database-free subsystems are being extracted as
   Apache-2.0 libraries under the `Managoat.*` namespace, first as apps in
@@ -201,7 +209,7 @@ upgrade, is in
     lapses, with a *Reconnect* button. Revoke is RFC 7009 where the
     provider has a revoke URL.
   - Every tenant-supplied URL is https-only and may not resolve into the
-    cluster (`Fountain.Connections.UrlGuard`), at save time and at every
+    cluster (`Managoat.McpAuth.UrlGuard`), at save time and at every
     fetch, including the URLs discovery gets back from the server.
   - API: `GET/POST /api/connection-providers`,
     `GET/PATCH/DELETE /api/connection-providers/:id`,

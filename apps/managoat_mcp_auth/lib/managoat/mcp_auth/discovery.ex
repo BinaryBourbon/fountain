@@ -1,7 +1,7 @@
-defmodule Fountain.Connections.McpDiscovery do
+defmodule Managoat.McpAuth.Discovery do
   @moduledoc """
-  How Fountain learns where a remote MCP server's authorization lives
-  (#1186), the way the MCP authorization spec says:
+  How a client learns where a remote MCP server's authorization lives, the
+  way the MCP authorization spec says:
 
   1. `GET` the MCP URL with no credential. A conforming server answers
      `401` with `WWW-Authenticate: Bearer resource_metadata="…"` naming its
@@ -11,19 +11,19 @@ defmodule Fountain.Connections.McpDiscovery do
      metadata (`/.well-known/oauth-authorization-server`, with the OpenID
      `/.well-known/openid-configuration` as the fallback) carries the
      authorize, token, revocation and registration endpoints.
-  3. `register/2`: RFC 7591 dynamic client registration at
+  3. `register/3`: RFC 7591 dynamic client registration at
      `registration_endpoint`, so the tenant types no client id anywhere.
      The server picks the client's auth method; a public client comes back
      with no secret and `token_endpoint_auth_method: none`.
 
   Every URL, including the ones the server sent back, passes
-  `Fountain.Connections.UrlGuard` before it is fetched: a malicious
+  `Managoat.McpAuth.UrlGuard` before it is fetched: a malicious
   resource document that points discovery at the metadata service is the
   obvious trick. Each fetch has a timeout and the chain follows no
   redirects.
   """
 
-  alias Fountain.Connections.UrlGuard
+  alias Managoat.McpAuth.UrlGuard
 
   @type metadata :: %{String.t() => term()}
 
@@ -189,14 +189,21 @@ defmodule Fountain.Connections.McpDiscovery do
   Register a client at the authorization server (RFC 7591) and return the
   provider attributes it yields: `client_id`, `client_secret` (absent for
   a public client), `token_endpoint_auth` and `client_source: "dcr"`.
+
+  `:client_name` and `:client_uri` are required options. Omitting either is a
+  programming error and raises rather than sending an incomplete registration.
   """
-  @spec register(metadata(), String.t()) :: {:ok, map()} | {:error, term()}
-  def register(%{"registration_endpoint" => endpoint} = md, redirect_uri)
-      when is_binary(endpoint) and is_binary(redirect_uri) do
+  @spec register(metadata(), String.t(), client_name: String.t(), client_uri: String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def register(%{"registration_endpoint" => endpoint} = md, redirect_uri, opts)
+      when is_binary(endpoint) and is_binary(redirect_uri) and is_list(opts) do
+    client_name = Keyword.fetch!(opts, :client_name)
+    client_uri = Keyword.fetch!(opts, :client_uri)
+
     with :ok <- guard(endpoint) do
       body = %{
-        "client_name" => "Fountain",
-        "client_uri" => Fountain.PublicUrl.base(),
+        "client_name" => client_name,
+        "client_uri" => client_uri,
         "redirect_uris" => [redirect_uri],
         "grant_types" => ["authorization_code", "refresh_token"],
         "response_types" => ["code"],
@@ -224,7 +231,7 @@ defmodule Fountain.Connections.McpDiscovery do
     end
   end
 
-  def register(_md, _redirect_uri), do: {:error, :no_registration_endpoint}
+  def register(_md, _redirect_uri, _opts), do: {:error, :no_registration_endpoint}
 
   # Ask for a confidential client where the server offers one; a public
   # client (PKCE only) where that is all it does.
@@ -259,10 +266,10 @@ defmodule Fountain.Connections.McpDiscovery do
   def req do
     Req.new(
       [
-        receive_timeout: Application.get_env(:fountain, :connections_timeout_ms, 15_000),
+        receive_timeout: Application.get_env(:managoat_mcp_auth, :timeout_ms, 15_000),
         retry: false,
         redirect: false
-      ] ++ Application.get_env(:fountain, :connections_req_options, [])
+      ] ++ Application.get_env(:managoat_mcp_auth, :req_options, [])
     )
   end
 end

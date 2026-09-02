@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336) and managoat_sandbox (#1337)."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337) and managoat_mcp_auth (#1338)."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
-generated: { by: human:jhgaylor, at: 2026-09-01T20:30:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-09-01T20:30:00-04:00 }
+generated: { by: openai-codex/5.6, at: 2026-09-01T21:03:00-04:00 }
+verified: { by: openai-codex/5.6, at: 2026-09-01T21:03:00-04:00 }
 stale_after: 2026-12-01
 ---
 
@@ -19,8 +19,10 @@ stale_after: 2026-12-01
 the guard test, `umbrella_layout_test.exs`) and `managoat_sandbox` (#1337:
 the behaviour, the Sprites/E2B/Daytona adapters, `Retry`, the Fake and the
 conformance case; the runner adapter and the configured-providers policy
-stay in `fountain`). Not yet built: `managoat_mcp_auth` (#1338),
-`managoat_acp` (#1339), `managoat_broker` (#1340), `managoat_runner`
+stay in `fountain`), plus `managoat_mcp_auth` (#1338: the RFC 9728 / 8414 /
+7591 discovery chain and its SSRF URL guard; provider rows, the OAuth client,
+the Gmail tool server and the verified catalog stay in `fountain`). Not yet
+built: `managoat_acp` (#1339), `managoat_broker` (#1340), `managoat_runner`
 (#1341), `managoat_docs` (#1342), `managoat_oauth` (#1343) and the optional
 credits extraction (#1344). None has graduated to a repository (#1345). The
 tracker is #1334. Each PR that extracts a library updates this block.
@@ -107,7 +109,7 @@ extracted it is its own Elastic-licensed repository.
 A library holds no reference to `Fountain.*` or `FountainWeb.*`, reads no
 `:fountain` configuration and emits no `[:fountain, …]` telemetry. A test
 in `apps/fountain` walks every `apps/managoat_*` directory and fails on any
-of the three (not yet built; #1336).
+of the three (#1336).
 
 **Configuration and telemetry.** A library reads its own otp_app
 (`config :managoat_sandbox, …`) or takes an options map; `fountain`'s
