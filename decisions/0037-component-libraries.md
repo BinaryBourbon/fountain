@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Component libraries, extracted umbrella-first under the Managoat namespace"
-description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339)."
+description: "Fountain's database-free subsystems (sandbox, ACP peer, MCP authorization discovery, broker, runner protocol, docs, OAuth, substitution) are extracted one at a time as Apache-2.0 libraries named Managoat.*, first as apps in this umbrella and then as managoat/<name> repos on hex. Built so far: managoat_substitution (#1336), managoat_sandbox (#1337), managoat_mcp_auth (#1338), managoat_runner (#1341), managoat_docs (#1342), managoat_oauth (#1343), managoat_broker (#1340) and managoat_acp (#1339). Graduated to hex so far: managoat_substitution."
 tags: [architecture, libraries, licensing, ci]
 status: stable
 adr: "0037"
 adr_status: "Accepted"
 date: 2026-09-01
 generated: { by: claude-fable/5.1, at: 2026-09-02T02:30:00-04:00 }
-verified: { by: claude-fable/5.1, at: 2026-09-02T02:30:00-04:00 }
+verified: { by: claude-fable/5.1, at: 2026-09-02T03:00:00-04:00 }
 stale_after: 2026-12-01
 ---
 
@@ -49,9 +49,12 @@ behind a writer callback rather than a sandbox dependency; runtime
 provisioning, `LegacyBlocks`, the stream-keyed `Conversations.Blocks`
 dispatcher and the tool bridge stay in `fountain`; its README carries the
 comparison against `acpex` and `agent_client_protocol`). Not yet built: the
-optional credits extraction (#1344). None has graduated to a repository
-(#1345). The
-tracker is #1334. Each PR that extracts a library updates this block.
+optional credits extraction (#1344). **Graduated** (#1345, the recipe is
+`scripts/graduate-library.sh` and the CONTRIBUTING section "Graduating a
+library"): `managoat_substitution` (managoat/managoat_substitution, hex
+0.1.0, 2026-09-02). The
+tracker is #1334. Each PR that extracts or graduates a library updates this
+block.
 
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names
