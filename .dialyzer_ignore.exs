@@ -22,4 +22,11 @@
 # location term exactly as dialyzer reports it: a bare line number when there
 # is no column, a {line, column} tuple when there is. A stale entry shows up as
 # an "unnecessary skip" in `mix dialyzer --list-unused-filters`.
-[]
+[
+  # x509 0.9.2 (the broker CA, apps/managoat_broker, ADR 0019) references two
+  # types dialyzer does not know: its own X509.ASN1.record/1 macro-type and
+  # :public_key's unexported ec_private_key/0. Both are inside the dependency,
+  # not ours.
+  {"lib/x509/certificate.ex", :unknown_type, {20, 23}},
+  {"lib/x509/private_key.ex", :unknown_type, {33, 57}}
+]
