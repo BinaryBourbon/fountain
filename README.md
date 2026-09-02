@@ -77,7 +77,7 @@ applications built on this API.
 
 ## Four surfaces
 
-Every public feature lives on the first three; the SDK wraps the verbs most
+Every public feature lives on the first three; the SDKs wrap the verbs most
 code actually reaches for.
 
 | Surface | Use it when |
@@ -85,12 +85,22 @@ code actually reaches for.
 | **Web UI** (`/dashboard`) | Getting started, managing agents, environments, vaults, keys and audit visually |
 | **REST API** (`/api/*`) | Scripting, CI/CD pipelines, integrating Fountain into your own tools |
 | **CLI** (`fountain`) | Local workflows, manifest-driven `apply`, shell scripting |
-| **TypeScript SDK** (`@agentshit/fountain-sdk`) | Running an agent from your own code: `fountain.run(prompt, { agent, vault })` |
+| **TypeScript and Swift SDKs** | Running an agent from your own code: `fountain.run(...)` |
 
-The CLI and the SDK are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
+The CLI and the SDKs are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
 
 ```bash
 npm install @agentshit/fountain-sdk
+```
+
+For Swift Package Manager, add the repository's `main` branch until the next
+Fountain release supplies the first versioned Swift package:
+
+```swift
+.package(
+    url: "https://github.com/BinaryBourbon/fountain.git",
+    branch: "main"
+)
 ```
 
 ```ts
@@ -104,9 +114,26 @@ const run = await new Fountain().run("Upgrade us to Phoenix 1.8 and open a PR", 
 console.log(run.text, run.url);
 ```
 
-The sandbox is still there afterwards: `fountain.resume(run.conversationId).send("...")`
-continues on the same machine, with the same checkout and the same session.
-See [`sdk/typescript/`](sdk/typescript/) or the [SDK docs](https://managoat.com/docs/sdk).
+```swift
+import Fountain
+
+let run = Fountain().run(
+    "Upgrade us to Phoenix 1.8 and open a PR",
+    agent: "reposage",
+    vault: "github-bot"
+)
+let result = try await run.value()
+
+print(result.text, result.url)
+```
+
+The sandbox is still there afterwards. TypeScript's
+`fountain.resume(run.conversationId).send("...")` and Swift's
+`fountain.resume(result.conversationID).send("...")` continue on the same
+machine, with the same checkout and the same session. See
+[`sdk/typescript/`](sdk/typescript/), [`sdk/swift/`](sdk/swift/), the
+[TypeScript SDK docs](https://managoat.com/docs/sdk), or the
+[Swift SDK docs](https://managoat.com/docs/swift-sdk).
 
 ## Get started with the CLI
 
@@ -234,7 +261,7 @@ Fountain is not licensed as a single unit. The short version:
 |---|---|---|
 | The server (`apps/fountain`) | [AGPL-3.0-or-later](LICENSE) | Run it, modify it, host it. If you host a modified version, your users are entitled to your source |
 | [`ee/`](ee/) — Stripe billing and growth email | [Elastic Licence 2.0](ee/LICENSE) | Free to run in your own instance, changes stay yours. You may not offer it to third parties as a hosted service |
-| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript) | [Apache-2.0](cli/LICENSE) | Build on the API, ship the CLI inside a proprietary product, no obligations |
+| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript), [`sdk/swift`](sdk/swift) | [Apache-2.0](cli/LICENSE) | Build on the API, ship the CLI or either SDK inside a proprietary product, no obligations |
 
 The client surfaces are permissive on purpose. Integrating with Fountain
 should never put a licence obligation on your application, and an AGPL SDK

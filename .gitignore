@@ -66,3 +66,7 @@ __pycache__/
 
 # Build output of scripts/build-pages-tombstone.py.
 /_pages_tombstone/
+
+# Swift Package Manager build state.
+/.build/
+/.swiftpm/

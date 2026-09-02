@@ -97,8 +97,9 @@ Elastic Licence 2.0. You can run the code in your own instance at no cost, and
 your changes stay private. You must not offer that code to third parties as a
 hosted service.
 
-The `cli/` directory and the TypeScript SDK use the Apache Licence 2.0. Your
-application gets no licence obligation when it calls the Fountain API.
+The `cli/` directory and the TypeScript and Swift SDKs use the Apache Licence
+2.0. Your application gets no licence obligation when it calls the Fountain
+API.
 
 Releases up to v0.12.0 used the MIT licence, and those releases stay MIT. The
 `NOTICE` file at the repository root records the change.

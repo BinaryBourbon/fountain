@@ -890,6 +890,39 @@ jobs:
           npm ci --prefix scripts/destink
           node scripts/destink/destink.mjs
 
+  swift-sdk:
+    name: Swift SDK (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+        with:
+          swift-version: "6.1"
+
+      - name: Swift format
+        run: swift format lint --strict --recursive Package.swift sdk/swift/Sources sdk/swift/Tests
+
+      - name: Swift debug tests
+        run: swift test --configuration debug -Xswiftc -warnings-as-errors
+
+      - name: Swift release build
+        run: swift build --configuration release -Xswiftc -warnings-as-errors
+
   compose-fresh-clone:
     name: Compose fresh-clone check
     runs-on: ubuntu-24.04
