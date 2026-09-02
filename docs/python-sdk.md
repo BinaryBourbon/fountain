@@ -40,8 +40,8 @@ conversations as children of the current one.
 ## Waiting and streaming
 
 `run()` starts work immediately and returns a `Run` handle. `result()` waits
-for the finished turn. Iterating the handle streams lifecycle, text, thinking,
-tool, block, and permission events from that same run.
+for the finished turn. The handle's iterator streams lifecycle, text,
+`thinking`, tool, block, and permission events from that same run.
 
 ```python
 run = fountain.run("Review this repository", agent="reviewer")
@@ -56,7 +56,7 @@ result = run.result()
 ```
 
 Use `run.text_stream` when you only need the answer text. Start several runs
-before calling `result()` to provision and run them in parallel.
+before you call `result()` to provision and run them in parallel.
 
 The handle is awaitable and asynchronously iterable too. The SDK keeps HTTP in
 its background thread, so the wait does not block an asyncio event loop.
@@ -85,8 +85,8 @@ The second turn uses the same sandbox, checkout, and agent session.
 
 ## Permission requests
 
-An agent with an `ask` permission rule stops before a matching tool call. The
-run emits a `permission` event with the options the runtime offered:
+An agent with an `ask` permission rule stops before a tool call that matches.
+The run emits a `permission` event with the options the runtime offered:
 
 ```python
 for event in run:
@@ -161,7 +161,7 @@ Catch `ConversationBusyError`, `NotReadyError`, `QuotaExceededError`,
 also exposes `field_errors`.
 
 Endpoints without a wrapper stay available through the same authentication
-and error handling:
+and error behavior:
 
 ```python
 rows = fountain.request("GET", "/api/audit", query={"limit": 50})
