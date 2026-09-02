@@ -65,6 +65,12 @@ fountain/                  umbrella root
                                are enabled here" policy
                                (Fountain.SandboxProviders) stays here.
                                apps/managoat_runner takes it from hex too.
+        managoat_docs          Managoat.Docs, the compile-time embedded manual
+                               (a `use` macro Fountain.Docs is one instance
+                               of), Managoat.Docs.Markdown (both render paths)
+                               and Managoat.Docs.GuardrailCase; docs/, nav.yml,
+                               Fountain.Help, the prose gates and the /docs
+                               controller stay here
       managoat_runner/         Managoat.Runner: the self-hosted runner wire
                                protocol (Connection), the sandbox adapter over
                                it, the sandbox-name shape and the FakeDaemon,
@@ -72,13 +78,6 @@ fountain/                  umbrella root
                                Fountain.Runners.Host implements it over Horde;
                                the runners table, placement and presence stay
                                in fountain.
-      managoat_docs/           Managoat.Docs: the compile-time embedded manual
-                               (a `use` macro Fountain.Docs is one instance
-                               of), Managoat.Docs.Markdown (both render paths)
-                               and Managoat.Docs.GuardrailCase, the docs_test
-                               checks as a case template. docs/, nav.yml,
-                               Fountain.Help, the prose gates and the /docs
-                               controller stay in fountain.
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is
