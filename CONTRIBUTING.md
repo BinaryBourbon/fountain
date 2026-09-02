@@ -117,6 +117,13 @@ to a `managoat/<name>` repository once its surface stops moving.
   `Application.get_env(:fountain, …)`, and no `[:fountain, …]` telemetry
   anywhere under its `lib/` or `test/`. The library takes what it needs as
   arguments or reads its own otp_app.
+- If the library's `test/test_helper.exs` writes its own config (a test
+  host, a stub name), Fountain's `apps/fountain/test/test_helper.exs` must
+  set the value Fountain needs for that same key, with a comment. `mix test`
+  at the umbrella root runs every app in one VM, so a library helper's
+  `put_env` is still in effect when Fountain's suite starts (#1352 lost ten
+  runner tests to this). CI never sees it, since the partitions and
+  `scripts/test-libraries.sh` are separate VMs; `mix precommit` does.
 
 `apps/fountain/test/fountain/umbrella_layout_test.exs` checks every one of
 those and fails the suite on a miss. The root gates already reach the new
