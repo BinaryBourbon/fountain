@@ -3,8 +3,8 @@ import Testing
 
 @testable import Fountain
 
-@Test func configurationPrecedenceAndConversationURL() {
-  let config = FountainConfig.resolve(
+@Test func configurationPrecedenceAndConversationURL() throws {
+  let config = try FountainConfig.resolve(
     apiKey: " argument ", baseURL: "https://api.example.test/", profile: "work",
     environment: ["FOUNTAIN_API_KEY": "environment"],
     credentialsText: "[work]\napi_key = credentials\n"
@@ -61,4 +61,80 @@ import Testing
       if case .permission(let request, _) = $0 { return request.requestID == "p/1" }
       return false
     })
+}
+
+@Test func anUnparseableBaseURLThrowsAndNamesWhereItCameFrom() throws {
+  // A base URL without a scheme used to fall back to the hosted Fountain, which
+  // put the caller's API key on a host they never named.
+  func message(_ body: () throws -> FountainConfiguration) -> String {
+    do {
+      let config = try body()
+      Issue.record("Expected a validation error, resolved \(config.baseURL) instead")
+      return ""
+    } catch let error as FountainError {
+      #expect(error.kind == .validation)
+      return error.message
+    } catch {
+      Issue.record("Expected a FountainError, got \(error)")
+      return ""
+    }
+  }
+
+  let fromArgument = message {
+    try FountainConfig.resolve(baseURL: "localhost:4000", environment: [:], credentialsText: "")
+  }
+  #expect(fromArgument.contains("the baseURL argument"))
+  #expect(fromArgument.contains("localhost:4000"))
+  #expect(!fromArgument.contains(fountainDefaultBaseURL))
+
+  let fromEnvironment = message {
+    try FountainConfig.resolve(
+      environment: ["FOUNTAIN_BASE_URL": "fountain.internal:4000"], credentialsText: "")
+  }
+  #expect(fromEnvironment.contains("FOUNTAIN_BASE_URL"))
+
+  let fromCredentials = message {
+    try FountainConfig.resolve(
+      environment: [:], credentialsText: "[default]\nbase_url = ftp://files.example.test\n")
+  }
+  #expect(fromCredentials.contains("CLI credentials file"))
+
+  let fromApp = message {
+    try FountainConfig.resolve(
+      baseURL: "https://api.example.test", appURL: "app.example.test", environment: [:],
+      credentialsText: "")
+  }
+  #expect(fromApp.contains("conversation app URL"))
+
+  // An empty app URL still means "this deployment has no conversation app".
+  let none = try FountainConfig.resolve(
+    baseURL: "https://api.example.test", appURL: "", environment: [:], credentialsText: "")
+  #expect(none.appURL == nil)
+}
+
+@Test func credentialsAreReadOnceAndOnlyWhenSomethingIsMissing() throws {
+  let file = "[default]\napi_key = from-file\nbase_url = https://from-file.example.test\n"
+
+  var passedEverything = 0
+  let passed = try FountainConfig.resolve(
+    apiKey: "secret", baseURL: "https://api.example.test", profile: nil, appURL: nil,
+    environment: [:], credentialsText: nil,
+    readFile: { _ in
+      passedEverything += 1
+      return file
+    })
+  #expect(passed.apiKey == "secret")
+  #expect(passed.baseURL.absoluteString == "https://api.example.test")
+  #expect(passedEverything == 0)
+
+  var passedNothing = 0
+  let resolved = try FountainConfig.resolve(
+    apiKey: nil, baseURL: nil, profile: nil, appURL: nil, environment: [:], credentialsText: nil,
+    readFile: { _ in
+      passedNothing += 1
+      return file
+    })
+  #expect(resolved.apiKey == "from-file")
+  #expect(resolved.baseURL.absoluteString == "https://from-file.example.test")
+  #expect(passedNothing == 1)
 }

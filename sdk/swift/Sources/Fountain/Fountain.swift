@@ -18,6 +18,9 @@ public final class Fountain: @unchecked Sendable {
   public let connections: Connections
   private let resolver: ResourceResolver
 
+  /// Throws when a base URL supplied by an argument, the environment or the CLI
+  /// credentials file is not a valid http(s) URL. It is never replaced with a
+  /// different host.
   public init(
     apiKey: String? = nil,
     baseURL: String? = nil,
@@ -25,8 +28,8 @@ public final class Fountain: @unchecked Sendable {
     appURL: String? = nil,
     timeout: TimeInterval = 30,
     session: URLSession = .shared
-  ) {
-    let configuration = FountainConfig.resolve(
+  ) throws {
+    let configuration = try FountainConfig.resolve(
       apiKey: apiKey, baseURL: baseURL, profile: profile, appURL: appURL)
     self.configuration = configuration
     self.api = FountainHTTPClient(configuration: configuration, timeout: timeout, session: session)

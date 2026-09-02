@@ -50,9 +50,49 @@ func decodeSSEMessage(_ message: SSEMessage) -> JSONObject? {
   return object
 }
 
+/// The returned stream is idle until it is iterated. `AsyncThrowingStream` runs
+/// the closure of its buffering initializer at construction, so opening the
+/// connection there would put the request on the wire, and buffer every event
+/// it answered with, before the caller asked for anything. Unfolding defers
+/// that to the first `next()`.
 func streamPath(
   http: FountainHTTPClient, path: String, after: Int = 0, streams: String? = nil,
   wait: Bool = true, blocks: Bool = false, maxRetries: Int = 5, retryDelay: TimeInterval = 0.5
+) -> AsyncThrowingStream<JSONObject, Error> {
+  let source = LazyStream {
+    openStream(
+      http: http, path: path, after: after, streams: streams, wait: wait, blocks: blocks,
+      maxRetries: maxRetries, retryDelay: retryDelay)
+  }
+  return AsyncThrowingStream(unfolding: { try await source.next() })
+}
+
+/// Holds the connection the first `next()` opens. An `AsyncIterator` has a
+/// single consumer by contract, which is what makes the actor's read-await-write
+/// of `iterator` safe here.
+private actor LazyStream {
+  private let open: @Sendable () -> AsyncThrowingStream<JSONObject, Error>
+  private var iterator: AsyncThrowingStream<JSONObject, Error>.AsyncIterator?
+  private var opened = false
+
+  init(open: @escaping @Sendable () -> AsyncThrowingStream<JSONObject, Error>) {
+    self.open = open
+  }
+
+  func next() async throws -> JSONObject? {
+    if !opened {
+      opened = true
+      iterator = open().makeAsyncIterator()
+    }
+    guard var current = iterator else { return nil }
+    defer { iterator = current }
+    return try await current.next()
+  }
+}
+
+private func openStream(
+  http: FountainHTTPClient, path: String, after: Int, streams: String?,
+  wait: Bool, blocks: Bool, maxRetries: Int, retryDelay: TimeInterval
 ) -> AsyncThrowingStream<JSONObject, Error> {
   AsyncThrowingStream { continuation in
     let task = Task {

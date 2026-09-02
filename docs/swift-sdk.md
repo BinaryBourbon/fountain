@@ -6,7 +6,7 @@ job: start an agent, follow its turn and return the answer.
 ```swift
 import Fountain
 
-let fountain = Fountain()
+let fountain = try Fountain()
 let run = fountain.run(
     "Upgrade us to Phoenix 1.8 and open a PR",
     agent: "reposage",
@@ -60,15 +60,20 @@ apiKey:  argument -> FOUNTAIN_API_KEY -> FOUNTAIN_TOKEN -> saved CLI login
 baseURL: argument -> FOUNTAIN_BASE_URL -> saved CLI login -> hosted Fountain
 ```
 
-Pass values directly when the process must not read its environment or the
-CLI credentials file:
+Pass the API key and the base URL directly to keep the CLI credentials file
+out of the process. The SDK reads that file only when an argument and the
+environment both miss:
 
 ```swift
-let fountain = Fountain(
+let fountain = try Fountain(
     apiKey: secret,
     baseURL: "https://fountain.example.com"
 )
 ```
+
+A base URL must carry a scheme and a host. `Fountain()` throws a
+`FountainError` for a value such as `localhost:4000`. It does not fall back to
+the hosted Fountain, because that sends your API key to a different host.
 
 `FOUNTAIN_TOKEN` is the delegated token inside a Fountain sandbox. Code that
 runs there can use `Fountain()` to start child conversations without another

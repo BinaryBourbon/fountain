@@ -5,7 +5,7 @@ Give an agent a computer, repositories, and credentials in one call.
 ```swift
 import Fountain
 
-let fountain = Fountain()
+let fountain = try Fountain()
 let run = fountain.run(
     "Upgrade us to Phoenix 1.8 and open a PR",
     agent: "reposage",
@@ -43,7 +43,8 @@ watchOS 8, and Linux FoundationNetworking, with no third-party dependencies.
 
 ## Credentials
 
-`Fountain()` resolves credentials the same way as the Fountain CLI:
+`Fountain()` resolves credentials the same way as the Fountain CLI. It throws
+if the base URL it resolves has no scheme or no host:
 
 ```text
 apiKey:  argument -> FOUNTAIN_API_KEY -> FOUNTAIN_TOKEN -> ~/.fountain/credentials

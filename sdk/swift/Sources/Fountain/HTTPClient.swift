@@ -4,6 +4,13 @@ import Foundation
   import FoundationNetworking
 #endif
 
+/// `URLRequest.timeoutInterval` bounds the gap between packets, not the life of
+/// the whole stream, so a day of silence stands in for "no timeout" on a feed
+/// that heartbeats. `.greatestFiniteMagnitude` cannot be used: it is out of
+/// range for the integer timeout FoundationNetworking derives from it on Linux,
+/// and that conversion traps rather than clamping.
+let fountainStreamTimeout: TimeInterval = 24 * 60 * 60
+
 public final class FountainHTTPClient: @unchecked Sendable {
   public let configuration: FountainConfiguration
   public let timeout: TimeInterval
@@ -113,7 +120,7 @@ public final class FountainHTTPClient: @unchecked Sendable {
     -> URLRequest
   {
     var request = try makeRequest("GET", path, query: query, accept: "text/event-stream")
-    request.timeoutInterval = TimeInterval.greatestFiniteMagnitude
+    request.timeoutInterval = fountainStreamTimeout
     if lastEventID > 0 {
       request.setValue(String(lastEventID), forHTTPHeaderField: "Last-Event-ID")
     }

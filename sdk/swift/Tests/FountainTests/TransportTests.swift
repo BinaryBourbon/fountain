@@ -29,11 +29,19 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
   }
 }
 
-private func mockSession() -> URLSession {
+/// One session for every mocked test, not one per test. FoundationNetworking
+/// keeps a single global task registry, and a process that churns through
+/// sessions trips it at teardown ("Trying to access a behaviour for a task that
+/// in not in the registry"), which failed about one Ubuntu run in six. Sharing
+/// is safe here because `MockURLProtocol.handler` is global too, and the suite
+/// is serialized.
+private let sharedMockSession: URLSession = {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [MockURLProtocol.self]
   return URLSession(configuration: configuration)
-}
+}()
+
+private func mockSession() -> URLSession { sharedMockSession }
 
 private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value) }
 
@@ -69,7 +77,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
           == "/api/connection-providers/provider%20one/discover")
       protocolInstance.respond(data: json(["ok": true] as JSONValue))
     }
-    let fountain = Fountain(
+    let fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     let result = try await fountain.connections.providers.discover("provider one")
     #expect(result["ok"]?.boolValue == true)
@@ -86,7 +94,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
         data: Data("id: 42\nevent: output\ndata: {\"kind\":\"output\"}\n\n".utf8)
       )
     }
-    let fountain = Fountain(
+    let fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     var ids: [Int] = []
     for try await event in fountain.events(after: 41, maxRetries: 0) {
@@ -144,7 +152,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     MockURLProtocol.handler = { request, protocolInstance in
       router.handle(request, protocolInstance)
     }
-    let fountain = Fountain(
+    let fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     let run = fountain.run("review", agent: "reviewer")
     var concurrentSubscriber: Task<[String], Error>?
@@ -173,7 +181,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     MockURLProtocol.handler = { request, protocolInstance in
       router.handle(request, protocolInstance)
     }
-    let fountain = Fountain(
+    let fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     let conversation = fountain.resume("conversation-1")
     _ = try await conversation.send("first").value()
@@ -204,8 +212,46 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     #expect(ids == [7])
   }
 
+  @Test func streamRequestsUseATimeoutLinuxCanConvertToAnInteger() throws {
+    // FoundationNetworking derives an integer timeout from this value, and
+    // `.greatestFiniteMagnitude` is out of Int range, so converting it traps.
+    let config = FountainConfiguration(
+      baseURL: URL(string: "https://api.example.test")!, apiKey: "secret", appURL: nil)
+    // No session: the request never goes out, and a URLSession left unused
+    // trips FoundationNetworking's task registry when the process exits.
+    let http = FountainHTTPClient(configuration: config)
+    let request = try http.streamRequest("/api/events/stream", query: [:], lastEventID: 0)
+    #expect(request.timeoutInterval.isFinite)
+    #expect(request.timeoutInterval <= TimeInterval(Int32.max))
+    #expect(Int(exactly: request.timeoutInterval.rounded()) != nil)
+    // Still far longer than the gap a heartbeating feed leaves between packets.
+    #expect(request.timeoutInterval > 3600)
+  }
+
+  @Test func anEventStreamOpensNothingUntilItIsIterated() async throws {
+    // Counted by cursor, not by call: a stream an earlier test left retrying
+    // reaches this handler too, and only this one asks from 987_654.
+    let cursor = 987_654
+    let counter = LockedCounter()
+    MockURLProtocol.handler = { request, protocolInstance in
+      if request.value(forHTTPHeaderField: "Last-Event-ID") == String(cursor) {
+        _ = counter.increment()
+      }
+      protocolInstance.respond(
+        headers: ["Content-Type": "text/event-stream"],
+        data: Data("id: \(cursor + 1)\nevent: output\ndata: {\"kind\":\"output\"}\n\n".utf8))
+    }
+    let fountain = try Fountain(
+      apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
+    let stream = fountain.events(after: cursor, maxRetries: 0)
+    try await Task.sleep(nanoseconds: 50_000_000)
+    #expect(counter.value == 0)
+    for try await _ in stream { break }
+    #expect(counter.value == 1)
+  }
+
   @Test func configTokenFallbackAndParentHeader() async throws {
-    let config = FountainConfig.resolve(
+    let config = try FountainConfig.resolve(
       environment: [
         "FOUNTAIN_TOKEN": "fallback-token",
         "FOUNTAIN_BASE_URL": "https://api.example.test",
@@ -228,7 +274,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
       recorder.append(request)
       protocolInstance.respond(data: json(["data": [:]] as JSONValue))
     }
-    let fountain = Fountain(
+    let fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     _ = try await fountain.sandboxFiles("sandbox-1", path: "src")
     _ = try await fountain.sandboxFile("sandbox-1", path: "src/main.swift", maxBytes: 4096)
@@ -247,7 +293,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     MockURLProtocol.handler = { request, protocolInstance in
       router.handle(request, protocolInstance)
     }
-    let fountain = Fountain(
+    let fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     _ = try await fountain.agents.get("reviewer")
     _ = try await fountain.agents.get("reviewer")
@@ -263,7 +309,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     MockURLProtocol.handler = { request, protocolInstance in
       router.handle(request, protocolInstance)
     }
-    let fountain = Fountain(
+    let fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     _ = try await fountain.team.schedules.create("reviewer", input: ["cron": "0 9 * * *"])
     _ = try await fountain.team.schedules.run("reviewer", id: "schedule-1")
@@ -279,7 +325,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     MockURLProtocol.handler = { request, protocolInstance in
       failed.handle(request, protocolInstance)
     }
-    var fountain = Fountain(
+    var fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     #expect(try await fountain.run("fail", agent: "reviewer").value().state == .failed)
 
@@ -287,7 +333,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     MockURLProtocol.handler = { request, protocolInstance in
       hanging.handle(request, protocolInstance)
     }
-    fountain = Fountain(
+    fountain = try Fountain(
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     do {
       _ = try await fountain.run("wait", agent: "reviewer", timeout: 0.02).value()
