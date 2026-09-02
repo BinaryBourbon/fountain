@@ -134,6 +134,127 @@ and their coverage export joins the merged gate, so a library with no tests
 fails the run rather than passing unmeasured. Add a `[Unreleased]` entry
 and update the "Built so far" block in decisions/0037.
 
+## Graduating a library
+
+The reverse of the section above: an `apps/managoat_<name>` app leaves this
+umbrella for a repository of its own, `managoat/managoat_<name>` (the same
+string as the hex package), from which CI publishes it to hex, and
+`apps/fountain` pins the hex release. The recipe is `scripts/graduate-library.sh`
+plus `templates/managoat-library/`; #1345 wrote both and proved them on
+`managoat_substitution`, then ran them for the other seven.
+
+**When.** A library graduates when it has stopped moving: its public surface
+has not changed since extraction, or its last change was a release of its own
+rather than a fix that a Fountain PR needed the same day. There is no open
+issue that needs a change on both sides of the seam. Until then the umbrella
+gives the compile-time boundary at no release cost; after, every cross-seam
+change costs two PRs (below).
+
+**Prerequisite, org admin only.** The publish workflow authenticates with
+`HEX_API_KEY`, an organization-level secret on `managoat` visible to every
+repository, holding a write key from the hex.pm user account that owns every
+`managoat_*` package. There is no hex organization and hex has no trusted
+publishing; that key, used only by CI, is the mechanism. Listing org secrets
+needs a scope your `gh` token may not have, so the check is to use it: the
+first publish run of a new repository either works or fails with 401. On a
+401, stop and ask; never create a key, and never put one in a repository
+secret or a file.
+
+**The script.** From the umbrella root, on a clean and up-to-date `main`:
+
+```bash
+scripts/graduate-library.sh --prepare-only <name>   # nothing on GitHub yet
+scripts/graduate-library.sh <name>
+```
+
+`--prepare-only` runs the preflight and builds the stand-alone tree in a
+scratch clone with the local gates, and stops. Do that first: a hex package
+name is claimed by its first publish and can never be released, and the name
+in `mix.exs` is permanent from the moment `main` exists. The full run then:
+
+1. refuses unless the tree is clean, `main` matches `origin/main`, and
+   `mix hex.build` succeeds for the app (a git dependency fails it; hex takes
+   hex packages only, which is why `managoat_sandbox` waited for the Sprites
+   client's hex release, pinned exactly to `0.2.0` for the reason in its
+   `mix.exs`);
+2. `git subtree split -P apps/managoat_<name>` puts the app's history on
+   `graduate/<name>` (one commit per app today, the extraction PR; an
+   `--unshallow` fetch first if the clone is shallow);
+3. creates the repository (public, no wiki, topic `managoat-library`) and
+   pushes the split as `main`;
+4. in a fresh clone, copies the template in, takes the three umbrella path
+   lines out of `mix.exs`, points `@source_url` at the new repository, adds
+   `ex_doc` (so `mix hex.publish` publishes hexdocs too), credo and dialyzer,
+   writes the repository's own `mix.lock`, runs compile, credo, the tests and
+   `mix hex.build` locally, and pushes `chore: stand alone (...)`. That push
+   is what runs CI and the first publish;
+5. creates the `no-release` label and protects `main` behind the two checks,
+   `ci` and `release gate`, with no review requirement, since a library
+   repository's `main` is what publishes and the gate is what keeps it honest.
+
+It is idempotent after a failure in 4 or 5: rerun it and it skips what exists.
+The template it copies mirrors the SDK's release automation
+(`.github/workflows/sdk-publish.yml`, `sdk-release-gate.yml`,
+`scripts/sdk-release.mjs`): `scripts/release.exs state` reads `@version` from
+`mix.exs` and asks hex whether it exists; `guard <base>` fails a PR that
+changes `lib/`, `priv/` or the consumer-facing part of `mix.exs` without a
+bump, a bump whose version hex already has, or a bump without a
+`## [<version>]` heading in `CHANGELOG.md`. Merging a bump publishes and tags
+`v<version>` as a record; a docs-only merge finds nothing to do. The template
+carries a Postgres service block that only `managoat_oauth` keeps (the script
+strips it for the others) and action pins copied from `ci.yml`; Dependabot
+maintains them from there, and the checkout-pin trap from this repository
+applies: a Dependabot bump can move the SHA and leave the version comment
+behind, so trust the SHA.
+
+**What the script does not do: the Fountain-side PR.** One per library, opened
+only after the hex release exists and only after the previous library's PR has
+merged (two open at once conflict on `apps/fountain/mix.exs`, the Dockerfile
+and `CLAUDE.md`):
+
+- delete `apps/managoat_<name>`;
+- `{:managoat_<name>, in_umbrella: true}` becomes
+  `{:managoat_<name>, "~> 0.1.0"}` in `apps/fountain/mix.exs`;
+- drop its `COPY apps/managoat_<name>/mix.exs` line from the Dockerfile;
+- `mix deps.get`, then `mix deps.unlock --unused`;
+- the layout block in `CLAUDE.md`, the "Built so far" block in
+  decisions/0037 (then `scripts/decisions-index.sh` and
+  `okf validate decisions`), and a `[Unreleased]` line here in `CHANGELOG.md`;
+- the gates: `mix compile --warnings-as-errors`, `mix format --check-formatted`,
+  `mix credo --strict`, `MIX_ENV=dev mix dialyzer`, the full root suite with
+  every remaining library's banner at `0 failures`,
+  `umbrella_layout_test.exs`, `scripts/test-libraries.sh`, and
+  **`docker build --target build .`**. The last one matters most: the
+  Dockerfile's deps layer is the only consumer of the hex release that CI does
+  not exercise, since CI never builds the image. After the merge, watch
+  `build.yml` on `main` go green.
+
+`umbrella_layout_test.exs` and `scripts/test-libraries.sh` walk whatever
+`apps/managoat_*` directories remain, so they need no edit per library; the
+last library out relaxes the "at least one library" assertion and makes the
+script exit 0 with a message on zero apps. The `config :managoat_*` lines in
+`config/*.exs` stay: a hex dependency reads its otp_app configuration the same
+way an umbrella app did.
+
+**Ordering: a library that depends on another graduates after it.** Hex
+refuses `in_umbrella` dependencies, so the dependency must be on hex first.
+`managoat_runner` depends on `managoat_sandbox` and is the worked example:
+sandbox graduates and its Fountain-side PR merges; a one-line Fountain PR
+changes `apps/managoat_runner/mix.exs` from
+`{:managoat_sandbox, in_umbrella: true}` to `{:managoat_sandbox, "~> 0.1.0"}`
+(the umbrella resolves it from hex like Fountain does, and `mix hex.build`
+for runner now succeeds inside the umbrella); then runner graduates.
+
+**The cost that starts on graduation day.** A change across the seam is two
+PRs: a bump in the library (its gate insists), then a pin in Fountain. The
+version pins here are `~> 0.1.0`, patch-level while every library is 0.x, so
+a library's `0.2.0` reaches Fountain only when someone bumps the pin, on
+purpose. Under this repository's ruleset a solo merge is
+`gh pr merge --admin`, and a merged-PR branch push runs no CI here, so the pin
+PR is the only place the new version is exercised against Fountain; do not
+skip its gates. Merges into a library repository are yours once its CI is
+green, because its `main` is what publishes.
+
 ## Pull requests
 
 Every change goes through a PR and the CI gate must pass. Do not push directly

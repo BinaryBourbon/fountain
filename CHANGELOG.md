@@ -16,6 +16,15 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **The graduation recipe for umbrella libraries** (#1345, ADR 0037):
+  `templates/managoat-library/` (CI, a release gate, a publish workflow that
+  makes a version bump on `main` the release, mirroring the SDK's) and
+  `scripts/graduate-library.sh`, which moves an `apps/managoat_<name>` app to
+  `managoat/managoat_<name>` with its history. CONTRIBUTING.md has the
+  recipe, the ordering rule and the cost.
+
 ### Changed
 
 - **`managoat_substitution` comes from hex** (#1345, ADR 0037). The first
