@@ -23,8 +23,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Vaults
   }
 
-  alias Fountain.Conversations.{Conversation, HomeCheckpoint, Lifecycle}
-  alias Managoat.Substitution
+  alias Fountain.Conversations.{CallbackKey, Conversation, HomeCheckpoint, Lifecycle, McpServers}
 
   # How often the sandbox lifetime bounds are evaluated. A minute is far finer
   # than the bounds themselves (an hour, a day), so the cost of the tick is
@@ -738,7 +737,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp dispatch_provision(state, conv, sandbox, agent, env, _vault, secrets) do
-    case substitute_agent_mcp(agent, env, secrets) do
+    case McpServers.substitute_agent(agent, env, secrets) do
       {:ok, agent} ->
         case sandbox.status do
           s when s in ["ready", "suspended"] ->
@@ -773,30 +772,6 @@ defmodule Fountain.Conversations.ConversationServer do
         Conversations.update_conversation(conv, %{status: "failed"})
         {:stop, :normal, state}
     end
-  end
-
-  # Resolve `${VAR}` references in the agent's MCP server config against
-  # env_vars + env_secrets + vault_secrets (vault wins). Env vars values
-  # are coerced to strings; non-string values further down the tree pass
-  # through untouched.
-  defp substitute_agent_mcp(nil, _env, _secrets), do: {:ok, nil}
-
-  defp substitute_agent_mcp(agent, env, secrets) do
-    vars = substitution_vars(env, secrets)
-
-    case Substitution.apply(agent.mcp_servers || %{}, vars) do
-      {:ok, mcp} -> {:ok, %{agent | mcp_servers: mcp}}
-      {:error, _} = err -> err
-    end
-  end
-
-  defp substitution_vars(env, secrets) do
-    env_vars =
-      if env,
-        do: Map.new(env.env_vars || %{}, fn {k, v} -> {to_string(k), to_string(v)} end),
-        else: %{}
-
-    Map.merge(env_vars, secrets)
   end
 
   defp fresh_provision(state, conv, sandbox, agent, env, secrets) do
@@ -1498,7 +1473,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp do_build_sprite_env(state, agent, env, secrets, sandbox_url) do
     (state.runtime_module.default_env(agent, state.env_credentials) || []) ++
-      fountain_callback_env(state.callback_token) ++
+      CallbackKey.env(state.callback_token) ++
       conversation_env(state.conversation_id) ++
       sandbox_id_env(state.sandbox_id) ++
       sandbox_url_env(sandbox_url) ++
@@ -3113,7 +3088,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # already dead or inert.
   #
   # If the BEAM crashes hard (SIGKILL — untrappable) the row in `api_keys`
-  # is left behind, but it is not dangerous: `callback_api_key_opts/0`
+  # is left behind, but it is not dangerous: `CallbackKey.api_key_opts/0`
   # sets an `expires_at`, so an un-revoked key stops authenticating on its
   # own, and RetentionPruner deletes long-expired rows. See SandboxReaper
   # for the sprite half, which does not self-heal.
@@ -3242,146 +3217,24 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-  # The `x != ""` guards here defend against operator configuration, not against
-  # types. Dialyzer proves them always-true from today's success typings —
-  # `PublicUrl.base/0` cannot currently return `""` — and flags both the
-  # comparison (`exact_compare`) and the `if`'s consequently-dead else branch
-  # (`pattern_match`). The guards stay: a future config path that yields an
-  # empty base or token must produce no callback env, not a sprite told to call
-  # back to `""`.
-  #
-  # Suppressed here rather than in `.dialyzer_ignore.exs` because that file
-  # pins by `{line, column}`, and this function sits near the bottom of a
-  # 1400-line module: the pin moved three times during #540 alone, each time
-  # failing the build with a misleading "Unnecessary Skips: 1" that reads like
-  # a stale suppression rather than "you added lines above". A function-scoped
-  # attribute travels with the code it describes and is narrower than the
-  # file-wide alternative.
-  @dialyzer {:nowarn_function, fountain_callback_env: 1}
-  defp fountain_callback_env(token) do
-    base = Fountain.PublicUrl.base()
-
-    if is_binary(base) and base != "" and is_binary(token) and token != "" do
-      [{"FOUNTAIN_BASE_URL", base}, {"FOUNTAIN_TOKEN", token}]
-    else
-      []
-    end
-  end
-
-  # The Buzz reply tools (#737), injected into `session/new` only for a
-  # Buzz-driven conversation and only once a callback token has been minted —
-  # `Fountain.Buzz` decides both. `[]` for every other conversation.
-  defp buzz_mcp_servers(%{callback_token: token, conversation_id: conv_id})
-       when is_binary(token) and is_binary(conv_id) do
-    Fountain.Buzz.conversation_mcp_servers(conv_id, token)
-  end
-
-  defp buzz_mcp_servers(_state), do: []
-
-  # The team tools (#851), for conversations on the team channel.
-  defp team_mcp_servers(%{callback_token: token, conversation_id: conv_id})
-       when is_binary(token) and is_binary(conv_id),
-       do: Fountain.Team.conversation_mcp_servers(conv_id, token)
-
-  defp team_mcp_servers(_state), do: []
-
-  # A teammate's email + phone tools (flag `team_comms`), injected the same
-  # way: only for a team conversation whose teammate has a contact, and only
-  # once a callback token exists — `Fountain.Team.Comms` decides. Computed
-  # at every turn kick, so a contact given mid-session is there next turn.
-  defp team_comms_mcp_servers(%{callback_token: token, conversation_id: conv_id})
-       when is_binary(token) and is_binary(conv_id) do
-    Fountain.Team.Comms.conversation_mcp_servers(conv_id, token)
-  end
-
-  defp team_comms_mcp_servers(_state), do: []
-
-  # The caller-tool bridge (#1202): the tools a chat-completions or AG-UI
-  # client defined, served back to the sandbox as one more MCP server. Read
-  # off the conversation row at every turn kick, so a list registered by the
-  # request that opened this turn is on it.
-  defp caller_mcp_servers(%{callback_token: token}, conv) when is_binary(token),
-    do: Fountain.CallerTools.conversation_mcp_servers(conv, token)
-
-  defp caller_mcp_servers(_state, _conv), do: []
-
-  # How long a sprite's callback key stays valid.
-  #
-  # This is a backstop, not the primary control: the key is revoked at
-  # terminate/2 and rotated on every provision and reattach, so under normal
-  # operation it is replaced long before expiry. It exists for the hard-crash
-  # case, where the row is orphaned and would otherwise be valid forever.
-  #
-  # The default is deliberately generous. The token is only rotated on provision
-  # and reattach, so a TTL shorter than the longest continuously-running
-  # conversation would expire a token mid-flight and break the agent's callbacks
-  # — a worse failure than a long-lived orphan. Lower it if conversations in your
-  # deployment are short.
-  @default_callback_key_ttl_seconds 30 * 24 * 60 * 60
-
-  defp callback_key_ttl_seconds do
-    Application.get_env(:fountain, :callback_key_ttl_seconds, @default_callback_key_ttl_seconds)
-  end
-
   @doc """
-  Options used when minting a sprite's callback key.
+  The options a sprite's callback key is minted with: `CallbackKey.api_key_opts/0`.
 
-  `"sprite"` scope, not full: the sandbox can stream, prompt and spawn
-  sub-agents, but cannot mint a key that would survive the revoke at teardown.
-  The expiry is a backstop for the orphan case — if the BEAM dies hard the row
-  is never revoked, and without it the key stays valid forever.
-
-  Public so the scope and expiry can be asserted directly: this module has no
-  test coverage of its own (#192), and an unscoped callback token is the
-  privilege-escalation path the scoping exists to close.
+  Re-exported here because `conversation_server_shutdown_revoke_test`,
+  `api_key_scope_test` and `audit_coverage_test` pin the scope and expiry
+  through this module, and the server tests do not change (#1369).
   """
-  def callback_api_key_opts do
-    [
-      scopes: ["sprite"],
-      expires_at:
-        DateTime.utc_now()
-        |> DateTime.add(callback_key_ttl_seconds(), :second)
-        |> DateTime.truncate(:second),
-      # Minting a sprite credential is exactly the event the trail is for, and
-      # this is the one mint the account owner did not ask for by hand. Low
-      # volume by construction: rotation happens on fresh provision and on
-      # wake, not per turn.
-      actor: "system:conversation_server"
-    ]
-  end
+  def callback_api_key_opts, do: CallbackKey.api_key_opts()
 
-  # Issue a fresh per-conversation API key scoped to the conversation
-  # owner, revoking the one THIS server previously minted (a re-provision
-  # or reattach within one server life). The plaintext is only kept in
-  # `state.callback_token` — the durable record is a hash in `api_keys`,
-  # which we can't reverse, so we rotate on every fresh provision /
-  # reattach instead of trying to recover the old plaintext.
-  #
-  # Deliberately NOT revoking `conv.callback_api_key_id` when it isn't
-  # ours: with duplicate servers (registry lag, #367), the row's id can be
-  # the live credential of the other server's sprite — revoking it 401s
-  # every callback and sub-agent spawn there, surfaced nowhere. A
-  # predecessor's un-revoked key goes inert at its `expires_at` and its
-  # row is pruned by RetentionPruner.
+  # Rotate the sandbox's callback key (`CallbackKey.rotate/2`) and hold the
+  # result: the plaintext and the row id on success. On failure only the
+  # token is cleared; `callback_api_key_id` is left as it was.
   defp rotate_callback_api_key(state, %Conversation{} = conv) do
-    if id = state.callback_api_key_id do
-      _ = Accounts.revoke_api_key(conv.user_id, id, actor: "system:conversation_server")
-    end
-
-    case Accounts.create_api_key(
-           conv.user_id,
-           "sprite:#{String.slice(conv.id, 0, 8)}",
-           callback_api_key_opts()
-         ) do
-      {:ok, {%Accounts.ApiKey{id: key_id}, raw}} ->
-        {:ok, conv} = Conversations.update_conversation(conv, %{callback_api_key_id: key_id})
+    case CallbackKey.rotate(conv, state.callback_api_key_id) do
+      {:ok, raw, key_id, conv} ->
         {%{state | callback_token: raw, callback_api_key_id: key_id}, conv}
 
-      {:error, cs} ->
-        Logger.warning(
-          "could not issue callback api key for conv #{conv.id}: #{inspect(cs.errors)}"
-        )
-
+      {:error, conv} ->
         {%{state | callback_token: nil}, conv}
     end
   end
@@ -3705,10 +3558,7 @@ defmodule Fountain.Conversations.ConversationServer do
                     images: images,
                     mcp_servers:
                       Fountain.Runtimes.ACP.mcp_servers(with_connection_servers(agent, state)) ++
-                        buzz_mcp_servers(state) ++
-                        team_mcp_servers(state) ++
-                        team_comms_mcp_servers(state) ++
-                        caller_mcp_servers(state, conv),
+                        McpServers.fountain_served(conv, state.callback_token),
                     model:
                       agent &&
                         Fountain.Runtimes.Model.acp_model(

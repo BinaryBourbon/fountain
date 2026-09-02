@@ -182,6 +182,16 @@ upgrade, is in
   the pin in the PR that moves a function family out. The section headers
   now say what sits under them (`sprite environment and egress`, `turns`,
   `permissions, reclaim and redaction`). No code moved.
+- **The MCP server list and the callback key have left `ConversationServer`**
+  (#1371, tracker #1369). `Fountain.Conversations.McpServers` assembles the
+  list a runtime receives (the agent's own after `${VAR}` substitution, then
+  the Fountain-served buzz, team, team-comms and caller-tool entries) and
+  `Fountain.Conversations.CallbackKey` mints, rotates and expires the
+  sprite's callback key and builds its env pair. Functions over rows and
+  values; the server passes in what it holds. No behaviour, timer, audit
+  event or option changed, and `ConversationServer.callback_api_key_opts/0`
+  still answers for the tests that pin it. The pin drops from 4,498 to
+  4,348.
 
 ### Added
 
