@@ -306,6 +306,40 @@ Two things that are not optional:
   which has no Elixir toolchain, can check against it. `dist/openapi.json` is
   the rebuilt input and stays ignored.
 
+### Changing behaviour rather than shape
+
+The contract above covers request and response *shape*. What a client does with
+that shape — SSE framing, reconnect and cursor resume, which error class a
+status becomes, terminal run states, the permission flow, pagination — is the
+shared conformance suite in `sdk/conformance/`, run by all four clients from
+one set of JSON scenarios.
+
+Change one of those behaviours and the scenario is where you start, before any
+client changes:
+
+```bash
+$EDITOR sdk/conformance/scenarios/<name>.json
+python3 sdk/conformance/lint.py
+```
+
+The lint checks the format, checks the support matrix, and checks every fixture
+body against the schema the server declares for that operation, so a scenario
+cannot go green against a response the real server would never send. Then run
+the four adapters:
+
+```bash
+cd sdk/typescript && npm run conformance
+cd sdk/python     && python3 -m unittest discover -s tests -p test_conformance.py
+cd sdk/elixir     && mix test test/conformance_test.exs
+swift test --filter ConformanceTests        # from the repository root
+```
+
+A client that cannot pass a scenario yet gets an entry in
+`sdk/conformance/matrix.json` saying what it does instead and the issue
+tracking it. `lint.py` refuses a skip with no issue number, so a gap is always
+something somebody decided and filed. `sdk/conformance/README.md` is the
+reference for the scenario format and the shared vocabularies.
+
 Do not bump an SDK's version because the contract moved. Merging a version bump
 publishes that SDK, so a version moves when its own public surface changes.
 Label a PR `sdk-no-release` where the distinction needs saying out loud.

@@ -106,7 +106,10 @@
     "run-timeout-raises-and-keeps-partial-text": {
       "typescript": "yes",
       "python": "yes",
-      "swift": "yes",
+      "swift": {
+        "skip": "On timeout, Swift cancels the stream but then sends GET /api/conversations/:id before raising its timeout error.",
+        "issue": 1424
+      },
       "elixir": "yes"
     },
     "sse-comments-and-blank-lines-are-ignored": {

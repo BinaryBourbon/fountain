@@ -26,7 +26,7 @@ sdk/conformance/
 | SDK | Command | Run from |
 |---|---|---|
 | TypeScript | `npm run conformance` | `sdk/typescript` |
-| Python | `python3 -m unittest tests.test_conformance` | `sdk/python` |
+| Python | `python3 -m unittest discover -s tests -p test_conformance.py` | `sdk/python` |
 | Swift | `swift test --filter ConformanceTests` | repository root |
 | Elixir | `mix test test/conformance_test.exs` | `sdk/elixir` |
 
