@@ -92,6 +92,20 @@ defmodule Fountain.Umbrella.MixProject do
     [
       setup: ["deps.get", "cmd --app fountain mix ecto.setup"],
       "ecto.reset": ["cmd --app fountain mix ecto.reset"],
+      # Migrating from the umbrella root has to go through apps/fountain, or the
+      # extension migration paths are silently dropped (ADR 0043, #1506).
+      #
+      # `mix ecto.migrate` is a recursive task: run here, Mix invokes the task
+      # module inside each child project WITHOUT resolving that child's aliases,
+      # so apps/fountain's "ecto.migrate" alias — the one that appends every
+      # installed extension's --migrations-path — never fires. It reports
+      # "Migrations already up" and leaves the extension's tables missing.
+      # Shelling into the app the way `ecto.reset` above already does is what
+      # makes the child's alias run. CI, SETUP.md and CLAUDE.md all migrate from
+      # the root, so without these two lines the root is the entrance that
+      # quietly skips extensions.
+      "ecto.migrate": ["cmd --app fountain mix ecto.migrate"],
+      "ecto.rollback": ["cmd --app fountain mix ecto.rollback"],
       precommit: [
         "compile --warnings-as-errors",
         &deps_unlock_unused_changes_nothing/1,

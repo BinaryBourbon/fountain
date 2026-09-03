@@ -30,6 +30,11 @@ defmodule Fountain.Extension do
     * `c:conversation_mcp_servers/2` — the MCP servers this extension serves
       back to a conversation's sandbox. The one callback on the turn's hot
       path. Return `[]` for a conversation the extension does not claim.
+    * `c:migrations/0` — migration directories in the extension's own `priv`,
+      appended after the core's at every migration entrance.
+    * `c:openapi_paths/0` — the extension's OpenAPI paths, **relative to its own
+      mount**. The host prefixes them with `/api/<api_prefix>`, so an extension
+      cannot describe a path it does not serve.
 
   ## Supervision is not a callback
 
@@ -96,6 +101,47 @@ defmodule Fountain.Extension do
   @callback api_plug() :: plug() | nil
 
   @doc """
+  Migration directories this extension owns, as `{otp_app, path_under_priv}`.
+
+  Resolved through `:code.priv_dir/1`, so the same declaration works in the
+  umbrella, in a hex dependency and in a release. Appended to the core's path at
+  every migration entrance — the boot migrator, `Fountain.Release.migrate/0` and
+  `mix ecto.migrate` — always after it, so core ordering never depends on an
+  extension being present.
+
+  **Version numbers are global.** Every extension's migrations are recorded in
+  Fountain's one `schema_migrations` table, so a version number an extension
+  picks must not collide with the core's or another extension's. Ecto raises on
+  a duplicate version across the path set, which turns a collision into a failed
+  migrate rather than a skipped migration. Keep using timestamps.
+
+  A declared directory that does not exist is a boot failure
+  (`Fountain.Extensions.validate!/0`), not a silently empty path set.
+  """
+  @callback migrations() :: [{otp_app :: atom(), path_under_priv :: String.t()}]
+
+  @doc """
+  This extension's OpenAPI paths, **relative to its own mount**.
+
+  `OpenApiSpex.Paths.from_router(MyExt.Router)` is the whole implementation for
+  an extension with a Phoenix router: it yields `"/agents"`, and the host
+  prefixes it to `"/api/<api_prefix>/agents"`. The extension never writes its
+  own prefix, so the described path and the served path cannot drift apart.
+
+  This callback exists because a forward is opaque to the spec:
+  `OpenApiSpex.Paths.from_router/1` reads `router.__routes__()`, where the
+  host's `forward` to `FountainWeb.Plugs.ExtensionDispatch` is one route whose
+  plug exports no `open_api_operation/1` — so it is filtered out entirely and
+  the mounted routes are invisible. Verified in
+  `deps/open_api_spex/lib/open_api_spex/path_item.ex`.
+
+  Schema components are resolved from the returned operations. A component title
+  that collides with a core one, or with another extension's, raises when the
+  spec is built rather than letting the last writer win.
+  """
+  @callback openapi_paths() :: OpenApiSpex.Paths.t()
+
+  @doc """
   The MCP servers to serve back to this conversation's sandbox, in the shape
   `Managoat.Runtimes` puts on `session/new`.
 
@@ -135,7 +181,18 @@ defmodule Fountain.Extension do
       @impl Fountain.Extension
       def conversation_mcp_servers(_conversation_id, _callback_token), do: []
 
-      defoverridable enabled?: 0, api_prefix: 0, api_plug: 0, conversation_mcp_servers: 2
+      @impl Fountain.Extension
+      def migrations, do: []
+
+      @impl Fountain.Extension
+      def openapi_paths, do: %{}
+
+      defoverridable enabled?: 0,
+                     api_prefix: 0,
+                     api_plug: 0,
+                     conversation_mcp_servers: 2,
+                     migrations: 0,
+                     openapi_paths: 0
     end
   end
 end

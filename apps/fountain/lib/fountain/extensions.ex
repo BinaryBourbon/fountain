@@ -129,6 +129,120 @@ defmodule Fountain.Extensions do
       false
   end
 
+  ## ─── Migrations ──────────────────────────────────────────────────────────
+
+  @doc """
+  Every installed extension's migration directories, in configured order.
+
+  Callers append these to the core's path — never prepend, never interleave — so
+  a database with no extension installed migrates exactly as it did before this
+  existed, and core migration ordering never depends on an extension being
+  present. With nothing installed this is `[]` and every entrance degrades to
+  the single core path it used before (#1506).
+
+  Raises if an installed extension declares a directory that is not there: a
+  missing migration path is the difference between "this deployment has no
+  extension migrations" and "this deployment silently skipped them", and only
+  the first is safe to keep booting through.
+  """
+  @spec migration_paths() :: [String.t()]
+  def migration_paths, do: migration_paths(installed())
+
+  @doc "See `migration_paths/0`. Takes the list, so a test can supply one."
+  @spec migration_paths([t()]) :: [String.t()]
+  def migration_paths(modules) when is_list(modules) do
+    Enum.flat_map(modules, fn ext ->
+      Enum.map(ext.migrations(), &resolve_migration_path!(ext, &1))
+    end)
+  end
+
+  defp resolve_migration_path!(ext, {otp_app, path_under_priv})
+       when is_atom(otp_app) and is_binary(path_under_priv) do
+    case :code.priv_dir(otp_app) do
+      {:error, :bad_name} ->
+        raise ArgumentError,
+              "extension #{inspect(ext)} declares migrations in #{inspect(otp_app)}, " <>
+                "which is not a loaded OTP application"
+
+      priv ->
+        path = Path.join(to_string(priv), path_under_priv)
+
+        if File.dir?(path) do
+          path
+        else
+          raise ArgumentError,
+                "extension #{inspect(ext)} declares the migration directory " <>
+                  "#{inspect(path_under_priv)} in #{inspect(otp_app)}, but #{path} does not exist"
+        end
+    end
+  end
+
+  defp resolve_migration_path!(ext, other) do
+    raise ArgumentError,
+          "extension #{inspect(ext)} migrations/0 must return {otp_app, path} tuples, " <>
+            "got #{inspect(other)}"
+  end
+
+  ## ─── OpenAPI ─────────────────────────────────────────────────────────────
+
+  @doc """
+  Every installed extension's OpenAPI paths, prefixed with its own mount.
+
+  An extension describes `"/agents"`; this returns `"/api/buzz/agents"`. The
+  host owns the prefix in both the router and the spec, so a described path and
+  a served path cannot drift apart, and an extension cannot describe a path it
+  does not serve.
+
+  Raises if two extensions produce the same path. Prefix uniqueness already
+  makes that impossible, so this is a second lock on the same door rather than a
+  live risk — but the failure it prevents (one extension's operation silently
+  replacing another's in the published spec) is invisible, and the SDKs are
+  generated from that spec.
+  """
+  @spec openapi_paths() :: OpenApiSpex.Paths.t()
+  def openapi_paths, do: openapi_paths(installed())
+
+  @doc "See `openapi_paths/0`. Takes the list, so a test can supply one."
+  @spec openapi_paths([t()]) :: OpenApiSpex.Paths.t()
+  def openapi_paths(modules) when is_list(modules) do
+    modules
+    |> Enum.flat_map(&mounted_openapi_paths/1)
+    |> Enum.reduce(%{}, fn {path, item, ext}, acc ->
+      case acc do
+        %{^path => {_item, other}} ->
+          raise ArgumentError,
+                "extensions #{inspect(other)} and #{inspect(ext)} both describe " <>
+                  "the OpenAPI path #{inspect(path)}"
+
+        _ ->
+          Map.put(acc, path, {item, ext})
+      end
+    end)
+    |> Map.new(fn {path, {item, _ext}} -> {path, item} end)
+  end
+
+  defp mounted_openapi_paths(ext) do
+    case {ext.api_prefix(), ext.openapi_paths()} do
+      {_prefix, empty} when empty == %{} ->
+        []
+
+      {prefix, paths} when is_binary(prefix) and is_map(paths) ->
+        Enum.map(paths, fn {path, item} -> {mount(prefix, path), item, ext} end)
+
+      {nil, paths} when is_map(paths) and map_size(paths) > 0 ->
+        raise ArgumentError,
+              "extension #{inspect(ext)} describes OpenAPI paths but declares no api_prefix, " <>
+                "so there is no mount to describe them under"
+    end
+  end
+
+  defp mount(prefix, path) do
+    case String.trim_leading(path, "/") do
+      "" -> "/api/" <> prefix
+      rest -> "/api/" <> prefix <> "/" <> rest
+    end
+  end
+
   ## ─── Validation ──────────────────────────────────────────────────────────
 
   @doc """
@@ -170,8 +284,13 @@ defmodule Fountain.Extensions do
          :ok <- check_unique(modules, & &1.id(), "id"),
          :ok <- check_all(modules, &check_http_surface/1),
          :ok <- check_all(modules, &check_prefix_shape/1),
-         :ok <- check_unique(modules, & &1.api_prefix(), "API prefix") do
-      check_all(modules, &check_prefix_free(&1, reserved))
+         :ok <- check_unique(modules, & &1.api_prefix(), "API prefix"),
+         :ok <- check_all(modules, &check_prefix_free(&1, reserved)) do
+      # Only the ones this deployment will actually run: a configured extension
+      # that is off here contributes no migrations, so its directory need not be
+      # present. Resolution is what checks it, so this is the same code path the
+      # migrator takes rather than a second opinion about it.
+      check_resolvable(fn -> migration_paths(installed(modules)) end)
     end
   end
 
@@ -195,6 +314,16 @@ defmodule Fountain.Extensions do
       end
     end)
     |> MapSet.new()
+  end
+
+  # Turns the raise that `migration_paths/1` and `openapi_paths/1` use at their
+  # own call sites into the `{:error, message}` this function returns, so
+  # `validate!/0` raises once, with one message shape, from one place.
+  defp check_resolvable(fun) do
+    fun.()
+    :ok
+  rescue
+    error in ArgumentError -> {:error, Exception.message(error)}
   end
 
   defp check_all(modules, fun) do

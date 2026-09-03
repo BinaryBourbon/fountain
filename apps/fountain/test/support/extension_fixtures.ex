@@ -46,12 +46,42 @@ defmodule Fountain.ExtensionFixtures do
     end
   end
 
+  defmodule Schemas do
+    @moduledoc "The fixture extension's own OpenAPI components."
+
+    require OpenApiSpex
+
+    defmodule Whoami do
+      @moduledoc false
+      require OpenApiSpex
+
+      # A title no core schema uses. `FixtureWhoami`, not `Whoami`, because a
+      # collision here would be a real one and the collision tests build their
+      # own colliding schema on purpose.
+      OpenApiSpex.schema(%{
+        title: "FixtureWhoami",
+        type: :object,
+        properties: %{
+          user_id: %OpenApiSpex.Schema{type: :string},
+          email: %OpenApiSpex.Schema{type: :string}
+        }
+      })
+    end
+  end
+
   defmodule Controller do
     @moduledoc """
     Answers with what the host handed the extension, so a test can assert on
     the seam itself rather than on the fixture's own behaviour.
     """
     use Phoenix.Controller, formats: [:json]
+    use OpenApiSpex.ControllerSpecs
+
+    operation(:whoami,
+      summary: "Who the host authenticated",
+      operation_id: "fixtureWhoami",
+      responses: [ok: {"Whoami", "application/json", Fountain.ExtensionFixtures.Schemas.Whoami}]
+    )
 
     def whoami(conn, _params) do
       json(conn, %{
@@ -63,6 +93,8 @@ defmodule Fountain.ExtensionFixtures do
         script_name: conn.script_name
       })
     end
+
+    operation(:deep, summary: "A nested path", operation_id: "fixtureDeep", responses: [])
 
     def deep(conn, _params), do: json(conn, %{path_info: conn.path_info})
   end
@@ -79,6 +111,12 @@ defmodule Fountain.ExtensionFixtures do
 
     @impl true
     def api_plug, do: Fountain.ExtensionFixtures.Router
+
+    @impl true
+    def migrations, do: [{:fountain, "test_extension_migrations"}]
+
+    @impl true
+    def openapi_paths, do: OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.Router)
 
     @impl true
     def conversation_mcp_servers(conversation_id, callback_token) do
@@ -160,6 +198,88 @@ defmodule Fountain.ExtensionFixtures do
     def conversation_mcp_servers(conversation_id, _callback_token) do
       if conversation_id == trigger_conversation_id(), do: :not_a_list, else: []
     end
+  end
+
+  defmodule CollidingSchemas do
+    @moduledoc false
+
+    defmodule Agent do
+      @moduledoc false
+      require OpenApiSpex
+
+      # Deliberately titled "Agent", which the core already defines, and
+      # deliberately a different shape. This is the collision the published spec
+      # must never resolve silently: every $ref to Agent would land on whichever
+      # of the two merged last, and the SDKs are generated from that spec.
+      OpenApiSpex.schema(%{
+        title: "Agent",
+        type: :object,
+        properties: %{not_the_core_agent: %OpenApiSpex.Schema{type: :boolean}}
+      })
+    end
+  end
+
+  defmodule CollidingController do
+    @moduledoc false
+    use Phoenix.Controller, formats: [:json]
+    use OpenApiSpex.ControllerSpecs
+
+    operation(:show,
+      summary: "Collides on a component title",
+      operation_id: "fixtureColliding",
+      responses: [
+        ok: {"Agent", "application/json", Fountain.ExtensionFixtures.CollidingSchemas.Agent}
+      ]
+    )
+
+    def show(conn, _params), do: json(conn, %{})
+  end
+
+  defmodule CollidingRouter do
+    @moduledoc false
+    use Phoenix.Router
+
+    # No scope alias: CollidingController is defined above in this file, so
+    # Elixir has already auto-aliased it and Phoenix would concatenate the
+    # namespace a second time.
+    scope "/" do
+      get "/thing", Fountain.ExtensionFixtures.CollidingController, :show
+    end
+  end
+
+  defmodule Colliding do
+    @moduledoc """
+    Describes a component titled `Agent`, which the core also defines. NOT
+    configured: composing it into the spec is supposed to raise, and it does so
+    only when asked for by a test.
+    """
+    use Fountain.Extension, id: :fixture_colliding
+
+    @impl true
+    def api_prefix, do: "colliding"
+
+    @impl true
+    def api_plug, do: Fountain.ExtensionFixtures.CollidingRouter
+
+    @impl true
+    def openapi_paths,
+      do: OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.CollidingRouter)
+  end
+
+  defmodule MissingMigrations do
+    @moduledoc "Declares a migration directory that is not there. NOT configured."
+    use Fountain.Extension, id: :fixture_missing_migrations
+
+    @impl true
+    def migrations, do: [{:fountain, "no_such_directory"}]
+  end
+
+  defmodule DescribesWithoutMount do
+    @moduledoc "Describes OpenAPI paths with no api_prefix to mount them under. NOT configured."
+    use Fountain.Extension, id: :fixture_describes_without_mount
+
+    @impl true
+    def openapi_paths, do: OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.Router)
   end
 
   defmodule EnabledRaises do
