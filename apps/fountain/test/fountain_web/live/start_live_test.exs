@@ -5,6 +5,7 @@ defmodule FountainWeb.StartLiveTest do
   """
   use FountainWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
 
   alias Fountain.{Accounts, Onboarding}
@@ -103,8 +104,12 @@ defmodule FountainWeb.StartLiveTest do
   end
 
   describe "the request" do
+    # #1389 plants a `starter` agent at verification, so `insert_verified_user/0`
+    # already owns one and this page has something to point at from the moment
+    # an account exists.
     test "carries the real key and the account's agent", %{conn: conn, user: user} do
-      agent = insert_agent(user_id: user.id, name: "starter")
+      agent = Fountain.Agents.get_agent_by_name("starter", user.id)
+      assert agent, "verification should have planted a starter agent"
 
       {:ok, _lv, html} = live(conn, ~p"/start")
 
@@ -117,16 +122,21 @@ defmodule FountainWeb.StartLiveTest do
       end
     end
 
-    test "says so plainly when there is no agent to run against", %{conn: conn} do
+    # An account can still reach this page with nothing: the starter is an
+    # ordinary agent and may be deleted, and an account verified before #1389
+    # never had one.
+    test "says so plainly when there is no agent to run against", %{conn: conn, user: user} do
+      Fountain.Repo.delete_all(from a in Fountain.Agents.Agent, where: a.user_id == ^user.id)
+
       {:ok, _lv, html} = live(conn, ~p"/start")
 
       assert html =~ "You have no agent yet"
       assert html =~ "/agents/new"
     end
 
-    test "prefers a starter agent over the account's other agents", %{conn: conn, user: user} do
+    test "prefers the starter agent over the account's other agents", %{conn: conn, user: user} do
       _other = insert_agent(user_id: user.id, name: "aardvark")
-      starter = insert_agent(user_id: user.id, name: "starter")
+      starter = Fountain.Agents.get_agent_by_name("starter", user.id)
 
       {:ok, _lv, html} = live(conn, ~p"/start")
 

@@ -1,8 +1,7 @@
 # Run your first agent
 
 One request gets a reply from an agent in its own sandbox. You need an
-account, an inference credential, and nothing else. No repository, no GitHub
-token, and no install.
+account and nothing else. No repository, no GitHub token, and no install.
 
 ## 1. Your key and your agent
 
@@ -17,11 +16,12 @@ export FOUNTAIN_AGENT_ID="the agent id from your start page"
 
 For your own server, use that server's address as `FOUNTAIN_BASE_URL`.
 
-!!! note "One credential first"
+!!! note "Whose model key"
 
-    An agent calls a model, and today the model key is yours. Add an
-    Anthropic, OpenAI or Google key under Account, then Inference keys. Your
-    start page says so too, and the request answers as soon as a key exists.
+    An agent calls a model. Fountain runs your agent on this deployment's own
+    model key while your account has none. Your key always wins when you add
+    one, under Account, then Inference keys. A server with no key of its own
+    needs yours first, and your start page says which case you are in.
 
 ## 2. Send the request
 

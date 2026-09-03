@@ -60,7 +60,7 @@ defmodule FountainWeb.StartLive do
       |> assign(:has_key?, Accounts.list_api_keys(user.id) != [])
       |> assign(:reply, Activation.first_reply(user.id))
       |> assign(:sent?, false)
-      |> assign(:needs_credential?, needs_credential?(user.id))
+      |> assign(:needs_credential?, needs_credential?(user.id, agent))
 
     {:ok, if(connected?(socket), do: on_connect(socket, user), else: socket)}
   end
@@ -91,15 +91,32 @@ defmodule FountainWeb.StartLive do
     end
   end
 
-  # Today the request only answers for an account that holds an inference
-  # credential of its own (ADR 0008), so the page says so rather than letting
-  # a copied `curl` fail with a refusal the developer has to go and decode.
+  # Will this request reach a model at all?
   #
-  # **#1388 is what removes this.** When this deployment holds a platform
-  # inference key, an account with no credential runs on it, and this becomes
-  # `not (has_own_credential? or platform_key_available?)`. One condition, in
-  # one place, deliberately not coupled to a thing that does not exist yet.
-  defp needs_credential?(user_id), do: not InferenceCredentials.has_any_credential?(user_id)
+  # `InferenceCredentials.select/2` is the one selection rule (#1388): the
+  # tenant's own key wins, this deployment's platform key covers an account
+  # that has none, and `{:error, :no_credential}` is the case where the
+  # sandbox starts and the agent has nothing to call. The page says so rather
+  # than letting a copied `curl` fail with a provider's auth error the
+  # developer has to go and decode.
+  #
+  # Asked here rather than reimplemented, so a deployment that turns a
+  # platform key on stops showing the banner with no change to this file. It
+  # is also the reason the banner is per-*agent*: `select/2` keys off the
+  # model's provider, and an account holding an Anthropic key still has
+  # nothing for an agent on a `gemini` model.
+  defp needs_credential?(_user_id, nil), do: false
+
+  defp needs_credential?(user_id, agent) do
+    with {:ok, dek} <- Fountain.Crypto.load_tenant_key(user_id),
+         {:ok, own} <- InferenceCredentials.decrypted_for_user(user_id, dek) do
+      match?({:error, :no_credential}, InferenceCredentials.select(agent.model, own))
+    else
+      # A tenant key that will not load is a bigger problem than this banner,
+      # and it is not this page's to report.
+      _ -> false
+    end
+  end
 
   # The agent the first request runs against. #1389 gives every verified
   # account a canned `starter`; until that ships — and afterwards, for an
@@ -192,9 +209,9 @@ defmodule FountainWeb.StartLive do
       >
         <p class="text-sm font-medium">This account has no inference credential yet</p>
         <p class="mt-1 text-sm">
-          The request below reaches a sandbox, and the agent in it has no model to call.
-          Add an Anthropic, OpenAI or Google key first. It takes a minute, and Fountain
-          never bills you for those tokens.
+          This deployment holds no model key for your agent's provider either, so the
+          request below reaches a sandbox and the agent in it has nothing to call. Add
+          an Anthropic, OpenAI or Google key first. It takes a minute.
         </p>
       </.link>
 
