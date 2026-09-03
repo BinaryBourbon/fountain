@@ -62,9 +62,12 @@ defmodule FountainWeb.EmailVerificationController do
                 # the welcome fires on the verification transition (#449).
                 Fountain.Workers.WelcomeEmail.enqueue(verified_user)
 
+                # The verified landing, not the dashboard (ADR 0038): the
+                # first screen after verification hands over a key and one
+                # request rather than a list of things to go and set up.
                 conn
                 |> log_in_user(verified_user)
-                |> redirect(to: ~p"/dashboard")
+                |> redirect(to: ~p"/start")
 
               {:error, _changeset} ->
                 conn

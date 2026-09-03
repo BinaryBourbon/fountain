@@ -44,10 +44,17 @@ inference up would make the opening credit buy less of the one thing it was
 granted to buy, which is the reply this ADR is about. A future decision may
 change that; a passing thought about margin should not.
 
-Not built: the verified landing, the CLI commands and the field cleanup.
-`onboarding_completed_at` is still stamped by the dashboard checklist (#1390
-moves the stamp to the seam `Fountain.Activation.capture_first_reply/2`
-marks).`Fountain.Activation.capture_first_reply/2` marks).
+Decision 5: `FountainWeb.StartLive` is the verified landing at `/start`. It
+mints an API key and shows it once, prints one request against the account's
+agent from the single source `Fountain.Onboarding` shares with
+`docs/quickstart.md`, and shows the reply inline. Both signup routes land
+there. The dashboard checklist is gone.
+
+The first half of decision 7: `onboarding_completed_at` is stamped by
+`Fountain.Activation` at the first reply, not by a console page.
+
+Not built: the CLI commands (#1391) and the second half of decision 7,
+dropping `onboarding_state` (#1393).
 
 Amends [0008](0008-byo-inference-credentials.md): Fountain will hold platform
 inference keys. Leans on [0031](0031-credits-are-the-product.md) (the opening

@@ -86,11 +86,15 @@ defmodule FountainWeb.UeberauthController do
         # created verified, so this is its verification transition.
         Fountain.Workers.WelcomeEmail.enqueue(user)
 
+        # And the same landing (ADR 0038). An OAuth signup is created verified,
+        # so this *is* its first screen after verification; sending it to the
+        # dashboard instead would give one of the two signup doors a different
+        # first hour.
         conn
         |> configure_session(renew: true)
         |> put_session(:user_id, user.id)
         |> put_session(:session_version, user.session_version)
-        |> redirect(to: ~p"/dashboard")
+        |> redirect(to: ~p"/start")
 
       {:ok, user, :existing} ->
         if Fountain.Accounts.suspended?(user) do

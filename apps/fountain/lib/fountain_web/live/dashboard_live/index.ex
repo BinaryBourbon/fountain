@@ -1,17 +1,20 @@
 defmodule FountainWeb.DashboardLive.Index do
   @moduledoc """
-  The console's home, and what greets a new account (#867).
+  The console's home: the account's own numbers, and the way in to its
+  primitives.
 
-  It replaced the onboarding wizard, which was four pages an account could
-  not leave until it finished. The same three things have to be true before
-  an agent can run — an inference credential, an agent, and somewhere to
-  watch it — so they are listed here, ticked as they are done, and the
-  account is free to do them in any order or not at all.
+  It is no longer what greets a new account. It used to carry a three-item
+  checklist — an inference credential, an agent, a conversation — which
+  replaced the four-page onboarding wizard and then defined onboarding as
+  "three things exist" (#867). ADR 0038 replaced that with the verified
+  landing (`FountainWeb.StartLive`), where a key and one request produce a
+  reply, and `users.onboarding_completed_at` is stamped at that reply by
+  `Fountain.Activation` rather than by this mount. The dashboard is what an
+  account gets *after* the first reply, which is what a dashboard is for.
   """
   use FountainWeb, :live_view
 
   alias Fountain.{
-    Accounts,
     Agents,
     Apps,
     Conversations,
@@ -28,13 +31,6 @@ defmodule FountainWeb.DashboardLive.Index do
     counts = Conversations.conversation_counts(user.id)
     has_credential? = InferenceCredentials.has_any_credential?(user.id)
 
-    # `onboarding_completed_at` used to be stamped by the wizard's last step.
-    # Nothing else ever set it, so with the wizard gone the lifecycle funnel's
-    # "onboarded" stage would have flatlined (Fountain.Funnel). Stamp it here
-    # instead, off what the checklist actually asks for — a truer definition
-    # than "clicked through four pages", and idempotent.
-    maybe_complete_onboarding(user, has_credential?, agents)
-
     {:ok,
      socket
      |> assign(:page_title, "Dashboard")
@@ -42,6 +38,7 @@ defmodule FountainWeb.DashboardLive.Index do
      |> assign(:environment_count, length(Environments.list_environments(user.id)))
      |> assign(:vault_count, length(Vaults.list_vaults(user.id)))
      |> assign(:has_credential?, has_credential?)
+     |> assign(:replied?, Fountain.Activation.first_reply_at(user.id) != nil)
      |> assign(:active_count, counts.active)
      |> assign(:conversation_count, counts.total)
      |> assign(:recent_conversations, Conversations.list_conversations(user.id, limit: 5))
@@ -80,39 +77,18 @@ defmodule FountainWeb.DashboardLive.Index do
         </a>
       </div>
 
-      <%!-- Setup, when something is still missing. Ticks disappear once
-            everything is in place rather than nagging forever. --%>
-      <section :if={not ready?(assigns)} class="rounded-lg border border-[var(--color-border)] p-5">
-        <h2 class="text-sm font-semibold">Before an agent can run</h2>
+      <%!-- One line, not a checklist: an account that has never had a reply
+            has somewhere better to be, and it is not this page. --%>
+      <.link
+        :if={not @replied?}
+        navigate={~p"/start"}
+        class="block rounded-lg border border-[var(--color-border)] p-4 hover:border-[var(--color-border-strong)]"
+      >
+        <p class="text-sm font-medium">Nothing has answered on this account yet</p>
         <p class="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Three things, in any order.
+          Your key and one request are on the start page, and the reply comes back there.
         </p>
-        <ul class="mt-4 space-y-3">
-          <.setup_step
-            done={@has_credential?}
-            label="An inference credential"
-            hint="Your own Anthropic, OpenAI or Google key — Fountain never bills you for tokens."
-            href={~p"/account/inference-credentials"}
-            cta="Add a key"
-          />
-          <.setup_step
-            done={@agent_count > 0}
-            label="An agent"
-            hint="A name, a runtime and a model — the thing that runs."
-            href={~p"/agents/new"}
-            cta="Create an agent"
-          />
-          <.setup_step
-            :if={@conversations_app}
-            done={@conversation_count > 0}
-            label="A conversation"
-            hint="Runs in an isolated sandbox and streams back live, in the conversations app."
-            href={@conversations_app <> "#/new"}
-            cta="Start one"
-            external
-          />
-        </ul>
-      </section>
+      </.link>
 
       <%!-- The apps. External on purpose: their own origins, their own
             tokens, and a deployment may have neither. --%>
@@ -226,12 +202,6 @@ defmodule FountainWeb.DashboardLive.Index do
     """
   end
 
-  defp maybe_complete_onboarding(%{onboarding_completed_at: nil} = user, true, [_ | _]) do
-    Accounts.complete_onboarding(user)
-  end
-
-  defp maybe_complete_onboarding(_user, _has_credential?, _agents), do: :ok
-
   defp nothing_this_month?(assigns) do
     assigns.usage.conversations == 0 and assigns.usage.turns == 0 and
       assigns.usage.sandbox_minutes == 0 and Conversations.total_input(assigns.tokens) == 0 and
@@ -278,57 +248,6 @@ defmodule FountainWeb.DashboardLive.Index do
   end
 
   defp format_hours(_), do: "—"
-
-  defp ready?(assigns) do
-    assigns.has_credential? and assigns.agent_count > 0 and
-      (is_nil(assigns.conversations_app) or assigns.conversation_count > 0)
-  end
-
-  attr :done, :boolean, required: true
-  attr :label, :string, required: true
-  attr :hint, :string, required: true
-  attr :href, :string, required: true
-  attr :cta, :string, required: true
-  attr :external, :boolean, default: false
-
-  defp setup_step(assigns) do
-    ~H"""
-    <li class="flex items-start gap-3">
-      <span class={[
-        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-xs",
-        if(@done,
-          do: "border-green-500 bg-green-500/15 text-green-600",
-          else: "border-[var(--color-border)] text-[var(--color-text-muted)]"
-        )
-      ]}>
-        {if @done, do: "✓", else: "•"}
-      </span>
-      <div class="min-w-0 flex-1">
-        <p class={[
-          "text-sm font-medium",
-          @done && "text-[var(--color-text-muted)] line-through"
-        ]}>
-          {@label}
-        </p>
-        <p :if={not @done} class="text-xs text-[var(--color-text-secondary)]">{@hint}</p>
-      </div>
-      <a
-        :if={not @done and @external}
-        href={@href}
-        class="shrink-0 text-sm text-[var(--color-brand)] hover:underline"
-      >
-        {@cta} ↗
-      </a>
-      <.link
-        :if={not @done and not @external}
-        navigate={@href}
-        class="shrink-0 text-sm text-[var(--color-brand)] hover:underline"
-      >
-        {@cta}
-      </.link>
-    </li>
-    """
-  end
 
   attr :label, :string, required: true
   attr :value, :string, required: true

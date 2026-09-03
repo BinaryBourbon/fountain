@@ -701,6 +701,10 @@ defmodule FountainWeb.Router do
     # protects spend is in the context (ADR 0031), not here.
     live_session :authenticated,
       on_mount: [{FountainWeb.Live.Hooks, :require_authenticated_user}] do
+      # The verified landing (ADR 0038): a key, one request, the reply. Where
+      # `GET /users/confirm/:token` sends a person, and where the welcome
+      # email points. The dashboard is what they get afterwards.
+      live "/start", StartLive, :index
       live "/dashboard", DashboardLive.Index, :index
       live "/agents", AgentsLive.Index, :index
       live "/agents/new", AgentsLive.Form, :new

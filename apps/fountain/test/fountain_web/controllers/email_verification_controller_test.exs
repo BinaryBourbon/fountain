@@ -8,7 +8,7 @@ defmodule FountainWeb.EmailVerificationControllerTest do
   alias Fountain.Workers.WelcomeEmail
 
   describe "GET /users/confirm/:token" do
-    test "verifies email, sets session, and redirects to the dashboard for a new user", %{
+    test "verifies email, sets session, and redirects to the verified landing", %{
       conn: conn
     } do
       user = insert_user()
@@ -17,7 +17,9 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
       conn = get(conn, ~p"/users/confirm/#{token}")
 
-      assert redirected_to(conn) == ~p"/dashboard"
+      # ADR 0038: the first screen after verification is the landing that
+      # hands over a key and one request, not the dashboard.
+      assert redirected_to(conn) == ~p"/start"
       assert get_session(conn, :user_id) == user.id
 
       # User should be verified in DB

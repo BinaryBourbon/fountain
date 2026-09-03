@@ -133,6 +133,59 @@ defmodule Fountain.ActivationTest do
     end
   end
 
+  describe "onboarding_completed_at" do
+    test "is stamped at the first reply, not before it" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv, %{status: "running"})
+
+      refute Repo.reload!(user).onboarding_completed_at
+
+      insert_log_event(conv, %{turn_id: turn.id, stream: "acp", data: acp_text("hello")})
+      {:ok, _} = Conversations._unsafe_update_turn(turn, %{status: "completed", ended_at: at(0)})
+
+      assert Repo.reload!(user).onboarding_completed_at
+    end
+
+    test "is not stamped by a turn that said nothing" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv, %{status: "running"})
+
+      {:ok, _} = Conversations._unsafe_update_turn(turn, %{status: "completed", ended_at: at(0)})
+
+      refute Repo.reload!(user).onboarding_completed_at
+    end
+
+    test "an account that was already onboarded keeps its original timestamp" do
+      user = insert_verified_user()
+      earlier = at(48)
+      Repo.update!(Ecto.Changeset.change(user, onboarding_completed_at: earlier))
+
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv, %{status: "running"})
+      insert_log_event(conv, %{turn_id: turn.id, stream: "acp", data: acp_text("hello")})
+      {:ok, _} = Conversations._unsafe_update_turn(turn, %{status: "completed", ended_at: at(0)})
+
+      assert DateTime.compare(Repo.reload!(user).onboarding_completed_at, earlier) == :eq
+    end
+  end
+
+  describe "conversation_created/1" do
+    test "is safe for the first conversation and for every one after it" do
+      user = insert_verified_user()
+      first = insert_conversation(user_id: user.id)
+      second = insert_conversation(user_id: user.id)
+
+      assert Activation.conversation_created(first) == :ok
+      assert Activation.conversation_created(second) == :ok
+    end
+
+    test "does not raise for a conversation with no owner" do
+      assert Activation.conversation_created(%Fountain.Conversations.Conversation{}) == :ok
+    end
+  end
+
   describe "funnel_events/0" do
     test "names the four steps of the PostHog funnel, in order" do
       assert Activation.funnel_events() == [

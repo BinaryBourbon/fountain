@@ -6,7 +6,7 @@ defmodule Fountain.Workers.WelcomeEmailTest do
   alias Fountain.Workers.WelcomeEmail
 
   describe "perform/1" do
-    test "welcomes a verified user and points at the console" do
+    test "welcomes a verified user and points at the landing" do
       user = insert_verified_user()
       assert is_nil(user.onboarding_completed_at)
 
@@ -15,7 +15,7 @@ defmodule Fountain.Workers.WelcomeEmailTest do
       assert_email_sent(fn email ->
         assert email.subject == "Welcome to Fountain"
         assert email.to == [{user.email, user.email}]
-        assert email.text_body =~ "/dashboard"
+        assert email.text_body =~ "/start"
       end)
     end
 
