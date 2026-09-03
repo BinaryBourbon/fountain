@@ -205,13 +205,25 @@ broker_listen_port =
       end
   end
 
-# A deployment still carrying the retired vendor variables is told, rather
-# than quietly brokering nothing: they used to select a whole backend.
-for retired <- ~w(BROKER_URL BROKER_TOKEN) do
-  if blank_to_nil.(System.get_env(retired)) do
-    raise "#{retired} is set, but the Agent Vault backend was removed in #1487. " <>
-            "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL instead; see docs/configuration.md."
-  end
+# BROKER_URL selected a whole backend, so a deployment still carrying it is
+# told rather than left to broker nothing in silence.
+if blank_to_nil.(System.get_env("BROKER_URL")) do
+  raise "BROKER_URL is set, but the Agent Vault backend was removed in #1487. " <>
+          "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL instead; see docs/configuration.md."
+end
+
+# BROKER_TOKEN is only a warning, and the difference matters. It never turned
+# anything on by itself: it was the credential BROKER_URL used. Refusing to
+# boot over a leftover one punishes an upgrade for a variable that was doing
+# nothing, and it is the kind of value that outlives a deployment change by
+# sitting in a secret store rather than in a manifest. That is exactly how it
+# crash-looped this deployment's own rollout: the variable had been dropped
+# from the Deployment, and arrived anyway through `envFrom`.
+if blank_to_nil.(System.get_env("BROKER_TOKEN")) do
+  IO.warn(
+    "BROKER_TOKEN is set and is ignored: the Agent Vault backend was removed in #1487. " <>
+      "Remove it from your secret store; it is a credential for a service that no longer exists."
+  )
 end
 
 if broker_listen_port && is_nil(broker_proxy_url) do
