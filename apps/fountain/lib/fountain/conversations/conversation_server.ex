@@ -471,6 +471,9 @@ defmodule Fountain.Conversations.ConversationServer do
       # conversation (#1178): their access tokens rotate hourly, so each turn
       # kick re-reads them and re-prepares the vault when one has changed.
       connection_keys: [],
+      # This conversation's one resolved MCP configuration (#1404). See
+      # `McpServers.resolve_for_session/2`.
+      resolved_mcp_servers: nil,
       # The environment's networking shape, enforced at the broker (gate 2).
       broker_network: :unrestricted,
       # What the runtime's default_env/2 is handed (gate 3): the real
@@ -746,6 +749,8 @@ defmodule Fountain.Conversations.ConversationServer do
   defp dispatch_provision(state, conv, sandbox, agent, env, _vault, secrets) do
     case McpServers.substitute_agent(agent, env, secrets) do
       {:ok, agent} ->
+        state = %{state | resolved_mcp_servers: agent && agent.mcp_servers}
+
         case sandbox.status do
           s when s in ["ready", "suspended"] ->
             # The sprite already exists at sprites.dev and was fully provisioned
@@ -2504,15 +2509,12 @@ defmodule Fountain.Conversations.ConversationServer do
                     cwd: cwd,
                     images: images,
                     mcp_servers:
-                      Managoat.Runtimes.ACP.mcp_servers(
-                        Egress.with_connection_servers(
-                          agent,
-                          state.user_id,
-                          state.conversation_id,
-                          state.callback_token
-                        )
-                      ) ++
-                        McpServers.fountain_served(conv, state.callback_token),
+                      McpServers.for_session(agent, conv,
+                        user_id: state.user_id,
+                        conversation_id: state.conversation_id,
+                        callback_token: state.callback_token,
+                        resolved: state.resolved_mcp_servers
+                      ),
                     model:
                       agent &&
                         Managoat.Runtimes.Model.acp_model(

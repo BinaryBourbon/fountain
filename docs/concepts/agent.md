@@ -111,6 +111,19 @@ spec:
 `${GITHUB_PAT}` resolves from the merged environment and vault secrets. Read
 [substitution](../api.md).
 
+Substitution applies to the whole entry, and not to `env` alone. A header, a
+URL or an argument takes a reference too.
+
+Write `$$` for a literal `$`. Use it when the value must reach the runtime
+unresolved. Fountain turns `"Bearer $${FOUNTAIN_TOKEN}"` into
+`"Bearer ${FOUNTAIN_TOKEN}"`, and the runtime then reads `FOUNTAIN_TOKEN` from
+the sandbox environment. Fountain resolves each reference one time, and does
+not scan the result again.
+
+The runtime receives one configuration. Fountain resolves it at spawn time,
+and the project file in the sandbox and the agent session both carry the same
+document.
+
 ## What an agent is not
 
 **Not a process that runs.** An Agent that nobody has run has no sandbox, no
