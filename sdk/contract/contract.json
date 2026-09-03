@@ -5470,11 +5470,6 @@
           "required": false,
           "type": "boolean"
         },
-        "onboarding_state": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
         "role": {
           "enum": [
             "admin",
@@ -7650,18 +7645,6 @@
             },
             "completed_at": {
               "format": "date-time",
-              "nullable": true,
-              "required": false,
-              "type": "string"
-            },
-            "state": {
-              "enum": [
-                "completed",
-                "step_1",
-                "step_2",
-                "step_3",
-                "step_4"
-              ],
               "nullable": true,
               "required": false,
               "type": "string"

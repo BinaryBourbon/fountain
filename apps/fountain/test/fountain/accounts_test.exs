@@ -5,7 +5,6 @@ defmodule Fountain.AccountsTest do
   alias Fountain.Accounts.User
 
   # Pure unit tests do not touch the DB.
-  # DB-backed tests for advance_onboarding/2 are below.
 
   describe "User.registration_changeset/2" do
     test "valid attrs produce a valid changeset" do
@@ -115,32 +114,6 @@ defmodule Fountain.AccountsTest do
       cs = Fountain.Accounts.User.theme_changeset(user, %{theme_preference: "invalid"})
       refute cs.valid?
       assert cs.errors[:theme_preference] != nil
-    end
-  end
-
-  describe "Accounts.advance_onboarding/2" do
-    setup do
-      {:ok, user: insert_verified_user()}
-    end
-
-    test "step_2 sets onboarding_state to 'step_2' and leaves onboarding_completed_at nil",
-         %{user: user} do
-      assert {:ok, updated} = Accounts.advance_onboarding(user, "step_2")
-      assert updated.onboarding_state == "step_2"
-      assert updated.onboarding_completed_at == nil
-    end
-
-    test "step_4 sets onboarding_state to 'step_4' and leaves onboarding_completed_at nil",
-         %{user: user} do
-      assert {:ok, updated} = Accounts.advance_onboarding(user, "step_4")
-      assert updated.onboarding_state == "step_4"
-      assert updated.onboarding_completed_at == nil
-    end
-
-    test "invalid state raises FunctionClauseError", %{user: user} do
-      assert_raise FunctionClauseError, fn ->
-        Accounts.advance_onboarding(user, "invalid_step")
-      end
     end
   end
 

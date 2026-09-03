@@ -129,7 +129,7 @@ expires in 30 days, and it lists under Account, then API keys, as
 ## Account state
 
 ```
-GET    /api/account/onboarding           # {state, completed, completed_at}
+GET    /api/account/onboarding           # {completed, completed_at}
 POST   /api/account/onboarding/complete  # idempotent
 ```
 
@@ -137,8 +137,7 @@ An account that somebody configured through the API alone never passes through
 the browser wizard. So nothing marks it onboarded, and a later browser visit
 re-enters that wizard. Complete it over the API and the loop closes.
 
-`GET /api/auth/me` also carries `email_verified`, `onboarding_state` and
-`onboarding_completed`.
+`GET /api/auth/me` also carries `email_verified` and `onboarding_completed`.
 
 ### Billing
 

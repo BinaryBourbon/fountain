@@ -607,10 +607,7 @@ defmodule FountainWeb.AdminLive.Users do
                 </form>
               </td>
               <td class="px-4 py-2 text-zinc-500 text-xs">
-                {u.onboarding_state}
-                <span :if={u.onboarding_completed_at} class="text-zinc-400">
-                  · {format_date(u.onboarding_completed_at)}
-                </span>
+                {if u.onboarding_completed_at, do: format_date(u.onboarding_completed_at), else: "—"}
               </td>
               <td class="px-4 py-2 text-zinc-500 text-xs">
                 {if u.last_activity_at, do: format_date(u.last_activity_at), else: "—"}

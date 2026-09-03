@@ -51,7 +51,6 @@ defmodule Fountain.AnalyticsTest do
         role: "user",
         comped: false,
         credit_balance_cents: 0,
-        onboarding_state: "step_1",
         sandbox_limit_override: nil,
         inserted_at: ~U[2026-01-01 00:00:00Z]
       },

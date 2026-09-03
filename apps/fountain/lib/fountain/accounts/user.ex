@@ -17,7 +17,6 @@ defmodule Fountain.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :email_verified_at, :utc_datetime
     field :onboarding_completed_at, :utc_datetime
-    field :onboarding_state, :string, default: "step_1"
     # Per-user override of the balance-funded concurrent-sandbox cap
     # (`Fountain.Quotas.sandbox_limit/1`); null means the balance rule. The
     # Postgres column is still `max_concurrent_sandboxes` — renaming it would

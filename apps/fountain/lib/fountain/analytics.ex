@@ -409,7 +409,6 @@ defmodule Fountain.Analytics do
       "credit_balance_cents" => user.credit_balance_cents,
       "email_verified" => not is_nil(user.email_verified_at),
       "onboarded" => not is_nil(user.onboarding_completed_at),
-      "onboarding_state" => user.onboarding_state,
       "suspended" => not is_nil(user.suspended_at),
       "max_concurrent_sandboxes" => Fountain.Quotas.sandbox_limit_for(user),
       "sandbox_limit_override" => user.sandbox_limit_override,

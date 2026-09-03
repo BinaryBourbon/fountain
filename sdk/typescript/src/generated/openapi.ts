@@ -2804,8 +2804,6 @@ export interface components {
             /** Format: uuid */
             id: string;
             onboarding_completed?: boolean;
-            /** @description Wizard position. Only `completed` means anything to an API client. */
-            onboarding_state?: string | null;
             /** @enum {string} */
             role: "user" | "admin";
         };
@@ -3750,11 +3748,6 @@ export interface components {
                 completed: boolean;
                 /** Format: date-time */
                 completed_at?: string | null;
-                /**
-                 * @description Wizard position. Only `completed` means anything to an API client.
-                 * @enum {string|null}
-                 */
-                state?: "step_1" | "step_2" | "step_3" | "step_4" | "completed" | null;
             };
         };
         /** OpenAIError */

@@ -45,7 +45,7 @@ Validation report: `plan/phase-3-release-validation/validation-report.md`.
 - NC-1: Dark mode implementation
 - NC-4: `Billing.sync_subscription/1` unit tests
 - NC-5: `BillingLive` LiveView tests
-- NC-6: Standardise `onboarding_completed_at` vs `onboarding_state`
+- NC-6: Standardise `onboarding_completed_at` vs `onboarding_state` — **done** (#1393, [0038](0038-onboarding-first-reply.md)): `onboarding_state` is dropped and the stamp is the one field.
 - NC-9: `usage_events` user-deletion handling
 - NC-2, NC-3, NC-7, NC-8, NC-10: cleanup and coverage gaps
 

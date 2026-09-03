@@ -35,7 +35,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   alias Fountain.Environments.Environment
   alias Fountain.Exports.Export
   alias Fountain.InferenceCredentials.Credential
-  alias Fountain.{Accounts, Images, Manifest}
+  alias Fountain.{Images, Manifest}
   alias OpenApiSpex.Schema
 
   # {schema module, dotted property path} => {owning module, function}
@@ -111,7 +111,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.LogEvent, "kind"} => {LogEvent, :kinds},
     {FountainWeb.Schemas.LogEvent, "state"} => {LogEvent, :states},
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
-    {FountainWeb.Schemas.OnboardingResponse, "data.state"} => {Accounts, :onboarding_states},
     {FountainWeb.Schemas.Sandbox, "status"} => {Sandbox, :statuses},
     # The sandbox mode (ADR 0023 gate 6): on the agent as a default, on a
     # launch as the choice, on the sandbox row as what it is.

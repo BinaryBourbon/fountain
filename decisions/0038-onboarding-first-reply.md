@@ -20,7 +20,8 @@ stale_after: 2026-11-02
 and measured) and #1393 (the field cleanup), all sub-issues of #1039. Each PR
 that builds one updates this block.
 
-**Built so far:** decisions 2 (#1392), 3 (#1388) and 4 (#1389).
+**Built so far:** decisions 2 (#1392), 3 (#1388), 4 (#1389), 5 (#1426) and
+7 (#1393).
 
 Decision 2: `Fountain.Activation` holds the definition, `Fountain.Funnel`
 counts it and measures verification to first reply, and
@@ -33,10 +34,6 @@ selection rule, a `burn_inference` debit per closed platform turn from
 `PLATFORM_INFERENCE_DAILY_CENTS` (default 5000) as a deployment-wide daily
 circuit breaker answering 503.
 
-Decision 4: `Fountain.Agents.Starter` is planted by `Accounts.verify_email/2`,
-so an account verified from now on owns one agent from the moment it is
-verified.
-
 **The price is pass-through at provider list, a 1.0x margin, no markup**
 (decided with Jake on 2026-09-02). Fountain's margin is sandbox time
 (`CREDIT_TURN_HOUR_CENTS`, [0031](0031-credits-are-the-product.md)). Marking
@@ -44,17 +41,28 @@ inference up would make the opening credit buy less of the one thing it was
 granted to buy, which is the reply this ADR is about. A future decision may
 change that; a passing thought about margin should not.
 
+Decision 4: `Fountain.Agents.Starter` is planted by `Accounts.verify_email/2`,
+so an account verified from now on owns one agent from the moment it is
+verified.
+
 Decision 5: `FountainWeb.StartLive` is the verified landing at `/start`. It
 mints an API key and shows it once, prints one request against the account's
 agent from the single source `Fountain.Onboarding` shares with
 `docs/quickstart.md`, and shows the reply inline. Both signup routes land
 there. The dashboard checklist is gone.
 
-The first half of decision 7: `onboarding_completed_at` is stamped by
-`Fountain.Activation` at the first reply, not by a console page.
+Decision 7, both halves. `Fountain.Activation` stamps
+`onboarding_completed_at` at the first reply rather than a console page
+(#1426), and `users.onboarding_state` is dropped (#1393) along with
+`Accounts.advance_onboarding/2`, the funnel's `by_onboarding_state`
+breakdown, and the field on `GET /api/auth/me` and
+`GET /api/account/onboarding`. The stamp is the whole of onboarding. Both
+onboarding endpoints still work: only the vestigial field went, because
+whether `POST /onboarding/complete` has a purpose left now that the stamp
+moved is a question about the landing, not about this cleanup. This settles
+NC-6 from [0007](0007-g3-launch-go.md).
 
-Not built: the CLI commands (#1391) and the second half of decision 7,
-dropping `onboarding_state` (#1393).
+Not built: the CLI commands (#1391).
 
 Amends [0008](0008-byo-inference-credentials.md): Fountain will hold platform
 inference keys. Leans on [0031](0031-credits-are-the-product.md) (the opening

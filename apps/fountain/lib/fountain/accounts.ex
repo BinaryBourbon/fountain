@@ -26,13 +26,6 @@ defmodule Fountain.Accounts do
   alias Fountain.Audit
   alias Fountain.Crypto
 
-  # The onboarding wizard's states, in order. An attribute rather than an
-  # inline literal so `advance_onboarding/2` can guard on it and the OpenAPI
-  # schema can be checked against it — see the enum guardrail test.
-  @onboarding_states ~w(step_1 step_2 step_3 step_4 completed)
-
-  def onboarding_states, do: @onboarding_states
-
   ## Users
 
   @doc "Look up a user by (downcased) email. Returns `nil` if not found."
@@ -535,40 +528,18 @@ defmodule Fountain.Accounts do
 
   @doc """
   Mark onboarding as completed by setting `onboarding_completed_at` to now.
+
+  `onboarding_completed_at` is the whole of it since #1393. The wizard's
+  `onboarding_state` column is gone, and so is `advance_onboarding/2`, which
+  existed only to walk that state machine: a stamp is either set or it is not,
+  and there are no steps left to be part-way through.
   """
   @spec complete_onboarding(User.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
   def complete_onboarding(%User{} = user) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     user
-    |> Ecto.Changeset.change(
-      onboarding_completed_at: now,
-      onboarding_state: "completed"
-    )
-    |> Repo.update()
-  end
-
-  @doc """
-  Advance the onboarding wizard to the given state.
-  Valid states: "step_1", "step_2", "step_3", "step_4", "completed"
-
-  When state is "completed", also sets `onboarding_completed_at`.
-  """
-  @spec advance_onboarding(User.t(), String.t()) ::
-          {:ok, User.t()} | {:error, Ecto.Changeset.t()}
-  def advance_onboarding(%User{} = user, state)
-      when state in @onboarding_states do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    changes =
-      if state == "completed" do
-        %{onboarding_state: state, onboarding_completed_at: now}
-      else
-        %{onboarding_state: state}
-      end
-
-    user
-    |> Ecto.Changeset.change(changes)
+    |> Ecto.Changeset.change(onboarding_completed_at: now)
     |> Repo.update()
   end
 

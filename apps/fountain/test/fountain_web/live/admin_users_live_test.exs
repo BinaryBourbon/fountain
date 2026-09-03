@@ -22,12 +22,20 @@ defmodule FountainWeb.AdminUsersLiveTest do
       assert html =~ other.email
     end
 
-    test "shows onboarding state for each user", %{conn: conn} do
+    # The column was the wizard's `onboarding_state` until #1393. What is left
+    # is the one stamp: a date when the account is onboarded, an em dash when
+    # it is not.
+    test "shows whether each user is onboarded", %{conn: conn} do
       admin = insert_admin()
       conn = login_user(conn, admin)
       {:ok, _lv, html} = live(conn, ~p"/admin/users")
 
-      assert html =~ "step_1"
+      refute html =~ "step_1"
+      assert html =~ "Onboarding"
+
+      {:ok, _} = Accounts.complete_onboarding(admin)
+      {:ok, _lv, onboarded} = live(login_user(build_conn(), admin), ~p"/admin/users")
+      assert onboarded =~ Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d")
     end
   end
 

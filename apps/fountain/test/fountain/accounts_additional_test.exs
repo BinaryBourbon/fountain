@@ -311,37 +311,11 @@ defmodule Fountain.AccountsAdditionalTest do
   # ── complete_onboarding/1 ───────────────────────────────────────────────────
 
   describe "complete_onboarding/1" do
-    test "sets onboarding_state to 'completed' and onboarding_completed_at to a datetime" do
+    test "sets onboarding_completed_at, which is the whole of onboarding since #1393" do
       user = insert_verified_user()
       assert is_nil(user.onboarding_completed_at)
 
       assert {:ok, updated} = Accounts.complete_onboarding(user)
-      assert updated.onboarding_state == "completed"
-      assert %DateTime{} = updated.onboarding_completed_at
-    end
-  end
-
-  # ── advance_onboarding/2 ────────────────────────────────────────────────────
-
-  describe "advance_onboarding/2" do
-    test "advances to step_1 and only sets onboarding_state" do
-      user = insert_verified_user()
-      assert {:ok, updated} = Accounts.advance_onboarding(user, "step_1")
-      assert updated.onboarding_state == "step_1"
-      assert is_nil(updated.onboarding_completed_at)
-    end
-
-    test "advances to step_3 and only sets onboarding_state" do
-      user = insert_verified_user()
-      assert {:ok, updated} = Accounts.advance_onboarding(user, "step_3")
-      assert updated.onboarding_state == "step_3"
-      assert is_nil(updated.onboarding_completed_at)
-    end
-
-    test "advancing to 'completed' also sets onboarding_completed_at" do
-      user = insert_verified_user()
-      assert {:ok, updated} = Accounts.advance_onboarding(user, "completed")
-      assert updated.onboarding_state == "completed"
       assert %DateTime{} = updated.onboarding_completed_at
     end
   end
