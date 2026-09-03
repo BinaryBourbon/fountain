@@ -99,6 +99,7 @@ defmodule Fountain.Umbrella.MixProject do
         "credo --strict",
         &dialyzer_in_dev/1,
         &sobelow_in_app/1,
+        &release_assembles_in_prod/1,
         "test"
       ]
     ]
@@ -133,6 +134,50 @@ defmodule Fountain.Umbrella.MixProject do
     case Mix.shell().cmd("mix dialyzer", env: [{"MIX_ENV", "dev"}]) do
       0 -> :ok
       status -> Mix.raise("mix dialyzer failed with exit status #{status}")
+    end
+  end
+
+  # The only step here that builds :prod, and so the only one that can see a
+  # dependency graph the dev and test builds do not have. apps/fountain scopes
+  # the OpenTelemetry family `only: :prod`, which puts `chatterbox` (reached
+  # through grpcbox under opentelemetry_exporter) in no dev or test build. When
+  # the hackney 4 bump pulled in `h2`, whose modules collide with chatterbox's,
+  # every other gate above stayed green while `mix release` refused to
+  # assemble (#1472, #1477):
+  #
+  #   ** (Mix) Duplicated modules:
+  #     h2_settings specified in chatterbox and h2
+  #
+  # Assemble only, not CI's boot check. Duplicate modules and the
+  # application-mode validation are decided at assemble time, and assembling
+  # needs no secrets: `mix release` reads config/runtime.exs to copy it in as a
+  # config provider rather than to evaluate it. Booting is the half that needs
+  # SECRET_KEY_BASE and a database, and CI keeps it.
+  #
+  # ~9s in a warm tree. A cold one also pays the first prod compile (~2 min),
+  # once, and then caches it under _build/prod like any other env.
+  #
+  # `deps.get`, not CI's `deps.get --only prod`. `--only` *prunes* deps/ down
+  # to that env, so running it here would delete credo, dialyxir, sobelow,
+  # mimic and stream_data and leave the `test` step below dying on "Unchecked
+  # dependencies for environment test". CI gets away with it because its job
+  # ends at the release. Plain `deps.get` is env-agnostic and fetches nothing
+  # when the tree is current, but it has to run: the steps above only check
+  # :test and :dev deps, so the lockfile bump this gate exists for would
+  # otherwise fail on "lock mismatch" instead of assembling.
+  defp release_assembles_in_prod(_args) do
+    env = [{"MIX_ENV", "prod"}]
+
+    with 0 <- Mix.shell().cmd("mix deps.get", env: env),
+         0 <- Mix.shell().cmd("mix release fountain_server --overwrite", env: env) do
+      :ok
+    else
+      status ->
+        Mix.raise(
+          "the prod release failed to assemble (exit status #{status}). " <>
+            "CI fails this in \"Static analysis and release checks\". A duplicate-module " <>
+            "clash between a new dependency and a prod-only one is the usual cause."
+        )
     end
   end
 
