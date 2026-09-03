@@ -200,14 +200,11 @@ checks the files and metadata that Hex will receive. A change to shipped code
 must bump `@version` in `sdk/elixir/mix.exs` and add the related
 `## [<version>]` heading to `sdk/elixir/CHANGELOG.md`.
 
-To publish to Hex, use an API key with `api:write` permission. The Hex account
-that owns the key must also own `fountain_sdk`. A maintainer stores the key
-outside the repository and passes it only for the publish command.
+CI is the only publisher. The `HEX_API_KEY` Actions secret stores the Hex key.
+The key does not expire. It has API write and repository access, but does not
+enter the checkout. When a shipped change reaches `main`, CI publishes
+its new version and records the commit as `elixir-sdk-v<version>`. The workflow
+first checks Hex, so a repeat run is safe when that version exists.
 
-```sh
-cd sdk/elixir
-HEX_API_KEY=... MIX_ENV=dev mix hex.publish --yes
-```
-
-The first publisher claims the package name for its Hex account. Do not commit
-the key or put it in a checked-in environment file.
+The first successful run claims the package name for the Hex account that owns
+the key. Do not publish from a checkout or put the key in a file.

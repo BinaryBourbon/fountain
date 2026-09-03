@@ -23,14 +23,13 @@ enter the prompt or the event feed that the SDK reads.
 
 ## Install
 
-Add Fountain as a Swift Package Manager dependency. Until the next Fountain
-release includes the root `Package.swift`, depend on `main`:
+Add Fountain as a Swift Package Manager dependency:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/BinaryBourbon/fountain.git",
-        branch: "main"
+        from: "0.15.0"
     ),
 ]
 ```
@@ -46,9 +45,7 @@ Add the library product to your target:
 )
 ```
 
-The next Fountain `vX.Y.Z` release that contains `Package.swift` will also be
-the first versioned Swift package release. You can then replace the branch
-requirement with `from: "X.Y.Z"`.
+The Swift package follows Fountain's `vX.Y.Z` release tags.
 
 ## Credentials
 
