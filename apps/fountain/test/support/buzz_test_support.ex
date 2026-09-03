@@ -11,7 +11,14 @@ defmodule Fountain.BuzzTestSupport do
   def stop_all_harnesses!(tries \\ @drain_tries)
 
   def stop_all_harnesses!(0) do
-    raise "BuzzSupervisor still has children after test teardown"
+    raise """
+    BuzzSupervisor still has children after test teardown: \
+    #{inspect(Horde.DynamicSupervisor.which_children(@supervisor))}
+
+    This supervisor is global, so the children are not necessarily this test's.
+    Every module that starts one is async: false today, which is what makes the
+    check safe to fail on; if that changes, scope the drain before relaxing it.
+    """
   end
 
   def stop_all_harnesses!(tries) do
@@ -22,6 +29,12 @@ defmodule Fountain.BuzzTestSupport do
         _ = Horde.DynamicSupervisor.terminate_child(@supervisor, pid)
 
       {_, :restarting, _, _} ->
+        :ok
+
+      # Horde is free to grow the child tuple. A FunctionClauseError raised here
+      # would come out of on_exit and fail an unrelated test with the wrong
+      # story, so take the next loop rather than the exception.
+      _other ->
         :ok
     end)
 

@@ -1,3 +1,22 @@
+defmodule Fountain.Buzz.HarnessTest.LogSink do
+  @moduledoc false
+  # A :logger handler that forwards every event to a test process. :logger calls
+  # `log/2` in the process that logged, so receiving the message is proof the
+  # harness reached the Logger — the ordering a marker file cannot give.
+
+  def log(%{msg: msg}, %{config: %{pid: pid}}) do
+    send(pid, {:log_line, flatten(msg)})
+    :ok
+  end
+
+  defp flatten({:string, chardata}), do: IO.chardata_to_string(chardata)
+  defp flatten({:report, report}), do: inspect(report)
+
+  defp flatten({format, args}) do
+    format |> :io_lib.format(args) |> IO.chardata_to_string()
+  end
+end
+
 defmodule Fountain.Buzz.HarnessTest do
   # async: false — writes fake executables and spawns OS processes.
   use ExUnit.Case, async: false
@@ -100,7 +119,27 @@ defmodule Fountain.Buzz.HarnessTest do
     assert reaped, "child OS process #{child} survived shutdown (leaked)"
   end
 
-  test "shutdown waits for the launcher OS process to exit", %{dir: dir} do
+  # Under a PATH with no `kill` on it, which is what the runtime image is: it is
+  # debian:trixie-slim plus six packages (Dockerfile), and none of them ship
+  # /bin/kill — `kill` there is only the shell's builtin. `System.cmd/3`
+  # resolves an executable with `:os.find_executable/1` and never through a
+  # shell, so a liveness probe that spawns "kill" raises :enoent in production,
+  # gets read as "the launcher already exited", and skips this wait — while
+  # passing on macOS and the CI runner, which both have the binary. Restricting
+  # PATH is how that image is reachable from here. `cat` and `sleep` are on it
+  # because the fake launcher below needs them, and `sh` because `alive?/1`
+  # does; `kill` is left off deliberately.
+  test "shutdown waits for the launcher OS process to exit, with no `kill` on PATH",
+       %{dir: dir} do
+    bin = Path.join(dir, "bin")
+    File.mkdir_p!(bin)
+
+    for tool <- ~w(sh cat sleep) do
+      File.ln_s!(System.find_executable(tool), Path.join(bin, tool))
+    end
+
+    refute File.exists?(Path.join(bin, "kill")), "the point of this test is that kill is absent"
+
     launcher =
       write_fake(dir, "slow-launcher", "exec 3<&0\ncat <&3 >/dev/null\nexec sleep 0.2\n")
 
@@ -108,7 +147,15 @@ defmodule Fountain.Buzz.HarnessTest do
     pid = start(command: cmd, launcher: launcher, label: "t")
     {:os_pid, launcher_pid} = pid |> :sys.get_state() |> Map.fetch!(:port) |> Port.info(:os_pid)
 
-    :ok = stop_supervised(Harness)
+    prev_path = System.get_env("PATH")
+    on_exit(fn -> System.put_env("PATH", prev_path) end)
+    System.put_env("PATH", bin)
+
+    try do
+      :ok = stop_supervised(Harness)
+    after
+      System.put_env("PATH", prev_path)
+    end
 
     refute alive?(launcher_pid), "launcher OS process #{launcher_pid} survived shutdown"
   end
@@ -116,31 +163,55 @@ defmodule Fountain.Buzz.HarnessTest do
   test "surfaces buzz-acp output on the Logger, tagged with the label", %{dir: dir} do
     import ExUnit.CaptureLog
 
-    marker = Path.join(dir, "logged")
-
-    cmd =
-      write_fake(
-        dir,
-        "buzz-acp",
-        "echo 'connected to relay'\necho ready > #{marker}\nexec sleep 30\n"
-      )
+    cmd = write_fake(dir, "buzz-acp", "echo 'connected to relay'\nexec sleep 30\n")
 
     # Test config filters :info at the primary level; prod logs at :info. Lower
-    # the level for this test so the info line is dispatched to the capture.
+    # the level for this test so the info line is dispatched at all.
     prev = Logger.level()
     Logger.configure(level: :info)
-    on_exit(fn -> Logger.configure(level: prev) end)
 
-    log =
-      capture_log(fn ->
-        pid = start(command: cmd, label: "philo-xyz")
-        wait_until(fn -> File.exists?(marker) end)
-        _ = :sys.get_state(pid)
-        Logger.flush()
-      end)
+    # Wait on the log event itself, not on a side effect of the fake. The fake's
+    # `echo` returning only proves its write(2) into the pipe returned; the
+    # emulator's port reader then delivers {:data, {:eol, _}} to the harness
+    # asynchronously, and nothing orders that against this process. A marker
+    # file races exactly the same way the 400ms sleep this replaced did, only
+    # faster, and `:sys.get_state/1` flushes a mailbox the line may not have
+    # reached yet (#1469).
+    handler = :"harness_log_#{System.unique_integer([:positive])}"
+    sink = Fountain.Buzz.HarnessTest.LogSink
+    :ok = :logger.add_handler(handler, sink, %{level: :info, config: %{pid: self()}})
 
-    assert log =~ "[buzz-acp philo-xyz]"
-    assert log =~ "connected to relay"
+    on_exit(fn ->
+      _ = :logger.remove_handler(handler)
+      Logger.configure(level: prev)
+    end)
+
+    # capture_log only to keep the line out of the test output; the assertion is
+    # on what the handler delivered.
+    capture_log(fn ->
+      start(command: cmd, label: "philo-xyz")
+      assert await_log_line("[buzz-acp philo-xyz]") =~ "connected to relay"
+    end)
+  end
+
+  # The harness logs its own lines too, so take the first *match* rather than the
+  # first message. On a deadline, so a stream of non-matching lines cannot keep
+  # extending the wait.
+  defp await_log_line(substring, timeout \\ 5_000) do
+    do_await_log_line(substring, System.monotonic_time(:millisecond) + timeout)
+  end
+
+  defp do_await_log_line(substring, deadline) do
+    left = deadline - System.monotonic_time(:millisecond)
+
+    receive do
+      {:log_line, line} ->
+        if String.contains?(line, substring),
+          do: line,
+          else: do_await_log_line(substring, deadline)
+    after
+      max(left, 0) -> flunk("no log line containing #{inspect(substring)}")
+    end
   end
 
   # 2026-08-17: two pods ran the boot sweep before the cluster formed, both

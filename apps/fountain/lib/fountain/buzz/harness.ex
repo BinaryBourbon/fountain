@@ -31,8 +31,17 @@ defmodule Fountain.Buzz.Harness do
   require Logger
 
   @default_backoff_ms 1_000
+  # priv/buzz-acp-launch.sh TERMs buzz-acp and gives it five seconds before
+  # SIGKILL, so six is one second past the worst case the launcher can produce.
+  # It has to stay well under the supervisor's `shutdown: 10_000` (manager.ex),
+  # which is why `terminate/2` revokes the key before it spends any of this.
   @launcher_shutdown_timeout_ms 6_000
-  @launcher_shutdown_poll_ms 10
+  # Back the poll off rather than firing every 10ms: each check forks a shell,
+  # and a node draining its harnesses on a rolling deploy would otherwise spend
+  # hundreds of spawns per hung launcher at the worst possible moment. The
+  # common case — a launcher already gone — is caught before the first sleep.
+  @launcher_poll_start_ms 1
+  @launcher_poll_max_ms 50
   # Line-frame buzz-acp's output at the port so a single log line is bounded and
   # a chatty process cannot deliver one unbounded binary.
   @max_line 4_096
@@ -143,10 +152,16 @@ defmodule Fountain.Buzz.Harness do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  # Revoke first, close second. `close/3` can wait seconds on a launcher that is
+  # slow to go, and all of this runs under the supervisor's `shutdown: 10_000`:
+  # with the wait first, a hung launcher plus a slow database would leave the
+  # revoke unfinished at `:brutal_kill` and leak this launch's API key — the one
+  # thing `on_stop` exists to prevent. Nothing in `on_stop` needs the OS process
+  # to be gone, so the order costs nothing.
   @impl true
   def terminate(_reason, state) do
-    close(state.port, state.launcher)
     run_on_stop(state.on_stop)
+    close(state.port, state.launcher, state.shell)
     :ok
   end
 
@@ -181,9 +196,9 @@ defmodule Fountain.Buzz.Harness do
   defp spawn_argv(%{launcher: launcher, shell: shell} = state),
     do: {shell, [launcher, state.command | state.args]}
 
-  defp close(nil, _launcher), do: :ok
+  defp close(nil, _launcher, _shell), do: :ok
 
-  defp close(port, nil) do
+  defp close(port, nil, _shell) do
     close_port(port)
   end
 
@@ -194,10 +209,10 @@ defmodule Fountain.Buzz.Harness do
   # Harness shutdown meaning its executable and other launch resources are no
   # longer in use (#1469). Without the launcher this only closes the pipe and a
   # bare buzz-acp would be orphaned.
-  defp close(port, _launcher) do
+  defp close(port, _launcher, shell) do
     launcher_pid = port_os_pid(port)
     close_port(port)
-    await_launcher_exit(launcher_pid)
+    await_launcher_exit(launcher_pid, shell)
     :ok
   end
 
@@ -217,32 +232,39 @@ defmodule Fountain.Buzz.Harness do
     ArgumentError -> nil
   end
 
-  defp await_launcher_exit(nil), do: :ok
+  defp await_launcher_exit(nil, _shell), do: :ok
 
-  defp await_launcher_exit(os_pid) do
+  defp await_launcher_exit(os_pid, shell) do
     deadline = System.monotonic_time(:millisecond) + @launcher_shutdown_timeout_ms
-    do_await_launcher_exit(os_pid, deadline)
+    do_await_launcher_exit(os_pid, shell, deadline, @launcher_poll_start_ms)
   end
 
-  defp do_await_launcher_exit(os_pid, deadline) do
+  defp do_await_launcher_exit(os_pid, shell, deadline, poll_ms) do
     cond do
-      not os_process_alive?(os_pid) ->
+      not os_process_alive?(os_pid, shell) ->
         :ok
 
       System.monotonic_time(:millisecond) >= deadline ->
         Logger.warning("buzz-acp launcher did not exit after shutdown: os_pid=#{os_pid}")
 
       true ->
-        Process.sleep(@launcher_shutdown_poll_ms)
-        do_await_launcher_exit(os_pid, deadline)
+        Process.sleep(poll_ms)
+        next = min(poll_ms * 2, @launcher_poll_max_ms)
+        do_await_launcher_exit(os_pid, shell, deadline, next)
     end
   end
 
-  defp os_process_alive?(os_pid) do
-    match?(
-      {_, 0},
-      System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
-    )
+  # `kill -0` through the shell, because it has to be the shell's builtin.
+  # `System.cmd/3` resolves an executable with `:os.find_executable/1` and never
+  # goes through a shell, and the runtime image — debian:trixie-slim plus
+  # libstdc++6, openssl, libncurses6, locales, ca-certificates and tini, see the
+  # Dockerfile — ships no /bin/kill, so spawning "kill" directly raises
+  # `:enoent` there. The rescue below would read that as "already exited" and
+  # skip the wait entirely, in prod only: macOS and the CI runner both have the
+  # binary, so every test would still pass. priv/buzz-acp-launch.sh checks the
+  # same way for the same reason. `os_pid` is an integer from `Port.info/2`.
+  defp os_process_alive?(os_pid, shell) do
+    match?({_, 0}, System.cmd(shell, ["-c", "kill -0 #{os_pid} 2>/dev/null"]))
   rescue
     ErlangError -> false
   end
