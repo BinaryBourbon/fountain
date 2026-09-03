@@ -1,0 +1,35 @@
+{
+  "name": "error-401-maps-to-auth",
+  "title": "A 401 becomes the client's authentication error",
+  "contract": "errors",
+  "why": "The caller's fix is a different key, and no amount of retrying finds one.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "respond": {
+        "status": 401,
+        "json": {
+          "error": "unauthorized"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "me"
+    }
+  ],
+  "expect": {
+    "error": {
+      "kind": "auth",
+      "status": 401,
+      "code": "unauthorized"
+    }
+  }
+}

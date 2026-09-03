@@ -1,0 +1,35 @@
+{
+  "name": "error-404-maps-to-not-found",
+  "title": "A 404 becomes the client's not-found error",
+  "contract": "errors",
+  "why": "Distinguishing a missing conversation from a broken connection is the difference between retrying and not.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555"
+      },
+      "respond": {
+        "status": 404,
+        "json": {
+          "error": "not_found"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "get_conversation",
+      "conversation_id": "11111111-2222-3333-4444-555555555555"
+    }
+  ],
+  "expect": {
+    "error": {
+      "kind": "not_found",
+      "status": 404
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "name": "history-drains-the-feed-across-pages",
+  "title": "Draining a conversation's history follows the cursor until the feed is exhausted",
+  "contract": "pagination",
+  "why": "A turn with more events than one page is ordinary. A client that reads one page reports a truncated conversation as complete.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/events",
+        "query": {
+          "after": "0"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": 1,
+              "kind": "stage",
+              "stage": "turn",
+              "state": "started",
+              "stream": "stage",
+              "ts": "2026-09-02T00:00:00Z",
+              "data": "{\"turn_number\": 1, \"turn_id\": \"t1\"}"
+            },
+            {
+              "id": 2,
+              "kind": "output",
+              "stream": "acp",
+              "turn_id": "t1",
+              "ts": "2026-09-02T00:00:00Z",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "body": "one"
+                }
+              ]
+            }
+          ],
+          "meta": {
+            "next_cursor": 2,
+            "has_more": true
+          }
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/events",
+        "query": {
+          "after": "2"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": 3,
+              "kind": "output",
+              "stream": "acp",
+              "turn_id": "t1",
+              "ts": "2026-09-02T00:00:00Z",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "body": "two"
+                }
+              ]
+            }
+          ],
+          "meta": {
+            "next_cursor": 3,
+            "has_more": false
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "history",
+      "conversation_id": "11111111-2222-3333-4444-555555555555"
+    }
+  ],
+  "expect": {
+    "event_ids": [
+      1,
+      2,
+      3
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/events",
+        "query": {
+          "after": "0"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/events",
+        "query": {
+          "after": "2"
+        }
+      }
+    ],
+    "requests_exactly": true,
+    "no_error": true
+  }
+}

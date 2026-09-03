@@ -1,0 +1,47 @@
+{
+  "name": "history-empty-feed-is-an-empty-list",
+  "title": "A conversation with no events yields nothing and asks once",
+  "contract": "pagination",
+  "why": "An empty first page must terminate the drain rather than looping on the same cursor.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/events",
+        "query": {
+          "after": "0"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": [],
+          "meta": {
+            "next_cursor": 0,
+            "has_more": false
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "history",
+      "conversation_id": "11111111-2222-3333-4444-555555555555"
+    }
+  ],
+  "expect": {
+    "event_ids": [],
+    "requests_exactly": true,
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/events"
+      }
+    ],
+    "no_error": true
+  }
+}

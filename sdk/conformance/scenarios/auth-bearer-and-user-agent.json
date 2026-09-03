@@ -1,0 +1,47 @@
+{
+  "name": "auth-bearer-and-user-agent",
+  "title": "Every request carries the key as a bearer token and an identifying User-Agent",
+  "contract": "auth",
+  "why": "Fountain's request logs are keyed on the product token, and an unauthenticated call is a 401 the caller cannot diagnose.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "email": "conformance@example.test",
+          "role": "user",
+          "email_verified": true
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "me"
+    }
+  ],
+  "expect": {
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/api/auth/me",
+        "headers": {
+          "authorization": "Bearer conformance-key"
+        },
+        "header_prefixes": {
+          "user-agent": "fountain-sdk-"
+        }
+      }
+    ],
+    "requests_exactly": true,
+    "no_error": true
+  }
+}
