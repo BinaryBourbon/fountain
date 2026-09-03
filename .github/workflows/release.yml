@@ -349,10 +349,14 @@ jobs:
             echo "expected 2 digests (amd64 + arm64), found ${#digests[@]}: ${digests[*]}" >&2
             exit 1
           fi
+          refs=()
+          for digest in "${digests[@]}"; do
+            refs+=("${IMAGE}@sha256:${digest}")
+          done
           docker buildx imagetools create \
             --tag "${IMAGE}:${TAG}" \
             --tag "${IMAGE}:${MINOR}" \
-            $(printf "${IMAGE}@sha256:%s " *)
+            "${refs[@]}"
           docker buildx imagetools inspect "${IMAGE}:${TAG}"
 
   compose-boot:
@@ -403,6 +407,67 @@ jobs:
         if: failure()
         run: docker compose logs --timestamps
 
+  swift-package:
+    name: Resolve the released Swift package remotely
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+        with:
+          swift-version: "6.1"
+
+      - name: Resolve and build a clean consumer
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! echo "${RELEASE_TAG}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "'${RELEASE_TAG}' is not a vX.Y.Z tag" >&2
+            exit 1
+          fi
+          version="${RELEASE_TAG#v}"
+          consumer="${RUNNER_TEMP}/fountain-swift-consumer"
+          mkdir -p "${consumer}/Sources/FountainReleaseSmoke"
+          cat > "${consumer}/Package.swift" <<EOF
+          // swift-tools-version: 6.1
+          import PackageDescription
+
+          let package = Package(
+            name: "FountainReleaseSmoke",
+            dependencies: [
+              .package(
+                url: "https://github.com/BinaryBourbon/fountain.git",
+                exact: "${version}"
+              )
+            ],
+            targets: [
+              .executableTarget(
+                name: "FountainReleaseSmoke",
+                dependencies: [
+                  .product(name: "Fountain", package: "fountain")
+                ]
+              )
+            ]
+          )
+          EOF
+          cat > "${consumer}/Sources/FountainReleaseSmoke/main.swift" <<'EOF'
+          import Fountain
+
+          print(fountainSDKVersion)
+          EOF
+          cd "${consumer}"
+          swift package resolve
+          swift build
+          resolved_version="$(swift run FountainReleaseSmoke)"
+          if [ "${resolved_version}" != "${version}" ]; then
+            echo "remote package reports ${resolved_version}, expected ${version}" >&2
+            exit 1
+          fi
+
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -413,7 +478,7 @@ jobs:
     # pushed digests with no manifest list on the tag is not a published image.
     # compose-boot goes one further: the image also has to boot through the
     # quick start the release page points at.
-    needs: [build, openapi, image-manifest, compose-boot]
+    needs: [build, openapi, image-manifest, compose-boot, swift-package]
     permissions:
       contents: write
 
