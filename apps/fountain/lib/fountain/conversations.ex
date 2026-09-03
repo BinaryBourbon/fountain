@@ -221,8 +221,36 @@ defmodule Fountain.Conversations do
 
     with {:ok, updated} <- Repo.update(changeset) do
       record_sandbox_usage(was, updated)
+      maybe_poke_sandbox_queue(was, updated)
       {:ok, updated}
     end
+  end
+
+  # A transition out of a cap-counting status can free both a tenant slot and
+  # the deployment-wide fleet slot, so every tenant with active queue work
+  # wants draining. This is the choke point every sandbox status change goes
+  # through, and almost every one of them happens with an empty queue, so the
+  # cost here is one existence probe and nothing else. When there is work, it
+  # is one Oban insert and the job does the scan that finds the tenants —
+  # never a scan plus an insert per waiting tenant on the caller's path.
+  defp maybe_poke_sandbox_queue(was, %Sandbox{} = updated) do
+    active = Fountain.Quotas.active_statuses()
+
+    if was in active and updated.status not in active and
+         Fountain.SandboxQueue.any_active_requests?() do
+      Fountain.Workers.SandboxQueueDrainer.poke_all_later()
+    end
+
+    :ok
+  rescue
+    # Best-effort for the same reason `Billing.record_usage/5` rescues at this
+    # choke point: the row is already committed, nearly every call site matches
+    # `{:ok, _}` (ConversationServer's terminate path, `Accounts.Deletion`,
+    # `SandboxReaper`), and a failed poke must not take down a caller that only
+    # wanted to write a status. The five-minute cron backstop drains anyway.
+    e ->
+      Logger.warning("sandbox queue poke failed: #{Exception.message(e)}")
+      :ok
   end
 
   @billable_terminal ~w(terminated failed)

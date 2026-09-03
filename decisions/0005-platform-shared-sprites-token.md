@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Platform-shared SPRITES_TOKEN; per-tenant concurrency cap as noisy-neighbor mitigation"
-description: "One platform-level Sprites credential provisions every tenant sandbox; a per-tenant concurrent-sandbox cap is the noisy-neighbor mitigation. Amended by 0018 to one credential per provider."
+description: "One platform-level Sprites credential provisions every tenant sandbox; a per-tenant concurrent-sandbox cap is the noisy-neighbor mitigation. Amended by 0018 to one credential per provider and by 0042 with a bounded capacity queue."
 tags: [sandbox, secrets, quotas]
 status: stable
 adr: "0005"
@@ -64,3 +64,11 @@ Infisical operator into the `fountain-secrets` Kubernetes Secret
 `envFrom`; access control is the cluster's RBAC plus Infisical project
 access. It remains env-var-only from the app's perspective — never in the
 DB, never in the UI.
+
+## Addendum — 2026-09-03
+
+ADR 0042 keeps the cap and adds an explicit, bounded wait in front of it.
+Fresh API starts can opt in to the queue, and scheduled teammate runs always
+do. The reservation still refuses work when it reaches the cap. The drainer
+retries later under the same reservation lock, so the queue delays the cap
+and never raises it.

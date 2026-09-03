@@ -389,6 +389,10 @@ defmodule FountainWeb.ConversationController do
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
+      accepted:
+        {"Queued for sandbox capacity", "application/json", Schemas.SandboxRequestResponse},
+      too_many_requests: {"Tenant concurrency cap reached", "application/json", Schemas.Error},
+      service_unavailable: {"Sandbox fleet is full", "application/json", Schemas.Error},
       not_found: {"Agent not found", "application/json", Schemas.Error},
       unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
       payment_required:
@@ -434,6 +438,57 @@ defmodule FountainWeb.ConversationController do
       conn
       |> put_status(if(outcome == :created, do: :created, else: :ok))
       |> render(:show, conversation: conv, resumed: outcome == :resumed)
+    else
+      {:error, {:sandbox_quota_exceeded, _} = reason} ->
+        maybe_enqueue(conn, params, user, reason)
+
+      {:error, :fleet_full = reason} ->
+        maybe_enqueue(conn, params, user, reason)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Exactly the launch keys `Conversations.start_conversation/2` reads, minus
+  # the ones this path sets itself (`user_id`, `agent_id`, `source`) or
+  # refuses to queue (`images`, `sandbox_id`) and the `queue` flag. A drop
+  # list kept every unrecognised key instead: `ConversationCreateRequest` does
+  # not set `additionalProperties: false`, so a caller could park arbitrary
+  # JSON in `attrs` until the request expired.
+  @queued_attr_keys ~w(prompt title vault_id environment_id permission_policy
+                       sandbox_mode sprite_name channel_id fresh
+                       parent_conversation_id caller_tools)
+
+  defp maybe_enqueue(conn, params, user, reason) do
+    if params["queue"] == true and params["images"] in [nil, []] and
+         params["sandbox_id"] in [nil, ""] do
+      enqueue_params = %{
+        user_id: user.id,
+        agent_id: params["agent_id"],
+        kind: "start",
+        source: params["source"],
+        attrs: Map.take(params, @queued_attr_keys)
+      }
+
+      case Fountain.SandboxQueue.enqueue(enqueue_params, Audited.attribution(conn)) do
+        {:ok, request} ->
+          conn
+          |> put_status(:accepted)
+          |> put_view(FountainWeb.SandboxQueueJSON)
+          |> render(:show,
+            request: request,
+            position: Fountain.SandboxQueue.position(request)
+          )
+
+        {:error, :queue_full} ->
+          {:error, reason}
+
+        {:error, _} = error ->
+          error
+      end
+    else
+      {:error, reason}
     end
   end
 

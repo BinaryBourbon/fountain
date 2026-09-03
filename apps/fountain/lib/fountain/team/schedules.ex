@@ -165,6 +165,9 @@ defmodule Fountain.Team.Schedules do
   `last_error` say how it went; the caller decides whether an error is worth
   retrying (the worker snoozes on `:busy` and `:provisioning`).
 
+  A capacity refusal is queued only for the cron caller — see
+  `maybe_queue_run/3`. "Run now" gets the error and nothing else happens.
+
   `opts` is audit attribution: `Fountain.Workers.TeamScheduleRun` passes
   `actor: "system:team_scheduler"`, the UI passes the socket's. Recorded as
   `team.schedule.fired` on top of the conversation events underneath.
@@ -179,8 +182,17 @@ defmodule Fountain.Team.Schedules do
 
     run_attrs =
       case result do
-        {:ok, conv} -> %{last_run_at: now, last_conversation_id: conv.id, last_error: nil}
-        {:error, reason} -> %{last_run_at: now, last_error: describe_error(reason)}
+        {:ok, conv} ->
+          %{last_run_at: now, last_conversation_id: conv.id, last_error: nil}
+
+        {:error, {:sandbox_quota_exceeded, _} = reason} ->
+          %{last_run_at: now, last_error: maybe_queue_run(schedule, reason, opts)}
+
+        {:error, :fleet_full = reason} ->
+          %{last_run_at: now, last_error: maybe_queue_run(schedule, reason, opts)}
+
+        {:error, reason} ->
+          %{last_run_at: now, last_error: describe_error(reason)}
       end
 
     {:ok, _} = schedule |> Schedule.run_changeset(run_attrs) |> Repo.update()
@@ -283,6 +295,39 @@ defmodule Fountain.Team.Schedules do
   end
 
   # What a run's failure reads as on the row and in the UI. Never the prompt.
+  # Scheduled work opts into the bounded queue: unlike an interactive caller,
+  # a cron firing has nobody present to retry it when capacity frees.
+  #
+  # Only the cron caller. `run_schedule/2` is also the page's and the API's
+  # "Run now" (`POST /api/team/:agent_id/schedules/:id/run`), and queueing
+  # there would hand that caller a 429 or 503 while a conversation started on
+  # its own up to an hour later, with no request id in the response to watch
+  # or cancel. ADR 0042 decision 3 buys the queue with "a cron firing has
+  # nobody there to retry it", which is exactly what a person pressing a
+  # button is not. The queue's own replay (`actor: "system:sandbox_queue"`)
+  # is excluded for the same reason: the drainer already holds the claim.
+  defp maybe_queue_run(%Schedule{} = schedule, reason, opts) do
+    if Keyword.get(opts, :actor) == @actor,
+      do: queue_run(schedule, reason, opts),
+      else: describe_error(reason)
+  end
+
+  defp queue_run(%Schedule{} = schedule, reason, opts) do
+    case Fountain.SandboxQueue.enqueue(
+           %{
+             user_id: schedule.user_id,
+             agent_id: schedule.agent_id,
+             kind: "schedule_run",
+             schedule_id: schedule.id,
+             source: "schedule"
+           },
+           opts
+         ) do
+      {:ok, _request} -> "waiting for a free sandbox slot"
+      {:error, _} -> describe_error(reason)
+    end
+  end
+
   def describe_error(:busy), do: "teammate was busy"
 
   def describe_error(:sandbox_at_capacity),
@@ -291,6 +336,7 @@ defmodule Fountain.Team.Schedules do
   def describe_error(:provisioning), do: "teammate's computer was still starting"
   def describe_error(:not_found), do: "agent is not on the team"
   def describe_error(:insufficient_credits), do: "out of credit"
+  def describe_error(:fleet_full), do: "sandbox fleet is full"
   def describe_error(:runner_offline), do: "teammate's machine is offline"
   def describe_error(:sprite_probe_failed), do: "could not reach the sandbox provider"
 

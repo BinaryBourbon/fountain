@@ -504,6 +504,9 @@ defmodule FountainWeb.Router do
     end
 
     resources "/agents", AgentController, except: [:new, :edit]
+    get "/sandbox-queue", SandboxQueueController, :index
+    get "/sandbox-queue/:id", SandboxQueueController, :show
+    delete "/sandbox-queue/:id", SandboxQueueController, :delete
     # Config history (ADR 0029, #1051): read-only. Rollback stays a console action.
     get "/agents/:id/versions", AgentVersionController, :index
     get "/agents/:id/versions/:version", AgentVersionController, :show

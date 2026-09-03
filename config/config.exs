@@ -52,7 +52,10 @@ config :fountain, Oban,
        # 06:47 UTC daily: rent for numbers and inboxes, the grace reminders,
        # and the release on day seven (ADR 0030 decision 4). No-ops until a
        # rent price is set.
-       {"47 6 * * *", Fountain.Workers.CreditRentCollector}
+       {"47 6 * * *", Fountain.Workers.CreditRentCollector},
+       # Five-minute backstop for the event-driven sandbox queue. Normal
+       # drains come from a sandbox leaving a cap-counting status.
+       {"*/5 * * * *", Fountain.Workers.SandboxQueueDrainer}
      ]}
   ]
 
@@ -83,6 +86,10 @@ config :fountain, :sandboxes,
   cap_floor: 2,
   cap_ceiling: 20,
   fleet_ceiling: 20
+
+config :fountain,
+  sandbox_queue_max_depth: 10,
+  sandbox_queue_max_wait_seconds: 3600
 
 # Prepaid credits (ADR 0030). Cents. `turn_hour_cents` is the customer price
 # of one hour of turn time; the comms prices are nil until an operator sets

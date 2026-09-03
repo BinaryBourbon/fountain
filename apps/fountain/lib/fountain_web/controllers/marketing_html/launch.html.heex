@@ -268,7 +268,7 @@
         Each {elem(cap_rule(), 0)} in your balance supports one agent working at a time, from a minimum of {elem(
           cap_rule(),
           1
-        )} to a maximum of {elem(cap_rule(), 2)}. Starts beyond the limit are refused, not queued.
+        )} to a maximum of {elem(cap_rule(), 2)}. Starts beyond the limit can wait in a bounded queue. The queue delays the cap; it never raises it.
       </p>
       <p class="border-l border-[var(--color-ink-border)] pl-4">
         At zero, new work pauses. Work already in flight finishes. Add credit and the next prompt can wake the same workspace.

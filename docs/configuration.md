@@ -147,6 +147,8 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `SANDBOX_CAP_FLOOR` | `2` | No. | The fewest sandboxes a tenant with a positive balance may run at once. |
 | `SANDBOX_CAP_CEILING` | `20` | No. | The most sandboxes one tenant may run at once, unless an admin override raises it. |
 | `SANDBOX_FLEET_CEILING` | `20` | No. | The most live sandboxes across every tenant. Set it to what your sandbox provider plan allows. A start beyond it gets `503 fleet_full`. |
+| `SANDBOX_QUEUE_MAX_DEPTH` | `10` | No. | The most sandbox requests one tenant may have waiting or starting. Requests beyond it keep the immediate capacity error. |
+| `SANDBOX_QUEUE_MAX_WAIT_SECONDS` | `3600` | No. | How long a sandbox request may wait for capacity before it expires. |
 | `CREDIT_OPENING_CENTS` | `500` | No. | The credit a new account starts with, in cents. |
 | `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |
 | `TEAM_CONTACT_CEILING` | `10` | No. | The most teammate contacts one account may hold at once. |

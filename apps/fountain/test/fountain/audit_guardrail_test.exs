@@ -44,6 +44,10 @@ defmodule Fountain.AuditGuardrailTest do
     {"agent create", &__MODULE__.do_agent_create/1, "agent.created"},
     {"agent update", &__MODULE__.do_agent_update/1, "agent.updated"},
     {"agent delete", &__MODULE__.do_agent_delete/1, "agent.deleted"},
+    {"sandbox request enqueue", &__MODULE__.do_sandbox_request_enqueue/1,
+     "sandbox_request.enqueued"},
+    {"sandbox request cancel", &__MODULE__.do_sandbox_request_cancel/1,
+     "sandbox_request.cancelled"},
     {"agent rollback", &__MODULE__.do_agent_rollback/1, "agent.updated"},
     {"environment create", &__MODULE__.do_env_create/1, "environment.created"},
     {"environment update", &__MODULE__.do_env_update/1, "environment.updated"},
@@ -191,6 +195,8 @@ defmodule Fountain.AuditGuardrailTest do
           {Agents, :update_agent, 3},
           {Agents, :delete_agent, 2},
           {Agents, :rollback_agent, 3},
+          {Fountain.SandboxQueue, :enqueue, 2},
+          {Fountain.SandboxQueue, :cancel_request, 2},
           {Environments, :create_environment, 2},
           {Environments, :update_environment, 3},
           {Environments, :delete_environment, 2},
@@ -265,6 +271,32 @@ defmodule Fountain.AuditGuardrailTest do
     {:ok, _} = Agents.update_agent(agent, %{"description" => "edited"})
     version = Agents.get_agent_version(agent.id, 1, user.id)
     {:ok, _} = Agents.rollback_agent(agent, version)
+  end
+
+  def do_sandbox_request_enqueue(user) do
+    agent = insert_agent(user_id: user.id)
+
+    {:ok, _} =
+      Fountain.SandboxQueue.enqueue(%{
+        user_id: user.id,
+        agent_id: agent.id,
+        kind: "start",
+        attrs: %{"prompt" => "queued work"}
+      })
+  end
+
+  def do_sandbox_request_cancel(user) do
+    agent = insert_agent(user_id: user.id)
+
+    {:ok, request} =
+      Fountain.SandboxQueue.enqueue(%{
+        user_id: user.id,
+        agent_id: agent.id,
+        kind: "start",
+        attrs: %{}
+      })
+
+    {:ok, _} = Fountain.SandboxQueue.cancel_request(request)
   end
 
   def do_env_create(user),

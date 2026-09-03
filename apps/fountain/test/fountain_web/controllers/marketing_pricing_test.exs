@@ -48,7 +48,8 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "Starter credit expires after 14 days"
     assert body =~ "Each $2.00 in your balance supports one agent working at a time"
     assert body =~ "from a minimum of 2 to a maximum of 20"
-    assert body =~ "Starts beyond the limit are refused, not queued"
+    assert body =~ "Starts beyond the limit can wait in a bounded queue"
+    assert body =~ "The queue delays the cap; it never raises it"
   end
 
   # Scale-to-zero (0017) is the strongest claim the rest of the page makes. A
@@ -72,14 +73,14 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "Your balance sets your concurrency"
     assert body =~ "Each $2.00 in your balance supports one agent working at a time"
     assert body =~ "with a minimum of 2 and a maximum of 20"
-    assert body =~ "Starts beyond your limit are refused, not queued"
+    assert body =~ "Starts beyond your limit can wait in a bounded queue"
+    assert body =~ "The queue delays the cap; it never raises it"
     assert body =~ "At zero, new work pauses"
     assert body =~ "Work already in flight finishes"
     # No rent or message price in test config, so the page says nothing about
     # contacts rather than quoting $0.
     refute body =~ "Teammate contacts come out of the same balance"
     refute body =~ "Going over the hours does not stop anything"
-    refute body =~ "waits for a free slot"
   end
 
   test "the hero quotes the opening credit", %{conn: conn} do

@@ -784,7 +784,7 @@
           </span>
           Each {elem(cap_rule(), 0)} in your balance supports one agent working at a time,
           with a minimum of {elem(cap_rule(), 1)} and a maximum of {elem(cap_rule(), 2)}.
-          Starts beyond your limit are refused, not queued.
+          Starts beyond your limit can wait in a bounded queue. The queue delays the cap; it never raises it.
         </p>
         <p>
           <span class="font-medium text-[var(--color-ink-text)]">

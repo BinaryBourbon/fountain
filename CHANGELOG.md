@@ -30,6 +30,16 @@ upgrade, is in
   OpenAI-compatible gateways a current body-level fallback when they cannot
   set custom headers. Requests with no key are still rejected.
 
+- **A bounded sandbox-capacity queue** (#1033). `POST /api/conversations`
+  accepts `queue: true` and returns `202` when a fresh start reaches either
+  the tenant concurrency cap or the deployment fleet ceiling. A teammate
+  schedule opts in when its cron fires; "Run now" keeps the immediate error. `GET /api/sandbox-queue` lists waiting
+  work in FIFO order, `GET /api/sandbox-queue/:id` reports its outcome, and
+  `DELETE /api/sandbox-queue/:id` cancels it. Each
+  tenant holds at most ten requests for at most one hour by default; the
+  bounds are configurable. The queue drains when any sandbox frees capacity,
+  with a five-minute sweep as a backstop.
+
 - **Standalone consumers for the Managoat libraries** (#1365). The
   [`managoat_examples`](https://github.com/managoat/managoat_examples)
   repository has three plain Mix projects with Hex dependencies and no

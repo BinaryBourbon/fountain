@@ -54,6 +54,7 @@ Mimic.copy(Fountain.Health)
 Mimic.copy(FountainWeb.OAuth)
 Mimic.copy(Fountain.Mailer)
 Mimic.copy(Fountain.InferenceCredentials)
+Mimic.copy(Fountain.Workers.SandboxQueueDrainer)
 
 # ─── The schema guard (#1427) ────────────────────────────────────────────────
 #

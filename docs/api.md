@@ -432,7 +432,10 @@ it again and again.
 
 ```
 GET    /api/conversations                  # list (?roots_only=true; ?agent_id= ?channel_id= ?status=idle,terminated)
-POST   /api/conversations                  # start (agent_id; optional vault_id, environment_id, sandbox_id, sandbox_mode, prompt, images)
+POST   /api/conversations                  # start (agent_id; optional vault_id, environment_id, sandbox_id, sandbox_mode, prompt, images, queue)
+GET    /api/sandbox-queue                  # waiting sandbox requests in FIFO order
+GET    /api/sandbox-queue/:id              # queued or terminal request outcome
+DELETE /api/sandbox-queue/:id              # cancel a waiting request
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
 POST   /api/conversations/:id/read         # clear unread state
@@ -480,6 +483,19 @@ default for this conversation. A persistent conversation lands on the agent's
 own machine. Fountain makes that machine on the first persistent launch of an
 agent, environment and vault. A second launch while the first still builds
 it gets `503 provisioning`, so send again shortly.
+
+Set `queue: true` on a fresh start. If a capacity limit blocks the start,
+Fountain returns `202` with a sandbox request and its one-based `position`.
+The request becomes a conversation after capacity becomes available.
+`GET /api/sandbox-queue` lists queued requests in order.
+`GET /api/sandbox-queue/:id` reports the status. It includes
+`conversation_id` after the start. `DELETE /api/sandbox-queue/:id` cancels a
+request that has the `queued` status.
+
+The queue holds ten requests per tenant by default, and a request expires
+after one hour. A full queue keeps the immediate `429` or `503` response.
+Requests with images or an explicit `sandbox_id` do not queue. A queued start
+must pass the credit and platform-inference gates again when it runs.
 
 `POST /api/conversations/:id/requests/:request_id` answers a permission
 request that blocks the agent. The request and its options arrive as a
@@ -1124,9 +1140,9 @@ to walk the whole trail.
 | `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity`, `sandbox_not_attachable`, `sandbox_mid_turn`, `permission_request_resolved` and `contact_already_provisioned`. |
 | `410` | Somebody terminated the conversation. The code is `conversation_terminated`. Stop, and do not try again. |
 | `422` | A validation error. |
-| `429` | The rate limit stopped you. |
+| `429` | The rate limit stopped you, or the tenant sandbox cap refused a start that did not enter the queue. |
 | `500` | An internal error. |
-| `503` | The instance is at its fleet ceiling, or a sandbox is not up yet. The codes are `fleet_full`, `provisioning` and `sprite_probe_failed`, and the response carries `Retry-After`. |
+| `503` | The instance is at its fleet ceiling and the start did not enter the queue, or a sandbox is not up yet. The codes are `fleet_full`, `provisioning` and `sprite_probe_failed`, and the response carries `Retry-After`. |
 
 ## LLM-native discovery
 

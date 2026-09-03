@@ -75,10 +75,16 @@ to `SANDBOX_CAP_CEILING` (20). An admin override on the account wins. The
 whole deployment stops at `SANDBOX_FLEET_CEILING` (20). Set that to what your
 sandbox provider plan allows.
 
-The two limits behave differently. Fountain refuses the next start for a
-tenant at their cap, and tells the caller to terminate a conversation or top
-up. Fountain refuses the next start for everyone when the fleet is full, and
-tells the caller to try again in a minute.
+The two limits feed the same bounded queue. A fresh API start can set
+`queue: true`. Fountain then returns `202` and lets the request wait when the
+tenant cap or the fleet ceiling blocks it. Scheduled teammate runs always
+use the queue. Other callers keep the immediate `429` or `503` response.
+
+Each tenant can hold ten requests. A request can wait for one hour. Set these
+bounds with `SANDBOX_QUEUE_MAX_DEPTH` and
+`SANDBOX_QUEUE_MAX_WAIT_SECONDS`. At the depth bound, Fountain refuses the
+request. After the wait bound, Fountain expires it. The queue delays the cap.
+It never raises it, and a start must still pass the credit gate when it runs.
 
 ## Give someone free credit
 
