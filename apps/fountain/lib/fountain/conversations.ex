@@ -1251,6 +1251,92 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Reconciles a turn left `running` after its server or runtime disappeared.
+
+  The turn transition and the conversation's `running` to `idle` transition
+  are conditional writes. If another process already ended the turn, this is
+  a no-op rather than overwriting its result. `orphaned_at` records that the
+  true end of work is unknown, which keeps the interval out of billing and
+  usage attribution.
+
+  This function is unscoped because it is called by a conversation's own
+  server and by the system reaper. Callers may supply audit attribution.
+  """
+  def _unsafe_orphan_turn(%Turn{} = turn, why, opts \\ []) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    reply_text = turn.reply_text || _unsafe_turn_reply_text(turn)
+
+    updates =
+      [status: "interrupted", ended_at: now, orphaned_at: now]
+      |> maybe_set_reply_text(reply_text)
+
+    result =
+      Repo.transaction(fn ->
+        {count, _} =
+          from(t in Turn, where: t.id == ^turn.id and t.status == "running")
+          |> Repo.update_all(set: updates)
+
+        if count == 0 do
+          :noop
+        else
+          {conversation_count, _} =
+            from(c in Conversation,
+              where: c.id == ^turn.conversation_id and c.status == "running"
+            )
+            |> Repo.update_all(set: [status: "idle", updated_at: now])
+
+          {
+            Repo.get!(Turn, turn.id),
+            Repo.get!(Conversation, turn.conversation_id),
+            conversation_count == 1
+          }
+        end
+      end)
+
+    case result do
+      {:ok, :noop} ->
+        :noop
+
+      {:ok, {updated_turn, conv, conversation_changed?}} ->
+        if is_nil(turn.reply_text) and is_binary(updated_turn.reply_text) do
+          Fountain.Activation.turn_replied(updated_turn)
+        end
+
+        if conversation_changed?, do: broadcast_sidebar_update(conv.user_id)
+
+        publish_stage(turn.conversation_id, "reattach", "interrupted", %{
+          outcome: "turn_orphaned",
+          turn_id: turn.id,
+          turn_number: turn.turn_number,
+          reason: why
+        })
+
+        Audit.record(%{
+          user_id: conv.user_id,
+          action: "conversation.turn.orphaned",
+          resource_type: "turn",
+          resource_id: turn.id,
+          actor: Keyword.get(opts, :actor, "system:conversation_server"),
+          metadata: %{
+            "conversation_id" => turn.conversation_id,
+            "turn_number" => turn.turn_number,
+            "reason" => why
+          }
+        })
+
+        {:ok, updated_turn, conv}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp maybe_set_reply_text(updates, nil), do: updates
+
+  defp maybe_set_reply_text(updates, reply_text),
+    do: Keyword.put(updates, :reply_text, reply_text)
+
+  @doc """
   Record a turn's end-of-turn token usage (#827): stamp `usage` on the turn
   and add its `input` / `output` to the conversation's running sums, in one
   transaction. `usage` is the normalised map `Managoat.ACP.Usage`

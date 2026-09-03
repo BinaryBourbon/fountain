@@ -25,6 +25,9 @@ config :fountain, Oban,
        # matters. Each run is one paginated list plus at most a handful of
        # deletes.
        {"7 * * * *", Fountain.Workers.SandboxReaper},
+       # A server's autonomous quiet timer is in memory. Sweep old, silent
+       # running turns whose server disappeared before that timer fired.
+       {"*/5 * * * *", Fountain.Workers.AutonomousTurnReaper},
        # 05:41 UTC — after the 03:17 backup and the 04:23 retention prune, so
        # a backup always captures the accounts before the sweep removes them.
        {"41 5 * * *", Fountain.Workers.UnverifiedAccountPruner},

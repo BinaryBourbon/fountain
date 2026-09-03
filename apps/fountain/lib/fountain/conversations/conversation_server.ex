@@ -1461,26 +1461,8 @@ defmodule Fountain.Conversations.ConversationServer do
     }
   end
 
-  defp mark_orphan(state, running_turn, why) do
-    {:ok, _} =
-      Conversations._unsafe_update_turn(running_turn, %{
-        status: "interrupted",
-        ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
-      })
-
-    # The orphaned turn was the only thing keeping the conversation in
-    # `running`. Flip it back to `idle` so the UI accurately reflects
-    # state and the user can prompt without going through wake.
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
-
-    Output.publish_stage(state.conversation_id, "reattach", "interrupted", %{
-      outcome: "turn_orphaned",
-      turn_id: running_turn.id,
-      turn_number: running_turn.turn_number,
-      reason: why
-    })
-  end
+  defp mark_orphan(_state, running_turn, why),
+    do: Conversations._unsafe_orphan_turn(running_turn, why)
 
   defp find_running_turn(conv_id) do
     import Ecto.Query
@@ -2238,7 +2220,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # own, and RetentionPruner deletes long-expired rows. See SandboxReaper
   # for the sprite half, which does not self-heal.
   @impl true
-  def terminate(_reason, state) do
+  def terminate(reason, state) do
     Fountain.Conversations.Redaction.delete(state.conversation_id)
 
     if state.conversation_id && state.callback_api_key_id do
@@ -2252,6 +2234,22 @@ defmodule Fountain.Conversations.ConversationServer do
 
         _ ->
           :ok
+      end
+    end
+
+    # A normal stop is not restarted, and its quiet timer dies with it. Leave
+    # supervisor shutdowns and crashes running for reattach. This stays last
+    # and best-effort so it cannot skip callback-key revocation.
+    if reason == :normal and state.current_turn do
+      try do
+        _ =
+          Conversations._unsafe_orphan_turn(state.current_turn, "server_terminated_normally")
+      rescue
+        error ->
+          Logger.error(
+            "terminate/2: orphaning turn for conv #{inspect(state.conversation_id)} raised: " <>
+              Exception.format(:error, error, __STACKTRACE__)
+          )
       end
     end
 

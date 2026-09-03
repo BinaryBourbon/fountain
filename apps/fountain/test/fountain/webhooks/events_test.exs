@@ -20,6 +20,7 @@ defmodule Fountain.Webhooks.EventsTest do
 
   # Where publish_stage/4 is called from. A new file calling it belongs here.
   @sources [
+    "lib/fountain/conversations.ex",
     "lib/fountain/conversations/conversation_server.ex",
     "lib/fountain/conversations/provisioning.ex",
     "lib/fountain/conversations/egress.ex",

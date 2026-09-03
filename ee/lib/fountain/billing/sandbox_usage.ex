@@ -424,6 +424,7 @@ defmodule Fountain.Billing.SandboxUsage do
         on: c.id == t.conversation_id,
         where: c.sandbox_id in ^ids,
         where: not is_nil(t.started_at),
+        where: is_nil(t.orphaned_at),
         where: t.started_at < ^ceiling,
         where: is_nil(t.ended_at) or t.ended_at >= ^period_start,
         select: %{sandbox_id: c.sandbox_id, started_at: t.started_at, ended_at: t.ended_at}

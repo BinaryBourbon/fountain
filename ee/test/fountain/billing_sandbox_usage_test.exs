@@ -280,21 +280,26 @@ defmodule Fountain.Billing.SandboxUsageTest do
     # A sandbox nobody is prompting still costs full price, so it stays in
     # active. Reporting it separately is what says whether the bill is
     # avoidable.
-    defp turn(sandbox, user, started_at, ended_at) do
+    defp turn(sandbox, user, started_at, ended_at, overrides \\ %{}) do
       agent = insert_agent(user_id: user.id)
 
       conversation =
         insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
 
-      {:ok, _} =
-        Conversations._unsafe_create_turn(%{
-          conversation_id: conversation.id,
-          turn_number: System.unique_integer([:positive]),
-          prompt: "hello",
-          status: "completed",
-          started_at: started_at,
-          ended_at: ended_at
-        })
+      attrs =
+        Map.merge(
+          %{
+            conversation_id: conversation.id,
+            turn_number: System.unique_integer([:positive]),
+            prompt: "hello",
+            status: "completed",
+            started_at: started_at,
+            ended_at: ended_at
+          },
+          overrides
+        )
+
+      {:ok, _} = Conversations._unsafe_create_turn(attrs)
     end
 
     test "an hour with a ten-minute turn is fifty minutes idle" do
@@ -309,6 +314,26 @@ defmodule Fountain.Billing.SandboxUsageTest do
       assert row.active_seconds == 3600
       assert row.busy_seconds == 600
       assert row.idle_seconds == 3000
+    end
+
+    test "orphaned turns are excluded from busy and turn time" do
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      turn(
+        sandbox,
+        user,
+        ~U[2026-05-10 12:00:00Z],
+        ~U[2026-05-10 13:00:00Z],
+        %{status: "interrupted", orphaned_at: ~U[2026-05-10 13:00:00Z]}
+      )
+
+      assert [row] = attribution()
+      assert row.busy_seconds == 0
+      assert row.turn_seconds == 0
+      assert row.idle_seconds == row.active_seconds
     end
 
     test "a sandbox that never took a turn is entirely idle" do
