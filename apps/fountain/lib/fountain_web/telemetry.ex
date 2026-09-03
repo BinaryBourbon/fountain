@@ -244,6 +244,27 @@ defmodule FountainWeb.Telemetry do
         event_name: [:fountain, :sandbox, :suspended],
         description: "Sandboxes parked by the idle bound (sprite kept, decisions/0017)"
       ),
+      distribution("fountain.sandbox_queue.tenant_depth",
+        event_name: [:fountain, :sandbox_queue, :tenant_depth],
+        measurement: :depth,
+        reporter_options: [buckets: [0, 1, 2, 3, 5, 8, 10]],
+        description: "Active sandbox requests for a tenant after a queue mutation"
+      ),
+      counter("fountain.sandbox_queue.completed.count",
+        event_name: [:fountain, :sandbox_queue, :completed],
+        measurement: :count,
+        tags: [:status, :kind],
+        description: "Sandbox queue requests completed by outcome and kind"
+      ),
+      distribution("fountain.sandbox_queue.completed.wait_ms",
+        event_name: [:fountain, :sandbox_queue, :completed],
+        measurement: :wait_ms,
+        tags: [:status, :kind],
+        reporter_options: [
+          buckets: [1000, 5000, 15_000, 30_000, 60_000, 300_000, 900_000, 1_800_000, 3_600_000]
+        ],
+        description: "Time a sandbox request waited before its terminal outcome"
+      ),
       sum("fountain.reaper.run.released",
         event_name: [:fountain, :reaper, :run],
         measurement: :released,
@@ -353,6 +374,12 @@ defmodule FountainWeb.Telemetry do
         measurement: :count,
         tags: [:status],
         description: "Sandbox rows by status"
+      ),
+      last_value("fountain.sandbox_queue.requests.count",
+        event_name: [:fountain, :sandbox_queue, :requests],
+        measurement: :count,
+        tags: [:status],
+        description: "Sandbox request rows by status"
       ),
       # The live view of what the sandbox providers are charging for. Tagged
       # by provider because a minute on each is bought at a different price;

@@ -40,6 +40,12 @@ defmodule Fountain.OpsGauges do
         Fountain.Conversations.Sandbox.statuses()
       )
 
+      emit_status_counts(
+        [:fountain, :sandbox_queue, :requests],
+        Fountain.SandboxQueue.Request,
+        Fountain.SandboxQueue.Request.statuses()
+      )
+
       emit_sandbox_provider_counts()
       emit_oban_depths()
     end)

@@ -221,8 +221,22 @@ defmodule Fountain.Conversations do
 
     with {:ok, updated} <- Repo.update(changeset) do
       record_sandbox_usage(was, updated)
+      maybe_poke_sandbox_queue(was, updated)
       {:ok, updated}
     end
+  end
+
+  # A transition out of a cap-counting status can free both a tenant slot and
+  # the deployment-wide fleet slot. Poke every active tenant queue so work
+  # blocked on either ceiling resumes from the event, not the cron backstop.
+  defp maybe_poke_sandbox_queue(was, %Sandbox{} = updated) do
+    active = Fountain.Quotas.active_statuses()
+
+    if was in active and updated.status not in active do
+      Fountain.Workers.SandboxQueueDrainer.poke_all()
+    end
+
+    :ok
   end
 
   @billable_terminal ~w(terminated failed)

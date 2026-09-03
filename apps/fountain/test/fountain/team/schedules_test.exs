@@ -333,4 +333,28 @@ defmodule Fountain.Team.SchedulesTest do
   test "a broke scheduled run is described in words, not as an atom (#1126)" do
     assert Schedules.describe_error(:insufficient_credits) == "out of credit"
   end
+
+  describe "run_schedule/2 at a sandbox ceiling" do
+    test "queues the firing once instead of losing it" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      schedule = create!(user, agent, %{"one_off" => true})
+
+      for _ <- 1..Fountain.Quotas.sandbox_limit(user.id) do
+        insert_sandbox(user_id: user.id, status: "ready")
+      end
+
+      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(schedule)
+
+      assert Schedules.get_schedule(schedule.id, user.id).last_error ==
+               "waiting for a free sandbox slot"
+
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.kind == "schedule_run"
+      assert request.schedule_id == schedule.id
+
+      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(schedule)
+      assert [_] = Fountain.SandboxQueue.list_queued(user.id)
+    end
+  end
 end

@@ -955,6 +955,10 @@ config :fountain, :sandboxes,
   cap_ceiling: whole_number.("SANDBOX_CAP_CEILING", 20),
   fleet_ceiling: whole_number.("SANDBOX_FLEET_CEILING", 20)
 
+config :fountain,
+  sandbox_queue_max_depth: whole_number.("SANDBOX_QUEUE_MAX_DEPTH", 10),
+  sandbox_queue_max_wait_seconds: whole_number.("SANDBOX_QUEUE_MAX_WAIT_SECONDS", 3600)
+
 # Teammate contacts one account may hold at once — an abuse ceiling.
 config :fountain, :team_contact_ceiling, whole_number.("TEAM_CONTACT_CEILING", 10)
 

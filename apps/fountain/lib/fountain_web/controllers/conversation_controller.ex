@@ -389,6 +389,10 @@ defmodule FountainWeb.ConversationController do
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
+      accepted:
+        {"Queued for sandbox capacity", "application/json", Schemas.SandboxRequestResponse},
+      too_many_requests: {"Tenant concurrency cap reached", "application/json", Schemas.Error},
+      service_unavailable: {"Sandbox fleet is full", "application/json", Schemas.Error},
       not_found: {"Agent not found", "application/json", Schemas.Error},
       unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
       payment_required:
@@ -434,6 +438,47 @@ defmodule FountainWeb.ConversationController do
       conn
       |> put_status(if(outcome == :created, do: :created, else: :ok))
       |> render(:show, conversation: conv, resumed: outcome == :resumed)
+    else
+      {:error, {:sandbox_quota_exceeded, _} = reason} ->
+        maybe_enqueue(conn, params, user, reason)
+
+      {:error, :fleet_full = reason} ->
+        maybe_enqueue(conn, params, user, reason)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp maybe_enqueue(conn, params, user, reason) do
+    if params["queue"] == true and params["images"] in [nil, []] and
+         params["sandbox_id"] in [nil, ""] do
+      enqueue_params = %{
+        user_id: user.id,
+        agent_id: params["agent_id"],
+        kind: "start",
+        source: params["source"],
+        attrs: Map.drop(params, ["queue", "images", "user_id", "agent_id"])
+      }
+
+      case Fountain.SandboxQueue.enqueue(enqueue_params, Audited.attribution(conn)) do
+        {:ok, request} ->
+          conn
+          |> put_status(:accepted)
+          |> put_view(FountainWeb.SandboxQueueJSON)
+          |> render(:show,
+            request: request,
+            position: Fountain.SandboxQueue.position(request)
+          )
+
+        {:error, :queue_full} ->
+          {:error, reason}
+
+        {:error, _} = error ->
+          error
+      end
+    else
+      {:error, reason}
     end
   end
 

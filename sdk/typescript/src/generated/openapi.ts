@@ -1543,6 +1543,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandbox-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List queued sandbox requests
+         * @description Lists the caller's waiting requests in FIFO position order.
+         */
+        get: operations["FountainWeb.SandboxQueueController.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandbox-queue/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a sandbox request */
+        get: operations["FountainWeb.SandboxQueueController.show"];
+        put?: never;
+        post?: never;
+        /** Cancel a queued sandbox request */
+        delete: operations["FountainWeb.SandboxQueueController.delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sandboxes": {
         parameters: {
             query?: never;
@@ -3367,6 +3405,8 @@ export interface components {
             } | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
+            /** @description When a fresh start reaches the tenant or fleet concurrency ceiling, wait in the bounded sandbox queue and return 202 instead of 429 or 503. Requests with images or an explicit sandbox_id are not queued. */
+            queue?: boolean | null;
             /**
              * Format: uuid
              * @description Attach the conversation to a sandbox you already have instead of provisioning one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or suspended (409 sandbox_not_attachable), and built for the same agent, environment and vault as this launch (422 sandbox_identity_mismatch; 422 sandbox_runtime_mismatch if the agent's runtime changed since). The conversation opens idle on that machine; a prompt here wakes it. Several conversations then run on one disk at once, except on opencode and gemini, where a second turn is refused with 409 sandbox_at_capacity while one runs.
@@ -4098,6 +4138,35 @@ export interface components {
         /** SandboxListingResponse */
         SandboxListingResponse: {
             data: components["schemas"]["SandboxListing"];
+        };
+        /**
+         * SandboxRequest
+         * @description Work waiting for sandbox capacity (ADR 0042).
+         */
+        SandboxRequest: {
+            /** Format: uuid */
+            agent_id: string;
+            /** Format: uuid */
+            conversation_id?: string | null;
+            error?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** @enum {string} */
+            kind: "start" | "schedule_run";
+            position?: number | null;
+            source?: string | null;
+            /** @enum {string} */
+            status: "queued" | "starting" | "started" | "cancelled" | "expired" | "failed";
+        };
+        /** SandboxRequestListResponse */
+        SandboxRequestListResponse: {
+            data: components["schemas"]["SandboxRequest"][];
+        };
+        /** SandboxRequestResponse */
+        SandboxRequestResponse: {
+            data: components["schemas"]["SandboxRequest"];
         };
         /** SandboxResponse */
         SandboxResponse: {
@@ -7664,6 +7733,15 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationResponse"];
                 };
             };
+            /** @description Queued for sandbox capacity */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxRequestResponse"];
+                };
+            };
             /** @description Insufficient credits */
             402: {
                 headers: {
@@ -7692,6 +7770,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangesetError"];
+                };
+            };
+            /** @description Tenant concurrency cap reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox fleet is full */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -8722,6 +8818,86 @@ export interface operations {
                 };
             };
             /** @description No such runner */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxQueueController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sandbox requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxRequestListResponse"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxQueueController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sandbox request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxRequestResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxQueueController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found or no longer queued */
             404: {
                 headers: {
                     [name: string]: unknown;
