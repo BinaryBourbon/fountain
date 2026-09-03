@@ -96,12 +96,13 @@ pip install fountain-agent-sdk
 # or add {:fountain_sdk, "~> 0.1.0"} to mix.exs
 ```
 
-For Swift Package Manager, use the versioned repository package:
+Until the next Fountain release contains the root `Package.swift`, use the
+repository's `main` branch with Swift Package Manager:
 
 ```swift
 .package(
     url: "https://github.com/BinaryBourbon/fountain.git",
-    from: "0.15.0"
+    branch: "main"
 )
 ```
 

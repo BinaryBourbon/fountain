@@ -16,6 +16,12 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-03
+
+### Upgrade notes
+
+- None.
+
 ### Removed
 
 - **`users.onboarding_state`** (#1393, ADR 0038, settling NC-6 from ADR 0007).
@@ -53,6 +59,10 @@ upgrade, is in
 
 ### Changed
 
+- **The Swift SDK becomes a versioned SwiftPM package in `v0.16.0`.** The
+  manifest now declares Swift tools 6.1, its SSE iterator passes Swift 6 strict
+  concurrency checks, and the release pipeline resolves and builds the tag from
+  a clean remote consumer before it creates the GitHub Release.
 - **`managoat_runtimes` comes from hex** (#1368, #1345, ADR 0037), the
   ninth library to graduate and the last in the umbrella:
   `apps/managoat_runtimes` is gone, the pin is

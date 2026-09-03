@@ -68,11 +68,11 @@ func streamPath(
 }
 
 /// Holds the connection the first `next()` opens. An `AsyncIterator` has a
-/// single consumer by contract, which is what makes the actor's read-await-write
-/// of `iterator` safe here.
+/// single consumer by contract, which is what makes access to the boxed
+/// iterator safe here.
 private actor LazyStream {
   private let open: @Sendable () -> AsyncThrowingStream<JSONObject, Error>
-  private var iterator: AsyncThrowingStream<JSONObject, Error>.AsyncIterator?
+  private var iterator: StreamIterator?
   private var opened = false
 
   init(open: @escaping @Sendable () -> AsyncThrowingStream<JSONObject, Error>) {
@@ -82,11 +82,24 @@ private actor LazyStream {
   func next() async throws -> JSONObject? {
     if !opened {
       opened = true
-      iterator = open().makeAsyncIterator()
+      iterator = StreamIterator(open().makeAsyncIterator())
     }
-    guard var current = iterator else { return nil }
-    defer { iterator = current }
-    return try await current.next()
+    return try await iterator?.next()
+  }
+}
+
+/// `AsyncThrowingStream.Iterator` is a single-consumer value but does not
+/// declare `Sendable`. The actor above owns this box, and the sequence contract
+/// prevents overlapping calls to `next()`.
+private final class StreamIterator: @unchecked Sendable {
+  private var iterator: AsyncThrowingStream<JSONObject, Error>.AsyncIterator
+
+  init(_ iterator: AsyncThrowingStream<JSONObject, Error>.AsyncIterator) {
+    self.iterator = iterator
+  }
+
+  func next() async throws -> JSONObject? {
+    try await iterator.next()
   }
 }
 
