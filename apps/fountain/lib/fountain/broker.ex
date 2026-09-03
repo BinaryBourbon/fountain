@@ -212,9 +212,27 @@ defmodule Fountain.Broker do
   end
 
   # Inference credentials (gate 3): the env var each runtime reads, the host
-  # it talks to, and the prefix its vendor's tokens carry. Substitution covers
-  # every shape at once — Anthropic's `x-api-key`, the OAuth bearer, OpenAI's
-  # bearer and Gemini's `?key=` query parameter alike.
+  # it talks to, and the prefix its vendor's tokens carry. Substitution
+  # rewrites the placeholder wherever it appears in a **header value**, which
+  # is every shape these runtimes actually send — Anthropic's `x-api-key`, the
+  # OAuth bearer, OpenAI's bearer, Gemini's `x-goog-api-key`.
+  #
+  # This comment used to claim substitution also covered "Gemini's `?key=`
+  # query parameter". It does not, on either backend that matters:
+  # `Fountain.Broker.Native` substitutes in header values only, where Agent
+  # Vault also rewrote path, query and body (#1359 row 1). Measured 2026-09-03
+  # against gemini-cli 0.58.0 — the sandbox images pin no version, so this is
+  # what a sandbox runs — by hooking `fetch` under the sandbox's own env
+  # (`GEMINI_API_KEY` set, no base-URL override, so `getAuthTypeFromEnv`
+  # resolves `gemini-api-key`): every call to generativelanguage.googleapis.com
+  # carries the key in `x-goog-api-key` and nothing in the query string. The
+  # `?key=` form is real but belongs to the Live API's audio and music
+  # WebSockets, which an ACP turn never opens. Header substitution is therefore
+  # sufficient for Gemini and query substitution is not needed for the flip.
+  #
+  # Note `GOOGLE_GEMINI_BASE_URL` outranks `GEMINI_API_KEY` in that
+  # resolution, so pointing the CLI at a local capture changes the auth type
+  # out from under the measurement. Hook the client, do not redirect it.
   @inference %{
     "CLAUDE_CODE_OAUTH_TOKEN" => %{cred: :claude_code_oauth_token, hosts: ["api.anthropic.com"]},
     "ANTHROPIC_API_KEY" => %{cred: :anthropic_api_key, hosts: ["api.anthropic.com"]},
