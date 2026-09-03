@@ -151,13 +151,19 @@ jobs:
           set -euo pipefail
           current='${{ steps.ver.outputs.current }}'
           next='${{ steps.ver.outputs.next }}'
-          # Only touch the umbrella, fountain app and Swift SDK constant.
+          # Only touch the umbrella, fountain app and the two Swift version
+          # constants (the SDK and the typed client release together).
           # Hard-coded rather than `find` to avoid clobbering version: in deps.
           sed -i -E "s/version: \"${current}\"/version: \"${next}\"/" mix.exs
           sed -i -E "s/version: \"${current}\"/version: \"${next}\"/" apps/fountain/mix.exs
           sed -i -E "s/public let fountainSDKVersion = \"${current}\"/public let fountainSDKVersion = \"${next}\"/" sdk/swift/Sources/Fountain/Fountain.swift
           if ! grep -qF "public let fountainSDKVersion = \"${next}\"" sdk/swift/Sources/Fountain/Fountain.swift; then
             echo "Swift SDK version bump failed: expected ${current} -> ${next}" >&2
+            exit 1
+          fi
+          sed -i -E "s/public let fountainKitVersion = \"${current}\"/public let fountainKitVersion = \"${next}\"/" sdk/swift/Sources/FountainKit/Version.swift
+          if ! grep -qF "public let fountainKitVersion = \"${next}\"" sdk/swift/Sources/FountainKit/Version.swift; then
+            echo "FountainKit version bump failed: expected ${current} -> ${next}" >&2
             exit 1
           fi
           git diff --stat
@@ -195,6 +201,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "${BRANCH}"
           git add mix.exs apps/fountain/mix.exs sdk/swift/Sources/Fountain/Fountain.swift \
+            sdk/swift/Sources/FountainKit/Version.swift \
             docker-compose.yml .env.compose.example render.yaml fly.toml \
             deploy/k8s/kustomization.yaml deploy/k8s/deployment.yaml
           # No [skip ci]: the PR is meant to run CI, and a main push whose
@@ -202,7 +209,7 @@ jobs:
           git commit -m "chore(release): ${TAG}"
           git push origin "${BRANCH}"
           cat > "${RUNNER_TEMP}/body.md" <<EOF
-          Version bump for ${TAG}: both \`mix.exs\` files, the Swift SDK version source, and the six self-host image pins.
+          Version bump for ${TAG}: both \`mix.exs\` files, the two Swift version sources, and the six self-host image pins.
 
           Merging this PR tags the squash commit \`${TAG}\` and dispatches \`release.yml\`, which builds the CLI binaries, publishes \`ghcr.io/binarybourbon/fountain:${TAG}\`, boots it through the documented quick start and creates the GitHub Release.
 

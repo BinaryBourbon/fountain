@@ -2,6 +2,17 @@
 
 Give an agent a computer, repositories, and credentials in one call.
 
+Two clients ship from this package, and they are for different jobs:
+
+| Product | Import | Shape | Use it when |
+|---|---|---|---|
+| `Fountain` | `import Fountain` | JSON in, `JSONObject` out; one `Fountain` object | scripting, automation, a one-call run — the shape its TypeScript, Python and Elixir siblings have |
+| `FountainKit` | `import FountainKit` | `Codable` models, one namespace per resource | building an application against the API: models that bind to a UI, and the admin, audit, runner and API-key surfaces a console needs |
+
+Both speak the same wire, both are checked against the same
+[conformance suite](../conformance/README.md), both are Apache-2.0. Pick one:
+they do not share types, and an app has no reason to use both.
+
 ```swift
 import Fountain
 
@@ -35,10 +46,48 @@ dependencies: [
 ]
 ```
 
-Then add `.product(name: "Fountain", package: "fountain")` to your target.
+Then add `.product(name: "Fountain", package: "fountain")` to your target —
+or `.product(name: "FountainKit", package: "fountain")` for the typed client,
+which needs a release later than 0.16.0.
 
 Swift 6.1 or newer is required. The SDK supports macOS 12, iOS/tvOS 15,
 watchOS 8, and Linux FoundationNetworking, with no third-party dependencies.
+
+## The typed client
+
+`FountainKit` is the same API with the JSON resolved into types: `Agent`,
+`Conversation`, `LogEvent`, `Block`, `AuthMe`, `AdminUser`, and a resource
+namespace each. Errors are an enum (`FountainError`) you branch on by case
+and by server `code`, and every server enum decodes unknown values instead of
+throwing, so a new runtime never crashes a shipped app.
+
+```swift
+import FountainKit
+
+let client = FountainClient(config: FountainConfig(baseURL: url, apiKey: key))
+let me = try await client.auth.me()          // the cheapest key check
+for agent in try await client.agents.list() {
+    print(agent.name, agent.model)
+}
+
+let run = try await client.run("Review this repository", agent: agent.id)
+for try await event in run.events {
+    if case .text(let chunk) = event { print(chunk, terminator: "") }
+}
+let result = try await run.value()           // text, tools used, end state
+```
+
+`run.events` replays from the beginning for every subscriber and follows the
+turn once, so a window and a menu-bar item can watch the same run without
+opening a second stream. A failed *turn* is a `RunResult` with a non-`done`
+state; only client-side failures throw.
+
+It wraps more of the API than `Fountain` does — admin, audit, runners, API
+keys, `apply`, agent avatars, turn images — and reaches anything unwrapped
+through `client.request(_:_:)`. See
+[docs/api-surface.md in swift-goat](https://github.com/jhgaylor/swift-goat/blob/main/docs/api-surface.md)
+for the operation-by-operation map, and swift-goat itself for a macOS app
+built on it.
 
 ## Credentials
 

@@ -21,6 +21,12 @@ print(result.url)
 The vault value reaches the sandbox as an environment variable. It does not
 enter the prompt or the event feed that the SDK reads.
 
+The package ships a second client, `FountainKit`, for applications: the same
+API read into Swift types rather than JSON. Use `Fountain` to script a run,
+and `FountainKit` to build against the API. They do not share types, and an
+app has no reason to use both. Everything below is `Fountain`; the typed
+client has [its own section](#the-typed-client).
+
 ## Install
 
 Add Fountain as a package dependency:
@@ -34,7 +40,8 @@ dependencies: [
 ]
 ```
 
-Add the library product to your target:
+Add the library product to your target: `Fountain` to script a run, or
+`FountainKit` to build an application (it needs a release later than 0.16.0):
 
 ```swift
 .target(
@@ -148,6 +155,45 @@ let second = try await fountain
 
 print(second.text)
 ```
+
+## The typed client
+
+`FountainKit` is the same API with the JSON resolved into types: `Agent`,
+`Conversation`, `LogEvent`, `Block`, `AuthMe`, and a namespace per resource.
+Errors are an enum you branch on by case and by server code. Every server
+enum decodes values it does not know rather than throws. A runtime added
+after you shipped does not crash your app.
+
+```swift
+import FountainKit
+
+let client = FountainClient(config: FountainConfig(baseURL: url, apiKey: key))
+
+for agent in try await client.agents.list() {
+    print(agent.name, agent.model)
+}
+
+let run = try await client.run("Review this repository", agent: agent.id)
+for try await event in run.events {
+    if case .text(let chunk) = event {
+        print(chunk, terminator: "")
+    }
+}
+let result = try await run.value()
+print(result.state.rawValue, result.toolsUsed)
+```
+
+`run.events` replays from the start for every subscriber, and follows the
+turn once. Two views can watch one run without a second stream. A turn that
+fails is a result with a state of `failed`, not a thrown error. Only
+client-side failures throw.
+
+It wraps parts of the API the untyped client does not: admin, the audit
+trail, runners, API keys, `apply`, agent avatars and turn images. Use
+`client.request(_:_:)` to reach what neither of them wraps.
+
+For a worked example, [swift-goat](https://github.com/jhgaylor/swift-goat) is
+a macOS app built on it.
 
 The [TypeScript SDK](sdk.md) covers the same workflow in TypeScript. Use the
 [API reference](api.md) for endpoints that need no Swift wrapper.

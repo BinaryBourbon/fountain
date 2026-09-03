@@ -28,6 +28,7 @@ sdk/conformance/
 | TypeScript | `npm run conformance` | `sdk/typescript` |
 | Python | `python3 -m unittest discover -s tests -p test_conformance.py` | `sdk/python` |
 | Swift | `swift test --filter ConformanceTests` | repository root |
+| Swift (typed) | `swift test --filter FountainKitTests.Conformance` | repository root |
 | Elixir | `mix test test/conformance_test.exs` | `sdk/elixir` |
 
 Each also runs inside that SDK's normal test command, so a contributor who runs
