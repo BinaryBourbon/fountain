@@ -1,5 +1,7 @@
 defmodule FountainWeb.BuzzAgentControllerTest do
-  use FountainWeb.ConnCase, async: true
+  # Every provision request calls Manager.start_harness/1 under the global
+  # Horde supervisor, even when start_harness_link/2 later rejects the launch.
+  use FountainWeb.ConnCase, async: false
 
   alias Fountain.{Crypto, Vaults}
 
@@ -7,6 +9,9 @@ defmodule FountainWeb.BuzzAgentControllerTest do
     user = insert_verified_user()
     {_rec, raw_key} = insert_api_key(user)
     agent = insert_agent(user_id: user.id)
+
+    on_exit(fn -> Fountain.BuzzTestSupport.stop_all_harnesses!() end)
+
     %{user: user, raw_key: raw_key, agent: agent}
   end
 

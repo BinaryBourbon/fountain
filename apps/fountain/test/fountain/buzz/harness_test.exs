@@ -36,7 +36,9 @@ defmodule Fountain.Buzz.HarnessTest do
 
   test "opens the port with the given env and stays running", %{dir: dir} do
     marker = Path.join(dir, "marker")
-    cmd = write_fake(dir, "buzz-acp", "printf '%s' \"$BUZZ_RELAY_URL\" > #{marker}\nsleep 30\n")
+
+    cmd =
+      write_fake(dir, "buzz-acp", "printf '%s' \"$BUZZ_RELAY_URL\" > #{marker}\nexec sleep 30\n")
 
     pid = start(command: cmd, env: [{"BUZZ_RELAY_URL", "wss://relay.example"}], label: "t")
 
@@ -64,7 +66,7 @@ defmodule Fountain.Buzz.HarnessTest do
   # still-live process. Through the launcher the port stays open, so no restart.
   test "does NOT restart when the child merely closes its stdio", %{dir: dir} do
     # Close stdin/stdout/stderr toward the port, then keep running.
-    cmd = write_fake(dir, "buzz-acp", "exec 0<&- 1>&- 2>&-\nsleep 30\n")
+    cmd = write_fake(dir, "buzz-acp", "exec 0<&- 1>&- 2>&-\nexec sleep 30\n")
 
     pid = start(command: cmd, restart_backoff_ms: 20, label: "t")
 
@@ -98,10 +100,30 @@ defmodule Fountain.Buzz.HarnessTest do
     assert reaped, "child OS process #{child} survived shutdown (leaked)"
   end
 
+  test "shutdown waits for the launcher OS process to exit", %{dir: dir} do
+    launcher =
+      write_fake(dir, "slow-launcher", "exec 3<&0\ncat <&3 >/dev/null\nexec sleep 0.2\n")
+
+    cmd = write_fake(dir, "buzz-acp", "exit 0\n")
+    pid = start(command: cmd, launcher: launcher, label: "t")
+    {:os_pid, launcher_pid} = pid |> :sys.get_state() |> Map.fetch!(:port) |> Port.info(:os_pid)
+
+    :ok = stop_supervised(Harness)
+
+    refute alive?(launcher_pid), "launcher OS process #{launcher_pid} survived shutdown"
+  end
+
   test "surfaces buzz-acp output on the Logger, tagged with the label", %{dir: dir} do
     import ExUnit.CaptureLog
 
-    cmd = write_fake(dir, "buzz-acp", "echo 'connected to relay'\nsleep 30\n")
+    marker = Path.join(dir, "logged")
+
+    cmd =
+      write_fake(
+        dir,
+        "buzz-acp",
+        "echo 'connected to relay'\necho ready > #{marker}\nexec sleep 30\n"
+      )
 
     # Test config filters :info at the primary level; prod logs at :info. Lower
     # the level for this test so the info line is dispatched to the capture.
@@ -111,8 +133,10 @@ defmodule Fountain.Buzz.HarnessTest do
 
     log =
       capture_log(fn ->
-        start(command: cmd, label: "philo-xyz")
-        Process.sleep(400)
+        pid = start(command: cmd, label: "philo-xyz")
+        wait_until(fn -> File.exists?(marker) end)
+        _ = :sys.get_state(pid)
+        Logger.flush()
       end)
 
     assert log =~ "[buzz-acp philo-xyz]"
@@ -148,7 +172,7 @@ defmodule Fountain.Buzz.HarnessTest do
   end
 
   test "a :normal linked exit is ignored — the harness keeps running", %{dir: dir} do
-    cmd = write_fake(dir, "buzz-acp", "sleep 30\n")
+    cmd = write_fake(dir, "buzz-acp", "exec sleep 30\n")
     pid = start(command: cmd, label: "t")
     # What a linked helper that exits normally would deliver to a trapping process.
     send(pid, {:EXIT, self(), :normal})
@@ -157,7 +181,7 @@ defmodule Fountain.Buzz.HarnessTest do
   end
 
   test "runs the on_stop callback on shutdown", %{dir: dir} do
-    cmd = write_fake(dir, "buzz-acp", "sleep 30\n")
+    cmd = write_fake(dir, "buzz-acp", "exec sleep 30\n")
     test_pid = self()
 
     start(command: cmd, label: "t", on_stop: fn -> send(test_pid, :stopped) end)
@@ -165,7 +189,7 @@ defmodule Fountain.Buzz.HarnessTest do
     assert_receive :stopped, 2_000
   end
 
-  defp wait_until(fun, tries \\ 200)
+  defp wait_until(fun, tries \\ 1_000)
   defp wait_until(_fun, 0), do: flunk("condition not met in time")
 
   defp wait_until(fun, tries) do

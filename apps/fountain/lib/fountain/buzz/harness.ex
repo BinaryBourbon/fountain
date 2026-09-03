@@ -31,6 +31,8 @@ defmodule Fountain.Buzz.Harness do
   require Logger
 
   @default_backoff_ms 1_000
+  @launcher_shutdown_timeout_ms 6_000
+  @launcher_shutdown_poll_ms 10
   # Line-frame buzz-acp's output at the port so a single log line is bounded and
   # a chatty process cannot deliver one unbounded binary.
   @max_line 4_096
@@ -143,7 +145,7 @@ defmodule Fountain.Buzz.Harness do
 
   @impl true
   def terminate(_reason, state) do
-    close(state.port)
+    close(state.port, state.launcher)
     run_on_stop(state.on_stop)
     :ok
   end
@@ -179,18 +181,70 @@ defmodule Fountain.Buzz.Harness do
   defp spawn_argv(%{launcher: launcher, shell: shell} = state),
     do: {shell, [launcher, state.command | state.args]}
 
-  defp close(nil), do: :ok
+  defp close(nil, _launcher), do: :ok
+
+  defp close(port, nil) do
+    close_port(port)
+  end
 
   # Closing the port EOFs the launcher's held pipe, which TERMs buzz-acp (and,
   # if it will not go, KILLs it) and reaps its `fountain acp` child — see
-  # priv/buzz-acp-launch.sh. Without the launcher this only closes the pipe and
-  # a bare buzz-acp would be orphaned.
-  defp close(port) do
-    Port.close(port)
+  # priv/buzz-acp-launch.sh. Port.close/1 returns before the launcher OS process
+  # necessarily exits, so wait for that process too: callers rely on a completed
+  # Harness shutdown meaning its executable and other launch resources are no
+  # longer in use (#1469). Without the launcher this only closes the pipe and a
+  # bare buzz-acp would be orphaned.
+  defp close(port, _launcher) do
+    launcher_pid = port_os_pid(port)
+    close_port(port)
+    await_launcher_exit(launcher_pid)
     :ok
+  end
+
+  defp close_port(port) do
+    Port.close(port)
   rescue
     # Port already closed between the exit frame and here.
     ArgumentError -> :ok
+  end
+
+  defp port_os_pid(port) do
+    case Port.info(port, :os_pid) do
+      {:os_pid, os_pid} -> os_pid
+      nil -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp await_launcher_exit(nil), do: :ok
+
+  defp await_launcher_exit(os_pid) do
+    deadline = System.monotonic_time(:millisecond) + @launcher_shutdown_timeout_ms
+    do_await_launcher_exit(os_pid, deadline)
+  end
+
+  defp do_await_launcher_exit(os_pid, deadline) do
+    cond do
+      not os_process_alive?(os_pid) ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        Logger.warning("buzz-acp launcher did not exit after shutdown: os_pid=#{os_pid}")
+
+      true ->
+        Process.sleep(@launcher_shutdown_poll_ms)
+        do_await_launcher_exit(os_pid, deadline)
+    end
+  end
+
+  defp os_process_alive?(os_pid) do
+    match?(
+      {_, 0},
+      System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
+    )
+  rescue
+    ErlangError -> false
   end
 
   defp run_on_stop(nil), do: :ok
