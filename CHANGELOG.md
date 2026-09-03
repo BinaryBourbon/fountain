@@ -16,6 +16,19 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **opencode on a `google/` model could never authenticate** (#1460).
+  `managoat_runtimes` exported the Gemini key as `GEMINI_API_KEY`, which is
+  what the *gemini* runtime reads. opencode reaches Google through
+  `@ai-sdk/google` and reads `GOOGLE_GENERATIVE_AI_API_KEY` only, so the key
+  arrived in the sandbox and was ignored, and every turn failed with
+  `Authentication required: provider authentication required`. This affected a
+  tenant's own Gemini key exactly as much as a platform one, and had been true
+  since the runtime was written; the platform keys (#1388) only made it easy to
+  hit. Fixed in managoat_runtimes 0.1.1, taken here as a lockfile bump. Nothing
+  to change on an agent: the same model and the same credential now work.
+
 ## [0.16.0] - 2026-09-03
 
 ### Upgrade notes
