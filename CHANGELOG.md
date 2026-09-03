@@ -27,6 +27,21 @@ upgrade, is in
   registration. Its CI compiles all three with warnings as errors and runs
   the Fake sandbox turn.
 
+### Changed
+
+- **The connection and the transcript have left `ConversationServer`, and the
+  server is what is left** (#1377, tracker #1369, last). The ACP connection
+  that outlives the turn (#817) is `Fountain.Conversations.Connection`: the
+  peer, its monitor, the command underneath it and the quiet timer that closes
+  a background cycle (#1301), with the functions that reuse the connection,
+  close it, lose it and open an autonomous turn. What the sandbox says on its
+  way to the transcript is `Fountain.Conversations.Output`: the durable log
+  budget (#331), the truncation marker, the reattach replay skip and the stage
+  events. The server keeps the process — `init/1`, the provisioning watchdog,
+  the reattach orchestration, the callbacks, and the terminal paths that end a
+  turn. No stage, log line, telemetry event, timer or audit event changed. The
+  pin drops from 3,048 to 2,835, and the tracker closes.
+
 ### Fixed
 
 - **Platform inference on the gemini runtime was unbilled** (#1459). gemini
