@@ -195,10 +195,10 @@ has no platform account or credential.
 
 The table is a point-in-time measurement, not a vendor scorecard. We measured
 Sprites, E2B, Daytona and the self-hosted runner through their Fountain adapters
-in August 2026. We measured Render against its HTTP API in September 2026; no
-Render adapter exists yet.
+in August 2026. Render Sandboxes entered Early Access in September 2026. We
+measured that API directly; no Render adapter exists yet.
 
-| Requirement | [Sprites](sprites.md) | [E2B](e2b.md) | [Daytona](daytona.md) | [Runner](runners.md) | Render |
+| Requirement | [Sprites](sprites.md) | [E2B](e2b.md) | [Daytona](daytona.md) | [Runner](runners.md) | Render (Early Access) |
 |---|---|---|---|---|---|
 | exit-truth | Yes | Yes | No. Session records have no exit code. | Yes | Yes for the client that owns the stream. Later readers see only the result that client reported. |
 | replay-cursor | Partial. Replays the last 16 KiB and can begin mid-line. | No. Fountain adds a journal and replayer. | Yes. Replays from byte zero. | Yes | No. The documented endpoint is absent in production. |
