@@ -20,7 +20,9 @@ defmodule FountainWeb.InferenceCredentialController do
 
   action_fallback FountainWeb.FallbackController
 
-  plug OpenApiSpex.Plug.CastAndValidate, replace_params: false
+  plug OpenApiSpex.Plug.CastAndValidate,
+    replace_params: false,
+    render_error: FountainWeb.Plugs.CastRenderError
 
   @providers Credential.providers()
   @provider_strings Enum.map(@providers, &Atom.to_string/1)

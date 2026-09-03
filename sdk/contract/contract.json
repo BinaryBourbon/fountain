@@ -6107,6 +6107,10 @@
     },
     "ChangesetError": {
       "properties": {
+        "error": {
+          "required": false,
+          "type": "string"
+        },
         "errors": {
           "additionalProperties": {
             "items": {

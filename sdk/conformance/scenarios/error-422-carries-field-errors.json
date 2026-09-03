@@ -1,8 +1,8 @@
 {
   "name": "error-422-carries-field-errors",
-  "title": "A 422 becomes a validation error that still carries the server's per-field messages",
+  "title": "A 422 becomes a validation error carrying both the code and the server's per-field messages",
   "contract": "errors",
-  "why": "`errors: {field: [message]}` is the only thing that tells a caller which field to fix.",
+  "why": "`errors` keyed by field is the only thing that tells a caller which field to fix, and since #1431 every 422 carries a code beside it whether it came from a changeset, from the OpenAPI cast or from a coded refusal.",
   "client": {
     "api_key": "conformance-key"
   },
@@ -15,6 +15,7 @@
       "respond": {
         "status": 422,
         "json": {
+          "error": "validation_failed",
           "errors": {
             "name": [
               "can't be blank"
@@ -36,6 +37,7 @@
     "error": {
       "kind": "validation",
       "status": 422,
+      "code": "validation_failed",
       "field_errors": {
         "name": [
           "can't be blank"

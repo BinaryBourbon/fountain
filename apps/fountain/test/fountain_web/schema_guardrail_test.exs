@@ -48,7 +48,7 @@ defmodule FountainWeb.SchemaGuardrailTest do
 
   # The allowlist may shrink freely. Growing it means editing this number in
   # the same diff, which is the whole ratchet: a reviewer sees the number move.
-  @ceiling 97
+  @ceiling 72
 
   describe "the ratchet" do
     test "the allowlist has not grown" do

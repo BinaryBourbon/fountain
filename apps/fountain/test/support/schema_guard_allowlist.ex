@@ -23,12 +23,11 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   plugs, which is why 68 of them appear at once. Declaring each per operation
   is a large, mechanical documentation change (#1432).
 
-  `:cast_and_validate_422` — `OpenApiSpex.Plug.CastAndValidate` renders its own
-  422 body, `%{"errors" => [%{message, title, source}]}`, while these
-  operations declare `Error` (`%{error}`) or `ChangesetError`
-  (`%{errors: %{field => [message]}}`). So the spec describes the changeset's
-  422 and the wire sometimes carries the validator's. One root cause, 27
-  operations (#1431).
+  `:mixed_422_shapes` — the operation declares `ChangesetError` for 422, which
+  requires `errors`, and can also refuse with a coded
+  `%{error: ..., message: ...}` that has none. Since #1431 both bodies carry
+  `error`, so the question left is what such an operation should declare;
+  #1444 has the three answers and why it is an API decision rather than a fix.
 
   `:test_fixture_vocabulary` — not a defect in the API. The fixture inserts a
   value on purpose that the domain no longer accepts (a conversation whose
@@ -42,8 +41,7 @@ defmodule FountainWeb.SchemaGuardAllowlist do
 
   @reasons %{
     plug_status: "a status a pipeline plug returns that the operation does not declare (#1432)",
-    cast_and_validate_422:
-      "CastAndValidate renders its own 422 body, not the declared error schema (#1431)",
+    mixed_422_shapes: "declares ChangesetError for 422 but can also refuse with a code (#1444)",
     test_fixture_vocabulary: "the fixture inserts an out-of-vocabulary value on purpose",
     openai_error_shape: "the OpenAI gateway renders `error` as a string, not an object (#1433)"
   }
@@ -122,34 +120,9 @@ defmodule FountainWeb.SchemaGuardAllowlist do
     {"PUT /api/environments/{id}", 401} => :plug_status,
     {"PUT /api/vaults/{id}", 401} => :plug_status,
 
-    # ── cast_and_validate_422 (27) ─────────────────────────────
-    {"DELETE /api/account", 422} => :cast_and_validate_422,
-    {"GET /api/sandboxes/{sandbox_id}/file", 422} => :cast_and_validate_422,
-    {"GET /api/search", 422} => :cast_and_validate_422,
-    {"PATCH /api/buzz/agents/{id}", 422} => :cast_and_validate_422,
-    {"PATCH /api/connection-providers/{id}", 422} => :cast_and_validate_422,
-    {"PATCH /api/team/{agent_id}", 422} => :cast_and_validate_422,
-    {"PATCH /api/team/{agent_id}/contact", 422} => :cast_and_validate_422,
-    {"PATCH /api/team/{agent_id}/schedules/{id}", 422} => :cast_and_validate_422,
-    {"POST /api/admin/users/{id}/credits", 422} => :cast_and_validate_422,
-    {"POST /api/admin/users/{id}/sandbox-limit", 422} => :cast_and_validate_422,
-    {"POST /api/agents", 422} => :cast_and_validate_422,
-    {"POST /api/apply", 422} => :cast_and_validate_422,
-    {"POST /api/auth/api-keys", 422} => :cast_and_validate_422,
-    {"POST /api/auth/password", 422} => :cast_and_validate_422,
-    {"POST /api/auth/register", 422} => :cast_and_validate_422,
-    {"POST /api/auth/reset", 422} => :cast_and_validate_422,
-    {"POST /api/buzz/agents", 422} => :cast_and_validate_422,
-    {"POST /api/conversations", 422} => :cast_and_validate_422,
-    {"POST /api/secret-bindings", 422} => :cast_and_validate_422,
-    {"POST /api/support/reports", 422} => :cast_and_validate_422,
-    {"POST /api/team/{agent_id}/contact", 422} => :cast_and_validate_422,
-    {"POST /api/team/{agent_id}/schedules", 422} => :cast_and_validate_422,
-    {"POST /api/vaults", 422} => :cast_and_validate_422,
-    {"POST /api/webhooks", 422} => :cast_and_validate_422,
-    {"PUT /api/account/inference-credentials/{provider}", 422} => :cast_and_validate_422,
-    {"PUT /api/environments/{id}", 422} => :cast_and_validate_422,
-    {"PUT /api/vaults/{id}", 422} => :cast_and_validate_422,
+    # ── mixed_422_shapes (2) ─────────────────────────────
+    {"POST /api/auth/register", 422} => :mixed_422_shapes,
+    {"POST /api/conversations", 422} => :mixed_422_shapes,
 
     # ── test_fixture_vocabulary (1) ─────────────────────────────
     {"GET /api/conversations/{id}", 200} => :test_fixture_vocabulary,

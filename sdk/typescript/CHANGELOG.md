@@ -10,6 +10,23 @@ server releases.
 
 ---
 
+## [1.20.0] — 2026-09-03
+
+### Changed
+
+- `error.fieldErrors` now populates on a request the server rejected against
+  its OpenAPI schema, not only on one a changeset rejected. Those two
+  failures used to come back in different shapes — the schema validator sent
+  an array keyed by JSON pointer, which this client read as `{}` — so a
+  caller was told the request was invalid and not which field, on exactly the
+  failures where the field is the only useful information. The server now
+  sends one shape for every 422 (#1431). No API change here; the client got
+  better because the wire did.
+- `ChangesetError` gains an optional `error`, the code every Fountain error
+  carries. On a validation body it is always `validation_failed`.
+
+---
+
 ## [1.19.0] — 2026-09-03
 
 ### Changed

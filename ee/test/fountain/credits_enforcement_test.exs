@@ -172,8 +172,10 @@ defmodule Fountain.CreditsEnforcementTest do
         |> post("/api/admin/users/#{user.id}/credits", %{"cents" => -5})
         |> json_response(422)
 
-      # The spec's `minimum: 1` refuses it before the action does.
-      assert body["error"] == "invalid_request" or is_list(body["errors"])
+      # The spec's `minimum: 1` refuses it before the action does, and the cast
+      # plug renders that like every other validation failure (#1431).
+      assert body["error"] == "validation_failed"
+      assert is_map(body["errors"])
     end
   end
 
