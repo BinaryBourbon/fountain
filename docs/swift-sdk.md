@@ -23,14 +23,13 @@ enter the prompt or the event feed that the SDK reads.
 
 ## Install
 
-Until the next Fountain release contains the root `Package.swift`, use the
-repository's `main` branch:
+Add Fountain as a package dependency:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/BinaryBourbon/fountain.git",
-        branch: "main"
+        from: "0.16.0"
     ),
 ]
 ```
