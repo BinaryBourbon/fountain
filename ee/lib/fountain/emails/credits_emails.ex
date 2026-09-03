@@ -37,18 +37,23 @@ defmodule Fountain.Emails.CreditsEmails do
   def deliver_welcome_email(%User{} = user) do
     base_url = Fountain.PublicUrl.base()
 
-    # The console's dashboard, whatever the account has set up: it is the
-    # thing that says what is still missing (#867).
-    start_url = "#{base_url}/dashboard"
+    # The verified landing (ADR 0038): a key, one request, the reply. Not the
+    # dashboard, which used to greet a new account with a checklist of things
+    # to go and set up before anything could answer.
+    start_url = "#{base_url}/start"
 
     opening_text = welcome_opening_phrase(user)
+    # The same request the landing shows and the manual prints, with its
+    # placeholders left in. The key is never in an email; the email says
+    # where the key is.
+    request = Fountain.Onboarding.curl(base_url: base_url)
 
     new()
     |> from(UserEmails.from_address())
     |> to({user.email, user.email})
     |> subject("Welcome to #{brand()}")
-    |> html_body(welcome_html(start_url, opening_text))
-    |> text_body(welcome_text(start_url, opening_text))
+    |> html_body(welcome_html(start_url, opening_text, request))
+    |> text_body(welcome_text(start_url, opening_text, request))
     |> Mailer.deliver()
   end
 
@@ -65,21 +70,26 @@ defmodule Fountain.Emails.CreditsEmails do
     end
   end
 
-  defp welcome_html(start_url, opening_text) do
+  defp welcome_html(start_url, opening_text, request) do
     """
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
       <h2>Welcome to #{brand()}</h2>
       <p>
-        Your account is verified and ready. Set up an agent, give it an
-        environment, and start a conversation — it runs in an isolated sandbox
-        and streams back live.
+        Your account is verified. One request gets you a reply from an agent
+        running in its own sandbox — no repository, no token, no install.
+      </p>
+      <pre style="background: #f4f4f5; border-radius: 6px; padding: 12px; font-size: 12px; overflow-x: auto;"><code>#{Phoenix.HTML.html_escape(request) |> Phoenix.HTML.safe_to_string()}</code></pre>
+      <p>
+        Your API key and your agent's id are on your start page, already
+        filled into that request. Keys are shown once, so open it when you are
+        ready to paste.
       </p>
       <p style="margin: 32px 0;">
         <a href="#{start_url}"
            style="background: #18181b; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
-          Get started
+          Get your key
         </a>
       </p>
       #{if opening_text, do: "<p>#{opening_text}</p>", else: ""}
@@ -92,13 +102,18 @@ defmodule Fountain.Emails.CreditsEmails do
     """
   end
 
-  defp welcome_text(start_url, opening_text) do
+  defp welcome_text(start_url, opening_text, request) do
     """
     Welcome to #{brand()}
 
-    Your account is verified and ready. Set up an agent, give it an
-    environment, and start a conversation — it runs in an isolated sandbox
-    and streams back live:
+    Your account is verified. One request gets you a reply from an agent
+    running in its own sandbox — no repository, no token, no install.
+
+    #{request}
+
+    Your API key and your agent's id are on your start page, already filled
+    into that request. Keys are shown once, so open it when you are ready to
+    paste:
 
     #{start_url}
     #{if opening_text, do: "\n#{opening_text}\n", else: ""}

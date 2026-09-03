@@ -54,7 +54,9 @@ defmodule FountainWeb.UeberauthControllerTest do
   end
 
   describe "callback/2 — success (new user)" do
-    test "creates user, sets session, redirects to the dashboard", %{conn: conn} do
+    # An OAuth signup is created verified, so this is its first screen after
+    # verification too (ADR 0038): the landing, not the dashboard.
+    test "creates user, sets session, redirects to the verified landing", %{conn: conn} do
       email = "github_new_#{System.unique_integer()}@example.com"
       auth = github_auth(email)
 
@@ -64,7 +66,7 @@ defmodule FountainWeb.UeberauthControllerTest do
         |> assign_auth(auth)
         |> get(~p"/auth/oauth/github/callback")
 
-      assert redirected_to(conn) == ~p"/dashboard"
+      assert redirected_to(conn) == ~p"/start"
       user_id = get_session(conn, :user_id)
       assert user_id
 

@@ -8,16 +8,19 @@ It is an API first. Your app reaches it over a protocol you already speak, or
 through an SDK. The person who uses your app need never learn that an agent
 is there.
 
-!!! tip "In a hurry?"
-    Install the CLI and log in. For your own instance, set `FOUNTAIN_BASE_URL`
-    first, because the CLI defaults to the hosted one.
-    ```sh
-    brew install BinaryBourbon/tap/fountain
-    fountain auth login
-    fountain auth whoami
-    ```
-    The CLI now works, and you have no agent to run yet. The
-    [quickstart](quickstart.md) starts the first one.
+The whole product fits in one request. It gets a reply from an agent in its
+own sandbox. Your API key and your agent's id are on your start page, and that
+page puts both into this request for you.
+
+```sh
+--8<-- "docs/snippets/first-request.sh"
+```
+
+The reply arrives on that same page. The [quickstart](quickstart.md) is those
+three steps in full.
+
+<!-- The snippet include above must start a line: an admonition indents its
+     body, and an indented include is left unexpanded. -->
 
 ## The problem
 
@@ -69,9 +72,9 @@ in full.
 
 ## Start here
 
-- **[Run your first agent](quickstart.md)** applies a small manifest and
-  starts an agent against a public repository. It needs no GitHub token or
-  setup script. Start here if Fountain is new to you.
+- **[Run your first agent](quickstart.md)** is a key and one request. It
+  needs no repository, no GitHub token and no install. Start here if Fountain
+  is new to you.
 - **[The guided tour](tour.md)** builds an agent that clones a repo, changes it
   and opens a pull request. A second turn then lands a revision on the same PR.
   The tour is about forty lines. It is the step after the quickstart.

@@ -357,6 +357,92 @@ defmodule Fountain.AnalyticsBridgesTest do
     end
   end
 
+  # ADR 0038's funnel: verified, saw the landing, sent the request, got a
+  # reply. Two of its four steps leave from `Fountain.Activation`, and
+  # deliberately not from the landing page — a developer who copies the
+  # request and runs it after closing the tab still did the thing.
+  describe "activation" do
+    # `create_conversation/1` is the write both create paths share, which is
+    # why the seam is on it rather than on either path. The factory inserts
+    # directly, so these go through the real function.
+    defp create_conversation!(user) do
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id)
+
+      {:ok, conv} =
+        Conversations.create_conversation(%{
+          user_id: user.id,
+          agent_id: agent.id,
+          sandbox_id: sandbox.id,
+          runtime: agent.runtime,
+          status: "pending",
+          source: "api"
+        })
+
+      {conv, agent}
+    end
+
+    test "the account's first conversation is the request being sent" do
+      user = insert_verified_user()
+      forget_setup()
+
+      {conv, agent} = create_conversation!(user)
+
+      assert event = event_named("onboarding.request_sent")
+      assert event["distinct_id"] == user.id
+      assert event["properties"]["conversation_id"] == conv.id
+      assert event["properties"]["agent_id"] == agent.id
+    end
+
+    test "the account's second conversation is not" do
+      user = insert_verified_user()
+      create_conversation!(user)
+      forget_setup()
+
+      create_conversation!(user)
+
+      refute event_named("onboarding.request_sent")
+    end
+
+    test "a turn that ends with a reply is the activation" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv, %{status: "running"})
+
+      insert_log_event(conv, %{
+        turn_id: turn.id,
+        stream: "acp",
+        data:
+          Jason.encode!(%{
+            "jsonrpc" => "2.0",
+            "method" => "session/update",
+            "params" => %{
+              "sessionId" => "s",
+              "update" => %{
+                "sessionUpdate" => "agent_message_chunk",
+                "content" => %{"type" => "text", "text" => "Linux, /work."}
+              }
+            }
+          })
+      })
+
+      forget_setup()
+
+      {:ok, _} =
+        Conversations._unsafe_update_turn(turn, %{
+          status: "completed",
+          ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      assert event = event_named("activation.first_reply")
+      assert event["distinct_id"] == user.id
+      assert event["properties"]["conversation_id"] == conv.id
+      assert is_number(event["properties"]["hours_since_verified"])
+      # The reply itself is agent output, and agent output never leaves.
+      refute inspect(event) =~ "Linux, /work."
+    end
+  end
+
   describe "with capture off" do
     setup do
       Application.put_env(:fountain, :analytics_enabled, false)

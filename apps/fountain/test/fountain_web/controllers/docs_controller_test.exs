@@ -26,14 +26,23 @@ defmodule FountainWeb.DocsControllerTest do
       assert body =~ ~s(href="/docs/integrations/sprites-contract")
     end
 
-    test "renders the admonition as a blockquote, not its raw source syntax", %{conn: conn} do
+    test "the home page has no raw admonition source in it", %{conn: conn} do
       body = conn |> get(~p"/docs") |> html_response(200)
-      assert body =~ "In a hurry?"
       refute body =~ "!!!"
     end
   end
 
   describe "GET /docs/:page" do
+    # The home page carried the admonition this used to read until #1390 made
+    # its "in a hurry" box a snippet include — an admonition indents its body,
+    # and an indented `--8<--` is left unexpanded. The quickstart carries one
+    # now, so the rendering is still pinned to a real page.
+    test "renders an admonition as a blockquote, not its raw source syntax", %{conn: conn} do
+      body = conn |> get(~p"/docs/quickstart") |> html_response(200)
+      assert body =~ "Whose model key"
+      refute body =~ "!!!"
+    end
+
     test "serves a top-level page", %{conn: conn} do
       body = conn |> get(~p"/docs/setup") |> html_response(200)
       assert body =~ "Setup"

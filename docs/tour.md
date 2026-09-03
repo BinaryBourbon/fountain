@@ -8,6 +8,10 @@ runs.
 The tour is about forty lines. Each number and each output below came from a
 real run.
 
+This is the second page. The [quickstart](quickstart.md) is the first one: a
+key and one request, with no repository and no token. Read it first if nothing
+has answered on your account yet.
+
 ## What you must have
 
 - A Fountain API key (Account, then API keys, or `fountain auth login`).

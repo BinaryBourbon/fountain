@@ -1,18 +1,75 @@
 # Run your first agent
 
-This is the shortest path that demonstrates Fountain's whole job. An agent
-starts in a sandbox with a real repository, inspects the checkout, and streams
-its answer to your terminal.
+One request gets a reply from an agent in its own sandbox. You need an
+account and nothing else. No repository, no GitHub token, and no install.
 
-The example uses Fountain's public repository. It needs no GitHub token, setup
-script, package install, or Vault.
+## 1. Your key and your agent
 
-## Choose where Fountain runs
+Your start page holds an API key and the id of your agent. The page adds both
+to the request below, and it shows a key once. Copy the key there.
 
-Run the server yourself, or use the hosted server. The manifest and the agent
-run are the same on both.
+```sh
+export FOUNTAIN_BASE_URL="https://managoat.com"
+export FOUNTAIN_API_KEY="the key from your start page"
+export FOUNTAIN_AGENT_ID="the agent id from your start page"
+```
 
-### Run your own server
+For your own server, use that server's address as `FOUNTAIN_BASE_URL`.
+
+!!! note "Whose model key"
+
+    An agent calls a model. Fountain runs your agent on this deployment's own
+    model key while your account has none. Your key always wins when you add
+    one, under Account, then Inference keys. A server with no key of its own
+    needs yours first, and your start page says which case you are in.
+
+## 2. Send the request
+
+```sh
+--8<-- "docs/snippets/first-request.sh"
+```
+
+Fountain starts a sandbox, starts the agent in it, and answers. The response
+holds the conversation `id`.
+
+## 3. Read the reply
+
+The reply arrives on your start page. For a terminal, read the conversation
+stream with the id from step 2.
+
+```sh
+curl -N -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  "$FOUNTAIN_BASE_URL/api/conversations/CONVERSATION_ID/stream?blocks=true"
+```
+
+That reply came from your agent, on a machine that Fountain operates for you.
+Fountain counts that moment as activation. It is the whole product, in one
+request.
+
+## The same request from the SDK
+
+```bash
+npm install @agentshit/fountain-sdk
+```
+
+```ts
+--8<-- "docs/snippets/first-request.ts"
+```
+
+`new Fountain()` reads `FOUNTAIN_API_KEY` and `FOUNTAIN_BASE_URL` from the
+environment, exactly as the CLI does. There are
+[Python](python-sdk.md), [Elixir](elixir-sdk.md) and [Swift](swift-sdk.md)
+clients over the same API.
+
+## Where to go next
+
+The [guided tour](tour.md) is the second page. It builds an agent that clones
+your repository, changes it, and opens a pull request.
+
+The rest of this page is the same first run from the CLI, and the way to run
+the server yourself.
+
+## Run your own server
 
 You need Docker, OpenSSL, and a sandbox provider token. The Compose file runs
 Postgres. The example below uses Sprites as the sandbox provider.
@@ -36,12 +93,6 @@ The Compose defaults self-verify the first account and make it the admin.
 Create that account before you expose the server to another network. The
 [deployment guide](guides/operate/deploy.md) shows how to verify readiness,
 close registration, and configure the other sandbox providers.
-
-### Use the hosted server
-
-Create an account on [managoat.com](https://managoat.com), then add an
-Anthropic credential under Account, then Inference keys. The hosted
-server supplies the control plane and sandbox provider.
 
 ## Install and authenticate the CLI
 
@@ -77,9 +128,11 @@ fountain auth login
 your browser. Approve the device there. The CLI saves the server URL and an
 API key, so the commands below need no server flag.
 
-## Apply and run
+## Apply and run your own agent
 
-Download the small manifest, apply it, and call the agent by name.
+The request above runs the agent your account already has. A manifest
+describes agents of your own, with the machine each one gets. Download the
+small manifest, apply it, and call the agent by name.
 
 ```sh
 curl -fsSLo fountain.yml \

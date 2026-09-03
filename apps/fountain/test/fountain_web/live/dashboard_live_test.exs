@@ -30,34 +30,19 @@ defmodule FountainWeb.DashboardLiveTest do
     {:ok, conn: login_user(conn, user), user: user}
   end
 
-  test "a brand-new account is told what is missing, and where to do it", %{conn: conn} do
+  # The three-item checklist went with ADR 0038. What is left is one line
+  # pointing at the landing, and it is about a reply rather than about things
+  # existing.
+  test "an account that has never had a reply is pointed at the landing", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/dashboard")
 
-    assert html =~ "Before an agent can run"
-    assert html =~ "An inference credential"
-    assert html =~ "/account/inference-credentials"
-    assert html =~ "https://apps.test/convs/#/new"
-
-    # The agent step arrives ticked: verification plants the starter agent
-    # (ADR 0038), so the item this list used to send a new account away to
-    # build is the one it now already has. #1390 replaces the checklist.
-    assert html =~ "An agent"
-    refute html =~ "/agents/new"
+    assert html =~ "Nothing has answered on this account yet"
+    assert html =~ "/start"
+    refute html =~ "Before an agent can run"
   end
 
-  test "a step that is done is ticked and loses its call to action", %{conn: conn, user: user} do
+  test "owning an agent and a credential is not what clears it", %{conn: conn, user: user} do
     insert_agent(user_id: user.id)
-
-    {:ok, _lv, html} = live(conn, ~p"/dashboard")
-
-    assert html =~ "Before an agent can run"
-    refute html =~ "/agents/new"
-  end
-
-  test "the checklist disappears once there is nothing left in it", %{conn: conn, user: user} do
-    insert_agent(user_id: user.id)
-    insert_conversation(user_id: user.id)
-
     {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
     {:ok, _} =
@@ -71,12 +56,26 @@ defmodule FountainWeb.DashboardLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/dashboard")
 
-    refute html =~ "Before an agent can run"
+    assert html =~ "Nothing has answered on this account yet"
   end
 
-  # The wizard's last step used to stamp this; the funnel's "onboarded" stage
-  # reads it, so the console has to keep it true (#867).
-  test "an account with a credential and an agent is marked onboarded", %{conn: conn, user: user} do
+  test "a reply clears it", %{conn: conn, user: user} do
+    conv = insert_conversation(user_id: user.id)
+
+    insert_turn(conv, %{
+      status: "completed",
+      reply_text: "the agent answered",
+      ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    })
+
+    {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+    refute html =~ "Nothing has answered on this account yet"
+  end
+
+  # ADR 0038 decision 7: `onboarding_completed_at` is stamped at the first
+  # reply by `Fountain.Activation`, not by this mount when three things exist.
+  test "the dashboard no longer stamps onboarding", %{conn: conn, user: user} do
     refute user.onboarding_completed_at
 
     insert_agent(user_id: user.id)
@@ -90,14 +89,6 @@ defmodule FountainWeb.DashboardLiveTest do
         "sk-ant-test-key-000000000000",
         actor: "ui"
       )
-
-    {:ok, _lv, _html} = live(conn, ~p"/dashboard")
-
-    assert Fountain.Accounts.get_user(user.id).onboarding_completed_at
-  end
-
-  test "an account still missing a piece is not", %{conn: conn, user: user} do
-    insert_agent(user_id: user.id)
 
     {:ok, _lv, _html} = live(conn, ~p"/dashboard")
 

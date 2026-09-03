@@ -836,6 +836,14 @@ defmodule Fountain.Conversations do
     %Conversation{}
     |> Conversation.changeset(attrs)
     |> Repo.insert()
+    |> tap(fn
+      # The account's first conversation is the request the verified landing
+      # handed over (ADR 0038). Both create paths go through this write, so
+      # the funnel's third step cannot be missed by a new door — and it does
+      # not depend on the landing page still being open.
+      {:ok, conv} -> Fountain.Activation.conversation_created(conv)
+      _ -> :ok
+    end)
   end
 
   @doc """

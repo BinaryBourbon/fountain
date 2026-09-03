@@ -26,19 +26,29 @@ defmodule Fountain.Activation do
   It is the *account's first* reply that this module cares about, so the
   function is a no-op for every later turn.
 
-  **#1390 stamps `users.onboarding_completed_at` here**, at the first reply,
-  instead of the dashboard checklist stamping it when three things exist.
-  The call site is marked in `capture_first_reply/2`; the field is untouched
-  by this module today.
+  **`users.onboarding_completed_at` is stamped here** (#1390), at the first
+  reply, rather than by the dashboard checklist when three things existed. It
+  is the same moment the funnel calls activated, so the two can no longer
+  disagree, and it lands whatever door the request came through.
+
+  `conversation_created/1` is the second seam, on
+  `Conversations.create_conversation/1`, which both create paths go through.
+  It emits `onboarding.request_sent` on the account's *first* conversation.
+  That event is a step in the PostHog funnel and is deliberately **not** the
+  landing page's to send: a developer who copies the request, closes the tab
+  and runs it an hour later still sent it, and an ordered funnel whose third
+  step only fires while a browser is open would drop exactly the people who
+  did the thing.
 
   ## What it costs
 
   Two queries per turn that ends with a reply — the conversation's owner, and
   whether an earlier reply already exists for that owner — and a third (the
   user row, for the time since verification) only on the one turn per account
-  that is the first. It is best-effort: a raise here would take a turn ending
-  with it, so everything is rescued, exactly as
-  `Conversations.publish_stage/4` treats its own analytics mirror.
+  that is the first. One `EXISTS` per conversation created. It is best-effort:
+  a raise here would take a turn ending or a conversation create with it, so
+  everything is rescued, exactly as `Conversations.publish_stage/4` treats its
+  own analytics mirror.
   """
 
   import Ecto.Query
@@ -50,6 +60,7 @@ defmodule Fountain.Activation do
   alias Fountain.Repo
 
   @event "activation.first_reply"
+  @request_sent "onboarding.request_sent"
 
   @doc """
   The moment each account first got a reply: `%{user_id => DateTime.t()}`.
@@ -93,6 +104,33 @@ defmodule Fountain.Activation do
   end
 
   @doc """
+  The account's first reply itself — when it landed, which conversation it
+  came from, and what the agent said — or `nil` if it never got one.
+
+  This is what the verified landing renders (#1390), so the words on that
+  screen are the same row the funnel counted rather than a second guess at
+  which reply was first. No tenant scope: `user_id` is the scope.
+  """
+  @spec first_reply(String.t()) ::
+          %{at: DateTime.t(), conversation_id: String.t(), text: String.t()} | nil
+  def first_reply(user_id) when is_binary(user_id) do
+    Repo.one(
+      from t in Turn,
+        join: c in Conversation,
+        on: c.id == t.conversation_id,
+        where: c.user_id == ^user_id,
+        where: not is_nil(t.reply_text) and t.reply_text != "",
+        order_by: [asc: coalesce(t.ended_at, t.inserted_at), asc: t.id],
+        limit: 1,
+        select: %{
+          at: type(coalesce(t.ended_at, t.inserted_at), :utc_datetime),
+          conversation_id: c.id,
+          text: t.reply_text
+        }
+    )
+  end
+
+  @doc """
   A turn has ended carrying a reply: if it is the account's first, this is
   activation.
 
@@ -117,24 +155,66 @@ defmodule Fountain.Activation do
   def turn_replied(_turn), do: :ok
 
   @doc """
+  A conversation row was just written: if it is the account's first, the
+  developer has sent the request the landing handed them.
+
+  Emits `onboarding.request_sent`, the funnel's third step. Called from
+  `Conversations.create_conversation/1`, which is the one write both create
+  paths share, so a new door onto conversation creation is instrumented by
+  construction. Returns `:ok` in every case.
+  """
+  @spec conversation_created(Conversation.t()) :: :ok
+  def conversation_created(%Conversation{user_id: user_id, id: id} = conv)
+      when is_binary(user_id) do
+    if Fountain.Analytics.enabled?() and first_conversation?(user_id, id) do
+      Fountain.Analytics.capture(
+        @request_sent,
+        user_id,
+        %{
+          "conversation_id" => id,
+          "agent_id" => conv.agent_id,
+          "conversation_source" => conv.source,
+          "source" => "activation"
+        },
+        timestamp: conv.inserted_at
+      )
+    end
+
+    :ok
+  rescue
+    e ->
+      Logger.warning("activation: first-conversation check failed: #{inspect(e)}")
+      :ok
+  end
+
+  def conversation_created(_conv), do: :ok
+
+  @doc """
   The PostHog event name this module emits, and the names the verified
   landing (#1390) emits either side of it.
 
   The funnel ADR 0038 asks for is `auth.email.verified` →
   `onboarding.landing_viewed` → `onboarding.request_sent` →
   `activation.first_reply`. The first arrives already, from the audit trail's
-  own choke point (`Accounts.verify_email/2` records `auth.email.verified`);
-  the last is emitted here; the middle two are the landing page's, and are
-  named here so the funnel definition and the page that fills it cannot drift
-  apart. `onboarding.key_copied` is the fourth moment #1390 captures and is
-  not a funnel step: copying is not doing.
+  own choke point (`Accounts.verify_email/2` records `auth.email.verified`).
+  The last two are emitted here — `onboarding.request_sent` from
+  `conversation_created/1` and `activation.first_reply` from
+  `turn_replied/1` — so neither depends on a browser being open.
+  `onboarding.landing_viewed` is `FountainWeb.StartLive`'s, and is named here
+  so the funnel definition and the page that fills it cannot drift apart.
+
+  Two more events the landing sends are deliberately not steps.
+  `onboarding.key_copied` is not doing, it is intending to.
+  `onboarding.reply_shown` says the reply arrived while the developer was
+  still watching, which is a fact about the page rather than about the
+  account, and `activation.first_reply` already counts the account.
   """
   @spec funnel_events() :: [String.t()]
   def funnel_events do
     [
       "auth.email.verified",
       "onboarding.landing_viewed",
-      "onboarding.request_sent",
+      @request_sent,
       @event
     ]
   end
@@ -168,12 +248,23 @@ defmodule Fountain.Activation do
     earliest == turn.id
   end
 
+  # Is this the account's first conversation? The row is already written when
+  # this runs, so "no other row" is the test. One indexed EXISTS.
+  defp first_conversation?(user_id, conversation_id) do
+    not Repo.exists?(
+      from c in Conversation, where: c.user_id == ^user_id and c.id != ^conversation_id
+    )
+  end
+
   defp capture_first_reply(user_id, %Turn{} = turn) do
-    # #1390: stamp `users.onboarding_completed_at` here, on this branch —
-    # it runs exactly once per account, at the first reply, whatever door the
-    # request came through. Nothing writes it from this module today.
     user = Repo.get(User, user_id)
     at = turn.ended_at || turn.inserted_at
+
+    # ADR 0038 decision 7: onboarding is done at the first reply, not when
+    # three things exist. This branch runs exactly once per account, whatever
+    # door the request came through, which is why the stamp belongs here and
+    # not on a console page the developer may never open.
+    stamp_onboarding(user)
 
     Fountain.Analytics.capture(
       @event,
@@ -190,6 +281,13 @@ defmodule Fountain.Activation do
       set_once: %{"first_reply_at" => iso(at)}
     )
   end
+
+  defp stamp_onboarding(%User{onboarding_completed_at: nil} = user) do
+    Fountain.Accounts.complete_onboarding(user)
+    :ok
+  end
+
+  defp stamp_onboarding(_user), do: :ok
 
   defp hours_since_verified(%User{email_verified_at: %DateTime{} = verified_at}, %DateTime{} = at) do
     Float.round(DateTime.diff(at, verified_at, :second) / 3600, 3)
