@@ -11,8 +11,7 @@ defmodule Fountain.Buzz.ManagerTest do
   alias Fountain.Repo
 
   setup do
-    dir = Path.join(System.tmp_dir!(), "buzz-mgr-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
+    dir = Fountain.TmpDir.mkdir!("buzz-mgr")
     fake = Path.join(dir, "buzz-acp")
     File.write!(fake, "#!/bin/sh\nsleep 30\n")
     File.chmod!(fake, 0o755)

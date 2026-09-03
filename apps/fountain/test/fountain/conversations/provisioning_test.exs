@@ -289,7 +289,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
   # across lines.
   defp sourced_value(value) do
     body = Provisioning.render_env_file(%{"SECRET" => value})
-    dir = Path.join(System.tmp_dir!(), "envq-#{System.unique_integer([:positive])}")
+    dir = Fountain.TmpDir.path("envq")
     File.mkdir_p!(dir)
     file = Path.join(dir, ".env")
     File.write!(file, body)
