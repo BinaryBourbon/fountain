@@ -262,7 +262,13 @@ defmodule Fountain.Buzz.Harness do
   # `:enoent` there. The rescue below would read that as "already exited" and
   # skip the wait entirely, in prod only: macOS and the CI runner both have the
   # binary, so every test would still pass. priv/buzz-acp-launch.sh checks the
-  # same way for the same reason. `os_pid` is an integer from `Port.info/2`.
+  # same way for the same reason.
+  #
+  # sobelow_skip ["CI.System"] — nothing here is reachable by a tenant. `shell`
+  # is the harness's own `:shell` option, which no caller sets and which
+  # defaults to "/bin/sh"; `os_pid` is an integer from `Port.info/2`, so the
+  # interpolation cannot carry a shell metacharacter. The `-c` string is a
+  # literal otherwise.
   defp os_process_alive?(os_pid, shell) do
     match?({_, 0}, System.cmd(shell, ["-c", "kill -0 #{os_pid} 2>/dev/null"]))
   rescue
