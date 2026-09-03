@@ -2,6 +2,10 @@ import Foundation
 
 @testable import FountainKit
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 /// One request, as a scenario's expectations describe it.
 struct RecordedRequest: Sendable {
   var method: String

@@ -2,6 +2,10 @@ import Foundation
 
 @testable import FountainKit
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 /// Scripted transport: each call pops the next canned response and records
 /// the request it answered. Response shapes in these tests are taken from
 /// real API responses (managoat.com, 2026-08-31), not invented — the fake
