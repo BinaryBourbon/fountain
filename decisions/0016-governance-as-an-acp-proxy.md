@@ -1,29 +1,40 @@
 ---
 type: ADR
 title: "Governance as an ACP proxy"
-description: "Fountain becomes a policy decision point speaking ACP on both sides; the governance proxy in the middle is the product. No policy engine or inference proxy is built."
+description: "Proposed; ACP tool permissions, human escalation, credential brokerage and the sandbox seam are built. A versioned tenant policy primitive, path-aware PDP and decision ledger are not."
 tags: [acp, governance, product]
 status: draft
 adr: "0016"
 adr_status: "Proposed"
 date: 2026-08-09
-generated: { by: human:jhgaylor, at: 2026-08-15T21:03:19-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-15T21:03:19-04:00 }
+generated: { by: codex/gpt-5, at: 2026-09-03T02:05:29-04:00 }
+verified: { by: codex/gpt-5, at: 2026-09-03T02:05:29-04:00 }
 stale_after: 2026-11-15
 ---
 
 # 0016 — Governance as an ACP proxy
 
-**Status:** Proposed — **the governance layer described here is not built.**
-No policy engine and no inference proxy exist in this repo. Two things this
-ADR originally listed as missing have since landed: ACP is built, and is the
-only path to the agent for claude, codex and opencode
-([0014](0014-agent-client-protocol.md) gates 1–4); and the sandbox
-abstraction is `Fountain.Sandbox`
-([0018](0018-sandbox-provider-abstraction.md)). What remains unbuilt is the
-*answering* — Fountain still observes a turn it cannot intervene in. This ADR
-records a product shape and the gates that decide whether we take it; the PR
-that builds each gate removes its caveat.
+**Status:** Proposed — **the enforcement foundation is built; the governance
+product described here is not.** ACP is the only runtime I/O path for all four
+coding agents ([0014](0014-agent-client-protocol.md)). Agents and conversations
+carry a narrow per-tool permission map; Fountain can automatically permit or
+deny a runtime's `session/request_permission`, hold it for a human, deny after
+five minutes, and take the first answer from the API, either web app or an ACP
+editor (#947, #950, #965). A deny does not end the turn. A runtime that never
+asks is refused a policy it cannot enforce. `Managoat.ACP` now owns the peer
+and permission evaluator behind Fountain's writer callback (#1358).
+
+The other foundations landed out of the order proposed here. The sandbox
+behaviour and conformance suite are built ([0018](0018-sandbox-provider-abstraction.md));
+self-hosted runners and an isolated Firecracker backend followed ([0022](0022-self-hosted-runner-provider.md),
+[0036](0036-firecracker-runner-backend.md)); and [0019](0019-egress-credential-brokerage.md)
+built the forward broker, including inference credentials.
+
+There is still no tenant-owned, versioned `Policy` primitive, path-aware PDP,
+general allow/deny/escalate rule language, or separate governance-decision
+ledger. The shipped permission map is useful enforcement, not the whole claim
+this ADR makes. The gates below record that partial, out-of-order build rather
+than pretending the original roadmap happened unchanged.
 
 This is the third ACP ADR and the only one that is about what Fountain *is*.
 [0014](0014-agent-client-protocol.md) proposes Fountain as an ACP client of
@@ -39,32 +50,39 @@ It does not supersede either. It amends how **0014 gate 3** should be read
 
 ## Context
 
-### Fountain can observe. It cannot intervene.
+### Fountain could observe. It could not intervene.
 
-Every runtime we ship runs with its safety rail removed, and 0014 lists the
-flags: `claude.ex:39` `--dangerously-skip-permissions`, `gemini.ex:50`
-`--approval-mode yolo`, `codex.ex:51`
-`--dangerously-bypass-approvals-and-sandbox`, `open_code.ex:46`
-`--dangerously-skip-permissions`. This is not carelessness — a headless CLI
-has no channel back to a human, so bypass is the only way it runs unattended.
+When this ADR was written, every runtime ran with its safety rail removed, and
+0014 listed the vendor flags. This was not carelessness: a headless CLI had no
+channel back to a human, so bypass was the only way it ran unattended.
 
-The consequence is that the audit trail from [0013](0013-audit-trail.md) is
+The consequence was that the audit trail from [0013](0013-audit-trail.md) was
 **retrospective by construction**. It is an excellent record of what a tenant
-changed. It has never been able to say "and this was not allowed to happen,"
+changed. It could not say "and this was not allowed to happen,"
 because nothing in the system was positioned to prevent anything. The sandbox
-is not defence in depth; it is the only defence there is.
+was not defence in depth; it was the only defence there was.
 
-Anyone evaluating Fountain on governance grounds asks one question first —
-*what stops the agent from doing X?* — and today the only honest answer is
-"it is in a sandbox, and afterwards you can read what it did."
+That starting point is now history. The vendor bypass flags are gone; ACP
+permission requests reach Fountain; and the shipped permission map can permit,
+deny or escalate by tool title or ACP kind. It cannot inspect a command, path,
+destination or prompt, and opencode sends no permission request at all. The
+honest answer to *what stops the agent from doing X?* is therefore narrower
+than this ADR's target: Fountain can stop a class of tool calls on runtimes
+that ask, and the sandbox and broker enforce coarser boundaries underneath.
 
-### None of the four primitives is a rule
+### A permission map is not yet a Policy primitive
 
 Environment, Vault, Agent and Conversation are all **configuration**: what the
-agent has, and what it ran. There is no object anywhere in the system that
-expresses *what an agent may do*. Adding governance features to the existing
-primitives would mean scattering predicates across four schemas that were
-designed to describe capability, not constrain it.
+agent has, and what it ran. Agent and Conversation now carry
+`permission_policy`, a map from tool title or ACP kind to `auto_allow`, `ask`
+or `auto_deny`; a launch may narrow and never widen the agent's rule. That is a
+real rule and should not be described as absent.
+
+It is also deliberately smaller than the primitive proposed here. It has no
+policy id or version, no conditional input beyond the tool label, and no
+decision record tying a verdict to the rule that produced it. Adding the rest
+piecemeal to Environment, Vault, Agent and Conversation would still scatter a
+governance system across schemas designed to describe capability and execution.
 
 ### What ACP actually changes
 
@@ -161,11 +179,35 @@ tool calls through the client is not a governed runtime.** We may still run
 it, but it must be labelled ungoverned in the UI and the API rather than
 quietly enrolled under a policy that cannot reach it.
 
+Every surface may deny early for presentation; only an enforcement point may
+permit. An editor, web app, CLI or sandbox may hide, disable or decline an
+action, but none has standing to grant one. The server-side ACP evaluator,
+inference broker or sandbox control is load-bearing. Removing a presentation
+check may change what a user sees; it must never change what an agent can do.
+
+Every recorded decision names its subject: tenant, agent, conversation and the
+principal or surface that initiated the turn. It reuses 0013's closed actor
+vocabulary where that vocabulary applies, but governance actions do not become
+audit mutation actions. A principal-less subject is invalid rather than an
+anonymous value that can drift into the record.
+
+A denial is semantic and transport-neutral: action, reason, details and policy
+version, with no HTTP status, redirect or ACP option baked into it. The API,
+web apps, editor and runtime adapter render the same denial in their own
+protocols.
+
 ### 3. Reframing 0014 gate 3
 
-0014 gate 3 reads as "implement `session/request_permission` against the
-conversation LiveView: a real approval prompt." Read through this ADR it is
-the wrong shape, and the difference matters:
+> **Status note (2026-09-03):** 0014 gate 3 and 0015 gate 4 are built, but in a
+> narrower shape than this section proposes. `Managoat.ACP.Permissions`
+> evaluates a title/kind/default map; `Fountain.Conversations.Pending`
+> persists an `ask`, sends it to the API, apps and editor, takes the first
+> answer, and denies after five minutes. It cannot express "deny writes outside
+> the workspace," and there is no versioned PDP or separate decision record.
+
+0014 gate 3 originally read as "implement `session/request_permission`
+against the conversation LiveView: a real approval prompt." Read through this
+ADR, the intended shape is broader:
 
 > Build a PDP. The LiveView prompt is **one of its answer sources**, used only
 > when a rule evaluates to *escalate*.
@@ -182,7 +224,7 @@ core semantics. Four requirements fall out, and none is a polish item:
 - **Every escalation carries a timeout, and the default on expiry is deny.**
   Fail-open is not a governance posture, and an escalation nobody will ever
   see is the normal case for a conversation started from CI or left running
-  overnight.
+  overnight. This is built with a five-minute timeout.
 - **An escalation holds a sandbox open, so the timeout is a cost control as
   much as a security one.** 0014's *Session lifetime* section binds the ACP
   connection to the turn precisely so that an idle sandbox can be reclaimed,
@@ -201,61 +243,39 @@ core semantics. Four requirements fall out, and none is a polish item:
 - **The conversation survives a deny.** A denial is an ordinary result the
   agent is told about, not a fault. Anything else hands `SandboxReaper` and
   the rehydrator a hang state neither knows about — which is the exact risk
-  0015 names as a precondition for its own gate 4.
+  0015 named as a precondition for its own gate 4. This is built.
 
 ### 4. Credential brokerage: the sandbox holds no long-lived secret
 
-[0008](0008-byo-inference-credentials.md) decrypts tenant inference
-credentials at provisioning time and passes them to
-`runtime_module.default_env(agent, credentials)`, from where they enter the
-sandbox as environment variables. Under a governance thesis that is backwards:
-we hand the key to the thing we are governing, and every control above is
-theatre once the agent can exfiltrate it and use it elsewhere.
+[0019](0019-egress-credential-brokerage.md) implemented and generalized this
+section. Fountain did not point each runtime's provider base URL at a bespoke
+inference proxy. It built a forward proxy that the sandbox reaches through
+`HTTPS_PROXY`; the sandbox holds placeholders and a short-lived,
+conversation-scoped broker session, while the real credential is attached at
+the proxy. Bindings constrain which hosts receive each secret, brokered
+environments apply a limited-network floor, inference credentials use the same
+path, and the egress trail records what crossed it.
 
-The target shape is a broker. The sandbox receives a short-lived,
-conversation-scoped token; the runtime's provider base URL points at Fountain;
-the tenant's real key stays server-side and is applied on the way out.
-
-0008's core decision survives untouched — it is still the tenant's key and
-still the tenant's bill, so the cost-attribution argument and the
-Claude-subscription case are unaffected. What changes is custody.
-
-Two things fall out, and both are load-bearing:
-
-- **A fourth chokepoint.** Model selection, spend caps and prompt-level policy
-  become enforceable, in a place that already sees every request.
-- **A usage-based revenue line.** 0008 gave away the inference margin by
-  design and 0005 keeps compute as a cost we recover; if the substrate also
-  becomes BYO (below), Fountain is a pure control-plane subscription with no
-  metered line at all. The broker is where one could exist without
-  reintroducing the problems 0008 rejected.
-
-**Unverified, and a gate-1-shaped question:** whether every runtime honours a
-provider base-URL override, and whether doing so is stable across their point
-releases. A runtime that does not is a runtime whose inference cannot be
-brokered, and by the corollary in §2 it should be labelled accordingly rather
-than exempted quietly.
+That removes the per-runtime base-URL survey that this section treated as a
+blocker and reaches more than inference. It also establishes the chokepoint
+this ADR needs. It does not yet evaluate a tenant-owned governance policy over
+model choice, spend or prompt content. Brokerage changes custody and makes
+those questions enforceable; it is not itself the PDP that answers them.
 
 ### 5. The sandbox behaviour is defined by a conformance bar, not a cloud list
 
-> **Status note (2026-08-14):** built, with one deviation.
-> [0018](0018-sandbox-provider-abstraction.md) supersedes this section's
-> two-implementation cap: `Fountain.Sandbox` + its conformance suite exist,
-> and the second and third implementations are hosted providers (E2B,
-> Daytona) rather than the BYO-Kubernetes runner sketched here — proving
-> the seam against differently-shaped backends took priority over waiting
-> for a named customer. The conformance bar itself is unchanged.
+> **Status note (2026-09-03):** the seam is built and extracted.
+> [0018](0018-sandbox-provider-abstraction.md) produced the behaviour and
+> conformance suite, now `Managoat.Sandbox`, with Sprites, E2B and Daytona
+> adapters. [0022](0022-self-hosted-runner-provider.md) added a tenant-owned
+> runner and [0036](0036-firecracker-runner-backend.md) added its isolated
+> backend. `Fountain.SandboxProviders` decides which are enabled here. The old
+> two-implementation cap and bring-your-own-Kubernetes plan did not survive.
 
-`Fountain.SpritesClient` is the single sandbox implementation, reached through
-a platform-shared token ([0005](0005-platform-shared-sprites-token.md)).
-"Whatever cloud" must not become a matrix of providers — that is the entire
-product of several better-funded companies, and competing there means shipping
-a worse version of somebody's whole business in order to sell something the
-customer regards as table stakes.
-
-Instead: **one `Fountain.Sandbox` behaviour whose contract is dictated by what
-governance requires**, and a conformance suite that a backend either passes or
-does not. The contract must include, at minimum:
+The surviving decision is **one sandbox behaviour with a capability contract
+and conformance suite**. A provider answers for itself; Fountain does not
+special-case a cloud name into a governance promise. A governed backend must
+cover, at minimum:
 
 - network egress policy, expressible per conversation;
 - provisioning that injects no long-lived credential (§4);
@@ -266,10 +286,6 @@ A backend that cannot express egress policy cannot host a governed
 conversation, whoever owns the cloud it runs in. This inverts the problem from
 "support everything" to "here is the bar," which is defensible, testable, and
 makes community-contributed backends viable without us owning them.
-
-Two implementations are in scope ever: **Sprites** (today's hosted default)
-and **bring-your-own-Kubernetes**. A third is not written until a paying
-customer names it.
 
 ### 6. Decisions are not mutations
 
@@ -290,16 +306,30 @@ its own rule. The existing vocabulary is closed and this ADR does not open it;
 `sprite` already names an agent acting as the tenant, which is precisely the
 principal on the requesting side of every decision.
 
+This record is not built. The narrower permission system currently records a
+`conversation.permission_denied` audit event and records no permits. That is a
+useful operational event, but it has no policy version, answer source or
+latency and does not satisfy this decision. A broader PDP must migrate or
+dual-write deliberately rather than silently treating the audit row as the
+decision ledger.
+
+### 7. Coverage is enforced, not remembered
+
+A governance claim needs a guardrail over every runtime and enforcement
+chokepoint it names. The implementation must fail a test when a claimed path
+bypasses evaluation, or list that path as explicitly ungoverned with a reason.
+The current permission tests establish the runtime-specific matrix; the
+broader PDP adds a reviewable decision-table snapshot of subject, action,
+policy input and verdict. A policy change becomes a table diff, not a predicate
+hidden in a call graph.
+
 ### Gates
 
-**Gate 0 — one policy, one runtime, end to end.** Not the sandbox behaviour,
-and not the four-runtime conversion. 0014 gate 2 for a single runtime, plus a
-PDP that can answer exactly one rule — *deny writes outside the workspace* —
-with deny-on-timeout, recorded as a decision, on a conversation that survives
-the denial. This is the smallest artifact that proves interception,
-server-side evaluation, a real deny and survivability. If the deny wedges the
-conversation or the added latency is unacceptable, we have learned it for the
-price of one runtime rather than a platform.
+**Gate 0 — partially built.** The shipped permission map proves interception,
+server-side evaluation, automatic deny, deny-on-timeout, human escalation and
+a conversation that survives refusal. It does not implement the gate's test
+rule — *deny writes outside the workspace* — because it cannot inspect a path.
+It also does not write the separate decision record or carry a policy version.
 
 Two of its success criteria are numbers, not properties, and they should be
 written down before the gate starts rather than discovered in it: the added
@@ -308,23 +338,30 @@ pays; and the escalation deadline, which by §3 must be shorter than
 `sandbox_idle_timeout_minutes` and is the difference between a governance
 control and an unbounded bill.
 
-**Gate 1 — the chokepoints ACP already gives us.** `fs/*` and `terminal/*`
+**Gate 1 — not built.** `fs/*` and `terminal/*`
 serviced against the sprite, under policy. 0014 lists these under Consequences
 as the likeliest source of a security finding, and that judgement stands:
 paths arriving over this channel are untrusted input from a sandbox we do not
 fully control, and the absolute-path and 1-based-line requirements are the
 protocol's, not ours.
 
-**Gate 2 — the rule language**, chosen against the denials gates 0 and 1
-actually produced.
+**Gate 2 — a narrow precursor is built.** Title/kind/default mapped to
+`auto_allow`, `ask` or `auto_deny` is enough for runtime permission requests.
+The versioned, tenant-owned rule language described in §1 remains unchosen and
+must be selected against path-aware denials from gates 0 and 1.
 
-**Gate 3 — the broker.** Blocked on the base-URL survey in §4.
+**Gate 3 — built, with a different mechanism.** 0019's forward proxy replaced
+the per-runtime base-URL design and now brokers inference credentials too.
 
-**Gate 4 — the sandbox behaviour and a second implementation.** Blocked on a
-named customer, not on a roadmap slot.
+**Gate 4 — the provider foundation is built.** The behaviour, conformance
+suite, hosted adapters, runner and Firecracker backend exist. A governance
+capability bar and an honest governed/ungoverned label still need to be added
+for the controls this ADR claims.
 
-Human escalation to an *editor* — 0015's own gate 4 — remains blocked on
-everything above, and on 0015's detach question having an answer.
+Human escalation to an *editor* — 0015's own gate 4 — is built. The first
+answer wins across peer clients; a detached editor is not a privileged
+fallback, and the persisted request remains answerable elsewhere until its
+five-minute timeout.
 
 ### Not in scope
 
@@ -333,6 +370,15 @@ everything above, and on 0015's detach question having an answer.
   and this ADR does not smuggle them in; the editor stays a control surface.
 - **Governing anything that is not a coding agent in a sandbox.** A general
   policy plane for arbitrary MCP traffic is a larger and different product.
+- **Application authorization.** Whether a user, API key, sprite or worker may
+  invoke a Fountain context mutation is a separate policy plane, tracked in
+  [#1464](https://github.com/BinaryBourbon/fountain/issues/1464). It must not
+  share this `Policy` namespace by accident.
+- **Tenant scoping.** User-facing queries continue to select by `user_id`; a
+  policy check after an unscoped fetch is weaker than never loading another
+  tenant's row.
+- **Rate limiting.** Per-IP abuse control runs before authentication and has no
+  governance subject to evaluate.
 
 ## Consequences
 
@@ -356,9 +402,11 @@ vendor-maintained npm packages versioned independently of the CLIs they wrap
 runtime into an ungoverned one — which means "supported runtime" acquires a
 maintenance obligation and a public status, per §2's corollary.
 
-**The JSON-RPC peer must not land in `ConversationServer`.** It is 2,088 lines
-today (`apps/fountain/lib/fountain/conversations/conversation_server.ex`).
-0014 already says this; adding a PDP call path makes it more true, not less.
+**The JSON-RPC peer did not land in `ConversationServer`.** It now lives in
+`Managoat.ACP.Peer` behind a writer callback; Fountain keeps persistence,
+lifecycle and answer routing in `Conversations.Pending` and `TurnMachine`.
+The future PDP should preserve that boundary rather than move protocol state
+back into the conversation process.
 
 **The event stream becomes an interface with a policy dimension.** 0015 notes
 that two clients rendering the same stream makes it an interface subject to
@@ -368,14 +416,12 @@ show an auditor.
 
 **This is a go-to-market change wearing an architecture costume.** Governance
 sells to a buyer with procurement, a security questionnaire and a long cycle.
-[0005](0005-platform-shared-sprites-token.md),
-[0006](0006-hard-stripe-billing-gate-at-launch.md) and
-[0007](0007-g3-launch-go.md) describe a self-serve, Stripe-gated product
-measured in weekly actives; the `ee/` boundary and the hard billing gate were
-built for that company. Adopting this ADR is choosing a different one, and the
-code is the cheaper half of that choice. **Nothing in gates 1–4 should start
-before that has been decided deliberately** — gate 0 is worth building either
-way, because it also settles whether 0014 gate 3 is achievable at all.
+[0031](0031-credits-are-the-product.md) and
+[0038](0038-onboarding-first-reply.md) describe the current self-serve product:
+credits, an API-first path, and activation at the first reply. The enforcement
+foundations above are useful there without making an enterprise governance
+claim. Adopting the broader claim still chooses a buyer, sales motion and
+reliability obligation; the code is the cheaper half of that choice.
 
 **What we give up:** the position that Fountain is a convenience layer over
 agent configuration. Today the pitch is that running Claude with worktrees and
@@ -387,11 +433,11 @@ be right about them.
 
 ## Alternatives considered
 
-- **Ship 0014 and 0015 as protocol cleanups and stop.** Real value: a
-  deleted render-path parser problem and an editor integration. Rejected as
-  the *end state* because it spends the ACP migration and declines the only
-  thing it uniquely enables; the parsers can be deleted without ever being
-  able to deny anything.
+- **Stop at 0014, 0015 and the shipped permission map.** This is now a real,
+  useful product: one runtime protocol, editor integration and coarse tool
+  permissions. Rejected as this ADR's *end state* because it cannot express
+  conditional rules, prove a decision against a policy version, or back the
+  broader governance claim.
 - **Governance as post-hoc detection.** Keep the current architecture, add
   alerting and anomaly rules over the 0013 trail. Much cheaper, ships now, no
   protocol dependency, no latency. Rejected as the primary answer because it
@@ -409,8 +455,9 @@ be right about them.
   gate 2 and explicitly left open there. Rejected as a *starting point*
   because the hard part is not evaluating a predicate — it is having a
   synchronous position from which the answer matters, which is gates 0 and 1.
-- **Lead with the sandbox abstraction, ACP later.** Correct if the first buyer
-  conversation is about egress and residency rather than approvals. Named here
-  as the alternative sequencing that would replace this ADR's, and the signal
-  to watch for: if two consecutive prospects ask about the VPC before they ask
-  about approvals, the substrate is the product and the proxy is the sidecar.
+- **Lead with the sandbox abstraction, ACP later.** The implementation partly
+  took this route: provider conformance and the broker landed before the
+  broader PDP. That sequencing produced useful security controls without
+  deciding that governance is the product. The remaining signal is commercial:
+  if prospects ask about network and residency before approvals, the substrate
+  may be the product and the proxy the sidecar.
