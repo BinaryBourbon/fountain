@@ -1,5 +1,5 @@
 {
-  "__comment": "Finance dashboard for Fountain. Owned by the repo at deploy/grafana/fountain-finance.json; see docs/guides/operate/dashboards.md. Cost drivers and conversion counts, not revenue: Stripe holds the money and usage_events holds the billable record. Sandbox-minutes are an estimate sampled from a gauge and must be reconciled against the provider bill. Provider gauges are duplicated per replica, so every one collapses with `max` before any `sum`.",
+  "__comment": "Finance dashboard for Fountain. Owned by the repo at deploy/grafana/fountain-finance.json; see docs/guides/operate/dashboards.md. Cost drivers, the credit ledger and conversion counts, not revenue: Stripe holds the money and usage_events holds the billable record. Sandbox-minutes are an estimate sampled from a gauge and must be reconciled against the provider bill. Provider gauges are duplicated per replica, so every one collapses with `max` before any `sum`; the credit worker stamp is per-replica for a different reason (only the pod that ran the Oban job has it) and collapses the same way.",
   "title": "Fountain / Finance",
   "uid": "fountain-finance",
   "tags": [
@@ -506,13 +506,363 @@
     },
     {
       "type": "row",
+      "title": "The credit machinery",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Time since each credit worker last finished",
+      "description": "Under ADR 0031 the balance is the gate, so the three workers that keep it honest are load-bearing: the pricer burns closed turns every ten minutes, the expirer sweeps unspent grants daily, and rent collects for numbers and inboxes daily. PER-REPLICA GAUGE: the stamp exists only on the pod that ran the Oban job, so this collapses with max and never avg. A worker with no bar at all has never stamped since the last rollout, which is the case a staleness number cannot express and FountainCreditWorkerSilent covers with an absent() arm. Do not read a missing bar as zero.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 27
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 7200
+              },
+              {
+                "color": "red",
+                "value": 172800
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max by (worker) (fountain_credits_worker_run_last_run_unix{namespace=\"$namespace\"})",
+          "legendFormat": "{{worker}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Money through the ledger per hour, by reason",
+      "description": "Measured at the ledger write in Credits.post/4, not from a worker counting its own output, so it cannot drift from the ledger. reason is a closed vocabulary, so these lines are the whole story: burn_turn, burn_inference, burn_message and burn_rent take money out, grant_opening, grant_admin and purchase put it in, and expire, clawback_refund and clawback_dispute take back what was never spent. Every line is a positive number; direction is a separate label. A flat zero on burn_turn while turns complete is the signal FountainCreditPricerPricedNothing pages on.",
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 8,
+        "y": 27
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "min": 0,
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(fountain_credits_posted_cents{namespace=\"$namespace\"}[1h])) * 36",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Debits in the last day, by reason",
+      "description": "The debit half of the ledger over 24 hours. burn_turn is turn time on platform-paid providers only, so an instance running entirely on self-hosted runners completes turns and correctly burns nothing here. expire is unspent grant money reclaimed at its deadline rather than money the account spent. An empty panel means no debit posted in a day.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (increase(fountain_credits_posted_cents{namespace=\"$namespace\", direction=\"debit\"}[24h])) / 100",
+          "legendFormat": "{{reason}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Turns completed, last day",
+      "description": "The denominator for the panel beside it. This is the observation count of the fountain.turn.completed.duration_ms histogram, because that metric is a distribution and there is no bare fountain_turn_completed series. Read the two together: turns completed with nothing burned beside them is a broken pricer, and both at zero is an idle day.",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 8,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_turn_completed_duration_ms_count{namespace=\"$namespace\"}[24h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Burned on turns, last day",
+      "description": "What those turns cost their accounts. Zero here while the panel to the left is not zero means every turn since the break is unbilled, and the pricer only looks back seven days, so the window to recover it closes. Suspect the price or the query before the worker: CREDIT_TURN_HOUR_CENTS unset or zero, or SandboxUsage matching no platform-paid provider.",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 12,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_credits_posted_cents{namespace=\"$namespace\", reason=\"burn_turn\"}[24h])) / 100 or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Stripe webhooks failed, last hour",
+      "description": "Purchases, refunds and disputes all arrive on this one endpoint. A rejected signature answers 400, so these failures were never inside the 5xx rate that would otherwise have carried them. The kinds mean different things: bad_signature is usually a rotated secret, no_secret is a deployment missing STRIPE_WEBHOOK_SECRET, user_not_found is an event that is gone for good, and processing and exception are retryable. The counter has no series until the first failure, hence the or vector(0).",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 16,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_stripe_webhook_failure_count{namespace=\"$namespace\"}[1h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Emails that failed to send, last hour",
+      "description": "Every transactional email is on this path, including the credits-low, credits-exhausted and rent-due notices. A failure here is an account that never learns its balance ran out and finds out when its agent stops. Counted off the Swoosh delivery span, so all fourteen call sites are covered without one of them opting in. Both terms need or vector(0): neither series exists until it first fires.",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 20,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(increase(fountain_email_delivery_count{namespace=\"$namespace\", outcome=\"error\"}[1h])) or vector(0)) + (sum(increase(fountain_email_delivery_exception_count{namespace=\"$namespace\"}[1h])) or vector(0))"
+        }
+      ]
+    },
+    {
+      "type": "row",
       "title": "Conversion to paid",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 41
       },
       "panels": []
     },
@@ -524,7 +874,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 42
       },
       "datasource": {
         "type": "prometheus",
@@ -591,7 +941,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 27
+        "y": 42
       },
       "datasource": {
         "type": "prometheus",
@@ -637,7 +987,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 27
+        "y": 42
       },
       "datasource": {
         "type": "prometheus",
@@ -682,7 +1032,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 49
       },
       "options": {
         "mode": "markdown",
