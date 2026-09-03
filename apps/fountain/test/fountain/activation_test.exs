@@ -40,12 +40,15 @@ defmodule Fountain.ActivationTest do
       conv = insert_conversation(user_id: user.id)
       other = insert_conversation(user_id: user.id)
 
+      # Bound once: `at/1` reads the clock, so a second call either side of a
+      # second boundary would compare against a timestamp the row never held.
+      earliest = at(4)
       insert_turn(other, %{status: "completed", reply_text: "later", ended_at: at(1)})
-      insert_turn(conv, %{status: "completed", reply_text: "first", ended_at: at(4)})
+      insert_turn(conv, %{status: "completed", reply_text: "first", ended_at: earliest})
 
       first = Activation.first_reply_at(user.id)
 
-      assert DateTime.compare(first, at(4)) == :eq
+      assert DateTime.compare(first, earliest) == :eq
       assert Activation.first_reply_by_user() == %{user.id => first}
     end
 
