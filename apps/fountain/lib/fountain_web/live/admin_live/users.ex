@@ -33,7 +33,11 @@ defmodule FountainWeb.AdminLive.Users do
      socket
      |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin · Users")
-     |> assign(:credits_enabled, Fountain.Credits.enabled?())}
+     |> assign(:credits_enabled, Fountain.Credits.enabled?())
+     |> assign(
+       :buzz_identity_ceiling,
+       Application.get_env(:fountain, :buzz_identity_ceiling, 10)
+     )}
   end
 
   # Filter/sort/page state lives in the URL, so the 10s refresh, admin
@@ -318,6 +322,10 @@ defmodule FountainWeb.AdminLive.Users do
     # One grouped query, not one per row — the same contract as the sandbox
     # counts above. The page refreshes on a timer.
     contact_counts = Fountain.Team.Comms.contact_counts()
+    # Hosted Buzz agents are standing OS processes on the gateway pods that no
+    # sandbox meter reports (#1017). You cannot bound what nobody can see, so
+    # the slot count sits beside the sandbox and contact counts.
+    identity_counts = Fountain.Buzz.identity_counts()
 
     %{users: users, total: total} =
       Accounts.list_users_admin(
@@ -337,6 +345,7 @@ defmodule FountainWeb.AdminLive.Users do
         |> Map.put(:active_sandboxes, Map.get(sandbox_counts, u.id, 0))
         |> Map.put(:sandbox_limit, Fountain.Quotas.sandbox_limit_for(u))
         |> Map.put(:contact_count, Map.get(contact_counts, u.id, 0))
+        |> Map.put(:buzz_identity_count, Map.get(identity_counts, u.id, 0))
         |> Map.put(:usage, Map.get(usage, u.id, no_usage))
       end)
 
@@ -489,6 +498,12 @@ defmodule FountainWeb.AdminLive.Users do
                 Usage 30d
               </th>
               <th class="px-4 py-2">Sandboxes</th>
+              <%!-- Standing slots: a teammate contact is rented from the
+                    balance every month, and a hosted Buzz agent is a
+                    permanent OS process on these pods that no sandbox meter
+                    reports (#1017). Both cost while nobody uses them, which
+                    is exactly why they belong on the row. --%>
+              <th class="px-4 py-2" title="Teammate contacts · hosted Buzz agents">Slots</th>
               <th class="px-4 py-2">Onboarding</th>
               <th class="px-4 py-2">
                 <.sort_header label="Last active" col="last_activity" filters={@filters} />
@@ -605,6 +620,19 @@ defmodule FountainWeb.AdminLive.Users do
                   />
                   <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">set</button>
                 </form>
+              </td>
+              <td
+                class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"
+                title={"#{u.contact_count} teammate contact(s) · #{u.buzz_identity_count} hosted Buzz agent(s)"}
+              >
+                <span class={
+                  if(u.buzz_identity_count >= @buzz_identity_ceiling,
+                    do: "text-red-600 font-medium",
+                    else: ""
+                  )
+                }>
+                  {u.contact_count}c · {u.buzz_identity_count}b
+                </span>
               </td>
               <td class="px-4 py-2 text-zinc-500 text-xs">
                 {if u.onboarding_completed_at, do: format_date(u.onboarding_completed_at), else: "—"}

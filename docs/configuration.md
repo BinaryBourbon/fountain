@@ -150,6 +150,7 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `CREDIT_OPENING_CENTS` | `500` | No. | The credit a new account starts with, in cents. |
 | `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |
 | `TEAM_CONTACT_CEILING` | `10` | No. | The most teammate contacts one account may hold at once. |
+| `BUZZ_IDENTITY_CEILING` | `10` | No. | The most hosted Buzz agents one account may run at once. Each one is a permanent process on the Fountain pods. |
 | `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |
 | `CREDIT_NUMBER_CENTS` | — | No. | What a tenant pays for one phone number each month, in whole cents. Unset means the number burns nothing. |
 | `CREDIT_INBOX_CENTS` | — | No. | What a tenant pays for one inbox each month, in whole cents. Unset means the inbox burns nothing. |

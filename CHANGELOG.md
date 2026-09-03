@@ -36,6 +36,24 @@ upgrade, is in
   delivery. The per-replica gauge trap applies to `last_run_unix`: it exists
   only on the pod that ran the job, so every rule over it needs `max`.
 
+- **Hosted Buzz agents are bounded and gated** (#1017). Each enabled Buzz
+  identity is a supervised `buzz-acp` OS process on Fountain's own pods, so
+  the cost is standing rather than metered and `SandboxUsage` reports zero for
+  it. One account could stand up unbounded permanent processes, and
+  `BootSweep` restarted every one of them on each deploy. Standing up a *new*
+  agent now calls `Billing.check_spend/1` and a `BUZZ_IDENTITY_CEILING`
+  (default 10), both `402`; a converging deploy of an agent that already
+  exists is exempt, because it adds no process and refusing it would strand a
+  running harness on stale credentials. `Workers.BuzzHarnessSweep` stops the
+  harnesses of an account that cannot spend and starts them again when it can,
+  keeping the identity row so a top-up restores the agent intact rather than
+  needing a fresh deploy; the boot sweep asks the same question, so a deploy
+  no longer undoes it. The admin users table grows a **Slots** column showing
+  teammate contacts and hosted agents per tenant, which also renders the
+  contact count that had been assigned and never displayed. Pricing the slot
+  is still open, deliberately: the ceiling should run for a cycle before
+  anyone picks a number.
+
 - **Fountain can sit behind LiteLLM as an OpenAI-compatible upstream.** The
   `examples/litellm-gateway` configuration maps `fountain/<agent>` to every
   agent on an account, forwards `X-Fountain-Thread`, gives long-running turns
