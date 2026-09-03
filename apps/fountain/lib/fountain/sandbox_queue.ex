@@ -145,6 +145,17 @@ defmodule Fountain.SandboxQueue do
     %{started: started, failed: failed, expired: expired}
   end
 
+  @doc """
+  Whether any tenant has work waiting or claimed.
+
+  An existence probe, for the choke point in `Conversations.update_sandbox/2`
+  that has to decide whether a freed slot is worth a job at all. Cheaper than
+  `user_ids_with_active_requests/0`, which scans for the distinct set.
+  """
+  def any_active_requests? do
+    Repo.exists?(from r in Request, where: r.status in ^@active_statuses)
+  end
+
   @doc "Tenant ids with work waiting or currently claimed."
   def user_ids_with_active_requests do
     Repo.all(

@@ -10,6 +10,21 @@ server releases.
 
 ---
 
+## [1.22.0] — 2026-09-03
+
+### Added
+
+- Generated types for the bounded sandbox-capacity queue (#1033): the `queue`
+  flag on the conversation create body, and the three `/api/sandbox-queue`
+  operations that list, read and cancel waiting work. `queue: true` turns a
+  tenant-cap `429` or fleet-cap `503` on a fresh start into a `202` carrying a
+  sandbox request and its position in line.
+
+  The client exposes no method for any of this on purpose (ADR 0042): a run
+  handle promises an immediate conversation, and a queued start does not have
+  one yet. Reach the endpoints through the raw HTTP client, with these types,
+  until a queued-run handle owns polling and cancellation.
+
 ## [1.20.0] — 2026-09-03
 
 ### Changed

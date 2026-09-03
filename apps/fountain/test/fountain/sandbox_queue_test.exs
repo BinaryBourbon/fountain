@@ -295,6 +295,15 @@ defmodule Fountain.SandboxQueueTest do
     assert_enqueued(worker: Fountain.Workers.SandboxQueueDrainer, args: %{user_id: waiting.id})
   end
 
+  test "a slot-freeing transition with an empty queue schedules nothing" do
+    user = insert_verified_user()
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+    {:ok, _} = Fountain.Conversations.update_sandbox(sandbox, %{status: "terminated"})
+
+    refute_enqueued(worker: Fountain.Workers.SandboxQueueDrainer)
+  end
+
   test "a poke that raises never takes down the caller that freed the slot" do
     user = insert_verified_user()
     sandbox = insert_sandbox(user_id: user.id, status: "ready")

@@ -228,14 +228,16 @@ defmodule Fountain.Conversations do
 
   # A transition out of a cap-counting status can free both a tenant slot and
   # the deployment-wide fleet slot, so every tenant with active queue work
-  # wants draining. That fan-out is one Oban insert here and the query behind
-  # it runs in the job: this is the choke point every sandbox status change
-  # goes through, and a caller writing one row must not pay for a scan plus an
-  # insert per waiting tenant.
+  # wants draining. This is the choke point every sandbox status change goes
+  # through, and almost every one of them happens with an empty queue, so the
+  # cost here is one existence probe and nothing else. When there is work, it
+  # is one Oban insert and the job does the scan that finds the tenants —
+  # never a scan plus an insert per waiting tenant on the caller's path.
   defp maybe_poke_sandbox_queue(was, %Sandbox{} = updated) do
     active = Fountain.Quotas.active_statuses()
 
-    if was in active and updated.status not in active do
+    if was in active and updated.status not in active and
+         Fountain.SandboxQueue.any_active_requests?() do
       Fountain.Workers.SandboxQueueDrainer.poke_all_later()
     end
 
