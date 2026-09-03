@@ -19,7 +19,9 @@ defmodule FountainWeb.AgentsLive.IndexTest do
     end
 
     test "renders empty state when user has no agents", %{conn: conn} do
-      user = insert_verified_user()
+      # Verification plants the starter agent (ADR 0038), so an account with no
+      # agents is now one that deleted it — still a state the page has to draw.
+      user = insert_user_without_agents()
       conn = login_user(conn, user)
 
       {:ok, _view, html} = live(conn, ~p"/agents")

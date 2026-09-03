@@ -570,7 +570,9 @@ defmodule Fountain.TeamTest do
 
   describe "list_addable_agents/1" do
     test "the user's agents not yet on the team" do
-      user = insert_verified_user()
+      # No starter agent (ADR 0038): the subject is which of the two agents
+      # below is addable, not how many agents the account happens to own.
+      user = insert_user_without_agents()
       ada = insert_agent(user_id: user.id, name: "Ada")
       linus = insert_agent(user_id: user.id, name: "Linus")
       insert_teammate_conv(user, ada)

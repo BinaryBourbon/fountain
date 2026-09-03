@@ -92,7 +92,9 @@ defmodule Fountain.ExportsTest do
   # Seed one account with every kind of owned data, including a real encrypted
   # secret, and a second account whose data must never bleed in.
   defp seed_account do
-    user = insert_verified_user()
+    # No starter agent (ADR 0038): every assertion below names the rows this
+    # function seeded, and an agent verification handed out is not one of them.
+    user = insert_user_without_agents()
 
     env = insert_env(user_id: user.id, name: "export-env")
     insert_secret(env, %{"key" => "EXPORT_TOKEN", "value" => @secret_value})

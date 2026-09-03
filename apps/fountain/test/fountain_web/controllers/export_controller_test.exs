@@ -25,7 +25,9 @@ defmodule FountainWeb.ExportControllerTest do
   end
 
   test "the owner downloads a plain JSON file", %{conn: conn} do
-    user = insert_verified_user()
+    # No starter agent (ADR 0038), so the one agent in the payload is the one
+    # this test put there.
+    user = insert_user_without_agents()
     insert_agent(user_id: user.id, name: "download-agent")
     export = completed_export(user)
 

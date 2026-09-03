@@ -258,9 +258,11 @@ defmodule Fountain.FunnelTest do
 
       assert stalled.count == 3
       assert stalled.by_onboarding_state == %{"step_1" => 1, "step_3" => 2}
-      assert stalled.built_agent == 1
+      # All three, and none: every verified account owns a starter agent
+      # (ADR 0038). #1421 replaces this decomposition.
+      assert stalled.built_agent == 3
       assert stalled.built_environment == 1
-      assert stalled.built_nothing == 1
+      assert stalled.built_nothing == 0
     end
 
     test "started: the stalled accounts that ran something and got nothing back" do

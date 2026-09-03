@@ -17,7 +17,9 @@ defmodule FountainWeb.OpenAIControllerTest do
   alias FountainWeb.OpenAIController
 
   setup do
-    user = insert_verified_user()
+    # No starter agent (ADR 0038): `/v1/models` lists every agent the tenant
+    # owns, and the model list here is meant to be the agents these tests name.
+    user = insert_user_without_agents()
     {_key, raw_key} = insert_api_key(user)
     agent = insert_agent(user_id: user.id, name: "pr-reviewer")
 

@@ -17,7 +17,9 @@ defmodule FountainWeb.AccountDataControllerTest do
   alias Fountain.Workers.AccountExport
 
   setup do
-    user = insert_verified_user()
+    # No starter agent (ADR 0038), so an export's `agents` list holds exactly
+    # what a test seeded into it.
+    user = insert_user_without_agents()
     {_rec, key} = insert_api_key(user)
     {:ok, user: user, key: key}
   end

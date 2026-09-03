@@ -4,7 +4,9 @@ defmodule Fountain.ManifestTest do
   alias Fountain.{Agents, Crypto, Environments, Manifest, Vaults}
 
   setup do
-    %{user: insert_verified_user()}
+    # No starter agent (ADR 0038): every assertion here counts what the
+    # manifest reconciled, and an agent the account was given is not that.
+    %{user: insert_user_without_agents()}
   end
 
   defp env_resource(name, spec \\ %{}) do
