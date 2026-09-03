@@ -7,6 +7,22 @@ defmodule Fountain.Umbrella.MixProject do
       # Kept in lockstep with the newest v* git tag — release-bump.yml
       # computes the next tag from this value.
       version: "0.16.0",
+      hex: [
+        ignore_advisories: [
+          # cowlib 2.19.0 is already the newest Hex release, OSV lists no fixed
+          # Hex version, and Fountain serves HTTP with Bandit rather than Cowboy.
+          "EEF-CVE-2026-43969",
+          # cowlib 2.19.0 is already the newest Hex release, OSV lists no fixed
+          # Hex version, and Fountain serves HTTP with Bandit rather than Cowboy.
+          "EEF-CVE-2026-43971",
+          # cowlib 2.19.0 is already the newest Hex release, OSV lists no fixed
+          # Hex version, and Fountain serves HTTP with Bandit rather than Cowboy.
+          "EEF-CVE-2026-43966",
+          # gun 2.5.0 is already the newest Hex release, OSV lists no fixed Hex
+          # version, and Fountain serves HTTP with Bandit rather than Cowboy.
+          "GHSA-w4f7-4cxr-rv3c"
+        ]
+      ],
       deps: deps(),
       releases: releases(),
       aliases: aliases(),

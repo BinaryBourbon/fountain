@@ -605,12 +605,10 @@ jobs:
         run: mix credo --strict
 
       - name: Audit dependencies
-        # Deliberately non-blocking. A package can be retired upstream at any
-        # moment by someone else, and that would break every build here for a
-        # reason unrelated to the change under test. It stays visible in the
-        # log. Currently flags earmark 1.4.48 (deprecated, unmaintained).
-        continue-on-error: true
-        run: mix hex.audit
+        # Security advisories block the build unless explicitly acknowledged in
+        # mix.exs. Retirements stay visible without breaking unrelated work: an
+        # upstream maintainer can retire a package at any moment.
+        run: elixir scripts/hex-audit-gate.exs
 
       # The Elixir SDK is a standalone Mix project. Keep its dependency graph
       # and build artifacts separate from this umbrella's -- which also puts
