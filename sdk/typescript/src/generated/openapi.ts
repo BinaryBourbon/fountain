@@ -3077,9 +3077,11 @@ export interface components {
         };
         /**
          * ChangesetError
-         * @description Validation errors keyed by field, with each value an array of messages.
+         * @description Validation errors keyed by field, with each value an array of messages, beside the code every Fountain error carries.
          */
         ChangesetError: {
+            /** @description `validation_failed`. */
+            error?: string;
             errors: {
                 [key: string]: string[];
             };

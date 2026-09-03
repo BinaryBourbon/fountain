@@ -20,9 +20,13 @@ defmodule FountainWeb.ChangesetJSONTest do
   # ---------------------------------------------------------------------------
 
   describe "error/1" do
-    test "returns empty errors map when changeset has no errors" do
+    test "returns a code and an empty errors map when the changeset has no errors" do
       cs = build_changeset(%{name: :string}, %{name: "Alice"})
-      assert ChangesetJSON.error(%{changeset: cs}) == %{errors: %{}}
+
+      # `error` is here so a 422 has one shape whether it came from a
+      # changeset, from the OpenAPI cast or from a coded refusal (#1431).
+      assert ChangesetJSON.error(%{changeset: cs}) ==
+               %{error: "validation_failed", errors: %{}}
     end
 
     test "includes field key with message for a required-field error" do

@@ -42,14 +42,15 @@ defmodule FountainWeb.SupportReportControllerTest do
     end
 
     test "rejects a bad category or an empty message", %{conn: conn, raw_key: key} do
-      # the OpenAPI cast rejects the enum before the context sees it
-      assert %{"errors" => [%{"source" => %{"pointer" => "/category"}}]} =
+      # the OpenAPI cast rejects the enum before the context sees it, and
+      # renders it as ChangesetError like every other 422 (#1431)
+      assert %{"error" => "validation_failed", "errors" => %{"category" => [_ | _]}} =
                conn
                |> authed_with_key(key)
                |> post_json("/api/support/reports", %{"category" => "rant", "message" => "x"})
                |> json_response(422)
 
-      assert %{"errors" => [%{"source" => %{"pointer" => "/message"}}]} =
+      assert %{"error" => "validation_failed", "errors" => %{"message" => [_ | _]}} =
                conn
                |> authed_with_key(key)
                |> post_json("/api/support/reports", %{"category" => "bug", "message" => ""})

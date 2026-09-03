@@ -15,7 +15,9 @@ defmodule FountainWeb.OAuthTokenController do
 
   action_fallback FountainWeb.FallbackController
 
-  plug OpenApiSpex.Plug.CastAndValidate, replace_params: false
+  plug OpenApiSpex.Plug.CastAndValidate,
+    replace_params: false,
+    render_error: FountainWeb.Plugs.CastRenderError
 
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "oauth_token", max: 30, window_ms: 3_600_000]

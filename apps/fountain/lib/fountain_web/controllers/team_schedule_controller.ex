@@ -17,7 +17,9 @@ defmodule FountainWeb.TeamScheduleController do
 
   action_fallback FountainWeb.FallbackController
 
-  plug OpenApiSpex.Plug.CastAndValidate, replace_params: false
+  plug OpenApiSpex.Plug.CastAndValidate,
+    replace_params: false,
+    render_error: FountainWeb.Plugs.CastRenderError
 
   tags(["Team"])
 

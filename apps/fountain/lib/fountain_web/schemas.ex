@@ -3344,13 +3344,21 @@ defmodule FountainWeb.Schemas do
 
     OpenApiSpex.schema(%{
       title: "ChangesetError",
-      description: "Validation errors keyed by field, with each value an array of messages.",
+      description:
+        "Validation errors keyed by field, with each value an array of messages, " <>
+          "beside the code every Fountain error carries.",
       type: :object,
       properties: %{
         errors: %Schema{
           type: :object,
           additionalProperties: %Schema{type: :array, items: %Schema{type: :string}}
-        }
+        },
+        # Always `validation_failed` on this body, and always present since
+        # #1431 — a 422 is not always a validation failure (the fallback
+        # controller renders coded refusals with the same status), so a client
+        # that branches on the code needs one here too. Optional rather than
+        # required because widening that is the open question in #1444.
+        error: %Schema{type: :string, description: "`validation_failed`."}
       },
       required: [:errors]
     })

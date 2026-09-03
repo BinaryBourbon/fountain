@@ -19,7 +19,9 @@ defmodule FountainWeb.HealthController do
 
   alias FountainWeb.Schemas
 
-  plug OpenApiSpex.Plug.CastAndValidate, replace_params: false
+  plug OpenApiSpex.Plug.CastAndValidate,
+    replace_params: false,
+    render_error: FountainWeb.Plugs.CastRenderError
 
   tags(["Health"])
   security([])

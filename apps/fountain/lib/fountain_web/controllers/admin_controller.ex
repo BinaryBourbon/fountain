@@ -30,7 +30,9 @@ defmodule FountainWeb.AdminController do
 
   action_fallback FountainWeb.FallbackController
 
-  plug OpenApiSpex.Plug.CastAndValidate, replace_params: false
+  plug OpenApiSpex.Plug.CastAndValidate,
+    replace_params: false,
+    render_error: FountainWeb.Plugs.CastRenderError
 
   @default_per_page 25
   @max_per_page 100
