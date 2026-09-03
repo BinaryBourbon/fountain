@@ -7480,6 +7480,7 @@
           "type": "string"
         },
         "stage": {
+          "nullable": true,
           "required": false,
           "type": "string"
         },

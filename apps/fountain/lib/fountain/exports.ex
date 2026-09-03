@@ -470,8 +470,8 @@ defmodule Fountain.Exports do
       "kind" => le.kind,
       "stream" => le.stream,
       "data" => le.data,
-      "stage" => le.stage,
-      "state" => le.state,
+      "stage" => LogEvent.rendered_stage(le),
+      "state" => LogEvent.rendered_state(le),
       "duration_ms" => le.duration_ms,
       "turn_id" => le.turn_id,
       "at" => le.inserted_at

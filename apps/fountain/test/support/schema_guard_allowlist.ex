@@ -30,12 +30,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   422 and the wire sometimes carries the validator's. One root cause, 27
   operations (#1431).
 
-  `:log_event_empty_state` — `Fountain.Conversations.LogEvent` validates
-  `state` against `["" | @states]` and stores `""` for an event that has no
-  state, but the schema's enum is `started done failed interrupted` and does
-  not include it. A generated client with a strict enum decoder rejects a real
-  event, and all four SDKs decode this field (#1430).
-
   `:test_fixture_vocabulary` — not a defect in the API. The fixture inserts a
   value on purpose that the domain no longer accepts (a conversation whose
   runtime is `retired-runtime`, exercising the retired-runtime path), so the
@@ -50,7 +44,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
     plug_status: "a status a pipeline plug returns that the operation does not declare (#1432)",
     cast_and_validate_422:
       "CastAndValidate renders its own 422 body, not the declared error schema (#1431)",
-    log_event_empty_state: "LogEvent stores state \"\", which the schema's enum omits (#1430)",
     test_fixture_vocabulary: "the fixture inserts an out-of-vocabulary value on purpose",
     openai_error_shape: "the OpenAI gateway renders `error` as a string, not an object (#1433)"
   }
@@ -157,9 +150,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
     {"PUT /api/account/inference-credentials/{provider}", 422} => :cast_and_validate_422,
     {"PUT /api/environments/{id}", 422} => :cast_and_validate_422,
     {"PUT /api/vaults/{id}", 422} => :cast_and_validate_422,
-
-    # ── log_event_empty_state (1) ─────────────────────────────
-    {"GET /api/conversations/{conversation_id}/events", 200} => :log_event_empty_state,
 
     # ── test_fixture_vocabulary (1) ─────────────────────────────
     {"GET /api/conversations/{id}", 200} => :test_fixture_vocabulary,

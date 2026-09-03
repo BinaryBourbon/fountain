@@ -142,8 +142,8 @@ defmodule FountainWeb.ConversationJSON do
       kind: e.kind,
       stream: e.stream,
       data: e.data,
-      stage: e.stage,
-      state: e.state,
+      stage: LogEvent.rendered_stage(e),
+      state: LogEvent.rendered_state(e),
       duration_ms: e.duration_ms,
       turn_id: e.turn_id,
       ts: e.inserted_at
