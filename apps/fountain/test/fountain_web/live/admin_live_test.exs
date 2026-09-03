@@ -63,8 +63,10 @@ defmodule FountainWeb.AdminLiveTest do
       # conversation that never answered is a start, not an activation.
       assert html =~ "2 verified users have never had a reply"
       assert html =~ "started a conversation and got nothing back: 1"
-      # Both, because a verified account owns a starter agent (ADR 0038).
-      assert html =~ "built an agent: 2"
+      # One: `stalled` kept a second agent beside the starter every verified
+      # account owns (ADR 0038); the admin has only the starter (#1421).
+      assert html =~ "built their own agent: 1"
+      assert html =~ "added a credential: 0"
     end
 
     test "shows time to first reply", %{conn: conn} do

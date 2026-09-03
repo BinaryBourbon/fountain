@@ -148,7 +148,7 @@ defmodule FountainWeb.AdminLive.Index do
             started a conversation and got nothing back: {@funnel.stalled.started}
           </div>
           <div class="text-xs">
-            built an agent: {@funnel.stalled.built_agent} · created an environment: {@funnel.stalled.built_environment} · built nothing: {@funnel.stalled.built_nothing}
+            added a credential: {@funnel.stalled.added_credential} · created an environment: {@funnel.stalled.built_environment} · built their own agent: {@funnel.stalled.built_own_agent}
           </div>
         </div>
       </section>

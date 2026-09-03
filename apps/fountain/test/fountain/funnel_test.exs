@@ -36,6 +36,31 @@ defmodule Fountain.FunnelTest do
     })
   end
 
+  # An inference credential the tenant supplied. `nil` clears it, which is
+  # what an account that set a key and removed it leaves behind.
+  defp put_credential!(user, value \\ "sk-ant-test") do
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+    {:ok, _} =
+      Fountain.InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, value)
+
+    :ok
+  end
+
+  # Edit the agent the account was given. The write goes through
+  # `update_agent/3` so the changeset stamps `updated_at` the way production
+  # does, and the row is aged backwards first: `updated_at` is second-granular,
+  # so an agent inserted and edited inside one test would otherwise read as
+  # untouched.
+  defp edit_agent!(user) do
+    [agent] = Fountain.Agents.list_agents(user.id, [])
+
+    agent
+    |> Ecto.Changeset.change(inserted_at: at(1), updated_at: at(1))
+    |> Repo.update!()
+    |> Fountain.Agents.update_agent(%{"description" => "mine now"})
+  end
+
   describe "summary_admin/0 — stage counts" do
     test "empty database: zero counts, nil conversions and medians" do
       summary = Funnel.summary_admin()
@@ -235,17 +260,29 @@ defmodule Fountain.FunnelTest do
   end
 
   describe "summary_admin/0 — stalled breakdown" do
-    test "verified users with no conversation, by how far they got" do
-      _nothing = insert_verified_user()
+    test "verified users with no reply, by how far they got" do
+      # Took the starter agent and stopped. The floor every verified account
+      # stands on since #1389, and the case the old decomposition could not
+      # tell apart from any other.
+      _floor = insert_verified_user()
 
-      agent_builder = insert_verified_user()
-      insert_agent(user_id: agent_builder.id)
+      credentialled = insert_verified_user()
+      put_credential!(credentialled)
 
       env_builder = insert_verified_user()
       insert_env(user_id: env_builder.id)
 
+      # Two ways to own an agent of your own: keep a second one...
+      second_agent = insert_verified_user()
+      insert_agent(user_id: second_agent.id)
+
+      # ...or edit the one you were given.
+      editor = insert_verified_user()
+      edit_agent!(editor)
+
       # An account that got a reply is not stalled, whatever else is true.
       activated = insert_verified_user()
+      put_credential!(activated)
       reply!(activated)
 
       # Unverified users are not in the stalled cohort.
@@ -253,12 +290,38 @@ defmodule Fountain.FunnelTest do
 
       %{stalled: stalled} = Funnel.summary_admin()
 
-      assert stalled.count == 3
-      # All three, and none: every verified account owns a starter agent
-      # (ADR 0038). #1421 replaces this decomposition.
-      assert stalled.built_agent == 3
+      assert stalled.count == 5
+      assert stalled.added_credential == 1
       assert stalled.built_environment == 1
-      assert stalled.built_nothing == 0
+      assert stalled.built_own_agent == 2
+    end
+
+    test "a cleared credential is not an added one" do
+      user = insert_verified_user()
+      put_credential!(user)
+      assert Funnel.summary_admin().stalled.added_credential == 1
+
+      # Clearing the last key leaves the row behind, so the row's existence
+      # cannot be the signal.
+      put_credential!(user, nil)
+
+      assert Repo.get_by(Fountain.InferenceCredentials.Credential, user_id: user.id)
+      assert Funnel.summary_admin().stalled.added_credential == 0
+    end
+
+    test "the starter agent alone is not an agent of your own" do
+      user = insert_verified_user()
+
+      assert [%{name: "starter"}] = Fountain.Agents.list_agents(user.id, [])
+      assert Funnel.summary_admin().stalled.built_own_agent == 0
+    end
+
+    test "an account with no agents at all is not counted as owning one" do
+      # The starter deleted rather than kept or edited.
+      _bare = insert_user_without_agents()
+
+      assert Funnel.summary_admin().stalled.count == 1
+      assert Funnel.summary_admin().stalled.built_own_agent == 0
     end
 
     test "started: the stalled accounts that ran something and got nothing back" do
