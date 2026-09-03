@@ -103,7 +103,7 @@ upgrade, is in
   delete race still produces. `no_turn_running`, already served for an idle
   conversation and never documented, joins it in the api.md status table.
   The wake-on-miss decision moved to `Conversations.wake_for_interrupt/1`,
-  taking the server's pin from 2,835 down to 2,813.
+  taking the server's pin from 2,835 down to 2,815.
 
 - **Platform inference on the gemini runtime was unbilled** (#1459). gemini
   leaves ACP's `PromptResponse.usage` empty and reports the turn's tokens
