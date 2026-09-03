@@ -15,7 +15,7 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   accepts is downward. Lower it when you move something out; never raise it.
   """
 
-  @pin 3049
+  @pin 3048
 
   @server "apps/fountain/lib/fountain/conversations/conversation_server.ex"
 

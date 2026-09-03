@@ -23,6 +23,16 @@ machinery, plan Checkout, the portal and `verify_plans` are gone, with the
 subscription columns left unread in Postgres for one release. Stripe holds
 no subscription and no price. Persistent-home rent (decision 7) is not built.
 
+
+**Inference is a priced cost in the ledger since #1388**
+([0038](0038-onboarding-first-reply.md)): a tenant with no inference
+credential of their own runs on a Fountain platform key and burns
+`burn_inference` for the tokens, at provider list price. The gate is
+unchanged — the balance, through `Billing.check_spend/1` — and the only new
+refusal is a per-deployment daily ceiling on platform inference, which is a
+503 like `:fleet_full` rather than a 402, because it is Fountain's limit and
+not the tenant's balance.
+
 ## Context
 
 ADR 0026 sold three tiers that differed on one axis, the concurrency cap,

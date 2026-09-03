@@ -12,7 +12,16 @@ generated: { by: human:jhgaylor, at: 2026-05-10T05:00:20-04:00 }
 
 # 0008 — BYO inference credentials per tenant
 
-**Status:** Accepted — 2026-05-10.
+**Status:** Accepted — 2026-05-10. **Amended by
+[0038](0038-onboarding-first-reply.md)** (2026-09-02, built in #1388): the
+premise "Fountain holds no platform inference keys and pays nothing for
+inference" no longer holds. Fountain holds a set of platform keys and runs a
+tenant's agent on one when that tenant has none of their own for the model's
+provider, metering the tokens against their credit balance at provider list
+price. Everything else here stands unchanged — the per-tenant DEK, the
+encrypted-at-rest columns, and the rule that **the tenant's own credential
+always wins**. A deployment that configures no platform key behaves exactly as
+this ADR describes.
 
 ## Context
 

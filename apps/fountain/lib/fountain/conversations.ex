@@ -1800,6 +1800,10 @@ defmodule Fountain.Conversations do
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
+         # Whose inference key would run this (#1388): refused only when it
+         # would be Fountain's and the deployment has spent its day. A door
+         # with no platform key configured runs no query here.
+         :ok <- Fountain.PlatformInference.gate(user_id, agent.model),
          # A persistent launch lands on the identity's home when there is one
          # (ADR 0023 gate 6): `{:home, sandbox}` leaves the `with` and attaches
          # below. Only when there is none does a machine get provisioned, and
@@ -2306,6 +2310,10 @@ defmodule Fountain.Conversations do
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
+         # Whose inference key would run this (#1388): refused only when it
+         # would be Fountain's and the deployment has spent its day. A door
+         # with no platform key configured runs no query here.
+         :ok <- Fountain.PlatformInference.gate(user_id, agent.model),
          %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
          :ok <- check_attach_capacity(sandbox, agent, attrs["prompt"]),
@@ -2769,6 +2777,10 @@ defmodule Fountain.Conversations do
           # backstop; this one makes the refusal synchronous at the API door.
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
                :ok <- Fountain.Billing.check_spend(conv.user_id),
+               # Whose inference key would run this (#1388): refused only when it
+               # would be Fountain's and the deployment has spent its day. A door
+               # with no platform key configured runs no query here.
+               :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
             case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
               {:error, {:already_started, winner_pid}} ->
@@ -3027,6 +3039,10 @@ defmodule Fountain.Conversations do
 
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_spend(conv.user_id),
+         # Whose inference key would run this (#1388): refused only when it
+         # would be Fountain's and the deployment has spent its day. A door
+         # with no platform key configured runs no query here.
+         :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
          # A fresh sandbox is a fresh placement decision — re-resolve from
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.

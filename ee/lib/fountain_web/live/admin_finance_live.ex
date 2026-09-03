@@ -349,6 +349,18 @@ defmodule FountainWeb.Live.AdminFinanceLive do
             </div>
             <div class="text-xs text-zinc-400">inbound counts — AgentPhone charges to receive</div>
           </div>
+          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+            <div class="text-xs text-zinc-500">Platform inference</div>
+            <div class="text-xl font-semibold tabular-nums">
+              {money(@finance.cost.inference_cents)}
+            </div>
+            <div class="text-xs text-zinc-500">
+              tokens on Fountain's own keys, for tenants with none of their own
+            </div>
+            <div class="text-xs text-zinc-400">
+              sold at provider list price, so this is earned revenue too and nets to zero margin
+            </div>
+          </div>
         </div>
 
         <div :if={@finance.cost.by_provider != %{}} class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -583,7 +595,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   defp negative?(cents), do: is_integer(cents) and cents < 0
 
   defp total_cost(%{cost: cost}) do
-    [cost.sandbox_cents, cost.contact_cents, cost.message_cents]
+    [cost.sandbox_cents, cost.contact_cents, cost.message_cents, cost.inference_cents]
     |> then(fn parts -> if Enum.any?(parts, &is_nil/1), do: nil, else: Enum.sum(parts) end)
   end
 
@@ -629,7 +641,8 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   defp contacts_cell(%{inboxes: i, numbers: n}), do: "#{i}✉ #{n}☎"
 
   defp cost_breakdown(t) do
-    "sandboxes #{money(t.sandbox_cost_cents)} · contacts #{money(t.contact_cost_cents)} · messages #{money(t.message_cost_cents)}"
+    "sandboxes #{money(t.sandbox_cost_cents)} · contacts #{money(t.contact_cost_cents)} · " <>
+      "messages #{money(t.message_cost_cents)} · inference #{money(t.inference_cost_cents)}"
   end
 
   defp pluralize(1, singular, _plural), do: singular

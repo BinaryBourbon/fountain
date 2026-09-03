@@ -474,6 +474,9 @@ defmodule Fountain.Conversations.ConversationServer do
       # What the runtime's default_env/2 is handed (gate 3): the real
       # credentials, or placeholders when the conversation is brokered.
       env_credentials: %{},
+      # #1388; see `SpriteEnv.select_inference/2`, which decides both.
+      inference_source: nil,
+      inference_model: nil,
       broker: nil,
       current_command: nil,
       current_command_ref: nil,
@@ -686,7 +689,8 @@ defmodule Fountain.Conversations.ConversationServer do
     vault = if conv.vault_id, do: Vaults._unsafe_get_vault(conv.vault_id)
 
     case SpriteEnv.load_tenant_state(conv.user_id) do
-      {:ok, dek, inference_creds} ->
+      {:ok, dek, own_creds} ->
+        {inference_source, inference_creds} = SpriteEnv.select_inference(agent, own_creds)
         bindings = Egress.bindings(conv.user_id)
 
         {merged, bindings, connection_keys} =
@@ -709,6 +713,8 @@ defmodule Fountain.Conversations.ConversationServer do
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
               inference_credentials: inference_creds,
+              inference_source: inference_source,
+              inference_model: agent && agent.model,
               env_credentials: env_creds,
               brokered: brokered,
               broker_bindings: bindings,
@@ -1589,7 +1595,7 @@ defmodule Fountain.Conversations.ConversationServer do
       state = close_autonomous_turn(state, "superseded_by_prompt")
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      with :ok <- TurnMachine.gate(conv.user_id),
+      with :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
            :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
         {:reply, :ok, kick_turn(state, prompt, agent, images)}
@@ -1748,7 +1754,7 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      case TurnMachine.gate(conv.user_id) do
+      case TurnMachine.gate(conv.user_id, state.inference_source) do
         :ok ->
           state = close_autonomous_turn(state, "superseded_by_prompt")
           agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
@@ -1825,7 +1831,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # No `cycle_end` came. Close the autonomous turn as completed — the updates
   # it collected are real — and say why.
   def handle_info({:autonomous_quiet, turn_id}, %{current_turn: %{id: turn_id}} = state) do
-    if autonomous_turn?(state) do
+    if TurnMachine.autonomous_turn?(state) do
       {:noreply,
        finish_acp_turn(state, "completed", %{"origin" => "quiet"}, %{
          origin: "autonomous",
@@ -2674,11 +2680,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # server holds goes in, the next one comes back with the effects to apply,
   # in order. `ctx` is what the machine needs that is not the turn's own.
   defp drive_turn(state, payload, extra \\ []) do
-    ctx =
-      Map.new(
-        [autonomous?: autonomous_turn?(state), runtime_module: state.runtime_module] ++ extra
-      )
-
+    ctx = TurnMachine.ctx(state, extra)
     {turn, effects} = TurnMachine.handle(TurnMachine.from_state(state), payload, ctx)
     state = TurnMachine.into_state(state, turn)
 
@@ -2732,9 +2734,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp user_turn_running?(%{current_turn: %{origin: "autonomous"}}), do: false
   defp user_turn_running?(%{current_turn: turn}), do: not is_nil(turn)
-
-  defp autonomous_turn?(%{current_turn: %{origin: "autonomous"}}), do: true
-  defp autonomous_turn?(_state), do: false
 
   # This turn rides the open connection: no spawn, no handshake. `Peer.prompt/3`
   # reuses the session already open, so a background task keeps running and the
@@ -2795,7 +2794,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp drop_connection(state, why) do
     state =
-      if autonomous_turn?(state) do
+      if TurnMachine.autonomous_turn?(state) do
         finish_acp_turn(state, "completed", %{"origin" => "connection_closed"}, %{
           origin: "autonomous",
           cycle: "connection_closed"
@@ -2881,7 +2880,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp close_autonomous_turn(state, why) do
-    if autonomous_turn?(state) do
+    if TurnMachine.autonomous_turn?(state) do
       finish_acp_turn(state, "completed", %{"origin" => why}, %{origin: "autonomous", cycle: why})
     else
       state

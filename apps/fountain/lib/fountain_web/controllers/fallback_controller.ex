@@ -189,6 +189,24 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # The deployment has spent its platform inference budget for the day
+  # (#1388). 503 rather than 402, for the same reason as `:fleet_full`: this
+  # is Fountain's own ceiling, not the caller's balance, and there is nothing
+  # they can buy to clear it. Adding an inference credential does clear it —
+  # a tenant's own key never touches this ceiling — so the message says so.
+  def call(conn, {:error, :platform_inference_unavailable}) do
+    conn
+    |> put_resp_header("retry-after", "3600")
+    |> put_status(:service_unavailable)
+    |> json(%{
+      error: "platform_inference_unavailable",
+      message:
+        "Fountain's shared inference budget for today is spent. Add your own " <>
+          "inference credential to run now, or try again tomorrow.",
+      credentials_url: "/account/inference-credentials"
+    })
+  end
+
   # The ConversationServer did not answer within the call timeout — almost
   # always a server still inside handle_continue(:provision), whose blocked
   # mailbox makes every call wait the full 30s and exit (#412). 503 with

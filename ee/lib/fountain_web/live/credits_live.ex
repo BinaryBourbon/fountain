@@ -215,6 +215,16 @@ defmodule FountainWeb.Live.CreditsLive do
     do: "Conversation time, #{format_seconds(s)}"
 
   defp ledger_label(%{reason: "burn_turn"}), do: "Conversation time"
+
+  # A platform-inference burn (#1388). The model is on the row because it is
+  # what the price came from, and because "Fountain's key" is the answer to
+  # the question this line raises: why am I paying for tokens? A tenant who
+  # adds their own credential stops seeing these.
+  defp ledger_label(%{reason: "burn_inference", metadata: %{"model" => model}})
+       when is_binary(model),
+       do: "Inference on Fountain's key, #{model}"
+
+  defp ledger_label(%{reason: "burn_inference"}), do: "Inference on Fountain's key"
   defp ledger_label(%{reason: "burn_rent"}), do: "Number or inbox, one month"
   defp ledger_label(%{reason: "burn_message"}), do: "Message"
   defp ledger_label(%{reason: "expire"}), do: "Expired with the period"

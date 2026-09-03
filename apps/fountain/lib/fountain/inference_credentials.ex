@@ -182,6 +182,74 @@ defmodule Fountain.InferenceCredentials do
   end
 
   @doc """
+  Whether the tenant has a credential of their own that would run this model.
+
+  True also when the model's provider needs none at all (a local model, a
+  gateway): there is nothing missing, which is the same answer
+  `missing_for_model/2` gives.
+  """
+  @spec has_own?(binary(), String.t() | nil) :: boolean()
+  def has_own?(user_id, model) when is_binary(user_id),
+    do: is_nil(missing_for_model(user_id, model))
+
+  @doc """
+  Which credential a conversation on `model` runs on (#1388, ADR 0038
+  decision 3). **This is the whole selection rule**, and it is one function so
+  that the two paths a credential reaches a sandbox by cannot disagree.
+
+    * `{:ok, :own, creds}` — the tenant has a credential the model's provider
+      accepts, or the provider needs none. `creds` is what came in, untouched.
+    * `{:ok, :platform, creds}` — the tenant has none and this deployment
+      holds a platform key for that provider. `creds` is what came in with the
+      platform key merged in under the provider's credential, so everything
+      downstream — the broker split, the runtime's `default_env/2`, the
+      redaction register — treats it as exactly what it is: a credential for
+      that provider.
+    * `{:error, :no_credential}` — neither. The caller keeps today's
+      behaviour, which is to provision anyway and let the runtime report the
+      provider's own auth failure on the transcript.
+
+  **The tenant's credential always wins**, and there is no per-agent toggle:
+  a tenant who has supplied a key is never quietly run on Fountain's, whatever
+  their balance says. The tenant's other credentials survive the merge, so an
+  agent with an `openai` model on an account that holds only an Anthropic key
+  still exports that key for whatever else the sandbox does with it.
+
+  `own_creds` is the decrypted map `decrypted_for_user/2` returns, so this is
+  a pure function over it: no query, no decryption, and testable without a
+  tenant.
+  """
+  @spec select(String.t() | nil, %{atom() => String.t()}) ::
+          {:ok, :own, %{atom() => String.t()}}
+          | {:ok, :platform, %{atom() => String.t()}}
+          | {:error, :no_credential}
+  def select(model, own_creds) when is_map(own_creds) do
+    provider = Managoat.Runtimes.Model.provider(model)
+    accepted = credentials_for_provider(provider)
+
+    cond do
+      accepted == [] ->
+        {:ok, :own, own_creds}
+
+      Enum.any?(accepted, &present?(own_creds, &1)) ->
+        {:ok, :own, own_creds}
+
+      true ->
+        case Fountain.PlatformInference.key_for(provider) do
+          {:ok, credential, key} -> {:ok, :platform, Map.put(own_creds, credential, key)}
+          :none -> {:error, :no_credential}
+        end
+    end
+  end
+
+  defp present?(creds, credential) do
+    case Map.get(creds, credential) do
+      value when is_binary(value) and value != "" -> true
+      _ -> false
+    end
+  end
+
+  @doc """
   Returns a map `%{provider => boolean}` of which providers the user has set.
   Cheap — does not decrypt; just checks for non-nil ciphertext.
   """

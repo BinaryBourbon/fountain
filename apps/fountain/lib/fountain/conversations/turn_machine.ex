@@ -49,13 +49,17 @@ defmodule Fountain.Conversations.TurnMachine do
   @typedoc """
   What the machine needs that is not the turn's own: `:autonomous?` (the
   connection family's predicate, read by the server), `:runtime_module`
-  (the OAuth clause is Claude-only) and `:oauth_switched?` (the server
-  swaps the env before the call; the machine words the message).
+  (the OAuth clause is Claude-only), `:oauth_switched?` (the server
+  swaps the env before the call; the machine words the message), and the
+  pair the usage stamp needs — `:inference` (`:own` | `:platform`, whose key
+  ran this turn, #1388) and `:model` (what it ran).
   """
   @type ctx :: %{
           optional(:autonomous?) => boolean(),
           optional(:runtime_module) => module(),
-          optional(:oauth_switched?) => boolean()
+          optional(:oauth_switched?) => boolean(),
+          optional(:inference) => :own | :platform | nil,
+          optional(:model) => String.t() | nil
         }
 
   @type effect ::
@@ -112,6 +116,35 @@ defmodule Fountain.Conversations.TurnMachine do
   end
 
   # ── the machine ───────────────────────────────────────────────────────────
+
+  @doc """
+  The `ctx/0` for a report, from the server's state plus whatever the call
+  site adds (`:oauth_switched?` is the only one).
+
+  Here rather than at the call site because every key of it is the machine's
+  own vocabulary, and the server's job is to hold the state, not to know
+  which parts of it the machine reads.
+  """
+  @spec ctx(map(), keyword()) :: ctx()
+  def ctx(state, extra \\ []) do
+    Map.new(
+      [
+        autonomous?: autonomous_turn?(state),
+        runtime_module: state.runtime_module,
+        inference: state.inference_source,
+        model: state.inference_model
+      ] ++ extra
+    )
+  end
+
+  @doc """
+  Whether the running turn is a background cycle the agent narrated out of
+  turn (#817) rather than a prompt somebody sent. Over the server's state,
+  which is where the running turn lives.
+  """
+  @spec autonomous_turn?(map()) :: boolean()
+  def autonomous_turn?(%{current_turn: %{origin: "autonomous"}}), do: true
+  def autonomous_turn?(_state), do: false
 
   @doc "One peer report: the next turn and the effects the server applies."
   @spec handle(t(), payload(), ctx()) :: {t(), [effect()]}
@@ -252,9 +285,9 @@ defmodule Fountain.Conversations.TurnMachine do
   # `usage` is the turn's end-of-turn token figure (#827), recorded once here
   # — the response is the only place the runtime reports it — before the turn
   # row is closed. nil records nothing.
-  def handle(%__MODULE__{} = turn, {:done, stop_reason, usage}, _ctx) do
+  def handle(%__MODULE__{} = turn, {:done, stop_reason, usage}, ctx) do
     status = if stop_reason in ["refusal", "cancelled"], do: "failed", else: "completed"
-    record_usage(turn, usage)
+    record_usage(turn, with_inference(usage, ctx))
 
     {turn,
      [
@@ -480,6 +513,47 @@ defmodule Fountain.Conversations.TurnMachine do
   # a previous BEAM lifetime).
   def maybe_emit_first_output(%__MODULE__{} = turn), do: turn
 
+  @doc """
+  The usage figure with the turn's inference source on it (#1388).
+
+  Two keys beside the token counts: `"inference"` — `"platform"` when
+  Fountain's key ran the turn, `"own"` when the tenant's did — and, on a
+  platform turn, `"model"`, which is what `Workers.CreditPricer` prices
+  against the rate card.
+
+  **Only stamped on a deployment that holds a platform key at all.** With
+  none configured there is no question to answer, and an unstamped map is
+  byte-for-byte the map every turn has always carried, which is what keeps a
+  self-hosted install (and the tests that assert on it) unchanged.
+
+  The `"model"` key is deliberately absent on an `"own"` turn: nothing prices
+  it, so recording it would put a configuration detail in a column that
+  exists to hold token counts.
+  """
+  @spec with_inference(map() | nil, ctx()) :: map() | nil
+  def with_inference(usage, ctx) when is_map(usage) do
+    case Map.get(ctx, :inference) do
+      source when source in [:own, :platform] ->
+        if Fountain.PlatformInference.enabled?() do
+          usage
+          |> Map.put("inference", Atom.to_string(source))
+          |> put_model(source, Map.get(ctx, :model))
+        else
+          usage
+        end
+
+      _ ->
+        usage
+    end
+  end
+
+  def with_inference(usage, _ctx), do: usage
+
+  defp put_model(usage, :platform, model) when is_binary(model),
+    do: Map.put(usage, "model", model)
+
+  defp put_model(usage, _source, _model), do: usage
+
   @spec record_usage(t(), map() | nil) :: :ok
   def record_usage(%__MODULE__{row: %{} = row}, %{} = usage) do
     case Conversations._unsafe_record_turn_usage(row, usage) do
@@ -571,10 +645,19 @@ defmodule Fountain.Conversations.TurnMachine do
   # started under, and each turn resets the idle clock, so a balance spent to
   # zero otherwise bought up to the 24h max lifetime of continued service per
   # live sandbox (#313). Suspension is the same shape.
-  @spec gate(String.t()) :: :ok | {:error, term()}
-  def gate(user_id) do
-    with :ok <- Fountain.Accounts.check_not_suspended(user_id) do
-      Fountain.Billing.check_spend(user_id)
+  #
+  # `inference` is the conversation's inference source (#1388). On a turn
+  # running on a platform key the deployment's daily ceiling is the third
+  # gate: a live server outlives the ceiling it started under exactly as it
+  # outlives the balance, so the same backstop shape applies. A turn on the
+  # tenant's own key is never touched by it.
+  @spec gate(String.t(), :own | :platform | nil) :: :ok | {:error, term()}
+  def gate(user_id, inference \\ nil) do
+    with :ok <- Fountain.Accounts.check_not_suspended(user_id),
+         :ok <- Fountain.Billing.check_spend(user_id) do
+      if inference == :platform,
+        do: Fountain.PlatformInference.check_ceiling(),
+        else: :ok
     end
   end
 
