@@ -994,6 +994,25 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
+    test "a close before the exit frame fails the turn, it does not complete it", %{conv: conv} do
+      # The frame this replaces. Until managoat_sandbox 0.2.0 a socket that
+      # closed with no exit frame was reported as {:exit, _, 0}, so this
+      # landed on the :exit handler and wrote a *completed* turn with exit
+      # code 0 — a turn that never finished, recorded as a clean one, which
+      # is the shape of BinaryBourbon/fountain#880.
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:error, %{ref: ref}, :closed_before_exit})
+      _ = :sys.get_state(pid)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+      assert is_nil(turn.exit_code)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      GenServer.stop(pid)
+    end
+
     test "an error for a stale command ref does not touch the current turn", %{conv: conv} do
       {pid, ref} = start_with_turn(conv)
 

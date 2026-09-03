@@ -992,6 +992,15 @@ defmodule Fountain.Conversations.TurnMachine do
   #
   # The deadline is absolute rather than per-message: a `receive` timeout
   # restarts on every match, and this runs inside a GenServer callback.
+  #
+  # The other terminal frame ends the drain too, with a nil code. Since
+  # `managoat_sandbox` 0.2.0 a transport that closes with no exit frame
+  # arrives as `{:error, ref, :closed_before_exit}` rather than a fabricated
+  # `{:exit, ref, 0}`, and that frame is just as stranded as the output
+  # around it: `current_command_ref` is unset on this path, so leaving it in
+  # the mailbox costs the full deadline and then drops it (#608 again). The
+  # code stays nil because nobody measured one — a nil reads as "no exit
+  # code" everywhere it is reported, which is exactly the truth here.
   @spec drain_exited_command(reference()) :: {integer() | nil, [{String.t(), binary()}]}
   def drain_exited_command(ref) do
     drain_exited_command(ref, System.monotonic_time(:millisecond) + @drain_timeout_ms, [])
@@ -1003,6 +1012,9 @@ defmodule Fountain.Conversations.TurnMachine do
     receive do
       {:exit, %{ref: ^ref}, code} ->
         {code, Enum.reverse(output)}
+
+      {:error, %{ref: ^ref}, _reason} ->
+        {nil, Enum.reverse(output)}
 
       {:stdout, %{ref: ^ref}, data} ->
         drain_exited_command(ref, deadline, [{"stdout", data} | output])
