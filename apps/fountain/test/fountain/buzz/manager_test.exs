@@ -13,16 +13,13 @@ defmodule Fountain.Buzz.ManagerTest do
   setup do
     dir = Fountain.TmpDir.mkdir!("buzz-mgr")
     fake = Path.join(dir, "buzz-acp")
-    File.write!(fake, "#!/bin/sh\nsleep 30\n")
+    File.write!(fake, "#!/bin/sh\nexec sleep 30\n")
     File.chmod!(fake, 0o755)
 
     on_exit(fn ->
       # Tear down every harness this test left running (no prod harnesses exist
       # under this supervisor in the test node) before the tmp dir goes away.
-      for {_, pid, _, _} <- Horde.DynamicSupervisor.which_children(Fountain.BuzzSupervisor),
-          is_pid(pid) do
-        Horde.DynamicSupervisor.terminate_child(Fountain.BuzzSupervisor, pid)
-      end
+      Fountain.BuzzTestSupport.stop_all_harnesses!()
 
       File.rm_rf(dir)
     end)
@@ -166,7 +163,12 @@ defmodule Fountain.Buzz.ManagerTest do
       dir = Path.dirname(fake)
       old = Path.join(dir, "old-launch.sh")
       new = Path.join(dir, "new-launch.sh")
-      for l <- [old, new], do: File.write!(l, "#!/bin/sh\nexec \"$@\"\n") && File.chmod!(l, 0o755)
+      real_launcher = Application.app_dir(:fountain, "priv/buzz-acp-launch.sh")
+
+      for launcher <- [old, new] do
+        File.write!(launcher, "#!/bin/sh\nexec \"#{real_launcher}\" \"$@\"\n")
+        File.chmod!(launcher, 0o755)
+      end
 
       Application.put_env(:fountain, :buzz_acp_launcher, old)
       on_exit(fn -> Application.delete_env(:fountain, :buzz_acp_launcher) end)

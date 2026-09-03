@@ -109,6 +109,12 @@ defmodule Fountain.Buzz.Manager do
   @doc """
   Stop the harness for `identity_id` if one is running. The harness's own
   `terminate` revokes its launch key. Returns `:ok` whether or not one was found.
+
+  Synchronous, and it waits for the launcher OS process to exit so a completed
+  stop means the launch's executable and pipes are free (#1469). A buzz-acp that
+  handles SIGTERM goes in milliseconds; one that ignores it costs the launcher's
+  five-second grace, capped at `Harness`'s six. Callers on a request path — the
+  buzz-agent create, update and delete endpoints — pay that tail.
   """
   def stop_harness(identity_id) do
     case whereis(identity_id) do
