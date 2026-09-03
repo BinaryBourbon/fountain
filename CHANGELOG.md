@@ -56,6 +56,38 @@ upgrade, is in
   hit. Fixed in managoat_runtimes 0.1.1, taken here as a lockfile bump. Nothing
   to change on an agent: the same model and the same credential now work.
 
+### Security
+
+- **hackney 1.25.0 carried four advisories and is on two live request paths**
+  (#1468). Bumped to **4.7.4**, which fixes all four:
+  [EEF-CVE-2026-47071](https://osv.dev/vulnerability/EEF-CVE-2026-47071)
+  (HIGH, a SOCKS5 TLS upgrade that ignored the caller's timeout),
+  [EEF-CVE-2026-47076](https://osv.dev/vulnerability/EEF-CVE-2026-47076)
+  (an SSRF allowlist bypass through a percent-encoded host),
+  [EEF-CVE-2026-47075](https://osv.dev/vulnerability/EEF-CVE-2026-47075)
+  (CR/LF injection in a query parameter) and
+  [EEF-CVE-2026-47069](https://osv.dev/vulnerability/EEF-CVE-2026-47069)
+  (CR/LF injection in the cookie domain and path options). `stripity_stripe`
+  was the blocker at 3.2.0, which pins `hackney ~> 1.18`; it moves to 3.3.2,
+  which requires `~> 4.0`. Our own constraint was already `~> 3.0`, so only
+  the lockfile changed. hackney is reached through **Swoosh** (every
+  transactional email, since `Swoosh.ApiClient.Hackney` is the compiled-in
+  default and nothing overrides it outside dev and test) and through
+  **`Stripe.API`** (every Stripe call, since `:http_module` is unset).
+  Sentry is *not* affected — it has defaulted to `Sentry.FinchClient` since
+  v12.0.0 — and neither is GitHub OAuth: `oauth2` runs on Tesla, whose
+  adapter here is the default `Tesla.Adapter.Httpc`, so hackney is not on
+  the token-exchange path at all. Both live paths were exercised against
+  4.7.4 rather than accepted on a clean resolve: a real test-mode Stripe read
+  and write, and a real message delivered through Resend.
+- **`cowlib` and `gun` advisories remain open, with nothing to upgrade to**
+  (#1468). `cowlib 2.19.0` (three advisories) and `gun 2.5.0` (one) are
+  already the newest releases on Hex and OSV lists no fixed version for the
+  Hex ranges. They arrive only through `sprites` → `gun` → `cowlib`, the
+  outbound WebSocket client to one known host, and Fountain serves HTTP with
+  **Bandit, not Cowboy**, so cowlib is not on the inbound request path.
+  Tracking upstream; `mix hex.audit` reports them and does not fail the build.
+
 ## [0.16.0] - 2026-09-03
 
 ### Upgrade notes
