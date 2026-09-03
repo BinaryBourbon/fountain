@@ -286,7 +286,7 @@ is the list of what every client now has to agree with. Work through it:
 ```bash
 cd sdk/typescript && npm run generate && npm run verify-contract
 cd sdk/python     && python3 scripts/verify_contract.py
-cd sdk/elixir     && mix contract.verify
+cd sdk/elixir     && mix test test/contract_test.exs
 swift test --filter ContractTests        # from the repository root
 ```
 

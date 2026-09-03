@@ -2,7 +2,7 @@
   "sdk": "elixir",
   "package": "fountain_sdk",
   "directory": "sdk/elixir",
-  "verify": "mix contract.verify",
+  "verify": "mix test test/contract_test.exs",
   "note": "The manifest covers the string-keyed wire fields and hand-written endpoint surface used by the Elixir client.",
   "operations": [
     "DELETE /api/agents/{id}",

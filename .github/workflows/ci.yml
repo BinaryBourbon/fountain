@@ -912,7 +912,7 @@ jobs:
 
       - name: Elixir SDK contract
         working-directory: sdk/elixir
-        run: mix contract.verify
+        run: mix test test/contract_test.exs
 
       # Eleven browser applications are built on this API, so the SDK's default
       # entry has to bundle for a browser — no Node built-ins reachable from it.

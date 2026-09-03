@@ -136,6 +136,6 @@ omits it is told.
 | TypeScript (types) | `npm run generate` then check for a diff | `sdk/typescript` |
 | Python | `python3 scripts/verify_contract.py` | `sdk/python` |
 | Swift | `swift test --filter ContractTests` | repository root |
-| Elixir | `mix contract.verify` | `sdk/elixir` |
+| Elixir | `mix test test/contract_test.exs` | `sdk/elixir` |
 
 `CONTRIBUTING.md` has the order to run them in when a PR changes the API.
