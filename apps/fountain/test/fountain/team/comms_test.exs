@@ -458,4 +458,75 @@ defmodule Fountain.Team.CommsTest do
       assert [] = Comms.conversation_mcp_servers("not-a-uuid", "tok")
     end
   end
+
+  describe "record_message/1 — the row the ledger prices (#1143)" do
+    setup do
+      %{user: insert_verified_user()}
+    end
+
+    defp attrs(user, overrides \\ %{}) do
+      Map.merge(
+        %{
+          user_id: user.id,
+          channel: "sms",
+          direction: "outbound",
+          provider_message_id: "prov-#{System.unique_integer([:positive])}"
+        },
+        overrides
+      )
+    end
+
+    test "writes a row and stamps it", %{user: user} do
+      assert {:ok, message} = Comms.record_message(attrs(user))
+      assert message.user_id == user.id
+      assert message.inserted_at
+    end
+
+    # The contract that makes this different from `Billing.record_usage/5`,
+    # and the whole reason the table exists. `record_usage/5` rescues by
+    # design, so a dropped comms row was a message nobody was charged for.
+    # This one must hand the failure back, not log it and return :ok.
+    test "an invalid row is an error, not a swallowed log line", %{user: user} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Comms.record_message(attrs(user, %{channel: "carrier-pigeon"}))
+
+      assert %{channel: _} = errors_on(cs)
+
+      assert {:error, %Ecto.Changeset{}} =
+               Comms.record_message(attrs(user, %{provider_message_id: nil}))
+
+      assert {:error, %Ecto.Changeset{}} =
+               Comms.record_message(attrs(user, %{direction: "sideways"}))
+    end
+
+    test "the provider's id makes a repeat a no-op, not a second charge", %{user: user} do
+      a = attrs(user, %{provider_message_id: "prov-fixed"})
+
+      assert {:ok, _} = Comms.record_message(a)
+      assert {:ok, :duplicate} = Comms.record_message(a)
+
+      assert Fountain.Repo.aggregate(Fountain.Team.CommsMessage, :count, :id) == 1
+    end
+
+    # Scoped by user as well as channel: provider message ids are unique
+    # within a provider, so two tenants could in principle collide, and one
+    # tenant's send must never be swallowed as another's duplicate.
+    test "two tenants may hold the same provider id", %{user: user} do
+      other = insert_verified_user()
+
+      assert {:ok, _} = Comms.record_message(attrs(user, %{provider_message_id: "shared"}))
+      assert {:ok, _} = Comms.record_message(attrs(other, %{provider_message_id: "shared"}))
+
+      assert Fountain.Repo.aggregate(Fountain.Team.CommsMessage, :count, :id) == 2
+    end
+
+    test "the same id on different channels is two messages", %{user: user} do
+      assert {:ok, _} = Comms.record_message(attrs(user, %{provider_message_id: "x"}))
+
+      assert {:ok, _} =
+               Comms.record_message(attrs(user, %{provider_message_id: "x", channel: "email"}))
+
+      assert Fountain.Repo.aggregate(Fountain.Team.CommsMessage, :count, :id) == 2
+    end
+  end
 end

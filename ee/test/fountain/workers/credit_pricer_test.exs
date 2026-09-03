@@ -133,21 +133,32 @@ defmodule Fountain.Workers.CreditPricerTest do
       assert %{messages: 0} = CreditPricer.run(since: @since, now: @now)
     end
 
-    test "a priced message burns once, inbound SMS included" do
-      user = insert_empty_user()
-      cfg = Application.get_env(:fountain, :credits)
-
+    defp priced_card(cfg) do
       Application.put_env(
         :fountain,
         :credits,
         Keyword.merge(cfg, email_message_cents: 1, sms_message_cents: 2)
       )
+    end
 
-      {:ok, _} = Billing.record_usage(user.id, "comms_email_sent", nil, "contact", %{})
-      {:ok, _} = Billing.record_usage(user.id, "comms_sms_sent", nil, "contact", %{})
-      {:ok, _} = Billing.record_usage(user.id, "comms_sms_received", nil, "contact", %{})
-      # Not a message.
-      {:ok, _} = Billing.record_usage(user.id, "turn_started", nil, "conversation", %{})
+    defp comms_message(user, channel, direction) do
+      {:ok, _} =
+        Fountain.Team.Comms.record_message(%{
+          user_id: user.id,
+          channel: channel,
+          direction: direction,
+          provider_message_id: "prov-#{System.unique_integer([:positive])}"
+        })
+    end
+
+    test "a priced message burns once, inbound SMS included" do
+      user = insert_empty_user()
+      priced_card(Application.get_env(:fountain, :credits))
+
+      comms_message(user, "email", "outbound")
+      comms_message(user, "sms", "outbound")
+      # AgentPhone charges for a received SMS too, so inbound is priced.
+      comms_message(user, "sms", "inbound")
 
       assert %{messages: 3} = CreditPricer.run(since: @since, now: DateTime.utc_now())
       assert Credits.balance(user.id) == -5
@@ -155,6 +166,56 @@ defmodule Fountain.Workers.CreditPricerTest do
 
       reasons = Credits.list_entries(user.id) |> Enum.map(& &1.reason) |> Enum.uniq()
       assert reasons == ["burn_message"]
+    end
+
+    # The whole point of #1143. `usage_events` rows come from a writer that
+    # rescues and logs, so a dropped one was a free message; they are the
+    # product signal now and the ledger must not read them. If this ever
+    # starts billing again, a comms message would be charged twice — once from
+    # each table.
+    test "a usage_events row is not priced" do
+      user = insert_empty_user()
+      priced_card(Application.get_env(:fountain, :credits))
+
+      {:ok, _} = Billing.record_usage(user.id, "comms_email_sent", nil, "contact", %{})
+      {:ok, _} = Billing.record_usage(user.id, "comms_sms_sent", nil, "contact", %{})
+      {:ok, _} = Billing.record_usage(user.id, "comms_sms_received", nil, "contact", %{})
+
+      assert %{messages: 0} = CreditPricer.run(since: @since, now: DateTime.utc_now())
+      assert Credits.balance(user.id) == 0
+    end
+
+    # The provider's id is the idempotency key, so a send retried after a
+    # timeout that in fact reached the provider bills once.
+    test "the same provider message id is one row and one charge" do
+      user = insert_empty_user()
+      priced_card(Application.get_env(:fountain, :credits))
+
+      attrs = %{
+        user_id: user.id,
+        channel: "sms",
+        direction: "outbound",
+        provider_message_id: "prov-retried"
+      }
+
+      assert {:ok, _} = Fountain.Team.Comms.record_message(attrs)
+      assert {:ok, :duplicate} = Fountain.Team.Comms.record_message(attrs)
+
+      assert %{messages: 1} = CreditPricer.run(since: @since, now: DateTime.utc_now())
+      assert Credits.balance(user.id) == -2
+    end
+
+    # A deleted account's rows are nilified rather than removed, and there is
+    # nobody left to charge. Without the guard the pricer would raise on a
+    # nil user_id every pass, taking the turn and inference passes with it.
+    test "a message whose account was deleted is skipped" do
+      user = insert_empty_user()
+      priced_card(Application.get_env(:fountain, :credits))
+
+      comms_message(user, "sms", "outbound")
+      Fountain.Repo.update_all(Fountain.Team.CommsMessage, set: [user_id: nil])
+
+      assert %{messages: 0} = CreditPricer.run(since: @since, now: DateTime.utc_now())
     end
   end
 

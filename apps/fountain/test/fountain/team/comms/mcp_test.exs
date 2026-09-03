@@ -198,7 +198,8 @@ defmodule Fountain.Team.Comms.McpTest do
                          "cc" => ["c@y.com"]
                        }}
 
-      assert_received {:audit, "email_send", %{"recipients" => 2}}
+      assert_received {:audit, "email_send",
+                       %{"recipients" => 2, "provider_message_id" => "msg_1"}}
     end
 
     test "email_send accepts a single comma-separated string for `to`" do
@@ -286,7 +287,10 @@ defmodule Fountain.Team.Comms.McpTest do
       assert_received {:sms_send,
                        %{"number_id" => "num_1", "to_number" => "+15550001111", "body" => "hey"}}
 
-      assert_received {:audit, "sms_send", %{}}
+      # The provider's id rides the audit summary so the controller can key
+      # the durable billing row on it (#1143). Without it a send is logged as
+      # unbillable rather than billed against something unidentifiable.
+      assert_received {:audit, "sms_send", %{"provider_message_id" => "sms_1"}}
     end
 
     test "sms_list shapes the messages" do

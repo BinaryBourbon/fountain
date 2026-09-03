@@ -28,7 +28,7 @@ defmodule Fountain.Team.Comms do
 
   alias Fountain.{Audit, Conversations, FeatureFlags, Repo, Team}
   alias Fountain.Team.Comms.{AgentMail, AgentPhone}
-  alias Fountain.Team.Contact
+  alias Fountain.Team.{CommsMessage, Contact}
 
   @flag :team_comms
   @mcp_name "fountain-comms"
@@ -53,6 +53,68 @@ defmodule Fountain.Team.Comms do
 
   @doc "The MCP server name the teammate sees the tools under."
   def mcp_name, do: @mcp_name
+
+  ## messages
+
+  @doc """
+  Record a message a provider charged for. **This is the row the credit
+  ledger prices from** (#1143), so unlike `Billing.record_usage/5` it does
+  not rescue: a write that fails must be visible, not logged and forgotten.
+
+  Idempotent on the provider's own message id, so a send retried after a
+  timeout that in fact reached the provider converges on one row rather than
+  billing twice. That makes `{:ok, :duplicate}` a success from every caller's
+  point of view.
+
+  `attrs` (atom-keyed): `:user_id`, `:channel` (`email`/`sms`), `:direction`
+  (`outbound`/`inbound`), `:provider_message_id`, and optionally
+  `:contact_id`, `:agent_id` and `:metadata`.
+  """
+  @spec record_message(map()) ::
+          {:ok, CommsMessage.t()} | {:ok, :duplicate} | {:error, Ecto.Changeset.t()}
+  def record_message(attrs) when is_map(attrs) do
+    attrs = Map.put_new(attrs, :inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
+
+    %CommsMessage{}
+    |> CommsMessage.changeset(attrs)
+    |> Repo.insert()
+    |> case do
+      {:ok, %CommsMessage{}} = ok ->
+        ok
+
+      # The unique index did its job. The provider already told us about this
+      # message once, and it is already priced or waiting to be.
+      {:error, %Ecto.Changeset{errors: errors} = cs} ->
+        if Keyword.has_key?(errors, :user_id) or has_provider_id_error?(errors),
+          do: {:ok, :duplicate},
+          else: {:error, cs}
+    end
+  end
+
+  defp has_provider_id_error?(errors) do
+    Enum.any?(errors, fn
+      {:provider_message_id, {_, opts}} -> opts[:constraint] == :unique
+      {_, {_, opts}} -> opts[:constraint] == :unique
+    end)
+  end
+
+  @doc """
+  Messages this tenant was charged for in a period, for the finance view.
+  Counts both directions: AgentPhone charges for a received SMS as well as a
+  sent one.
+  """
+  @spec message_counts(binary(), DateTime.t(), DateTime.t()) :: %{
+          optional(String.t()) => non_neg_integer()
+        }
+  def message_counts(user_id, from, to) when is_binary(user_id) do
+    from(m in CommsMessage,
+      where: m.user_id == ^user_id and m.inserted_at >= ^from and m.inserted_at < ^to,
+      group_by: m.channel,
+      select: {m.channel, count(m.id)}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
 
   ## contacts
 

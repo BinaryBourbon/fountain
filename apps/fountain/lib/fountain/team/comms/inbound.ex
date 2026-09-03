@@ -87,7 +87,7 @@ defmodule Fountain.Team.Comms.Inbound do
              source: "sms"
            ) do
         {:ok, conv} ->
-          record(contact, text, conv)
+          record(contact, text, conv, data["id"] || delivery_id)
           {:ok, conv.id}
 
         {:error, reason} ->
@@ -241,7 +241,7 @@ defmodule Fountain.Team.Comms.Inbound do
       "texted back.]\n\n#{text}#{media}"
   end
 
-  defp record(%Contact{} = contact, text, conv) do
+  defp record(%Contact{} = contact, text, conv, provider_message_id) do
     Audit.record(%{
       user_id: contact.user_id,
       action: "team.contact.prompted",
@@ -258,8 +258,42 @@ defmodule Fountain.Team.Comms.Inbound do
 
     # AgentPhone charges for an inbound message as well as an outbound one, so
     # it is metered on the same footing as a send
-    # (`FountainWeb.TeamCommsMcpController`). Best-effort, after the prompt is
-    # already away.
+    # (`FountainWeb.TeamCommsMcpController`).
+    #
+    # Two writes, for the two contracts (#1143). The `comms_messages` row is
+    # what the ledger prices, so it does not rescue and a failure is loud; the
+    # `usage_events` row keeps `record_usage/5`'s swallow-and-log contract and
+    # feeds the product mirror only. Both run after the prompt is away, which
+    # is deliberate: a billing problem must not cost the customer the message
+    # they were charged for.
+    case provider_message_id do
+      id when is_binary(id) and id != "" ->
+        case Comms.record_message(%{
+               user_id: contact.user_id,
+               contact_id: contact.id,
+               agent_id: contact.agent_id,
+               channel: "sms",
+               direction: "inbound",
+               provider_message_id: id,
+               metadata: %{"conversation_id" => conv.id}
+             }) do
+          {:ok, _} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.error(
+              "team comms inbound: sms #{id} for user #{contact.user_id} was received but " <>
+                "not recorded, so it will not be billed: #{inspect(reason)}"
+            )
+        end
+
+      _ ->
+        Logger.error(
+          "team comms inbound: sms for user #{contact.user_id} carried no provider message " <>
+            "id or delivery id; it will not be billed"
+        )
+    end
+
     Fountain.Billing.record_usage(
       contact.user_id,
       "comms_sms_received",

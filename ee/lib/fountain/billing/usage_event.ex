@@ -2,9 +2,21 @@ defmodule Fountain.Billing.UsageEvent do
   @moduledoc """
   Schema for the `usage_events` table.
 
-  Tracks platform usage for billing aggregation and post-hoc analytics.
-  Written synchronously from `ConversationServer` at key lifecycle points;
-  never updated after insertion (no `updated_at`).
+  **Nothing here is money any more** (#1143). These rows are the product
+  signal: a count on a dashboard and the PostHog mirror that
+  `Billing.record_usage/5` writes from the same choke point. That writer
+  rescues and logs rather than failing the action that produced it, because a
+  metering outage must never fail a conversation — the right contract for a
+  count and the wrong one for a row the ledger keys on.
+
+  Comms messages used to be priced from the `comms_*` rows here, so a dropped
+  event was a message the customer was never charged for. They are priced from
+  `Fountain.Team.CommsMessage` now, whose writer does not rescue and whose key
+  is the provider's own message id. The `comms_*` types stay in the
+  vocabulary, and stay product-only.
+
+  Written from `ConversationServer` at key lifecycle points and from the comms
+  paths; never updated after insertion (no `updated_at`).
   """
 
   use Ecto.Schema
@@ -26,12 +38,14 @@ defmodule Fountain.Billing.UsageEvent do
     field :inserted_at, :utc_datetime
   end
 
-  # The closed vocabulary of things Fountain pays for. Sandbox lifecycle, and
-  # the teammate messages that carry a per-message provider charge on top of
-  # the monthly cost of an inbox or a number (`Fountain.Billing.Finance`).
-  # `sandbox_terminated` is forensic only: nothing prices or aggregates it
-  # (`SandboxUsage` reads the sandbox rows), but its `duration_ms` and
-  # `final_status` are the record of what a sandbox did when it died.
+  # The closed vocabulary. Sandbox lifecycle, and the teammate messages that
+  # carry a per-message provider charge (`Fountain.Billing.Finance`).
+  #
+  # None of it is priced from here. `sandbox_terminated` never was — it is
+  # forensic only, and `SandboxUsage` reads the sandbox rows — and since #1143
+  # the `comms_*` types are not either: `CreditPricer` prices comms messages
+  # from `comms_messages`, whose writer cannot silently drop one. Keep these
+  # for the product mirror; do not add a type expecting it to bill.
   @valid_event_types ~w(sandbox_provisioned sandbox_provision_failed turn_started sandbox_terminated
                          sandbox_suspended sandbox_resumed
                          comms_email_sent comms_sms_sent comms_sms_received)
