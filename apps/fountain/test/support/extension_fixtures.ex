@@ -115,8 +115,36 @@ defmodule Fountain.ExtensionFixtures do
     @impl true
     def migrations, do: [{:fountain, "test_extension_migrations"}]
 
+    @doc """
+    Describes paths only while the suite is running.
+
+    `apps/fountain/test/test_helper.exs` sets the flag; nothing else does. That
+    is not fussiness — **the published OpenAPI artifact is generated in
+    `MIX_ENV=test`.** `scripts/sdk-contract/build.sh` runs `mix openapi.export`,
+    ci.yml and release.yml both set `MIX_ENV: test` for it, and the
+    `dist/openapi.json` that comes out is attached to every tag and is what
+    `sdk/contract/contract.json` is projected from. A fixture that described
+    paths from `config/test.exs` would put `/api/fixture/whoami` in the spec
+    every Fountain release ships. The SDK contract gate catches it, which is how
+    this was found.
+
+    A real extension has the opposite requirement and needs no flag: the bundled
+    distribution serves its operations, so they belong in the artifact (ADR 0043
+    decision 6). #1507 must add Buzz's operations to an SDK manifest or to
+    `sdk/contract/omissions.json` deliberately, rather than discovering them.
+    """
+    def describes_openapi_paths? do
+      Application.get_env(:fountain, :extension_fixture_openapi, false)
+    end
+
     @impl true
-    def openapi_paths, do: OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.Router)
+    def openapi_paths do
+      if describes_openapi_paths?() do
+        OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.Router)
+      else
+        %{}
+      end
+    end
 
     @impl true
     def conversation_mcp_servers(conversation_id, callback_token) do
