@@ -23,6 +23,24 @@ that builds one updates this block.
 **Built:** every decision. 2 (#1392), 3 (#1388), 4 (#1389), 5 (#1426),
 6 (#1443) and 7 (#1393).
 
+**Walked on production, 2026-09-03**, by the first account ever to run on a
+platform key. Verified at 04:35:03Z, request sent at 04:35:19Z, the turn
+started at 04:35:33Z once the sandbox was up, and the reply was on screen at
+04:35:38Z: **verification to first reply, 35 seconds** — 14 of them the
+sandbox, 5 the model, and 16 a human copying the request. The account held no
+credential of its own, so decision 3's selection rule served it from
+`PLATFORM_ANTHROPIC_API_KEY`, and the `Workers.CreditPricer` tick at 04:40:00Z
+posted a 3-cent `burn_inference` debit against the $5 opening grant. That is
+the metering half of decision 3 exercised outside a test for the first time.
+Sandbox time added no `burn_turn` row, because five seconds at
+`CREDIT_TURN_HOUR_CENTS` rounds to nothing, which is what the pricer says it
+does.
+
+Setting a platform key is a deployment step and not a code one, so a
+deployment that has never set `PLATFORM_ANTHROPIC_API_KEY` still puts every
+new account in front of the wall this ADR removes. Production itself ran that
+way from #1388 merging until the walk above.
+
 Decision 2: `Fountain.Activation` holds the definition, `Fountain.Funnel`
 counts it and measures verification to first reply, and
 `activation.first_reply` reaches PostHog from the turn-ending write.
