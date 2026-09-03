@@ -202,6 +202,9 @@ defmodule FountainWeb.MetricsTest do
         # Emitted by the proxy itself (Managoat.Broker.Proxy.log_request/4),
         # which Fountain.Broker.Native.handle_request/4 also writes rows from
         [:managoat, :broker, :request],
+        # Also the proxy's own (Managoat.Broker.Proxy.connect_event/4, since
+        # managoat_broker 0.1.2): once per connection rather than per request
+        [:managoat, :broker, :connect],
         # Emitted by Oban itself around every job execution
         [:oban, :job, :stop],
         [:oban, :job, :exception],
@@ -258,6 +261,36 @@ defmodule FountainWeb.MetricsTest do
       # conv_id is metadata, never a label — one series per conversation
       # would eat Prometheus.
       refute body =~ "conv_id="
+    end
+
+    test "broker connect outcomes land in the scrape, so the failure ratio has both halves (#1170)" do
+      # FountainBrokerUpstreamFailures divides upstream_failed by the
+      # connections that dialled out at all. Both label values have to reach
+      # Prometheus for that to be a ratio rather than a bare count.
+      for outcome <- [:ok, :upstream_failed, :denied, :unauthenticated] do
+        :telemetry.execute([:managoat, :broker, :connect], %{count: 1}, %{
+          host: "api.example.com",
+          port: 443,
+          outcome: outcome,
+          meta: %{"conversation_id" => Ecto.UUID.generate()}
+        })
+      end
+
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      for outcome <- ~w(ok upstream_failed denied unauthenticated) do
+        assert Regex.match?(
+                 ~r/fountain_broker_connect_count\{[^}]*outcome="#{outcome}"[^}]*\}/,
+                 body
+               ),
+               "outcome=#{outcome} is missing from the scrape"
+      end
+
+      # host and conversation_id are metadata, never labels: one series per
+      # origin a sandbox names is unbounded, and one per conversation worse.
+      refute body =~ ~s(host="api.example.com")
+      refute body =~ "conversation_id="
     end
 
     test "ops gauges and Oban events land in the scrape (#321)" do

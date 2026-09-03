@@ -434,6 +434,19 @@ defmodule FountainWeb.Telemetry do
         measurement: :count,
         description: "Egress log rows dropped because the writer's buffer was full"
       ),
+      # The connection-level companion to `request.count`, which only counts
+      # requests that got as far as a tunnel. This one fires on every
+      # connection the proxy decides about, the `502`s and `407`s included,
+      # which is what lets "how much of this broker's egress is failing" be a
+      # ratio: a count of failures alone cannot tell a broken broker from a
+      # busy one. `managoat_broker` 0.1.2 and later.
+      counter("fountain.broker.connect.count",
+        event_name: [:managoat, :broker, :connect],
+        measurement: :count,
+        tags: [:outcome],
+        description:
+          "Broker connections by outcome: ok, upstream_failed, denied or unauthenticated"
+      ),
 
       # ── VM ────────────────────────────────────────────────────────────────
       last_value("vm.memory.total", unit: {:byte, :kilobyte}),
