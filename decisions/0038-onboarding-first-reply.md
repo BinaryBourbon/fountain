@@ -20,7 +20,7 @@ stale_after: 2026-11-02
 and measured) and #1393 (the field cleanup), all sub-issues of #1039. Each PR
 that builds one updates this block.
 
-**Built so far:** decisions 2 (#1392), 3 (#1388) and 4 (#1389).
+**Built so far:** decisions 2 (#1392), 3 (#1388), 4 (#1389) and 7 (#1393).
 
 Decision 2: `Fountain.Activation` holds the definition, `Fountain.Funnel`
 counts it and measures verification to first reply, and
@@ -36,6 +36,15 @@ circuit breaker answering 503.
 Decision 4: `Fountain.Agents.Starter` is planted by `Accounts.verify_email/2`,
 so an account verified from now on owns one agent from the moment it is
 verified.
+
+Decision 7: `users.onboarding_state` is dropped, and with it
+`Accounts.advance_onboarding/2`, the funnel's `by_onboarding_state`
+breakdown and the field on `GET /api/auth/me` and
+`GET /api/account/onboarding`. `onboarding_completed_at` is the whole of
+onboarding. Both onboarding endpoints still work; only the vestigial field
+went, because #1390 owns the larger question of whether
+`POST /onboarding/complete` still has a purpose once the stamp moves to the
+first reply. This settles NC-6 from [0007](0007-g3-launch-go.md).
 
 **The price is pass-through at provider list, a 1.0x margin, no markup**
 (decided with Jake on 2026-09-02). Fountain's margin is sandbox time

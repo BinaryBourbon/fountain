@@ -2,9 +2,8 @@ defmodule FountainWeb.OnboardingController do
   @moduledoc """
   Onboarding state over the API (#525).
 
-  `complete_onboarding/1` and `advance_onboarding/2` were called only from the
-  wizard LiveView, so an account driven entirely through the API stayed
-  permanently un-onboarded: `onboarding_state` never reached `"completed"`.
+  `complete_onboarding/1` was called only from the wizard LiveView, so an
+  account driven entirely through the API stayed permanently un-onboarded.
 
   The wizard is gone (#867). The console's dashboard stamps the flag when the
   account actually has what it needs — an inference credential and an agent —

@@ -2148,12 +2148,6 @@ defmodule FountainWeb.Schemas do
         data: %Schema{
           type: :object,
           properties: %{
-            state: %Schema{
-              type: :string,
-              nullable: true,
-              enum: ~w(step_1 step_2 step_3 step_4 completed),
-              description: "Wizard position. Only `completed` means anything to an API client."
-            },
             completed: %Schema{type: :boolean},
             completed_at: %Schema{type: :string, format: :"date-time", nullable: true}
           },
@@ -3414,11 +3408,6 @@ defmodule FountainWeb.Schemas do
         email: %Schema{type: :string, format: :email},
         role: %Schema{type: :string, enum: ~w(user admin)},
         email_verified: %Schema{type: :boolean},
-        onboarding_state: %Schema{
-          type: :string,
-          nullable: true,
-          description: "Wizard position. Only `completed` means anything to an API client."
-        },
         onboarding_completed: %Schema{type: :boolean},
         comped: %Schema{type: :boolean, nullable: true, description: "Null when billing is off."},
         brokered: %Schema{

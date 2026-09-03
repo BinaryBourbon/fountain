@@ -148,12 +148,6 @@ defmodule FountainWeb.AdminLive.Index do
             started a conversation and got nothing back: {@funnel.stalled.started}
           </div>
           <div class="text-xs">
-            onboarding:
-            <span :for={{state, n} <- Enum.sort(@funnel.stalled.by_onboarding_state)} class="mr-2">
-              {state} ×{n}
-            </span>
-          </div>
-          <div class="text-xs">
             built an agent: {@funnel.stalled.built_agent} · created an environment: {@funnel.stalled.built_environment} · built nothing: {@funnel.stalled.built_nothing}
           </div>
         </div>

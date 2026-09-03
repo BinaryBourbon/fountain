@@ -10,6 +10,25 @@ server releases.
 
 ---
 
+## [1.17.0] — 2026-09-02
+
+### Removed
+
+- `onboarding_state` is gone from `AuthMe`, and `state` is gone from the
+  onboarding response. Both were the browser wizard's position. The wizard
+  went in #867, after which the field only ever said `step_1` or `completed`
+  — which is what `onboarding_completed` and `completed_at` already say. The
+  server dropped the column in #1393 (ADR 0038 makes `onboarding_completed_at`
+  the one source of truth), so these types now match what the API sends.
+
+  Nothing in the hand-written layer read either field, so this is a generated
+  types change only. Code that read `me.onboarding_state` should read
+  `me.onboarding_completed`; there is no replacement for a part-way step,
+  because the server no longer records one.
+
+- `GET /api/account/onboarding` and `POST /api/account/onboarding/complete`
+  are unchanged and still work. Only the vestigial field went.
+
 ## [1.16.0] — 2026-09-02
 
 ### Changed

@@ -5470,11 +5470,6 @@
           "required": false,
           "type": "boolean"
         },
-        "onboarding_state": {
-          "nullable": true,
-          "required": false,
-          "type": "string"
-        },
         "role": {
           "enum": [
             "admin",

@@ -39,11 +39,12 @@ defmodule FountainWeb.OnboardingControllerTest do
         |> json_response(200)
 
       assert body["data"]["completed"] == true
-      assert body["data"]["state"] == "completed"
+      # The wizard's `state` went with the column (#1393); `completed` and
+      # `completed_at` both derive from the one stamp that is left.
+      refute Map.has_key?(body["data"], "state")
 
       reloaded = Accounts.get_user(user.id)
       assert reloaded.onboarding_completed_at
-      assert reloaded.onboarding_state == "completed"
     end
 
     test "is idempotent and does not move the original timestamp", %{
@@ -101,7 +102,7 @@ defmodule FountainWeb.OnboardingControllerTest do
         build_conn() |> authed_with_key(key) |> get("/api/auth/me") |> json_response(200)
 
       assert after_body["onboarding_completed"] == true
-      assert after_body["onboarding_state"] == "completed"
+      refute Map.has_key?(after_body, "onboarding_state")
     end
   end
 end

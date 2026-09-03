@@ -236,15 +236,12 @@ defmodule Fountain.FunnelTest do
 
   describe "summary_admin/0 — stalled breakdown" do
     test "verified users with no conversation, by how far they got" do
-      nothing = insert_verified_user()
-      set!(nothing, onboarding_state: "step_1")
+      _nothing = insert_verified_user()
 
       agent_builder = insert_verified_user()
-      set!(agent_builder, onboarding_state: "step_3")
       insert_agent(user_id: agent_builder.id)
 
       env_builder = insert_verified_user()
-      set!(env_builder, onboarding_state: "step_3")
       insert_env(user_id: env_builder.id)
 
       # An account that got a reply is not stalled, whatever else is true.
@@ -257,7 +254,6 @@ defmodule Fountain.FunnelTest do
       %{stalled: stalled} = Funnel.summary_admin()
 
       assert stalled.count == 3
-      assert stalled.by_onboarding_state == %{"step_1" => 1, "step_3" => 2}
       # All three, and none: every verified account owns a starter agent
       # (ADR 0038). #1421 replaces this decomposition.
       assert stalled.built_agent == 3

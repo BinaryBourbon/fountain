@@ -20,13 +20,14 @@ defmodule Fountain.Funnel do
 
   - **registered** — a `users` row exists
   - **verified** — `email_verified_at` set
-  - **onboarded** — `onboarding_completed_at` set. Since #867 that means the
-    account has an inference credential and an agent (the console stamps it),
-    rather than "clicked through the wizard"; ADR 0038 moves the stamp to the
-    first reply, which is `Fountain.Activation`'s seam. `by_onboarding_state`
-    in the stall breakdown is the vestige of that wizard — it now only
-    distinguishes `step_1` from `completed`; `built_agent` /
-    `built_environment` / `built_nothing` are the live signal.
+  - **onboarded** — `onboarding_completed_at` set, and since #1393 that stamp
+    is the whole of it: the `onboarding_state` column it used to sit beside
+    was the wizard's, distinguished nothing once the wizard went (#867), and
+    is dropped. Since #867 the stamp means the account has an inference
+    credential and an agent (the console stamps it) rather than "clicked
+    through the wizard"; ADR 0038 moves it to the first reply, which is
+    `Fountain.Activation`'s seam. `built_agent` / `built_environment` /
+    `built_nothing` are the stall breakdown's live signal.
   - **activated** — **the first conversation with a reply** (ADR 0038): the
     earliest `turns` row for the account carrying a non-empty `reply_text`.
     A conversation that never answered does not count, and neither does a
@@ -78,8 +79,7 @@ defmodule Fountain.Funnel do
   The funnel: five stages, time to first reply, and the stalled breakdown.
 
   Returns `%{stages: [stage], time_to_first_reply: timing, stalled: %{count: n,
-  by_onboarding_state: map, started: n, built_agent: n, built_environment: n,
-  built_nothing: n}}`.
+  started: n, built_agent: n, built_environment: n, built_nothing: n}}`.
 
   `conversion` is the fraction of the *previous* stage (nil for registered);
   `median_hours` is the median time from the previous stage's timestamp, for
@@ -96,7 +96,6 @@ defmodule Fountain.Funnel do
             registered_at: u.inserted_at,
             verified_at: u.email_verified_at,
             onboarded_at: u.onboarding_completed_at,
-            onboarding_state: u.onboarding_state,
             credit_balance_cents: u.credit_balance_cents
           }
       )
@@ -231,7 +230,6 @@ defmodule Fountain.Funnel do
 
     %{
       count: length(stalled),
-      by_onboarding_state: Enum.frequencies_by(stalled, & &1.onboarding_state),
       started: MapSet.size(starters),
       built_agent: MapSet.size(agent_owners),
       built_environment: MapSet.size(env_owners),

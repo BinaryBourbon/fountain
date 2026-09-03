@@ -16,6 +16,21 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Removed
+
+- **`users.onboarding_state`** (#1393, ADR 0038, settling NC-6 from ADR 0007).
+  It was the browser wizard's position. The wizard went in #867, after which
+  the column only ever held `step_1` or `completed` — which is exactly what
+  `onboarding_completed_at` being null or set already says. Gone with it:
+  `Accounts.advance_onboarding/2`, the funnel's `by_onboarding_state`
+  breakdown and its line on `/admin`, the field on the admin user views, and
+  the `onboarding_state` property on `GET /api/auth/me` plus `state` on
+  `GET /api/account/onboarding`. **Both onboarding endpoints still work and
+  are unchanged otherwise**; `completed` and `completed_at` come from the one
+  stamp that is left. The migration's `down/0` restores the column and
+  backfills `completed`, but cannot restore which step an unfinished account
+  had reached, because nothing has recorded that since #867.
+
 ### Added
 
 - **The graduation recipe for umbrella libraries** (#1345, ADR 0037):

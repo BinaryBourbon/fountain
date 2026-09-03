@@ -142,11 +142,13 @@ defmodule FountainWeb.AdminLive.UserDetail do
           class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
         >
           <div class="text-xs text-zinc-500">Onboarding</div>
-          <div class="text-sm font-medium">{@user.onboarding_state}</div>
+          <div class="text-sm font-medium">
+            {if @user.onboarding_completed_at, do: "completed", else: "not completed"}
+          </div>
           <div class="text-xs text-zinc-500">
             {if @user.onboarding_completed_at,
-              do: "completed #{format_date(@user.onboarding_completed_at)}",
-              else: "not completed"}
+              do: format_date(@user.onboarding_completed_at),
+              else: "—"}
           </div>
         </div>
         <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
