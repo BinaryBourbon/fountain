@@ -306,4 +306,123 @@ defmodule Fountain.Credits.InferenceTest do
       assert row.margin_cents == 0
     end
   end
+
+  describe "every runtime reports something we can bill (#1459)" do
+    # The whole chain from a runtime's wire response to a ledger row starts at
+    # `Managoat.ACP.Usage`, and a runtime that reports nothing falls out of it
+    # silently: no usage map, so `TurnMachine.with_inference/2` has nowhere to
+    # stamp `"inference" => "platform"`, so the pricer's fourth pass never
+    # sees the turn, so no `burn_inference` row exists — and
+    # `PlatformInference`'s daily ceiling is measured from those rows, so the
+    # spend is outside the circuit breaker as well as unbilled.
+    #
+    # That is what gemini did (#1459): it puts its tokens under a vendor
+    # `_meta.quota` extension instead of the protocol's `usage`. Nothing here
+    # failed, because "unbilled" and "free" look identical from every angle
+    # but the provider's invoice. `turns.usage` had been NULL for gemini since
+    # the runtime went onto the ACP path; the platform keys (#1388) are only
+    # what turned a missing figure into a missing bill.
+    #
+    # So the shapes are recorded, one per runtime, and asserted to price above
+    # zero. This is a claim about the wire, not about the library: it fails if
+    # an adapter changes what it sends, if `Managoat.ACP.Usage` stops reading
+    # a shape, or if a new runtime is added without checking that it reports
+    # anything at all.
+    #
+    # The counts are from live turns on production's platform keys,
+    # 2026-09-03 — except gemini's, which cannot be, because the bug is that
+    # nothing was recorded. Its *shape* is gemini-cli's own
+    # (`packages/cli/src/acp/acpSession.ts`, identical at 0.53.0, 0.56.0 and
+    # 0.59) and its counts are the neighbouring opencode-on-google turn's,
+    # which is the closest real figure there is.
+    @wire_shapes %{
+      # claude-agent-acp, the protocol's own `usage` object.
+      "claude" =>
+        {"anthropic/claude-sonnet-5",
+         %{
+           "stopReason" => "end_turn",
+           "usage" => %{
+             "inputTokens" => 2,
+             "outputTokens" => 41,
+             "cachedReadTokens" => 24_101,
+             "cachedWriteTokens" => 9_122
+           }
+         }},
+      # codex-acp, the same object, no cache write reported.
+      "codex" =>
+        {"openai/gpt-5.3-codex",
+         %{
+           "stopReason" => "end_turn",
+           "usage" => %{"inputTokens" => 12_975, "outputTokens" => 10, "cachedReadTokens" => 0}
+         }},
+      # gemini-cli's vendor extension — the shape #1459 was about.
+      "gemini" =>
+        {"google/gemini-3.1-pro-preview",
+         %{
+           "stopReason" => "end_turn",
+           "_meta" => %{
+             "quota" => %{
+               "token_count" => %{"input_tokens" => 8_716, "output_tokens" => 21},
+               "model_usage" => []
+             }
+           }
+         }},
+      # opencode speaks the protocol's object whichever provider it drives.
+      "opencode" =>
+        {"google/gemini-3.1-pro-preview",
+         %{
+           "stopReason" => "end_turn",
+           "usage" => %{"inputTokens" => 8_716, "outputTokens" => 21}
+         }}
+    }
+
+    for {runtime, {model, result}} <- @wire_shapes do
+      test "#{runtime} reports tokens that price above zero" do
+        usage = Managoat.ACP.Usage.from_prompt_result(unquote(Macro.escape(result)))
+
+        refute is_nil(usage),
+               """
+               #{unquote(runtime)} reported no usage. A platform turn on this \
+               runtime would be unbilled and invisible to the daily ceiling. \
+               Either the adapter changed what it sends, or Managoat.ACP.Usage \
+               no longer reads it — see #1459.\
+               """
+
+        stamped = Map.merge(usage, %{"inference" => "platform", "model" => unquote(model)})
+        assert InferenceRates.cost_cents(stamped) > 0
+      end
+    end
+
+    test "the gemini shape reaches the ledger, not just the rate card" do
+      user = insert_empty_user()
+      conv = conv_for(user)
+
+      {model, result} = @wire_shapes["gemini"]
+
+      usage =
+        result
+        |> Managoat.ACP.Usage.from_prompt_result()
+        |> Map.merge(%{"inference" => "platform", "model" => model})
+
+      # gemini reports no cache split at all: its input count already includes
+      # cached tokens. The card prices google's cached tokens at the base
+      # input rate, so the total is right either way — but a reader who
+      # assumes the four keys are always present should see they are not.
+      refute Map.has_key?(usage, "cache_read")
+
+      turn = platform_turn(conv, usage, seconds: 8)
+
+      assert %{inference: 1} = CreditPricer.run(since: @since, now: @now)
+
+      [entry] = Credits.list_entries(user.id) |> Enum.filter(&(&1.reason == "burn_inference"))
+      assert entry.idempotency_key == "burn_inference:#{turn.id}"
+      assert entry.metadata["model"] == "google/gemini-3.1-pro-preview"
+
+      # 8,716 input at $2/MTok is 1.743 cents and 21 output at $12/MTok is
+      # 0.025 more, so the turn rounds to 2 — negative because a debit is.
+      # Before #1459 there was no row here to read at all.
+      assert entry.amount_cents == -2
+      assert Billing.platform_inference_spend_today() == 2
+    end
+  end
 end
