@@ -10,6 +10,29 @@ server releases.
 
 ---
 
+## [1.16.0] — 2026-09-02
+
+### Changed
+
+- `AuthMe` now types `id`, `email`, `role` and `email_verified` as always
+  present. They always were: the server's `AuthMeResponse` schema listed
+  `name`, `prefix` and `created_at` as required, three properties copied from
+  the API-key schema that this response does not have, and
+  `openapi-typescript` drops a required name with no property. The result was
+  a response type with every field optional. The server schema now names the
+  four fields `GET /api/auth/me` always renders, so the generated type does
+  too (#1411).
+
+### Added
+
+- `npm run verify-contract`, which checks this client's declared wire
+  dependencies against `sdk/contract/contract.json`, the projection of the
+  server's OpenAPI document that all four SDKs now check against. `npm run
+  generate` defaults to the same artifact, `dist/openapi.json`, instead of a
+  path under `/tmp`.
+
+---
+
 ## [1.15.0] — 2026-09-02
 
 ### Added
@@ -487,5 +510,6 @@ First published release.
 - A browser entry with no Node built-in reachable from it, and a Node entry
   that adds `~/.fountain/credentials`.
 
+[1.16.0]: https://www.npmjs.com/package/@agentshit/fountain-sdk/v/1.16.0
 [0.1.1]: https://www.npmjs.com/package/@agentshit/fountain-sdk/v/0.1.1
 [0.1.0]: https://www.npmjs.com/package/@agentshit/fountain-sdk/v/0.1.0

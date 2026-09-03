@@ -1,6 +1,6 @@
 {
   "name": "@agentshit/fountain-sdk",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "description": "Run a coding agent on a real computer, with your repos and your credentials, in one call.",
   "license": "Apache-2.0",
   "publishConfig": {
@@ -43,7 +43,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "generate": "openapi-typescript ${FOUNTAIN_OPENAPI:-/tmp/fountain-openapi.json} -o src/generated/openapi.ts",
+    "generate": "openapi-typescript ${FOUNTAIN_OPENAPI:-../../dist/openapi.json} -o src/generated/openapi.ts",
+    "verify-contract": "node scripts/verify-contract.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.ts",
     "prepublishOnly": "node scripts/ci-publishes.mjs && npm run typecheck && npm test && npm run build"

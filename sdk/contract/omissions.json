@@ -1,0 +1,101 @@
+{
+  "$comment": "Operations of the API that no SDK's hand-written layer models, and why. `scripts/sdk-contract/build.py --check` fails on an operation that is neither claimed by a manifest nor matched here, and on an entry here that matches nothing the API still serves. So this file is the record of a decision, not a place to make a failure go away: a new endpoint stops CI until somebody either wires it into a client or writes one line about why no client needs it. Patterns are fnmatch globs over `METHOD /path`, with the path exactly as the OpenAPI document templates it.",
+  "omit": [
+    {
+      "operations": ["* /api/admin/*"],
+      "reason": "The operator console's own surface. It is behind require_admin and has one client, the console; no SDK models it (ADR 0013)."
+    },
+    {
+      "operations": [
+        "POST /api/auth/register",
+        "POST /api/auth/token",
+        "POST /api/auth/verify",
+        "POST /api/auth/resend-verification",
+        "POST /api/auth/email",
+        "POST /api/auth/email/confirm",
+        "POST /api/auth/forgot",
+        "POST /api/auth/reset",
+        "POST /api/auth/password",
+        "POST /api/auth/device",
+        "POST /api/auth/device/token",
+        "GET /api/auth/api-keys",
+        "POST /api/auth/api-keys",
+        "DELETE /api/auth/api-keys/{id}"
+      ],
+      "reason": "Account bootstrap and key minting. An SDK is constructed with a key it already holds; the flows that produce one belong to the console and to `fountain auth login` (#1305). Only GET /api/auth/me is modelled, because a client wants to know whose key it has."
+    },
+    {
+      "operations": ["POST /api/oauth/token", "POST /api/oauth/revoke"],
+      "reason": "Sign in with Fountain. The browser apps run the code+PKCE dance themselves against these two, and the token they get IS an API key, so the SDK starts after this point."
+    },
+    {
+      "operations": ["* /api/account/*", "DELETE /api/account"],
+      "reason": "Account self-service: billing, credit checkout, data exports, inference credentials, onboarding. The console owns all of it and none of it is part of running an agent."
+    },
+    {
+      "operations": ["* /api/webhooks*"],
+      "reason": "Webhook registration and delivery replay. Server-to-server configuration a person does once in the console; nothing an SDK caller does per run."
+    },
+    {
+      "operations": ["* /api/secret-bindings*"],
+      "reason": "Egress broker bindings (ADR 0019). Configuration of where a credential lives, set once per account; the run-time effect is invisible to a client."
+    },
+    {
+      "operations": ["* /api/runners*"],
+      "reason": "Self-hosted runner registration and the daemon's WebSocket (ADR 0022). The `fountain runner` daemon is the only client, and its socket is not JSON over HTTP."
+    },
+    {
+      "operations": ["* /api/buzz/agents*"],
+      "reason": "The Buzz gateway's own provisioning surface (ADR 0020). Buzz calls it; no general client does."
+    },
+    {
+      "operations": ["POST /api/apply"],
+      "reason": "Bulk upsert of a compiled fountain.yml. The CLI compiles the manifest and calls this; an SDK caller creates the resources it wants directly."
+    },
+    {
+      "operations": ["POST /api/agui/{agent_id}"],
+      "reason": "The AG-UI event stream. A second wire dialect for the same turn, consumed by AG-UI clients that already have their own protocol library; the SDKs follow /events and /stream instead."
+    },
+    {
+      "operations": ["POST /v1/chat/completions", "GET /v1/models", "GET /v1/models/{model}"],
+      "reason": "The OpenAI-compatible gateway. Its clients are OpenAI SDKs by definition — that is the whole point of the shape."
+    },
+    {
+      "operations": ["GET /api/audit", "GET /api/support/reports", "GET /api/support/reports/{id}", "POST /api/support/reports"],
+      "reason": "Read-only console surfaces: the tenant's audit trail and the support inbox. No agent run touches them."
+    },
+    {
+      "operations": [
+        "GET /api/agents/{id}/avatar",
+        "PUT /api/agents/{id}/avatar",
+        "DELETE /api/agents/{id}/avatar",
+        "POST /api/avatars/generate"
+      ],
+      "reason": "Avatar upload and generation. Image bytes for the console's own presentation, not part of any client's wire."
+    },
+    {
+      "operations": ["GET /api/agents/{id}/versions", "GET /api/agents/{id}/versions/{version}"],
+      "reason": "Agent version history, a console read. A conversation pins its version server-side, so a client never selects one."
+    },
+    {
+      "operations": [
+        "GET /api/connections/providers",
+        "GET /api/conversations/{conversation_id}/egress",
+        "GET /api/conversations/{conversation_id}/turns/{turn_id}/images/{position}",
+        "GET /api/secret-bindings/presets",
+        "POST /api/team/{agent_id}/contact",
+        "PATCH /api/team/{agent_id}/contact",
+        "DELETE /api/team/{agent_id}/contact"
+      ],
+      "reason": "Console-facing reads and the rented teammate contact (ADR 0030 decision 4). Each needs a UI around it — a connect button, an egress panel, an image, a phone number a person pays for — rather than a verb on a client."
+    },
+    {
+      "operations": ["GET /health", "GET /health/ready"],
+      "reason": "kubelet's probes. Unauthenticated, and about the deployment rather than the API."
+    },
+    {
+      "operations": ["PUT /api/agents/{id}", "PUT /api/environments/{id}", "PUT /api/vaults/{id}"],
+      "reason": "PUT aliases of the PATCH routes, kept for clients that only speak PUT. The SDKs model the PATCH, and the two share a controller action."
+    }
+  ]
+}

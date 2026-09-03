@@ -150,9 +150,12 @@ jobs:
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
 
+      # The same script CI runs, so the document attached to a tag is byte for
+      # byte the one the SDK contract was built from — keys sorted, ordering
+      # independent of the encoder (#1411). Without --check, because a tag is
+      # not the place to discover a stale contract; CI already refused that.
       - name: Export spec
-        working-directory: apps/fountain
-        run: mix openapi.export
+        run: scripts/sdk-contract/build.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
