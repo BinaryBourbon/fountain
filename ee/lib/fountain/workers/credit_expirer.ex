@@ -22,7 +22,10 @@ defmodule Fountain.Workers.CreditExpirer do
 
   @impl Oban.Worker
   def perform(_job) do
-    case run() do
+    counts = run()
+    Fountain.Credits.Telemetry.emit_run("expirer", counts)
+
+    case counts do
       %{expired: 0} -> :ok
       c -> Logger.info("credit expirer: #{c.expired} expiries")
     end

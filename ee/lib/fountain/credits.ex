@@ -483,11 +483,39 @@ defmodule Fountain.Credits do
     if changeset.valid? do
       changeset
       |> insert_and_move(Keyword.get(opts, :lot_id), Keyword.get(opts, :cap_to_lot, false))
+      |> emit_posted()
       |> audited(opts)
     else
       {:error, changeset}
     end
   end
+
+  # Every movement of money, measured where it actually happens (#1169).
+  #
+  # Emitting here rather than from each worker's return value is deliberate:
+  # this is the ledger write, so the measurement cannot drift from the ledger
+  # the way a separately-counted total can, and one event covers turns,
+  # inference, messages, rent, expiry, grants and purchases at once. It is
+  # outside the transaction — `insert_and_move/3` has already returned — for
+  # the reason ADR 0013 gives about audit rows: work inside a transaction that
+  # can fail takes the transaction with it.
+  #
+  # `reason` is the label because it is a closed vocabulary
+  # (`LedgerEntry.debit_reasons/0` plus the credit reasons), so it cannot blow
+  # up Prometheus cardinality. A duplicate posts nothing and measures nothing,
+  # which is what makes "the pricer priced zero cents today" a real signal
+  # rather than an artefact of the seven-day look-back re-reading old rows.
+  defp emit_posted({:ok, %LedgerEntry{} = entry} = result) do
+    :telemetry.execute(
+      [:fountain, :credits, :posted],
+      %{cents: abs(entry.amount_cents)},
+      %{reason: entry.reason, direction: if(entry.amount_cents < 0, do: "debit", else: "credit")}
+    )
+
+    result
+  end
+
+  defp emit_posted(result), do: result
 
   # The unique index is the idempotency guard, and the duplicate is detected
   # *after* attempting the insert rather than by a lookup first: two workers
