@@ -21,13 +21,12 @@ defmodule Fountain.Funnel do
   - **registered** — a `users` row exists
   - **verified** — `email_verified_at` set
   - **onboarded** — `onboarding_completed_at` set, and since #1393 that stamp
-    is the whole of it: the `onboarding_state` column it used to sit beside
-    was the wizard's, distinguished nothing once the wizard went (#867), and
-    is dropped. Since #867 the stamp means the account has an inference
-    credential and an agent (the console stamps it) rather than "clicked
-    through the wizard"; ADR 0038 moves it to the first reply, which is
-    `Fountain.Activation`'s seam. `built_agent` / `built_environment` /
-    `built_nothing` are the stall breakdown's live signal.
+    is the whole of it. The `onboarding_state` column beside it was the
+    wizard's position; the wizard went in #867, after which the column only
+    distinguished `step_1` from `completed`, so it is dropped.
+    `Fountain.Activation` stamps the date at the first reply (ADR 0038).
+    `built_agent` / `built_environment` / `built_nothing` are the stall
+    breakdown's live signal.
   - **activated** — **the first conversation with a reply** (ADR 0038): the
     earliest `turns` row for the account carrying a non-empty `reply_text`.
     A conversation that never answered does not count, and neither does a
