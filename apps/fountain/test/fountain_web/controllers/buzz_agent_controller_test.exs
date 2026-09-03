@@ -280,4 +280,59 @@ defmodule FountainWeb.BuzzAgentControllerTest do
     # OpenApiSpex CastAndValidate rejects the missing required field before the action.
     assert conn.status in [422, 400]
   end
+
+  describe "the standing-cost gates (#1017)" do
+    test "402 identity_limit_reached at the ceiling, with the numbers", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key,
+      agent: agent
+    } do
+      prev = Application.get_env(:fountain, :buzz_identity_ceiling)
+      Application.put_env(:fountain, :buzz_identity_ceiling, 1)
+
+      on_exit(fn ->
+        if prev,
+          do: Application.put_env(:fountain, :buzz_identity_ceiling, prev),
+          else: Application.delete_env(:fountain, :buzz_identity_ceiling)
+      end)
+
+      {:ok, _} = Fountain.Buzz.provision_identity(user.id, params(agent))
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/buzz/agents", %{params(agent) | "pubkey" => String.duplicate("b", 64)})
+
+      # 402 rather than 429: the fix is a ceiling change, not a retry, which
+      # is the same reasoning the teammate-contact ceiling gives.
+      assert %{"error" => "identity_limit_reached", "count" => 1, "limit" => 1} =
+               json_response(conn, 402)
+    end
+
+    test "402 insufficient_credits when the balance is exhausted", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key,
+      agent: agent
+    } do
+      case Fountain.Credits.balance(user.id) do
+        0 -> :ok
+        c -> {:ok, _} = Fountain.Credits.debit(user.id, c, "burn_turn", idempotency_key: "d")
+      end
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/buzz/agents", params(agent))
+
+      # The FallbackController's 402, the same one every other spending door
+      # gives, carrying `upgrade_url` — not the generic 422 the catch-all
+      # would have produced.
+      assert %{"error" => "insufficient_credits"} = json_response(conn, 402)
+      assert Fountain.Buzz.list_identities(user.id) == []
+    end
+  end
 end

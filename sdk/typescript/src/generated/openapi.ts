@@ -902,7 +902,10 @@ export interface paths {
         /** List hosted Buzz agents */
         get: operations["FountainWeb.BuzzAgentController.index"];
         put?: never;
-        /** Provision (or converge on) a hosted Buzz agent */
+        /**
+         * Provision (or converge on) a hosted Buzz agent
+         * @description Converges on the Nostr pubkey, so a provider may call it repeatedly. A deploy that would add a **new** hosted agent is gated by the credit balance and by `BUZZ_IDENTITY_CEILING`, both `402`; a converging deploy of an agent that already exists is not.
+         */
         post: operations["FountainWeb.BuzzAgentController.create"];
         delete?: never;
         options?: never;
@@ -7013,6 +7016,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuzzIdentityResponse"];
+                };
+            };
+            /** @description Balance exhausted, or the hosted-agent ceiling is reached */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Validation error */

@@ -968,6 +968,9 @@ config :fountain, :sandboxes,
 # Teammate contacts one account may hold at once — an abuse ceiling.
 config :fountain, :team_contact_ceiling, whole_number.("TEAM_CONTACT_CEILING", 10)
 
+# Hosted Buzz agents one account may run at once — an abuse ceiling (#1017).
+config :fountain, :buzz_identity_ceiling, whole_number.("BUZZ_IDENTITY_CEILING", 10)
+
 config :fountain, :credits,
   # The opening grant a new account gets, and how many days it lasts.
   opening_cents: credit_cents.("CREDIT_OPENING_CENTS") || 500,

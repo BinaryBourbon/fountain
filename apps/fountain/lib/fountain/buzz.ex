@@ -60,6 +60,33 @@ defmodule Fountain.Buzz do
   end
 
   @doc """
+  How many hosted agents this tenant has. `BUZZ_IDENTITY_CEILING` bounds it.
+
+  Counts every identity, enabled or not: a disabled row is a slot the tenant
+  can re-enable without asking anyone, so a ceiling that ignored them would
+  bound nothing.
+  """
+  @spec identity_count(binary()) :: non_neg_integer()
+  def identity_count(user_id) when is_binary(user_id) do
+    Repo.aggregate(from(i in BuzzIdentity, where: i.user_id == ^user_id), :count, :id)
+  end
+
+  @doc """
+  Identity counts for every tenant with at least one, in a single query — for
+  the admin view, which shows the number on every row and must not run a count
+  per row (the same contract as `Fountain.Team.Comms.contact_counts/0` and
+  `Fountain.Quotas.active_sandbox_counts/0`).
+
+  Returns `%{user_id => count}`; tenants with no identities are absent.
+  """
+  @spec identity_counts() :: %{optional(binary()) => non_neg_integer()}
+  def identity_counts do
+    from(i in BuzzIdentity, group_by: i.user_id, select: {i.user_id, count(i.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  @doc """
   Provision a Buzz identity from a caller that holds the Nostr key — the
   Fountain-side of the remote-agents provider deploy (ADR 0020 Phase 3, #738).
 
@@ -85,16 +112,55 @@ defmodule Fountain.Buzz do
   `owner-only` with an empty list, again because the deploy is the whole truth;
   `allowlist` with no pubkeys is `{:error, %Ecto.Changeset{}}` rather than a
   harness that refuses to start.
+
+  A *new* identity is gated twice (#1017). An enabled identity is a supervised
+  `buzz-acp` OS process on Fountain's own pods for as long as it exists, so
+  standing one up is spend that no sandbox meter ever reports: `check_spend/1`
+  refuses it on an exhausted balance, and `BUZZ_IDENTITY_CEILING` bounds how
+  many one tenant may stand up in a burst. Both are skipped when the deploy
+  **converges on an identity that already exists**, which adds no standing
+  process — refusing a re-deploy would strand a running harness on stale
+  credentials, which is strictly worse than letting it refresh them. What
+  stops the cost for an account out of credit is
+  `Fountain.Workers.BuzzHarnessSweep`, which suspends the harness and keeps
+  the row.
+
   Returns `{:ok, %BuzzIdentity{}}` or `{:error, reason}`.
   """
   def provision_identity(user_id, params, opts \\ []) when is_binary(user_id) do
     with {:ok, fields} <- validate_provision(params),
          :ok <- check_environment(fields.environment_id, user_id),
          :ok <- check_sandbox_mode(fields.sandbox_mode),
+         :ok <- check_new_identity_allowed(user_id, fields.pubkey),
          {:ok, dek} <- Crypto.load_tenant_key(user_id),
          {:ok, vault} <- ensure_vault(user_id, fields, dek, opts),
          :ok <- write_buzz_secrets(vault, fields, dek, opts) do
       upsert_identity(user_id, vault, fields, opts)
+    end
+  end
+
+  # The gate is the balance and the ceiling is the burst bound (ADR 0031,
+  # #1017). Both only apply to a provision that would add a standing process:
+  # `provision_identity/3` converges on the pubkey, and a converging deploy is
+  # maintenance on a slot the tenant already holds.
+  defp check_new_identity_allowed(user_id, pubkey) do
+    if get_identity_by_pubkey(pubkey, user_id) do
+      :ok
+    else
+      with :ok <- Fountain.Billing.check_spend(user_id) do
+        check_identity_ceiling(user_id)
+      end
+    end
+  end
+
+  defp check_identity_ceiling(user_id) do
+    limit = Application.get_env(:fountain, :buzz_identity_ceiling, 10)
+    count = identity_count(user_id)
+
+    if count < limit do
+      :ok
+    else
+      {:error, {:identity_limit_reached, %{count: count, limit: limit}}}
     end
   end
 

@@ -67,6 +67,21 @@ number.
 `TEAM_CONTACT_CEILING` (10) is the most contacts one account may hold at once.
 It is an abuse ceiling, not a price.
 
+## Hosted Buzz agents
+
+An enabled Buzz identity is a permanent `buzz-acp` process on the Fountain
+pods. It costs while nobody uses it, and no sandbox meter reports it, because
+it is not a sandbox. Two rules apply to it.
+
+`BUZZ_IDENTITY_CEILING` (10) is the most hosted agents one account may run at
+once. It is an abuse ceiling, not a price.
+
+An account with no credit keeps its agents but not their processes. Fountain
+stops each harness within 15 minutes and keeps the row, in the same way that
+an idle sandbox parks. A top-up starts them again on the next sweep. Nothing
+charges for the agent itself yet. Only the conversations it opens burn
+credit.
+
 ## How many agents at once
 
 A tenant may run as many sandboxes at once as the balance funds: one for each

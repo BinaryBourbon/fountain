@@ -39,8 +39,16 @@ defmodule FountainWeb.BuzzAgentController do
   operation(:create,
     summary: "Provision (or converge on) a hosted Buzz agent",
     request_body: {"Provision attributes", "application/json", Schemas.BuzzProvisionRequest},
+    description:
+      "Converges on the Nostr pubkey, so a provider may call it repeatedly. " <>
+        "A deploy that would add a **new** hosted agent is gated by the credit " <>
+        "balance and by `BUZZ_IDENTITY_CEILING`, both `402`; a converging " <>
+        "deploy of an agent that already exists is not.",
     responses: [
       created: {"Buzz agent", "application/json", Schemas.BuzzIdentityResponse},
+      payment_required:
+        {"Balance exhausted, or the hosted-agent ceiling is reached", "application/json",
+         Schemas.Error},
       unprocessable_entity: {"Validation error", "application/json", Schemas.Error}
     ]
   )
@@ -88,6 +96,26 @@ defmodule FountainWeb.BuzzAgentController do
           error: "invalid_sandbox_mode",
           detail: "sandbox_mode must be ephemeral or persistent"
         })
+
+      # 402, the same status the credit gate uses, and for the same reason the
+      # contact ceiling does: the fix is a top-up or an operator decision, not
+      # a retry. The numbers are in the body so a provider can say which
+      # ceiling it hit (#1017).
+      {:error, {:identity_limit_reached, %{count: count, limit: limit}}} ->
+        conn
+        |> put_status(:payment_required)
+        |> json(%{
+          error: "identity_limit_reached",
+          message: "this account may run #{limit} hosted Buzz agents (#{count} in use)",
+          count: count,
+          limit: limit
+        })
+
+      # Standing up a permanent process is spend, so the balance gates it
+      # (ADR 0031). Rendered by the FallbackController as the 402 every other
+      # door gives, with `upgrade_url`.
+      {:error, :insufficient_credits} = err ->
+        err
 
       # Field errors — an empty allowlist in allowlist mode, a malformed pubkey —
       # so a provider deploy can say *why* it was refused, not a bare 422.
