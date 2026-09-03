@@ -155,6 +155,7 @@ defmodule Fountain.Workers.CreditPricer do
       on: l.idempotency_key == fragment("'burn_turn:' || ?::text", t.id),
       where: is_nil(l.id),
       where: not is_nil(t.started_at) and not is_nil(t.ended_at),
+      where: is_nil(t.orphaned_at),
       where: t.ended_at >= ^floor,
       where: s.provider in ^providers,
       where: not is_nil(c.user_id),

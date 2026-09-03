@@ -62,6 +62,21 @@ defmodule Fountain.Workers.CreditPricerTest do
     assert Credits.balance(user.id) == 0
   end
 
+  test "an orphaned turn is not priced" do
+    user = insert_empty_user()
+    conv = setup_conv(user)
+
+    insert_turn(conv, %{
+      status: "interrupted",
+      started_at: ~U[2026-08-02 10:00:00Z],
+      ended_at: ~U[2026-08-02 14:00:00Z],
+      orphaned_at: ~U[2026-08-02 14:00:00Z]
+    })
+
+    assert %{turns: 0} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.list_entries(user.id) == []
+  end
+
   test "a turn that rounds to zero cents writes nothing and is not an error" do
     user = insert_empty_user()
     conv = setup_conv(user)

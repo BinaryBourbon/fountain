@@ -22,6 +22,10 @@ defmodule Fountain.Conversations.Turn do
     field :exit_code, :integer
     field :started_at, :utc_datetime
     field :ended_at, :utc_datetime
+    # Set when Fountain, rather than the runtime or the user, reconciles a
+    # running turn that no longer has anything driving it. Billing and usage
+    # exclude these intervals because the true end of work is unknowable.
+    field :orphaned_at, :utc_datetime
     # JSON-RPC id of the ACP `session/prompt` in flight; nil on the legacy
     # path and until the peer has written the prompt. See the migration.
     field :acp_prompt_id, :integer
@@ -59,6 +63,7 @@ defmodule Fountain.Conversations.Turn do
       :exit_code,
       :started_at,
       :ended_at,
+      :orphaned_at,
       :acp_prompt_id,
       :pending_permission,
       :usage,
