@@ -29,6 +29,22 @@ upgrade, is in
 
 ### Fixed
 
+- **Platform inference on the gemini runtime was unbilled** (#1459). gemini
+  leaves ACP's `PromptResponse.usage` empty and reports the turn's tokens
+  under a vendor extension at `_meta.quota.token_count`, so
+  `Managoat.ACP.Usage` normalised every gemini turn to nothing:
+  `turns.usage` landed NULL, `Workers.CreditPricer` had no tokens to price
+  and no `burn_inference` row was written. Worse than a missing debit —
+  `PLATFORM_INFERENCE_DAILY_CENTS` is measured from the ledger, so gemini
+  spend was outside the daily circuit breaker entirely and a deployment could
+  run past its ceiling on gemini alone. Fixed in managoat_acp 0.1.1, taken
+  here as a lockfile bump, and recorded as quirk `:gemini_usage_in_meta_quota`
+  in managoat_runtimes 0.1.2. **A deployment that ran gemini on a platform key
+  will not be charged retroactively**: the pricer looks back seven days but
+  prices from `turns.usage`, and those rows are empty for good. The other
+  three runtimes were unaffected and are now covered by a test that asserts
+  each one's reported shape prices above zero.
+
 - **opencode on a `google/` model could never authenticate** (#1460).
   `managoat_runtimes` exported the Gemini key as `GEMINI_API_KEY`, which is
   what the *gemini* runtime reads. opencode reaches Google through
