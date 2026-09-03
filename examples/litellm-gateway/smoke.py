@@ -21,7 +21,7 @@ from openai import OpenAI
 
 def conversations(thread: str) -> list[dict]:
     """Return Fountain conversations bound to an OpenAI thread key."""
-    base = os.environ["FOUNTAIN_URL"].removesuffix("/v1")
+    base = os.environ["FOUNTAIN_URL"].rstrip("/").removesuffix("/v1")
     response = httpx.get(
         f"{base}/api/conversations",
         params={"channel_id": f"openai:{thread}"},
@@ -90,7 +90,14 @@ def main() -> None:
     check("pelican" in reply.lower(), "the second turn remembered the first")
 
     person = f"smoke-user-{uuid.uuid4().hex[:8]}"
-    turn(client, model, "Reply with only: hello.", safety_identifier=person)
+    # extra_body, not a typed kwarg: safety_identifier reached openai-python
+    # in 1.99, and this script does not pin the version.
+    turn(
+        client,
+        model,
+        "Reply with only: hello.",
+        extra_body={"safety_identifier": person},
+    )
     body_keyed = conversations(person)
     check(len(body_keyed) == 1, f"one conversation on channel openai:{person}")
 

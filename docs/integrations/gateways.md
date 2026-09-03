@@ -110,5 +110,6 @@ response and decides when to retry.
 - Only caller-defined tools return as `tool_calls`. Tools the agent runs in
   its sandbox have already completed and appear in the agent's answer.
 
-The agent runtime's inference gateway uses a different configuration. See
-[LLM integration](../llm-integration.md).
+The gateway in front of Fountain is not the gateway the agent uses for
+inference. Each user brings their own provider credentials. Read
+[the service you do not configure](index.md#the-service-you-do-not-configure).
