@@ -80,6 +80,22 @@ upgrade, is in
   the token-exchange path at all. Both live paths were exercised against
   4.7.4 rather than accepted on a clean resolve: a real test-mode Stripe read
   and write, and a real message delivered through Resend.
+
+  Carries `grpcbox` 0.17.1 → **0.18.0** (with `ts_chatterbox` 0.15.1 → 0.16.0
+  and `gproc` 0.9.1 → 1.2.0), which the hackney bump forces. hackney 4
+  delegates HTTP/2 to the `h2` package, whose modules are named `h2_client`,
+  `h2_connection`, `h2_frame` and `h2_settings` — the same four names
+  `chatterbox` had used since long before, and `chatterbox` is in the tree
+  through `grpcbox` under `opentelemetry_exporter`. Two apps cannot ship the
+  same module, so `mix release` refused to assemble with `Duplicated modules`
+  and **only the prod release build could see it**: the OpenTelemetry
+  packages are `only: :prod`, so the whole dev and test suite is green on a
+  tree whose release will not build. `ts_chatterbox` 0.16.0 renames its
+  modules to `chatterbox_h2_*` and `grpcbox` 0.18.0 is the release that takes
+  it. Excluding the gRPC path from the release instead is not available:
+  `grpcbox` is a hard dependency of `opentelemetry_exporter`, so Mix rejects
+  setting it to `:none` under a `:permanent` parent — even though this
+  deployment exports over `otlp_protocol: :http_protobuf` and never calls it.
 - **`cowlib` and `gun` advisories remain open, with nothing to upgrade to**
   (#1468). `cowlib 2.19.0` (three advisories) and `gun 2.5.0` (one) are
   already the newest releases on Hex and OSV lists no fixed version for the
