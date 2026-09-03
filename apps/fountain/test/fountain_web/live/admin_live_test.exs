@@ -18,6 +18,8 @@ defmodule FountainWeb.AdminLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/admin")
       assert html =~ "Admin"
       assert html =~ "Users"
+      assert html =~ "Buzz runtimes"
+      assert html =~ "running now · owners"
     end
 
     test "regular user is redirected away from /admin", %{conn: conn} do

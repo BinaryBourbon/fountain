@@ -57,6 +57,15 @@ defmodule Fountain.Buzz.Manager do
   @doc "Whether a harness is running for `identity_id` (anywhere in the cluster)."
   def running?(identity_id), do: whereis(identity_id) != nil
 
+  @doc "Number of Buzz harnesses running across the cluster."
+  @spec running_count() :: non_neg_integer()
+  def running_count do
+    case Horde.Registry.count(@registry) do
+      :undefined -> 0
+      count -> count
+    end
+  end
+
   @doc """
   Ensure a harness is running for `identity`. Idempotent: if one already runs,
   returns it without minting a credential. Otherwise starts the supervised
