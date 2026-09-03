@@ -1,0 +1,191 @@
+defmodule FountainWeb.SchemaGuardAllowlist do
+  @moduledoc """
+  What the schema guard is allowed to find today, and why.
+
+  The ratchet this repository already uses for the docs prose gates
+  (`scripts/docs-style-allow.txt`) and for the omissions list in
+  `sdk/contract`: write down what is wrong now, forbid anything new, and let
+  the list only shrink. Every entry is one `{operation, status}` pair — never a
+  pattern — so a second operation with the same defect fails until somebody
+  decides about it too. That is the whole point: the families below are
+  systemic, and a wildcard would let the next instance in unnoticed.
+
+  Cleaning one up means deleting its line. `FountainWeb.SchemaGuardrailTest`
+  fails if the list grows past `@ceiling`, so growing it is a deliberate edit a
+  reviewer sees.
+
+  ## The families
+
+  `:plug_status` — the operation does not declare a status something in the
+  pipeline can return on any route. `Plugs.TenantAPIAuth` answers 401,
+  `require_admin` 403, `Plugs.RateLimit` 429, an unready sandbox 503,
+  `plug :accepts` 406. The document describes controllers; these come from
+  plugs, which is why 68 of them appear at once. Declaring each per operation
+  is a large, mechanical documentation change (#1432).
+
+  `:cast_and_validate_422` — `OpenApiSpex.Plug.CastAndValidate` renders its own
+  422 body, `%{"errors" => [%{message, title, source}]}`, while these
+  operations declare `Error` (`%{error}`) or `ChangesetError`
+  (`%{errors: %{field => [message]}}`). So the spec describes the changeset's
+  422 and the wire sometimes carries the validator's. One root cause, 27
+  operations (#1431).
+
+  `:log_event_empty_state` — `Fountain.Conversations.LogEvent` validates
+  `state` against `["" | @states]` and stores `""` for an event that has no
+  state, but the schema's enum is `started done failed interrupted` and does
+  not include it. A generated client with a strict enum decoder rejects a real
+  event, and all four SDKs decode this field (#1430).
+
+  `:test_fixture_vocabulary` — not a defect in the API. The fixture inserts a
+  value on purpose that the domain no longer accepts (a conversation whose
+  runtime is `retired-runtime`, exercising the retired-runtime path), so the
+  rendered enum is out of vocabulary because the test asked for that.
+
+  `:openai_error_shape` — the OpenAI-compatible gateway renders `error` as a
+  string on a 409 while `OpenAIError.error` declares an object. Narrow, and its
+  clients are OpenAI SDKs rather than ours (#1433).
+  """
+
+  @reasons %{
+    plug_status: "a status a pipeline plug returns that the operation does not declare (#1432)",
+    cast_and_validate_422:
+      "CastAndValidate renders its own 422 body, not the declared error schema (#1431)",
+    log_event_empty_state: "LogEvent stores state \"\", which the schema's enum omits (#1430)",
+    test_fixture_vocabulary: "the fixture inserts an out-of-vocabulary value on purpose",
+    openai_error_shape: "the OpenAI gateway renders `error` as a string, not an object (#1433)"
+  }
+
+  # The list may shrink, never grow, without a deliberate edit here and in the
+  # guardrail's own ceiling.
+  @entries %{
+    # ── plug_status (68) ─────────────────────────────
+    {"DELETE /api/account", 401} => :plug_status,
+    {"DELETE /api/agents/{id}", 401} => :plug_status,
+    {"DELETE /api/conversations/{id}", 401} => :plug_status,
+    {"DELETE /api/environments/{id}", 401} => :plug_status,
+    {"DELETE /api/vaults/{id}", 401} => :plug_status,
+    {"GET /api/account/billing", 401} => :plug_status,
+    {"GET /api/account/inference-credentials", 401} => :plug_status,
+    {"GET /api/admin/users", 401} => :plug_status,
+    {"GET /api/admin/users", 422} => :plug_status,
+    {"GET /api/agents", 401} => :plug_status,
+    {"GET /api/agents", 429} => :plug_status,
+    {"GET /api/agents/{id}", 401} => :plug_status,
+    {"GET /api/agents/{id}/avatar", 401} => :plug_status,
+    {"GET /api/agents/{id}/versions", 401} => :plug_status,
+    {"GET /api/agents/{id}/versions/{version}", 422} => :plug_status,
+    {"GET /api/audit", 401} => :plug_status,
+    {"GET /api/catalog", 401} => :plug_status,
+    {"GET /api/connection-providers", 403} => :plug_status,
+    {"GET /api/connections", 403} => :plug_status,
+    {"GET /api/conversations", 401} => :plug_status,
+    {"GET /api/conversations", 406} => :plug_status,
+    {"GET /api/conversations/{conversation_id}/events", 401} => :plug_status,
+    {"GET /api/conversations/{conversation_id}/events", 422} => :plug_status,
+    {"GET /api/conversations/{conversation_id}/stream", 401} => :plug_status,
+    {"GET /api/conversations/{conversation_id}/tree", 401} => :plug_status,
+    {"GET /api/conversations/{conversation_id}/turns/{turn_id}/images/{position}", 401} =>
+      :plug_status,
+    {"GET /api/conversations/{id}", 401} => :plug_status,
+    {"GET /api/environments", 401} => :plug_status,
+    {"GET /api/environments/{environment_id}/secrets", 401} => :plug_status,
+    {"GET /api/environments/{id}", 401} => :plug_status,
+    {"GET /api/sandboxes/{sandbox_id}/file", 403} => :plug_status,
+    {"GET /api/sandboxes/{sandbox_id}/files", 403} => :plug_status,
+    {"GET /api/search", 401} => :plug_status,
+    {"GET /api/team", 401} => :plug_status,
+    {"GET /api/team/schedules", 401} => :plug_status,
+    {"GET /api/vaults", 401} => :plug_status,
+    {"GET /api/vaults/{id}", 401} => :plug_status,
+    {"GET /api/webhooks", 403} => :plug_status,
+    {"GET /v1/models", 404} => :plug_status,
+    {"POST /api/account/onboarding/complete", 401} => :plug_status,
+    {"POST /api/agents", 401} => :plug_status,
+    {"POST /api/agui/{agent_id}", 401} => :plug_status,
+    {"POST /api/agui/{agent_id}", 409} => :plug_status,
+    {"POST /api/apply", 401} => :plug_status,
+    {"POST /api/auth/token", 429} => :plug_status,
+    {"POST /api/avatars/generate", 400} => :plug_status,
+    {"POST /api/buzz/agents", 404} => :plug_status,
+    {"POST /api/conversations", 400} => :plug_status,
+    {"POST /api/conversations", 409} => :plug_status,
+    {"POST /api/conversations", 429} => :plug_status,
+    {"POST /api/conversations", 503} => :plug_status,
+    {"POST /api/conversations/{conversation_id}/interrupt", 503} => :plug_status,
+    {"POST /api/conversations/{conversation_id}/prompts", 402} => :plug_status,
+    {"POST /api/conversations/{conversation_id}/prompts", 410} => :plug_status,
+    {"POST /api/conversations/{conversation_id}/prompts", 422} => :plug_status,
+    {"POST /api/conversations/{conversation_id}/prompts", 429} => :plug_status,
+    {"POST /api/conversations/{conversation_id}/prompts", 503} => :plug_status,
+    {"POST /api/conversations/{conversation_id}/terminate", 503} => :plug_status,
+    {"POST /api/environments", 401} => :plug_status,
+    {"POST /api/support/reports", 401} => :plug_status,
+    {"POST /api/team/{agent_id}/contact", 424} => :plug_status,
+    {"POST /api/vaults", 401} => :plug_status,
+    {"POST /api/webhooks", 403} => :plug_status,
+    {"POST /v1/chat/completions", 401} => :plug_status,
+    {"POST /v1/chat/completions", 500} => :plug_status,
+    {"PUT /api/agents/{id}", 401} => :plug_status,
+    {"PUT /api/environments/{id}", 401} => :plug_status,
+    {"PUT /api/vaults/{id}", 401} => :plug_status,
+
+    # ── cast_and_validate_422 (27) ─────────────────────────────
+    {"DELETE /api/account", 422} => :cast_and_validate_422,
+    {"GET /api/sandboxes/{sandbox_id}/file", 422} => :cast_and_validate_422,
+    {"GET /api/search", 422} => :cast_and_validate_422,
+    {"PATCH /api/buzz/agents/{id}", 422} => :cast_and_validate_422,
+    {"PATCH /api/connection-providers/{id}", 422} => :cast_and_validate_422,
+    {"PATCH /api/team/{agent_id}", 422} => :cast_and_validate_422,
+    {"PATCH /api/team/{agent_id}/contact", 422} => :cast_and_validate_422,
+    {"PATCH /api/team/{agent_id}/schedules/{id}", 422} => :cast_and_validate_422,
+    {"POST /api/admin/users/{id}/credits", 422} => :cast_and_validate_422,
+    {"POST /api/admin/users/{id}/sandbox-limit", 422} => :cast_and_validate_422,
+    {"POST /api/agents", 422} => :cast_and_validate_422,
+    {"POST /api/apply", 422} => :cast_and_validate_422,
+    {"POST /api/auth/api-keys", 422} => :cast_and_validate_422,
+    {"POST /api/auth/password", 422} => :cast_and_validate_422,
+    {"POST /api/auth/register", 422} => :cast_and_validate_422,
+    {"POST /api/auth/reset", 422} => :cast_and_validate_422,
+    {"POST /api/buzz/agents", 422} => :cast_and_validate_422,
+    {"POST /api/conversations", 422} => :cast_and_validate_422,
+    {"POST /api/secret-bindings", 422} => :cast_and_validate_422,
+    {"POST /api/support/reports", 422} => :cast_and_validate_422,
+    {"POST /api/team/{agent_id}/contact", 422} => :cast_and_validate_422,
+    {"POST /api/team/{agent_id}/schedules", 422} => :cast_and_validate_422,
+    {"POST /api/vaults", 422} => :cast_and_validate_422,
+    {"POST /api/webhooks", 422} => :cast_and_validate_422,
+    {"PUT /api/account/inference-credentials/{provider}", 422} => :cast_and_validate_422,
+    {"PUT /api/environments/{id}", 422} => :cast_and_validate_422,
+    {"PUT /api/vaults/{id}", 422} => :cast_and_validate_422,
+
+    # ── log_event_empty_state (1) ─────────────────────────────
+    {"GET /api/conversations/{conversation_id}/events", 200} => :log_event_empty_state,
+
+    # ── test_fixture_vocabulary (1) ─────────────────────────────
+    {"GET /api/conversations/{id}", 200} => :test_fixture_vocabulary,
+
+    # ── openai_error_shape (1) ─────────────────────────────
+    {"POST /v1/chat/completions", 409} => :openai_error_shape
+  }
+
+  @doc "Is this `{operation, status}` a known, recorded disagreement?"
+  @spec allowed?(String.t(), integer()) :: boolean()
+  def allowed?(operation, status), do: Map.has_key?(@entries, {operation, status})
+
+  @doc "The reason family for one entry, or nil."
+  @spec reason(String.t(), integer()) :: String.t() | nil
+  def reason(operation, status) do
+    case Map.get(@entries, {operation, status}) do
+      nil -> nil
+      family -> Map.fetch!(@reasons, family)
+    end
+  end
+
+  @doc "Every entry, for the guardrail's hygiene checks."
+  @spec entries() :: %{{String.t(), integer()} => atom()}
+  def entries, do: @entries
+
+  @doc "The families and their prose."
+  @spec reasons() :: %{atom() => String.t()}
+  def reasons, do: @reasons
+end

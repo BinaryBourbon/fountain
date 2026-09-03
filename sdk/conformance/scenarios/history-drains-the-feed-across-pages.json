@@ -44,7 +44,8 @@
           ],
           "meta": {
             "next_cursor": 2,
-            "has_more": true
+            "has_more": true,
+            "limit": 1000
           }
         }
       }
@@ -77,7 +78,8 @@
           ],
           "meta": {
             "next_cursor": 3,
-            "has_more": false
+            "has_more": false,
+            "limit": 1000
           }
         }
       }

@@ -306,6 +306,32 @@ Two things that are not optional:
   which has no Elixir toolchain, can check against it. `dist/openapi.json` is
   the rebuilt input and stays ignored.
 
+### The schema has to match its own controller
+
+`sdk/contract` and `sdk/conformance` both compare a schema with another schema,
+so neither notices when the document is wrong about what the action actually
+renders. Three defects of that shape landed in a day (#1417, #1418, #1427), so
+the suite now checks it directly and you will meet it without doing anything:
+
+- **Every response any controller test renders** is validated against the
+  schema its operation declares. The check is attached in `test_helper.exs` and
+  costs nothing per test; 146 operations are covered by tests that already
+  exist. A failure names the operation, the mismatch and the body.
+- **`apps/fountain/test/fountain_web/schema_guardrail_test.exs`** adds what a
+  rendered response cannot show: that no `required` list names a property its
+  schema lacks, that no response is declared as an object with no properties,
+  and — for the operations on its short list — that the action renders *every*
+  property the schema declares, which an optional field never sent would
+  otherwise hide.
+
+If you hit it, the schema in `apps/fountain/lib/fountain_web/schemas.ex` is
+usually the thing that is wrong, not the action. When it genuinely cannot be
+fixed in that PR, add the `{operation, status}` pair to
+`FountainWeb.SchemaGuardAllowlist` with a reason and an issue, and raise
+`@ceiling` in the guardrail test in the same diff — that number moving is the
+signal to a reviewer. The list may shrink freely; deleting a line is how a fix
+finishes.
+
 ### Changing behaviour rather than shape
 
 The contract above covers request and response *shape*. What a client does with

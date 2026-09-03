@@ -34,6 +34,23 @@ defmodule FountainWeb.ConnCase do
 
   setup tags do
     Fountain.DataCase.setup_sandbox(tags)
+
+    # The schema guard (#1427) validates every response this test renders
+    # against the schema its operation declares, and files anything that
+    # disagrees under this process. Collect it here rather than raising in the
+    # telemetry handler, which `:telemetry` would catch and then detach.
+    test_pid = self()
+
+    ExUnit.Callbacks.on_exit(fn ->
+      case FountainWeb.SchemaGuard.take(test_pid) do
+        [] ->
+          :ok
+
+        violations ->
+          raise "Schema guard: " <> Enum.join(violations, "\n")
+      end
+    end)
+
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
