@@ -106,6 +106,20 @@ defmodule Fountain.Onboarding do
     ~w($FOUNTAIN_BASE_URL $FOUNTAIN_API_KEY $FOUNTAIN_AGENT_ID $FOUNTAIN_AGENT_NAME)
   end
 
+  @doc """
+  The placeholders still present in `text`, in `placeholders/0` order.
+
+  `GET /api/catalog` answers with this rather than the whole list: the server
+  fills the base URL in before it hands the snippet over, so a client told to
+  substitute `$FOUNTAIN_BASE_URL` would be looking for a token that is not
+  there. What is left is exactly what the caller has and the server does not
+  — its own raw key, and the agent it picked.
+  """
+  @spec remaining_placeholders(String.t()) :: [String.t()]
+  def remaining_placeholders(text) when is_binary(text) do
+    Enum.filter(placeholders(), &String.contains?(text, &1))
+  end
+
   defp replace(text, _token, nil), do: text
   defp replace(text, token, value), do: String.replace(text, token, to_string(value))
 

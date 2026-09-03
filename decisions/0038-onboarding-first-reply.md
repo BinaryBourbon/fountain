@@ -20,8 +20,8 @@ stale_after: 2026-11-02
 and measured) and #1393 (the field cleanup), all sub-issues of #1039. Each PR
 that builds one updates this block.
 
-**Built so far:** decisions 2 (#1392), 3 (#1388), 4 (#1389), 5 (#1426) and
-7 (#1393).
+**Built:** every decision. 2 (#1392), 3 (#1388), 4 (#1389), 5 (#1426),
+6 (#1443) and 7 (#1393).
 
 Decision 2: `Fountain.Activation` holds the definition, `Fountain.Funnel`
 counts it and measures verification to first reply, and
@@ -51,6 +51,16 @@ agent from the single source `Fountain.Onboarding` shares with
 `docs/quickstart.md`, and shows the reply inline. Both signup routes land
 there. The dashboard checklist is gone.
 
+Decision 6: `fountain auth register` creates the account, waits while the
+person clicks the link in their email, saves the key and prints the same
+first request the landing shows; `fountain quickstart` sends it. The request
+text has one source — `docs/snippets/first-request.*`, which
+`Fountain.Onboarding` reads at compile time — and the CLI reaches it over the
+wire through `GET /api/catalog`, because Go cannot read those files and a
+build-time copy would be the second copy this is meant to prevent. The wait
+is nine attempts over ten minutes, shaped by the ten-per-hour limit on
+`POST /api/auth/token` rather than by taste.
+
 Decision 7, both halves. `Fountain.Activation` stamps
 `onboarding_completed_at` at the first reply rather than a console page
 (#1426), and `users.onboarding_state` is dropped (#1393) along with
@@ -61,8 +71,6 @@ onboarding endpoints still work: only the vestigial field went, because
 whether `POST /onboarding/complete` has a purpose left now that the stamp
 moved is a question about the landing, not about this cleanup. This settles
 NC-6 from [0007](0007-g3-launch-go.md).
-
-Not built: the CLI commands (#1391).
 
 Amends [0008](0008-byo-inference-credentials.md): Fountain will hold platform
 inference keys. Leans on [0031](0031-credits-are-the-product.md) (the opening

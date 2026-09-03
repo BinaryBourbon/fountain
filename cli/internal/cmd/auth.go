@@ -55,8 +55,24 @@ func init() {
 		"sign in with email + password (the default when stdin is piped)")
 	loginCmd.Flags().Bool("api-key", false,
 		"paste an API key you created in the console")
+	registerCmd := &cobra.Command{
+		Use:   "register",
+		Short: "Create an account, wait for the emailed link, and save the key",
+		Long: "The terminal half of ADR 0038's path. Creates the account, waits " +
+			"while you click the link in your email, saves the API key, and prints " +
+			"the same first request the start page shows.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			email, _ := cmd.Flags().GetString("email")
+			password, _ := cmd.Flags().GetString("password")
+			return authRegister(email, password)
+		},
+	}
+	registerCmd.Flags().String("email", "", "email address (prompted for when omitted)")
+	registerCmd.Flags().String("password", "", "password (prompted for when omitted, which keeps it out of shell history)")
+
 	authCmd.AddCommand(
 		loginCmd,
+		registerCmd,
 		&cobra.Command{
 			Use:   "logout",
 			Short: "Remove saved credentials",

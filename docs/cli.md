@@ -20,6 +20,27 @@ brew install BinaryBourbon/tap/fountain
 Or take a release binary from the
 [GitHub Releases](https://github.com/BinaryBourbon/fountain/releases) page.
 
+On Linux, Homebrew compiles a formula and needs a C compiler first,
+`build-essential` on Debian and Ubuntu. A release binary needs no compiler,
+and the [quickstart](../quickstart.md) has the three commands that install
+one.
+
+## Start from nothing
+
+```bash
+fountain auth register    # create an account, wait for the emailed link, save the key
+fountain quickstart       # run the first request and stream the reply
+```
+
+`auth register` asks for an email address and a password, creates the
+account, then waits while you click the link in your email. It saves the API
+key and prints the same first request your start page shows. The wait ends
+after about ten minutes. The account and the emailed link both survive that,
+so `fountain auth login` finishes the job later.
+
+`quickstart` sends that request. It runs the prompt against the agent your
+account already has, streams the reply, and prints where to go next.
+
 ## Authentication
 
 ```bash

@@ -938,7 +938,7 @@ export interface paths {
         };
         /**
          * The instance's form vocabulary
-         * @description Runtimes with model suggestions per runtime (suggestions, not an allowlist — any `provider/model` under a known provider is accepted), sandbox providers usable on this instance and the default, package managers an environment accepts, the avatar generator's bases and moods, the URLs of the browser apps this instance sends people to for conversations and the team, and remote MCP servers verified to complete connection discovery (again suggestions — any URL can be discovered), each with the date it was last verified.
+         * @description Runtimes with model suggestions per runtime (suggestions, not an allowlist — any `provider/model` under a known provider is accepted), sandbox providers usable on this instance and the default, package managers an environment accepts, the avatar generator's bases and moods, the URLs of the browser apps this instance sends people to for conversations and the team, and remote MCP servers verified to complete connection discovery (again suggestions — any URL can be discovered), each with the date it was last verified. Also `first_request`, the one onboarding snippet this deployment hands out, with its base URL already in it and the caller's own key and agent left as placeholders.
          */
         get: operations["FountainWeb.CatalogController.show"];
         put?: never;
@@ -3039,6 +3039,17 @@ export interface components {
                 avatar: {
                     bases: string[];
                     moods: string[];
+                };
+                /** @description The one onboarding request this deployment hands out (ADR 0038), the same text the verified landing and the manual print. The base URL is already in it. The caller's key and agent are not: the server stores only a hash of a key, so a client substitutes the key it holds and an agent from `GET /api/agents`. */
+                first_request: {
+                    /** @description The `curl`, with placeholders. */
+                    curl: string;
+                    /** @description Every token a client must substitute before it runs the request. */
+                    placeholders: string[];
+                    /** @description The prompt both snippets send, for a client that runs it. */
+                    prompt: string;
+                    /** @description The TypeScript SDK equivalent, with placeholders. */
+                    typescript: string;
                 };
                 /** @description Remote MCP servers verified to complete the MCP authorization discovery chain, each with the date it was last verified. Suggestions, not an allowlist — any URL can be discovered. */
                 mcp_servers?: {

@@ -10,6 +10,17 @@ server releases.
 
 ---
 
+## [1.18.0] — 2026-09-03
+
+### Added
+
+- `GET /api/catalog` now carries `first_request`: the one onboarding request
+  this deployment hands out (ADR 0038), as `curl` and as the TypeScript
+  equivalent, with the prompt and the placeholders a client must still
+  substitute. It is the same text the verified landing and the manual print,
+  so a client that shows a first request no longer keeps its own copy to
+  drift from. `fountain auth register` reads it from here (#1391).
+
 ## [1.17.0] — 2026-09-02
 
 ### Removed
