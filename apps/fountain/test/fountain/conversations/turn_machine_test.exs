@@ -470,6 +470,19 @@ defmodule Fountain.Conversations.TurnMachineTest do
       send(self(), {:stdout, %{ref: ref}, "partial"})
       assert {nil, [{"stdout", "partial"}]} = TurnMachine.drain_exited_command(ref)
     end
+
+    test "drain_exited_command/1 ends on the error frame with no exit code" do
+      # A transport that closed with no exit frame (managoat_sandbox 0.2.0
+      # reports `:closed_before_exit` where it used to fabricate an exit 0).
+      # The frame is as stranded as the output around it, so the drain takes
+      # it rather than paying the deadline and dropping it.
+      ref = make_ref()
+      send(self(), {:stdout, %{ref: ref}, "partial"})
+      send(self(), {:error, %{ref: ref}, :closed_before_exit})
+
+      assert {nil, [{"stdout", "partial"}]} = TurnMachine.drain_exited_command(ref)
+      refute_received {:error, %{ref: ^ref}, _}
+    end
   end
 
   describe "the session reset and the messages" do
