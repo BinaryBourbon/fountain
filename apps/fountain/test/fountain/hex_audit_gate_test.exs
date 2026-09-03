@@ -46,12 +46,8 @@ defmodule Fountain.HexAuditGateTest do
     root = Path.expand("../../../..", __DIR__)
     script = Path.join(root, "scripts/hex-audit-gate.exs")
 
-    fake_bin =
-      Path.join(System.tmp_dir!(), "hex-audit-gate-#{System.unique_integer([:positive])}")
-
+    fake_bin = Fountain.TmpDir.mkdir!("hex-audit-gate")
     fake_mix = Path.join(fake_bin, "mix")
-
-    File.mkdir_p!(fake_bin)
 
     File.write!(fake_mix, """
     #!/bin/sh
@@ -60,8 +56,6 @@ defmodule Fountain.HexAuditGateTest do
     """)
 
     File.chmod!(fake_mix, 0o755)
-
-    on_exit(fn -> File.rm_rf!(fake_bin) end)
 
     System.cmd("elixir", [script],
       env: [
