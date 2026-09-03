@@ -20,7 +20,7 @@ stale_after: 2026-11-02
 and measured) and #1393 (the field cleanup), all sub-issues of #1039. Each PR
 that builds one updates this block.
 
-**Built so far:** decisions 2 (#1392) and 3 (#1388).
+**Built so far:** decisions 2 (#1392), 3 (#1388) and 4 (#1389).
 
 Decision 2: `Fountain.Activation` holds the definition, `Fountain.Funnel`
 counts it and measures verification to first reply, and
@@ -33,6 +33,10 @@ selection rule, a `burn_inference` debit per closed platform turn from
 `PLATFORM_INFERENCE_DAILY_CENTS` (default 5000) as a deployment-wide daily
 circuit breaker answering 503.
 
+Decision 4: `Fountain.Agents.Starter` is planted by `Accounts.verify_email/2`,
+so an account verified from now on owns one agent from the moment it is
+verified.
+
 **The price is pass-through at provider list, a 1.0x margin, no markup**
 (decided with Jake on 2026-09-02). Fountain's margin is sandbox time
 (`CREDIT_TURN_HOUR_CENTS`, [0031](0031-credits-are-the-product.md)). Marking
@@ -40,10 +44,10 @@ inference up would make the opening credit buy less of the one thing it was
 granted to buy, which is the reply this ADR is about. A future decision may
 change that; a passing thought about margin should not.
 
-Not built: the default agent, the verified landing, the CLI commands and the
-field cleanup. `onboarding_completed_at` is still stamped by the dashboard
-checklist (#1390 moves the stamp to the seam
-`Fountain.Activation.capture_first_reply/2` marks).
+Not built: the verified landing, the CLI commands and the field cleanup.
+`onboarding_completed_at` is still stamped by the dashboard checklist (#1390
+moves the stamp to the seam `Fountain.Activation.capture_first_reply/2`
+marks).`Fountain.Activation.capture_first_reply/2` marks).
 
 Amends [0008](0008-byo-inference-credentials.md): Fountain will hold platform
 inference keys. Leans on [0031](0031-credits-are-the-product.md) (the opening
@@ -108,7 +112,9 @@ them nothing; inference is the second cost on the same first run.
 4. **Every account has a default agent from the moment it is verified**, a
    canned agent on the claude runtime created beside the opening credit,
    ordinary in every way (listed, editable, deletable, never recreated). It
-   exists so there is something to send the first request to. (#1389)
+   exists so there is something to send the first request to. (#1389, built:
+   `Fountain.Agents.Starter`, planted by `Accounts.verify_email/2` and audited
+   as `system:onboarding` per [0013](0013-audit-trail.md).)
 
 5. **The path is a key and one request, and the API carries it.** The first
    screen after verification hands the developer their API key and one
@@ -148,9 +154,17 @@ developer takes because they want to, not because nothing works without it.
   that have not supplied a key. The per-tenant DEK, the BYO path and "the
   tenant's credential wins" are unchanged; what changes is the default when
   there is none.
-- **Two tests that count a new account's agents change**, and
-  `insert_verified_user/1` creates an agent. Every test that assumed an
-  empty verified account is touched once.
+- **Twenty-odd tests that count a new account's agents change**, and
+  `insert_verified_user/1` creates an agent. Every test that assumed an empty
+  verified account is touched once; the ones whose subject is a controlled set
+  of agents take the new `insert_user_without_agents/1` instead. Two of them
+  are not arithmetic: the funnel's stalled breakdown now reports "built an
+  agent" for every stalled account and "built nothing" for none, and the
+  dashboard checklist's agent step arrives ticked. #1421 and #1390 own those
+  two surfaces respectively; #1389 left both computing what they always did,
+  and the tests assert the degenerate numbers rather than hiding them. #1421
+  waits for #1390 so that the replacement decomposition is chosen against the
+  funnel's final shape.
 - **Activation counted through turns instead of conversations** will report
   fewer activated accounts than today's funnel, since conversations that
   never answered stop counting. That is the point; the PR that changes it

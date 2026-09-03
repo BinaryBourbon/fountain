@@ -36,9 +36,13 @@ defmodule FountainWeb.DashboardLiveTest do
     assert html =~ "Before an agent can run"
     assert html =~ "An inference credential"
     assert html =~ "/account/inference-credentials"
-    assert html =~ "An agent"
-    assert html =~ "/agents/new"
     assert html =~ "https://apps.test/convs/#/new"
+
+    # The agent step arrives ticked: verification plants the starter agent
+    # (ADR 0038), so the item this list used to send a new account away to
+    # build is the one it now already has. #1390 replaces the checklist.
+    assert html =~ "An agent"
+    refute html =~ "/agents/new"
   end
 
   test "a step that is done is ticked and loses its call to action", %{conn: conn, user: user} do

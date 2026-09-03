@@ -53,6 +53,12 @@ defmodule FountainWeb.SelfHostBootstrapTest do
       user = Accounts.get_user_by_email("hoster@example.com")
       assert %DateTime{} = user.email_verified_at
       refute_enqueued(worker: VerificationEmail)
+
+      # The self-verifying door is verification like any other, so it plants
+      # the starter agent too (ADR 0038). It is also the only door that runs
+      # inside the registration transaction, which is where a planting that
+      # rolled back would take the whole account with it.
+      assert [%{name: "starter"}] = Fountain.Agents.list_agents(user.id, [])
     end
 
     test "API signup self-verifies and says so", %{conn: conn} do

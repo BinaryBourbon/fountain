@@ -95,12 +95,21 @@ for the sandbox privilege-escalation fix make them distinguishable.
 `system:<worker>` names are snake_case and match the module doing the work:
 `conversation_server`, `sandbox_reaper`, `retention_pruner`, `release_task`,
 `provisioning`, `account_export`, `unverified_pruner`, `verify_lifecycle`,
-`team_scheduler`, `webhook_delivery`, and
+`team_scheduler`, `webhook_delivery`, `onboarding`, and
 in `ee/` the billing sources `webhook`, `stripe`, `local`, `trial_sweeper`.
 
 `webhook_delivery` was added by [0024](0024-outbound-webhooks.md): the delivery
 worker disables an endpoint after sustained failure, which is a mutation of
 tenant state with no human behind it.
+
+`onboarding` was added by [0038](0038-onboarding-first-reply.md) and #1389:
+verification plants a starter agent in the account, which is an `agent.created`
+in a tenant's trail that the tenant did not ask for. It is the one member of
+the vocabulary named after a moment rather than a worker module, because the
+work is done inline on the verification transition rather than by a background
+worker of its own. `self` would have been the wrong answer for the same reason
+`system` is wrong on the unauthenticated routes: it names a principal that did
+not act.
 
 Two rules keep the list from fraying:
 

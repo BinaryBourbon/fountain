@@ -178,10 +178,19 @@ defmodule Fountain.Accounts do
   verification route — the emailed link, `Fountain.Release.verify_email/1`,
   and the `EMAIL_DELIVERY=none` auto-verify — behaves the same.
 
+  It is also where an account gets the two things it is meant to have before
+  it has built anything: the opening credit (ADR 0031) and the starter agent
+  (ADR 0038, `Fountain.Agents.Starter`). Both are best-effort and neither can
+  fail a verification.
+
   Returns `{:ok, user}` or `{:error, changeset}`.
   """
   @spec verify_email(User.t(), keyword()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
   def verify_email(%User{} = user, opts \\ []) do
+    # The before-state, read before the update overwrites it: the starter
+    # agent lands on the transition, not on every call of this function.
+    first_verification? = is_nil(user.email_verified_at)
+
     result =
       user
       |> Ecto.Changeset.change(
@@ -193,6 +202,7 @@ defmodule Fountain.Accounts do
 
     with {:ok, verified} <- result do
       verified = maybe_bootstrap_first_admin(verified)
+      plant_starter_agent(verified, first_verification?)
       broadcast_verification(verified)
       {:ok, verified}
     end
@@ -210,6 +220,27 @@ defmodule Fountain.Accounts do
   end
 
   defp grant_opening_credit(_), do: :ok
+
+  # The default agent (ADR 0038 decision 4) is planted beside the opening
+  # credit, for the same reason and on the same transition: a verified account
+  # must have something to send a first request to without building anything.
+  #
+  # Guarded on the *transition* rather than on the agent's existence, so that
+  # re-running a verification route on an already-verified account — the
+  # release task, a second click on the emailed link — cannot resurrect an
+  # agent the tenant deleted. `Starter.create_for/2` is idempotent by name on
+  # top of that, which covers two doors finishing the same verification at once.
+  #
+  # Best-effort by rescuing, exactly like the credit: no failure to make an
+  # agent is worth refusing someone their account.
+  defp plant_starter_agent(%User{} = user, true) do
+    Fountain.Agents.Starter.create_for(user.id)
+    :ok
+  rescue
+    e -> Logger.warning("starter agent for #{user.id} failed: #{inspect(e)}")
+  end
+
+  defp plant_starter_agent(_user, _first_verification?), do: :ok
 
   @doc """
   PubSub topic carrying a user's verification transition.
