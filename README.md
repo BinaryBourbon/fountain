@@ -93,16 +93,15 @@ The CLI and the SDKs are convenience wrappers over the REST API. Everything they
 npm install @agentshit/fountain-sdk
 # or
 pip install fountain-agent-sdk
-# After its first Hex release, add {:fountain_sdk, "~> 0.1.0"} to mix.exs
+# or add {:fountain_sdk, "~> 0.1.0"} to mix.exs
 ```
 
-For Swift Package Manager, add the repository's `main` branch until the next
-Fountain release supplies the first versioned Swift package:
+For Swift Package Manager, use the versioned repository package:
 
 ```swift
 .package(
     url: "https://github.com/BinaryBourbon/fountain.git",
-    branch: "main"
+    from: "0.15.0"
 )
 ```
 
