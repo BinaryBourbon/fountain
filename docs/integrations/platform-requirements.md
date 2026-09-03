@@ -1,322 +1,226 @@
-# What Fountain needs from a sandbox platform
+# Sandbox platform requirements
 
 <!-- The ten requirement names are identifiers: exit-truth, replay-cursor,
-     honest-listing, url-or-nothing and the rest. "Blocking" and "Costly"
-     are the priority values. "blocking" and "streaming" name the two exec
-     paths, and "naming system", "provisioning", "billing" and "scheduling"
-     are Technical Names. STE exempts a Technical Name from Rule 3.4, and
-     the linter has no vocabulary hook for that rule, so the exemption is
-     declared for the page. Every other -ing form here was rewritten. -->
+     honest-listing, url-or-nothing and the rest. "Blocking", "Costly" and
+     "Wanted" are priority values. "blocking" and "streaming" name the two
+     exec paths, and "naming system", "provisioning", "billing" and
+     "scheduling" are Technical Names. STE exempts a Technical Name from Rule
+     3.4, and the linter has no vocabulary hook for that rule, so the exemption
+     is declared for the page. -->
 <!-- vale STE.IngForms = NO -->
 
-This page is for a **sandbox platform team**. It lists the things Fountain had
-to build itself, because no platform promised them. We order them by what
-each one costs us, and each carries an acceptance test, so you can check the
-agreement and not assume it.
+This page is for teams that build sandbox platforms. It defines the ten
+capabilities Fountain needs to run long-lived, interactive agents safely.
 
-The two pages beside this one have other audiences.
-[The sandbox contract](sandbox-contract.md) is what the abstraction
-guarantees a Fountain operator.
-[Add a provider](adding-a-sandbox-provider.md) is the checklist for how to
-write an adapter. This page is what we would ask for if we could ask.
+For the interface that Fountain guarantees to operators, read
+[The sandbox contract](sandbox-contract.md). To implement an adapter, read
+[Add a provider](adding-a-sandbox-provider.md).
 
-Everything here is measurable against a real account. An adapter in this
-repository backs each claim, with one exception that the table below names. If
-one is wrong for your platform, to correct it costs us less than to work
-around it.
+## The workload
 
-## Why an agent turn is not a CI job
+An agent turn can run for hours. A person watches its output in real time and
+can send more input while it runs. The next turn resumes on the same disk, so
+that disk contains user work and agent state.
 
-An agent turn runs for minutes or hours. It streams output that a person
-watches in real time. It takes input mid-flight. The filesystem it leaves
-behind **is the agent's memory**, because the next turn resumes on that disk.
+Fountain must also survive its own deploys. After a restart, the control plane
+must find each live process, replay any missed output and continue the session.
+It must know whether each command succeeded. It must also know whether the
+provider deleted a missing sandbox or cannot reach it before the reaper acts.
 
-Our control plane redeploys under turns that run, and it has to rejoin them.
-Our reaper destroys sandboxes on the strength of what a provider's API says
-exists.
+Most sandbox APIs support short, disposable jobs well. The gaps appear at the
+boundary between a long-lived command and the client that supervises it.
+Fountain fills those gaps today with shell shims, journals, sentinels and local
+registries. This page defines the native platform support that would let us
+delete that code.
 
-Whoever built each platform we integrated aimed at a shorter, more disposable
-unit of work, and each of them is excellent at that. The gaps below cluster in
-one place, the seam between a command and the process that watches it.
+## Priorities
 
-Three of the four backends we ship can report that a command *ended*. None of
-those three can reliably report whether it *worked*. Render, the newest and
-the fifth we measured, does both. Not one of the five can tell us where in a
-stream we stopped.
+- **Blocking** means Fountain cannot meet its contract without an in-sandbox
+  workaround.
+- **Costly** means Fountain can operate, but with more code, weaker guarantees
+  or manual work.
+- **Wanted** means the absence removes a useful product capability.
 
-So we wrote the contract down, as a behaviour, an error taxonomy and an
-executable conformance suite. Then we made three hosted platforms pass it, and
-built the absent pieces inside their sandboxes with shell shims. That code
-works. We would rather delete it.
-
-## The ten requirements
-
-| Requirement | Priority | What we build when it is absent |
+| Requirement | Priority | Fountain fallback |
 |---|---|---|
-| [exit-truth](#exit-truth) | Blocking. | A shell wrapper that writes an exit-code sentinel file, and a poller for it. |
-| [replay-cursor](#replay-cursor) | Blocking. | In-guest `tee` journals, a `tail -c +1 -f` replayer, and de-duplication by byte count. |
-| [detached-sessions](#detached-sessions) | Blocking. | The same journal shim, and our own session registry, keyed by a tag we invent. |
-| [absence-definitive](#absence-definitive) | Blocking. | A map we maintain by hand, from each error shape to "definitely gone" or "ask again later". |
-| [stdin-total](#stdin-total) | Costly. | A private FIFO that `tail -f` feeds. "Close stdin" becomes a kill of the tail. |
-| [named-create](#named-create) | Costly. | A second naming system in provider metadata, and a converger for the duplicates our own retries created. |
-| [park-not-expire](#park-not-expire) | Costly. | A heartbeat on each live command, and an auto-pause setting, so a beat we miss parks the sandbox and does not kill it. |
-| [honest-listing](#honest-listing) | Costly. | The reaper stands down for that provider entirely. Leaked sandboxes then pile up until a person steps in. |
-| [egress-deny](#egress-deny) | Costly. | A translation that fails open, and a doc that tells the operator their "contained" environment is not. |
-| [url-or-nothing](#url-or-nothing) | Wanted. | We report `:unsupported`, and the agent cannot tell a person where its preview runs. |
+| [exit-truth](#exit-truth) | Blocking. | Write an exit-code sentinel from a shell wrapper, then poll for it. |
+| [replay-cursor](#replay-cursor) | Blocking. | Journal output with `tee`, replay it with `tail` and remove duplicate bytes. |
+| [detached-sessions](#detached-sessions) | Blocking. | Use the journal shim and maintain a session registry. |
+| [absence-definitive](#absence-definitive) | Blocking. | Classify every provider error as definitive absence or transient failure. |
+| [stdin-total](#stdin-total) | Costly. | Feed a private FIFO with `tail -f`; kill the tail process to close stdin. |
+| [named-create](#named-create) | Costly. | Store a second identity in metadata and reconcile duplicate sandboxes. |
+| [park-not-expire](#park-not-expire) | Costly. | Send heartbeats and configure missed heartbeats to park the sandbox. |
+| [honest-listing](#honest-listing) | Costly. | Disable automatic cleanup and remove leaked sandboxes by hand. |
+| [egress-deny](#egress-deny) | Costly. | Fail open and tell operators that the environment is not contained. |
+| [url-or-nothing](#url-or-nothing) | Wanted. | Report `:unsupported`; agents cannot link to their previews. |
+
+## Requirements
 
 ### exit-truth
 
-**We need** exactly one terminal event for each command. It must carry the
-process's true exit code. It must arrive on the streaming path as well as on
-the blocking one. We must be able to tell it apart from a transport failure
-that ended the stream early.
+**Requirement.** Emit exactly one terminal event for each command. Include the
+true process exit code on both the blocking and streaming paths. Keep a command
+failure distinct from a transport failure that ends the stream.
 
-**Because** a setup script that fails without a sound produces a sandbox that
-looks provisioned and is not. Nobody finds out until the model says it cannot
-find the repository, twenty minutes later, in front of a customer. An exit
-code that is always `0` is worse than no exit code, because it is a lie we act
-on.
+**Why.** Without a trustworthy verdict, Fountain can mark a failed setup as
+complete. A fabricated exit code of 0 is worse than no verdict because the
+control plane acts on it.
 
-**Acceptance.** `sh -c 'exit 3'` reports 3 on the blocking path and on the
-streaming path. A sandbox killed mid-command surfaces as a transport error,
-and not as exit 0.
+**Test.** Run `sh -c 'exit 3'` through both exec paths. Each path must report 3.
+Then destroy a sandbox during a command. The client must report a transport
+error, not exit 0.
 
 ### replay-cursor
 
-**We need** an output journal for each session. We must be able to read it
-from byte zero, or from a cursor the platform hands back. It must keep stdout
-and stderr apart.
+**Requirement.** Keep an output journal for each session. Let a client read it
+from byte zero or from a platform cursor. Keep stdout and stderr separate.
 
-**Because** we redeploy while turns run. The process that reads a turn dies,
-and the turn does not. To rejoin must duplicate no byte and drop no byte,
-because those bytes go into a transcript that a person reads right now. A
-backend that replays "the last 64 KiB" and starts mid-line corrupts that
-arithmetic without a sound.
+**Why.** A deploy can disconnect the process that reads a turn without ending
+the turn. After reconnect, Fountain must add every missed byte to the transcript
+exactly once. A fixed-size replay can begin mid-line and cannot guarantee that.
 
-Our own contract specifies replay from byte zero purely because no platform
-offers a cursor. A caller then de-duplicates by a count of the bytes it
-already persisted for each stream.
+Fountain currently asks adapters to replay from byte zero because no integrated
+platform supplies a cursor. The caller removes bytes that it already stored from
+each stream.
 
-**Acceptance.** Attach to a session that runs twice, once from byte zero and
-once from a cursor. The two outputs, concatenated, are byte-identical to one
-uninterrupted read.
+**Test.** Read part of a session, disconnect, then resume from the last cursor.
+The combined output must match one uninterrupted read byte for byte.
 
 ### detached-sessions
 
-**We need** three first-class operations. Spawn as detachable. List the
-sessions on a sandbox. Rejoin one by id.
+**Requirement.** Support three operations: start a detachable session, list the
+sessions on a sandbox and rejoin a session by id.
 
-**Because** a deploy of our control plane must not kill a turn in flight.
-After a restart nobody planned, we must discover what still runs before we
-decide the next move. A session is the unit of recovery.
+**Why.** A control-plane restart must not end a turn. Fountain must discover the
+processes that survived before it decides how to recover them.
 
-**Acceptance.** Kill the client mid-command. List the sessions. Rejoin by id,
-and receive the terminal frame with the real exit code.
+**Test.** Disconnect the client during a command. List the sessions, rejoin the
+command by id and receive its terminal event with the true exit code.
 
 ### absence-definitive
 
-**We need** a documented statement of which responses mean a sandbox has
-definitively gone. We also need a guarantee that a partition, a throttle, an
-expired credential or a slow region never produces one of them.
+**Requirement.** Document which responses prove that a sandbox no longer
+exists. A partition, throttle, expired credential or slow region must never
+produce one of those responses.
 
-**Because** a parked sandbox's disk is the agent's memory. Our reaper
-reconciles the provider's list against our database, then destroys whatever
-the provider lists and our database does not. If a blip reads as absence, we
-delete a customer's work.
+**Why.** The sandbox disk contains persistent agent state. Fountain must keep a
+temporary control-plane failure distinct from permanent absence before cleanup
+can safely run.
 
-That is not hypothetical. A control-plane partition on our side once made nine
-live sandboxes look absent, and the next sweep destroyed them.
+This failure mode has caused data loss. A Fountain control-plane partition once
+made nine live sandboxes appear absent, and the next sweep destroyed them.
 
-**Acceptance.** During an induced control-plane outage, no endpoint returns
-not-found for a sandbox that exists. Publish the list of statuses that are
-safe to treat as definitive.
+**Test.** During an induced control-plane outage, no endpoint may return a
+not-found response for a sandbox that still exists. Publish the complete set of
+responses that are safe to treat as definitive.
 
 ### stdin-total
 
-**We need** a write to a process that exited to return a distinct "already
-exited", and not a transport error. We also need a close of stdin to send a
-real EOF, once, on demand.
+**Requirement.** A write to a process that has exited must return a distinct
+`already exited` result, not a transport error. A separate close operation must
+send EOF exactly once.
 
-**Because** an agent protocol is conversational. We write a turn's input to a
-process that can end as we write. That race is normal traffic, and not an edge
-case, so it has to be data and not an exception. A stdin channel
-that sends EOF after each write cannot carry a protocol of many messages at
-all.
+**Why.** Agent protocols send many messages to one process. A process can exit
+while Fountain writes to it, so the race is part of normal input handling. A
+channel that sends EOF after each write cannot carry the protocol.
 
-**Acceptance.** A `cat` that reads stdin ends on the close, and on nothing
-else. A write issued after the exit returns *exited*, and not a transport
-error.
+**Test.** Start `cat`. It must exit only after the client closes stdin. A later
+write must return `already exited`, not a transport error.
 
 ### named-create
 
-**We need** identity that the caller supplies. A create against a name that
-somebody took must return the sandbox that exists, and not mint a second one.
+**Requirement.** Accept a caller-defined identity at creation. Repeated or
+concurrent creates with that identity must return the existing sandbox.
 
-**Because** idempotence under retry is the whole game for a control plane.
-With identity the server assigns, a create that times out leaves an orphan
-that we pay for and cannot address. So we end up with a second naming system
-in provider metadata, and we reconcile the duplicates our own retries
-produced.
+**Why.** A create request can succeed after the client times out. Without a
+stable identity, the retry creates an orphan that Fountain pays for but cannot
+address. Metadata can emulate identity, but it adds another naming system and a
+duplicate-reconciliation loop.
 
-**Acceptance.** Two concurrent creates of the same name yield one sandbox and
-two identical handles.
+**Test.** Send two concurrent creates with the same name. Both must return the
+same handle, and the account must contain one sandbox.
 
 ### park-not-expire
 
-**We need** a pause or a stop that keeps the filesystem at storage-only cost,
-and no TTL that destroys. Where a TTL is unavoidable, an expiry must park the
-sandbox and not kill it.
+**Requirement.** Supply a pause or stop state that keeps the filesystem at
+storage-only cost. Do not destroy a parked sandbox on a TTL. If a TTL is
+unavoidable, expiration must park the sandbox.
 
-**Because** our cost model is "park everything idle". The disk we park is what
-makes the next turn a continuation, and not a fresh start. Destroy-on-TTL
-turns each long turn into a heartbeat treadmill, and one beat we miss into
-data loss.
+**Why.** Fountain parks idle sandboxes because the disk makes the next turn a
+continuation. A destroy-on-TTL policy turns every long turn into a heartbeat
+loop and turns one missed heartbeat into data loss.
 
-**Acceptance.** Park a sandbox. Wait a week. Resume it, and read a file
-written before the park.
+**Test.** Write a file, park the sandbox, wait one week, resume it and read the
+same file.
 
 ### honest-listing
 
-**We need** pagination that is explicit and that terminates. When you cannot
-produce a full account view, we need an error, and not a `200`.
+**Requirement.** Make pagination explicit and finite. If the API cannot return
+a complete account view, return an error instead of a successful partial list.
 
-**Because** our reaper destroys a sandbox that appears on the provider's side
-and not on ours. A page that is quietly short makes a live sandbox look
-untracked.
+**Why.** Fountain compares the provider list with its database during cleanup.
+An outage stops cleanup. A truncated list that appears complete can cause the
+control plane to act on false information.
 
-This is the one place where partial success is strictly more dangerous than an
-outage. An outage makes us stand down. A short page makes us act.
-
-**Acceptance.** A list that the server interrupts surfaces as an error. It
-never surfaces as a truncated set that looks whole.
+**Test.** Interrupt a paginated list on the server. The client must receive an
+error, never a truncated collection that looks complete.
 
 ### egress-deny
 
-**We need** an empty allowlist that means nothing gets out. We must be able to
-set it for each sandbox at creation, on each plan tier, with no support
-ticket.
+**Requirement.** An empty allowlist must deny all outbound traffic. The policy
+must be available per sandbox at creation on every plan tier, without manual
+support work.
 
-**Because** the agent inside holds credentials, and executes text that
-somebody else wrote. The network is the exfiltration path, and it is the
-control that a security review always asks about. To gate it by tier means the
-operators who most need containment are the ones who cannot buy it.
+**Why.** Agents hold credentials and run text supplied by other people. Network
+egress is the main exfiltration path. A tier-gated control leaves lower-tier
+environments without the containment their configuration claims.
 
-**Acceptance.** An allowlist of exactly one host. Each other destination fails
-to connect, and that includes DNS and a raw IP.
+**Test.** Allow exactly one host. Connections to every other DNS name and raw IP
+address must fail.
 
 ### url-or-nothing
 
-**We need** one HTTP endpoint for each sandbox that a browser can open with no
-platform credential, reported by the API. Or we need a clear statement that
-the platform has no such concept.
+**Requirement.** Return one browser-ready HTTP URL for each sandbox, or state
+that the platform has no such concept. Opening the URL must not need a platform
+credential.
 
-**Because** an agent builds things, then needs to show a person. After a turn
-that worked, the most common question is where the thing now runs. A hostname for
-each port, which the orchestrator has to guess, is worse than nothing. A URL
-that does not resolve gets blamed on whoever handed it over.
+**Why.** Agents often build a preview that a person needs to open. Fountain
+cannot safely guess a hostname from a port. A guessed URL that does not resolve
+is worse than an explicit unsupported result.
 
-**Acceptance.** Serve on a port inside the sandbox. Then open the reported URL
-from a browser with no platform account.
+**Test.** Serve HTTP inside the sandbox. Open the reported URL in a browser that
+has no platform account or credential.
 
-## Where the backends stand
+## Current platform support
 
-We measured the first four in August 2026, through the adapters in this
-repository, against the APIs and daemon versions of that moment. We measured
-Render in September 2026. That column is the exception to the rule above. No
-adapter exists yet, so we drove the HTTP API directly. It is a snapshot, and
-not a scorecard. Several entries are probably stale already.
+The table is a point-in-time measurement, not a vendor scorecard. We measured
+Sprites, E2B, Daytona and the self-hosted runner through their Fountain adapters
+in August 2026. We measured Render against its HTTP API in September 2026; no
+Render adapter exists yet.
 
 | Requirement | [Sprites](sprites.md) | [E2B](e2b.md) | [Daytona](daytona.md) | [Runner](runners.md) | Render |
 |---|---|---|---|---|---|
-| exit-truth | Yes. | Yes. | No. A session-command record carries no exit code. | Yes. | Yes, on both paths, for the client that holds the stream. A later reader sees only what that client reported back. |
-| replay-cursor | Partial. It replays the last 16 KiB, and starts mid-line. | No. We ship a journal shim and a tail replayer. | Yes. The journal replays from byte zero. | Yes. | No. The endpoint is in the spec and absent in production. |
-| detached-sessions | Yes. | No. The adapter emulates them. | Yes. | Yes. | Partial. The process survives the disconnection, and a list of executions exists. No output and no verdict. |
-| absence-definitive | Undocumented. | Undocumented. | Undocumented. | Yes. Each offline shape is transient by construction. | Partial. A terminated sandbox reads back. A workspace without the entitlement returns the same 404 as a missing one. |
-| stdin-total | Yes. | Yes. | No. The FIFO sends EOF after each write, and has no close. | Yes. | No. The API has no stdin at all. |
-| named-create | Yes. | No. Metadata emulates the names. | Yes. | Yes. | No, and no metadata field either. |
-| park-not-expire | Yes. It scales to zero. | Partial. A pause keeps the disk, and a TTL runs underneath. | Yes. It stops, then archives to object storage. | Yes. | No. There is no park, and the lifetime ends in a destruction. |
-| honest-listing | Yes, with continuation tokens. | Not measured. | Not measured. | Yes. | Yes. Cursors are explicit, and a limit that is too large is an error. |
-| egress-deny | Partial. The translation fails open. | Yes. | Yes, and the tier gates it. | No, by design. The machine is the user's. | Partial. The deny is real and total. There is no allowlist. |
-| url-or-nothing | Yes. | No. It has a hostname for each port, and no more. | No. | No. | No. |
+| exit-truth | Yes | Yes | No. Session records have no exit code. | Yes | Yes for the client that owns the stream. Later readers see only the result that client reported. |
+| replay-cursor | Partial. Replays the last 16 KiB and can begin mid-line. | No. Fountain adds a journal and replayer. | Yes. Replays from byte zero. | Yes | No. The documented endpoint is absent in production. |
+| detached-sessions | Yes | No. Fountain emulates sessions. | Yes | Yes | Partial. The process survives, and the API lists executions, but supplies no output or verdict. |
+| absence-definitive | Undocumented | Undocumented | Undocumented | Yes. Offline states are transient by construction. | Partial. A terminated sandbox remains readable, but missing entitlement and missing sandbox both return 404. |
+| stdin-total | Yes | Yes | No. Each write sends EOF, and no close operation exists. | Yes | No stdin API. |
+| named-create | Yes | No. Fountain stores names in metadata. | Yes | Yes | No names or metadata. |
+| park-not-expire | Yes. Scales to zero. | Partial. Pause keeps the disk, but a TTL remains active. | Yes. Stop keeps the disk and later archives it to object storage. | Yes | No. Lifetime expiration destroys the sandbox. |
+| honest-listing | Yes. Uses continuation tokens. | Not measured | Not measured | Yes | Yes. Cursors are explicit, and an excessive limit returns an error. |
+| egress-deny | Partial. Fountain's translation fails open. | Yes | Yes, but plan tier gates it. | No by design. The user owns the machine. | Partial. Deny-all works, but allowlists do not exist. |
+| url-or-nothing | Yes | No. Supplies a hostname per port, not a URL. | No | No | No |
 
-One entry here was wrong for three months. This table said Sprites failed
-exit-truth, because each command we ran through it reported 0. The platform
-sent the true code every time. Our Elixir client read the one-byte field as
-four bytes, matched no frame, and reported a 0 that nobody had sent. See
-[#880](https://github.com/BinaryBourbon/fountain/issues/880).
+Treat every negative result as a prompt to verify both the platform and the
+adapter. This table once said that Sprites failed `exit-truth`. Sprites sent the
+correct one-byte exit field, but the Elixir client tried to read four bytes and
+substituted 0 when the frame did not match. [Issue
+#880](https://github.com/BinaryBourbon/fountain/issues/880) fixed the adapter.
 
-Read that as a warning about this table. We measure each platform through our
-own adapter, so every row says something about the adapter as well as the
-platform. A row that reports a failure is the row to distrust first. The
-Render column is younger than the others, and it carries the opposite risk. We
-measured it directly, so no adapter hides a platform strength from us. No long
-run has yet found the behaviour that only a long run finds.
+The Render column has the opposite limitation. Direct API tests remove adapter
+errors, but they do not expose failures that appear only during long production
+runs.
 
-One backend is our own daemon, the
-[self-hosted runner](runners.md). Read it as an existence proof, and not as a
-comparison. It meets nearly all of this because we wrote both ends. That is
-the only reason we know this list is possible to implement, and not merely
-desirable.
-
-## The rule under all ten
-
-!!! note "Advertise or refuse, never pretend"
-
-    An orchestrator can degrade around a capability that is absent.
-    It cannot degrade around a capability that you claim and that then quietly
-    does nothing.
-
-A pause that quietly returns a fresh disk is data loss. A network policy you
-accept with a `200` and never enforce is a false security claim that we pass
-on to an operator. A preview URL that somebody guessed is a support ticket for
-another product.
-
-The whole abstraction rests on this. Each adapter declares a capability set,
-and the lifecycle changes shape to match. A backend that cannot park then gets
-destroy-on-idle, and not a fake park. That works only when "I do not support
-this" is an answer the platform's API will give.
-
-## What we do not ask for
-
-To name the non-asks is half of what makes this a conversation, and not a wish
-list.
-
-- **A common wire format.** REST, gRPC, WebSocket or a vendor SDK, because we
-  write the adapter. This page is about semantics, and not shapes.
-- **Images, or provisioning.** We ship our own image for each platform,
-  deliberately, so that no provision logic belongs to one provider.
-- **Checkpoint and snapshot APIs.** They are genuinely useful. They are
-  optional today, and we shipped without them.
-- **Tenancy, billing or region models.** The differences there have cost us
-  nothing.
-- **Parity with each other.** The capability set exists precisely so that
-  platforms can differ. Three honest platforms with three shapes beat three
-  identical ones.
-
-## The bias in this list
-
-One consumer with one workload wrote it, and it shows.
-
-We over-specify sessions and streams, because an agent turn is a long
-conversation with a process. We under-specify scheduling, burst behaviour,
-cold-start latency, and everything else that a hundred-thousand-short-jobs
-workload cares about. A neutral contract needs another kind of customer
-in the room.
-
-The capability vocabulary also does more work than it should. `:suspend` today
-means three different promises across our backends. Those are scale-to-zero,
-an explicit pause, and a stop of the processes in a directory. They are not
-equivalent. If any of this became a shared specification, somebody would have
-to divide that word first.
-
-## How to test a platform against it
-
-`Managoat.Sandbox.ConformanceCase` is a real test suite, and not a checklist.
-An in-memory reference adapter passes it in full, and it pins each semantic
-above, the byte-exact replay test with them.
-
-The practical route for a platform team is
-[Add a provider](adding-a-sandbox-provider.md). Its verification ladder exists
-because each rung caught something the rung before it passed.
-
-<!-- vale STE.IngForms = YES -->
+The [self-hosted runner](runners.md) is an existence proof, not a peer vendor.
+It meets most of these requirements because Fountain controls both ends of the
+protocol.
