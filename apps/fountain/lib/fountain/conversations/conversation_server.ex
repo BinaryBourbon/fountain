@@ -23,10 +23,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
   alias Fountain.Conversations.{
     CallbackKey,
+    Connection,
     Conversation,
     Egress,
     Lifecycle,
     McpServers,
+    Output,
     Pending,
     Provisioning,
     SpriteEnv,
@@ -604,7 +606,9 @@ defmodule Fountain.Conversations.ConversationServer do
                 :ok
             end
 
-            publish_stage(conv_id, "provision", "failed", %{reason: "provision deadline exceeded"})
+            Output.publish_stage(conv_id, "provision", "failed", %{
+              reason: "provision deadline exceeded"
+            })
 
             # Prefer supervisor termination over Process.exit: it removes the
             # child, so no restart happens at all, and it bounds the wait —
@@ -729,7 +733,7 @@ defmodule Fountain.Conversations.ConversationServer do
           "ConversationServer could not load tenant credentials for conv #{conv.id} (user #{conv.user_id}): #{inspect(reason)}"
         )
 
-        publish_stage(state.conversation_id, "provision", "failed", %{
+        Output.publish_stage(state.conversation_id, "provision", "failed", %{
           reason: "tenant_credential_load_failed: #{inspect(reason)}"
         })
 
@@ -770,7 +774,7 @@ defmodule Fountain.Conversations.ConversationServer do
       {:error, {:missing_vars, names}} ->
         reason = "missing env/vault keys referenced in mcp_servers: #{Enum.join(names, ", ")}"
         Logger.error("provision failed for conv #{conv.id}: #{reason}")
-        publish_stage(state.conversation_id, "provision", "failed", %{reason: reason})
+        Output.publish_stage(state.conversation_id, "provision", "failed", %{reason: reason})
         {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
         Conversations.update_conversation(conv, %{status: "failed"})
         {:stop, :normal, state}
@@ -794,7 +798,7 @@ defmodule Fountain.Conversations.ConversationServer do
         msg = Exception.format(:error, exception, stack)
         Logger.error("provision raised an unhandled exception:\n#{msg}")
 
-        publish_stage(state.conversation_id, "provision", "failed", %{
+        Output.publish_stage(state.conversation_id, "provision", "failed", %{
           reason: Exception.message(exception),
           stack: Exception.format_stacktrace(stack) |> String.slice(0, 2000)
         })
@@ -814,7 +818,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "starting"})
 
-    publish_stage(
+    Output.publish_stage(
       state.conversation_id,
       "provision",
       "started",
@@ -909,7 +913,7 @@ defmodule Fountain.Conversations.ConversationServer do
                  sprite_env
                ) do
           {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
-          publish_stage(state.conversation_id, "provision", "done")
+          Output.publish_stage(state.conversation_id, "provision", "done")
 
           # Best-effort: snapshot the fully-provisioned state so subsequent
           # conversations on this env can warm-start from it. Async so it
@@ -938,7 +942,7 @@ defmodule Fountain.Conversations.ConversationServer do
             Egress.release(state.user_id, state.conversation_id)
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
-            publish_stage(state.conversation_id, "provision", "failed", %{
+            Output.publish_stage(state.conversation_id, "provision", "failed", %{
               reason: inspect(reason)
             })
 
@@ -949,7 +953,11 @@ defmodule Fountain.Conversations.ConversationServer do
       {:error, reason} ->
         Logger.error("provision could not start: #{inspect(reason)}")
         {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
-        publish_stage(state.conversation_id, "provision", "failed", %{reason: inspect(reason)})
+
+        Output.publish_stage(state.conversation_id, "provision", "failed", %{
+          reason: inspect(reason)
+        })
+
         Conversations.update_conversation(conv, %{status: "failed"})
         {:stop, :normal, state}
     end
@@ -999,7 +1007,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp attempt_warm_start(_handle, %{checkpoint_id: ""}, _conv_id), do: :cold
 
   defp attempt_warm_start(handle, %{checkpoint_id: id} = env, conv_id) do
-    publish_stage(conv_id, "checkpoint_restore", "started", %{checkpoint_id: id})
+    Output.publish_stage(conv_id, "checkpoint_restore", "started", %{checkpoint_id: id})
 
     # `restore_checkpoint/2` returns a bare `:ok` — `Fountain.Telemetry.span/3`
     # unwraps the `{result, metadata}` pair it is given, so the `{:ok, _}` this
@@ -1008,7 +1016,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # this branch was unreachable.
     case Fountain.Conversations.Provisioning.restore_checkpoint(handle, id) do
       ok when ok == :ok or (is_tuple(ok) and elem(ok, 0) == :ok) ->
-        publish_stage(conv_id, "checkpoint_restore", "done", %{checkpoint_id: id})
+        Output.publish_stage(conv_id, "checkpoint_restore", "done", %{checkpoint_id: id})
         :warm_started
 
       {:error, reason} ->
@@ -1016,7 +1024,7 @@ defmodule Fountain.Conversations.ConversationServer do
           "checkpoint #{id} on env #{env.name} restore failed (#{inspect(reason)}); clearing + cold provisioning"
         )
 
-        publish_stage(conv_id, "checkpoint_restore", "failed", %{
+        Output.publish_stage(conv_id, "checkpoint_restore", "failed", %{
           checkpoint_id: id,
           reason: inspect(reason)
         })
@@ -1114,7 +1122,7 @@ defmodule Fountain.Conversations.ConversationServer do
              label: "sprite lookup on wake"
            ),
          {:ok, state} <- broker_prepare(state) do
-      publish_stage(state.conversation_id, "reattach", "started", %{
+      Output.publish_stage(state.conversation_id, "reattach", "started", %{
         sprite_name: sandbox.sprite_name,
         node: to_string(node())
       })
@@ -1202,7 +1210,7 @@ defmodule Fountain.Conversations.ConversationServer do
           "reattach failed for sprite #{sandbox.sprite_name}: not found — marking sandbox failed"
         )
 
-        publish_stage(state.conversation_id, "reattach", "failed", %{
+        Output.publish_stage(state.conversation_id, "reattach", "failed", %{
           reason: "not_found",
           retryable: false,
           node: to_string(node())
@@ -1237,7 +1245,7 @@ defmodule Fountain.Conversations.ConversationServer do
             "transient; sandbox row left untouched"
         )
 
-        publish_stage(state.conversation_id, "reattach", "failed", %{
+        Output.publish_stage(state.conversation_id, "reattach", "failed", %{
           reason: inspect(reason),
           retryable: true,
           node: to_string(node())
@@ -1318,7 +1326,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
         outcome = if mine == [], do: "no_running_turn", else: "orphan_session_reaped"
 
-        publish_stage(state.conversation_id, "reattach", "done", %{
+        Output.publish_stage(state.conversation_id, "reattach", "done", %{
           outcome: outcome,
           reaped: length(mine)
         })
@@ -1326,7 +1334,10 @@ defmodule Fountain.Conversations.ConversationServer do
         state
 
       {:error, _reason} ->
-        publish_stage(state.conversation_id, "reattach", "done", %{outcome: "no_running_turn"})
+        Output.publish_stage(state.conversation_id, "reattach", "done", %{
+          outcome: "no_running_turn"
+        })
+
         state
     end
   end
@@ -1362,7 +1373,7 @@ defmodule Fountain.Conversations.ConversationServer do
                 running_turn.id
               )
 
-        publish_stage(state.conversation_id, "reattach", "done", %{
+        Output.publish_stage(state.conversation_id, "reattach", "done", %{
           outcome: "session_attached",
           matched_by: matched_by,
           session_id: session.id,
@@ -1397,9 +1408,6 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @replay_dedup_ttl_ms 10_000
-
-  # An autonomous turn with no `cycle_end` closes after this long a silence.
-  @autonomous_quiet_ms :timer.minutes(10)
 
   # An ACP turn is only alive while something answers the agent: a
   # `session/request_permission` left unanswered blocks it forever, and the
@@ -1466,7 +1474,7 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
-    publish_stage(state.conversation_id, "reattach", "interrupted", %{
+    Output.publish_stage(state.conversation_id, "reattach", "interrupted", %{
       outcome: "turn_orphaned",
       turn_id: running_turn.id,
       turn_number: running_turn.turn_number,
@@ -1585,7 +1593,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   @impl true
   def handle_call({:send_prompt, prompt, images}, _from, state) do
-    if user_turn_running?(state) do
+    if Connection.user_turn_running?(state.current_turn) do
       {:reply, {:error, :busy}, state}
     else
       # A background cycle the agent was still narrating is closed by the
@@ -1687,7 +1695,7 @@ defmodule Fountain.Conversations.ConversationServer do
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
       {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
-      publish_stage(state.conversation_id, "terminate", "done", %{
+      Output.publish_stage(state.conversation_id, "terminate", "done", %{
         sandbox: "kept",
         reason:
           if(Lifecycle.home?(state.sandbox_id),
@@ -1708,7 +1716,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
       {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
-      publish_stage(state.conversation_id, "terminate", "done")
+      Output.publish_stage(state.conversation_id, "terminate", "done")
       {:stop, :normal, :ok, state}
     end
   end
@@ -1727,7 +1735,7 @@ defmodule Fountain.Conversations.ConversationServer do
     state = drop_connection(state, "released")
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
-    publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
+    Output.publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
     {:stop, :normal, :ok, %{state | handle: nil}}
   end
 
@@ -1745,7 +1753,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # happen, and re-running is the failure this whole mechanism exists to avoid.
   @impl true
   def handle_cast({:initial_prompt, prompt, images}, state) do
-    if user_turn_running?(state) do
+    if Connection.user_turn_running?(state.current_turn) do
       Logger.warning(
         "conv #{state.conversation_id}: initial prompt arrived while a turn was running; dropping it"
       )
@@ -1783,7 +1791,7 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
 
-    publish_stage(state.conversation_id, "sandbox", "done", %{
+    Output.publish_stage(state.conversation_id, "sandbox", "done", %{
       event: event,
       reason: reason,
       by: "another_conversation",
@@ -1963,7 +1971,7 @@ defmodule Fountain.Conversations.ConversationServer do
         ended_at: now()
       })
 
-    publish_stage(state.conversation_id, "turn", "done", %{
+    Output.publish_stage(state.conversation_id, "turn", "done", %{
       turn_id: turn.id,
       turn_number: turn.turn_number,
       exit_code: code
@@ -2030,7 +2038,7 @@ defmodule Fountain.Conversations.ConversationServer do
         ended_at: now()
       })
 
-    publish_stage(state.conversation_id, "turn", "failed", %{
+    Output.publish_stage(state.conversation_id, "turn", "failed", %{
       turn_id: turn.id,
       turn_number: turn.turn_number,
       reason: "sprite connection lost: #{inspect(reason)}"
@@ -2374,7 +2382,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # is still idle on this machine, this turn rides it — no spawn, no
     # handshake, no `session/resume`, no model pin — so a background task it
     # left running keeps running and codex's session grant survives.
-    if acp? and connection_alive?(state) do
+    if acp? and Connection.alive?(Connection.from_state(state)) do
       resume_acp_connection(state, conv, turn, prompt, images)
     else
       run_fresh_turn(state, conv, turn, prompt, agent, images, acp?)
@@ -2394,7 +2402,8 @@ defmodule Fountain.Conversations.ConversationServer do
     # Write image temp files to sprite. Only on the legacy path: ACP carries
     # images as content blocks inside `session/prompt`, so writing them into
     # the sandbox first would be a round trip whose product nothing reads.
-    image_paths = if acp?, do: [], else: write_image_temp_files(state.handle, turn.id, images)
+    image_paths =
+      if acp?, do: [], else: Output.write_image_temp_files(state.handle, turn.id, images)
 
     {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
@@ -2425,7 +2434,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # return a prompt_suffix with image references to append to stdin.
     prompt_suffix = Keyword.get(build_opts, :prompt_suffix, "")
 
-    publish_stage(state.conversation_id, "turn", "started", %{
+    Output.publish_stage(state.conversation_id, "turn", "started", %{
       turn_id: turn.id,
       turn_number: turn_number,
       mode: Atom.to_string(mode)
@@ -2607,16 +2616,6 @@ defmodule Fountain.Conversations.ConversationServer do
   defp emit_turn_completed(state, status),
     do: TurnMachine.emit_completed(TurnMachine.from_state(state), status)
 
-  # Persist + broadcast one chunk of sandbox output, subject to the
-  # per-conversation byte budget (#331). log_events is unbounded per row
-  # count and lives on the same Postgres volume the app depends on, so a
-  # `while true; do base64 /dev/urandom; done` sandbox was an availability
-  # risk, not just a storage bill — retention (#217) bounds age, not rate.
-  # Once the budget is exceeded, one truncation marker is persisted and
-  # every later chunk is dropped. Dropped rather than broadcast-only:
-  # consumers key ordering off the DB-assigned event id, and an unbounded
-  # broadcast stream would still let a hostile sandbox saturate PubSub.
-
   # Persistence for peer-relayed lines: the log budget, redaction and the
   # legacy replay skip all live on this path; the tracer reads protocol lines
   # from the peer's reports, never raw chunks.
@@ -2636,22 +2635,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
     %{new_state | stream_tracer: tracer}
   end
-
-  # gemini erases a session in the act of loading it (#659), so its store is
-  # consolidated at the end of every turn — before the next turn's
-  # `session/load` can collide with it. Best-effort and gemini-only; delete
-  # with the workaround when gemini-cli#28775 lands.
-  defp consolidate_gemini_session(%{handle: handle} = state) when not is_nil(handle) do
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-
-    if conv.runtime == "gemini" do
-      Managoat.Runtimes.Gemini.SessionStore.consolidate(handle, conv.runtime_session_id)
-    end
-
-    :ok
-  end
-
-  defp consolidate_gemini_session(_state), do: :ok
 
   # Terminal path for an ACP turn. The order matters: stdin closes first so the
   # adapter starts exiting while we do the bookkeeping, and `current_command_ref`
@@ -2728,35 +2711,21 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # ── the connection (#817) ─────────────────────────────────────────────────
 
-  # Whether an idle peer from an earlier turn is still driving this machine.
-  defp connection_alive?(%{acp_peer: peer}) when is_pid(peer), do: Process.alive?(peer)
-  defp connection_alive?(_state), do: false
-
-  defp user_turn_running?(%{current_turn: %{origin: "autonomous"}}), do: false
-  defp user_turn_running?(%{current_turn: turn}), do: not is_nil(turn)
-
-  # This turn rides the open connection: no spawn, no handshake. `Peer.prompt/3`
-  # reuses the session already open, so a background task keeps running and the
-  # runtime's per-session grants survive (#817).
+  # This turn rides the open connection (`Connection.resume/7`): the span, the
+  # stage event and the peer's answer are the connection's; the turn fields
+  # they land in are the server's. A peer that refuses the prompt is dropped
+  # and the turn runs on a fresh spawn against the row that already exists.
   defp resume_acp_connection(state, conv, turn, prompt, images) do
-    turn_span =
-      TurnMachine.open_span(state.user_id, conv, turn, :continue, TurnMachine.agent_for(conv))
-
-    previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)
-
-    publish_stage(state.conversation_id, "turn", "started", %{
-      turn_id: turn.id,
-      turn_number: turn.turn_number,
-      mode: "continue",
-      connection: "reused"
-    })
-
-    started_mono = System.monotonic_time(:millisecond)
-
-    case Managoat.ACP.Peer.prompt(state.acp_peer, prompt, images) do
-      :ok ->
-        OpenTelemetry.Tracer.set_current_span(previous_span)
-
+    case Connection.resume(
+           Connection.from_state(state),
+           state.conversation_id,
+           state.user_id,
+           conv,
+           turn,
+           prompt,
+           images
+         ) do
+      {:ok, turn_span, tracer, started_mono} ->
         %{
           touch_activity(state)
           | current_turn: turn,
@@ -2766,116 +2735,60 @@ defmodule Fountain.Conversations.ConversationServer do
               runtime: conv.runtime,
               first_output?: false
             },
-            stream_tracer: Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")
+            stream_tracer: tracer
         }
 
-      {:error, reason} ->
-        # The idle peer would not take the prompt (it died between the check
-        # and the call, or is wedged). Drop it and spawn fresh — the turn row
-        # already exists, so run the fresh path against it.
-        Logger.warning(
-          "conv #{state.conversation_id}: idle peer refused prompt (#{inspect(reason)}); respawning"
-        )
-
-        OpenTelemetry.Tracer.set_current_span(previous_span)
-        TurnMachine.end_span(turn_span, :error, %{"error" => "peer_refused_reuse"})
+      {:error, _reason} ->
         state = drop_connection(state, "peer_refused_reuse")
         run_fresh_turn(state, conv, turn, prompt, TurnMachine.agent_for(conv), images, true)
     end
   end
 
-  # Close the ACP connection: EOF the adapter so it exits (a detachable
-  # session outlives its client, so closing the socket alone leaves it and any
-  # background task running), consolidate gemini's store before the next
-  # `session/load` can collide, stop the peer, and clear the connection
-  # fields. An autonomous turn still open is completed first — its updates are
-  # real. Safe on a server with no connection.
+  # Close the connection (`Connection.close/3`). An autonomous turn still open
+  # is completed first: its updates are real, and ending a turn resolves what
+  # the turn holds pending and stamps its row, which is the server's work. The
+  # first clause is why a server with no connection skips that finish too.
   defp drop_connection(%{acp_peer: nil, current_command: nil} = state, _why), do: state
 
   defp drop_connection(state, why) do
-    state =
-      if TurnMachine.autonomous_turn?(state) do
-        finish_acp_turn(state, "completed", %{"origin" => "connection_closed"}, %{
-          origin: "autonomous",
-          cycle: "connection_closed"
-        })
-      else
-        state
-      end
-
-    state = cancel_autonomous_quiet(state)
-    if state.current_command, do: Managoat.Sandbox.close_stdin(state.current_command)
-    consolidate_gemini_session(state)
-    stop_acp_peer(state)
-    if state.current_command, do: Managoat.Sandbox.stop_command(state.current_command)
+    state = close_autonomous_turn(state, "connection_closed")
 
     _ = why
 
-    %{
-      state
-      | current_command: nil,
-        current_command_ref: nil,
-        acp_peer: nil,
-        acp_peer_mon: nil
-    }
-  end
-
-  # The adapter went away between turns with no turn to fail (#817). Record it
-  # on the transcript and clear the connection; the next prompt spawns fresh.
-  defp connection_lost(state, reason, meta) do
-    publish_stage(
-      state.conversation_id,
-      "sandbox",
-      "done",
-      Map.merge(%{event: "connection_lost", reason: reason}, meta)
+    Connection.into_state(
+      state,
+      Connection.close(Connection.from_state(state), state.conversation_id, state.handle)
     )
-
-    state = cancel_autonomous_quiet(state)
-    consolidate_gemini_session(state)
-
-    %{
-      state
-      | current_command: nil,
-        current_command_ref: nil,
-        acp_peer: nil,
-        acp_peer_mon: nil
-    }
   end
 
-  # An out-of-turn protocol line opened a background cycle (#817). A real turn
-  # row so the log budget, redaction and stage events all apply; `origin:
-  # "autonomous"` and a marker prompt tell it from a user turn.
+  # The adapter went away between turns with no turn to fail
+  # (`Connection.lost/5`).
+  defp connection_lost(state, reason, meta) do
+    Connection.into_state(
+      state,
+      Connection.lost(
+        Connection.from_state(state),
+        state.conversation_id,
+        state.handle,
+        reason,
+        meta
+      )
+    )
+  end
+
+  # An out-of-turn protocol line opened a background cycle
+  # (`Connection.open_autonomous_turn/2`). The row, its span and its tracer are
+  # the server's to hold; the quiet timer is armed in this process.
   defp open_autonomous_turn(state) do
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    turn_number = Conversations._unsafe_next_turn_number(state.conversation_id)
-
-    {:ok, turn} =
-      Conversations._unsafe_create_turn(%{
-        conversation_id: conv.id,
-        turn_number: turn_number,
-        prompt: "(background task follow-up)",
-        origin: "autonomous",
-        status: "running",
-        started_at: now()
-      })
-
-    turn_span =
-      TurnMachine.open_span(state.user_id, conv, turn, :autonomous, TurnMachine.agent_for(conv))
-
-    publish_stage(state.conversation_id, "turn", "started", %{
-      turn_id: turn.id,
-      turn_number: turn_number,
-      origin: "autonomous"
-    })
-
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
+    {turn, turn_span, tracer} =
+      Connection.open_autonomous_turn(state.conversation_id, state.user_id)
 
     arm_autonomous_quiet(%{
       touch_activity(state)
       | current_turn: turn,
         current_turn_span: turn_span,
         turn_metrics: nil,
-        stream_tracer: Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")
+        stream_tracer: tracer
     })
   end
 
@@ -2888,161 +2801,35 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp arm_autonomous_quiet(state) do
-    state = cancel_autonomous_quiet(state)
-    turn_id = state.current_turn && state.current_turn.id
-
-    timer =
-      if turn_id do
-        Process.send_after(self(), {:autonomous_quiet, turn_id}, autonomous_quiet_ms())
-      end
-
-    %{state | autonomous_quiet: timer}
-  end
-
-  defp cancel_autonomous_quiet(%{autonomous_quiet: nil} = state), do: state
-
-  defp cancel_autonomous_quiet(%{autonomous_quiet: timer} = state) do
-    Process.cancel_timer(timer)
-    %{state | autonomous_quiet: nil}
-  end
-
-  defp autonomous_quiet_ms do
-    Application.get_env(:fountain, :autonomous_turn_quiet_ms, @autonomous_quiet_ms)
-  end
-
-  # Demonitor before stopping so the peer's own exit does not arrive as a
-  # `:DOWN` that fails the turn we just finished.
-  defp stop_acp_peer(%{acp_peer: nil}), do: :ok
-
-  defp stop_acp_peer(%{acp_peer: peer, acp_peer_mon: mon}) do
-    if mon, do: Process.demonitor(mon, [:flush])
-    if Process.alive?(peer), do: GenServer.stop(peer, :normal, 1_000)
-    :ok
-  catch
-    :exit, _ -> :ok
-  end
-
-  defp log_output(state, stream, data) do
-    state = ensure_output_bytes(state)
-    budget = output_byte_budget()
-
-    cond do
-      state.output_capped ->
-        state
-
-      budget > 0 and state.output_bytes + byte_size(data) > budget ->
-        Logger.warning(
-          "conv #{state.conversation_id}: durable output budget " <>
-            "(#{budget} bytes) reached; dropping further sandbox output"
-        )
-
-        :telemetry.execute([:fountain, :log_output, :capped], %{count: 1}, %{
-          conversation_id: state.conversation_id
-        })
-
-        persist_output(state, "stderr", cap_marker(budget))
-        %{state | output_capped: true}
-
-      true ->
-        persist_output(state, stream, data)
-        %{state | output_bytes: state.output_bytes + byte_size(data)}
-    end
-  end
-
-  defp cap_marker(budget) do
-    "\n[fountain] This conversation reached its durable log budget of " <>
-      "#{div(budget, 1_000_000)} MB. Further sandbox output is discarded — " <>
-      "the turn keeps running, and stage events still appear.\n"
-  end
-
-  defp ensure_output_bytes(%{output_bytes: nil} = state) do
-    %{state | output_bytes: Conversations._unsafe_output_byte_total(state.conversation_id)}
-  end
-
-  defp ensure_output_bytes(state), do: state
-
-  # 0 disables the cap.
-  defp output_byte_budget do
-    Application.get_env(:fountain, :log_output_byte_budget, 50_000_000)
-  end
-
-  defp persist_output(state, stream, data) do
-    # Tag this output with the stage that's active right now. The
-    # runtime CLI is always spawned inside a `turn` so all stdout /
-    # stderr from it gets `stage: "turn"`. Any operator on the
-    # presentation side (LiveView grouping, SSE consumers) can group
-    # output by stage without inferring it from event interleaving.
-    event =
-      Conversations.log!(%{
-        conversation_id: state.conversation_id,
-        turn_id: state.current_turn && state.current_turn.id,
-        kind: "output",
-        stream: stream,
-        stage: "turn",
-        data: data
-      })
-
-    Phoenix.PubSub.broadcast(
-      Fountain.PubSub,
-      "conv:#{state.conversation_id}",
-      {:log_event, event}
+    Connection.into_state(
+      state,
+      Connection.arm_quiet(Connection.from_state(state), state.current_turn)
     )
+  end
 
-    if state.user_id do
-      Phoenix.PubSub.broadcast(
-        Fountain.PubSub,
-        "sidebar:#{state.user_id}",
-        {:sidebar_update, state.user_id}
+  defp cancel_autonomous_quiet(state),
+    do: Connection.into_state(state, Connection.cancel_quiet(Connection.from_state(state)))
+
+  defp stop_acp_peer(state), do: Connection.stop_peer(Connection.from_state(state))
+
+  # ── output (#331) ─────────────────────────────────────────────────────────
+
+  # One chunk of sandbox output onto the transcript, against the durable
+  # budget: `Output.log/4`.
+  defp log_output(state, stream, data),
+    do:
+      Output.into_state(
+        state,
+        Output.log(Output.from_state(state), Output.ctx(state), stream, data)
       )
-    end
-  end
 
-  # Drop replayed bytes before persisting. After reattach, sprites replays
-  # the session's buffered output up to where it left off, then live-tails.
-  # We pre-loaded the byte count we'd already persisted for the in-flight
-  # turn into `state.replay_skip[stream]`; consume that many bytes off the
-  # front of incoming data, then start logging the remainder normally.
+  # The same, minus the bytes a reattach is replaying: `Output.log_with_replay_skip/4`.
   defp log_with_replay_skip(state, stream, data) do
-    skip = Map.get(state.replay_skip, stream, 0)
-    size = byte_size(data)
-
-    cond do
-      skip == 0 ->
-        log_output(state, stream, data)
-
-      skip >= size ->
-        put_in(state.replay_skip[stream], skip - size)
-
-      true ->
-        state = log_output(state, stream, binary_part(data, skip, size - skip))
-        put_in(state.replay_skip[stream], 0)
-    end
-  end
-
-  defp publish_stage(conv_id, stage, status, meta \\ %{}) do
-    Conversations.publish_stage(conv_id, stage, status, meta)
+    Output.into_state(
+      state,
+      Output.log_with_replay_skip(Output.from_state(state), Output.ctx(state), stream, data)
+    )
   end
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
-
-  # Write each image to a temp path in the sprite filesystem and return
-  # a list of {path, media_type} tuples for passing to the runtime.
-  defp write_image_temp_files(_handle, _turn_id, []), do: []
-
-  defp write_image_temp_files(handle, turn_id, images) do
-    images
-    |> Enum.with_index()
-    |> Enum.map(fn {%{media_type: mt, data: data}, idx} ->
-      ext = media_type_to_ext(mt)
-      path = "/tmp/aod_turn_#{turn_id}_#{idx}.#{ext}"
-      Managoat.Sandbox.write_file(handle, path, data)
-      {path, mt}
-    end)
-  end
-
-  defp media_type_to_ext("image/png"), do: "png"
-  defp media_type_to_ext("image/jpeg"), do: "jpeg"
-  defp media_type_to_ext("image/gif"), do: "gif"
-  defp media_type_to_ext("image/webp"), do: "webp"
-  defp media_type_to_ext(_), do: "bin"
 end
