@@ -1610,8 +1610,17 @@ defmodule FountainWeb.Schemas do
           type: :string,
           description: "Output text, or JSON-encoded metadata for stage events."
         },
-        stage: %Schema{type: :string, description: "Lifecycle stage name (stage events)."},
-        state: %Schema{type: :string, enum: ~w(started done failed interrupted), nullable: true},
+        stage: %Schema{
+          type: :string,
+          nullable: true,
+          description: "Lifecycle stage name. null on an event that has no stage."
+        },
+        state: %Schema{
+          type: :string,
+          enum: ~w(started done failed interrupted),
+          nullable: true,
+          description: "Lifecycle state of the stage. null on an event that has no state."
+        },
         duration_ms: %Schema{type: :integer, nullable: true},
         turn_id: %Schema{type: :string, format: :uuid, nullable: true},
         ts: %Schema{type: :string, format: :"date-time"},

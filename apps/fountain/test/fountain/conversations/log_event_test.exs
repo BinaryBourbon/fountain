@@ -103,6 +103,34 @@ defmodule Fountain.Conversations.LogEventTest do
     end
   end
 
+  describe "rendered_state/1 and rendered_stage/1 (#1430)" do
+    # The column is NOT NULL DEFAULT '', so "no state" is `""` on disk while
+    # the published schema says the field is one of the four states or null.
+    # These two functions are the whole of the conversion, and every render
+    # path goes through them.
+    test "an event with no state or stage renders both as nil" do
+      event = %LogEvent{}
+
+      assert LogEvent.rendered_state(event) == nil
+      assert LogEvent.rendered_stage(event) == nil
+    end
+
+    test "a real state and stage pass through untouched" do
+      event = %LogEvent{kind: "stage", stage: "provision", state: "done"}
+
+      assert LogEvent.rendered_state(event) == "done"
+      assert LogEvent.rendered_stage(event) == "provision"
+    end
+
+    test "every state the changeset accepts survives the conversion" do
+      # Only `""` becomes nil. A conversion that swallowed a real state would
+      # be invisible on the wire, since the field is nullable either way.
+      for state <- LogEvent.states() do
+        assert LogEvent.rendered_state(%LogEvent{state: state}) == state
+      end
+    end
+  end
+
   describe "changeset/2 state inclusion" do
     for state <- ["started", "done", "failed", "interrupted", ""] do
       test "accepts state #{inspect(state)}" do

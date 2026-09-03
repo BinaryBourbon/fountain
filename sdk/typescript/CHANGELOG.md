@@ -10,6 +10,26 @@ server releases.
 
 ---
 
+## [1.19.0] — 2026-09-03
+
+### Changed
+
+- `LogEvent.stage` is typed `string | null` rather than `string`. The server
+  used to answer `""` for an event with no stage and no state, while its own
+  schema declared `state` as one of `started done failed interrupted` or
+  `null` — so `""` was a value the published contract did not allow, on the
+  busiest read in the API. The server now renders `null` for both fields
+  (#1430), which is what the schema always said for `state`; `stage` is typed
+  nullable here to match. `LogEvent.state`'s type is unchanged, because the
+  document already described it correctly and only the server was wrong.
+
+  Code that reads `event.stage` on an event that has no stage now sees `null`
+  where it saw `""`. This client's own readers were already null-safe. A
+  falsy check (`if (event.stage)`) behaves the same either way; `event.stage
+  .length` does not.
+
+---
+
 ## [1.18.0] — 2026-09-03
 
 ### Added

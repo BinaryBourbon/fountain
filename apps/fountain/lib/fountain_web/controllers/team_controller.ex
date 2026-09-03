@@ -610,8 +610,8 @@ defmodule FountainWeb.TeamController do
         kind: ev.kind,
         stream: ev.stream,
         data: ev.data,
-        stage: ev.stage,
-        state: ev.state,
+        stage: LogEvent.rendered_stage(ev),
+        state: LogEvent.rendered_state(ev),
         turn_id: ev.turn_id,
         ts: ev.inserted_at
       }

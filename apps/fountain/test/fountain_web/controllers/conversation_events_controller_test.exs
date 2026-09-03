@@ -20,6 +20,10 @@ defmodule FountainWeb.ConversationEventsControllerTest do
     conn |> authed_with_key(key) |> get("/api/conversations/#{conv.id}/events" <> query)
   end
 
+  defp body_of(conn, key, conv) do
+    conn |> get_events(key, conv) |> json_response(200) |> Map.fetch!("data")
+  end
+
   describe "GET /api/conversations/:id/events" do
     test "returns the feed oldest-first with the SSE payload's fields", %{
       conn: conn,
@@ -44,6 +48,32 @@ defmodule FountainWeb.ConversationEventsControllerTest do
                "turn_id" => _,
                "ts" => _
              } = hd(body["data"])
+    end
+
+    test "an event with no state or stage renders them null, not \"\" (#1430)", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      # The schema declares `state` as one of four values or null, and the
+      # server used to answer `""` — neither. This is the busiest read in the
+      # API and all four SDKs decode the field, so a strict enum decoder was
+      # entitled to reject an ordinary output line.
+      insert_log_event(conv, kind: "output", stream: "stdout", data: "hello")
+
+      assert %{"state" => nil, "stage" => nil} = hd(body_of(conn, key, conv))
+    end
+
+    test "a stage event still renders its real stage and state", %{
+      conn: conn,
+      key: key,
+      conv: conv
+    } do
+      # Guard the guard: a conversion that nilled everything would satisfy the
+      # test above and lose the field's entire meaning.
+      insert_log_event(conv, kind: "stage", stream: "", stage: "provision", state: "done")
+
+      assert %{"stage" => "provision", "state" => "done"} = hd(body_of(conn, key, conv))
     end
 
     test "an empty feed is an empty page, not an error", %{conn: conn, key: key, conv: conv} do

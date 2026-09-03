@@ -104,6 +104,24 @@ defmodule FountainWeb.SseStreamTest do
       assert conn.resp_body =~ "id: #{ev.id}"
     end
 
+    test "an output event streams state and stage as null, not \"\" (#1430)", %{
+      raw_key: key,
+      conv: conv
+    } do
+      # The stream builds its own payload rather than sharing the JSON view's,
+      # so it is a second place the conversion has to happen. A reader of the
+      # SSE feed and a reader of `/events` must not disagree about what "no
+      # state" looks like.
+      insert_log_event(conv, %{kind: "output", stream: "stdout", data: "x"})
+
+      conn = stream(key, "/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.resp_body =~ ~s("state":null)
+      assert conn.resp_body =~ ~s("stage":null)
+      refute conn.resp_body =~ ~s("state":"")
+      refute conn.resp_body =~ ~s("stage":"")
+    end
+
     test "a garbage Last-Event-ID replays everything rather than nothing", %{
       raw_key: key,
       conv: conv

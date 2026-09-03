@@ -3681,9 +3681,12 @@ export interface components {
             id: number;
             /** @enum {string} */
             kind: "output" | "stage";
-            /** @description Lifecycle stage name (stage events). */
-            stage?: string;
-            /** @enum {string|null} */
+            /** @description Lifecycle stage name. null on an event that has no stage. */
+            stage?: string | null;
+            /**
+             * @description Lifecycle state of the stage. null on an event that has no state.
+             * @enum {string|null}
+             */
             state?: "started" | "done" | "failed" | "interrupted" | null;
             /** @description `stdout` / `stderr` for output events; empty for stage events. */
             stream?: string;
