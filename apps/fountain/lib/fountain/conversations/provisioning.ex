@@ -410,6 +410,20 @@ defmodule Fountain.Conversations.Provisioning do
   exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.sandbox_env/1`
   points at the same file.
 
+  It also pins git's `http.proxyAuthMethod` to `basic`. git defaults to
+  `anyauth`, which by definition cannot send a credential until it has seen a
+  `407` naming the scheme: it sends CONNECT bare, reads the challenge, and
+  retries on the same connection. The native broker closes the connection
+  after a `407`, so the retry lands on a dead socket and git reports
+  `Proxy CONNECT aborted` — which is every brokered clone, on an environment
+  with a repository, failing to provision. Agent Vault kept the connection
+  open and answered the retry, which is why this only appeared at the flip
+  (#1485). `basic` makes libcurl send the credential preemptively, the way
+  the curl binary already did, so the first CONNECT carries it and no retry
+  is needed. The broker's own keep-alive gap is worth closing too, but this
+  is the half that does not need a library release, and it is the half that
+  makes the client stop depending on the server's 407 behaviour at all.
+
   The sudoers drop-in is what lets a setup script's `sudo apt-get install`
   reach a mirror at all: sudo's `env_reset` strips `http_proxy` and friends,
   apt then resolves the mirror directly, and the broker floor (only the
@@ -429,7 +443,10 @@ defmodule Fountain.Conversations.Provisioning do
     # trust directory the way `install_packages/4` reaches apt: through sudo.
     install =
       "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
-        "sudo update-ca-certificates && " <> sudo_env_keep_command()
+        "sudo update-ca-certificates && " <>
+        sudo_env_keep_command() <>
+        " && " <>
+        git_proxy_auth_command()
 
     with {:ok, pem} <- Fountain.Broker.ca_pem(),
          :ok <-
@@ -458,6 +475,12 @@ defmodule Fountain.Conversations.Provisioning do
         err
     end
   end
+
+  # Global, so it covers the agent's own `git push`/`fetch` inside the sandbox
+  # and not only the clone provisioning runs. Written to the sprite user's
+  # ~/.gitconfig, which git reads whatever XDG_CONFIG_HOME says.
+  defp git_proxy_auth_command,
+    do: "git config --global http.proxyAuthMethod basic"
 
   @sudoers_staging "/tmp/fountain-broker-proxy.sudoers"
   @sudoers_path "/etc/sudoers.d/fountain-broker-proxy"
@@ -583,6 +606,12 @@ defmodule Fountain.Conversations.Provisioning do
   # `env:` is passed for the same reason every other step passes it: a
   # brokered clone reaches GitHub only through `HTTPS_PROXY`, and git reads
   # that from its environment. It was the one step that ran bare.
+  #
+  # `-c http.proxyAuthMethod=basic` repeats what `install_broker_ca/2` writes
+  # globally, on purpose: the clone must not depend on that step having run,
+  # and it is inert when the conversation is not brokered (there is no proxy
+  # to authenticate to). The moduledoc there explains what git's `anyauth`
+  # default does to a proxy that closes the connection after a 407.
   defp clone_https(
          handle,
          %{"url" => url, "mount_path" => mount} = repo,
@@ -595,7 +624,8 @@ defmodule Fountain.Conversations.Provisioning do
     cmd =
       git_env_prefix() <>
         "mkdir -p #{shell_quote(Path.dirname(mount))} && " <>
-        "git clone --depth 50 #{branch_arg(repo)}#{shell_quote(auth_url)} #{shell_quote(mount)}"
+        "git -c http.proxyAuthMethod=basic clone --depth 50 " <>
+        "#{branch_arg(repo)}#{shell_quote(auth_url)} #{shell_quote(mount)}"
 
     # Not retried: a clone into a half-written directory is not idempotent.
     case Sandbox.exec(handle, "bash", ["-lc", cmd],

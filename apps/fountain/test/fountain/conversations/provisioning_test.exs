@@ -157,6 +157,38 @@ defmodule Fountain.Conversations.ProvisioningTest do
     end
   end
 
+  describe "clone_repositories/5" do
+    test "clones with basic proxy auth, so the CONNECT carries the credential first time" do
+      # The other half of the #1485 fix. This one must hold even if
+      # install_broker_ca/2 never ran: the clone is what fails visibly, as
+      # "Proxy CONNECT aborted", when git is left on its `anyauth` default
+      # against a proxy that closes the connection after a 407.
+      conv = insert_conversation()
+      test = self()
+
+      env = %Fountain.Environments.Environment{
+        repositories: [%{"url" => "https://github.com/o/r", "mount_path" => "/workspace/r"}]
+      }
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _cmd, [_, script], _opts ->
+        send(test, {:script, script})
+        {:ok, "", 0}
+      end)
+
+      assert :ok =
+               Provisioning.clone_repositories(
+                 sandbox_handle(),
+                 env,
+                 %{},
+                 [{"HTTPS_PROXY", "https://t:v@broker.example:443"}],
+                 conv.id
+               )
+
+      assert_received {:script, script}
+      assert script =~ "git -c http.proxyAuthMethod=basic clone --depth 50"
+    end
+  end
+
   describe "install_broker_ca/2" do
     test "writes the CA where update-ca-certificates reads it, then runs it" do
       conv = insert_conversation()
@@ -186,7 +218,30 @@ defmodule Fountain.Conversations.ProvisioningTest do
                  "NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO " <>
                  "UV_NATIVE_TLS\"' > '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo visudo -cf '/tmp/fountain-broker-proxy.sudoers' && " <>
-                 "sudo install -m 440 '/tmp/fountain-broker-proxy.sudoers' '/etc/sudoers.d/fountain-broker-proxy'"
+                 "sudo install -m 440 '/tmp/fountain-broker-proxy.sudoers' '/etc/sudoers.d/fountain-broker-proxy' && " <>
+                 "git config --global http.proxyAuthMethod basic"
+    end
+
+    test "pins git's proxy auth to basic, so a brokered clone never waits for a 407" do
+      # git's `anyauth` default sends CONNECT bare, reads the 407 naming the
+      # scheme, and retries on the same connection. The native broker closes
+      # after a 407, so the retry hits a dead socket and git says
+      # "Proxy CONNECT aborted" — every brokered clone failing to provision
+      # (#1485). Basic sends the credential on the first CONNECT instead.
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _cmd, [_, script], _opts ->
+        send(test, {:script, script})
+        {:ok, "", 0}
+      end)
+
+      assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+      assert_received {:script, script}
+      assert script =~ "git config --global http.proxyAuthMethod basic"
     end
 
     test "sudo keeps every proxy variable the broker sets, so `sudo apt-get` reaches a mirror" do
