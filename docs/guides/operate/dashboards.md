@@ -80,7 +80,8 @@ Read this one for volume and speed.
 
 - **Lifecycle funnel**. Registered, verified, onboarded, activated, funded,
   and the conversion between each pair. The counts are all time, so read the
-  slope rather than the level.
+  slope rather than the level. Activated means the first conversation with a
+  reply. A conversation that never answered is not an activation.
 - **What agents actually do**. Turn outcomes per hour, the failure share, and
   the two latency panels.
 - **Time to first output** is the latency a person feels. Turn duration is how
@@ -121,6 +122,32 @@ Every tile carries a description that states what it measures and why.
 | `What ends an attempt before any output`. | Setup and model failures, per account. |
 | `What people build`. | Agents, conversations and scheduled runs. |
 | `How much each active account runs`. | Depth against breadth. |
+| `Verified to first reply`. | Where does a new account stop before its first reply. |
+| `Time to first reply`. | How long an account waits from verification to the first reply. |
+
+### The activation funnel
+
+Activation is the first conversation with a reply. ADR 0038 sets that rule, and
+`Fountain.Activation` holds the one definition. The admin page and PostHog both
+read it.
+
+The funnel has four steps.
+
+| Step | Event | Source |
+|---|---|---|
+| Verified. | `auth.email.verified`. | `Fountain.Audit.record/1`. |
+| First page seen. | `onboarding.landing_viewed`. | The page after verification. |
+| Request sent. | `onboarding.request_sent`. | The page after verification. |
+| First reply. | `activation.first_reply`. | `Fountain.Activation.turn_replied/1`. |
+
+The two middle events come from the page after verification. Both of those
+steps are optional in the funnel. The conversion from the first step to the
+last step is therefore correct before that page exists.
+
+`activation.first_reply` carries an `hours_since_verified` property. A trend on
+that property reports the median and the p90 for any window. The admin funnel
+page at `/admin` reports the same two numbers from Postgres. It also reports the
+share of accounts that reach a reply inside a day.
 
 ### Fountain / Finance
 
@@ -141,6 +168,7 @@ point that the action already had to pass through.
 | `Fountain.Audit.record/1`. | Each audited mutation, under its own action name. |
 | `Fountain.Billing.record_usage/5`. | The nine `usage.` events. |
 | `Conversations.publish_stage/4`. | `conversation.turn.done` and the other outcome stages. |
+| `Fountain.Activation.turn_replied/1`. | `activation.first_reply`, once per account. |
 | `FountainWeb.Live.Hooks`. | `$pageview` for the console. |
 
 A new audited action is therefore a new product event, and the two can never

@@ -99,6 +99,42 @@ defmodule FountainWeb.AdminLive.Index do
             </div>
           </div>
         </div>
+        <%!-- The number ADR 0038 judges onboarding on. Verification to the
+              first reply, not to the first conversation: an attempt that
+              never answered is not an activation. --%>
+        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3 text-sm space-y-1">
+          <div class="font-medium">Time to first reply</div>
+          <div :if={@funnel.time_to_first_reply.count > 0} class="text-zinc-700 space-x-2">
+            <span>
+              median
+              <span class="font-semibold tabular-nums">
+                {format_hours(@funnel.time_to_first_reply.median_hours)}
+              </span>
+            </span>
+            <span>
+              · p90
+              <span class="font-semibold tabular-nums">
+                {format_hours(@funnel.time_to_first_reply.p90_hours)}
+              </span>
+            </span>
+            <span class="text-zinc-500">
+              · over {@funnel.time_to_first_reply.count} activated {if @funnel.time_to_first_reply.count ==
+                                                                         1,
+                                                                       do: "account",
+                                                                       else: "accounts"}
+            </span>
+          </div>
+          <div :if={@funnel.time_to_first_reply.count == 0} class="text-zinc-500">
+            No account has had a reply yet.
+          </div>
+          <div :if={@funnel.time_to_first_reply.within_day_of > 0} class="text-xs text-zinc-500">
+            within a day of verifying: {@funnel.time_to_first_reply.within_day} of {@funnel.time_to_first_reply.within_day_of}
+            <span :if={@funnel.time_to_first_reply.within_day_share}>
+              ({format_pct(@funnel.time_to_first_reply.within_day_share)})
+            </span>
+            — accounts verified less than a day ago are counted in neither.
+          </div>
+        </div>
         <div
           :if={@funnel.stalled.count > 0}
           class="bg-amber-50 border border-amber-200 rounded px-4 py-3 text-sm text-amber-900 space-y-1"
@@ -106,7 +142,10 @@ defmodule FountainWeb.AdminLive.Index do
           <div class="font-medium">
             {@funnel.stalled.count} verified {if @funnel.stalled.count == 1,
               do: "user has",
-              else: "users have"} never started a conversation
+              else: "users have"} never had a reply
+          </div>
+          <div class="text-xs">
+            started a conversation and got nothing back: {@funnel.stalled.started}
           </div>
           <div class="text-xs">
             onboarding:

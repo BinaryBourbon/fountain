@@ -14,11 +14,19 @@ stale_after: 2026-11-02
 
 # 0038 — Onboarding is the path from verified to first reply, carried by the API
 
-**Status:** Accepted, 2026-09-02. **Nothing described here is built.** The
-implementation issues are #1388 (platform inference), #1389 (the default
-agent), #1390 (the verified landing), #1391 (the CLI's `auth register` and
-`quickstart`), #1392 (activation redefined and measured) and #1393 (the field
-cleanup), all sub-issues of #1039. Each PR that builds one updates this block.
+**Status:** Accepted, 2026-09-02. The implementation issues are #1388
+(platform inference), #1389 (the default agent), #1390 (the verified landing),
+#1391 (the CLI's `auth register` and `quickstart`), #1392 (activation redefined
+and measured) and #1393 (the field cleanup), all sub-issues of #1039. Each PR
+that builds one updates this block.
+
+**Built so far:** decision 2 (#1392). `Fountain.Activation` holds the
+definition, `Fountain.Funnel` counts it and measures verification to first
+reply, and `activation.first_reply` reaches PostHog from the turn-ending write.
+Nothing else described here is built: there is no platform inference key, no
+default agent, no verified landing, and `onboarding_completed_at` is still
+stamped by the dashboard checklist (#1390 moves the stamp to the seam
+`Fountain.Activation.capture_first_reply/2` marks).
 
 Amends [0008](0008-byo-inference-credentials.md): Fountain will hold platform
 inference keys. Leans on [0031](0031-credits-are-the-product.md) (the opening
