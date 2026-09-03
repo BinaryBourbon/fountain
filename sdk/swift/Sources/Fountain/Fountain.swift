@@ -5,7 +5,7 @@ import Foundation
 #endif
 
 /// The Fountain server release this SDK shipped with.
-public let fountainSDKVersion = "0.15.0"
+public let fountainSDKVersion = "0.16.0"
 
 public final class Fountain: @unchecked Sendable {
   public let configuration: FountainConfiguration
