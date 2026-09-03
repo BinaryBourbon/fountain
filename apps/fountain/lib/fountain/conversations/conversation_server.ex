@@ -200,6 +200,14 @@ defmodule Fountain.Conversations.ConversationServer do
   Waking reattaches to a live sprite session if one exists (and this second
   `interrupt` call then really does end it), or reconciles the orphaned turn
   itself when none does.
+
+  The two misses are different answers, and #1179 is what conflating them
+  looks like from a client: `{:error, :not_found}` means no such conversation
+  row, while `{:error, :not_running}` means the row is there but is in no
+  state to be interrupted (idle, terminated, or a wake that produced no
+  server). Only the first is a 404 — the caller has already established
+  ownership by the time it gets here, so answering "wrong id, or it belongs to
+  another account" for a conversation it can `GET` is a lie.
   """
   def interrupt(conv_id, opts \\ []) do
     result =
@@ -214,6 +222,9 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp interrupt_dead(conv_id) do
     case Conversations._unsafe_get_conversation(conv_id) do
+      nil ->
+        {:error, :not_found}
+
       %Conversation{status: "running"} ->
         case Conversations.wake_conversation(conv_id) do
           {:ok, conv} ->
