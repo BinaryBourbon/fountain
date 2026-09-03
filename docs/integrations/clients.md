@@ -22,6 +22,7 @@ mail, OAuth, billing and error reports, read <!-- vale disable-line STE.IngForms
 | [OpenBot](openbot.md) | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) over HTTP. | The OpenBot host. |
 | [OpenAI-compatible API](openai-compatible.md) (alpha) | OpenAI chat completions over HTTP. | The client or the gateway. |
 | [LangChain and Deep Agents](langchain.md) (alpha) | The OpenAI-compatible API, from one Python file. | Your LangChain code. |
+| [AI gateways](gateways.md) (alpha) | The OpenAI-compatible API, with Fountain as a gateway upstream. | The gateway. |
 | [Buzz](buzz.md) | A Nostr relay, hosted by Fountain. | The Buzz desktop, or `POST /api/buzz/agents`. |
 | [Agentic IDEs](../llm-integration.md) | `/skill` and the discovery endpoints. | The IDE. |
 | Your own code | The [HTTP API](../api.md), the [TypeScript](../sdk.md), [Python](../python-sdk.md), [Elixir](../elixir-sdk.md) or [Swift](../swift-sdk.md) SDK, the [CLI](../cli.md). | Wherever you want. |
@@ -59,9 +60,14 @@ transcript that somebody replays. The coworker holds an API key.
 [**Any OpenAI-compatible client or gateway**](openai-compatible.md) needs
 only a base URL too. This one is alpha, behind the `openai_compat` flag. Fountain answers `POST /v1/chat/completions` and
 `GET /v1/models`, where the model is one of your agents. Open WebUI,
-LibreChat, LiteLLM and the `openai` SDK all speak that shape. A header, or the
-request's `user` field, binds each chat to one conversation, so the sandbox is
-the memory here as well.
+LibreChat, LiteLLM and the `openai` SDK all speak that shape. A header, the
+request's `user` field, or `safety_identifier` binds each chat to one
+conversation, so the sandbox is the memory here as well.
+
+[**An AI gateway**](gateways.md), such as LiteLLM, can put that same endpoint
+behind a shared model route. The included LiteLLM example maps
+`fountain/<agent>` to any agent on the account and checks that the gateway
+preserves the conversation's thread key.
 
 [**LangChain and Deep Agents**](langchain.md) ride on that endpoint. A
 Fountain agent becomes a Deep Agents subagent, or a LangChain tool, from one

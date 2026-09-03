@@ -89,7 +89,8 @@ A complete terminal chat on the `openai` package, with the model picker and
 the thread header in place, is in the repository at
 [`examples/openai-chat`](https://github.com/BinaryBourbon/fountain/tree/main/examples/openai-chat).
 For LangChain and Deep Agents, where a Fountain agent is a subagent, read
-[LangChain and Deep Agents](langchain.md).
+[LangChain and Deep Agents](langchain.md). To expose Fountain through LiteLLM
+or another gateway, read [Put Fountain behind an AI gateway](gateways.md).
 
 ## One thread is one conversation is one sandbox
 
@@ -105,8 +106,8 @@ sends only the newest `user` message of each request as the prompt. The first
 request on a thread opens a conversation. Each later request prompts the
 conversation already bound to it.
 
-The request has no field for a thread. Fountain reads the key from one of
-two places, in this order.
+The request has no standard thread field. Fountain reads the key from one of
+three places, in this order.
 
 1. The `X-Fountain-Thread` header. Set it to a stable id for the chat, such as
    the chat's own id in your client. Any gateway that forwards headers
@@ -116,11 +117,15 @@ two places, in this order.
    client that cannot set headers gets one sandbox for each person and agent,
    which that person talks to for as long as they like. That is the same
    model as the [team page](../concepts/teammates.md).
+3. The `safety_identifier` field, when the first two are absent. OpenAI added
+   it as one successor to the deprecated `user` field, and LiteLLM recognizes
+   it. Like `user`, it commonly identifies a person rather than an individual
+   chat.
 
-Fountain refuses a request with neither, with a 400 that names the header. It
-does not fall back to one conversation for each message. That would spawn a
-sandbox for each line of a chat, and it is the failure mode this endpoint
-exists to avoid.
+Fountain refuses a request with none of the three, with a 400 that names the
+header. It does not fall back to one conversation for each message. That would
+spawn a sandbox for each line of a chat, and it is the failure mode this
+endpoint exists to avoid.
 
 The key binds as channel `openai:<key>`, scoped to your account. Two accounts
 whose clients mint the same key share nothing. The conversations appear in

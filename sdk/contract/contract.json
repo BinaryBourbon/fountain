@@ -3906,6 +3906,10 @@
                 "required": true,
                 "type": "string"
               },
+              "safety_identifier": {
+                "required": false,
+                "type": "string"
+              },
               "stream": {
                 "has_default": true,
                 "required": false,
@@ -6245,6 +6249,10 @@
         },
         "model": {
           "required": true,
+          "type": "string"
+        },
+        "safety_identifier": {
+          "required": false,
           "type": "string"
         },
         "stream": {
