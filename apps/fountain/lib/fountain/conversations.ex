@@ -2932,6 +2932,44 @@ defmodule Fountain.Conversations do
     end
   end
 
+  @doc """
+  Reach a conversation whose `ConversationServer` is gone, so a caller can
+  interrupt the turn it left behind.
+
+  A missing server does not mean there is nothing to interrupt: the process
+  can have exited (deploy, Horde rebalance, a plain `{:stop, :normal, _}`)
+  while a turn was still marked `running`. Waking reattaches to a live sprite
+  session if one exists, or reconciles the orphaned turn itself when none
+  does. Only a row that says `running` is worth a wake — an idle, terminated
+  or unknown conversation has nothing running regardless, and must not pay
+  for one it does not need.
+
+  The two misses are different answers, and #1179 is what conflating them
+  looked like from a client. `:not_found` is no such conversation row.
+  `:not_running` is a row that exists in no state to be interrupted. Only the
+  first is a 404, because every caller establishes ownership before reaching
+  here, so answering "wrong id, or it belongs to another account" for a
+  conversation the same key can `GET` is a lie.
+  """
+  @spec wake_for_interrupt(binary()) :: {:ok, pid()} | {:error, :not_found | :not_running}
+  def wake_for_interrupt(conv_id) when is_binary(conv_id) do
+    case _unsafe_get_conversation(conv_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Conversation{status: "running"} ->
+        with {:ok, conv} <- wake_conversation(conv_id),
+             pid when is_pid(pid) <- ConversationServer.whereis(conv.id) do
+          {:ok, pid}
+        else
+          _ -> {:error, :not_running}
+        end
+
+      _ ->
+        {:error, :not_running}
+    end
+  end
+
   # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
   # confirms the sprite still exists, we can reattach without provisioning a
   # new one. Otherwise, fall through to creating a fresh sandbox.
