@@ -1,0 +1,39 @@
+{
+  "name": "error-429-carries-retry-after",
+  "title": "A 429 becomes a rate-limit error carrying the server's Retry-After",
+  "contract": "errors",
+  "why": "The server said how long to wait. A client that drops it either hammers or sleeps arbitrarily.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "respond": {
+        "status": 429,
+        "headers": {
+          "retry-after": "7"
+        },
+        "json": {
+          "error": "rate_limited"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "me"
+    }
+  ],
+  "expect": {
+    "error": {
+      "kind": "rate_limited",
+      "status": 429,
+      "retry_after": 7,
+      "retryable": true
+    }
+  }
+}

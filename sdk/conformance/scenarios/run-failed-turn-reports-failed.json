@@ -1,0 +1,75 @@
+{
+  "name": "run-failed-turn-reports-failed",
+  "title": "A turn the runtime failed reports the failed state and its exit code",
+  "contract": "run-states",
+  "why": "A failed turn that reads as an empty success is the worst possible answer: the caller ships nothing and is told nothing.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations"
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "running",
+            "runtime": "claude"
+          }
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/stream"
+      },
+      "respond": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "sse": [
+          "id: 1\nevent: stage\ndata: {\"id\":1,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"started\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\"}\"}\n\n",
+          "id: 2\nevent: output\ndata: {\"id\":2,\"kind\":\"output\",\"stream\":\"acp\",\"turn_id\":\"t1\",\"ts\":\"2026-09-02T00:00:00Z\",\"blocks\":[{\"kind\":\"text\",\"body\":\"Trying.\"}]}\n\n",
+          "id: 3\nevent: stage\ndata: {\"id\":3,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"failed\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\", \\\"exit_code\\\": 1, \\\"reason\\\": \\\"runtime exited 1\\\"}\"}\n\n"
+        ],
+        "close": "end"
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "failed",
+            "runtime": "claude"
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "run",
+      "agent": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "prompt": "hello"
+    }
+  ],
+  "expect": {
+    "result": {
+      "state": "failed",
+      "text": "Trying.",
+      "exit_code": 1
+    }
+  }
+}

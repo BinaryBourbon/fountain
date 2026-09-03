@@ -914,6 +914,31 @@ jobs:
         working-directory: sdk/elixir
         run: mix test test/contract_test.exs
 
+      # The behavioural half (#1412). sdk/contract pins the shape of the wire;
+      # these scenarios pin what a client does with it — SSE framing, cursor
+      # resume, error mapping, terminal run states. They are one set of JSON
+      # files run by four adapters, so this step checks the files and the three
+      # after it run them.
+      #
+      # The lint is not only a format check: it validates every fixture body
+      # against the schema sdk/contract/contract.json declares for that
+      # operation, which is what stops a scenario going green against a
+      # response the real server would never send.
+      - name: SDK conformance scenarios are well formed
+        run: python3 sdk/conformance/lint.py
+
+      - name: TypeScript SDK conformance
+        working-directory: sdk/typescript
+        run: npm run conformance
+
+      - name: Python SDK conformance
+        working-directory: sdk/python
+        run: python3 -m unittest discover -s tests -p "test_conformance.py" -v
+
+      - name: Elixir SDK conformance
+        working-directory: sdk/elixir
+        run: mix test test/conformance_test.exs
+
       # Eleven browser applications are built on this API, so the SDK's default
       # entry has to bundle for a browser — no Node built-ins reachable from it.
       - name: SDK bundles for the browser
@@ -1009,6 +1034,12 @@ jobs:
       # sdk/contract/contract.json, which is why that file is committed (#1411).
       - name: Swift SDK contract
         run: swift test --configuration debug -Xswiftc -warnings-as-errors --filter ContractTests
+
+      # The behavioural half (#1412), the same scenarios the other three run.
+      # Its own step for the same reason: a divergence should say "Swift SDK
+      # conformance" in the checks list, not hide inside a suite of forty.
+      - name: Swift SDK conformance
+        run: swift test --configuration debug -Xswiftc -warnings-as-errors --filter ConformanceTests
 
       - name: Swift debug tests
         run: swift test --configuration debug -Xswiftc -warnings-as-errors

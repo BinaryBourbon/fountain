@@ -1,0 +1,22 @@
+{
+  "name": "auth-missing-key-fails-before-any-request",
+  "title": "A client with no API key raises rather than sending an unauthenticated request",
+  "contract": "auth",
+  "why": "Sending the request first turns a local configuration mistake into a server 401, and burns a round trip to say so.",
+  "client": {
+    "api_key": null
+  },
+  "http": [],
+  "steps": [
+    {
+      "op": "me"
+    }
+  ],
+  "expect": {
+    "requests": [],
+    "requests_exactly": true,
+    "error": {
+      "kind": "auth"
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "name": "sse-fragmented-frame-is-reassembled",
+  "title": "A frame split across three writes is one event, not three",
+  "contract": "sse-framing",
+  "why": "TCP does not respect frame boundaries. A parser that treats each read as a message drops most of a busy turn.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations"
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "running",
+            "runtime": "claude"
+          }
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/stream"
+      },
+      "respond": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "sse": [
+          "id: 1\nevent: stage\ndata: {\"id\":1,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"started\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\"}\"}\n\n",
+          "id: 2\nevent: output\n",
+          "data: {\"id\":2,\"kind\":\"out",
+          "put\",\"stream\":\"acp\",\"turn_id\":\"t1\",\"ts\":\"2026-09-02T00:00:00Z\",\"blocks\":[{\"kind\":\"text\",\"body\":\"Found it.\"}]}\n\n",
+          "id: 3\nevent: stage\ndata: {\"id\":3,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"done\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\", \\\"stop_reason\\\": \\\"end_turn\\\"}\"}\n\n"
+        ],
+        "close": "end"
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "idle",
+            "runtime": "claude"
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "run",
+      "agent": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "prompt": "hello"
+    }
+  ],
+  "expect": {
+    "events": [
+      {
+        "type": "turn-start",
+        "turn_number": 1
+      },
+      {
+        "type": "text",
+        "text": "Found it."
+      },
+      {
+        "type": "turn-end",
+        "state": "done"
+      }
+    ],
+    "result": {
+      "state": "done",
+      "text": "Found it."
+    }
+  }
+}

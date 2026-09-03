@@ -1,0 +1,46 @@
+{
+  "name": "error-422-carries-field-errors",
+  "title": "A 422 becomes a validation error that still carries the server's per-field messages",
+  "contract": "errors",
+  "why": "`errors: {field: [message]}` is the only thing that tells a caller which field to fix.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/agents"
+      },
+      "respond": {
+        "status": 422,
+        "json": {
+          "errors": {
+            "name": [
+              "can't be blank"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "create_agent",
+      "attrs": {
+        "name": ""
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "kind": "validation",
+      "status": 422,
+      "field_errors": {
+        "name": [
+          "can't be blank"
+        ]
+      }
+    }
+  }
+}

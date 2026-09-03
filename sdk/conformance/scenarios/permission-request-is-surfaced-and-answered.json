@@ -1,0 +1,125 @@
+{
+  "name": "permission-request-is-surfaced-and-answered",
+  "title": "A held tool call reaches the caller as a permission event, and the answer posts the chosen option",
+  "contract": "permissions",
+  "why": "An agent with an `ask` policy blocks until the answer arrives. A client that cannot surface the request cannot use those agents at all.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations"
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "running",
+            "runtime": "claude"
+          }
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/stream"
+      },
+      "respond": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "sse": [
+          "id: 1\nevent: stage\ndata: {\"id\":1,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"started\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\"}\"}\n\n",
+          "id: 2\nevent: output\ndata: {\"id\":2,\"kind\":\"output\",\"stream\":\"acp\",\"turn_id\":\"t1\",\"ts\":\"2026-09-02T00:00:00Z\",\"blocks\":[{\"kind\":\"permission_request\",\"request_id\":\"req-1\",\"summary\":\"Run `rm -rf build`\",\"name\":\"bash\",\"options\":[{\"optionId\":\"allow-once\",\"kind\":\"allow_once\",\"name\":\"Allow once\"},{\"optionId\":\"reject\",\"kind\":\"reject_once\",\"name\":\"Reject\"}]}]}\n\n",
+          {
+            "text": "",
+            "delay_ms": 150
+          },
+          "id: 3\nevent: output\ndata: {\"id\":3,\"kind\":\"output\",\"stream\":\"acp\",\"turn_id\":\"t1\",\"ts\":\"2026-09-02T00:00:00Z\",\"blocks\":[{\"kind\":\"text\",\"body\":\"Done.\"}]}\n\n",
+          "id: 4\nevent: stage\ndata: {\"id\":4,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"done\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\", \\\"stop_reason\\\": \\\"end_turn\\\"}\"}\n\n"
+        ],
+        "close": "end"
+      }
+    },
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/requests/req-1"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "idle",
+            "runtime": "claude"
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "run",
+      "agent": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "prompt": "hello",
+      "answer_permissions": {
+        "*": "allow-once"
+      }
+    }
+  ],
+  "expect": {
+    "events": [
+      {
+        "type": "permission",
+        "request_id": "req-1"
+      },
+      {
+        "type": "text",
+        "text": "Done."
+      },
+      {
+        "type": "turn-end",
+        "state": "done"
+      }
+    ],
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/conversations"
+      },
+      {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/stream"
+      },
+      {
+        "method": "POST",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/requests/req-1",
+        "body": {
+          "option_id": "allow-once"
+        }
+      }
+    ],
+    "result": {
+      "state": "done",
+      "text": "Done."
+    }
+  }
+}

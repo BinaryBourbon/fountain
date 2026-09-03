@@ -1,0 +1,38 @@
+{
+  "name": "auth-me-is-not-enveloped",
+  "title": "GET /api/auth/me answers the identity directly, not under `data`",
+  "contract": "auth",
+  "why": "The one response in the SDK surface with no envelope. A client that unwraps it returns null, which shipped once.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "email": "conformance@example.test",
+          "role": "user",
+          "email_verified": true
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "me"
+    }
+  ],
+  "expect": {
+    "value": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "email": "conformance@example.test"
+    },
+    "no_error": true
+  }
+}

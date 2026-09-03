@@ -1,0 +1,62 @@
+{
+  "name": "run-timeout-raises-and-keeps-partial-text",
+  "title": "A run that outlives its timeout raises, and the error carries what the agent said so far",
+  "contract": "run-states",
+  "why": "The turn is still running in the sandbox. Throwing away the partial answer loses work the caller already paid for.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations"
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "running",
+            "runtime": "claude"
+          }
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/stream"
+      },
+      "respond": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "sse": [
+          "id: 1\nevent: stage\ndata: {\"id\":1,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"started\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\"}\"}\n\n",
+          "id: 2\nevent: output\ndata: {\"id\":2,\"kind\":\"output\",\"stream\":\"acp\",\"turn_id\":\"t1\",\"ts\":\"2026-09-02T00:00:00Z\",\"blocks\":[{\"kind\":\"text\",\"body\":\"Half an answer\"}]}\n\n",
+          {
+            "text": "",
+            "delay_ms": 1000
+          }
+        ],
+        "close": "end"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "run",
+      "agent": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "prompt": "hello",
+      "timeout_ms": 300
+    }
+  ],
+  "expect": {
+    "error": {
+      "kind": "timeout",
+      "partial_text": "Half an answer"
+    }
+  }
+}

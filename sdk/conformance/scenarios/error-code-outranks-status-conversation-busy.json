@@ -1,0 +1,67 @@
+{
+  "name": "error-code-outranks-status-conversation-busy",
+  "title": "`conversation_busy` is a 400, and the code decides the class, not the status",
+  "contract": "errors",
+  "why": "What a caller does about a busy conversation has nothing to do with the number 400. Fountain keys these on the code.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/stream",
+        "query": {
+          "streams": "stage",
+          "wait": "false"
+        }
+      },
+      "respond": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "sse": [],
+        "close": "end"
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/turns"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": []
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/prompts"
+      },
+      "respond": {
+        "status": 400,
+        "json": {
+          "error": "conversation_busy"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "send",
+      "conversation_id": "11111111-2222-3333-4444-555555555555",
+      "prompt": "again"
+    }
+  ],
+  "expect": {
+    "error": {
+      "kind": "busy",
+      "status": 400,
+      "code": "conversation_busy"
+    }
+  }
+}

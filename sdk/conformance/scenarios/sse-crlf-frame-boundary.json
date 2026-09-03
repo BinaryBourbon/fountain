@@ -1,0 +1,80 @@
+{
+  "name": "sse-crlf-frame-boundary",
+  "title": "A stream framed with CRLF parses the same as one framed with LF",
+  "contract": "sse-framing",
+  "why": "A proxy in front of Fountain may rewrite line endings, and the SSE spec allows both.",
+  "client": {
+    "api_key": "conformance-key"
+  },
+  "http": [
+    {
+      "match": {
+        "method": "POST",
+        "path": "/api/conversations"
+      },
+      "respond": {
+        "status": 201,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "running",
+            "runtime": "claude"
+          }
+        }
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555/stream"
+      },
+      "respond": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "sse": [
+          "id: 1\r\nevent: stage\r\ndata: {\"id\":1,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"started\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\"}\"}\r\n\r\n",
+          "id: 2\r\nevent: output\r\ndata: {\"id\":2,\"kind\":\"output\",\"stream\":\"acp\",\"turn_id\":\"t1\",\"ts\":\"2026-09-02T00:00:00Z\",\"blocks\":[{\"kind\":\"text\",\"body\":\"Found it.\"}]}\r\n\r\n",
+          "id: 3\r\nevent: stage\r\ndata: {\"id\":3,\"kind\":\"stage\",\"stage\":\"turn\",\"state\":\"done\",\"stream\":\"stage\",\"ts\":\"2026-09-02T00:00:00Z\",\"data\":\"{\\\"turn_number\\\": 1, \\\"turn_id\\\": \\\"t1\\\", \\\"stop_reason\\\": \\\"end_turn\\\"}\"}\r\n\r\n"
+        ],
+        "close": "end"
+      }
+    },
+    {
+      "match": {
+        "method": "GET",
+        "path": "/api/conversations/11111111-2222-3333-4444-555555555555"
+      },
+      "respond": {
+        "status": 200,
+        "json": {
+          "data": {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "status": "idle",
+            "runtime": "claude"
+          }
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "op": "run",
+      "agent": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "prompt": "hello"
+    }
+  ],
+  "expect": {
+    "events": [
+      {
+        "type": "text",
+        "text": "Found it."
+      }
+    ],
+    "result": {
+      "state": "done",
+      "text": "Found it."
+    }
+  }
+}
