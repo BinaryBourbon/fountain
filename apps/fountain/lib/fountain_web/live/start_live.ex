@@ -118,10 +118,12 @@ defmodule FountainWeb.StartLive do
     end
   end
 
-  # The agent the first request runs against. #1389 gives every verified
-  # account a canned `starter`; until that ships — and afterwards, for an
-  # account that renamed or deleted it — any agent will do, oldest first, so
-  # this page works either way and never creates one of its own.
+  # The agent the first request runs against. `Fountain.Agents.Starter` plants
+  # a `starter` at verification (#1389), so an account has one from the moment
+  # it exists. The fallback is not dead code: the starter is an ordinary agent
+  # and may be renamed or deleted, and every account verified before #1389
+  # never had one. Any agent will do, oldest first. This page never creates
+  # one of its own.
   defp default_agent(user_id) do
     agents = Agents.list_agents(user_id, [])
 
