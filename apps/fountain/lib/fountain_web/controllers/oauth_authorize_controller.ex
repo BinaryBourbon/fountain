@@ -8,7 +8,8 @@ defmodule FountainWeb.OAuthAuthorizeController do
   Browser route with the session and CSRF protection. Not signed in →
   remember this request and go to login; the login round-trips back here.
   A request whose client or redirect URI does not check out is **rendered**
-  as an error, never redirected — see `Fountain.OAuth.validate_request/1`.
+  as an error, never redirected — see `Fountain.OAuth.validate_request/2`.
+  That includes a development-mode client requested by anyone but its owner.
   """
   use FountainWeb, :controller
 
@@ -16,13 +17,14 @@ defmodule FountainWeb.OAuthAuthorizeController do
   alias FountainWeb.ReturnTo
 
   plug :put_layout, false
-  plug :allow_redirect_form_action
   plug :require_user
 
   def show(conn, params) do
-    case OAuth.validate_request(params) do
+    case OAuth.validate_request(params, conn.assigns.current_user.id) do
       {:ok, client} ->
-        render(conn, :consent, client: client, params: request_params(params), error: nil)
+        conn
+        |> allow_redirect_form_action(params["redirect_uri"])
+        |> render(:consent, client: client, params: request_params(params), error: nil)
 
       {:error, reason} ->
         conn |> put_status(:bad_request) |> render(:invalid, reason: reason)
@@ -32,8 +34,10 @@ defmodule FountainWeb.OAuthAuthorizeController do
   def create(conn, %{"decision" => decision} = params) do
     user = conn.assigns.current_user
 
-    case OAuth.validate_request(params) do
+    case OAuth.validate_request(params, user.id) do
       {:ok, _client} when decision == "allow" ->
+        conn = allow_redirect_form_action(conn, params["redirect_uri"])
+
         case OAuth.authorize(user.id, params, FountainWeb.Audited.attribution(conn)) do
           {:ok, code} ->
             redirect(conn,
@@ -46,7 +50,9 @@ defmodule FountainWeb.OAuthAuthorizeController do
         end
 
       {:ok, _client} ->
-        redirect(conn,
+        conn
+        |> allow_redirect_form_action(params["redirect_uri"])
+        |> redirect(
           external:
             with_query(params["redirect_uri"], %{
               "error" => "access_denied",
@@ -80,10 +86,11 @@ defmodule FountainWeb.OAuthAuthorizeController do
 
   # The base browser CSP is `form-action 'self'`; a successful consent POST
   # redirects the browser to the app's own origin, which Chrome enforces
-  # form-action against on the redirect. Widen it — only here — to the
-  # registered clients' redirect origins (#818).
-  defp allow_redirect_form_action(conn, _opts) do
-    origins = Enum.join(["'self'" | OAuth.redirect_origins()], " ")
+  # form-action against on the redirect. Widen it only to this request's
+  # validated redirect origin (#818, narrowed in #1125). The requested URI is
+  # important for RFC 8252 loopback redirects, whose port may vary.
+  defp allow_redirect_form_action(conn, redirect_uri) do
+    origins = Enum.join(["'self'" | OAuth.form_action_origins(redirect_uri)], " ")
 
     update_resp_header(conn, "content-security-policy", "", fn csp ->
       if String.contains?(csp, "form-action"),

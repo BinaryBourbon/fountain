@@ -27,7 +27,7 @@ defmodule Fountain.OAuth.Host do
 
   @behaviour Managoat.OAuth.Host
 
-  alias Fountain.{Accounts, Audit}
+  alias Fountain.{Accounts, Audit, OAuth}
 
   @impl true
   def subject_allowed?(user_id) do
@@ -64,11 +64,17 @@ defmodule Fountain.OAuth.Host do
 
   @impl true
   def audit(:authorized, meta, opts) do
+    resource_id =
+      case OAuth.get_client(meta.client_id) do
+        %{record_id: id} when is_binary(id) -> id
+        _ -> nil
+      end
+
     Audit.record(%{
       user_id: meta.subject_id,
       action: "oauth.authorized",
       resource_type: "oauth_client",
-      resource_id: nil,
+      resource_id: resource_id,
       actor: Keyword.get(opts, :actor, "ui"),
       request_ip: Keyword.get(opts, :request_ip),
       metadata: %{"client_id" => meta.client_id, "redirect_uri" => meta.redirect_uri}

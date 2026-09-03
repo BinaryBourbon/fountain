@@ -31,6 +31,7 @@ defmodule Fountain.AuditGuardrailTest do
     Conversations,
     Environments,
     InferenceCredentials,
+    OAuth,
     Vaults,
     Webhooks
   }
@@ -114,6 +115,9 @@ defmodule Fountain.AuditGuardrailTest do
     {"secret binding create", &__MODULE__.do_binding_create/1, "secret_binding.created"},
     {"secret binding update", &__MODULE__.do_binding_update/1, "secret_binding.updated"},
     {"secret binding delete", &__MODULE__.do_binding_delete/1, "secret_binding.deleted"},
+    {"oauth client create", &__MODULE__.do_oauth_client_create/1, "oauth_client.created"},
+    {"oauth client update", &__MODULE__.do_oauth_client_update/1, "oauth_client.updated"},
+    {"oauth client delete", &__MODULE__.do_oauth_client_delete/1, "oauth_client.deleted"},
     {"connection connect", &__MODULE__.do_connection_connect/1, "connection.created"},
     {"connection revoke", &__MODULE__.do_connection_revoke/1, "connection.revoked"},
     {"connection expire", &__MODULE__.do_connection_expire/1, "connection.expired"},
@@ -674,6 +678,18 @@ defmodule Fountain.AuditGuardrailTest do
   end
 
   def do_oauth_authorize(user), do: {:ok, _} = Fountain.OAuth.authorize(user.id, oauth_request())
+
+  def do_oauth_client_create(user) do
+    {:ok, _} = OAuth.create_client(user.id, oauth_client_attrs())
+  end
+
+  def do_oauth_client_update(user) do
+    {:ok, _} = OAuth.update_client(insert_oauth_client(user_id: user.id), %{"name" => "renamed"})
+  end
+
+  def do_oauth_client_delete(user) do
+    {:ok, _} = OAuth.delete_client(insert_oauth_client(user_id: user.id))
+  end
 
   def do_oauth_device_approve(user) do
     {:ok, %{user_code: code}} = Fountain.OAuth.start_device_grant()
