@@ -20,9 +20,10 @@ guarantees a Fountain operator.
 [Add a provider](adding-a-sandbox-provider.md) is the checklist for how to
 write an adapter. This page is what we would ask for if we could ask.
 
-Everything here is measurable against a real account, and an adapter in this
-repository backs each claim. If one is wrong for your platform, to correct it
-costs us less than to work around it.
+Everything here is measurable against a real account. An adapter in this
+repository backs each claim, with one exception that the table below names. If
+one is wrong for your platform, to correct it costs us less than to work
+around it.
 
 ## Why an agent turn is not a CI job
 
@@ -39,8 +40,9 @@ unit of work, and each of them is excellent at that. The gaps below cluster in
 one place, the seam between a command and the process that watches it.
 
 Three of the four backends we ship can report that a command *ended*. None of
-those three can reliably report whether it *worked*. Not one of the four can
-tell us where in a stream we stopped.
+those three can reliably report whether it *worked*. Render, the newest and
+the fifth we measured, does both. Not one of the five can tell us where in a
+stream we stopped.
 
 So we wrote the contract down, as a behaviour, an error taxonomy and an
 executable conformance suite. Then we made three hosted platforms pass it, and
@@ -216,24 +218,26 @@ that does not resolve gets blamed on whoever handed it over.
 **Acceptance.** Serve on a port inside the sandbox. Then open the reported URL
 from a browser with no platform account.
 
-## Where the four backends stand
+## Where the backends stand
 
-We measured this in August 2026, through the adapters in this repository,
-against the APIs and daemon versions of that moment. It is a snapshot, and not
-a scorecard. Several entries are probably stale already.
+We measured the first four in August 2026, through the adapters in this
+repository, against the APIs and daemon versions of that moment. We measured
+Render in September 2026. That column is the exception to the rule above. No
+adapter exists yet, so we drove the HTTP API directly. It is a snapshot, and
+not a scorecard. Several entries are probably stale already.
 
-| Requirement | [Sprites](sprites.md) | [E2B](e2b.md) | [Daytona](daytona.md) | [Runner](runners.md) |
-|---|---|---|---|---|
-| exit-truth | Yes. | Yes. | No. A session-command record carries no exit code. | Yes. |
-| replay-cursor | Partial. It replays the last 16 KiB, and starts mid-line. | No. We ship a journal shim and a tail replayer. | Yes. The journal replays from byte zero. | Yes. |
-| detached-sessions | Yes. | No. The adapter emulates them. | Yes. | Yes. |
-| absence-definitive | Undocumented. | Undocumented. | Undocumented. | Yes. Each offline shape is transient by construction. |
-| stdin-total | Yes. | Yes. | No. The FIFO sends EOF after each write, and has no close. | Yes. |
-| named-create | Yes. | No. Metadata emulates the names. | Yes. | Yes. |
-| park-not-expire | Yes. It scales to zero. | Partial. A pause keeps the disk, and a TTL runs underneath. | Yes. It stops, then archives to object storage. | Yes. |
-| honest-listing | Yes, with continuation tokens. | Not measured. | Not measured. | Yes. |
-| egress-deny | Partial. The translation fails open. | Yes. | Yes, and the tier gates it. | No, by design. The machine is the user's. |
-| url-or-nothing | Yes. | No. It has a hostname for each port, and no more. | No. | No. |
+| Requirement | [Sprites](sprites.md) | [E2B](e2b.md) | [Daytona](daytona.md) | [Runner](runners.md) | Render |
+|---|---|---|---|---|---|
+| exit-truth | Yes. | Yes. | No. A session-command record carries no exit code. | Yes. | Yes, on both paths, for the client that holds the stream. A later reader sees only what that client reported back. |
+| replay-cursor | Partial. It replays the last 16 KiB, and starts mid-line. | No. We ship a journal shim and a tail replayer. | Yes. The journal replays from byte zero. | Yes. | No. The endpoint is in the spec and absent in production. |
+| detached-sessions | Yes. | No. The adapter emulates them. | Yes. | Yes. | Partial. The process survives the disconnection, and a list of executions exists. No output and no verdict. |
+| absence-definitive | Undocumented. | Undocumented. | Undocumented. | Yes. Each offline shape is transient by construction. | Partial. A terminated sandbox reads back. A workspace without the entitlement returns the same 404 as a missing one. |
+| stdin-total | Yes. | Yes. | No. The FIFO sends EOF after each write, and has no close. | Yes. | No. The API has no stdin at all. |
+| named-create | Yes. | No. Metadata emulates the names. | Yes. | Yes. | No, and no metadata field either. |
+| park-not-expire | Yes. It scales to zero. | Partial. A pause keeps the disk, and a TTL runs underneath. | Yes. It stops, then archives to object storage. | Yes. | No. There is no park, and the lifetime ends in a destruction. |
+| honest-listing | Yes, with continuation tokens. | Not measured. | Not measured. | Yes. | Yes. Cursors are explicit, and a limit that is too large is an error. |
+| egress-deny | Partial. The translation fails open. | Yes. | Yes, and the tier gates it. | No, by design. The machine is the user's. | Partial. The deny is real and total. There is no allowlist. |
+| url-or-nothing | Yes. | No. It has a hostname for each port, and no more. | No. | No. | No. |
 
 One entry here was wrong for three months. This table said Sprites failed
 exit-truth, because each command we ran through it reported 0. The platform
@@ -243,9 +247,12 @@ four bytes, matched no frame, and reported a 0 that nobody had sent. See
 
 Read that as a warning about this table. We measure each platform through our
 own adapter, so every row says something about the adapter as well as the
-platform. A row that reports a failure is the row to distrust first.
+platform. A row that reports a failure is the row to distrust first. The
+Render column is younger than the others, and it carries the opposite risk. We
+measured it directly, so no adapter hides a platform strength from us. No long
+run has yet found the behaviour that only a long run finds.
 
-The fourth backend is our own daemon, the
+One backend is our own daemon, the
 [self-hosted runner](runners.md). Read it as an existence proof, and not as a
 comparison. It meets nearly all of this because we wrote both ends. That is
 the only reason we know this list is possible to implement, and not merely
