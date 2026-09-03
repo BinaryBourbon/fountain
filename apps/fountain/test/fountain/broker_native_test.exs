@@ -13,7 +13,7 @@ defmodule Fountain.BrokerNativeTest do
   alias Fountain.SecretBindings.Binding
   alias Managoat.Broker.Rule
 
-  @keys [:broker_url, :broker_token, :broker_listen_port, :broker_proxy_url, :broker_tenants]
+  @keys [:broker_listen_port, :broker_proxy_url, :broker_tenants]
 
   setup do
     previous = for key <- @keys, do: {key, Application.get_env(:fountain, key)}
@@ -26,8 +26,6 @@ defmodule Fountain.BrokerNativeTest do
       end
     end)
 
-    Application.delete_env(:fountain, :broker_url)
-    Application.delete_env(:fountain, :broker_token)
     Application.put_env(:fountain, :broker_listen_port, 0)
     Application.put_env(:fountain, :broker_proxy_url, "http://broker.test:14322")
 
@@ -63,10 +61,10 @@ defmodule Fountain.BrokerNativeTest do
       assert :ok = Broker.release("c")
     end
 
-    test "BROKER_URL still selects Agent Vault" do
+    test "without the port there is no backend at all" do
       Application.delete_env(:fountain, :broker_listen_port)
-      Application.put_env(:fountain, :broker_url, "http://broker.test:14321")
-      assert Broker.backend() == :agent_vault
+      refute Broker.backend()
+      refute Broker.configured?()
     end
   end
 
@@ -294,7 +292,7 @@ defmodule Fountain.BrokerNativeTest do
         set: [expires_at: past]
       )
 
-      assert %{deleted: 1, failed: 0, kept: 0} = Fountain.Workers.BrokerVaultReaper.run()
+      assert %{sessions: 1, requests: 0} = Fountain.Workers.BrokerReaper.run()
     end
 
     test "a row whose ciphertext does not decrypt is :error, not a crash", %{
@@ -502,11 +500,10 @@ defmodule Fountain.BrokerNativeTest do
     end
   end
 
-  test "the Agent Vault reaper branch is not taken on native", %{user: user, conv: conv} do
+  test "the reaper leaves a live session alone", %{user: user, conv: conv} do
     {:ok, _} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
-    assert %{deleted: 0, failed: 0, kept: 0} = Fountain.Workers.BrokerVaultReaper.run()
-    assert {:ok, []} = Broker.list_vaults()
-    assert :ok = Broker.delete_vault("c-x")
+    assert %{sessions: 0, requests: 0} = Fountain.Workers.BrokerReaper.run()
+    assert Fountain.Repo.aggregate(Fountain.Broker.Native.Session, :count, :id) == 1
   end
 
   test "the reaper sweeps egress rows past the retention", %{user: user, conv: conv} do
@@ -534,7 +531,7 @@ defmodule Fountain.BrokerNativeTest do
 
     assert :ok = Fountain.Broker.Native.RequestLog.flush(pid)
 
-    assert %{deleted: 1} = Fountain.Workers.BrokerVaultReaper.run()
+    assert %{requests: 1} = Fountain.Workers.BrokerReaper.run()
     assert {:ok, %{events: [_one]}} = Broker.request_log(conv.id)
   end
 

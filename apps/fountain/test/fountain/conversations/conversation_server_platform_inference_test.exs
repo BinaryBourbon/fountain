@@ -17,8 +17,7 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
 
     previous =
       for key <- [
-            :broker_url,
-            :broker_token,
+            :broker_listen_port,
             :broker_proxy_url,
             :broker_tenants,
             :platform_anthropic_api_key
@@ -92,8 +91,7 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
 
   describe "the brokered path (ADR 0019 gate 3)" do
     setup %{user: user} do
-      Application.put_env(:fountain, :broker_url, "http://broker.test:14321")
-      Application.put_env(:fountain, :broker_token, "av_admin")
+      Application.put_env(:fountain, :broker_listen_port, 14_322)
       Application.put_env(:fountain, :broker_proxy_url, "http://broker.test:14322")
       Application.put_env(:fountain, :broker_tenants, [user.id])
       :ok

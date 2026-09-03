@@ -77,8 +77,10 @@ fountain/                  umbrella root
                                proxy (CONNECT + absolute-form forward proxy,
                                the derived CA, the header injector) behind
                                Managoat.Broker.Store; fountain implements the
-                               store over broker_sessions and runs it beside
-                               the Agent Vault client (BROKER_LISTEN_PORT)
+                               store over broker_sessions, runs the listener
+                               in-process (BROKER_LISTEN_PORT) and writes the
+                               egress log to broker_requests. It is the only
+                               backend since the 2026-09-03 flip (ADR 0019)
         managoat_runner        Managoat.Runner, the self-hosted runner wire
                                protocol (Connection), the sandbox adapter over
                                it, the sandbox-name shape and the FakeDaemon,

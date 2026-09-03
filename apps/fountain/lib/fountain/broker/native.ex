@@ -10,7 +10,7 @@ defmodule Fountain.Broker.Native do
   token. The proxy resolves the token back to the rules on every new sandbox
   connection through the `Managoat.Broker.Store` behaviour that module
   implements, on whichever replica the ingress chose. `release/1` deletes
-  the conversation's rows; `Fountain.Workers.BrokerVaultReaper` sweeps the
+  the conversation's rows; `Fountain.Workers.BrokerReaper` sweeps the
   expired ones.
 
   The listener is started by `Fountain.Application` from `listener_spec/0`.

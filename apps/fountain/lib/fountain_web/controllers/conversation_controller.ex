@@ -231,14 +231,15 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
-  # What `Broker.request_log/2` can fail with: the broker answered with a
-  # non-200 (`{:api_error, status, body}`), or Req could not reach it
-  # (`%Req.TransportError{reason: :econnrefused | :timeout | :nxdomain}`).
-  # `{:broker, :request_log, {:api_error, 503, _}}` -> "api_error_503".
+  # What `Broker.request_log/2` can fail with, now that the log is a table in
+  # this database rather than a call to a vendor proxy (#1487): only
+  # `{:broker, :request_log, :not_configured}`. There was a clause here for a
+  # vendor HTTP error and one for a `Req.TransportError`, and dialyzer marks
+  # anything more general than these two as unreachable, which is the right
+  # answer: a shape that cannot occur does not need a word. The 502 itself
+  # stays, because the endpoint's contract did not change with the backend.
   defp broker_reason({:broker, _call, inner}), do: broker_reason(inner)
-  defp broker_reason({:api_error, status, _body}), do: "api_error_#{status}"
-  defp broker_reason(%Req.TransportError{reason: r}) when is_atom(r), do: Atom.to_string(r)
-  defp broker_reason(%{__struct__: mod}), do: mod |> inspect() |> Macro.underscore()
+  defp broker_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
 
   defp egress_limit(nil), do: 100
 

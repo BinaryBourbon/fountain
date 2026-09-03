@@ -18,8 +18,6 @@ defmodule Fountain.Conversations.Egress do
   `split_inference/4`. Each is a no-op for an unbrokered tenant.
   """
 
-  require Logger
-
   alias Fountain.Broker
   alias Fountain.Conversations.Provisioning
 
@@ -263,24 +261,16 @@ defmodule Fountain.Conversations.Egress do
   def install_ca(_session, handle, conversation_id),
     do: Provisioning.install_broker_ca(handle, conversation_id)
 
-  # The vault and every session in it go when the conversation's sandbox
-  # does. Best effort and off the caller's path: a broker that is down at
-  # teardown must not keep a sandbox alive, and the vault is idempotently
-  # recreated on the next provision anyway.
+  # Every session of the conversation goes when its sandbox does. Still off
+  # the caller's path: deleting rows is local and cannot fail the way a call
+  # to a vendor proxy could, but teardown is not a place to start waiting on
+  # the database either, and a broker session that outlives its sandbox is
+  # swept by `Fountain.Workers.BrokerReaper` regardless.
   @spec release(String.t() | nil, String.t()) :: :ok
   def release(user_id, conversation_id) do
     if Broker.enabled_for?(user_id) do
       conv_id = conversation_id
-
-      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
-        case Broker.release(conv_id) do
-          :ok ->
-            :ok
-
-          {:error, reason} ->
-            Logger.warning("broker release for conv #{conv_id}: #{inspect(reason)}")
-        end
-      end)
+      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn -> Broker.release(conv_id) end)
     end
 
     :ok

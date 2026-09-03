@@ -188,8 +188,6 @@ services:
       # Brokered credentials (ADR 0019): the real token never enters the
       # sandbox. BROKER_ALLOW_UNENFORCED is a development escape hatch and
       # belongs off on anything that matters.
-      BROKER_URL: ${BROKER_URL:-}
-      BROKER_TOKEN: ${BROKER_TOKEN:-}
       BROKER_LISTEN_PORT: ${BROKER_LISTEN_PORT:-}
       BROKER_TENANTS: ${BROKER_TENANTS:-}
       BROKER_PROXY_URL: ${BROKER_PROXY_URL:-}

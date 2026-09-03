@@ -211,7 +211,7 @@ defmodule Fountain.RuntimeConfigTest do
     end
   end
 
-  describe "the egress broker backends (ADR 0019, #1340)" do
+  describe "the egress broker (ADR 0019)" do
     @broker_vars ~w(BROKER_URL BROKER_TOKEN BROKER_LISTEN_PORT BROKER_PROXY_URL)
 
     setup %{base: base} do
@@ -221,9 +221,7 @@ defmodule Fountain.RuntimeConfigTest do
       {:ok, base: Map.put(base, "PUBLIC_URL", "https://fountain.example.com")}
     end
 
-    test "BROKER_LISTEN_PORT selects the native backend and needs BROKER_PROXY_URL", %{
-      base: base
-    } do
+    test "BROKER_LISTEN_PORT turns brokerage on and needs BROKER_PROXY_URL", %{base: base} do
       cfg =
         read_prod_config(
           Map.merge(base, %{
@@ -233,7 +231,6 @@ defmodule Fountain.RuntimeConfigTest do
         )
 
       assert cfg[:broker_listen_port] == 14_322
-      assert cfg[:broker_url] == nil
       assert cfg[:broker_proxy_url] == "http://broker.example:14322"
 
       System.delete_env("BROKER_PROXY_URL")
@@ -253,25 +250,33 @@ defmodule Fountain.RuntimeConfigTest do
       end
     end
 
-    test "both backends at once is a boot error", %{base: base} do
-      assert_raise RuntimeError, ~r/one broker backend at a time/, fn ->
-        read_prod_config(
-          Map.merge(base, %{
-            "BROKER_URL" => "http://agent-vault:14321",
-            "BROKER_TOKEN" => "t",
-            "BROKER_LISTEN_PORT" => "14322",
-            "BROKER_PROXY_URL" => "http://broker.example:14322"
-          })
-        )
+    test "a retired Agent Vault variable is a boot error, not a silent no-op", %{base: base} do
+      # These used to select a whole backend (#1487). A deployment that still
+      # carries one would otherwise broker nothing at all and say nothing.
+      for retired <- ~w(BROKER_URL BROKER_TOKEN) do
+        # read_prod_config/1 puts the map into the real environment, so the
+        # previous iteration's variable has to go or it raises first.
+        for k <- @broker_vars, do: System.delete_env(k)
+
+        assert_raise RuntimeError,
+                     ~r/#{retired} is set, but the Agent Vault backend was removed/,
+                     fn ->
+                       read_prod_config(Map.put(base, retired, "x"))
+                     end
       end
     end
 
-    test "blank means neither backend", %{base: base} do
+    test "blank means off, including for the retired variables", %{base: base} do
       cfg =
-        read_prod_config(Map.merge(base, %{"BROKER_URL" => "", "BROKER_LISTEN_PORT" => ""}))
+        read_prod_config(
+          Map.merge(base, %{
+            "BROKER_URL" => "",
+            "BROKER_TOKEN" => "",
+            "BROKER_LISTEN_PORT" => ""
+          })
+        )
 
       assert cfg[:broker_listen_port] == nil
-      assert cfg[:broker_url] == nil
     end
   end
 end

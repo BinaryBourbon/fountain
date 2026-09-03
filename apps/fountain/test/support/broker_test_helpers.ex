@@ -6,7 +6,7 @@ defmodule Fountain.BrokerTestHelpers do
 
   import ExUnit.Callbacks, only: [on_exit: 1]
 
-  @keys [:broker_url, :broker_token, :broker_proxy_url, :broker_tenants]
+  @keys [:broker_listen_port, :broker_proxy_url, :broker_tenants]
 
   def enable_broker_for(user_ids) when is_list(user_ids) do
     previous = for k <- @keys, do: {k, Application.get_env(:fountain, k)}
@@ -19,8 +19,9 @@ defmodule Fountain.BrokerTestHelpers do
       end
     end)
 
-    Application.put_env(:fountain, :broker_url, "http://broker.test:14321")
-    Application.put_env(:fountain, :broker_token, "t")
+    # A port, not a listener: `Broker.backend/0` reads the config, and a test
+    # that only needs the ratchet on does not need anything bound.
+    Application.put_env(:fountain, :broker_listen_port, 14_322)
     Application.put_env(:fountain, :broker_proxy_url, "http://broker.test:14322")
     Application.put_env(:fountain, :broker_tenants, user_ids)
     :ok
