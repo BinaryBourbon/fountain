@@ -34,6 +34,43 @@ defmodule FountainWeb.CatalogControllerTest do
     assert {:ok, _} = Date.from_iso8601(linear["verified_on"])
   end
 
+  # ADR 0038: the landing, the manual and `fountain auth register` print the
+  # same request, so it has one source. This is how a client that is not the
+  # server reaches it.
+  test "GET /api/catalog carries the first request", %{conn: conn, raw_key: key} do
+    body = conn |> authed_with_key(key) |> get("/api/catalog") |> json_response(200)
+    first = body["data"]["first_request"]
+
+    assert first["curl"] == Fountain.Onboarding.curl(base_url: Fountain.PublicUrl.base())
+
+    # The SDK resolves its own key and base URL, so its snippet keeps the bare
+    # constructor the manual prints; a base URL with no key beside it would
+    # look finished and would not be.
+    assert first["typescript"] == Fountain.Onboarding.typescript()
+    assert first["typescript"] =~ "new Fountain()"
+
+    assert first["prompt"] == Fountain.Onboarding.prompt()
+    # Only what a client must still substitute: the base URL is already in.
+    assert first["placeholders"] ==
+             Fountain.Onboarding.remaining_placeholders(first["curl"] <> first["typescript"])
+
+    refute "$FOUNTAIN_BASE_URL" in first["placeholders"]
+
+    # The base URL is filled in, because the server knows it.
+    assert first["curl"] =~ Fountain.PublicUrl.base()
+    refute first["curl"] =~ "$FOUNTAIN_BASE_URL"
+
+    # The key is not, and cannot be: only a hash of it is stored.
+    assert first["curl"] =~ "$FOUNTAIN_API_KEY"
+    refute first["curl"] =~ key
+
+    # Every token a client must still substitute is named, so it does not
+    # have to scrape them out of the text.
+    for token <- first["placeholders"] do
+      assert String.contains?(first["curl"] <> first["typescript"], token)
+    end
+  end
+
   test "401 without a key", %{conn: conn} do
     assert conn |> get("/api/catalog") |> json_response(401)
   end

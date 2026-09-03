@@ -133,6 +133,23 @@ Remove saved credentials
 fountain auth logout
 ```
 
+## `fountain auth register`
+
+Create an account, wait for the emailed link, and save the key
+
+The terminal half of ADR 0038's path. Creates the account, waits while you click the link in your email, saves the API key, and prints the same first request the start page shows.
+
+```
+fountain auth register [flags]
+```
+
+Options:
+
+```
+      --email string      email address (prompted for when omitted)
+      --password string   password (prompted for when omitted, which keeps it out of shell history)
+```
+
 ## `fountain auth whoami`
 
 Print current user info
@@ -298,6 +315,16 @@ Revoke an API key
 
 ```
 fountain keys revoke <id>
+```
+
+## `fountain quickstart`
+
+Run the first request against your default agent and stream the reply
+
+Sends the same prompt the start page and the manual show, to the agent this account already has, and streams the reply. It is `fountain run` with the agent and the prompt filled in.
+
+```
+fountain quickstart
 ```
 
 ## `fountain run`

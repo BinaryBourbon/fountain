@@ -2845,6 +2845,32 @@ defmodule FountainWeb.Schemas do
                 },
                 required: [:slug, :name, :url, :dcr, :verified_on]
               }
+            },
+            first_request: %Schema{
+              type: :object,
+              description:
+                "The one onboarding request this deployment hands out (ADR 0038), " <>
+                  "the same text the verified landing and the manual print. The base " <>
+                  "URL is already in it. The caller's key and agent are not: the " <>
+                  "server stores only a hash of a key, so a client substitutes the " <>
+                  "key it holds and an agent from `GET /api/agents`.",
+              properties: %{
+                curl: %Schema{type: :string, description: "The `curl`, with placeholders."},
+                typescript: %Schema{
+                  type: :string,
+                  description: "The TypeScript SDK equivalent, with placeholders."
+                },
+                prompt: %Schema{
+                  type: :string,
+                  description: "The prompt both snippets send, for a client that runs it."
+                },
+                placeholders: %Schema{
+                  type: :array,
+                  items: %Schema{type: :string},
+                  description: "Every token a client must substitute before it runs the request."
+                }
+              },
+              required: [:curl, :typescript, :prompt, :placeholders]
             }
           },
           required: [
@@ -2853,7 +2879,8 @@ defmodule FountainWeb.Schemas do
             :sandbox_providers,
             :package_managers,
             :avatar,
-            :apps
+            :apps,
+            :first_request
           ]
         }
       },
