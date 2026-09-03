@@ -2274,7 +2274,7 @@ export interface paths {
          *
          *     OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any gateway or base-URL chat client at `/v1` with an API key as the bearer token.
          *
-         *     The thread is the conversation: `X-Fountain-Thread` (else the `user` field) binds to channel `openai:<key>`. The first request on a key opens a conversation, later ones prompt it, and only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript. A request with neither is refused with 400.
+         *     The thread is the conversation: `X-Fountain-Thread` (else `user`, else `safety_identifier`) binds to channel `openai:<key>`. The first request on a key opens a conversation, later ones prompt it, and only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript. A request with none is refused with 400.
          *
          *     `stream: true` answers with SSE `chat.completion.chunk` events (`content` for the reply, `reasoning_content` for thinking, tool use and provisioning stages) and `data: [DONE]`; a turn that fails mid-stream sends an `error` event first. `stream: false` blocks until the turn ends.
          *
@@ -3123,13 +3123,15 @@ export interface components {
         };
         /**
          * ChatCompletionRequest
-         * @description The OpenAI chat-completions request. `model`, `messages`, `stream`, `user`, `tools` and `tool_choice` are read; sampling parameters, `n`, `response_format` and the rest are accepted and ignored, because the thing behind the URL is an agent, not a model.
+         * @description The OpenAI chat-completions request. `model`, `messages`, `stream`, `user`, `safety_identifier`, `tools` and `tool_choice` are read; sampling parameters, `n`, `response_format` and the rest are accepted and ignored, because the thing behind the URL is an agent, not a model.
          */
         ChatCompletionRequest: {
             /** @description The chat so far. The newest `user` message becomes the prompt (its `image_url` parts must be `data:` URLs); `system`/`developer` messages become the standing role of a new conversation and are ignored afterwards. When the newest messages are `role: "tool"`, they answer the `tool_calls` the previous completion ended with and the turn resumes. */
             messages: Record<string, never>[];
             /** @description A Fountain agent: its name or its id. Unknown → 404. */
             model: string;
+            /** @description The thread key when neither `X-Fountain-Thread` nor `user` is set. An OpenAI safety identifier field supported by LiteLLM. */
+            safety_identifier?: string;
             /**
              * @description `true` streams `chat.completion.chunk` events as SSE, ending with `data: [DONE]`.
              * @default false
@@ -10873,7 +10875,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description The thread key. Overrides the `user` field. */
+                /** @description The thread key. Overrides `user` and `safety_identifier`. */
                 "x-fountain-thread"?: string;
             };
             path?: never;
@@ -10887,6 +10889,8 @@ export interface operations {
                     messages: Record<string, never>[];
                     /** @description A Fountain agent: its name or its id. Unknown → 404. */
                     model: string;
+                    /** @description The thread key when neither `X-Fountain-Thread` nor `user` is set. An OpenAI safety identifier field supported by LiteLLM. */
+                    safety_identifier?: string;
                     /**
                      * @description `true` streams `chat.completion.chunk` events as SSE, ending with `data: [DONE]`.
                      * @default false

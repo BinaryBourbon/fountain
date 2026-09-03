@@ -1,0 +1,39 @@
+# Every Fountain agent on the account appears as a LiteLLM model.
+#
+#   docker compose up
+#   curl localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_MASTER_KEY"
+
+model_list:
+  - model_name: "fountain/*"
+    litellm_params:
+      model: "openai/*"
+      # FOUNTAIN_URL includes /v1, for example https://managoat.com/v1.
+      api_base: "os.environ/FOUNTAIN_URL"
+      api_key: "os.environ/FOUNTAIN_API_KEY"
+      # A turn may work for minutes and may first provision a sandbox.
+      timeout: 1800
+      stream_timeout: 1800
+      # Fountain reports a busy thread with 409 + Retry-After. Let the client
+      # receive that response instead of retrying inside the gateway.
+      num_retries: 0
+
+  # A fixed alias can hide the agent name from the client.
+  # - model_name: support
+  #   litellm_params:
+  #     model: openai/support-agent
+  #     api_base: "os.environ/FOUNTAIN_URL"
+  #     api_key: "os.environ/FOUNTAIN_API_KEY"
+  #     timeout: 1800
+  #     stream_timeout: 1800
+  #     num_retries: 0
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  # Carries X-Fountain-Thread through the gateway.
+  forward_client_headers_to_llm_api: true
+
+litellm_settings:
+  # Populate LiteLLM's model list from Fountain's GET /v1/models response.
+  check_provider_endpoint: true
+  # Sampling parameters do not apply to an agent, so ignore unsupported ones.
+  drop_params: true

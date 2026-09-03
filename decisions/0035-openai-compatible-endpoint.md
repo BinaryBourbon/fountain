@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "An OpenAI-compatible /v1/chat/completions where the model is an agent"
-description: "The server carries a second public dialect: OpenAI chat completions at /v1, so every gateway and base-URL chat client reaches a Fountain agent with no plugin. The thread key is X-Fountain-Thread, else the request's user field, never a per-message sandbox. Built in the PR that adds this file. Amended 2026-08-25 (#1202): caller-defined tools are emitted as tool_calls; the sandbox's own tool use still is not."
+description: "The server carries a second public dialect: OpenAI chat completions at /v1, so every gateway and base-URL chat client reaches a Fountain agent with no plugin. The thread key is X-Fountain-Thread, else user, else safety_identifier, never a per-message sandbox. Built in the PR that adds this file. Amended 2026-08-25 (#1202): caller-defined tools are emitted as tool_calls; the sandbox's own tool use still is not. Amended 2026-09-03: safety_identifier is the third thread key."
 tags: [api, integrations, openai, dialect]
 status: stable
 adr: "0035"
@@ -65,19 +65,28 @@ two wire shapes to keep honest.
    to whatever base URL it is given and `https://host/v1` is the shape they
    all expect.
 
-2. **The thread key is `X-Fountain-Thread`, else `user`, else 400.** The
+2. **The thread key is `X-Fountain-Thread`, else `user`, else
+   `safety_identifier`, else 400.** The
    header is explicit and any gateway that forwards headers forwards it. The
    `user` field is the fallback because every SDK exposes it and Open WebUI
    and LibreChat set it per person — one sandbox per person per agent, which
    is the team page's model and is right for a chat client. A request with
-   neither is refused with a 400 that names the header. The stateless
-   fallback (one conversation per request) is the failure mode this endpoint
+   none of the accepted keys is refused with a 400 that names the header.
+   The stateless fallback (one conversation per request) is the failure mode this endpoint
    exists to avoid — Hermes's `copilot-acp` provider does exactly that over
    ACP and gets one sandbox per message — so it is refused, not offered.
    `metadata.thread_id` and the content hash are not read: the first is
    unsupported by generic clients, the second breaks under any gateway that
    rewrites content. The key binds as channel `openai:<key>`, namespaced
    like `agui:` and `fountain:team`.
+
+   **Amended 2026-09-03:** `safety_identifier` is read third, after `user`.
+   OpenAI introduced it as one successor to the deprecated `user` field. The
+   LiteLLM smoke run on 2026-08-26 found that the gateway's then-current
+   parameter filter dropped `user` but forwarded `safety_identifier`. This
+   keeps a body-level thread key available when the client cannot set a custom header. The
+   header remains the precise choice for a per-chat id; both body fields
+   commonly identify a person.
 
 3. **The mapping is the AG-UI mapping.** `model` is the agent's name (what
    `/v1/models` advertises and a picker shows) or its id, tenant-scoped;
@@ -158,10 +167,11 @@ two wire shapes to keep honest.
   the adapter's business, and a framework sends the same list every time.
   Approvals (#643) are a separate thing that can be built on the same
   parked-call shape later; this bridge never prompts either way.
-- Gateway and client smokes (LiteLLM as a custom provider, Open WebUI with
-  the base URL set: does the picker fill, does a multi-turn chat land in one
-  sandbox, does the gateway strip the header) are the verification this
-  decision still owes and are tracked on #1198, not asserted here.
+- Gateway and client smokes were tracked on #1198. The LiteLLM half ran on
+  2026-08-26 against production and is preserved as
+  `examples/litellm-gateway`: the model picker filled from `/v1/models`, two
+  turns on one forwarded `X-Fountain-Thread` landed in one conversation, and
+  `reasoning_content` passed through. The Open WebUI half is still owed.
 
 ## Alternatives considered
 

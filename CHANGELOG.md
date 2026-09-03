@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Added
 
+- **Fountain can sit behind LiteLLM as an OpenAI-compatible upstream.** The
+  `examples/litellm-gateway` configuration maps `fountain/<agent>` to every
+  agent on an account, forwards `X-Fountain-Thread`, gives long-running turns
+  an appropriate timeout, and disables gateway retries. Its smoke script sends
+  two turns through LiteLLM and queries Fountain directly to prove both turns
+  landed in one conversation. The new gateway guide explains the same setup.
+
+- **`safety_identifier` is a third thread key for OpenAI chat completions.**
+  Fountain reads it after `X-Fountain-Thread` and `user`, giving clients behind
+  OpenAI-compatible gateways a current body-level fallback when they cannot
+  set custom headers. Requests with no key are still rejected.
+
 - **Standalone consumers for the Managoat libraries** (#1365). The
   [`managoat_examples`](https://github.com/managoat/managoat_examples)
   repository has three plain Mix projects with Hex dependencies and no
