@@ -18,6 +18,24 @@ upgrade, is in
 
 ### Added
 
+- **The credit workers report on themselves, and money movement is measured
+  at the ledger** (#1169). Under ADR 0031 the balance is the gate, so
+  `CreditPricer`, `CreditExpirer` and `Credits.Rent` are load-bearing, and the
+  only thing watching them was `FountainObanJobsRaising` — which needs a job
+  to *raise*. A pricer that ran happily and priced nothing (a bad rate config,
+  an empty `SandboxUsage`, a query matching zero rows) tripped nothing, and
+  the failure mode is free compute with no signal. Two events answer the two
+  different questions. `[:fountain, :credits, :worker, :run]` carries a
+  wall-clock `last_run_unix` per worker, so a rule can alert on staleness and
+  on a worker that never fires at all. `[:fountain, :credits, :posted]` is
+  emitted by `Credits.post/4` at the ledger write, tagged by reason, so cents
+  burned cannot drift from the ledger and one event covers turns, inference,
+  messages, rent, expiry, grants and purchases. Stripe webhook rejections and
+  failures are counted by coarse kind, and email delivery by outcome — the
+  latter needs no call-site change, because Swoosh already spans every
+  delivery. The per-replica gauge trap applies to `last_run_unix`: it exists
+  only on the pod that ran the job, so every rule over it needs `max`.
+
 - **Fountain can sit behind LiteLLM as an OpenAI-compatible upstream.** The
   `examples/litellm-gateway` configuration maps `fountain/<agent>` to every
   agent on an account, forwards `X-Fountain-Thread`, gives long-running turns

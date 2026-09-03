@@ -315,4 +315,74 @@ defmodule FountainWeb.StripeWebhookControllerTest do
       assert conn.status == 400
     end
   end
+
+  describe "POST /api/stripe/webhook — failure telemetry (#1169)" do
+    setup do
+      test = self()
+      handler = "stripe-fail-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler,
+        [:fountain, :stripe_webhook, :failure],
+        fn _e, m, meta, _cfg -> send(test, {:webhook_failure, m, meta}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+    end
+
+    @tag capture_log: true
+    test "a bad signature is measured", %{conn: conn} do
+      stub(Stripe.Webhook, :construct_event, fn _b, _s, _sec -> {:error, "no match"} end)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=forged")
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
+
+      assert conn.status == 400
+
+      # Until now a rejected signature was visible only inside the global 5xx
+      # rate — and a 400 is not even in that.
+      assert_receive {:webhook_failure, %{count: 1}, %{kind: "bad_signature"}}
+    end
+
+    @tag capture_log: true
+    test "a processing failure is measured, and a success is not", %{conn: conn} do
+      event = %Stripe.Event{
+        id: "evt_telemetry_#{System.unique_integer([:positive])}",
+        type: "charge.refunded",
+        data: %{object: %{status: "active", customer: "cus_x", trial_end: nil}}
+      }
+
+      stub(Stripe.Webhook, :construct_event, fn _b, _s, _sec -> {:ok, event} end)
+      stub(Fountain.Billing, :handle_event, fn _e -> {:error, :database_unavailable} end)
+
+      post = fn ->
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
+      end
+
+      assert post.().status == 500
+      assert_receive {:webhook_failure, %{count: 1}, %{kind: "processing"}}
+
+      stub(Fountain.Billing, :handle_event, fn _e -> {:ok, :done} end)
+
+      assert post.().status == 200
+      refute_receive {:webhook_failure, _, _}, 100
+    end
+  end
 end

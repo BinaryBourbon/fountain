@@ -59,7 +59,10 @@ defmodule Fountain.Workers.CreditPricer do
 
   @impl Oban.Worker
   def perform(_job) do
-    case run() do
+    counts = run()
+    Fountain.Credits.Telemetry.emit_run("pricer", counts)
+
+    case counts do
       %{turns: 0, inference: 0, messages: 0, expired: 0} ->
         :ok
 

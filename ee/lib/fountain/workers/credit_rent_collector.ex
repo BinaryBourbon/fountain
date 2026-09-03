@@ -7,7 +7,10 @@ defmodule Fountain.Workers.CreditRentCollector do
 
   @impl Oban.Worker
   def perform(_job) do
-    case Fountain.Credits.Rent.collect() do
+    counts = Fountain.Credits.Rent.collect()
+    Fountain.Credits.Telemetry.emit_run("rent", counts)
+
+    case counts do
       %{charged: 0, reminded: 0, released: 0} ->
         :ok
 

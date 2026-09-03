@@ -43,8 +43,17 @@ defmodule FountainWeb.StripeWebhookController do
           "[stripe_webhook] Rejecting webhook: STRIPE_WEBHOOK_SECRET is not configured"
         )
 
+        emit_failure("no_secret")
         send_resp(conn, 400, "Webhook secret not configured")
     end
+  end
+
+  # A rejected signature or a failed event is money that did not land, and it
+  # was visible only inside the global 5xx rate (#1169). The label is a coarse
+  # kind rather than the reason itself: an exception message is unbounded, and
+  # a Prometheus label built from one is a cardinality incident.
+  defp emit_failure(kind) do
+    :telemetry.execute([:fountain, :stripe_webhook, :failure], %{count: 1}, %{kind: kind})
   end
 
   defp verify_and_process(conn, secret) do
@@ -66,6 +75,7 @@ defmodule FountainWeb.StripeWebhookController do
 
       {:error, reason} ->
         Logger.warning("[stripe_webhook] Signature verification failed: #{inspect(reason)}")
+        emit_failure("bad_signature")
         send_resp(conn, 400, "Bad signature")
     end
   end
@@ -88,17 +98,20 @@ defmodule FountainWeb.StripeWebhookController do
       {:error, :user_not_found} ->
         Logger.error("[stripe_webhook] No user for event #{event.id} (#{event.type})")
         Billing.record_webhook_failure(event, :user_not_found)
+        emit_failure("user_not_found")
         :ok
 
       {:error, reason} ->
         Logger.error("[stripe_webhook] Event processing error: #{inspect(reason)}")
         Billing.record_webhook_failure(event, reason)
+        emit_failure("processing")
         :retry
     end
   rescue
     e ->
       Logger.error("[stripe_webhook] Unhandled error: #{Exception.message(e)}")
       Billing.record_webhook_failure(event, e)
+      emit_failure("exception")
       :retry
   end
 
