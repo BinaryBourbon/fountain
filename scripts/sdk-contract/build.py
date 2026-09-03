@@ -119,6 +119,25 @@ def project_type(node: Any) -> Dict[str, Any]:
     if isinstance(node.get("items"), dict):
         out["items"] = project_type(node["items"])
 
+    # An inline object — a response body declared in the `operation` macro
+    # rather than as a named schema — carries its properties here, and dropping
+    # them left the projection saying `{"type": "object"}`: a shape nothing can
+    # disagree with. That is how the 402 on POST /api/conversations looked like
+    # an undeclared body when the server declares `error` and `upgrade_url`
+    # perfectly well (#1427). Requiredness is read the same way as in
+    # `project_schema`: from the sibling `required` list, never from a default.
+    properties = node.get("properties")
+    if isinstance(properties, dict):
+        required = set(node.get("required") or [])
+        projected = {}
+        for prop, sub in properties.items():
+            entry = project_type(sub)
+            entry["required"] = prop in required
+            if isinstance(sub, dict) and "default" in sub:
+                entry["has_default"] = True
+            projected[prop] = entry
+        out["properties"] = projected
+
     for keyword in ("oneOf", "anyOf", "allOf"):
         if isinstance(node.get(keyword), list):
             out[keyword] = [project_type(member) for member in node[keyword]]

@@ -21,7 +21,8 @@
           "data": [],
           "meta": {
             "next_cursor": 0,
-            "has_more": false
+            "has_more": false,
+            "limit": 1000
           }
         }
       }

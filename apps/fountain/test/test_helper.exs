@@ -54,3 +54,18 @@ Mimic.copy(Fountain.Health)
 Mimic.copy(FountainWeb.OAuth)
 Mimic.copy(Fountain.Mailer)
 Mimic.copy(Fountain.InferenceCredentials)
+
+# ─── The schema guard (#1427) ────────────────────────────────────────────────
+#
+# Every other check in this repository compares a schema with another schema.
+# `sdk/contract` projects the OpenAPI document and pins four SDKs to it,
+# `sdk/conformance` pins what those clients do with it, and both pass happily
+# when the document is a lie about its own controller. Three defects of that
+# shape surfaced in one day (#1417, #1418, #1427).
+#
+# This is the missing side of the comparison and it costs nothing per test:
+# `Plug.Telemetry` is already in the endpoint, so every response any controller
+# test produces is validated against the schema its operation declares. It
+# records; `FountainWeb.ConnCase` fails the test that caused it. See the
+# `attach/0` docstring for why it must not raise here.
+FountainWeb.SchemaGuard.attach()
