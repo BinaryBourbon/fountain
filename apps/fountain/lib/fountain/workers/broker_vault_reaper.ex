@@ -12,7 +12,10 @@ defmodule Fountain.Workers.BrokerVaultReaper do
   On the native backend (#1340) there are no vaults: the same pass sweeps
   the expired rows out of `broker_sessions`, which `release/1` and each
   `prepare/4` also do, so this is the backstop for a conversation that
-  never released.
+  never released, and the `broker_requests` rows older than the same
+  `BROKER_LOG_RETENTION_HOURS` the vault path used (#1486). The request log
+  is per-request rather than per-conversation, so retention is by row age
+  rather than by when the conversation ended.
 
   A no-op when the broker is not configured.
   """
@@ -62,7 +65,16 @@ defmodule Fountain.Workers.BrokerVaultReaper do
         end
 
       :native ->
-        %{deleted: Fountain.Broker.Native.Sessions.sweep_expired(), failed: 0, kept: 0}
+        now = Keyword.get(opts, :now) || DateTime.utc_now()
+        cutoff = DateTime.add(now, -Broker.log_retention_hours() * 3600, :second)
+
+        %{
+          deleted:
+            Fountain.Broker.Native.Sessions.sweep_expired() +
+              Fountain.Broker.Native.RequestLog.sweep(cutoff),
+          failed: 0,
+          kept: 0
+        }
 
       nil ->
         %{deleted: 0, failed: 0, kept: 0}

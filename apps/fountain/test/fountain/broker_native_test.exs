@@ -106,7 +106,8 @@ defmodule Fountain.BrokerNativeTest do
 
       assert {:ok, %Managoat.Broker.Session{} = found} = Sessions.lookup(session.token)
       assert found.unmatched_host_policy == :passthrough
-      assert found.meta == %{"conversation_id" => conv.id, "user_id" => user.id}
+      assert found.meta["conversation_id"] == conv.id
+      assert found.meta["user_id"] == user.id
       assert found.expires_at == session.expires_at
 
       assert [
@@ -344,6 +345,24 @@ defmodule Fountain.BrokerNativeTest do
       assert connect(port, bad) =~ "HTTP/1.1 407"
     end
 
+    test "a plain request with no proxy credentials gets 407, which is what the probe reads" do
+      # home-cloud's blackbox probe of this listener asserts exactly this
+      # (#1170): a forward proxy has no /health and no 2xx to ask for, so
+      # liveness is the 407 an unauthenticated origin-form GET gets. Reaching
+      # it means the listener accepted the connection, parsed the request and
+      # tried to resolve a session. If this ever answered 400 instead, the
+      # production alert would report the broker permanently down.
+      start_supervised!(Native.listener_spec())
+      port = Managoat.Broker.port()
+
+      {:ok, tcp} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 5_000)
+      :ok = :gen_tcp.send(tcp, "GET / HTTP/1.1\r\nHost: fountain.svc:14322\r\n\r\n")
+      {:ok, reply} = :gen_tcp.recv(tcp, 0, 5_000)
+      :gen_tcp.close(tcp)
+
+      assert reply =~ "HTTP/1.1 407"
+    end
+
     defp public_key(pem) do
       [{:Certificate, der, :not_encrypted}] = :public_key.pem_decode(pem)
       der |> X509.Certificate.from_der!() |> X509.Certificate.public_key()
@@ -365,8 +384,85 @@ defmodule Fountain.BrokerNativeTest do
   end
 
   describe "the request log" do
-    test "request_log/2 is an empty page: no stored log on this backend yet", %{conv: conv} do
+    test "request_log/2 is an empty page for a conversation that sent nothing", %{conv: conv} do
       assert {:ok, %{events: [], next: nil}} = Broker.request_log(conv.id)
+    end
+
+    test "the handler stores a row the endpoint reads back, with the credential keys",
+         %{user: user, conv: conv} do
+      pid = start_supervised!(Fountain.Broker.Native.RequestLog)
+      Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, self(), pid)
+      assert :ok = Native.attach_telemetry()
+
+      {:ok, _} =
+        Broker.prepare(
+          conv.id,
+          %{"GITHUB_TOKEN" => "ghp_real"},
+          %{},
+          user_id: user.id
+        )
+
+      :telemetry.execute([:managoat, :broker, :request], %{count: 1}, %{
+        method: "GET",
+        host: "api.github.com",
+        path: "/user",
+        outcome: :injected,
+        rule: "github-api",
+        meta: %{
+          "conversation_id" => conv.id,
+          "user_id" => user.id,
+          "credential_keys" => %{"github-api" => ["GITHUB_TOKEN"]}
+        }
+      })
+
+      assert :ok = Fountain.Broker.Native.RequestLog.flush(pid)
+
+      assert {:ok, %{events: [event], next: nil}} = Broker.request_log(conv.id)
+      assert event.method == "GET"
+      assert event.host == "api.github.com"
+      assert event.path == "/user"
+      assert event.service == "github-api"
+
+      # The names of the variables whose values were attached, never a value.
+      assert event.credential_keys == ["GITHUB_TOKEN"]
+      refute inspect(event) =~ "ghp_real"
+    end
+
+    test "a request with no conversation on its session stores nothing", %{conv: conv} do
+      pid = start_supervised!(Fountain.Broker.Native.RequestLog)
+      Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, self(), pid)
+      assert :ok = Native.attach_telemetry()
+
+      :telemetry.execute([:managoat, :broker, :request], %{count: 1}, %{
+        method: "GET",
+        host: "example.com",
+        path: "/",
+        outcome: :passthrough,
+        rule: nil,
+        meta: %{}
+      })
+
+      assert :ok = Fountain.Broker.Native.RequestLog.flush(pid)
+      assert {:ok, %{events: [], next: nil}} = Broker.request_log(conv.id)
+    end
+
+    test "prepare/4 puts the rule-to-key map on the session, so the log can name a credential",
+         %{user: user, conv: conv} do
+      {:ok, _} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
+
+      session = Fountain.Repo.one!(Fountain.Broker.Native.Session)
+
+      assert session.meta["credential_keys"] == %{
+               "github-api" => ["GH_TOKEN"],
+               "github-git" => ["GH_TOKEN"]
+             }
+    end
+
+    test "credential_keys/2 names a bound key under the rule name it will match" do
+      binding = binding("STRIPE_KEY", "api.stripe.com", "bearer")
+
+      assert Native.credential_keys(%{"STRIPE_KEY" => "sk"}, %{"STRIPE_KEY" => [binding]}) ==
+               %{"stripe-key-api-stripe-com" => ["STRIPE_KEY"]}
     end
 
     test "the telemetry handler writes conversation, method, host, path and outcome, never a header" do
@@ -411,5 +507,68 @@ defmodule Fountain.BrokerNativeTest do
     assert %{deleted: 0, failed: 0, kept: 0} = Fountain.Workers.BrokerVaultReaper.run()
     assert {:ok, []} = Broker.list_vaults()
     assert :ok = Broker.delete_vault("c-x")
+  end
+
+  test "the reaper sweeps egress rows past the retention", %{user: user, conv: conv} do
+    pid = start_supervised!(Fountain.Broker.Native.RequestLog)
+    Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, self(), pid)
+
+    stale = DateTime.add(DateTime.utc_now(), -(Broker.log_retention_hours() + 1) * 3600, :second)
+
+    for at <- [stale, DateTime.utc_now()] do
+      Fountain.Broker.Native.RequestLog.record(
+        %{
+          conversation_id: conv.id,
+          user_id: user.id,
+          method: "GET",
+          host: "api.github.com",
+          path: "/user",
+          outcome: "injected",
+          service: "github-api",
+          credential_keys: [],
+          inserted_at: at
+        },
+        pid
+      )
+    end
+
+    assert :ok = Fountain.Broker.Native.RequestLog.flush(pid)
+
+    assert %{deleted: 1} = Fountain.Workers.BrokerVaultReaper.run()
+    assert {:ok, %{events: [_one]}} = Broker.request_log(conv.id)
+  end
+
+  describe "emit_telemetry/0" do
+    test "reports the listener, the live sessions and the CA's remaining life",
+         %{user: user, conv: conv} do
+      {:ok, _} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
+
+      ref =
+        :telemetry_test.attach_event_handlers(self(), [
+          [:fountain, :broker, :listener],
+          [:fountain, :broker, :sessions],
+          [:fountain, :broker, :ca]
+        ])
+
+      on_exit(fn -> :telemetry.detach(ref) end)
+
+      assert :ok = Native.emit_telemetry()
+
+      assert_received {[:fountain, :broker, :listener], ^ref, %{up: up}, _}
+      assert up in [0, 1]
+      assert_received {[:fountain, :broker, :sessions], ^ref, %{count: 1}, _}
+      assert_received {[:fountain, :broker, :ca], ^ref, %{expires_in_seconds: left}, _}
+      assert left > 0
+    end
+
+    test "emits nothing when this deployment does not run the native backend" do
+      Application.delete_env(:fountain, :broker_listen_port)
+
+      ref = :telemetry_test.attach_event_handlers(self(), [[:fountain, :broker, :listener]])
+      on_exit(fn -> :telemetry.detach(ref) end)
+
+      assert :ok = Native.emit_telemetry()
+      refute_received {[:fountain, :broker, :listener], ^ref, _, _}
+    end
   end
 end

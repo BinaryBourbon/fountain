@@ -19,14 +19,21 @@ defmodule Fountain.Broker.Native do
   root and nothing is stored; `ca_pem/0` is that root.
 
   The request log is the `[:managoat, :broker, :request]` telemetry event
-  the proxy emits; `attach_telemetry/0` writes one log line per request
-  naming the conversation, method, host, path and outcome, never a header.
-  A stored log behind `GET /api/conversations/:id/egress` is gate 4's work
-  and is not built for this backend yet: `request_log/2` answers an empty
-  page.
+  the proxy emits. `attach_telemetry/0` writes one log line per request
+  naming the conversation, method, host, path and outcome, never a header,
+  and buffers a `broker_requests` row through
+  `Fountain.Broker.Native.RequestLog` for `GET /api/conversations/:id/egress`
+  to read back (gate 4, #1486). Response status and latency stay unset until
+  the proxy frames responses; everything else the Agent Vault backend
+  returned is there.
+
+  `emit_telemetry/0` is the poller tick behind the `fountain_broker_*`
+  gauges (#1170): the listener, the live session count and the CA's
+  remaining life. The alerts that read them are in home-cloud.
   """
 
   alias Fountain.Broker
+  alias Fountain.Broker.Native.RequestLog
   alias Fountain.Broker.Native.Sessions
   alias Fountain.Conversations.Conversation
   alias Fountain.Repo
@@ -76,7 +83,10 @@ defmodule Fountain.Broker.Native do
     end
   end
 
-  @doc "Write one log line per proxied request from the proxy's telemetry. Idempotent."
+  @doc """
+  Record every proxied request: one log line, and one buffered
+  `broker_requests` row. Idempotent.
+  """
   @spec attach_telemetry() :: :ok
   def attach_telemetry do
     case :telemetry.attach(
@@ -90,14 +100,60 @@ defmodule Fountain.Broker.Native do
     end
   end
 
+  # `:telemetry` detaches a handler that raises, for the life of the node
+  # (#1427), so this one cannot be allowed to. The whole body is guarded and
+  # the row goes through a cast, never a synchronous insert on the proxy's
+  # own connection process.
   @doc false
   def handle_request(_event, _measurements, meta, _config) do
-    conv = get_in(meta, [:meta, "conversation_id"]) || "?"
+    session = Map.get(meta, :meta) || %{}
+    conv = session["conversation_id"]
 
     Logger.info(
-      "broker: conv #{conv} #{meta.method} #{meta.host}#{meta.path} #{describe(meta.outcome, meta.rule)}"
+      "broker: conv #{conv || "?"} #{meta.method} #{meta.host}#{meta.path} " <>
+        describe(meta.outcome, meta.rule)
     )
+
+    if is_binary(conv) and is_binary(session["user_id"]) do
+      RequestLog.record(row(meta, session, conv))
+    end
+
+    :ok
+  rescue
+    error ->
+      Logger.warning("broker: request log handler skipped a row: #{Exception.message(error)}")
+      :ok
+  catch
+    kind, reason ->
+      Logger.warning("broker: request log handler skipped a row: #{inspect({kind, reason})}")
+      :ok
   end
+
+  # `credential_keys` names the environment variables whose values the proxy
+  # attached, never the values: the same thing an audit row records for a
+  # secret. The rule-to-keys map rides on the session's `meta`, put there by
+  # `prepare/4`, because the proxy knows only the rule that matched.
+  defp row(meta, session, conv) do
+    rule = meta.rule && to_string(meta.rule)
+
+    %{
+      conversation_id: conv,
+      user_id: session["user_id"],
+      method: clip(meta.method, 16),
+      host: clip(meta.host, 255),
+      path: clip(meta.path, 2048),
+      outcome: to_string(meta.outcome),
+      service: rule && clip(rule, 255),
+      credential_keys: (rule && get_in(session, ["credential_keys", rule])) || [],
+      inserted_at: DateTime.utc_now()
+    }
+  end
+
+  # Postgres counts `varchar(n)` in characters, so does `String.slice/3`, and
+  # slicing on graphemes cannot produce the invalid UTF-8 that would make the
+  # whole batch fail to insert.
+  defp clip(nil, _max), do: ""
+  defp clip(value, max), do: value |> to_string() |> String.slice(0, max)
 
   defp describe(:injected, rule), do: "injected #{rule}"
   defp describe(:passthrough, _), do: "passthrough"
@@ -137,7 +193,11 @@ defmodule Fountain.Broker.Native do
         user_id: user_id,
         rules: rules_for(brokered, bindings, network),
         unmatched_host_policy: policy_for(network),
-        meta: %{"conversation_id" => conversation_id, "user_id" => user_id},
+        meta: %{
+          "conversation_id" => conversation_id,
+          "user_id" => user_id,
+          "credential_keys" => credential_keys(brokered, bindings)
+        },
         ttl_seconds: Application.get_env(:fountain, :broker_session_ttl_seconds, 21_600)
       })
     end
@@ -269,7 +329,88 @@ defmodule Fountain.Broker.Native do
   def release(conversation_id) when is_binary(conversation_id),
     do: Sessions.release(conversation_id)
 
-  @doc "No stored request log on this backend yet (gate 4); an empty page."
-  @spec request_log(String.t(), keyword()) :: {:ok, %{events: [], next: nil}}
-  def request_log(_conversation_id, _opts), do: {:ok, %{events: [], next: nil}}
+  @doc """
+  The conversation's egress rows, newest first (gate 4, #1486). The same
+  shape the Agent Vault backend answered with, except that `status`,
+  `latency_ms` and `error` are `nil` until the proxy frames responses.
+  """
+  @spec request_log(String.t(), keyword()) ::
+          {:ok, %{events: [Broker.egress_event()], next: integer() | nil}}
+  def request_log(conversation_id, opts), do: RequestLog.page(conversation_id, opts)
+
+  # ---------------------------------------------------------------------------
+  # Gauges (#1170)
+
+  @doc """
+  The poller tick behind the `fountain_broker_*` series: is the listener up
+  on this node, how many sessions are live, and how long the derived CA has
+  left. Emits nothing on a deployment that does not run this backend, so the
+  series exist exactly where the alerts mean something.
+  """
+  @spec emit_telemetry() :: :ok
+  def emit_telemetry do
+    if Broker.backend() == :native do
+      Fountain.TelemetryTick.run("broker gauges", fn ->
+        up = if Managoat.Broker.running?(), do: 1, else: 0
+        :telemetry.execute([:fountain, :broker, :listener], %{up: up}, %{})
+
+        :telemetry.execute(
+          [:fountain, :broker, :sessions],
+          %{count: Repo.aggregate(Fountain.Broker.Native.Session, :count, :id)},
+          %{}
+        )
+
+        :telemetry.execute(
+          [:fountain, :broker, :ca],
+          %{expires_in_seconds: ca_expires_in_seconds()},
+          %{}
+        )
+      end)
+    end
+
+    :ok
+  end
+
+  # The root the library derives has a fixed twenty-year window today, so
+  # this reads as a constant. It is exported anyway: the number is the one
+  # thing that turns "the CA is fine" from an assumption into a series, and
+  # a library that ever shortens the window becomes visible here rather than
+  # on the day every sandbox stops trusting the proxy.
+  defp ca_expires_in_seconds do
+    {:ok, pem} = ca_pem()
+
+    not_after =
+      pem
+      |> X509.Certificate.from_pem!()
+      |> X509.Certificate.validity()
+      |> elem(2)
+      |> X509.DateTime.to_datetime()
+
+    DateTime.diff(not_after, DateTime.utc_now())
+  end
+
+  # Which environment variables each rule's credential came from, by rule
+  # name, mirroring how `rules_for/3` names them. Stored on the session so
+  # the request log can say which credential was attached without the proxy
+  # ever knowing an environment variable's name.
+  @spec credential_keys(%{String.t() => String.t()}, Broker.bindings()) :: %{
+          String.t() => [String.t()]
+        }
+  def credential_keys(brokered, bindings) do
+    bound =
+      brokered
+      |> Enum.flat_map(fn {key, _value} ->
+        bindings |> Map.get(key, []) |> Enum.map(&{Broker.service_name(key, &1.host), key})
+      end)
+
+    catalog =
+      case Broker.catalog_github_key(brokered, bindings) do
+        nil -> []
+        key -> [{"github-api", key}, {"github-git", key}]
+      end
+
+    (bound ++ catalog)
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Map.new(fn {name, keys} -> {name, keys |> Enum.uniq() |> Enum.sort()} end)
+  end
 end

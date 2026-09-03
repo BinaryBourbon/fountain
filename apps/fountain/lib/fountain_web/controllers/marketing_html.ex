@@ -1493,7 +1493,8 @@ defmodule FountainWeb.MarketingHTML do
         blurb:
           "The real token never enters the sandbox. The broker attaches it on the way out, and the transcript keeps a placeholder.",
         hosted: "Limited access. We enroll an account by hand.",
-        yours: "Set BROKER_URL and BROKER_TOKEN, and list the tenants in BROKER_TENANTS.",
+        yours:
+          "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL, and list the tenants in BROKER_TENANTS.",
         docs: "/docs/concepts/secrets"
       }
     ]

@@ -84,13 +84,29 @@ defmodule Fountain.Broker.Native.Sessions do
   def lookup(token) when is_binary(token) do
     case Repo.get_by(Session, token_hash: hash(token)) do
       nil ->
+        report(:unknown)
         :error
 
       %Session{} = session ->
-        if DateTime.compare(session.expires_at, DateTime.utc_now()) == :lt,
-          do: :error,
-          else: decrypt(session)
+        if DateTime.compare(session.expires_at, DateTime.utc_now()) == :lt do
+          report(:expired)
+          :error
+        else
+          case decrypt(session) do
+            {:ok, _} = ok -> report(:ok, ok)
+            :error -> report(:unreadable)
+          end
+        end
     end
+  end
+
+  # Every lookup counted by result (#1170). A sandbox whose token does not
+  # resolve gets a 407, which inside the sandbox looks like the network
+  # itself being broken, so a storm of these has to be visible without
+  # reading logs.
+  defp report(result, reply \\ :error) do
+    :telemetry.execute([:fountain, :broker, :session_lookup], %{count: 1}, %{result: result})
+    reply
   end
 
   @doc "Delete every session of a conversation. Its tokens stop working at once."
