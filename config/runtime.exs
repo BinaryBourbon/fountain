@@ -969,6 +969,93 @@ config :fountain, :credits,
   sms_message_cents: credit_cents.("CREDIT_SMS_MESSAGE_CENTS"),
   packs_cents: credit_packs
 
+# Platform inference keys (#1388, ADR 0038 decision 3, amending ADR 0008).
+#
+# Fountain runs a tenant's agent on one of these when the tenant has no
+# credential of their own for the model's provider, and meters the tokens
+# against their credit balance. The tenant's own credential always wins.
+#
+# **Blank means off, per provider.** A deployment that sets none of these
+# behaves exactly as it did before the feature existed: bring-your-own only.
+# That is what makes it opt-in for a self-hoster, who would otherwise be
+# paying a model provider for their users without having said so.
+#
+# Anthropic first: the default agent every verified account gets (#1389) runs
+# on the claude runtime, so this is the one key that makes the four-step path
+# — verify, copy, run, reply — work with nothing else configured.
+config :fountain,
+  platform_anthropic_api_key: System.get_env("PLATFORM_ANTHROPIC_API_KEY"),
+  platform_openai_api_key: System.get_env("PLATFORM_OPENAI_API_KEY"),
+  platform_gemini_api_key: System.get_env("PLATFORM_GEMINI_API_KEY")
+
+# The circuit breaker: the most this deployment's platform keys may cost in a
+# UTC day, across every tenant together. A log line and a 503 when it is hit
+# (`FountainWeb.FallbackController`), so one bad day cannot cost more than the
+# number written here. It is measured from the `burn_inference` ledger rows,
+# so it needs CREDITS_ENABLED=true and it lags the pricer's tick: it bounds
+# the day, not the minute.
+config :fountain,
+       :platform_inference_daily_cents,
+       whole_number.("PLATFORM_INFERENCE_DAILY_CENTS", 5_000)
+
+# Per-model inference rates, overriding the compiled card in
+# `Fountain.Credits.InferenceRates`. One entry per comma:
+#
+#   PLATFORM_INFERENCE_RATES="anthropic/claude-opus-5:500:2500:50:625,openai/*:500:3000:50:500"
+#
+# Five colon-separated fields: `provider/model_id` (or `provider/*` for that
+# provider's fallback), then input, output, cached-read and cached-write
+# prices **in cents per million tokens**, which is the unit every provider
+# publishes in. Decimals are allowed and are the point — OpenAI's cached
+# input for gpt-5.3-codex is 17.5 cents per million tokens.
+#
+# The compiled card is list price with **no markup, a 1.0x margin**, and that
+# is a decision (ADR 0038, noted on 0030 and 0031): Fountain's margin is
+# sandbox time (CREDIT_TURN_HOUR_CENTS), and marking inference up would make
+# the opening credit buy less of the one thing it was granted to buy. This
+# variable exists so a price change does not need a deploy, not so a
+# deployment can quietly add a margin — though a self-hoster reselling
+# inference is welcome to.
+inference_rates =
+  case System.get_env("PLATFORM_INFERENCE_RATES") do
+    value when value in [nil, ""] ->
+      %{}
+
+    value ->
+      value
+      |> String.split(",", trim: true)
+      |> Map.new(fn entry ->
+        cents_per_mtok = fn field ->
+          case Float.parse(String.trim(field)) do
+            {n, ""} when n >= 0 ->
+              # Cents per billion tokens: the unit the rate card holds, so a
+              # fraction of a cent per million tokens is still an integer.
+              round(n * 1_000)
+
+            _ ->
+              raise "PLATFORM_INFERENCE_RATES: #{inspect(field)} is not a price in cents per million tokens"
+          end
+        end
+
+        case String.split(String.trim(entry), ":") do
+          [model, input, output, cache_read, cache_write] when model != "" ->
+            {model,
+             %{
+               input: cents_per_mtok.(input),
+               output: cents_per_mtok.(output),
+               cache_read: cents_per_mtok.(cache_read),
+               cache_write: cents_per_mtok.(cache_write)
+             }}
+
+          _ ->
+            raise "PLATFORM_INFERENCE_RATES: #{inspect(entry)} is not " <>
+                    "provider/model:input:output:cache_read:cache_write"
+        end
+      end)
+  end
+
+config :fountain, :inference_rates, inference_rates
+
 # Mail delivery.
 #
 # With no adapter configured this used to silently fall back to

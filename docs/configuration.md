@@ -173,6 +173,67 @@ and message counts, and it shows `—` in each money column. A rate you do not
 set stays `—` and never becomes `$0`, because a cost of zero and a cost nobody
 told us about are different facts.
 
+## Platform inference
+
+Fountain can hold its own inference keys. A tenant with no credential of their
+own then runs on a Fountain key, and the tokens burn their credit balance. The
+tenant's own credential always wins. There is no per-agent switch.
+
+Every variable here is blank by default. A deployment with no platform key
+behaves as it always did, and each tenant supplies a credential of their own.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `PLATFORM_ANTHROPIC_API_KEY` | — | No. | The Anthropic key Fountain runs a tenant on when that tenant has none. This is the first key to set. The default agent uses the claude runtime. |
+| `PLATFORM_OPENAI_API_KEY` | — | No. | The same, for an agent on an `openai/` model. |
+| `PLATFORM_GEMINI_API_KEY` | — | No. | The same, for an agent on a `google/` model. |
+| `PLATFORM_INFERENCE_DAILY_CENTS` | `5000` | No. | The most the keys above may cost in one UTC day, across every tenant. A conversation beyond it gets `503 platform_inference_unavailable`. |
+| `PLATFORM_INFERENCE_RATES` | — | No. | Per-model prices, in cents per million tokens. See below. |
+
+### What a tenant pays
+
+Fountain prices these tokens at the provider's list price. There is no markup.
+The margin on a conversation is the turn time (`CREDIT_TURN_HOUR_CENTS`), not
+the tokens. A closed platform turn posts a `burn_inference` debit beside its
+`burn_turn` debit. The account credits page names both, and the
+finance panel at `/admin/finance` shows the two totals.
+
+The gate stays the balance. An account at zero cannot start the next
+conversation, and the answer is `402 insufficient_credits`. A comped account
+pays nothing, here as everywhere.
+
+### The daily ceiling
+
+`PLATFORM_INFERENCE_DAILY_CENTS` is a circuit breaker for the whole
+deployment. One bad day cannot cost more than this number. A refusal is a 503
+and not a 402, because the limit belongs to you and not to the tenant. A
+tenant with their own credential never meets this ceiling.
+
+Two limits on the ceiling. Fountain counts the day from the credit ledger, so
+`CREDITS_ENABLED` must be `true`. Fountain also writes those ledger rows on a
+timer, so the count trails the real spend by a few minutes. The ceiling bounds
+a day. It does not bound a minute.
+
+### Rate overrides
+
+Fountain ships a rate card for the models in the catalog. Each rate carries
+the date somebody read it from the provider. A provider that moves a price
+makes the card stale, and `PLATFORM_INFERENCE_RATES` corrects it without a new
+release.
+
+Give one entry per model, and separate the entries with a comma. Each entry
+has five fields with a colon between them. The fields are the model, the input
+price, the output price, the cached-read price and the cached-write price.
+Prices are cents per million tokens, and a fraction is valid.
+
+```bash
+PLATFORM_INFERENCE_RATES="anthropic/claude-opus-5:500:2500:50:625,openai/*:500:3000:50:500"
+```
+
+A `provider/*` entry is the price for every model of that provider with no
+entry of its own.
+
+
 ## Public pages
 
 The `/` page is not the same page on every deployment. The Fountain project's

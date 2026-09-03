@@ -36,6 +36,33 @@ defmodule Fountain.Billing do
   def check_spend(subject), do: Fountain.Credits.gate(subject)
 
   @doc """
+  What this deployment's platform inference keys have cost today, in cents,
+  across every tenant — the number `Fountain.PlatformInference` holds against
+  `PLATFORM_INFERENCE_DAILY_CENTS` (#1388).
+
+  `nil` with credits off: nothing is priced then (ADR 0031), so there is no
+  spend to report and "zero" would be a claim rather than an answer.
+
+  A UTC day, deliberately, and not each tenant's billing window: the ceiling
+  is a property of the deployment's own bill, and a sum over windows that
+  each start on a different day is not a number to bound anything with — the
+  same reasoning `Finance.summary/1` gives for the calendar month.
+  """
+  @spec platform_inference_spend_today(DateTime.t() | nil) :: non_neg_integer() | nil
+  def platform_inference_spend_today(now \\ nil) do
+    if Fountain.Credits.enabled?() do
+      now = now || DateTime.utc_now()
+      day_start = now |> DateTime.to_date() |> DateTime.new!(~T[00:00:00], "Etc/UTC")
+
+      Repo.one(
+        from e in Fountain.Credits.LedgerEntry,
+          where: e.reason == "burn_inference" and e.inserted_at >= ^day_start,
+          select: coalesce(sum(-e.amount_cents), 0)
+      )
+    end
+  end
+
+  @doc """
   Creates a Stripe Customer for the given user and stores its id.
 
   Customer only: a customer is what Checkout attaches a credit-pack payment

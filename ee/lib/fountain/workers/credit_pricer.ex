@@ -10,6 +10,13 @@ defmodule Fountain.Workers.CreditPricer do
       in-flight turn that crosses zero finishes and lands as debt, which is
       the soft stop of decision 6. Runner turns cost Fountain nothing and burn
       nothing (ADR 0022); a turn with no sandbox never ran.
+    * **Inference.** Every closed turn that ran on a **platform** inference
+      key (#1388) burns `Credits.InferenceRates.cost_cents/1` of its
+      `turns.usage` under the key `burn_inference:<turn_id>`. Unlike the turn
+      pass this one does **not** filter on the sandbox provider: a
+      self-hosted runner costs Fountain no sandbox time but its tokens are
+      still on Fountain's key. A turn on the tenant's own credential is not
+      marked and is never seen here.
     * **Messages.** Every `comms_email_sent`, `comms_sms_sent` and
       `comms_sms_received` usage event burns the matching price under
       `burn_message:<event_id>`. A `nil` price burns nothing (#1042).
@@ -53,13 +60,13 @@ defmodule Fountain.Workers.CreditPricer do
   @impl Oban.Worker
   def perform(_job) do
     case run() do
-      %{turns: 0, messages: 0, expired: 0} ->
+      %{turns: 0, inference: 0, messages: 0, expired: 0} ->
         :ok
 
       counts ->
         Logger.info(
-          "credit pricer: burned #{counts.turns} turns, #{counts.messages} messages, " <>
-            "expired #{counts.expired} grants"
+          "credit pricer: burned #{counts.turns} turns, #{counts.inference} platform-inference " <>
+            "turns, #{counts.messages} messages, expired #{counts.expired} grants"
         )
     end
 
@@ -67,12 +74,13 @@ defmodule Fountain.Workers.CreditPricer do
   end
 
   @doc """
-  Run both passes now. `:now` pins the clock; `:since` overrides the
-  configured floor. Returns `%{turns: n, messages: n, expired: n}` — rows
-  written, not rows seen.
+  Run every pass now. `:now` pins the clock; `:since` overrides the
+  configured floor. Returns `%{turns: n, inference: n, messages: n,
+  expired: n}` — rows written, not rows seen.
   """
   @spec run(keyword()) :: %{
           turns: non_neg_integer(),
+          inference: non_neg_integer(),
           messages: non_neg_integer(),
           expired: non_neg_integer()
         }
@@ -92,16 +100,22 @@ defmodule Fountain.Workers.CreditPricer do
 
     if Credits.enabled?(),
       do: do_run(floor, now),
-      else: %{turns: 0, messages: 0, expired: 0}
+      else: %{turns: 0, inference: 0, messages: 0, expired: 0}
   end
 
   defp do_run(floor, now) do
     {turns, touched} = price_turns(floor)
+    {inference, inference_touched} = price_inference(floor)
     messages = price_messages(floor)
-    Enum.each(touched, &Fountain.Workers.CreditsEmail.notify_after_burn/1)
+
+    touched
+    |> MapSet.new()
+    |> MapSet.union(MapSet.new(inference_touched))
+    |> Enum.each(&Fountain.Workers.CreditsEmail.notify_after_burn/1)
+
     # Burns first, so a turn consumes the grant before the grant is swept.
     %{expired: expired} = Fountain.Workers.CreditExpirer.run(now: now)
-    %{turns: turns, messages: messages, expired: expired}
+    %{turns: turns, inference: inference, messages: messages, expired: expired}
   end
 
   # ---------------------------------------------------------------------------
@@ -188,6 +202,100 @@ defmodule Fountain.Workers.CreditPricer do
 
           {:error, reason} ->
             Logger.warning("credit pricer: turn #{turn.id} not priced: #{inspect(reason)}")
+            false
+        end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Platform inference (#1388)
+  # ---------------------------------------------------------------------------
+
+  # Same shape as the turn pass: `{rows_written, user_ids_touched}`.
+  defp price_inference(floor), do: price_inference(floor, 0, MapSet.new())
+
+  defp price_inference(floor, written, touched) do
+    case unpriced_inference_turns(floor) do
+      [] ->
+        {written, MapSet.to_list(touched)}
+
+      turns ->
+        priced = Enum.filter(turns, &price_inference_turn/1)
+        n = length(priced)
+        touched = Enum.reduce(priced, touched, &MapSet.put(&2, &1.user_id))
+
+        if n == 0 or length(turns) < @batch,
+          do: {written + n, MapSet.to_list(touched)},
+          else: price_inference(floor, written + n, touched)
+    end
+  end
+
+  # No join to `sandboxes` and no provider filter, unlike `unpriced_turns/1`:
+  # the sandbox provider says who paid for the *machine*, and this pass is
+  # about who paid for the *tokens*. A turn on a tenant's own runner
+  # (ADR 0022) costs Fountain no sandbox time and still spends Fountain's
+  # inference key when the tenant has none of their own.
+  #
+  # `usage ->> 'inference' = 'platform'` is the whole selector: the
+  # ConversationServer stamps that key only on a turn whose credentials came
+  # from `Fountain.PlatformInference`, so a deployment that holds no platform
+  # key has no matching row and this query is a cheap miss.
+  defp unpriced_inference_turns(floor) do
+    from(t in Turn,
+      join: c in Conversation,
+      on: c.id == t.conversation_id,
+      left_join: l in LedgerEntry,
+      on: l.idempotency_key == fragment("'burn_inference:' || ?::text", t.id),
+      where: is_nil(l.id),
+      where: not is_nil(t.ended_at),
+      where: t.ended_at >= ^floor,
+      where: fragment("? ->> 'inference' = 'platform'", t.usage),
+      where: not is_nil(c.user_id),
+      order_by: [asc: t.ended_at],
+      limit: @batch,
+      select: %{
+        id: t.id,
+        user_id: c.user_id,
+        conversation_id: c.id,
+        usage: t.usage
+      }
+    )
+    |> Repo.all()
+  end
+
+  # True when a row was written. A turn whose tokens round to nothing writes
+  # none, and is skipped again next run — the same trade `price_turn/1` makes.
+  defp price_inference_turn(turn) do
+    case Credits.InferenceRates.cost_cents(turn.usage) do
+      0 ->
+        false
+
+      cents ->
+        case Credits.debit(turn.user_id, cents, "burn_inference",
+               idempotency_key: "burn_inference:#{turn.id}",
+               resource_type: "turn",
+               resource_id: turn.id,
+               actor: "system:credit_pricer",
+               # Tokens and a model id, not a prompt and not a reply: the
+               # ledger is not a second copy of the transcript.
+               metadata: %{
+                 "model" => turn.usage["model"],
+                 "input" => turn.usage["input"],
+                 "output" => turn.usage["output"],
+                 "conversation_id" => turn.conversation_id
+               }
+             ) do
+          {:ok, _} ->
+            true
+
+          {:ok, :duplicate, _} ->
+            false
+
+          {:error, reason} ->
+            Logger.warning(
+              "credit pricer: turn #{turn.id} inference not priced: #{inspect(reason)}"
+            )
+
             false
         end
     end

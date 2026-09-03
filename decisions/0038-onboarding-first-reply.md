@@ -20,14 +20,30 @@ stale_after: 2026-11-02
 and measured) and #1393 (the field cleanup), all sub-issues of #1039. Each PR
 that builds one updates this block.
 
-**Built so far:** decision 2 (#1392). `Fountain.Activation` holds the
-definition, `Fountain.Funnel` counts it and measures verification to first
-reply, and `activation.first_reply` reaches PostHog from the turn-ending write.
-Nothing else described here is built: there is no platform inference key, no
-default agent, no verified landing, and `onboarding_completed_at` is still
-stamped by the dashboard checklist (#1390 moves the stamp to the seam
-`Fountain.Activation.capture_first_reply/2` marks).
+**Built so far:** decisions 2 (#1392) and 3 (#1388).
 
+Decision 2: `Fountain.Activation` holds the definition, `Fountain.Funnel`
+counts it and measures verification to first reply, and
+`activation.first_reply` reaches PostHog from the turn-ending write.
+
+Decision 3: `PLATFORM_ANTHROPIC_API_KEY` / `_OPENAI_` / `_GEMINI_` (blank is
+off, per provider), `Fountain.InferenceCredentials.select/2` as the one
+selection rule, a `burn_inference` debit per closed platform turn from
+`Fountain.Credits.InferenceRates` posted by `Workers.CreditPricer`, and
+`PLATFORM_INFERENCE_DAILY_CENTS` (default 5000) as a deployment-wide daily
+circuit breaker answering 503.
+
+**The price is pass-through at provider list, a 1.0x margin, no markup**
+(decided with Jake on 2026-09-02). Fountain's margin is sandbox time
+(`CREDIT_TURN_HOUR_CENTS`, [0031](0031-credits-are-the-product.md)). Marking
+inference up would make the opening credit buy less of the one thing it was
+granted to buy, which is the reply this ADR is about. A future decision may
+change that; a passing thought about margin should not.
+
+Not built: the default agent, the verified landing, the CLI commands and the
+field cleanup. `onboarding_completed_at` is still stamped by the dashboard
+checklist (#1390 moves the stamp to the seam
+`Fountain.Activation.capture_first_reply/2` marks).
 Amends [0008](0008-byo-inference-credentials.md): Fountain will hold platform
 inference keys. Leans on [0031](0031-credits-are-the-product.md) (the opening
 credit and the balance gate), [0030](0030-prepaid-credits.md) (the ledger),

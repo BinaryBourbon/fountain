@@ -79,6 +79,16 @@ defmodule Fountain.Billing.Finance do
   channels are counted apart (`Team.Comms.channel_counts/0`) because the two
   providers charge differently and a contact can hold either, neither or both.
 
+  **Platform inference** is the one cost that is not priced from the rate
+  card at all: it is read straight off the `burn_inference` ledger rows
+  (#1388). Those rows *are* the bill — the rate card in
+  `Fountain.Credits.InferenceRates` is the provider's list price with no
+  markup (ADR 0038), so what a tenant was charged and what Fountain paid are
+  the same number. It is therefore never `nil`, it appears in `revenue` and
+  in `cost` both, and it nets to zero margin. That is the intended reading:
+  the panel exists to show that inference is passed through and sandbox time
+  is where the margin is.
+
   **Messages** are per-send, from the `comms_email_sent`, `comms_sms_sent` and
   `comms_sms_received` usage events (`FountainWeb.TeamCommsMcpController`,
   `Team.Comms.Inbound`). Inbound counts: AgentPhone charges to receive.
@@ -130,6 +140,7 @@ defmodule Fountain.Billing.Finance do
           sandbox_cost_cents: non_neg_integer() | nil,
           contact_cost_cents: non_neg_integer() | nil,
           message_cost_cents: non_neg_integer() | nil,
+          inference_cost_cents: non_neg_integer(),
           cost_cents: non_neg_integer() | nil,
           margin_cents: integer() | nil
         }
@@ -330,6 +341,10 @@ defmodule Fountain.Billing.Finance do
         ),
       contact_cents: sum_or_nil(tenants, & &1.contact_cost_cents),
       message_cents: sum_or_nil(tenants, & &1.message_cost_cents),
+      # What the platform inference keys cost this period (#1388). Equal to
+      # the `burn_inference` credit inside `revenue.earned_cents`, because
+      # inference is sold at cost.
+      inference_cents: tenants |> Enum.map(& &1.inference_cost_cents) |> Enum.sum(),
       inboxes: tenants |> Enum.map(& &1.inboxes) |> Enum.sum(),
       numbers: tenants |> Enum.map(& &1.numbers) |> Enum.sum(),
       emails_sent: tenants |> Enum.map(& &1.emails_sent) |> Enum.sum(),
@@ -423,7 +438,11 @@ defmodule Fountain.Billing.Finance do
     message_cost = message_cost_cents(messages, card)
     turn_seconds = billable_turn_seconds(usage)
 
-    cost = add_or_nil([sandbox_cost, contact_cost, message_cost])
+    # Never nil: the inference bill is read off the ledger rather than priced
+    # from a rate card, so unlike the three above it is always known.
+    inference_cost = ledger.inference
+
+    cost = add_or_nil([sandbox_cost, contact_cost, message_cost, inference_cost])
 
     # Earned revenue is credit burned, unless the account is comped and the
     # burn was never paid for.
@@ -449,6 +468,7 @@ defmodule Fountain.Billing.Finance do
       sandbox_cost_cents: sandbox_cost,
       contact_cost_cents: contact_cost,
       message_cost_cents: message_cost,
+      inference_cost_cents: inference_cost,
       cost_cents: cost,
       margin_cents: cost && revenue_cents - cost
     }
@@ -608,6 +628,18 @@ defmodule Fountain.Billing.Finance do
                "coalesce(sum(case when ? = 'purchase' then ? end), 0)",
                e.reason,
                e.amount_cents
+             ),
+           # Platform inference (#1388) is inside `burned` — it is credit the
+           # tenant spent — and also a bill Fountain paid, so it is pulled out
+           # again here as a cost. Priced pass-through at list (ADR 0038), so
+           # the two cancel and inference contributes nothing to margin, which
+           # is the point and is only visible because both numbers are on the
+           # row.
+           inference:
+             fragment(
+               "coalesce(sum(case when ? = 'burn_inference' then -? end), 0)",
+               e.reason,
+               e.amount_cents
              )
          }}
     )
@@ -615,7 +647,7 @@ defmodule Fountain.Billing.Finance do
     |> Map.new()
   end
 
-  defp empty_ledger, do: %{granted: 0, burned: 0, sold: 0}
+  defp empty_ledger, do: %{granted: 0, burned: 0, sold: 0, inference: 0}
 
   defp empty_usage,
     do: %{active_seconds: 0, busy_seconds: 0, idle_seconds: 0, turn_seconds: 0, by_provider: []}

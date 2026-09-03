@@ -36,6 +36,12 @@ once the hosted deployment had crossed over (#1121, #1116).
 **Not built, on purpose:** auto top-up (#1086 phase 6); #1038 steps 3
 onward (sandbox size, storage, per-provider cost basis).
 
+
+**Inference is a priced cost in this ledger since #1388**
+([0038](0038-onboarding-first-reply.md)): a turn that ran on a Fountain
+platform key posts a `burn_inference` debit beside its `burn_turn`, priced
+from `turns.usage` at the provider's list price with no markup.
+
 ## Context
 
 ADR 0026 shipped capacity tiers and deliberately left the usage half open:

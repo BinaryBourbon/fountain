@@ -32,6 +32,29 @@ defmodule Fountain.Conversations.SpriteEnv do
     end
   end
 
+  @doc """
+  Whose inference key this conversation runs on, and the credentials to run
+  it with (#1388, ADR 0038 decision 3). The agent may be nil (a conversation
+  with none, or one whose agent was deleted), which needs no credential.
+
+  `InferenceCredentials.select/2` is the rule; this is where a provision
+  applies it. The platform key comes back merged into the same map a tenant's
+  own key lives in, so everything downstream — the gate 3 broker split, the
+  runtime's `default_env/2`, the redaction register — is untouched by the
+  feature existing at all.
+
+  `:no_credential` keeps the behaviour that predates platform keys: the
+  conversation provisions anyway, and the provider's own auth failure lands
+  on the transcript rather than a refusal invented here.
+  """
+  @spec select_inference(map() | nil, map()) :: {:own | :platform, map()}
+  def select_inference(agent, own_creds) do
+    case InferenceCredentials.select(agent && agent.model, own_creds) do
+      {:ok, source, creds} -> {source, creds}
+      {:error, :no_credential} -> {:own, own_creds}
+    end
+  end
+
   # Env secrets first, vault overrides last — vault wins on key collision.
   # Same merged map feeds repositories[].secret_key resolution.
   @spec merge_secrets(Environment.t() | nil, Vault.t() | nil, binary()) :: %{
