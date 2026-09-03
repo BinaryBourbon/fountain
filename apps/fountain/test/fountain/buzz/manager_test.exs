@@ -56,6 +56,20 @@ defmodule Fountain.Buzz.ManagerTest do
     Manager.stop_harness(identity.id)
   end
 
+  test "running_count counts registered harnesses cluster-wide", %{fake: fake} do
+    baseline = Manager.running_count()
+    first = insert_buzz_identity()
+    second = insert_buzz_identity()
+
+    assert {:ok, _pid} = Manager.start_harness(first, launch_opts(fake))
+    assert {:ok, _pid} = Manager.start_harness(second, launch_opts(fake))
+    assert Manager.running_count() == baseline + 2
+
+    Manager.stop_harness(first.id)
+    assert Manager.running_count() == baseline + 1
+    Manager.stop_harness(second.id)
+  end
+
   test "start_harness is idempotent and mints no second credential", %{fake: fake} do
     identity = insert_buzz_identity()
 

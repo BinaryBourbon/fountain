@@ -20,6 +20,7 @@ defmodule FountainWeb.AdminLive.Index do
 
   alias Fountain.{Billing, Conversations}
   alias Fountain.Billing.SandboxUsage
+  alias Fountain.Buzz.Manager, as: BuzzManager
 
   @impl true
   def mount(_params, _session, socket) do
@@ -43,6 +44,7 @@ defmodule FountainWeb.AdminLive.Index do
     |> assign(:funnel, Fountain.Funnel.summary_admin())
     |> assign(:provider_spend, Billing.provider_spend())
     |> assign(:sandbox_count, Conversations._unsafe_count_sandboxes_admin())
+    |> assign(:buzz_runtime_count, BuzzManager.running_count())
     |> assign_billing_overview()
   end
 
@@ -155,7 +157,7 @@ defmodule FountainWeb.AdminLive.Index do
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">At a glance</h2>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <.link
             :if={@credits_enabled}
             navigate={~p"/admin/finance"}
@@ -189,6 +191,15 @@ defmodule FountainWeb.AdminLive.Index do
             <div class="text-xs text-zinc-500">Active sandboxes</div>
             <div class="text-2xl font-semibold tabular-nums">{@sandbox_count}</div>
             <div class="text-xs text-zinc-500">running now ↗</div>
+          </.link>
+
+          <.link
+            navigate={~p"/admin/users"}
+            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+          >
+            <div class="text-xs text-zinc-500">Buzz runtimes</div>
+            <div class="text-2xl font-semibold tabular-nums">{@buzz_runtime_count}</div>
+            <div class="text-xs text-zinc-500">running now · owners ↗</div>
           </.link>
 
           <%!-- Hours, not money: minutes on different providers cost
