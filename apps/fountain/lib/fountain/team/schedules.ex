@@ -165,6 +165,9 @@ defmodule Fountain.Team.Schedules do
   `last_error` say how it went; the caller decides whether an error is worth
   retrying (the worker snoozes on `:busy` and `:provisioning`).
 
+  A capacity refusal is queued only for the cron caller — see
+  `maybe_queue_run/3`. "Run now" gets the error and nothing else happens.
+
   `opts` is audit attribution: `Fountain.Workers.TeamScheduleRun` passes
   `actor: "system:team_scheduler"`, the UI passes the socket's. Recorded as
   `team.schedule.fired` on top of the conversation events underneath.
@@ -294,7 +297,22 @@ defmodule Fountain.Team.Schedules do
   # What a run's failure reads as on the row and in the UI. Never the prompt.
   # Scheduled work opts into the bounded queue: unlike an interactive caller,
   # a cron firing has nobody present to retry it when capacity frees.
+  #
+  # Only the cron caller. `run_schedule/2` is also the page's and the API's
+  # "Run now" (`POST /api/team/:agent_id/schedules/:id/run`), and queueing
+  # there would hand that caller a 429 or 503 while a conversation started on
+  # its own up to an hour later, with no request id in the response to watch
+  # or cancel. ADR 0042 decision 3 buys the queue with "a cron firing has
+  # nobody there to retry it", which is exactly what a person pressing a
+  # button is not. The queue's own replay (`actor: "system:sandbox_queue"`)
+  # is excluded for the same reason: the drainer already holds the claim.
   defp maybe_queue_run(%Schedule{} = schedule, reason, opts) do
+    if Keyword.get(opts, :actor) == @actor,
+      do: queue_run(schedule, reason, opts),
+      else: describe_error(reason)
+  end
+
+  defp queue_run(%Schedule{} = schedule, reason, opts) do
     case Fountain.SandboxQueue.enqueue(
            %{
              user_id: schedule.user_id,

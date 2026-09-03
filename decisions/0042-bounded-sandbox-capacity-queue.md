@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Bounded sandbox-capacity queue"
-description: "Fresh starts can opt into a per-tenant FIFO queue at the tenant or fleet ceiling; scheduled runs always opt in, and ten requests wait at most one hour. Built with this ADR."
+description: "Fresh starts can opt into a per-tenant FIFO queue at the tenant or fleet ceiling; a schedule opts in when its cron fires, and ten requests wait at most one hour. Built with this ADR."
 tags: [sandbox, quotas, api, schedules]
 status: stable
 adr: "0042"
@@ -50,17 +50,30 @@ drainer must prevent two replicas from replaying one request.
    name `sandbox_id` are attach or wake operations and also do not queue.
    Interactive prompt and wake paths keep their existing refusal behavior.
 
-3. **Scheduled teammate runs always opt in.** A cron firing has nobody there
-   to retry it. At either capacity ceiling, `run_schedule/2` creates one
+3. **Cron firings of a teammate schedule opt in.** A cron firing has nobody
+   there to retry it. At either capacity ceiling, `run_schedule/2` creates one
    `schedule_run` request and writes `waiting for a free sandbox slot` on the
    schedule. An active request is deduplicated by schedule, so later firings
    do not stack while the first waits.
+
+   The caller decides, not the function. `run_schedule/2` is also the page's
+   and the API's "Run now", and that caller is present: it gets the `429` or
+   `503` unchanged, exactly as `POST /api/conversations` answers without
+   `queue: true`. Queueing there would answer a person with an error while a
+   conversation started up to an hour later, and the response carries no
+   request id to watch or cancel. The gate is the audit actor, so the queue's
+   own replay does not re-enter the queue either.
 
 4. **The queue is bounded twice.** A tenant has at most ten active requests,
    configured by `SANDBOX_QUEUE_MAX_DEPTH`. A request waits for at most one
    hour, configured by `SANDBOX_QUEUE_MAX_WAIT_SECONDS`. At the depth bound,
    the original `429` or `503` is returned. At the wait bound, the request
    expires. The queue delays the cap; it never raises it.
+
+   The depth bound is a check followed by an insert, so it is taken under a
+   per-tenant advisory lock in its own namespace, for the reason
+   `Quotas.with_sandbox_reservation/3` holds one (#330): two requests reading
+   "room for one more" at the same instant would both be admitted.
 
 5. **Capacity changes drive drains.** Every sandbox status transition goes
    through `Conversations.update_sandbox/2`. A transition out of `pending`,
@@ -69,6 +82,14 @@ drainer must prevent two replicas from replaying one request.
    true when several conversations share one sandbox: a conversation ending
    is not the trigger, but the sandbox leaving a cap-counting status is. A
    five-minute Oban cron is the lost-poke and expiry backstop.
+
+   That poke is one Oban insert, and the job it schedules does the scan that
+   finds the waiting tenants. `update_sandbox/2` is the choke point every
+   status change goes through, so a caller writing one row must not pay for a
+   query plus an insert per waiting tenant. It is also best-effort: the row is
+   already committed and nearly every call site matches `{:ok, _}`, so a
+   failed poke is logged rather than raised, the way metering is at the same
+   choke point. The backstop drains what a lost poke missed.
 
 6. **A drainer claims before replay.** The FIFO read orders by insertion time
    and id. A compare-and-swap moves one row from `queued` to `starting` before
@@ -81,28 +102,48 @@ drainer must prevent two replicas from replaying one request.
 
 7. **Every replay uses today's gates.** A start re-enters
    `start_or_resume_conversation/2`, including channel binding and the tenant,
-   fleet, credit and platform-inference gates. A capacity error returns the
-   claim to `queued` and stops that tenant's drain. Any other error is terminal
-   and the next request can proceed. Reservation advisory locks remain the
-   authority that makes capacity atomic.
+   fleet, credit and platform-inference gates. Reservation advisory locks
+   remain the authority that makes capacity atomic. A replay ends three ways:
+
+   - A **capacity** error (`sandbox_quota_exceeded`, `fleet_full`) returns the
+     claim to `queued` and stops that tenant's drain. Every request behind it
+     would meet the same wall.
+   - A **transient** error returns the claim to `queued` and the drain moves
+     past it to the next request. `:busy`, `:provisioning`, `:runner_offline`
+     and `:sandbox_at_capacity` describe one teammate's machine, not the
+     tenant's ceiling: the turn in flight ends, the home finishes building,
+     the runner comes back. `Workers.TeamScheduleRun` snoozes on the same
+     list. Treating these as terminal destroyed the prompt over a condition
+     that clears by itself.
+   - Anything else is **terminal**, and the next request can proceed.
 
 8. **The resource is visible and leaves little data behind.**
    `GET /api/sandbox-queue` lists waiting work in position order, and
    `GET /api/sandbox-queue/:id` exposes its terminal outcome and conversation
    id. `DELETE /api/sandbox-queue/:id` cancels tenant-owned waiting work. Audit
    events cover enqueue, start, cancellation, expiry and failure. Telemetry
-   reports queue status counts, tenant depth observations, outcomes and wait
-   time. Every terminal transition erases `attrs`, including the prompt;
-   provenance fields remain as small history rows.
+   reports waiting and claimed row counts, tenant depth observations, outcomes
+   and wait time. The status gauge covers live rows only, because a
+   `last_value` over terminal rows climbs forever and reports nothing about
+   the queue now; outcomes are counted as they happen instead. Every terminal
+   transition erases `attrs`, including the prompt; provenance fields remain
+   as small history rows, and `RetentionPruner` expires those after 30 days.
+   A waiting or claimed row is never pruned, whatever the window says.
+
+   The launch attributes a `start` request stores are exactly the keys
+   `start_conversation/2` reads. `ConversationCreateRequest` does not set
+   `additionalProperties: false`, so a drop list would have parked whatever
+   else a caller sent in the table until the request expired.
 
 ## Consequences
 
 - A scheduled run survives a temporary tenant or fleet capacity spike.
 - A caller must handle a second success shape (`202` with a sandbox request)
   only when it opted in. The generated contract includes that shape.
-- Freeing one fleet slot fans out one cheap Oban insert attempt per tenant
-  with active work. Per-tenant scheduled-job uniqueness coalesces repeated
-  transitions, and reservation locks decide which request wins capacity.
+- Freeing one fleet slot costs one Oban insert on the path that freed it; the
+  job it schedules fans out per tenant with active work. Per-tenant
+  scheduled-job uniqueness coalesces repeated transitions, and reservation
+  locks decide which request wins capacity.
 - A tenant can inspect position but not an estimated start time. Capacity
   release and run duration are not predictable enough for an honest estimate;
   wait-time telemetry supplies the data needed to revisit that choice.

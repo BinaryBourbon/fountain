@@ -20,6 +20,7 @@ defmodule Fountain.SandboxQueue.Request do
 
   @kinds ~w(start schedule_run)
   @statuses ~w(queued starting started cancelled expired failed)
+  @active_statuses ~w(queued starting)
 
   schema "sandbox_requests" do
     field :kind, :string, default: "start"
@@ -36,6 +37,9 @@ defmodule Fountain.SandboxQueue.Request do
 
   def kinds, do: @kinds
   def statuses, do: @statuses
+
+  @doc "The statuses that mean live work, as opposed to a history row."
+  def active_statuses, do: @active_statuses
 
   @doc "Internal changeset. Callers never cast request parameters wholesale."
   def changeset(request, attrs) do

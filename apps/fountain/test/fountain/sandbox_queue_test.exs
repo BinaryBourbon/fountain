@@ -28,6 +28,15 @@ defmodule Fountain.SandboxQueueTest do
     for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
   end
 
+  # A persistent agent whose home is still building: a start for it reads
+  # `{:error, :provisioning}`, the transient shape the drainer must not treat
+  # as terminal.
+  defp agent_mid_provision(user) do
+    agent = insert_agent(user_id: user.id, sandbox_mode: "persistent")
+    insert_sandbox(user_id: user.id, agent_id: agent.id, mode: "persistent", status: "pending")
+    agent
+  end
+
   defp inert_start_child do
     stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _spec ->
       {:ok, spawn(fn -> Process.sleep(:infinity) end)}
@@ -45,6 +54,18 @@ defmodule Fountain.SandboxQueueTest do
       assert SandboxQueue.position(first) == 1
       assert SandboxQueue.position(second) == 2
       assert Enum.map(SandboxQueue.list_queued(user.id), & &1.id) == [first.id, second.id]
+    end
+
+    test "position counts a request that is already being replayed" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      first = enqueue!(user, agent)
+      second = enqueue!(user, agent)
+
+      {1, _} =
+        Repo.update_all(from(r in Request, where: r.id == ^first.id), set: [status: "starting"])
+
+      assert SandboxQueue.position(Repo.get!(Request, second.id)) == 2
     end
 
     test "refuses work beyond the default depth bound" do
@@ -184,6 +205,50 @@ defmodule Fountain.SandboxQueueTest do
       assert Repo.get!(Request, alive.id).status == "started"
     end
 
+    test "a transient failure goes back in line instead of burning the prompt" do
+      user = insert_active_user()
+      agent = agent_mid_provision(user)
+      request = enqueue!(user, agent)
+
+      assert %{started: 0, failed: 0, expired: 0} = SandboxQueue.drain(user.id)
+
+      reloaded = Repo.get!(Request, request.id)
+      assert reloaded.status == "queued"
+      assert reloaded.error == nil
+      assert reloaded.attrs["prompt"] == "hi"
+    end
+
+    test "a transient failure does not block the request behind it" do
+      user = insert_active_user()
+      waiting = enqueue!(user, agent_mid_provision(user))
+      alive = enqueue!(user, insert_agent(user_id: user.id))
+      inert_start_child()
+
+      assert %{started: 1, failed: 0, expired: 0} = SandboxQueue.drain(user.id)
+      assert Repo.get!(Request, waiting.id).status == "queued"
+      assert Repo.get!(Request, alive.id).status == "started"
+    end
+
+    test "a claim recovered mid-attempt is released without failing the job" do
+      user = insert_active_user()
+      agent = agent_mid_provision(user)
+      request = enqueue!(user, agent)
+
+      # What a concurrent drain's recover_stuck_claims/1 does to a claim that
+      # outran @claim_timeout_seconds, injected at the last gate before the
+      # attempt returns `:provisioning`.
+      stub(Fountain.Billing, :check_spend, fn _user_id ->
+        Repo.update_all(from(r in Request, where: r.id == ^request.id),
+          set: [status: "queued"]
+        )
+
+        :ok
+      end)
+
+      assert %{started: 0, failed: 0, expired: 0} = SandboxQueue.drain(user.id)
+      assert Repo.get!(Request, request.id).status == "queued"
+    end
+
     test "expires overdue work and erases its prompt" do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
@@ -214,7 +279,7 @@ defmodule Fountain.SandboxQueueTest do
     end
   end
 
-  test "a slot-freeing transition pokes every tenant with queued work" do
+  test "a slot-freeing transition schedules one fan-out, not one job per tenant" do
     owner = insert_verified_user()
     waiting = insert_verified_user()
     agent = insert_agent(user_id: waiting.id)
@@ -223,6 +288,22 @@ defmodule Fountain.SandboxQueueTest do
 
     {:ok, _} = Fountain.Conversations.update_sandbox(sandbox, %{status: "terminated"})
 
+    assert_enqueued(worker: Fountain.Workers.SandboxQueueDrainer, args: %{scope: "all"})
+    refute_enqueued(worker: Fountain.Workers.SandboxQueueDrainer, args: %{user_id: waiting.id})
+
+    assert :ok = perform_job(Fountain.Workers.SandboxQueueDrainer, %{"scope" => "all"})
     assert_enqueued(worker: Fountain.Workers.SandboxQueueDrainer, args: %{user_id: waiting.id})
+  end
+
+  test "a poke that raises never takes down the caller that freed the slot" do
+    user = insert_verified_user()
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+    stub(Fountain.Workers.SandboxQueueDrainer, :poke_all_later, fn ->
+      raise DBConnection.ConnectionError, "connection not available"
+    end)
+
+    assert {:ok, %{status: "terminated"}} =
+             Fountain.Conversations.update_sandbox(sandbox, %{status: "terminated"})
   end
 end

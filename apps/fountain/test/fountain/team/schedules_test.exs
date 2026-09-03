@@ -344,7 +344,9 @@ defmodule Fountain.Team.SchedulesTest do
         insert_sandbox(user_id: user.id, status: "ready")
       end
 
-      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(schedule)
+      opts = [actor: Schedules.actor()]
+
+      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(schedule, opts)
 
       assert Schedules.get_schedule(schedule.id, user.id).last_error ==
                "waiting for a free sandbox slot"
@@ -353,8 +355,26 @@ defmodule Fountain.Team.SchedulesTest do
       assert request.kind == "schedule_run"
       assert request.schedule_id == schedule.id
 
-      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(schedule)
+      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(schedule, opts)
       assert [_] = Fountain.SandboxQueue.list_queued(user.id)
+    end
+
+    test "\"Run now\" gets the refusal and starts nothing behind the caller's back" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      schedule = create!(user, agent, %{"one_off" => true})
+
+      for _ <- 1..Fountain.Quotas.sandbox_limit(user.id) do
+        insert_sandbox(user_id: user.id, status: "ready")
+      end
+
+      assert {:error, {:sandbox_quota_exceeded, _}} =
+               Schedules.run_schedule(schedule, actor: "api")
+
+      assert Fountain.SandboxQueue.list_queued(user.id) == []
+
+      assert Schedules.get_schedule(schedule.id, user.id).last_error !=
+               "waiting for a free sandbox slot"
     end
   end
 end

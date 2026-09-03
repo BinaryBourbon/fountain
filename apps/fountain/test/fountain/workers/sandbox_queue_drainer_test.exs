@@ -26,6 +26,17 @@ defmodule Fountain.Workers.SandboxQueueDrainerTest do
     assert Repo.get!(Request, request.id).status == "started"
   end
 
+  test "the fan-out job pokes every active tenant" do
+    user = insert_active_user()
+    agent = insert_agent(user_id: user.id)
+
+    {:ok, _} =
+      SandboxQueue.enqueue(%{user_id: user.id, agent_id: agent.id, kind: "start", attrs: %{}})
+
+    assert :ok = perform_job(SandboxQueueDrainer, %{"scope" => "all"})
+    assert_enqueued(worker: SandboxQueueDrainer, args: %{user_id: user.id})
+  end
+
   test "the cron backstop pokes every active tenant" do
     users = for _ <- 1..2, do: insert_active_user()
 

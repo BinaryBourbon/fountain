@@ -33,6 +33,38 @@ defmodule FountainWeb.SandboxQueueControllerTest do
     assert request.attrs["prompt"] == "queued work"
   end
 
+  test "only the launch keys are kept on the queued request", context do
+    fill_cap(context.user)
+
+    conn =
+      context.conn
+      |> authed_with_key(context.raw_key)
+      |> post_json("/api/conversations", %{
+        agent_id: context.agent.id,
+        prompt: "queued work",
+        title: "a title",
+        queue: true,
+        # `ConversationCreateRequest` does not set additionalProperties: false,
+        # so anything a caller sends arrives here. None of it belongs in a row
+        # that sits in the table for an hour.
+        junk: %{"anything" => String.duplicate("x", 100)},
+        user_id: Ecto.UUID.generate()
+      })
+
+    assert json_response(conn, 202)
+    assert [request] = SandboxQueue.list_queued(context.user.id)
+    # `parent_conversation_id` is one the controller itself puts on every
+    # launch; `junk` and the spoofed `user_id` are the point.
+    assert request.attrs ==
+             %{
+               "prompt" => "queued work",
+               "title" => "a title",
+               "parent_conversation_id" => nil
+             }
+
+    assert request.user_id == context.user.id
+  end
+
   test "POST without queue keeps the existing 429 contract", context do
     fill_cap(context.user)
 

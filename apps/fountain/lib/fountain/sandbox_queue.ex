@@ -14,6 +14,8 @@ defmodule Fountain.SandboxQueue do
 
   import Ecto.Query, only: [from: 2]
 
+  require Logger
+
   alias Fountain.Audit
   alias Fountain.Repo
   alias Fountain.SandboxQueue.Request
@@ -23,6 +25,22 @@ defmodule Fountain.SandboxQueue do
   @claim_timeout_seconds 300
   @active_statuses ~w(queued starting)
 
+  # Its own advisory-lock namespace. The depth bound counts rows in
+  # `sandbox_requests` and has nothing to serialize against a sandbox
+  # reservation or a shared machine's turn capacity, and every namespace here
+  # hashes a different kind of id into the same 32 bits: sharing one would let
+  # a `phash2` collision between a user and a sandbox block an unrelated
+  # writer. Taken: 4315 `Fountain.Quotas`, 4316 `Conversations`, 4331
+  # `Fountain.Connections`.
+  @lock_namespace 4317
+
+  # Not this request's fault and not this tenant's ceiling: the turn in flight
+  # ends, the home sandbox finishes provisioning, the runner comes back. The
+  # request goes back in line rather than burning its prompt on a condition
+  # that clears by itself. `Fountain.Workers.TeamScheduleRun` snoozes on
+  # exactly this list, for exactly this reason.
+  @transient_errors ~w(busy provisioning runner_offline sandbox_at_capacity)a
+
   @doc "Queue a start or scheduled run, subject to the per-tenant depth bound."
   def enqueue(params, opts \\ []) do
     case existing_schedule_request(params) do
@@ -30,16 +48,41 @@ defmodule Fountain.SandboxQueue do
         {:ok, request}
 
       nil ->
-        with :ok <- check_depth(params.user_id),
-             {:ok, request} <-
-               %Request{}
-               |> Request.changeset(Map.put_new(params, :status, "queued"))
-               |> Repo.insert() do
-          audited({:ok, request}, "sandbox_request.enqueued", opts)
-          emit_depth(request.user_id)
-          {:ok, request}
+        case insert_bounded(params) do
+          {:ok, request} ->
+            # Audited outside the transaction: `Audit.record/1` is best-effort
+            # by rescuing, and a rescue does not survive a transaction.
+            audited({:ok, request}, "sandbox_request.enqueued", opts)
+            emit_depth(request.user_id)
+            {:ok, request}
+
+          {:error, _} = error ->
+            error
         end
     end
+  end
+
+  # The depth bound is a check followed by an insert, so it needs the same
+  # protection `Quotas.with_sandbox_reservation/3` gives the sandbox cap: two
+  # requests that both read "room for one more" at the last slot is precisely
+  # how #330 got past that cap before its advisory lock existed.
+  defp insert_bounded(params) do
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+        @lock_namespace,
+        :erlang.phash2(params.user_id)
+      ])
+
+      with :ok <- check_depth(params.user_id),
+           {:ok, request} <-
+             %Request{}
+             |> Request.changeset(Map.put_new(params, :status, "queued"))
+             |> Repo.insert() do
+        request
+      else
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
   end
 
   @doc "List a tenant's waiting requests, oldest first."
@@ -53,12 +96,18 @@ defmodule Fountain.SandboxQueue do
     end
   end
 
-  @doc "Return a waiting request's one-based position."
+  @doc """
+  Return a waiting request's one-based position.
+
+  Counts claimed (`starting`) rows as well as waiting ones: a request being
+  replayed right now is still ahead of this one, and leaving it out reported
+  `position: 1` to a caller that had someone in front of it.
+  """
   def position(%Request{status: "queued"} = request) do
     Repo.aggregate(
       from(r in Request,
         where:
-          r.user_id == ^request.user_id and r.status == "queued" and
+          r.user_id == ^request.user_id and r.status in ^@active_statuses and
             (r.inserted_at < ^request.inserted_at or
                (r.inserted_at == ^request.inserted_at and r.id < ^request.id))
       ),
@@ -106,34 +155,46 @@ defmodule Fountain.SandboxQueue do
     )
   end
 
-  defp drain_loop(user_id, {started, failed}) do
-    case claim_next(user_id) do
+  # `skipped` holds the requests this pass released for a transient reason.
+  # Without it the loop would re-claim the row it just put back and spin.
+  defp drain_loop(user_id, counts, skipped \\ [])
+
+  defp drain_loop(user_id, {started, failed} = counts, skipped) do
+    case claim_next(user_id, skipped) do
       nil ->
-        {started, failed}
+        counts
 
       request ->
         case attempt(request) do
           {:ok, conversation_id} ->
             finish(request, %{status: "started", conversation_id: conversation_id})
-            drain_loop(user_id, {started + 1, failed})
+            drain_loop(user_id, {started + 1, failed}, skipped)
 
+          # Capacity did not free after all. Every request behind this one
+          # would meet the same wall, so stop the pass entirely.
           {:error, {:sandbox_quota_exceeded, _}} ->
             release(request)
-            {started, failed}
+            counts
 
           {:error, :fleet_full} ->
             release(request)
-            {started, failed}
+            counts
+
+          # Transient and specific to this request's teammate rather than to
+          # the tenant, so the rest of the queue can still make progress.
+          {:error, reason} when reason in @transient_errors ->
+            release(request)
+            drain_loop(user_id, counts, [request.id | skipped])
 
           {:error, reason} ->
             finish(request, %{status: "failed", error: describe(reason)})
-            drain_loop(user_id, {started, failed + 1})
+            drain_loop(user_id, {started, failed + 1}, skipped)
         end
     end
   end
 
-  defp claim_next(user_id) do
-    case Repo.one(from r in queued_query(user_id), limit: 1) do
+  defp claim_next(user_id, skipped) do
+    case Repo.one(from r in queued_query(user_id), where: r.id not in ^skipped, limit: 1) do
       nil ->
         nil
 
@@ -145,7 +206,7 @@ defmodule Fountain.SandboxQueue do
                set: [status: "starting", updated_at: now]
              ) do
           {1, _} -> Repo.get!(Request, request.id)
-          {0, _} -> claim_next(user_id)
+          {0, _} -> claim_next(user_id, skipped)
         end
     end
   end
@@ -188,13 +249,22 @@ defmodule Fountain.SandboxQueue do
   end
 
   defp release(%Request{} = request) do
-    {1, _} =
-      Repo.update_all(
-        from(r in Request, where: r.id == ^request.id and r.status == "starting"),
-        set: [status: "queued", updated_at: DateTime.utc_now()]
-      )
+    case Repo.update_all(
+           from(r in Request, where: r.id == ^request.id and r.status == "starting"),
+           set: [status: "queued", updated_at: DateTime.utc_now()]
+         ) do
+      {1, _} ->
+        :ok
 
-    :ok
+      # The claim is gone: a concurrent drain's `recover_stuck_claims/1` took
+      # it back after this attempt outran @claim_timeout_seconds, or the row
+      # went with a deleted agent or user. There is nothing left to release,
+      # and raising here would fail the job and strand every other request
+      # this tenant has waiting.
+      {0, _} ->
+        Logger.info("sandbox queue: request #{request.id} was no longer claimed on release")
+        :ok
+    end
   end
 
   # A worker can die after its compare-and-swap and before replay finishes.

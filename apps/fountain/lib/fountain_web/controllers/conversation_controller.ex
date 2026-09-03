@@ -450,6 +450,16 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
+  # Exactly the launch keys `Conversations.start_conversation/2` reads, minus
+  # the ones this path sets itself (`user_id`, `agent_id`, `source`) or
+  # refuses to queue (`images`, `sandbox_id`) and the `queue` flag. A drop
+  # list kept every unrecognised key instead: `ConversationCreateRequest` does
+  # not set `additionalProperties: false`, so a caller could park arbitrary
+  # JSON in `attrs` until the request expired.
+  @queued_attr_keys ~w(prompt title vault_id environment_id permission_policy
+                       sandbox_mode sprite_name channel_id fresh
+                       parent_conversation_id caller_tools)
+
   defp maybe_enqueue(conn, params, user, reason) do
     if params["queue"] == true and params["images"] in [nil, []] and
          params["sandbox_id"] in [nil, ""] do
@@ -458,7 +468,7 @@ defmodule FountainWeb.ConversationController do
         agent_id: params["agent_id"],
         kind: "start",
         source: params["source"],
-        attrs: Map.drop(params, ["queue", "images", "user_id", "agent_id"])
+        attrs: Map.take(params, @queued_attr_keys)
       }
 
       case Fountain.SandboxQueue.enqueue(enqueue_params, Audited.attribution(conn)) do

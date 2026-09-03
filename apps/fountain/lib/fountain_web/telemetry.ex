@@ -379,7 +379,7 @@ defmodule FountainWeb.Telemetry do
         event_name: [:fountain, :sandbox_queue, :requests],
         measurement: :count,
         tags: [:status],
-        description: "Sandbox request rows by status"
+        description: "Waiting and claimed sandbox request rows by status"
       ),
       # The live view of what the sandbox providers are charging for. Tagged
       # by provider because a minute on each is bought at a different price;

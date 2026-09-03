@@ -174,7 +174,7 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :reaper, :run],
         [:fountain, :reaper, :untracked],
         # SandboxQueue emits depth after mutations and completion at terminal
-        # transitions; OpsGauges emits durable request status counts.
+        # transitions; OpsGauges emits the waiting and claimed row counts.
         [:fountain, :sandbox_queue, :tenant_depth],
         [:fountain, :sandbox_queue, :completed],
         [:fountain, :sandbox_queue, :requests],

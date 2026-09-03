@@ -24,6 +24,12 @@ defmodule Fountain.Workers.RetentionPruner do
   attempt of a failing endpoint writes another. It is a debugging aid, not an
   event store, so it gets the shortest window of the lot.
 
+  `sandbox_requests` is the same shape of bookkeeping (ADR 0042): a finished
+  request holds no prompt — every terminal transition erases `attrs` — only
+  provenance and an outcome the audit trail already carries at its own
+  window. Waiting and claimed rows are never pruned whatever the window says;
+  they cannot outlive `SANDBOX_QUEUE_MAX_WAIT_SECONDS` anyway.
+
   `usage_events` gets the longest window because it is the input to billing
   history, and `turn_images` is deliberately absent — those rows are owned by
   their turn and go when the conversation does.
@@ -59,7 +65,8 @@ defmodule Fountain.Workers.RetentionPruner do
     stripe_events: 90,
     revoked_api_keys: 30,
     usage_events: 400,
-    webhook_deliveries: 30
+    webhook_deliveries: 30,
+    sandbox_requests: 30
   ]
 
   @impl Oban.Worker
@@ -162,6 +169,17 @@ defmodule Fountain.Workers.RetentionPruner do
   # aid rather than a second event store (#700).
   defp do_prune(:webhook_deliveries, cutoff) do
     delete_where("webhook_deliveries", dynamic([r], r.inserted_at < ^cutoff))
+  end
+
+  # Terminal rows only. A `queued` or `starting` row is live work, and the
+  # cutoff must never be what decides that.
+  defp do_prune(:sandbox_requests, cutoff) do
+    terminal = ~w(started failed cancelled expired)
+
+    delete_where(
+      "sandbox_requests",
+      dynamic([r], r.inserted_at < ^cutoff and r.status in ^terminal)
+    )
   end
 
   defp do_prune(:revoked_api_keys, cutoff) do

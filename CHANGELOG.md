@@ -32,8 +32,8 @@ upgrade, is in
 
 - **A bounded sandbox-capacity queue** (#1033). `POST /api/conversations`
   accepts `queue: true` and returns `202` when a fresh start reaches either
-  the tenant concurrency cap or the deployment fleet ceiling. Scheduled
-  teammate runs opt in automatically. `GET /api/sandbox-queue` lists waiting
+  the tenant concurrency cap or the deployment fleet ceiling. A teammate
+  schedule opts in when its cron fires; "Run now" keeps the immediate error. `GET /api/sandbox-queue` lists waiting
   work in FIFO order, `GET /api/sandbox-queue/:id` reports its outcome, and
   `DELETE /api/sandbox-queue/:id` cancels it. Each
   tenant holds at most ten requests for at most one hour by default; the
