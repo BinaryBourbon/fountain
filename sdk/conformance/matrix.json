@@ -4,6 +4,7 @@
     "typescript",
     "python",
     "swift",
+    "swift-kit",
     "elixir"
   ],
   "scenarios": {
@@ -11,96 +12,112 @@
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "auth-me-is-not-enveloped": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "auth-missing-key-fails-before-any-request": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "base-url-trailing-slash-is-normalised": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "error-401-maps-to-auth": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "error-404-maps-to-not-found": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "error-422-carries-field-errors": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "error-429-carries-retry-after": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "error-code-outranks-status-conversation-busy": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "error-code-outranks-status-insufficient-credits": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "history-drains-the-feed-across-pages": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "history-empty-feed-is-an-empty-list": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "list-empty-collection-is-an-empty-list": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "permission-request-is-surfaced-and-answered": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "run-completes-with-text-and-tools": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "run-failed-turn-reports-failed": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "run-timeout-raises-and-keeps-partial-text": {
@@ -110,48 +127,56 @@
         "skip": "On timeout, Swift cancels the stream but then sends GET /api/conversations/:id before raising its timeout error.",
         "issue": 1424
       },
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "sse-comments-and-blank-lines-are-ignored": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "sse-crlf-frame-boundary": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "sse-fragmented-frame-is-reassembled": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "sse-malformed-frame-is-skipped": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "sse-multiline-data-joins-with-newlines": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "sse-no-cursor-header-on-the-first-connection": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     },
     "sse-reconnect-resumes-from-last-event-id": {
       "typescript": "yes",
       "python": "yes",
       "swift": "yes",
+      "swift-kit": "yes",
       "elixir": "yes"
     }
   }

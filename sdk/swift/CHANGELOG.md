@@ -5,6 +5,19 @@ Notable changes to the Fountain Swift SDK follow
 
 ## Unreleased
 
+### Added
+
+- `FountainKit`, a second product in this package: the same API with
+  `Codable` models, a namespace per resource, a `FountainError` enum, typed
+  SSE (`LogEvent`/`Block`), a `TurnFollower` and a `Run` whose event stream
+  replays from the beginning for every subscriber. It wraps admin, audit,
+  runners, API keys and `apply`, which the untyped client leaves to its
+  escape hatch. Contributed from swift-goat, where it grew as that app's
+  client, and relicensed to Apache-2.0 by its author (ADR 0041).
+- `FountainKit` runs the shared conformance suite as the `swift-kit` column,
+  green on all 24 scenarios — including the timeout scenario `swift` skips
+  (#1424), because it raises before re-reading the conversation.
+
 ## [0.16.0] - 2026-09-03
 
 ### Added

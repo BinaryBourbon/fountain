@@ -1022,8 +1022,10 @@ jobs:
         run: |
           server_version="$(sed -nE 's/.*version: "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' mix.exs | head -n 1)"
           sdk_version="$(sed -nE 's/public let fountainSDKVersion = "([^"]+)"/\1/p' sdk/swift/Sources/Fountain/Fountain.swift)"
+          kit_version="$(sed -nE 's/public let fountainKitVersion = "([^"]+)"/\1/p' sdk/swift/Sources/FountainKit/Version.swift)"
           test -n "${server_version}"
           test "${sdk_version}" = "${server_version}"
+          test "${kit_version}" = "${server_version}"
 
       - name: Swift format
         run: swift format lint --strict --recursive Package.swift sdk/swift/Sources sdk/swift/Tests

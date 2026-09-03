@@ -14,7 +14,7 @@ carries its own LICENSE file:
 |---|---|
 | `apps/fountain`, `config`, `priv` | GNU AGPL v3.0 or later |
 | `ee/` | Elastic License 2.0 |
-| `cli/`, `sdk/typescript` | Apache License 2.0 |
+| `cli/`, `sdk/` (every client) | Apache License 2.0 |
 
 **You contribute under the Apache License 2.0, whichever directory you are
 editing.** Fountain then distributes your work under the license governing that
@@ -35,8 +35,8 @@ commercial exception closes permanently the first time an outside pull request
 is merged. If that trade is not one you want to make, say so on the pull
 request. It is a reasonable thing to object to.
 
-For `cli/` and `sdk/typescript` this changes nothing at all, since inbound and
-outbound are both Apache-2.0 there.
+For `cli/` and `sdk/` this changes nothing at all, since inbound and outbound
+are both Apache-2.0 there.
 
 ## Sign your commits (DCO)
 
