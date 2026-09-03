@@ -29,6 +29,21 @@ upgrade, is in
 
 ### Changed
 
+- **`mix precommit` now assembles the production release** (#1477). It was the
+  documented pre-push gate and it could not see a whole class of breakage:
+  anything that exists only in `MIX_ENV=prod`. `apps/fountain` scopes the
+  OpenTelemetry family `only: :prod`, so `chatterbox` — reached through
+  grpcbox under `opentelemetry_exporter` — is in no dev or test dependency
+  graph, and when the hackney 4 bump pulled in `h2` with the same four module
+  names, `mix release` refused to assemble while compile, format, credo,
+  sobelow, dialyzer and all 4,117 tests stayed green (#1472). The new step is
+  the assemble alone, not CI's boot check: duplicate modules and the
+  application-mode validation are decided at assemble time, and assembling
+  needs no secrets, because `mix release` copies `config/runtime.exs` in as a
+  config provider rather than evaluating it. It costs ~9s in a warm tree; a
+  fresh checkout pays one prod compile (~2 min) and then caches it under
+  `_build/prod`.
+
 - **The connection and the transcript have left `ConversationServer`, and the
   server is what is left** (#1377, tracker #1369, last). The ACP connection
   that outlives the turn (#817) is `Fountain.Conversations.Connection`: the

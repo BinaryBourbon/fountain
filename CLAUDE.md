@@ -397,7 +397,21 @@ produce the identical total (85.46% on the same six exports). Run
 and re-verify the two agree when bumping Elixir, since the script depends on
 `:cover` semantics the pin currently freezes.
 
-Run `mix precommit` locally before pushing — it covers the core gate (compile with warnings-as-errors, unused deps, format, `credo --strict`, sobelow, dialyzer, tests). CI additionally runs hex.audit, the Go CLI checks, the release boot check, and OpenAPI validation.
+Run `mix precommit` locally before pushing — it covers the core gate (compile
+with warnings-as-errors, unused deps, format, `credo --strict`, sobelow,
+dialyzer, a prod release **assemble**, tests). CI additionally runs hex.audit,
+the Go CLI checks, the release **boot** check, and OpenAPI validation.
+
+The release assemble is the only step that builds `MIX_ENV=prod`, and it is
+there because everything else is blind to a prod-only dependency graph: the
+OpenTelemetry family is `only: :prod`, so `chatterbox` exists in no dev or test
+build, and the hackney 4 bump that collided with it left every other gate green
+on a tree whose release would not assemble (#1472, #1477). It costs ~9s warm;
+the first run in a fresh checkout pays a full prod compile (~2 min) and then
+caches it under `_build/prod`. It needs no secrets — assembling copies
+`config/runtime.exs` in as a config provider rather than evaluating it, which
+is why CI keeps the booting half where `SECRET_KEY_BASE` and a database are
+required.
 
 ## Test patterns
 
