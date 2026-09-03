@@ -24,7 +24,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
     agent = insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
 
     previous =
-      for key <- [:broker_url, :broker_token, :broker_proxy_url, :broker_tenants],
+      for key <- [:broker_listen_port, :broker_proxy_url, :broker_tenants],
           do: {key, Application.get_env(:fountain, key)}
 
     on_exit(fn ->
@@ -39,8 +39,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
   end
 
   defp configure_broker(tenants) do
-    Application.put_env(:fountain, :broker_url, "http://broker.test:14321")
-    Application.put_env(:fountain, :broker_token, "av_sess_owner")
+    Application.put_env(:fountain, :broker_listen_port, 14_322)
     Application.put_env(:fountain, :broker_proxy_url, "http://broker.test:14322")
     Application.put_env(:fountain, :broker_tenants, tenants)
   end
@@ -97,7 +96,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
     end
 
     test "with BROKER_URL blank the ratchet is inert too", %{user: user, agent: agent} do
-      Application.delete_env(:fountain, :broker_url)
+      Application.delete_env(:fountain, :broker_listen_port)
       Application.put_env(:fountain, :broker_tenants, [user.id])
 
       conv = insert_conversation(user_id: user.id, agent: agent)

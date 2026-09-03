@@ -181,16 +181,16 @@ config :managoat_sandbox, Managoat.Sandbox.Daytona,
 # Egress credential brokerage (ADR 0019). Blank means off: no broker call is
 # made, nothing listens, and every conversation provisions exactly as it did
 # before the feature existed. The same "" counts-as-unset rule as
-# SPRITES_TOKEN. Two backends, one at a time (#1340): BROKER_URL selects the
-# Agent Vault client, BROKER_LISTEN_PORT the native proxy run inside this
-# application; both need BROKER_PROXY_URL, the address a sandbox dials.
+# SPRITES_TOKEN. BROKER_LISTEN_PORT is the switch: the proxy runs inside this
+# application, on that port, on every replica. It needs BROKER_PROXY_URL too,
+# the address a sandbox dials, which is not the same thing when the sandboxes
+# are on another network. BROKER_URL and BROKER_TOKEN selected a vendor proxy
+# until production moved off it (#1487); nothing reads them now.
 blank_to_nil = fn
   blank when blank in [nil, ""] -> nil
   value -> value
 end
 
-broker_url = blank_to_nil.(System.get_env("BROKER_URL"))
-broker_token = blank_to_nil.(System.get_env("BROKER_TOKEN"))
 broker_proxy_url = blank_to_nil.(System.get_env("BROKER_PROXY_URL"))
 
 broker_listen_port =
@@ -205,13 +205,13 @@ broker_listen_port =
       end
   end
 
-if broker_url && broker_listen_port do
-  raise "BROKER_URL and BROKER_LISTEN_PORT are both set: one broker backend at a time. " <>
-          "BROKER_URL selects the Agent Vault client, BROKER_LISTEN_PORT the native proxy."
-end
-
-if broker_url && (is_nil(broker_token) || is_nil(broker_proxy_url)) do
-  raise "BROKER_URL is set, so BROKER_TOKEN and BROKER_PROXY_URL must be set too"
+# A deployment still carrying the retired vendor variables is told, rather
+# than quietly brokering nothing: they used to select a whole backend.
+for retired <- ~w(BROKER_URL BROKER_TOKEN) do
+  if blank_to_nil.(System.get_env(retired)) do
+    raise "#{retired} is set, but the Agent Vault backend was removed in #1487. " <>
+            "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL instead; see docs/configuration.md."
+  end
 end
 
 if broker_listen_port && is_nil(broker_proxy_url) do
@@ -236,8 +236,6 @@ broker_session_ttl =
       end
   end
 
-config :fountain, :broker_url, broker_url
-config :fountain, :broker_token, broker_token
 config :fountain, :broker_listen_port, broker_listen_port
 config :fountain, :broker_proxy_url, broker_proxy_url
 config :fountain, :broker_tenants, broker_tenants

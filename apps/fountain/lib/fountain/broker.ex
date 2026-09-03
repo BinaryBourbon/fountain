@@ -12,19 +12,16 @@ defmodule Fountain.Broker do
   secrets the broker knows how to carry, the placeholder rule, the split of
   a secrets map into what the sandbox gets and what the broker gets, the
   sandbox's environment, and the session lifecycle. It is the **policy**;
-  the proxy that does the attaching is a **backend**, and there are two:
+  the proxy that does the attaching is `Fountain.Broker.Native`, the
+  `Managoat.Broker` listener this application runs itself, selected by
+  `BROKER_LISTEN_PORT`.
 
-  | Backend | Module | Selected by |
-  |---|---|---|
-  | [Agent Vault](https://github.com/Infisical/agent-vault), the vendor gate 1a shipped with | `Fountain.Broker.AgentVault` | `BROKER_URL` |
-  | The native proxy, `Managoat.Broker` (#1340), run inside this application | `Fountain.Broker.Native` | `BROKER_LISTEN_PORT` |
-
-  Setting both is a boot error (`config/runtime.exs`). Every function here
-  that reaches a proxy dispatches on `backend/0`; the ones that do not
-  (`split/2`, `placeholder/1`, `sandbox_env/1`, `network_for/1`, ...) are
-  the same whichever backend runs. The two coexist so that merging the
-  native backend is inert for a deployment on Agent Vault; the flip is a
-  deployment change, after which the vendor client is deleted.
+  Gate 1a shipped against a vendor proxy, Agent Vault, and this module was a
+  facade over both while production moved across. Production flipped on
+  2026-09-03 (#1485) and the vendor client is gone; what is left of that
+  history is in ADR 0019. Functions that do not reach a proxy at all
+  (`split/2`, `placeholder/1`, `sandbox_env/1`, `network_for/1`, ...) never
+  cared which one ran.
 
   ## What is brokered
 
@@ -74,13 +71,17 @@ defmodule Fountain.Broker do
 
   ## Off means off
 
-  `configured?/0` is false when neither `BROKER_URL` nor
-  `BROKER_LISTEN_PORT` is set, and then no function here reaches a proxy,
-  nothing listens, and provisioning is byte-for-byte what it was.
+  `configured?/0` is false when `BROKER_LISTEN_PORT` is not set, and then no
+  function here reaches a proxy, nothing listens, and provisioning is
+  byte-for-byte what it was.
   """
 
-  alias Fountain.Broker.{AgentVault, Native}
+  alias Fountain.Broker.Native
 
+  # Named for the vendor proxy this replaced, and deliberately not renamed:
+  # `install_broker_ca/2` overwrites this exact path, so every sandbox already
+  # provisioned swaps its root in place. A new filename would leave the old
+  # file behind in the trust store, trusted, with nothing to remove it.
   @ca_path "/usr/local/share/ca-certificates/agent-vault.crt"
 
   # The OS trust bundle update-ca-certificates rebuilds — real roots plus the
@@ -97,23 +98,18 @@ defmodule Fountain.Broker do
         }
 
   @typedoc "Which proxy attaches credentials on this deployment."
-  @type backend :: :agent_vault | :native
+  @type backend :: :native
 
   # ---------------------------------------------------------------------------
   # Configuration
 
   @doc """
   The backend this deployment runs, or nil when brokerage is off.
-  `BROKER_LISTEN_PORT` selects the native proxy, `BROKER_URL` the Agent Vault
-  client; boot refuses both.
+  `BROKER_LISTEN_PORT` selects the native proxy; there is no other.
   """
   @spec backend() :: backend() | nil
   def backend do
-    cond do
-      is_integer(Application.get_env(:fountain, :broker_listen_port)) -> :native
-      is_binary(Application.get_env(:fountain, :broker_url)) -> :agent_vault
-      true -> nil
-    end
+    if is_integer(Application.get_env(:fountain, :broker_listen_port)), do: :native
   end
 
   @doc "True when a backend is configured. Nothing here talks to a proxy otherwise."
@@ -136,7 +132,7 @@ defmodule Fountain.Broker do
   @spec proxy_host() :: String.t()
   def proxy_host, do: URI.parse(proxy_url()).host
 
-  @doc "How long a released conversation's vault keeps its request log before the reaper deletes it (Agent Vault)."
+  @doc "How long the egress request log keeps a row before `Fountain.Workers.BrokerReaper` deletes it."
   @spec log_retention_hours() :: pos_integer()
   def log_retention_hours, do: Application.get_env(:fountain, :broker_log_retention_hours, 168)
 
@@ -325,7 +321,15 @@ defmodule Fountain.Broker do
   # ---------------------------------------------------------------------------
   # The sandbox side
 
-  @doc "The broker vault name for a conversation. `[a-z0-9-]`, 3 to 64 characters."
+  @doc """
+  The label half of a conversation's proxy credential. `[a-z0-9-]`, 3 to 64
+  characters.
+
+  It is not a secret and the proxy ignores it: the random session token is the
+  whole binding. It exists because git refuses a proxy URL that carries a user
+  and no password, and it is named `vault` because the vendor proxy this
+  replaced addressed a real vault by it.
+  """
   @spec vault_name(String.t()) :: String.t()
   def vault_name(conversation_id) when is_binary(conversation_id) do
     "c-" <> (conversation_id |> String.downcase() |> String.replace(~r/[^a-z0-9]/, ""))
@@ -377,8 +381,8 @@ defmodule Fountain.Broker do
 
   # Both userinfo fields, on purpose (gate 0): with the token alone curl is
   # happy and git stops to ask for a *proxy* password. Agent Vault reads
-  # `Basic base64(token:vault)` and requires the vault to match the token's;
-  # the native proxy reads the token and ignores the vault half.
+  # `Basic base64(token:label)`; the proxy reads the token and ignores the
+  # label, which is there only so git accepts the URL.
   defp proxy_url_with(token, vault) do
     uri = URI.parse(proxy_url())
     URI.to_string(%{uri | userinfo: token <> ":" <> vault})
@@ -404,19 +408,6 @@ defmodule Fountain.Broker do
   end
 
   def network_for(_), do: :unrestricted
-
-  @doc "The conversation id a vault name was made from, or nil for a vault that is not ours."
-  @spec conversation_id_for_vault(String.t()) :: String.t() | nil
-  def conversation_id_for_vault("c-" <> hex) when byte_size(hex) == 32 do
-    case Ecto.UUID.cast(
-           String.replace(hex, ~r/(.{8})(.{4})(.{4})(.{4})(.{12})/, "\\1-\\2-\\3-\\4-\\5")
-         ) do
-      {:ok, id} -> id
-      :error -> nil
-    end
-  end
-
-  def conversation_id_for_vault(_), do: nil
 
   # ---------------------------------------------------------------------------
   # Calls to the backend. Each returns `:ok`/`{:ok, _}` or `{:error, reason}`;
@@ -461,33 +452,15 @@ defmodule Fountain.Broker do
 
   @doc """
   Release a conversation's session at the end of its life, so nothing
-  brokers on its behalf again. On Agent Vault the vault itself stays for
-  its request log (gate 4) until `Fountain.Workers.BrokerVaultReaper`
-  deletes it; on the native backend the session rows go at once.
+  brokers on its behalf again. The session rows go at once; the request log
+  it wrote (gate 4) outlives it, until `Fountain.Workers.BrokerReaper`
+  sweeps rows past `BROKER_LOG_RETENTION_HOURS`.
   """
-  @spec release(String.t()) :: :ok | {:error, term()}
+  @spec release(String.t()) :: :ok
   def release(conversation_id) when is_binary(conversation_id) do
     case backend() do
       nil -> :ok
       backend -> impl(backend).release(conversation_id)
-    end
-  end
-
-  @doc "Delete a vault outright, log and all. The reaper's call, never provisioning's. Agent Vault only."
-  @spec delete_vault(String.t()) :: :ok | {:error, term()}
-  def delete_vault(vault) when is_binary(vault) do
-    case backend() do
-      :agent_vault -> AgentVault.delete_vault(vault)
-      _ -> :ok
-    end
-  end
-
-  @doc "Every vault on the broker, by name. Agent Vault only; the native backend has none."
-  @spec list_vaults() :: {:ok, [String.t()]} | {:error, term()}
-  def list_vaults do
-    case backend() do
-      :agent_vault -> AgentVault.list_vaults()
-      _ -> {:ok, []}
     end
   end
 
@@ -509,9 +482,8 @@ defmodule Fountain.Broker do
   The broker's request log for a conversation, newest first (gate 4): what
   actually left the sandbox, to which host, with which credential attached,
   and what came back. `before:` pages by the previous page's oldest `id`.
-  The native backend keeps no stored log yet and answers an empty page; its
-  request log is the `[:managoat, :broker, :request]` telemetry and the
-  log line `Fountain.Broker.Native` writes from it.
+  `status`, `latency_ms` and `error` are unset until the proxy frames
+  responses (#1486).
   """
   @spec request_log(String.t(), keyword()) ::
           {:ok, %{events: [egress_event()], next: integer() | nil}} | {:error, term()}
@@ -522,6 +494,5 @@ defmodule Fountain.Broker do
     end
   end
 
-  defp impl(:agent_vault), do: AgentVault
   defp impl(:native), do: Native
 end

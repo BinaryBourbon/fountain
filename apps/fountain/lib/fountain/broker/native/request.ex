@@ -6,7 +6,7 @@ defmodule Fountain.Broker.Native.Request do
   Written by `Fountain.Broker.Native.RequestLog` from the proxy's telemetry,
   read by `Fountain.Broker.Native.request_log/2` behind
   `GET /api/conversations/:id/egress`, swept by
-  `Fountain.Workers.BrokerVaultReaper` on `BROKER_LOG_RETENTION_HOURS`.
+  `Fountain.Workers.BrokerReaper` on `BROKER_LOG_RETENTION_HOURS`.
 
   It holds no header, no body and no credential. `credential_keys` is the
   *names* of the environment variables whose values the proxy attached, which

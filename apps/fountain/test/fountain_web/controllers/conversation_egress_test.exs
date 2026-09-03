@@ -10,7 +10,7 @@ defmodule FountainWeb.ConversationEgressTest do
     conv = insert_conversation(user_id: user.id)
 
     previous =
-      for k <- [:broker_url, :broker_token, :broker_proxy_url, :broker_tenants],
+      for k <- [:broker_listen_port, :broker_proxy_url, :broker_tenants],
           do: {k, Application.get_env(:fountain, k)}
 
     on_exit(fn ->
@@ -22,8 +22,7 @@ defmodule FountainWeb.ConversationEgressTest do
             )
     end)
 
-    Application.put_env(:fountain, :broker_url, "http://broker.test:14321")
-    Application.put_env(:fountain, :broker_token, "t")
+    Application.put_env(:fountain, :broker_listen_port, 14_322)
     Application.put_env(:fountain, :broker_proxy_url, "http://broker.test:14322")
     Application.put_env(:fountain, :broker_tenants, [user.id])
 
@@ -90,25 +89,14 @@ defmodule FountainWeb.ConversationEgressTest do
   test "a broker that does not answer is a 502 with a sentence, not an inspected term",
        %{conn: conn, conv: conv} do
     expect(Broker, :request_log, fn _id, _opts ->
-      {:error, {:broker, :request_log, %Req.TransportError{reason: :econnrefused}}}
+      {:error, {:broker, :request_log, :not_configured}}
     end)
 
     assert %{
              "error" => "broker_unavailable",
              "message" => "The egress broker did not answer.",
-             "reason" => "econnrefused"
+             "reason" => "not_configured"
            } = conn |> get("/api/conversations/#{conv.id}/egress") |> json_response(502)
-  end
-
-  test "a broker API error is a 502 that carries the status as its reason",
-       %{conn: conn, conv: conv} do
-    expect(Broker, :request_log, fn _id, _opts ->
-      {:error, {:broker, :request_log, {:api_error, 503, %{"error" => "draining"}}}}
-    end)
-
-    body = conn |> get("/api/conversations/#{conv.id}/egress") |> json_response(502)
-    assert body["reason"] == "api_error_503"
-    refute body["message"] =~ "api_error"
   end
 
   # The log names which secrets went to which host: a sandbox's own token

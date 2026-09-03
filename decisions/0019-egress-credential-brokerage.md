@@ -1,27 +1,27 @@
 ---
 type: ADR
 title: "Egress credential brokerage: the sandbox holds placeholders, the broker holds the credential"
-description: "Proposed; gate 1a is built and live for one tenant (the maintainer) since 2026-08-25, off for everyone else. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
+description: "Accepted; live in production for one tenant (the maintainer), served by Fountain's own proxy since the 2026-09-03 flip. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
 tags: [security, secrets, sandbox, egress, governance]
 status: draft
 adr: "0019"
-adr_status: "Proposed"
+adr_status: "Accepted"
 date: 2026-08-14
 generated: { by: human:jhgaylor, at: 2026-08-14T04:45:00-04:00 }
-stale_after: 2026-11-24
+stale_after: 2027-03-03
 ---
 
 # 0019 — Egress credential brokerage
 
-**Status:** Proposed — **gate 1a is built and live for one tenant.**
+**Status:** Accepted — **live in production for one tenant, on Fountain's own proxy.**
 `Fountain.Broker` and the provisioning wiring exist on `main` (#1090 PRs 1–3),
-behind `BROKER_URL`: blank, and every conversation provisions exactly as it did
-before the module existed; set, and only the tenants in `BROKER_TENANTS` are
-brokered, for `GITHUB_TOKEN` / `GH_TOKEN` only. The broker is deployed under
-Flux in home-cloud (jhgaylor/home-cloud#128: Agent Vault on a CNPG cluster,
-published at `broker.inevitable.fyi` by the Traefik TCP router of §11), and
-the hosted deployment names **one** tenant, the maintainer's own account
-(home-cloud#131, 2026-08-25). Its done-when was observed on a production
+behind `BROKER_LISTEN_PORT`: blank, and every conversation provisions exactly
+as it did before the module existed; set, and only the tenants in
+`BROKER_TENANTS` are brokered. The proxy is `Managoat.Broker`, run inside the
+Fountain pods and published at `broker.inevitable.fyi` by the Traefik TCP
+router of §11, and the hosted deployment names **one** tenant, the
+maintainer's own account (home-cloud#131, 2026-08-25). It was a vendor
+service, Agent Vault, until the flip of 2026-09-03; see the amendment. Its done-when was observed on a production
 Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
 is byte-for-byte on the old path. Every gate is built: 1a and 1b (placeholders, bindings), 2 (`limited` at the
 broker), 3 (inference credentials) and 4 (the egress trail). #1090 is closed and each
@@ -785,16 +785,47 @@ the component-libraries plan ([0037](0037-component-libraries.md)). Decided
   replica presents the same root and nothing is stored. Merging is inert
   for the hosted deployment, which sets `BROKER_URL`.
 
-Still owed, in this order: the production flip (`BROKER_LISTEN_PORT` on the
-Fountain deployment, the Traefik `IngressRouteTCP` for the broker hostname
-pointed at the Fountain service, `BROKER_URL`/`BROKER_TOKEN` dropped, the
-`agent-vault` namespace and its CNPG cluster deleted), then a PR that
-deletes `Fountain.Broker.AgentVault`, `BROKER_URL`, `BROKER_TOKEN`,
-`BROKER_LOG_RETENTION_HOURS` and the vault reaper's Agent Vault branch.
-Gates 2, 3 and 4 are unchanged in what they require; on the native backend
-gate 4's stored request log behind `/api/conversations/:id/egress` is not
-built (the endpoint returns an empty page there), and the per-request
-telemetry with the conversation id is the half that exists. The status of
-this ADR stays Proposed until the flip has happened and the vendor client
-is gone.
+## Amendment (2026-09-03): production flipped, and the vendor client is gone
+
+Production moved to `BROKER_LISTEN_PORT` on 2026-09-03
+(jhgaylor/home-cloud#153): the Traefik `IngressRouteTCP` for
+`broker.inevitable.fyi` now points at the Fountain Service on 14322, the
+Certificate moved into the `fountain` namespace with it, and the
+`agent-vault` namespace and its CNPG cluster were deleted. `BROKER_URL`,
+`BROKER_TOKEN` and `Fountain.Broker.AgentVault` are gone from the codebase
+(#1487); boot refuses either variable rather than silently brokering nothing.
+`Fountain.Workers.BrokerVaultReaper` is `Fountain.Workers.BrokerReaper`,
+because there are no vaults to reap.
+
+Two things the flip closed on its way past. Agent Vault rate-limited `CONNECT`
+by TCP peer IP, and every sandbox reached it through a small pool of shared
+NAT egress addresses, so one tenant's bad-credential burst returned 429 to
+another's valid clone (#1206). And it answered 500 rather than 409 to a
+duplicate vault name, which broke a brokered reattach after idle (#1185).
+Neither failure has anywhere to live now: the native proxy has no
+auth-failure limiter, by design, and no vaults.
+
+Gate 4's stored request log **is** built on this backend (#1486): a
+`broker_requests` row per proxied request, written from the proxy's telemetry
+by a buffered writer, read by `GET /api/conversations/:id/egress`, swept by
+the reaper on `BROKER_LOG_RETENTION_HOURS`. Response status and latency stay
+unset until the byte pump frames responses, which is the one thing the Agent
+Vault log had that this one does not.
+
+### What the flip cost, and what caught it
+
+One regression, found by the first pre-flip smoke run and fixed the same day
+(#1492). `Managoat.Broker` closes the connection after a `407`; Agent Vault
+held it open and answered the retry on it. git leaves libcurl on `anyauth`,
+which cannot send a credential before it has seen a challenge naming the
+scheme, so every brokered clone failed with `Proxy CONNECT aborted` while
+inference and `npm install` were unaffected, because those clients send the
+credential preemptively. Fountain now pins git to `basic`. The proxy's own
+half is #1493, and it matters for the next client that negotiates rather than
+presumes.
+
+The lesson worth keeping: the parity checklist (#1359) compared the two
+proxies feature by feature and found nothing here, because this is not a
+feature. It is what a proxy does with a connection after it refuses one, and
+only a real client on the real path exercised it.
 

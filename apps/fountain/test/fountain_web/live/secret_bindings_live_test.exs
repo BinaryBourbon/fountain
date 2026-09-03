@@ -7,7 +7,7 @@ defmodule FountainWeb.SecretBindingsLiveTest do
 
   setup do
     previous =
-      for k <- [:broker_url, :broker_token, :broker_proxy_url, :broker_tenants],
+      for k <- [:broker_listen_port, :broker_proxy_url, :broker_tenants],
           do: {k, Application.get_env(:fountain, k)}
 
     on_exit(fn ->
@@ -19,8 +19,7 @@ defmodule FountainWeb.SecretBindingsLiveTest do
             )
     end)
 
-    Application.put_env(:fountain, :broker_url, "http://broker.test:14321")
-    Application.put_env(:fountain, :broker_token, "t")
+    Application.put_env(:fountain, :broker_listen_port, 14_322)
     Application.put_env(:fountain, :broker_proxy_url, "http://broker.test:14322")
     :ok
   end
