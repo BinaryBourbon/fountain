@@ -58,6 +58,18 @@ the placeholder.
               "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_ACCESS_TOKEN}" } } }
 ```
 
+A Node server needs one more variable. The built-in `fetch` in Node ignores
+`HTTP_PROXY` and `HTTPS_PROXY`. Its requests do not reach the broker, so the
+broker never replaces the placeholder. The server fails with `fetch failed`.
+Set `NODE_USE_ENV_PROXY` to `1` in the same `env` block. A Python server
+obeys the proxy variables and needs no change.
+
+```json
+{ "slack": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-slack"],
+             "env": { "SLACK_BOT_TOKEN": "${SLACK_ACCESS_TOKEN}",
+                      "NODE_USE_ENV_PROXY": "1" } } }
+```
+
 **A remote MCP server.** The entry names a URL and a connection. At spawn it
 gets a placeholder bearer, and the broker attaches the token to that host.
 
