@@ -3157,6 +3157,11 @@
             "ref": "BuzzIdentityResponse"
           }
         },
+        "402": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "Error"
