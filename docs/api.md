@@ -144,7 +144,11 @@ A registered client can produce a full-scope key after consent.
 Your client starts in **development mode**. It signs in only the account that
 registered it. Every other account gets an error page instead of a redirect.
 Only an operator can publish a client for other accounts to use. After an
-operator publishes it, only an operator can change its trusted registration.
+operator publishes it, only an operator can change or remove its trusted
+registration. Every other account signs in through it, and the `client_id` is
+random, so a deletion would break them all.
+
+One account can register a maximum of 25 apps.
 
 A redirect URI must match exactly and must use `https`. A URI on
 `localhost` or `127.0.0.1` can use `http` and matches on any port.

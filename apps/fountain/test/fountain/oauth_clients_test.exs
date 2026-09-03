@@ -42,6 +42,34 @@ defmodule Fountain.OAuthClientsTest do
       assert client.user_id == user.id
     end
 
+    test "caps how many clients one account may register" do
+      user = insert_verified_user()
+
+      for n <- 1..25 do
+        {:ok, _} =
+          OAuth.create_client(user.id, %{
+            "name" => "App #{n}",
+            "redirect_uris" => ["https://app#{n}.test/callback"]
+          })
+      end
+
+      assert {:error, changeset} =
+               OAuth.create_client(user.id, %{
+                 "name" => "One too many",
+                 "redirect_uris" => ["https://nope.test/callback"]
+               })
+
+      assert "at most 25 apps per account" in errors_on(changeset).base
+      assert length(OAuth.list_clients(user.id)) == 25
+
+      # The ceiling is per account, not per deployment.
+      assert {:ok, _} =
+               OAuth.create_client(insert_verified_user().id, %{
+                 "name" => "Someone else",
+                 "redirect_uris" => ["https://other.test/callback"]
+               })
+    end
+
     test "starts unpublished, whatever the caller says" do
       user = insert_verified_user()
 
@@ -342,6 +370,13 @@ defmodule Fountain.OAuthClientsTest do
       assert OAuth.get_client_record(mine.id, mine.user_id)
       refute OAuth.get_client_record(theirs.id, mine.user_id)
     end
+
+    test "get_client_record/2 returns nil for an id that is not a UUID" do
+      client = insert_oauth_client()
+
+      refute OAuth.get_client_record("foo", client.user_id)
+      refute OAuth.get_client_record("", client.user_id)
+    end
   end
 
   describe "delete_client/2" do
@@ -351,6 +386,15 @@ defmodule Fountain.OAuthClientsTest do
       {:ok, _} = OAuth.delete_client(client)
 
       refute OAuth.get_client(client.client_id)
+    end
+
+    test "cannot remove an operator-published registration" do
+      client = insert_oauth_client(published: true)
+
+      assert {:error, changeset} = OAuth.delete_client(client)
+      assert "published clients can only be removed by an operator" in errors_on(changeset).base
+      assert OAuth.get_client_record(client.id, client.user_id)
+      assert OAuth.get_client(client.client_id)
     end
   end
 

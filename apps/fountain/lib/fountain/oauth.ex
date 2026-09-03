@@ -27,6 +27,10 @@ defmodule Fountain.OAuth do
   alias Fountain.OAuth.Client
   alias Managoat.OAuth.Clients
 
+  # An abuse ceiling, not an allowance: every row here widens the deployment's
+  # CORS allowlist (ADR 0021), so registration must not be unbounded.
+  @max_clients_per_account 25
+
   @type client :: %{
           id: String.t(),
           name: String.t(),
@@ -177,17 +181,29 @@ defmodule Fountain.OAuth do
   @doc "One tenant-owned client by record id, or nil."
   @spec get_client_record(String.t(), String.t()) :: Client.t() | nil
   def get_client_record(id, user_id) when is_binary(id) and is_binary(user_id) do
-    Repo.get_by(Client, id: id, user_id: user_id)
+    # A path segment is whatever the caller typed. Casting a non-UUID to
+    # :binary_id raises, which phoenix_ecto turns into a 400 -- so the
+    # documented 404 would never reach a client that mistyped an id.
+    if valid_uuid?(id), do: Repo.get_by(Client, id: id, user_id: user_id)
   end
 
   @doc "Register an unpublished client for a tenant."
   @spec create_client(String.t(), map(), keyword()) ::
           {:ok, Client.t()} | {:error, Ecto.Changeset.t()}
   def create_client(user_id, attrs, opts \\ []) when is_binary(user_id) and is_map(attrs) do
-    %Client{}
-    |> Client.changeset(attrs, user_id)
-    |> Repo.insert()
-    |> audited("oauth_client.created", opts)
+    changeset = Client.changeset(%Client{}, attrs, user_id)
+
+    if client_count(user_id) >= @max_clients_per_account do
+      {:error,
+       changeset
+       |> Ecto.Changeset.add_error(
+         :base,
+         "at most #{@max_clients_per_account} apps per account"
+       )
+       |> Map.put(:action, :insert)}
+    else
+      changeset |> Repo.insert() |> audited("oauth_client.created", opts)
+    end
   end
 
   @doc "Rename a client or replace its redirect URIs."
@@ -207,11 +223,28 @@ defmodule Fountain.OAuth do
     )
   end
 
-  @doc "Delete a tenant-owned client."
+  @doc """
+  Delete a tenant-owned client.
+
+  Refused once the client is published, for the reason `update_client/3` is:
+  publication moved the trust boundary to every account, and deleting the row
+  would break sign-in for all of them with a `client_id` nobody can recreate.
+  """
   @spec delete_client(Client.t(), keyword()) ::
           {:ok, Client.t()} | {:error, Ecto.Changeset.t()}
   def delete_client(%Client{} = client, opts \\ []) do
-    client |> Repo.delete() |> audited("oauth_client.deleted", opts)
+    if client.published do
+      {:error,
+       client
+       |> Ecto.Changeset.change()
+       |> Ecto.Changeset.add_error(
+         :base,
+         "published clients can only be removed by an operator"
+       )
+       |> Map.put(:action, :delete)}
+    else
+      client |> Repo.delete() |> audited("oauth_client.deleted", opts)
+    end
   end
 
   @doc """
@@ -229,6 +262,12 @@ defmodule Fountain.OAuth do
   end
 
   def registered_origin?(_), do: false
+
+  defp client_count(user_id) do
+    Repo.aggregate(from(c in Client, where: c.user_id == ^user_id), :count)
+  end
+
+  defp valid_uuid?(id), do: match?({:ok, _}, Ecto.UUID.cast(id))
 
   defp origin_key_query(key) do
     from c in Client, where: fragment("? @> ?", c.origin_keys, ^[key])

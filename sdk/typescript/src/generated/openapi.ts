@@ -1480,7 +1480,7 @@ export interface paths {
         post?: never;
         /**
          * Unregister an OAuth client
-         * @description Deleting a client stops new sign-ins through it. Keys it already issued are ordinary API keys and outlive it — revoke those under the API keys endpoint.
+         * @description Deleting a client stops new sign-ins through it. Keys it already issued are ordinary API keys and outlive it — revoke those under the API keys endpoint. A published client can only be removed by an operator, because every account signs in through it.
          */
         delete: operations["FountainWeb.OAuthClientController.delete"];
         options?: never;
@@ -8817,6 +8817,15 @@ export interface operations {
             };
             /** @description No such client */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Refused */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

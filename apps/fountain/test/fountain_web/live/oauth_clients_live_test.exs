@@ -79,4 +79,27 @@ defmodule FountainWeb.OAuthClientsLiveTest do
 
     assert OAuth.list_clients(user.id) == []
   end
+
+  test "a published app offers neither Edit nor Delete", %{conn: conn} do
+    user = insert_verified_user()
+    client = insert_oauth_client(user_id: user.id, name: "Published", published: true)
+
+    {:ok, view, html} = conn |> login_user(user) |> live(~p"/account/oauth-apps")
+
+    assert html =~ "Published"
+    refute has_element?(view, "button[phx-value-id='#{client.id}'][phx-click=edit]")
+    refute has_element?(view, "button[phx-value-id='#{client.id}'][phx-click=delete]")
+  end
+
+  # The cancel that closed the form and a submit already in flight arrive in
+  # that order; the save must not take the view down with it.
+  test "a save with no form open is a no-op, not a crash", %{conn: conn} do
+    user = insert_verified_user()
+
+    {:ok, view, _html} = conn |> login_user(user) |> live(~p"/account/oauth-apps")
+
+    assert render_hook(view, "save", %{"name" => "Ghost", "redirect_uris" => "https://x.test/c"})
+    assert OAuth.list_clients(user.id) == []
+    assert render(view) =~ "OAuth apps"
+  end
 end

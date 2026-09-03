@@ -124,6 +124,28 @@ defmodule FountainWeb.OAuthClientControllerTest do
       assert conn |> delete("/api/oauth/clients/#{client.id}") |> response(204)
       assert OAuth.list_clients(user.id) == []
     end
+
+    test "cannot remove an operator-published registration", %{conn: conn, user: user} do
+      client = insert_oauth_client(user_id: user.id, published: true)
+
+      body = conn |> delete("/api/oauth/clients/#{client.id}") |> json_response(422)
+
+      assert body["errors"]["base"] == [
+               "published clients can only be removed by an operator"
+             ]
+
+      assert OAuth.get_client(client.client_id)
+    end
+
+    test "an id that is not a UUID is 404, not a cast error", %{conn: conn} do
+      assert conn |> get("/api/oauth/clients/not-a-uuid") |> json_response(404)
+
+      assert conn
+             |> patch("/api/oauth/clients/not-a-uuid", %{"name" => "x"})
+             |> json_response(404)
+
+      assert conn |> delete("/api/oauth/clients/not-a-uuid") |> json_response(404)
+    end
   end
 
   # A client is a standing way to obtain a full-scope key with one consent, so

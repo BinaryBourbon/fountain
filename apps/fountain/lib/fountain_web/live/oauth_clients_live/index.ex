@@ -64,9 +64,17 @@ defmodule FountainWeb.OAuthClientsLive.Index do
 
         %Client{} = client ->
           OAuth.update_client(client, attrs, Audited.attribution(socket))
+
+        # A submit queued behind the cancel that closed the form, or a
+        # crafted event. There is nothing to save and nothing to report.
+        nil ->
+          :no_form
       end
 
     case result do
+      :no_form ->
+        {:noreply, socket}
+
       {:ok, _client} ->
         {:noreply,
          socket
@@ -89,12 +97,19 @@ defmodule FountainWeb.OAuthClientsLive.Index do
         {:noreply, put_flash(socket, :error, "No such app")}
 
       client ->
-        {:ok, _} = OAuth.delete_client(client, Audited.attribution(socket))
+        case OAuth.delete_client(client, Audited.attribution(socket)) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> assign(:clients, OAuth.list_clients(socket.assigns.user_id))
+             |> put_flash(
+               :info,
+               "App deleted. Keys it already issued stay valid until revoked."
+             )}
 
-        {:noreply,
-         socket
-         |> assign(:clients, OAuth.list_clients(socket.assigns.user_id))
-         |> put_flash(:info, "App deleted. Keys it already issued stay valid until revoked.")}
+          {:error, changeset} ->
+            {:noreply, put_flash(socket, :error, Enum.join(error_messages(changeset), ", "))}
+        end
     end
   end
 
@@ -210,6 +225,7 @@ defmodule FountainWeb.OAuthClientsLive.Index do
               Edit
             </.button>
             <.button
+              :if={not c.published}
               variant="ghost"
               phx-click="delete"
               phx-value-id={c.id}

@@ -121,7 +121,11 @@ initiates the flow.**
   the person who registered it, its owner may name any HTTPS redirect URI or
   an HTTP loopback URI.
   `published` is an operator flip with no self-serve path. Once published, the
-  owner cannot change the operator-approved registration through self-service.
+  owner can neither change nor delete the operator-approved registration
+  through self-service. Deleting matters as much as editing: publication moved
+  the trust boundary to every account, and the row's `client_id` is random, so
+  a deletion would break sign-in for all of them with an id nobody can
+  recreate.
 - **RFC 8252 loopback matching**, for unpublished clients only: a
   `http://localhost` or `http://127.0.0.1` redirect matches on any port,
   because the port a local dev server lands on is not a fact anybody
@@ -143,6 +147,10 @@ initiates the flow.**
   (`Fountain.Accounts.ApiKey`); a sandbox token must not be able to leave one
   behind. Registering from the console, the CLI or the API with the owner's
   own key still removes the operator, which was the point.
+- **Twenty-five clients per account**, an abuse ceiling rather than an
+  allowance, because every row widens the deployment's CORS allowlist and
+  registration is self-serve. An operator raises it by editing the constant;
+  nobody has asked yet.
 - **Audit**: `oauth_client.created`, `.updated`, `.deleted`, and
   `oauth.authorized` now carries the client's `resource_id`.
 
