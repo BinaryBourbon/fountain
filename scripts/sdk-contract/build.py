@@ -31,7 +31,9 @@ languages.
 
 Usage:
     python3 scripts/sdk-contract/build.py            # write both files
-    python3 scripts/sdk-contract/build.py --check    # fail if either is stale
+    python3 scripts/sdk-contract/build.py --check    # write dist/openapi.json,
+                                                     # then fail rather than
+                                                     # write a stale contract
 """
 
 from __future__ import annotations
@@ -362,12 +364,14 @@ def main() -> int:
 
     problems = check_defaults(contract)
 
+    # The artifact is written in both modes. `mix openapi.export` renders it in
+    # the encoder's order, so it is never canonical when it lands and there
+    # would be nothing for a check to do but rewrite it. The TypeScript
+    # generate step reads it straight after this, and what --check is about is
+    # the committed files below.
+    spec_path.write_text(canonical_spec)
+
     if args.check:
-        if spec_path.read_text() != canonical_spec:
-            problems.append(
-                f"  {spec_path} is not canonical.\n"
-                "      Rebuild it: scripts/sdk-contract/build.sh"
-            )
         on_disk = CONTRACT.read_text() if CONTRACT.exists() else ""
         if on_disk != rendered:
             problems.append(
@@ -387,7 +391,6 @@ def main() -> int:
         sys.stderr.write("SDK wire contract: FAILED\n\n" + "\n".join(problems) + "\n")
         return 1
 
-    spec_path.write_text(canonical_spec)
     CONTRACT.parent.mkdir(parents=True, exist_ok=True)
     CONTRACT.write_text(rendered)
     print(
