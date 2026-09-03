@@ -16,6 +16,17 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **Standalone consumers for the Managoat libraries** (#1365). The
+  [`managoat_examples`](https://github.com/managoat/managoat_examples)
+  repository has three plain Mix projects with Hex dependencies and no
+  Fountain dependency: a local ACP adapter over an Erlang `Port`, an ACP
+  session inside `Managoat.Sandbox` with a credential-free Fake path and an
+  opt-in Sprites path, and MCP authorization discovery with dynamic client
+  registration. Its CI compiles all three with warnings as errors and runs
+  the Fake sandbox turn.
+
 ### Fixed
 
 - **opencode on a `google/` model could never authenticate** (#1460).

@@ -83,6 +83,20 @@ holds no library app, and `umbrella_layout_test.exs` and
 `scripts/test-libraries.sh` guard the next one. The tracker is #1334. Each PR
 that extracts or graduates a library updates this block.
 
+**Second consumer:**
+[`managoat/managoat_examples`](https://github.com/managoat/managoat_examples)
+(#1365, 2026-09-03) is three standalone Mix projects that depend only on the
+Hex releases. `acp_stdio` runs an adapter as an Erlang `Port` and gives its
+bytes to `Managoat.ACP.Peer` through the writer callback. `sandbox_agent`
+runs the same peer behind `Managoat.Sandbox.write_stdin/2`; its default
+`Managoat.Sandbox.Fake` script needs no credentials, and its opt-in Sprites
+path provisions a real adapter through `Managoat.Runtimes`. `mcp_discovery`
+starts with one verified server URL and uses `Managoat.McpAuth` through
+dynamic client registration. CI compiles every example from exact Hex pins
+and runs the Fake turn. The consumer needed no new library surface: the
+writer callback, the Fake command vocabulary and `${VAR}` substitution were
+enough outside Fountain.
+
 Extends [0010](0010-ee-directory-boundary.md) (the licence boundary inside
 one repo) and [0027](0027-agpl-relicensing.md) (the server's licence). Names
 the seams that [0018](0018-sandbox-provider-abstraction.md),
@@ -233,6 +247,10 @@ credit rules that `CLAUDE.md` lists as easy to get wrong.
 - **The credits ledger is the exception that proves the licence rule.** It
   is listed so the boundary is written down, not because extraction is
   assumed.
+- **A second consumer now exercises the seams without Fountain.** The
+  examples in `managoat/managoat_examples` compile only against Hex packages.
+  The local-Port and sandbox transports share the same peer, and the Fake
+  sandbox completes a scripted ACP turn in CI without provider credentials.
 
 ## Alternatives considered
 
