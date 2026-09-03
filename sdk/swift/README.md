@@ -26,17 +26,16 @@ print(try await next.value().text)
 
 ## Install
 
-The remotely consumable `Package.swift` is at the repository root. Until a
-new Fountain release tag containing that manifest exists, depend on `main`:
+The remotely consumable `Package.swift` is at the repository root. Depend on
+Fountain 0.16.0 or newer:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/BinaryBourbon/fountain.git", branch: "main")
+    .package(url: "https://github.com/BinaryBourbon/fountain.git", from: "0.16.0")
 ]
 ```
 
 Then add `.product(name: "Fountain", package: "fountain")` to your target.
-After the next Fountain `vX.Y.Z` tag, pin that version instead of a branch.
 
 Swift 6.1 or newer is required. The SDK supports macOS 12, iOS/tvOS 15,
 watchOS 8, and Linux FoundationNetworking, with no third-party dependencies.
