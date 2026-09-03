@@ -39,6 +39,62 @@ defmodule Fountain.Conversations.McpServers do
   end
 
   @doc """
+  The whole `session/new` MCP list for a turn: the agent's own servers, with
+  `${VAR}` already resolved and the tenant's brokered connections folded in,
+  followed by the ones Fountain serves back to the sandbox.
+
+  `opts` is what `ConversationServer` unpacks from its state — `:user_id`,
+  `:conversation_id`, `:callback_token` and `:resolved`, the conversation's
+  resolved MCP configuration (see `resolve_for_session/2`).
+  """
+  @spec for_session(Agent.t() | nil, map(), keyword()) :: [map()]
+  def for_session(agent, conv, opts) do
+    token = Keyword.get(opts, :callback_token)
+
+    agent
+    |> resolve_for_session(Keyword.get(opts, :resolved))
+    |> Fountain.Conversations.Egress.with_connection_servers(
+      Keyword.fetch!(opts, :user_id),
+      Keyword.fetch!(opts, :conversation_id),
+      token
+    )
+    |> Managoat.Runtimes.ACP.mcp_servers()
+    |> Kernel.++(fountain_served(conv, token))
+  end
+
+  @doc """
+  Put the conversation's already-resolved MCP configuration back onto a
+  freshly-fetched agent, for the turn that is about to open a session.
+
+  The turn path re-reads the agent row on every prompt, which is right — an
+  edit between turns should take effect — but that row holds the *stored*
+  document, with its `${VAR}` references and `$$` escapes unresolved. Sending
+  that to ACP `session/new` was #1404: the session copy wins in Claude Code,
+  so a header written `Bearer $${FOUNTAIN_TOKEN}` reached the server as
+  `Bearer $ftn_…`, the runtime having expanded the inner reference and left
+  the escape behind. The sandbox's own `.mcp.json` never had the bug, because
+  that copy is written from the substituted document — which is exactly the
+  point: there must be **one** substitution pass and one effective config,
+  not a resolved copy on disk and a raw one on the wire.
+
+  `resolved` is `nil` for an agentless conversation, and for one whose server
+  has not provisioned yet; the agent is returned untouched in both cases
+  rather than having its configuration blanked.
+
+  Resolution happens once per provision (`substitute_agent/3`), so a reattach
+  or a wake re-resolves against the environment and secrets as they are then.
+  Values Fountain does not own are deliberately still the runtime's to expand:
+  `${FOUNTAIN_TOKEN}` and `${FOUNTAIN_CONVERSATION_ID}` are process
+  environment inside the sandbox, never entries in `vars`, so a resumed turn
+  reads the current callback credential rather than one frozen into a
+  document.
+  """
+  @spec resolve_for_session(Agent.t() | nil, map() | nil) :: Agent.t() | nil
+  def resolve_for_session(nil, _resolved), do: nil
+  def resolve_for_session(agent, nil), do: agent
+  def resolve_for_session(agent, resolved), do: %{agent | mcp_servers: resolved}
+
+  @doc """
   The variables `${VAR}` resolves against: the environment's `env_vars` with
   keys and values as strings, overridden by the decrypted `secrets`.
   """

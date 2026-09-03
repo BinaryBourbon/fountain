@@ -33,6 +33,103 @@ defmodule Fountain.Conversations.McpServersTest do
     end
   end
 
+  describe "resolve_for_session/2 and for_session/3 (#1404)" do
+    # The escape is the whole bug. `$${FOUNTAIN_TOKEN}` means "leave a literal
+    # `${FOUNTAIN_TOKEN}` for the runtime to expand from the sandbox's process
+    # env". Fountain's pass turns `$$` into `$`; the runtime then expands the
+    # single-`$` reference. Send the *raw* document to `session/new` instead
+    # and the runtime expands the inner reference and leaves the escape, so
+    # the server receives `Bearer $ftn_…`.
+    test "the escaped form survives exactly one pass" do
+      agent = %Agent{
+        mcp_servers: %{
+          "salon" => %{"headers" => %{"Authorization" => "Bearer $${FOUNTAIN_TOKEN}"}}
+        }
+      }
+
+      assert {:ok, %Agent{mcp_servers: resolved}} =
+               McpServers.substitute_agent(agent, nil, %{})
+
+      assert resolved == %{
+               "salon" => %{"headers" => %{"Authorization" => "Bearer ${FOUNTAIN_TOKEN}"}}
+             }
+
+      # And that resolved form is what a turn puts on the wire, not the row.
+      assert %Agent{mcp_servers: ^resolved} = McpServers.resolve_for_session(agent, resolved)
+    end
+
+    test "an ordinary reference resolves once, and is not expanded twice" do
+      # `${A}` resolving to a string that itself looks like a reference must
+      # not be re-scanned: one pass, or a secret whose value contains `${...}`
+      # would reach for a variable the tenant never wrote.
+      agent = %Agent{mcp_servers: %{"svc" => %{"url" => "${A}"}}}
+
+      assert {:ok, %Agent{mcp_servers: mcp}} =
+               McpServers.substitute_agent(agent, nil, %{"A" => "${B}", "B" => "leaked"})
+
+      assert mcp == %{"svc" => %{"url" => "${B}"}}
+    end
+
+    test "the stored agent is never mutated by resolution" do
+      raw = %{"svc" => %{"token" => "${SECRET}"}}
+      agent = %Agent{mcp_servers: raw}
+
+      {:ok, %Agent{mcp_servers: resolved}} =
+        McpServers.substitute_agent(agent, nil, %{"SECRET" => "s3cret"})
+
+      # The resolved value exists only on the copy the session is built from.
+      assert resolved == %{"svc" => %{"token" => "s3cret"}}
+      assert agent.mcp_servers == raw
+    end
+
+    test "no resolved config leaves the freshly-fetched agent alone" do
+      # An agentless conversation, and one whose server has not provisioned
+      # yet: return the agent untouched rather than blanking its config.
+      agent = %Agent{mcp_servers: %{"svc" => %{"url" => "${A}"}}}
+
+      assert McpServers.resolve_for_session(agent, nil) == agent
+      assert McpServers.resolve_for_session(nil, %{"svc" => %{}}) == nil
+    end
+
+    # The reported case, end to end: Salon's conversation-authenticated HTTP
+    # MCP server. The row holds `Bearer $${FOUNTAIN_TOKEN}`; what reaches
+    # `session/new` must be the single-`$` form the runtime can expand, so the
+    # server sees `Bearer ftn_…` and not `Bearer $ftn_…`.
+    test "for_session sends the resolved document, not the agent row" do
+      user = insert_verified_user()
+
+      raw = %{
+        "salon" => %{
+          "type" => "http",
+          "url" => "https://salon.example/mcp",
+          "headers" => %{"Authorization" => "Bearer $${FOUNTAIN_TOKEN}"}
+        }
+      }
+
+      agent = insert_agent(user_id: user.id, mcp_servers: raw)
+      conv = insert_conversation(user_id: user.id, agent: agent)
+
+      {:ok, %Agent{mcp_servers: resolved}} = McpServers.substitute_agent(agent, nil, %{})
+
+      servers =
+        McpServers.for_session(agent, conv,
+          user_id: user.id,
+          conversation_id: conv.id,
+          callback_token: nil,
+          resolved: resolved
+        )
+
+      assert %{name: "salon", headers: headers} =
+               Enum.find(servers, &(&1[:name] == "salon"))
+
+      assert headers == [%{name: "Authorization", value: "Bearer ${FOUNTAIN_TOKEN}"}]
+
+      # The bug: the raw row would have put the escape on the wire, and the
+      # runtime would have expanded the inner reference and left the `$`.
+      refute inspect(servers) =~ "$${FOUNTAIN_TOKEN}"
+    end
+  end
+
   describe "substitution_vars/2" do
     test "no environment is just the secrets" do
       assert McpServers.substitution_vars(nil, %{"K" => "v"}) == %{"K" => "v"}

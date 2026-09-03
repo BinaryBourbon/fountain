@@ -71,6 +71,26 @@ upgrade, is in
 
 ### Fixed
 
+- **ACP `session/new` carried the agent's unsubstituted MCP configuration**
+  (#1404). Fountain resolves `${VAR}` references once at provision and writes
+  the sandbox's `.mcp.json` from the result, but the turn path re-read the
+  agent row on every prompt and sent *that* — the stored document, escapes
+  and all — as `session/new.mcpServers`. The session copy wins in Claude
+  Code, so a conversation-authenticated HTTP MCP server declared
+  `Bearer $${FOUNTAIN_TOKEN}` received `Bearer $ftn_…`: the runtime expanded
+  the inner reference and left the escape behind, and Salon had to strip the
+  stray `$` at its end. There is one substitution pass and one effective
+  configuration now — the resolved document is carried on the conversation
+  and is what both the project file and the session get. Resolved values
+  still exist only on the live conversation path; the stored agent, API
+  responses, logs and audit records are unchanged. `${FOUNTAIN_TOKEN}` and
+  `${FOUNTAIN_CONVERSATION_ID}` remain the runtime's to expand from the
+  sandbox process environment, which is what keeps a reattached or resumed
+  turn on the current credential rather than one frozen into a document.
+  Assembling the `session/new` list moved to
+  `Conversations.McpServers.for_session/3`, so the server's pin holds at
+  2,835 rather than growing.
+
 - **Platform inference on the gemini runtime was unbilled** (#1459). gemini
   leaves ACP's `PromptResponse.usage` empty and reports the turn's tokens
   under a vendor extension at `_meta.quota.token_count`, so

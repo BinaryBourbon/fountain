@@ -146,6 +146,92 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "the resolved MCP configuration (#1404)" do
+    # The server's half of the fix. Resolution happens once, at provision, and
+    # the resolved document is carried on state — so the turn path, which
+    # re-reads the agent row on every prompt, has the resolved copy to send to
+    # `session/new` instead of the raw one. `McpServersTest` covers what that
+    # copy then becomes on the wire.
+    test "provision resolves the agent's MCP config onto the server state", %{
+      user: user,
+      env: env,
+      sandbox: sandbox
+    } do
+      {:ok, env} =
+        Environments.update_environment(env, %{"env_vars" => %{"SALON_HOST" => "salon.example"}})
+
+      agent =
+        insert_agent(
+          user_id: user.id,
+          environment_id: env.id,
+          runtime: "claude",
+          mcp_servers: %{
+            "salon" => %{
+              "type" => "http",
+              "url" => "https://${SALON_HOST}/mcp",
+              "headers" => %{"Authorization" => "Bearer $${FOUNTAIN_TOKEN}"}
+            }
+          }
+        )
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          runtime: @legacy_runtime,
+          sandbox_id: sandbox.id,
+          status: "pending"
+        )
+
+      stub_happy_sprite()
+
+      {pid, _ref, :alive} = start_server(conv)
+
+      resolved = :sys.get_state(pid).resolved_mcp_servers
+
+      # The environment reference is resolved by Fountain, and the escaped one
+      # is left as a single-`$` reference for the runtime to expand from the
+      # sandbox's own process env — where the credential is always current,
+      # which is why a reattached or resumed turn cannot send a stale token.
+      assert resolved == %{
+               "salon" => %{
+                 "type" => "http",
+                 "url" => "https://salon.example/mcp",
+                 "headers" => %{"Authorization" => "Bearer ${FOUNTAIN_TOKEN}"}
+               }
+             }
+
+      # The stored agent still holds the unresolved document: the resolved
+      # values live only on the live conversation path.
+      assert Fountain.Agents._unsafe_get_agent!(agent.id).mcp_servers["salon"]["url"] ==
+               "https://${SALON_HOST}/mcp"
+
+      GenServer.stop(pid)
+    end
+
+    test "an agentless conversation carries no resolved config", %{
+      user: user,
+      sandbox: sandbox
+    } do
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent_id: nil,
+          runtime: @legacy_runtime,
+          sandbox_id: sandbox.id,
+          status: "pending"
+        )
+
+      stub_happy_sprite()
+
+      {pid, _ref, :alive} = start_server(conv)
+
+      assert :sys.get_state(pid).resolved_mcp_servers == nil
+
+      GenServer.stop(pid)
+    end
+  end
+
   describe "provisioning — per-launch environment override (#783)" do
     # The observable difference between two environments at provision is which
     # checkpoint is restored, so that is what the assertion reads.
