@@ -128,7 +128,7 @@ defmodule Fountain.ExtensionCompositionTest do
   end
 
   describe "openapi_paths/1" do
-    test "prefixes an extension's paths with its own mount" do
+    test "describes an extension's paths under its own mount" do
       paths = Extensions.openapi_paths()
 
       assert Map.has_key?(paths, "/api/fixture/whoami")
@@ -149,10 +149,15 @@ defmodule Fountain.ExtensionCompositionTest do
       assert Extensions.openapi_paths([Disabled]) == %{}
     end
 
-    test "raises when an extension describes paths but declares no mount" do
-      assert_raise ArgumentError, ~r/describes OpenAPI paths but declares no api_prefix/, fn ->
-        Extensions.openapi_paths([DescribesWithoutMount])
-      end
+    test "raises on a path outside every mount the extension declares" do
+      # The whole reason openapi_paths/0 takes absolute paths: the check is
+      # "does it serve this?", asked directly, rather than made true by
+      # construction for a single mount and unanswerable for two.
+      assert_raise ArgumentError,
+                   ~r|"/api/somewhere-else/nested/deep".*outside every path|s,
+                   fn ->
+                     Extensions.openapi_paths([DescribesWithoutMount])
+                   end
     end
   end
 
@@ -236,7 +241,7 @@ defmodule Fountain.ExtensionCompositionTest do
       # Same string in the router mount and in the spec, by construction: the
       # host builds both from api_prefix/0, so a described path and a served
       # path cannot drift.
-      assert Map.has_key?(ApiSpec.spec().paths, "/api/" <> Enabled.api_prefix() <> "/whoami")
+      assert Map.has_key?(ApiSpec.spec().paths, "/api" <> Enabled.mount() <> "/whoami")
     end
   end
 

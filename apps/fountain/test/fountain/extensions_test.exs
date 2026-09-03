@@ -12,6 +12,7 @@ defmodule Fountain.ExtensionsTest do
   alias Fountain.Extensions
 
   alias Fountain.ExtensionFixtures.{
+    AdminRaises,
     Disabled,
     Enabled,
     EnabledRaises,
@@ -39,26 +40,56 @@ defmodule Fountain.ExtensionsTest do
     end
   end
 
-  describe "find_by_prefix/1" do
-    test "finds an installed extension by its prefix" do
-      assert Extensions.find_by_prefix("fixture") == Enabled
+  describe "find_mount/1" do
+    test "finds an installed extension by its mount" do
+      assert {Enabled, ["fixture"], Fountain.ExtensionFixtures.Router} =
+               Extensions.find_mount(["fixture", "whoami"])
+    end
+
+    test "matches the mount itself, with nothing after it" do
+      assert {Enabled, ["fixture"], _plug} = Extensions.find_mount(["fixture"])
     end
 
     test "does not find a configured-but-disabled extension" do
-      # Disabled declares "fixture-disabled" and is still in configured/0. If
+      # Disabled declares /fixture-disabled and is still in configured/0. If
       # this ever returns the module, a deployment that turned an extension off
       # would still be serving its routes.
-      assert Disabled.api_prefix() == "fixture-disabled"
-      assert Extensions.find_by_prefix("fixture-disabled") == nil
+      assert Disabled.api_mounts() == [
+               {"/fixture-disabled", Fountain.ExtensionFixtures.Router}
+             ]
+
+      assert Extensions.find_mount(["fixture-disabled", "whoami"]) == nil
     end
 
-    test "does not find an extension that declares no prefix" do
-      assert Silent.api_prefix() == nil
-      assert Extensions.find_by_prefix(nil) == nil
+    test "does not find an extension that mounts nothing" do
+      assert Silent.api_mounts() == []
     end
 
-    test "returns nil for an unknown prefix" do
-      assert Extensions.find_by_prefix("nothing-serves-this") == nil
+    test "returns nil for an unknown path, an empty one, and a non-list" do
+      assert Extensions.find_mount(["nothing-serves-this"]) == nil
+      assert Extensions.find_mount([]) == nil
+      assert Extensions.find_mount(nil) == nil
+    end
+
+    test "the LONGEST mount wins, so a nested mount is not swallowed" do
+      # The property Buzz needs: one extension holding both /api/buzz and
+      # /api/mcp/buzz, with a different plug behind each.
+      defmodule TwoMounts do
+        use Fountain.Extension, id: :two_mounts
+        @impl true
+        def api_mounts do
+          [
+            {"/thing", Fountain.ExtensionFixtures.Router},
+            {"/thing/deeper", Fountain.ExtensionFixtures.CollidingRouter}
+          ]
+        end
+      end
+
+      assert {TwoMounts, ["thing"], Fountain.ExtensionFixtures.Router} =
+               Extensions.find_mount(["thing", "x"], [TwoMounts])
+
+      assert {TwoMounts, ["thing", "deeper"], Fountain.ExtensionFixtures.CollidingRouter} =
+               Extensions.find_mount(["thing", "deeper", "x"], [TwoMounts])
     end
   end
 
@@ -136,6 +167,39 @@ defmodule Fountain.ExtensionsTest do
     end
   end
 
+  describe "admin_overview/1 and admin_user_columns/1" do
+    test "collect what installed extensions report, in configured order" do
+      assert [{label, 7, opts}] = Extensions.admin_overview()
+      assert label == Enabled.overview_label()
+      assert opts[:navigate] == "/admin/users"
+
+      assert [{header, cells}] = Extensions.admin_user_columns()
+      assert header == Enabled.column_header()
+      assert cells["nobody"] == %{value: 3, alert?: true}
+    end
+
+    test "are empty with nothing installed" do
+      assert Extensions.admin_overview([]) == []
+      assert Extensions.admin_user_columns([]) == []
+    end
+
+    test "a raising extension costs its own figures and not the page" do
+      # An admin page is a read-only view. Losing one number beats losing the
+      # page an operator opened during an incident, so this is contained the
+      # way the MCP fan-out is.
+      log =
+        capture_log(fn ->
+          assert Extensions.admin_overview([AdminRaises, Enabled]) == Enabled.admin_overview()
+
+          assert Extensions.admin_user_columns([AdminRaises, Enabled]) ==
+                   Enabled.admin_user_columns()
+        end)
+
+      assert log =~ "AdminRaises"
+      assert log =~ "fixture cannot count"
+    end
+  end
+
   describe "validate/2 accepts" do
     test "the list this suite actually runs" do
       assert Extensions.validate(Extensions.configured()) == :ok
@@ -164,100 +228,120 @@ defmodule Fountain.ExtensionsTest do
       assert message =~ "id :same is declared by more than one extension"
     end
 
-    test "on a duplicate API prefix" do
-      defmodule DupePrefixA do
-        use Fountain.Extension, id: :dupe_prefix_a
+    test "on a duplicate mount" do
+      defmodule DupeMountA do
+        use Fountain.Extension, id: :dupe_mount_a
         @impl true
-        def api_prefix, do: "shared"
-        @impl true
-        def api_plug, do: Fountain.ExtensionFixtures.Router
+        def api_mounts, do: [{"/shared", Fountain.ExtensionFixtures.Router}]
       end
 
-      defmodule DupePrefixB do
-        use Fountain.Extension, id: :dupe_prefix_b
+      defmodule DupeMountB do
+        use Fountain.Extension, id: :dupe_mount_b
         @impl true
-        def api_prefix, do: "shared"
-        @impl true
-        def api_plug, do: Fountain.ExtensionFixtures.Router
+        def api_mounts, do: [{"/shared", Fountain.ExtensionFixtures.Router}]
       end
 
-      assert {:error, message} = Extensions.validate([DupePrefixA, DupePrefixB])
-      assert message =~ ~s(API prefix "shared" is declared by more than one extension)
+      assert {:error, message} = Extensions.validate([DupeMountA, DupeMountB])
+      assert message =~ ~s(api_mount "/shared" is declared by more than one extension)
     end
 
-    test "on a prefix a core route already claims" do
+    test "on a mount a core route already claims" do
       defmodule Shadower do
         use Fountain.Extension, id: :shadower
         @impl true
-        def api_prefix, do: "agents"
-        @impl true
-        def api_plug, do: Fountain.ExtensionFixtures.Router
+        def api_mounts, do: [{"/agents", Fountain.ExtensionFixtures.Router}]
       end
 
       assert {:error, message} = Extensions.validate([Shadower])
-      assert message =~ "already served by a core route at /api/agents"
+      assert message =~ "overlaps the core route /api/agents"
     end
 
-    test "on a prefix the browser scope claims (/api/settings/theme)" do
+    test "on a mount the browser scope claims (/api/settings/theme)" do
       # The one /api path that lives in the browser scope, declared after every
       # /api scope in the router. A hand-kept reserved list would have missed
       # it; reading __routes__/0 does not.
       defmodule SettingsShadower do
         use Fountain.Extension, id: :settings_shadower
         @impl true
-        def api_prefix, do: "settings"
-        @impl true
-        def api_plug, do: Fountain.ExtensionFixtures.Router
+        def api_mounts, do: [{"/settings", Fountain.ExtensionFixtures.Router}]
       end
 
       assert {:error, message} = Extensions.validate([SettingsShadower])
-      assert message =~ "already served by a core route at /api/settings"
+      assert message =~ "overlaps the core route /api/settings"
     end
 
-    test "on a prefix that is not one lowercase segment" do
-      for bad <- ["Buzz", "/buzz", "buzz/agents", "buzz.thing", "", "9lives"] do
-        defmodule_with_prefix = fn prefix ->
-          {:module, mod, _, _} =
-            Module.create(
-              :"Elixir.BadPrefix#{System.unique_integer([:positive])}",
-              quote do
-                use Fountain.Extension, id: :bad_prefix
-                @impl true
-                def api_prefix, do: unquote(prefix)
-                @impl true
-                def api_plug, do: Fountain.ExtensionFixtures.Router
-              end,
-              Macro.Env.location(__ENV__)
-            )
-
-          mod
-        end
-
-        assert {:error, message} = Extensions.validate([defmodule_with_prefix.(bad)])
-        assert message =~ "is not one lowercase path segment", "accepted #{inspect(bad)}"
-      end
-    end
-
-    test "on a prefix with no plug behind it" do
-      defmodule PrefixNoPlug do
-        use Fountain.Extension, id: :prefix_no_plug
+    test "on a mount that a core route PREFIXES, not just one that prefixes a core route" do
+      # /api/mcp/team/:id exists, so mounting /mcp would be a route the host's
+      # own declaration order guarantees never serves anything. Overlap is
+      # refused in both directions for that reason.
+      defmodule McpShadower do
+        use Fountain.Extension, id: :mcp_shadower
         @impl true
-        def api_prefix, do: "orphan"
+        def api_mounts, do: [{"/mcp", Fountain.ExtensionFixtures.Router}]
       end
 
-      assert {:error, message} = Extensions.validate([PrefixNoPlug])
-      assert message =~ "but no api_plug"
+      assert {:error, message} = Extensions.validate([McpShadower])
+      assert message =~ "overlaps the core route /api/mcp"
     end
 
-    test "on a plug with no prefix in front of it" do
-      defmodule PlugNoPrefix do
-        use Fountain.Extension, id: :plug_no_prefix
+    test "but NOT on a deeper mount beside a core one (/mcp/buzz beside /api/mcp/team)" do
+      # The case the Buzz move needs: /api/mcp/team/:id and /api/mcp/caller/:id
+      # are core routes, and /api/mcp/buzz overlaps neither.
+      defmodule McpSibling do
+        use Fountain.Extension, id: :mcp_sibling
         @impl true
-        def api_plug, do: Fountain.ExtensionFixtures.Router
+        def api_mounts, do: [{"/mcp/sibling", Fountain.ExtensionFixtures.Router}]
       end
 
-      assert {:error, message} = Extensions.validate([PlugNoPrefix])
-      assert message =~ "but no api_prefix"
+      assert Extensions.validate([McpSibling]) == :ok
+    end
+
+    test "on a mount segment that is not lowercase and static" do
+      for bad <- ["/Buzz", "/buzz.thing", "/9lives", "/buzz/:id", "/"] do
+        module =
+          :"Elixir.BadMount#{System.unique_integer([:positive])}"
+          |> Module.create(
+            quote do
+              use Fountain.Extension, id: :bad_mount
+              @impl true
+              def api_mounts, do: [{unquote(bad), Fountain.ExtensionFixtures.Router}]
+            end,
+            Macro.Env.location(__ENV__)
+          )
+          |> elem(1)
+
+        assert {:error, message} = Extensions.validate([module])
+        assert message =~ "api_mount", "accepted #{inspect(bad)}"
+      end
+    end
+
+    test "on a mount deeper than three segments" do
+      defmodule TooDeep do
+        use Fountain.Extension, id: :too_deep
+        @impl true
+        def api_mounts, do: [{"/a/b/c/d", Fountain.ExtensionFixtures.Router}]
+      end
+
+      assert {:error, message} = Extensions.validate([TooDeep])
+      assert message =~ "more than 3 segments"
+    end
+
+    test "on an api_mounts entry that is not {path, plug}" do
+      defmodule BadMountShape do
+        use Fountain.Extension, id: :bad_mount_shape
+        @impl true
+        def api_mounts, do: ["/just-a-string"]
+      end
+
+      assert {:error, message} = Extensions.validate([BadMountShape])
+      assert message =~ "must be {path_string, plug_module} tuples"
+    end
+
+    test "on an OpenAPI path outside every mount the extension declares" do
+      assert {:error, message} =
+               Extensions.validate([Fountain.ExtensionFixtures.DescribesWithoutMount])
+
+      assert message =~ "which is outside every path it mounts"
     end
 
     test "on a module that is not an extension" do
@@ -312,21 +396,31 @@ defmodule Fountain.ExtensionsTest do
     end
   end
 
-  describe "reserved_prefixes/0" do
+  describe "core_route_prefixes/0" do
     test "is read from the router rather than hand-kept" do
-      reserved = Extensions.reserved_prefixes()
+      prefixes = Extensions.core_route_prefixes()
 
-      for prefix <- ~w(agents vaults environments conversations audit search catalog admin) do
-        assert MapSet.member?(reserved, prefix), "/api/#{prefix} should reserve #{prefix}"
+      # Some are whole routes (`/api/agents`); `/api/admin` has no bare route,
+      # only `/api/admin/users` and friends. Both reserve the name, because the
+      # overlap check refuses a mount in either direction — which is the
+      # property that matters, so it is what is asserted.
+      for segment <- ~w(agents vaults environments conversations audit search catalog admin) do
+        assert Enum.any?(prefixes, &List.starts_with?(&1, [segment])),
+               "/api/#{segment} should reserve #{segment}"
       end
     end
 
-    test "skips dynamic segments, which cannot collide with a static prefix" do
-      refute Enum.any?(Extensions.reserved_prefixes(), &String.starts_with?(&1, ":"))
+    test "truncates at the first dynamic segment" do
+      prefixes = Extensions.core_route_prefixes()
+
+      # /api/mcp/gmail/:conversation_id/:connection_id stops at the static half,
+      # so a mount at /mcp/gmail is refused and one at /mcp/other is not.
+      assert ["mcp", "gmail"] in prefixes
+      refute Enum.any?(prefixes, fn segs -> Enum.any?(segs, &String.starts_with?(&1, ":")) end)
     end
 
-    test "does not reserve a prefix nothing serves" do
-      refute MapSet.member?(Extensions.reserved_prefixes(), "fixture")
+    test "does not reserve a path nothing serves" do
+      refute ["fixture"] in Extensions.core_route_prefixes()
     end
   end
 end

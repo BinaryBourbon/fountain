@@ -151,8 +151,8 @@ defmodule FountainWeb.Plugs.ExtensionDispatchTest do
       # #1505's gate in one assertion: the seam is exercised end to end by a
       # fixture, so #1507 can move Buzz onto it without the architecture being
       # decided by that PR.
-      assert Enabled.api_prefix() == "fixture"
-      assert Fountain.Extensions.find_by_prefix("fixture") == Enabled
+      assert Enabled.api_mounts() == [{"/fixture", Fountain.ExtensionFixtures.Router}]
+      assert {Enabled, ["fixture"], _plug} = Fountain.Extensions.find_mount(["fixture", "whoami"])
       assert Enabled.conversation_mcp_servers(Enabled.claimed_conversation_id(), "t") != []
     end
   end

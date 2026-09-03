@@ -52,18 +52,50 @@ defmodule Fountain.Extensions do
   def installed(modules) when is_list(modules), do: Enum.filter(modules, &enabled?/1)
 
   @doc """
-  The installed extension that serves `/api/<prefix>`, or `nil`.
+  The installed extension that serves `path_info`, as `{extension, mount, plug}`.
 
-  `nil` covers all three of "no extension declares it", "the one that does is
-  disabled here" and "nothing is configured" — the caller answers 404 to each,
-  because they are the same answer to a client.
+  `mount` is the matched mount's segments, so the caller can trim exactly what
+  matched. The **longest** declared mount wins, which is what lets one extension
+  hold both `/api/buzz` and `/api/mcp/buzz` without either swallowing the other.
+
+  `nil` covers all of "no extension declares a mount here", "the one that does
+  is disabled here" and "nothing is configured" — the caller answers 404 to
+  each, because they are the same answer to a client.
   """
-  @spec find_by_prefix(String.t()) :: t() | nil
-  def find_by_prefix(prefix) when is_binary(prefix) do
-    Enum.find(installed(), fn ext -> ext.api_prefix() == prefix end)
+  @spec find_mount([String.t()]) :: {t(), [String.t()], Extension.plug()} | nil
+  def find_mount(path_info), do: find_mount(path_info, installed())
+
+  @doc "See `find_mount/1`. Takes the list, so a test can supply one."
+  @spec find_mount([String.t()], [t()]) :: {t(), [String.t()], Extension.plug()} | nil
+  def find_mount(path_info, modules) when is_list(path_info) and is_list(modules) do
+    modules
+    |> Enum.flat_map(fn ext ->
+      for {path, plug} <- ext.api_mounts(), do: {ext, segments(path), plug}
+    end)
+    |> Enum.filter(fn {_ext, mount, _plug} -> List.starts_with?(path_info, mount) end)
+    |> Enum.max_by(fn {_ext, mount, _plug} -> length(mount) end, fn -> nil end)
   end
 
-  def find_by_prefix(_prefix), do: nil
+  def find_mount(_path_info, _modules), do: nil
+
+  @doc ~S(The segments of a mount path: `"/mcp/buzz"` is `["mcp", "buzz"]`.)
+  @spec segments(String.t()) :: [String.t()]
+  def segments(path) when is_binary(path), do: String.split(path, "/", trim: true)
+
+  @doc """
+  Every mount an installed extension declares, as `{extension, path}`.
+
+  For anything that needs to know the whole surface: the OpenAPI check, and the
+  guard tests.
+  """
+  @spec mounts() :: [{t(), String.t()}]
+  def mounts, do: mounts(installed())
+
+  @doc "See `mounts/0`. Takes the list, so a test can supply one."
+  @spec mounts([t()]) :: [{t(), String.t()}]
+  def mounts(modules) when is_list(modules) do
+    for ext <- modules, {path, _plug} <- ext.api_mounts(), do: {ext, path}
+  end
 
   @doc """
   Every installed extension's MCP servers for this conversation, concatenated
@@ -186,18 +218,18 @@ defmodule Fountain.Extensions do
   ## ─── OpenAPI ─────────────────────────────────────────────────────────────
 
   @doc """
-  Every installed extension's OpenAPI paths, prefixed with its own mount.
+  Every installed extension's OpenAPI paths, checked against its mounts.
 
-  An extension describes `"/agents"`; this returns `"/api/buzz/agents"`. The
-  host owns the prefix in both the router and the spec, so a described path and
-  a served path cannot drift apart, and an extension cannot describe a path it
-  does not serve.
+  An extension returns absolute paths; this refuses any that falls outside the
+  mounts it declared, so an extension cannot describe a path it does not serve.
+  That check is the reason the callback takes absolute paths at all: prefixing
+  mount-relative ones made the property true by construction for a single mount
+  and had no answer for an extension holding two.
 
-  Raises if two extensions produce the same path. Prefix uniqueness already
-  makes that impossible, so this is a second lock on the same door rather than a
-  live risk — but the failure it prevents (one extension's operation silently
-  replacing another's in the published spec) is invisible, and the SDKs are
-  generated from that spec.
+  Raises if two extensions describe the same path. Mount uniqueness already
+  makes that impossible, so it is a second lock on the same door — but the
+  failure it prevents (one extension's operation silently replacing another's in
+  the published spec) is invisible, and the SDKs are generated from that spec.
   """
   @spec openapi_paths() :: OpenApiSpex.Paths.t()
   def openapi_paths, do: openapi_paths(installed())
@@ -206,7 +238,7 @@ defmodule Fountain.Extensions do
   @spec openapi_paths([t()]) :: OpenApiSpex.Paths.t()
   def openapi_paths(modules) when is_list(modules) do
     modules
-    |> Enum.flat_map(&mounted_openapi_paths/1)
+    |> Enum.flat_map(&checked_openapi_paths/1)
     |> Enum.reduce(%{}, fn {path, item, ext}, acc ->
       case acc do
         %{^path => {_item, other}} ->
@@ -221,26 +253,102 @@ defmodule Fountain.Extensions do
     |> Map.new(fn {path, {item, _ext}} -> {path, item} end)
   end
 
-  defp mounted_openapi_paths(ext) do
-    case {ext.api_prefix(), ext.openapi_paths()} do
-      {_prefix, empty} when empty == %{} ->
-        []
+  defp checked_openapi_paths(ext) do
+    paths = ext.openapi_paths()
+    prefixes = Enum.map(ext.api_mounts(), fn {path, _plug} -> "/api" <> path end)
 
-      {prefix, paths} when is_binary(prefix) and is_map(paths) ->
-        Enum.map(paths, fn {path, item} -> {mount(prefix, path), item, ext} end)
-
-      {nil, paths} when is_map(paths) and map_size(paths) > 0 ->
+    for {path, item} <- paths do
+      unless Enum.any?(prefixes, &under?(path, &1)) do
         raise ArgumentError,
-              "extension #{inspect(ext)} describes OpenAPI paths but declares no api_prefix, " <>
-                "so there is no mount to describe them under"
+              "extension #{inspect(ext)} describes the OpenAPI path #{inspect(path)}, " <>
+                "which is outside every path it mounts (#{Enum.join(prefixes, ", ")})"
+      end
+
+      {path, item, ext}
     end
   end
 
-  defp mount(prefix, path) do
+  defp under?(path, prefix), do: path == prefix or String.starts_with?(path, prefix <> "/")
+
+  @doc """
+  A router's paths, mounted: `"/agents"` under `"/buzz"` is `"/api/buzz/agents"`.
+
+  What an extension calls from its own `openapi_paths/0`, so it writes its mount
+  once rather than repeating it on every path.
+  """
+  @spec mounted_paths(String.t(), module()) :: OpenApiSpex.Paths.t()
+  def mounted_paths(mount, router) when is_binary(mount) and is_atom(router) do
+    router
+    |> OpenApiSpex.Paths.from_router()
+    |> Map.new(fn {path, item} -> {mount_path(mount, path), item} end)
+  end
+
+  defp mount_path(mount, path) do
     case String.trim_leading(path, "/") do
-      "" -> "/api/" <> prefix
-      rest -> "/api/" <> prefix <> "/" <> rest
+      "" -> "/api" <> mount
+      rest -> "/api" <> mount <> "/" <> rest
     end
+  end
+
+  ## ─── Admin console ───────────────────────────────────────────────────────
+
+  @doc """
+  Every installed extension's admin overview figures, in configured order.
+
+  Data, not markup: the host renders each `{label, value}` as one stat tile
+  beside its own. An extension that raises here costs its own tiles and nothing
+  else — an admin page is a read-only view, and losing one number is better than
+  losing the page an operator opened during an incident.
+  """
+  @spec admin_overview([t()]) :: [{String.t(), term()}]
+  def admin_overview(modules \\ nil) do
+    Enum.flat_map(modules || installed(), fn ext ->
+      safe_admin(ext, :admin_overview, fn -> ext.admin_overview() end)
+    end)
+  end
+
+  @doc """
+  Every installed extension's extra admin users-table columns.
+
+  Each is `{header, %{user_id => value}}`, built once for the page rather than
+  once per row.
+  """
+  @spec admin_user_columns([t()]) :: [{String.t(), %{String.t() => term()}}]
+  def admin_user_columns(modules \\ nil) do
+    Enum.flat_map(modules || installed(), fn ext ->
+      safe_admin(ext, :admin_user_columns, fn -> ext.admin_user_columns() end)
+    end)
+  end
+
+  defp safe_admin(ext, callback, fun) do
+    case fun.() do
+      list when is_list(list) ->
+        list
+
+      other ->
+        Logger.error(
+          "extension #{inspect(ext)} #{callback}/0 returned #{inspect(other)}, " <>
+            "expected a list; contributing none"
+        )
+
+        []
+    end
+  rescue
+    error ->
+      Logger.error(
+        "extension #{inspect(ext)} #{callback}/0 raised; contributing none\n" <>
+          Exception.format(:error, error, __STACKTRACE__)
+      )
+
+      []
+  catch
+    kind, reason ->
+      Logger.error(
+        "extension #{inspect(ext)} #{callback}/0 failed; contributing none\n" <>
+          Exception.format(kind, reason, __STACKTRACE__)
+      )
+
+      []
   end
 
   ## ─── Validation ──────────────────────────────────────────────────────────
@@ -276,16 +384,18 @@ defmodule Fountain.Extensions do
   module. Pure: it reads the router's compiled route table and nothing else, so
   a test can call it on any list without touching configuration.
   """
-  @spec validate([t()], MapSet.t(String.t()) | nil) :: :ok | {:error, String.t()}
-  def validate(modules, reserved \\ nil) do
-    reserved = reserved || reserved_prefixes()
+  @spec validate([t()]) :: :ok | {:error, String.t()}
+  def validate(modules), do: validate(modules, core_route_prefixes())
 
+  @doc "See `validate/1`. Takes the core prefixes, so a test can supply them."
+  @spec validate([t()], [[String.t()]]) :: :ok | {:error, String.t()}
+  def validate(modules, core_prefixes) when is_list(core_prefixes) do
     with :ok <- check_all(modules, &check_module/1),
          :ok <- check_unique(modules, & &1.id(), "id"),
-         :ok <- check_all(modules, &check_http_surface/1),
-         :ok <- check_all(modules, &check_prefix_shape/1),
-         :ok <- check_unique(modules, & &1.api_prefix(), "API prefix"),
-         :ok <- check_all(modules, &check_prefix_free(&1, reserved)) do
+         :ok <- check_all(modules, &check_mount_shapes/1),
+         :ok <- check_mounts_unique(modules),
+         :ok <- check_all(modules, &check_mounts_free(&1, core_prefixes)),
+         :ok <- check_resolvable(fn -> openapi_paths(installed(modules)) end) do
       # Only the ones this deployment will actually run: a configured extension
       # that is off here contributes no migrations, so its directory need not be
       # present. Resolution is what checks it, so this is the same code path the
@@ -295,26 +405,29 @@ defmodule Fountain.Extensions do
   end
 
   @doc """
-  The `/api/<segment>` prefixes the core router already claims.
+  The static path prefixes the core router already claims under `/api`.
 
+  Each is a segment list truncated at the first dynamic segment, so
+  `/api/mcp/gmail/:conversation_id/:connection_id` yields `["mcp", "gmail"]`.
   Read from the compiled route table, so it needs no maintenance: a route added
-  to `FountainWeb.Router` reserves its prefix from the same commit. Dynamic
-  segments (`/api/:thing`) are skipped — nothing static can collide with them,
-  and an extension prefix is always static.
+  to `FountainWeb.Router` reserves its path from the same commit.
   """
-  @spec reserved_prefixes() :: MapSet.t(String.t())
-  def reserved_prefixes do
+  @spec core_route_prefixes() :: [[String.t()]]
+  def core_route_prefixes do
     FountainWeb.Router.__routes__()
     |> Enum.flat_map(fn route ->
       case String.split(route.path, "/", trim: true) do
-        ["api", ":" <> _dynamic | _rest] -> []
-        ["api", "*" <> _glob | _rest] -> []
-        ["api", segment | _rest] -> [segment]
+        ["api" | rest] -> [Enum.take_while(rest, &static_segment?/1)]
         _other -> []
       end
     end)
-    |> MapSet.new()
+    |> Enum.reject(&(&1 == []))
+    |> Enum.uniq()
   end
+
+  defp static_segment?(":" <> _rest), do: false
+  defp static_segment?("*" <> _rest), do: false
+  defp static_segment?(_segment), do: true
 
   # Turns the raise that `migration_paths/1` and `openapi_paths/1` use at their
   # own call sites into the `{:error, message}` this function returns, so
@@ -338,9 +451,12 @@ defmodule Fountain.Extensions do
   @required_callbacks [
     id: 0,
     enabled?: 0,
-    api_prefix: 0,
-    api_plug: 0,
-    conversation_mcp_servers: 2
+    api_mounts: 0,
+    conversation_mcp_servers: 2,
+    migrations: 0,
+    openapi_paths: 0,
+    admin_overview: 0,
+    admin_user_columns: 0
   ]
 
   defp check_module(module) when is_atom(module) do
@@ -370,60 +486,98 @@ defmodule Fountain.Extensions do
     {:error, "#{inspect(other)} is not a module"}
   end
 
-  defp check_http_surface(module) do
-    case {module.api_prefix(), module.api_plug()} do
-      {nil, nil} ->
+  # One or more lowercase static segments. Deliberately narrow: a mount carrying
+  # an uppercase letter, a dot or a dynamic segment is a mount that reads
+  # differently in a route, in an OpenAPI path and in a URL a person types.
+  @segment_shape ~r/^[a-z][a-z0-9-]*$/
+  @max_mount_segments 3
+
+  defp check_mount_shapes(module) do
+    Enum.reduce_while(module.api_mounts(), :ok, fn entry, :ok ->
+      case check_mount_shape(module, entry) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp check_mount_shape(module, {path, plug}) when is_binary(path) and is_atom(plug) do
+    segments = segments(path)
+
+    cond do
+      segments == [] ->
+        {:error, "#{inspect(module)} declares an empty api_mount path"}
+
+      length(segments) > @max_mount_segments ->
+        {:error,
+         "#{inspect(module)} api_mount #{inspect(path)} has more than " <>
+           "#{@max_mount_segments} segments"}
+
+      not Enum.all?(segments, &Regex.match?(@segment_shape, &1)) ->
+        {:error,
+         "#{inspect(module)} api_mount #{inspect(path)} is not lowercase static " <>
+           "path segments matching #{inspect(Regex.source(@segment_shape))}"}
+
+      not String.starts_with?(path, "/") ->
+        {:error, "#{inspect(module)} api_mount #{inspect(path)} must start with /"}
+
+      true ->
         :ok
-
-      {prefix, nil} when is_binary(prefix) ->
-        {:error, "#{inspect(module)} declares api_prefix #{inspect(prefix)} but no api_plug"}
-
-      {nil, plug} ->
-        {:error, "#{inspect(module)} declares api_plug #{inspect(plug)} but no api_prefix"}
-
-      {prefix, _plug} when is_binary(prefix) ->
-        :ok
-
-      {prefix, _plug} ->
-        {:error, "#{inspect(module)} api_prefix must be a string, got #{inspect(prefix)}"}
     end
   end
 
-  # One lowercase path segment. Deliberately narrow: a prefix carrying a slash,
-  # a dot or an uppercase letter is a prefix that reads differently in a route,
-  # in an OpenAPI path and in a URL a person types.
-  @prefix_shape ~r/^[a-z][a-z0-9-]*$/
+  defp check_mount_shape(module, {path, plug}) do
+    {:error,
+     "#{inspect(module)} api_mounts must be {path_string, plug_module} tuples, got " <>
+       "#{inspect({path, plug})}"}
+  end
 
-  defp check_prefix_shape(module) do
-    case module.api_prefix() do
+  defp check_mount_shape(module, other) do
+    {:error,
+     "#{inspect(module)} api_mounts must be {path_string, plug_module} tuples, got " <>
+       inspect(other)}
+  end
+
+  defp check_mounts_unique(modules) do
+    modules
+    |> Enum.flat_map(fn module ->
+      for {path, _plug} <- module.api_mounts(), do: {module, segments(path), path}
+    end)
+    |> Enum.group_by(fn {_module, segs, _path} -> segs end)
+    |> Enum.find(fn {_segs, entries} -> length(entries) > 1 end)
+    |> case do
       nil ->
         :ok
 
-      prefix when is_binary(prefix) ->
-        if Regex.match?(@prefix_shape, prefix) do
-          :ok
-        else
-          {:error,
-           "#{inspect(module)} api_prefix #{inspect(prefix)} is not one lowercase path " <>
-             "segment matching #{inspect(Regex.source(@prefix_shape))}"}
-        end
-
-      _other ->
-        :ok
+      {_segs, entries} ->
+        {:error,
+         "api_mount #{inspect(elem(hd(entries), 2))} is declared by more than one extension: " <>
+           Enum.map_join(entries, ", ", fn {module, _segs, _path} -> inspect(module) end)}
     end
   end
 
-  defp check_prefix_free(module, reserved) do
-    prefix = module.api_prefix()
+  # Overlap in either direction is refused. The host declares its extension
+  # dispatch LAST, so a core route always wins: a mount that a core path
+  # prefixes, or that prefixes a core path, would be a route silently serving
+  # nothing. `/mcp` overlaps `/api/mcp/team/:id`; `/mcp/buzz` does not.
+  defp check_mounts_free(module, core_prefixes) do
+    Enum.reduce_while(module.api_mounts(), :ok, fn {path, _plug}, :ok ->
+      mount = segments(path)
 
-    if is_binary(prefix) and MapSet.member?(reserved, prefix) do
-      {:error,
-       "#{inspect(module)} api_prefix #{inspect(prefix)} is already served by a core route " <>
-         "at /api/#{prefix}"}
-    else
-      :ok
-    end
+      case Enum.find(core_prefixes, &overlaps?(mount, &1)) do
+        nil ->
+          {:cont, :ok}
+
+        core ->
+          {:halt,
+           {:error,
+            "#{inspect(module)} api_mount #{inspect(path)} overlaps the core route " <>
+              "/api/#{Enum.join(core, "/")}"}}
+      end
+    end)
   end
+
+  defp overlaps?(a, b), do: List.starts_with?(a, b) or List.starts_with?(b, a)
 
   defp check_unique(modules, fun, label) do
     modules

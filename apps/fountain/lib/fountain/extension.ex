@@ -22,19 +22,22 @@ defmodule Fountain.Extension do
       (a binary on disk, a credential, a flag). An installed extension that
       answers `false` contributes nothing and is never called again; that is a
       supported state, not an error.
-    * `c:api_prefix/0` and `c:api_plug/0` — one `/api/<prefix>` segment and the
-      Plug that serves it. Mounted **inside** the host's `:api` pipeline by
+    * `c:api_mounts/0` — the paths under `/api` this extension serves and the
+      Plug behind each. Mounted **inside** the host's `:api` pipeline by
       `FountainWeb.Plugs.ExtensionDispatch`, so authentication, the rate limit,
       `conn.assigns.current_user` and the request audit are host-owned and an
-      extension cannot opt out of them by choosing a prefix.
+      extension cannot opt out of them by choosing a path.
     * `c:conversation_mcp_servers/2` — the MCP servers this extension serves
       back to a conversation's sandbox. The one callback on the turn's hot
       path. Return `[]` for a conversation the extension does not claim.
     * `c:migrations/0` — migration directories in the extension's own `priv`,
       appended after the core's at every migration entrance.
-    * `c:openapi_paths/0` — the extension's OpenAPI paths, **relative to its own
-      mount**. The host prefixes them with `/api/<api_prefix>`, so an extension
-      cannot describe a path it does not serve.
+    * `c:openapi_paths/0` — the extension's OpenAPI paths, absolute. The host
+      refuses any that falls outside `c:api_mounts/0`, so an extension cannot
+      describe a path it does not serve.
+    * `c:admin_overview/0` and `c:admin_user_columns/0` — read-only numbers for
+      the operator console. Data, never markup, and never a way to reach into a
+      core page.
 
   ## Supervision is not a callback
 
@@ -57,10 +60,7 @@ defmodule Fountain.Extension do
         use Fountain.Extension, id: :my_ext
 
         @impl true
-        def api_prefix, do: "my-ext"
-
-        @impl true
-        def api_plug, do: MyExt.Router
+        def api_mounts, do: [{"/my-ext", MyExt.Router}]
       end
 
   The behaviour stays total on purpose — there are no optional callbacks to
@@ -81,24 +81,32 @@ defmodule Fountain.Extension do
   @callback enabled?() :: boolean()
 
   @doc """
-  The single `/api` path segment this extension serves, or `nil` for an
-  extension with no HTTP surface.
+  The paths under `/api` this extension serves, and the Plug behind each.
 
-  Lowercase, and one segment: `"buzz"`, not `"buzz/agents"` and not `"/buzz"`.
-  `Fountain.Extensions.validate!/0` refuses a prefix that is malformed,
-  duplicated, or already claimed by a core route, and refuses it at boot rather
-  than at the first request.
-  """
-  @callback api_prefix() :: String.t() | nil
+  Each entry is `{"/segment[/segment...]", plug}` — an absolute path relative to
+  `/api`, lowercase, and static. Buzz declares two, because the compatibility
+  promise in ADR 0043 keeps both of its existing paths and they are not nested
+  under one another:
 
-  @doc """
-  The Plug serving `c:api_prefix/0` — usually the extension's own
-  `Phoenix.Router`. Called with the prefix already trimmed from `path_info`
-  and appended to `script_name`, so the extension's routes are written
-  relative to its own mount point and its path helpers still generate correct
-  URLs.
+      def api_mounts do
+        [{"/buzz", FountainBuzz.Router}, {"/mcp/buzz", FountainBuzz.McpRouter}]
+      end
+
+  Dispatch takes the **longest** declared mount that prefixes the request, trims
+  it from `path_info` onto `script_name`, and calls that mount's plug — so an
+  extension's routes are written relative to their own mount and its path
+  helpers still generate correct URLs.
+
+  `Fountain.Extensions.validate!/0` refuses, at boot: a malformed segment, a
+  mount two extensions both declare, and a mount that overlaps a core route in
+  either direction (a mount that is a prefix of a core path, or a core path
+  whose static part is a prefix of the mount). Overlap is refused rather than
+  resolved because the host declares its dispatch last, so a core route always
+  wins and an overlapping mount would be a route that silently serves nothing.
+
+  Returns `[]` for an extension with no HTTP surface.
   """
-  @callback api_plug() :: plug() | nil
+  @callback api_mounts() :: [{path :: String.t(), plug()}]
 
   @doc """
   Migration directories this extension owns, as `{otp_app, path_under_priv}`.
@@ -121,12 +129,17 @@ defmodule Fountain.Extension do
   @callback migrations() :: [{otp_app :: atom(), path_under_priv :: String.t()}]
 
   @doc """
-  This extension's OpenAPI paths, **relative to its own mount**.
+  This extension's OpenAPI paths, absolute.
 
-  `OpenApiSpex.Paths.from_router(MyExt.Router)` is the whole implementation for
-  an extension with a Phoenix router: it yields `"/agents"`, and the host
-  prefixes it to `"/api/<api_prefix>/agents"`. The extension never writes its
-  own prefix, so the described path and the served path cannot drift apart.
+  `Fountain.Extensions.mounted_paths/2` turns a router's paths into these,
+  which is the whole implementation for an extension with a Phoenix router:
+
+      def openapi_paths do
+        Fountain.Extensions.mounted_paths("/buzz", FountainBuzz.Router)
+      end
+
+  The host refuses a path that falls outside `c:api_mounts/0`, so an extension
+  cannot describe a path it does not serve, however it built the map.
 
   This callback exists because a forward is opaque to the spec:
   `OpenApiSpex.Paths.from_router/1` reads `router.__routes__()`, where the
@@ -159,6 +172,41 @@ defmodule Fountain.Extension do
   @callback conversation_mcp_servers(conversation_id :: String.t(), callback_token :: String.t()) ::
               [map()]
 
+  @doc """
+  Read-only figures for the admin overview, as `{label, value}` pairs.
+
+  The operator console is a core surface and stays one: an extension hands the
+  host **data**, never markup, and has no way to reach into a page. The host
+  renders each pair as one stat tile beside its own, or renders none if the
+  extension returns `[]`.
+
+  `opts` may carry `:navigate` (a path the tile links to) and `:note` (a line
+  under the number). Still data: the host owns every element of the markup.
+
+  This callback exists because #1017 and #1519 put two Buzz figures on the admin
+  pages — the running-harness count and the per-account identity count — and a
+  hosted agent is a standing OS process no sandbox meter reports. Deleting them
+  to move Buzz would have removed the only view an operator has of what they are
+  paying for. Called on a page render, so it must be one query or none.
+  """
+  @callback admin_overview() :: [
+              {label :: String.t(), value :: term()}
+              | {label :: String.t(), value :: term(), opts :: keyword()}
+            ]
+
+  @doc """
+  Extra columns for the admin users table, as `{header, %{user_id => cell}}`.
+
+  A `cell` is a bare value, or `%{value: term(), alert?: boolean()}` when the
+  extension wants the number highlighted — a hosted-agent count at its ceiling,
+  say. The extension owns that policy because the host does not know what a
+  ceiling means for it; the host owns the colour.
+
+  One grouped query per column, not one per row: the map is built once for the
+  page. A user with no entry renders as `0`. Return `[]` to add no columns.
+  """
+  @callback admin_user_columns() :: [{header :: String.t(), %{String.t() => term()}}]
+
   @doc false
   defmacro __using__(opts) do
     id = Keyword.fetch!(opts, :id)
@@ -173,10 +221,7 @@ defmodule Fountain.Extension do
       def enabled?, do: true
 
       @impl Fountain.Extension
-      def api_prefix, do: nil
-
-      @impl Fountain.Extension
-      def api_plug, do: nil
+      def api_mounts, do: []
 
       @impl Fountain.Extension
       def conversation_mcp_servers(_conversation_id, _callback_token), do: []
@@ -187,12 +232,19 @@ defmodule Fountain.Extension do
       @impl Fountain.Extension
       def openapi_paths, do: %{}
 
+      @impl Fountain.Extension
+      def admin_overview, do: []
+
+      @impl Fountain.Extension
+      def admin_user_columns, do: []
+
       defoverridable enabled?: 0,
-                     api_prefix: 0,
-                     api_plug: 0,
+                     api_mounts: 0,
                      conversation_mcp_servers: 2,
                      migrations: 0,
-                     openapi_paths: 0
+                     openapi_paths: 0,
+                     admin_overview: 0,
+                     admin_user_columns: 0
     end
   end
 end

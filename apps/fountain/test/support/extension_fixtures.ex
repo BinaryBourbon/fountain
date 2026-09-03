@@ -106,11 +106,11 @@ defmodule Fountain.ExtensionFixtures do
     @doc "The conversation id this fixture claims. Any other gets `[]`."
     def claimed_conversation_id, do: "11111111-1111-1111-1111-111111111111"
 
-    @impl true
-    def api_prefix, do: "fixture"
+    @doc "The mount this fixture's router sits at."
+    def mount, do: "/fixture"
 
     @impl true
-    def api_plug, do: Fountain.ExtensionFixtures.Router
+    def api_mounts, do: [{mount(), Fountain.ExtensionFixtures.Router}]
 
     @impl true
     def migrations, do: [{:fountain, "test_extension_migrations"}]
@@ -140,10 +140,29 @@ defmodule Fountain.ExtensionFixtures do
     @impl true
     def openapi_paths do
       if describes_openapi_paths?() do
-        OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.Router)
+        Fountain.Extensions.mounted_paths(mount(), Fountain.ExtensionFixtures.Router)
       else
         %{}
       end
+    end
+
+    @doc "What this fixture puts on the admin overview."
+    def overview_label, do: "Fixture widgets"
+
+    @impl true
+    def admin_overview do
+      [{overview_label(), 7, navigate: "/admin/users", note: "contributed by an extension"}]
+    end
+
+    @doc "The header of the column this fixture adds to the admin users table."
+    def column_header, do: "Fixture units"
+
+    @impl true
+    def admin_user_columns do
+      # A grouped query in a real extension; a constant here, because what is
+      # under test is the seam and not the fixture's arithmetic. The alert form
+      # is exercised so the host's highlight is covered.
+      [{column_header(), %{"nobody" => %{value: 3, alert?: true}}}]
     end
 
     @impl true
@@ -177,10 +196,7 @@ defmodule Fountain.ExtensionFixtures do
     def enabled?, do: false
 
     @impl true
-    def api_prefix, do: "fixture-disabled"
-
-    @impl true
-    def api_plug, do: Fountain.ExtensionFixtures.Router
+    def api_mounts, do: [{"/fixture-disabled", Fountain.ExtensionFixtures.Router}]
 
     @impl true
     def conversation_mcp_servers(_conversation_id, _callback_token) do
@@ -284,14 +300,12 @@ defmodule Fountain.ExtensionFixtures do
     use Fountain.Extension, id: :fixture_colliding
 
     @impl true
-    def api_prefix, do: "colliding"
+    def api_mounts, do: [{"/colliding", Fountain.ExtensionFixtures.CollidingRouter}]
 
     @impl true
-    def api_plug, do: Fountain.ExtensionFixtures.CollidingRouter
-
-    @impl true
-    def openapi_paths,
-      do: OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.CollidingRouter)
+    def openapi_paths do
+      Fountain.Extensions.mounted_paths("/colliding", Fountain.ExtensionFixtures.CollidingRouter)
+    end
   end
 
   defmodule MissingMigrations do
@@ -303,11 +317,32 @@ defmodule Fountain.ExtensionFixtures do
   end
 
   defmodule DescribesWithoutMount do
-    @moduledoc "Describes OpenAPI paths with no api_prefix to mount them under. NOT configured."
+    @moduledoc "Describes an OpenAPI path it does not mount. NOT configured."
     use Fountain.Extension, id: :fixture_describes_without_mount
 
     @impl true
-    def openapi_paths, do: OpenApiSpex.Paths.from_router(Fountain.ExtensionFixtures.Router)
+    def api_mounts, do: [{"/describes", Fountain.ExtensionFixtures.Router}]
+
+    # Outside its own mount: it serves /api/describes/* and nothing else.
+    @impl true
+    def openapi_paths do
+      Fountain.Extensions.mounted_paths("/somewhere-else", Fountain.ExtensionFixtures.Router)
+    end
+  end
+
+  defmodule AdminRaises do
+    @moduledoc """
+    Raises from both admin callbacks. Deliberately NOT configured — every admin
+    page render would log. `Extensions.admin_overview/1` takes a list so it can
+    still be tested against the real function.
+    """
+    use Fountain.Extension, id: :fixture_admin_raises
+
+    @impl true
+    def admin_overview, do: raise("fixture cannot count")
+
+    @impl true
+    def admin_user_columns, do: raise("fixture cannot count either")
   end
 
   defmodule EnabledRaises do
