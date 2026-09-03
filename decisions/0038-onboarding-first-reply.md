@@ -44,6 +44,7 @@ Not built: the default agent, the verified landing, the CLI commands and the
 field cleanup. `onboarding_completed_at` is still stamped by the dashboard
 checklist (#1390 moves the stamp to the seam
 `Fountain.Activation.capture_first_reply/2` marks).
+
 Amends [0008](0008-byo-inference-credentials.md): Fountain will hold platform
 inference keys. Leans on [0031](0031-credits-are-the-product.md) (the opening
 credit and the balance gate), [0030](0030-prepaid-credits.md) (the ledger),

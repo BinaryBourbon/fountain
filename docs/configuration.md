@@ -187,7 +187,7 @@ behaves as it always did, and each tenant supplies a credential of their own.
 | `PLATFORM_ANTHROPIC_API_KEY` | — | No. | The Anthropic key Fountain runs a tenant on when that tenant has none. This is the first key to set. The default agent uses the claude runtime. |
 | `PLATFORM_OPENAI_API_KEY` | — | No. | The same, for an agent on an `openai/` model. |
 | `PLATFORM_GEMINI_API_KEY` | — | No. | The same, for an agent on a `google/` model. |
-| `PLATFORM_INFERENCE_DAILY_CENTS` | `5000` | No. | The most the keys above may cost in one UTC day, across every tenant. A conversation beyond it gets `503 platform_inference_unavailable`. |
+| `PLATFORM_INFERENCE_DAILY_CENTS` | `5000` | No. | The most the keys above may cost in one UTC day, across every tenant. A conversation beyond it gets `503 platform_inference_unavailable`. It works only with `CREDITS_ENABLED=true`. |
 | `PLATFORM_INFERENCE_RATES` | — | No. | Per-model prices, in cents per million tokens. See below. |
 
 ### What a tenant pays
@@ -209,10 +209,19 @@ deployment. One bad day cannot cost more than this number. A refusal is a 503
 and not a 402, because the limit belongs to you and not to the tenant. A
 tenant with their own credential never meets this ceiling.
 
-Two limits on the ceiling. Fountain counts the day from the credit ledger, so
-`CREDITS_ENABLED` must be `true`. Fountain also writes those ledger rows on a
-timer, so the count trails the real spend by a few minutes. The ceiling bounds
-a day. It does not bound a minute.
+The ceiling trails the real spend, because Fountain writes the ledger rows on
+a timer. The ceiling bounds a day. It does not bound a minute.
+
+#### With credits off there is no ceiling
+
+Fountain counts the day from the credit ledger. `CREDITS_ENABLED=false` prices
+nothing and writes no ledger rows, so it also counts nothing.
+
+**A deployment with credits off and a platform key set has no ceiling at all.**
+Every tenant with no credential of their own runs on your key, and no limit
+stops the spend. For a self-hoster that is the correct behaviour, because the
+key is yours and the provider bill is yours. Do not set a platform key with
+credits off unless you accept an unbounded bill.
 
 ### Rate overrides
 
