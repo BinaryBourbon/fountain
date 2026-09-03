@@ -12,8 +12,8 @@ defmodule Fountain.Funnel do
     ADR 0038 says the onboarding redesign is judged on.
   - included stall breakdown — of the users who verified but never got a
     reply, how far did they get? This is the "40 verified, nothing created"
-    question: did they finish onboarding, build an agent, create an
-    environment, start a conversation that never answered, or bounce straight
+    question: did they add a credential, create an environment, write an agent
+    of their own, start a conversation that never answered, or bounce straight
     off?
 
   Stage definitions:
@@ -25,8 +25,8 @@ defmodule Fountain.Funnel do
     wizard's position; the wizard went in #867, after which the column only
     distinguished `step_1` from `completed`, so it is dropped.
     `Fountain.Activation` stamps the date at the first reply (ADR 0038).
-    `built_agent` / `built_environment` / `built_nothing` are the stall
-    breakdown's live signal.
+    `added_credential` / `built_environment` / `built_own_agent` are the
+    stall breakdown's live signal.
   - **activated** — **the first conversation with a reply** (ADR 0038): the
     earliest `turns` row for the account carrying a non-empty `reply_text`.
     A conversation that never answered does not count, and neither does a
@@ -51,8 +51,11 @@ defmodule Fountain.Funnel do
 
   alias Fountain.Accounts.User
   alias Fountain.Activation
+  alias Fountain.Agents.Agent
   alias Fountain.Billing.UsageEvent
   alias Fountain.Conversations.Conversation
+  alias Fountain.Environments.Environment
+  alias Fountain.InferenceCredentials
   alias Fountain.Repo
 
   # A day, in hours: the window ADR 0038 judges the landing by.
@@ -78,7 +81,8 @@ defmodule Fountain.Funnel do
   The funnel: five stages, time to first reply, and the stalled breakdown.
 
   Returns `%{stages: [stage], time_to_first_reply: timing, stalled: %{count: n,
-  started: n, built_agent: n, built_environment: n, built_nothing: n}}`.
+  started: n, added_credential: n, built_environment: n, built_own_agent:
+  n}}`.
 
   `conversion` is the fraction of the *previous* stage (nil for registered);
   `median_hours` is the median time from the previous stage's timestamp, for
@@ -214,25 +218,38 @@ defmodule Fountain.Funnel do
   end
 
   # Of the verified users who never got a reply: how far did each get?
+  #
+  # The decomposition changed in #1421. `built_agent` and `built_nothing` were
+  # the useful halves of this answer until #1389 planted a `starter` agent in
+  # every account at verification; after it they are constants
+  # (`built_agent == count`, `built_nothing == 0`) and tell an operator
+  # nothing. What replaces them are the two things owning an agent no longer
+  # implies: paying the cost of a credential, and writing an agent of one's
+  # own. `started` and `built_environment` carry the signal they always did
+  # and are unchanged.
+  #
+  # "Arrived at the landing and never sent the request" is the other split
+  # worth having, and it is deliberately not here.
+  # `onboarding.landing_viewed` is a PostHog event (`FountainWeb.StartLive`)
+  # and this function is SQL over `users`; a page view is the product sink's
+  # question rather than the audit trail's or the invoice's, so it is asked
+  # of PostHog (ADR 0028, `Fountain.Analytics`).
   defp stalled_breakdown(verified, first_reply) do
     stalled = Enum.reject(verified, &Map.has_key?(first_reply, &1.id))
     stalled_ids = MapSet.new(stalled, & &1.id)
 
-    agent_owners = owners_in(Fountain.Agents.Agent, stalled_ids)
-    env_owners = owners_in(Fountain.Environments.Environment, stalled_ids)
-    starters = started_ids(stalled_ids)
-
-    built_nothing =
-      Enum.count(stalled, fn u ->
-        not MapSet.member?(agent_owners, u.id) and not MapSet.member?(env_owners, u.id)
-      end)
-
+    # ownership: an admin-only aggregate over every account, like the rest of
+    # this module — the ids handed over are the stalled cohort computed above,
+    # and no tenant is being served.
     %{
       count: length(stalled),
-      started: MapSet.size(starters),
-      built_agent: MapSet.size(agent_owners),
-      built_environment: MapSet.size(env_owners),
-      built_nothing: built_nothing
+      started: MapSet.size(started_ids(stalled_ids)),
+      added_credential:
+        MapSet.size(
+          InferenceCredentials._unsafe_user_ids_with_credential(MapSet.to_list(stalled_ids))
+        ),
+      built_environment: MapSet.size(owners_in(Environment, stalled_ids)),
+      built_own_agent: MapSet.size(own_agent_owners(stalled_ids))
     }
   end
 
@@ -240,6 +257,30 @@ defmodule Fountain.Funnel do
     ids = MapSet.to_list(stalled_ids)
 
     from(r in schema, where: r.user_id in ^ids, distinct: true, select: r.user_id)
+    |> Repo.all()
+    |> MapSet.new()
+  end
+
+  # The accounts that own an agent they wrote, rather than the one they were
+  # given. Every verified account owns a `starter` (#1389), so the question is
+  # what they did to it: kept a second agent, or edited this one.
+  #
+  # Neither half reads the agent's name. `Fountain.Agents.Starter` says the
+  # starter is an ordinary row with no flag on it and that the tenant may
+  # rename it the next minute, so a name match would answer a different
+  # question every time somebody did. Nothing but a tenant edit moves
+  # `updated_at` — agents carry no `last_used_at` and no worker stamps them —
+  # though the column is second-granular, so an agent created and edited
+  # inside one second reads as untouched.
+  defp own_agent_owners(stalled_ids) do
+    ids = MapSet.to_list(stalled_ids)
+
+    from(a in Agent,
+      where: a.user_id in ^ids,
+      group_by: a.user_id,
+      having: count(a.id) > 1 or fragment("bool_or(? > ?)", a.updated_at, a.inserted_at),
+      select: a.user_id
+    )
     |> Repo.all()
     |> MapSet.new()
   end
