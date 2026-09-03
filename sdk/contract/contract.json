@@ -5995,6 +5995,31 @@
               "required": true,
               "type": "object"
             },
+            "first_request": {
+              "properties": {
+                "curl": {
+                  "required": true,
+                  "type": "string"
+                },
+                "placeholders": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "required": true,
+                  "type": "array"
+                },
+                "prompt": {
+                  "required": true,
+                  "type": "string"
+                },
+                "typescript": {
+                  "required": true,
+                  "type": "string"
+                }
+              },
+              "required": true,
+              "type": "object"
+            },
             "mcp_servers": {
               "items": {
                 "properties": {
