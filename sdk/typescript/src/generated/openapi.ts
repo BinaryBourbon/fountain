@@ -1149,7 +1149,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Interrupt the running turn */
+        /**
+         * Interrupt the running turn
+         * @description Ends the turn in flight. Wakes a conversation whose server has died so a turn left `running` behind it can still be closed.
+         *
+         *     `404` means no such conversation. `409` means the conversation exists but has nothing to interrupt: `no_turn_running` when it is idle between turns, `not_running` when it is terminated or could not be woken.
+         */
         post: operations["FountainWeb.ConversationController.interrupt"];
         delete?: never;
         options?: never;
@@ -7817,7 +7822,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description No turn running */
+            /** @description Nothing to interrupt */
             409: {
                 headers: {
                     [name: string]: unknown;

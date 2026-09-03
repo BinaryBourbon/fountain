@@ -679,13 +679,35 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conn.status == 204
     end
 
-    test "returns 404 when ConversationServer is not running", %{
+    # Ownership is established before the server is asked, so "not running" is
+    # a state conflict on a conversation the caller can see, not a missing one
+    # (#1179 — the owner of a stuck conversation got a 404 saying it was the
+    # wrong id or someone else's, while `GET` on it worked with the same key).
+    test "returns 409 when the conversation is not running", %{
       conn: conn,
       user: user,
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
       stub(ConversationServer, :interrupt, fn _id, _opts -> {:error, :not_running} end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post("/api/conversations/#{conv.id}/interrupt")
+
+      assert %{"error" => "not_running"} = json_response(conn, 409)
+    end
+
+    # Still reachable: the row can be deleted between the ownership fetch and
+    # the interrupt.
+    test "returns 404 when the conversation vanished mid-request", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      stub(ConversationServer, :interrupt, fn _id, _opts -> {:error, :not_found} end)
 
       conn =
         conn

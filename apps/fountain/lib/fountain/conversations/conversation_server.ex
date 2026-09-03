@@ -188,18 +188,10 @@ defmodule Fountain.Conversations.ConversationServer do
   @doc """
   Interrupt the turn in flight, if any.
 
-  If no server answers for this conversation, that alone doesn't mean there
-  is nothing to interrupt: the process can have exited (deploy, Horde
-  rebalance, a plain `{:stop, :normal, _}` return) while a turn was still
-  marked `running`, with nothing left to close it (#1179 — an autonomous
-  "background task follow-up" turn stuck this way for 4+ hours, `interrupt`
-  404ing the whole time, indistinguishable from hitting a conversation that
-  doesn't exist). Mirror `send_prompt/4`'s wake-on-miss fallback, but only
-  when the row says `running` — an idle/terminated/unknown conversation has
-  nothing running regardless, and must not pay for a wake it doesn't need.
-  Waking reattaches to a live sprite session if one exists (and this second
-  `interrupt` call then really does end it), or reconciles the orphaned turn
-  itself when none does.
+  A miss on the registry does not mean there is nothing to interrupt, and
+  `Conversations.wake_for_interrupt/1` owns what a miss means: it wakes a
+  conversation the row still calls `running`, and separates "no such
+  conversation" (`:not_found`) from "nothing to interrupt" (`:not_running`).
   """
   def interrupt(conv_id, opts \\ []) do
     result =
@@ -213,21 +205,9 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp interrupt_dead(conv_id) do
-    case Conversations._unsafe_get_conversation(conv_id) do
-      %Conversation{status: "running"} ->
-        case Conversations.wake_conversation(conv_id) do
-          {:ok, conv} ->
-            case whereis(conv.id) do
-              nil -> {:error, :not_running}
-              pid -> call_server(pid, :interrupt)
-            end
-
-          {:error, _} ->
-            {:error, :not_running}
-        end
-
-      _ ->
-        {:error, :not_running}
+    case Conversations.wake_for_interrupt(conv_id) do
+      {:ok, pid} -> call_server(pid, :interrupt)
+      {:error, _} = err -> err
     end
   end
 

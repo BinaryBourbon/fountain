@@ -1308,6 +1308,22 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert {:error, :not_running} = ConversationServer.interrupt(conv.id)
     end
 
+    # The two misses are different answers (#1179). A conversation that exists
+    # but has nothing running is a conflict; only a missing row is a 404, and
+    # conflating them is what left `interrupt` telling an owner their own
+    # conversation belonged to someone else.
+    test "interrupt for an unknown conversation reports not_found" do
+      assert {:error, :not_found} = ConversationServer.interrupt(Ecto.UUID.generate())
+    end
+
+    test "interrupt of a terminated conversation reports not_running, not not_found", %{
+      conv: conv
+    } do
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
+
+      assert {:error, :not_running} = ConversationServer.interrupt(conv.id)
+    end
+
     test "send_prompt for an unknown conversation reports not_running" do
       assert {:error, :not_running} =
                ConversationServer.send_prompt(Ecto.UUID.generate(), "hi", [])

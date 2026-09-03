@@ -91,6 +91,20 @@ upgrade, is in
   `Conversations.McpServers.for_session/3`, so the server's pin holds at
   2,835 rather than growing.
 
+- **`interrupt` answered `404` for a conversation the caller could see**
+  (#1179). The route establishes ownership with a tenant-scoped fetch and
+  then asked the `ConversationServer`, but rendered every `:not_running` it
+  got back as `404 "wrong id, or it belongs to another account"` — the
+  reported symptom being an owner whose stuck conversation answered `GET`
+  with the same key that `interrupt` refused. The miss was conflated at the
+  source: one atom meant both "no such conversation row" and "a row in no
+  state to interrupt". They are now separate, and the second is `409
+  not_running`. `404` stays for a row that is genuinely gone, which the
+  delete race still produces. `no_turn_running`, already served for an idle
+  conversation and never documented, joins it in the api.md status table.
+  The wake-on-miss decision moved to `Conversations.wake_for_interrupt/1`,
+  taking the server's pin from 2,835 down to 2,815.
+
 - **Platform inference on the gemini runtime was unbilled** (#1459). gemini
   leaves ACP's `PromptResponse.usage` empty and reports the turn's tokens
   under a vendor extension at `_meta.quota.token_count`, so

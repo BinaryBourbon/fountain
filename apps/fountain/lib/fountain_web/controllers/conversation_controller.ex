@@ -604,11 +604,18 @@ defmodule FountainWeb.ConversationController do
 
   operation(:interrupt,
     summary: "Interrupt the running turn",
+    description:
+      "Ends the turn in flight. Wakes a conversation whose server has died " <>
+        "so a turn left `running` behind it can still be closed.\n\n" <>
+        "`404` means no such conversation. `409` means the conversation " <>
+        "exists but has nothing to interrupt: `no_turn_running` when it is " <>
+        "idle between turns, `not_running` when it is terminated or could " <>
+        "not be woken.",
     parameters: [conversation_id: [in: :path, type: :string, required: true]],
     responses: [
       no_content: "Interrupted",
       not_found: {"Not found", "application/json", Schemas.Error},
-      conflict: {"No turn running", "application/json", Schemas.Error}
+      conflict: {"Nothing to interrupt", "application/json", Schemas.Error}
     ]
   )
 
@@ -624,8 +631,17 @@ defmodule FountainWeb.ConversationController do
           :ok ->
             send_resp(conn, :no_content, "")
 
+          # Ownership was established by the fetch above, so a state problem
+          # here is a conflict, not a missing row (#1179). `:not_found` is
+          # still reachable — the conversation can be deleted between the two
+          # calls — and falls through to the FallbackController's 404.
           {:error, :not_running} ->
-            {:error, :not_found}
+            conn
+            |> put_status(:conflict)
+            |> json(%{
+              error: "not_running",
+              message: "the conversation is not running, so there is no turn to interrupt"
+            })
 
           {:error, :idle} ->
             conn |> put_status(:conflict) |> json(%{error: "no_turn_running"})

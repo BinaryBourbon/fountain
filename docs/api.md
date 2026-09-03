@@ -490,6 +490,15 @@ resolved gets `409 permission_request_resolved`. An option the agent did not
 offer gets `422 unknown_option`. A sandbox's own token cannot answer, and
 gets `403 sprite_may_not_answer`.
 
+`POST /api/conversations/:id/interrupt` stops the turn in flight. It also
+wakes a conversation whose server died with a turn still marked `running`, so
+a turn that nothing else can close still ends.
+
+The error tells you about the conversation, never about your access. A status
+of `404` means no such conversation. A status of `409 no_turn_running` means
+the conversation sits idle between turns. A status of `409 not_running` means
+the conversation ended, or a wake did not restore it.
+
 Whatever does not resolve is a `404`, so nobody can probe for an id.
 
 That covers four cases. A conversation nobody knows. A turn from a different
@@ -1121,7 +1130,7 @@ to walk the whole trail.
 | `402` | Your credit balance is zero or below. The code is `insufficient_credits`, and the body carries `upgrade_url`. The old `subscription_required` code does not occur. A teammate contact past the account's ceiling is `contact_limit_reached`. |
 | `403` | The wrong tenant. |
 | `404` | Nothing found. |
-| `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity`, `sandbox_not_attachable`, `sandbox_mid_turn`, `permission_request_resolved` and `contact_already_provisioned`. |
+| `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity`, `sandbox_not_attachable`, `sandbox_mid_turn`, `permission_request_resolved`, `contact_already_provisioned`, `no_turn_running` and `not_running`. |
 | `410` | Somebody terminated the conversation. The code is `conversation_terminated`. Stop, and do not try again. |
 | `422` | A validation error. |
 | `429` | The rate limit stopped you. |
