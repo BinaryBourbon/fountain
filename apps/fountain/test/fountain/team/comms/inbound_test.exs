@@ -74,6 +74,33 @@ defmodule Fountain.Team.Comms.InboundTest do
     |> Map.merge(Map.delete(overrides, "data"))
   end
 
+  # #1143: the row the ledger prices. AgentPhone charges for a received SMS as
+  # well as a sent one, so an inbound message is metered on the same footing.
+  test "an inbound text records a durable comms message", %{user: user, contact: contact} do
+    assert {:ok, _} = Inbound.handle(payload(), "del_durable")
+
+    assert [message] = Fountain.Repo.all(Fountain.Team.CommsMessage)
+    assert message.user_id == user.id
+    assert message.contact_id == contact.id
+    assert message.channel == "sms"
+    assert message.direction == "inbound"
+
+    # No provider message id on the payload, so the webhook's own delivery id
+    # is the key — still stable per message, and still what a redelivery
+    # would collide on.
+    assert message.provider_message_id == "del_durable"
+  end
+
+  test "the provider's own message id is preferred over the delivery id", %{user: user} do
+    payload = payload(%{"data" => %{"id" => "msg_provider_1"}})
+
+    assert {:ok, _} = Inbound.handle(payload, "del_2")
+
+    assert [message] = Fountain.Repo.all(Fountain.Team.CommsMessage)
+    assert message.provider_message_id == "msg_provider_1"
+    assert message.user_id == user.id
+  end
+
   test "a text from the allow-listed number becomes a prompt in the teammate's conversation", %{
     conv: conv,
     user: user,

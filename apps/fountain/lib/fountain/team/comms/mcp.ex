@@ -231,7 +231,7 @@ defmodule Fountain.Team.Comms.Mcp do
 
       case mail(ctx).send_message(c.email_inbox_id, body) do
         {:ok, %{"message_id" => mid} = resp} ->
-          audit(ctx, "email_send", %{"recipients" => length(to)})
+          audit(ctx, "email_send", %{"recipients" => length(to), "provider_message_id" => mid})
           ok(id, %{message_id: mid, thread_id: resp["thread_id"]})
 
         {:ok, other} ->
@@ -256,7 +256,11 @@ defmodule Fountain.Team.Comms.Mcp do
 
       case mail(ctx).reply_to_message(c.email_inbox_id, message_id, body) do
         {:ok, %{"message_id" => mid} = resp} ->
-          audit(ctx, "email_reply", %{"reply_all" => args["reply_all"] == true})
+          audit(ctx, "email_reply", %{
+            "reply_all" => args["reply_all"] == true,
+            "provider_message_id" => mid
+          })
+
           ok(id, %{message_id: mid, thread_id: resp["thread_id"]})
 
         {:ok, other} ->
@@ -317,7 +321,7 @@ defmodule Fountain.Team.Comms.Mcp do
 
       case phone(ctx).send_message(payload) do
         {:ok, %{"id" => mid} = resp} ->
-          audit(ctx, "sms_send", %{})
+          audit(ctx, "sms_send", %{"provider_message_id" => mid})
           ok(id, %{message_id: mid, status: resp["status"], channel: resp["channel"]})
 
         {:ok, other} ->

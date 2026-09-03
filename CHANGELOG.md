@@ -123,6 +123,26 @@ upgrade, is in
   The wake-on-miss decision moved to `Conversations.wake_for_interrupt/1`,
   taking the server's pin from 2,835 down to 2,815.
 
+- **A dropped metering event was a free message** (#1143). Comms messages were
+  priced from `usage_events`, whose writer `Billing.record_usage/5` rescues and
+  logs rather than failing the action that produced it — the right contract for
+  a count on a dashboard, and the wrong one for a row the ledger keys on. A
+  `comms_*` event that failed to write was a message the customer was never
+  charged for, and nothing reconciled it afterwards, because the pricer's
+  seven-day look-back only re-reads rows that exist. Messages now have a
+  durable row of their own, `comms_messages`, written on the send and receive
+  paths through `Team.Comms.record_message/1`, which does **not** rescue: a
+  failure is logged as an unbilled message rather than silently discarded. The
+  row is keyed on the provider's own message id, so a send retried after a
+  timeout that in fact reached the provider bills once, and so a reconciliation
+  against a provider invoice has something to join on. `CreditPricer` and the
+  `/admin/finance` cost side both read it — leaving one of them on
+  `usage_events` would have put a discrepancy inside the view built to find
+  discrepancies. `usage_events` keeps the `comms_*` types for the PostHog
+  product mirror and no longer prices anything; its docs say so. **Messages
+  whose event was dropped before this are not charged retroactively**: there is
+  no record of them to price.
+
 - **Platform inference on the gemini runtime was unbilled** (#1459). gemini
   leaves ACP's `PromptResponse.usage` empty and reports the turn's tokens
   under a vendor extension at `_meta.quota.token_count`, so

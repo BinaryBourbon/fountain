@@ -89,9 +89,12 @@ defmodule Fountain.Billing.Finance do
   the panel exists to show that inference is passed through and sandbox time
   is where the margin is.
 
-  **Messages** are per-send, from the `comms_email_sent`, `comms_sms_sent` and
-  `comms_sms_received` usage events (`FountainWeb.TeamCommsMcpController`,
-  `Team.Comms.Inbound`). Inbound counts: AgentPhone charges to receive.
+  **Messages** are per-send, from the `comms_messages` rows the ledger also
+  prices (`FountainWeb.TeamCommsMcpController`, `Team.Comms.Inbound`). Inbound
+  counts: AgentPhone charges to receive. They moved off `usage_events` with
+  the pricer in #1143 — counting cost from a table whose writer can drop a row
+  while revenue reads one that cannot would put a discrepancy inside the view
+  built to find them.
 
   ## Cost, ownership and the tenants that are not there
 
@@ -113,11 +116,8 @@ defmodule Fountain.Billing.Finance do
   alias Fountain.Accounts.User
   alias Fountain.Billing
   alias Fountain.Billing.SandboxUsage
-  alias Fountain.Billing.UsageEvent
   alias Fountain.Repo
-  alias Fountain.Team.Comms
-
-  @message_events ~w(comms_email_sent comms_sms_sent comms_sms_received)
+  alias Fountain.Team.{Comms, CommsMessage}
 
   @typedoc "One tenant's money for a period. Every `*_cents` may be `nil` when the rate card is silent."
   @type tenant_row :: %{
@@ -576,28 +576,38 @@ defmodule Fountain.Billing.Finance do
     )
   end
 
-  # Message counts per tenant for the period, one grouped query over the same
-  # `usage_events` table the sandbox counts come from.
+  # Message counts per tenant for the period, one grouped query over
+  # `comms_messages` — the same rows the ledger prices (#1143).
+  #
+  # This used to read `usage_events`, and had to move with the pricer. The
+  # panel exists to hold revenue against cost, so counting the cost side from
+  # a table whose writer can silently drop a row while the revenue side reads
+  # a table whose writer cannot would put a discrepancy inside the one view
+  # built to find discrepancies.
   defp message_counts(period_start, period_end) do
-    from(e in UsageEvent,
+    from(m in CommsMessage,
       where:
-        e.inserted_at >= ^period_start and e.inserted_at < ^period_end and
-          e.event_type in @message_events and not is_nil(e.user_id),
-      group_by: [e.user_id, e.event_type],
-      select: {e.user_id, e.event_type, count(e.id)}
+        m.inserted_at >= ^period_start and m.inserted_at < ^period_end and
+          not is_nil(m.user_id),
+      group_by: [m.user_id, m.channel, m.direction],
+      select: {m.user_id, m.channel, m.direction, count(m.id)}
     )
     |> Repo.all()
-    |> Enum.reduce(%{}, fn {user_id, type, count}, acc ->
+    |> Enum.reduce(%{}, fn {user_id, channel, direction, count}, acc ->
       counts = Map.get(acc, user_id, empty_messages())
 
-      Map.put(acc, user_id, %{
-        counts
-        | emails_sent: counts.emails_sent + if(type == "comms_email_sent", do: count, else: 0),
-          sms_sent: counts.sms_sent + if(type == "comms_sms_sent", do: count, else: 0),
-          sms_received: counts.sms_received + if(type == "comms_sms_received", do: count, else: 0)
-      })
+      Map.put(acc, user_id, add_message_count(counts, channel, direction, count))
     end)
   end
+
+  defp add_message_count(counts, "email", _direction, n),
+    do: %{counts | emails_sent: counts.emails_sent + n}
+
+  defp add_message_count(counts, "sms", "inbound", n),
+    do: %{counts | sms_received: counts.sms_received + n}
+
+  defp add_message_count(counts, "sms", _outbound, n),
+    do: %{counts | sms_sent: counts.sms_sent + n}
 
   defp empty_messages, do: %{emails_sent: 0, sms_sent: 0, sms_received: 0}
 

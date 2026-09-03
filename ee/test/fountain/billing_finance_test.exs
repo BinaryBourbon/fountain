@@ -588,13 +588,25 @@ defmodule Fountain.Billing.FinanceTest do
     |> Repo.insert!()
   end
 
+  # The cost side counts the same `comms_messages` rows the ledger prices
+  # (#1143). The old event-type names are kept as this helper's vocabulary
+  # because the assertions read better in them; they map to the row's
+  # channel/direction pair.
   defp message(user, event_type, count, at \\ ~U[2026-05-10 00:00:00Z]) do
+    {channel, direction} =
+      case event_type do
+        "comms_email_sent" -> {"email", "outbound"}
+        "comms_sms_sent" -> {"sms", "outbound"}
+        "comms_sms_received" -> {"sms", "inbound"}
+      end
+
     for _ <- 1..count do
-      %Fountain.Billing.UsageEvent{}
-      |> Fountain.Billing.UsageEvent.changeset(%{
+      %Fountain.Team.CommsMessage{}
+      |> Fountain.Team.CommsMessage.changeset(%{
         user_id: user.id,
-        event_type: event_type,
-        resource_type: "team_contact",
+        channel: channel,
+        direction: direction,
+        provider_message_id: "prov-#{System.unique_integer([:positive])}",
         inserted_at: at
       })
       |> Repo.insert!()

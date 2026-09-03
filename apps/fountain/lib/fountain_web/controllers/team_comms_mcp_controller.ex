@@ -14,6 +14,8 @@ defmodule FountainWeb.TeamCommsMcpController do
   """
   use FountainWeb, :controller
 
+  require Logger
+
   alias Fountain.{Audit, Conversations}
   alias Fountain.Team.Comms
   alias Fountain.Team.Comms.Mcp
@@ -76,19 +78,63 @@ defmodule FountainWeb.TeamCommsMcpController do
   # for those alone today, so the fallback clause is a guard against a future
   # tool joining the audit path without joining the rate card.
   defp meter(tool, contact, user, summary) when tool in ~w(email_send email_reply) do
-    record_message(user, contact, "comms_email_sent", %{
+    record_message(user, contact, "email", "comms_email_sent", summary, %{
       "tool" => tool,
       "recipients" => Map.get(summary, "recipients", 1)
     })
   end
 
-  defp meter("sms_send", contact, user, _summary) do
-    record_message(user, contact, "comms_sms_sent", %{"tool" => "sms_send"})
+  defp meter("sms_send", contact, user, summary) do
+    record_message(user, contact, "sms", "comms_sms_sent", summary, %{"tool" => "sms_send"})
   end
 
   defp meter(_tool, _contact, _user, _summary), do: :ok
 
-  defp record_message(user, contact, event_type, metadata) do
+  # Two writes, deliberately, because they answer to different contracts
+  # (#1143).
+  #
+  # The `comms_messages` row is **money**: it is what `CreditPricer` prices,
+  # so it is written through `Team.Comms.record_message/1`, which does not
+  # rescue. A failure is logged loudly here rather than swallowed, and it is
+  # idempotent on the provider's own message id, so a retried send converges.
+  #
+  # The `usage_events` row is the **product** signal, and keeps
+  # `record_usage/5`'s swallow-and-log contract: it drives the PostHog mirror
+  # and a dashboard count, and a metering outage must never fail a send. It
+  # is no longer what anything prices from, which is the whole point — that
+  # conflation is what made a dropped event a free message.
+  defp record_message(user, contact, channel, event_type, summary, metadata) do
+    case summary["provider_message_id"] do
+      id when is_binary(id) and id != "" ->
+        case Fountain.Team.Comms.record_message(%{
+               user_id: user.id,
+               contact_id: contact.id,
+               agent_id: contact.agent_id,
+               channel: channel,
+               direction: "outbound",
+               provider_message_id: id,
+               metadata: metadata
+             }) do
+          {:ok, _} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.error(
+              "[team_comms] #{channel} message #{id} for user #{user.id} was sent but not " <>
+                "recorded, so it will not be billed: #{inspect(reason)}"
+            )
+        end
+
+      _ ->
+        # The provider answered without an id, so there is nothing to key on
+        # and nothing to reconcile against. Say so rather than billing a
+        # message we cannot identify.
+        Logger.error(
+          "[team_comms] #{channel} send for user #{user.id} returned no provider message id; " <>
+            "it will not be billed"
+        )
+    end
+
     Fountain.Billing.record_usage(
       user.id,
       event_type,
