@@ -27,10 +27,7 @@ defmodule Fountain.Buzz.HarnessTest do
 
   setup do
     assert File.exists?(@launcher), "launcher missing at #{@launcher}"
-    dir = Path.join(System.tmp_dir!(), "buzz-harness-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
-    on_exit(fn -> File.rm_rf(dir) end)
-    %{dir: dir}
+    %{dir: Fountain.TmpDir.mkdir!("buzz-harness")}
   end
 
   defp start(opts) do

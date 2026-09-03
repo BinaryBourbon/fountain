@@ -57,8 +57,7 @@ defmodule FountainWeb.BuzzMcpControllerTest do
   } do
     # Point the controller at a fake `buzz` that echoes JSON, so the full path
     # (controller → Mcp → System.cmd) runs without the real binary.
-    dir = Path.join(System.tmp_dir!(), "buzzbin-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
+    dir = Fountain.TmpDir.mkdir!("buzzbin")
     fake = Path.join(dir, "buzz")
     File.write!(fake, "#!/bin/sh\necho '{\"accepted\":true,\"event_id\":\"e1\"}'\n")
     File.chmod!(fake, 0o755)
