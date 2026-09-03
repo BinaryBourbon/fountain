@@ -390,6 +390,51 @@ defmodule FountainWeb.Telemetry do
         description: "Oban job executions that raised, by queue and worker"
       ),
 
+      # ── Egress broker (ADR 0019, #1170) ───────────────────────────────────
+      # Agent Vault exported no metrics at all: its three alerts read
+      # kube-state and a blackbox probe, and all three die with its
+      # namespace. These are the replacement, and they are what the
+      # home-cloud PrometheusRule reads. Only the native backend emits them,
+      # so `absent()` means "this deployment brokers and the listener is
+      # gone" rather than "this deployment does not broker".
+      last_value("fountain.broker.listener.up",
+        event_name: [:fountain, :broker, :listener],
+        measurement: :up,
+        description: "1 when the native egress proxy is accepting connections on this node"
+      ),
+      last_value("fountain.broker.sessions.count",
+        event_name: [:fountain, :broker, :sessions],
+        measurement: :count,
+        description: "Live broker_sessions rows (one or more per brokered conversation)"
+      ),
+      last_value("fountain.broker.ca.expires_in_seconds",
+        event_name: [:fountain, :broker, :ca],
+        measurement: :expires_in_seconds,
+        description: "Seconds until the derived broker root CA expires"
+      ),
+      # The proxy's own event. A policy regression that starts denying
+      # api.anthropic.com looks exactly like a spike in `denied`.
+      counter("fountain.broker.request.count",
+        event_name: [:managoat, :broker, :request],
+        measurement: :count,
+        tags: [:outcome],
+        description: "Proxied requests by what the broker did: injected, passthrough or denied"
+      ),
+      # A sandbox presenting a token this node cannot resolve: expired,
+      # revoked, or a tenant key that stopped decrypting. A storm of these is
+      # a 407 storm, which reads to a sandbox as "the network is broken".
+      counter("fountain.broker.session_lookup.count",
+        event_name: [:fountain, :broker, :session_lookup],
+        measurement: :count,
+        tags: [:result],
+        description: "Broker session lookups by result: ok, expired, unknown or unreadable"
+      ),
+      counter("fountain.broker.request_log_dropped.count",
+        event_name: [:fountain, :broker, :request_log_dropped],
+        measurement: :count,
+        description: "Egress log rows dropped because the writer's buffer was full"
+      ),
+
       # ── VM ────────────────────────────────────────────────────────────────
       last_value("vm.memory.total", unit: {:byte, :kilobyte}),
       last_value("vm.total_run_queue_lengths.total"),
@@ -503,7 +548,8 @@ defmodule FountainWeb.Telemetry do
   def periodic_measurements(true) do
     [
       {Fountain.Funnel, :emit_telemetry, []},
-      {Fountain.OpsGauges, :emit_telemetry, []}
+      {Fountain.OpsGauges, :emit_telemetry, []},
+      {Fountain.Broker.Native, :emit_telemetry, []}
     ]
   end
 

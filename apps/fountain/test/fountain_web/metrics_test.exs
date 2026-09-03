@@ -189,6 +189,19 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :sandboxes],
         [:fountain, :sandboxes_by_provider],
         [:fountain, :oban_queue],
+        # Fountain.Broker.Native.emit_telemetry/0 (#1170) — exercised
+        # directly by Fountain.BrokerNativeTest, since the poller is off in
+        # test and these are emitted only on the native backend
+        [:fountain, :broker, :listener],
+        [:fountain, :broker, :sessions],
+        [:fountain, :broker, :ca],
+        # Fountain.Broker.Native.Sessions.lookup/1, on every proxy connection
+        [:fountain, :broker, :session_lookup],
+        # Fountain.Broker.Native.RequestLog, when its buffer saturates
+        [:fountain, :broker, :request_log_dropped],
+        # Emitted by the proxy itself (Managoat.Broker.Proxy.log_request/4),
+        # which Fountain.Broker.Native.handle_request/4 also writes rows from
+        [:managoat, :broker, :request],
         # Emitted by Oban itself around every job execution
         [:oban, :job, :stop],
         [:oban, :job, :exception],

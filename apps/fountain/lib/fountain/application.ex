@@ -118,11 +118,12 @@ defmodule Fountain.Application do
   # The native egress proxy (ADR 0019, #1340) listens only when
   # BROKER_LISTEN_PORT selects it; on Agent Vault or with brokerage off, no
   # process here exists. Its request log is a telemetry handler attached
-  # before the listener takes a connection.
+  # before the listener takes a connection, and the writer it casts rows to
+  # starts first so no request finds it missing.
   defp broker_children do
     if Fountain.Broker.backend() == :native do
       Fountain.Broker.Native.attach_telemetry()
-      [Fountain.Broker.Native.listener_spec()]
+      [Fountain.Broker.Native.RequestLog, Fountain.Broker.Native.listener_spec()]
     else
       []
     end
