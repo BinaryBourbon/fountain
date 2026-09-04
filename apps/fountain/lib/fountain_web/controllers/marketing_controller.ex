@@ -112,6 +112,16 @@ defmodule FountainWeb.MarketingController do
   # the integration manual, which is the page that tells an operator the same
   # story without selling the hosted product.
   def buzz_launch(conn, _params) do
+    # The one marketing page that is entirely about an optional extension, so
+    # the only one whose whole route is gated (#1525). Every other page either
+    # needs nothing or drops a section. `Fountain.Marketing.available?/1` reads
+    # the installed set from configuration, so a bundled image serves this and
+    # a `-core` one has never heard of it — including the redirect below, whose
+    # target moved into the extension's manual in #1510.
+    unless Fountain.Marketing.available?(:buzz) do
+      raise Phoenix.Router.NoRouteError, conn: conn, router: FountainWeb.Router
+    end
+
     if Fountain.Marketing.site?() do
       render(conn, :buzz_launch,
         layout: {FountainWeb.Layouts, :marketing},

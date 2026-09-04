@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "First-party extensions: Buzz becomes an OTP app installed at build time and enabled at runtime"
-description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through ten Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2, 3 and 4 — the seam, migration and OpenAPI composition, and the move itself: apps/fountain_buzz exists and core names no FountainBuzz module. A second extension, fountain_support, moved the problem-report feature out under three of the nine callbacks and added none. The supply chain and the -core image have not moved."
+description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through ten Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2, 3 and 4 — the seam, migration and OpenAPI composition, and the move itself: apps/fountain_buzz exists and core names no FountainBuzz module. A second extension, fountain_support, moved the problem-report feature out under three of the ten callbacks and added none. Every gate but the repository split is built: the supply chain, the -core image and its release tags, the manual as a callback, and core marketing that renders only what its distribution can serve."
 tags: [buzz, extensions, packaging, architecture, licensing, support]
 status: stable
 adr: "0043"
@@ -16,7 +16,7 @@ stale_after: 2026-12-04
 
 **Status:** Accepted — **partially built.** Gates 2, 3 and 4 (#1505, #1506,
 #1507) are built, and so is the second extension (#1528, `fountain_support`),
-which used three of the nine callbacks and added none. `Fountain.Extension` (now nine callbacks — see decision 3),
+which used three of the ten callbacks and added none. `Fountain.Extension` (now ten callbacks — see decision 3),
 `Fountain.Extensions`, the authenticated dispatch, the conversation MCP
 fan-out, `Fountain.Migrations` and `FountainWeb.ApiSpec.Compose` exist; and
 Buzz has moved: `apps/fountain_buzz` is an AGPL OTP application depending on
@@ -28,6 +28,12 @@ override and the paths its binaries install to, and `BUNDLE_EXTENSIONS=false` bu
 a core image — no extension application in the release, no binaries in the
 image, one switch for both halves. Both images were built and their contents
 checked.
+
+Gate 7 (#1510) is built: the `-core` release tags (`vX.Y.Z-core`), the manual
+as the tenth callback (#1548), and decision 8's marketing rule (#1525) — core
+copy that needs an extension declares it and renders only where it is
+installed, asserted on the running core release by the `core-distribution` CI
+job. The repository split is #1550 and is deliberately not done.
 
 Gate 7's distribution half is built too: CI builds and boots a core release
 against an empty database on every PR, and each release publishes
@@ -372,6 +378,43 @@ anything back and does not delete a row.
   table**, and its account deletion is correct for the same reason: there is
   nothing to cascade.
 
+### 8. Core-owned marketing declares the extension it needs
+
+Built (#1525). Two images means the sales copy is a distribution question too.
+`/buzz-launch` is a campaign page entirely about one extension, and the Nostr
+card on `/integrations` advertises `POST /api/buzz/agents` — a path decision 7's
+own core release answers `404`. Marketing that sells an endpoint the image does
+not serve is marketing that lies, and #1510 had already forced a partial answer
+by making three core marketing links point at a manual page core no longer
+carries.
+
+The rule: **core-owned marketing content carries `requires_extension: <id>`,
+and renders only where that extension is installed.** A whole page gates its
+route (`/buzz-launch` raises `NoRouteError`); a section or a card drops out;
+prose neither counts nor enumerates what varies, because a number is wrong on
+one image or the other.
+
+Two properties make this consistent with decision 2 rather than a hole in it:
+
+- **The argument is an id, not a module.** `Fountain.Marketing.available?/1`
+  takes a value out of `config :fountain, :extensions`, so core still names no
+  extension code and the guard test stays green. This is what `id/0` is for.
+- **A gated page may link the extension's manual again.** The route gate runs
+  first, so every reader of `/buzz-launch` is on a distribution that serves
+  `/docs/integrations/buzz`. #1510's rule — a *core* page must not link an
+  extension's page — is unchanged; a page that only exists alongside the
+  extension is not a core page in the sense that rule means.
+
+This deliberately **inverts** `FountainWeb.Plugs.ExtensionDispatch`, which
+answers one uniform `404` for every unknown `/api` path precisely so a client
+cannot read the installed set off a status code. That is right for an API and
+wrong here: marketing is public copy about this deployment, and the failure it
+must avoid is claiming a capability that is absent, not disclosing one that is.
+
+The `core-distribution` CI job asserts it on the running core release, beside
+the OpenAPI check and guarded the same way: if no card declares
+`requires_extension` any more, the check fails rather than passing on nothing.
+
 ## Consequences
 
 - **The compiler becomes the boundary check, in one direction only.**
@@ -442,7 +485,8 @@ anything back and does not delete a row.
 ## Gates
 
 Each gate is a sub-issue of [#1503](https://github.com/BinaryBourbon/fountain/issues/1503),
-each leaves bundled behaviour green, and **none is built**.
+each leaves bundled behaviour green. Every gate below is built except the
+repository split (#1550), which is deliberately deferred.
 
 1. **#1504 — this ADR.** Accepted and indexed.
 2. **#1505 — the seam.** `Fountain.Extension` with `id/0`, `enabled?/0`,

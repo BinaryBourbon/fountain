@@ -126,11 +126,22 @@ defmodule FountainWeb.MarketingInstanceTest do
   end
 
   describe "GET /buzz-launch where the deployment is not the marketing site" do
-    test "sends the visitor to the integration manual", %{conn: conn} do
+    # And has no Buzz extension, which is this suite's distribution: it runs
+    # from apps/fountain, where nothing installs one. The route gate comes
+    # before the marketing-site branch (#1525), so the answer is 404 either
+    # way and the redirect below never runs.
+    #
+    # The redirect's own target is why the gate has to come first. It points
+    # at /docs/integrations/buzz, a page that moved to the extension in #1510
+    # — a link guard that scrapes `href=` out of a rendered body cannot see a
+    # redirect, so this was a dead end nothing caught. The bundled behaviour
+    # is asserted in apps/fountain_buzz/test/fountain_buzz/marketing_test.exs.
+    test "is not served at all, whatever kind of deployment it is", %{conn: conn} do
       Application.put_env(:fountain, :marketing_site, false)
+      assert conn |> get(~p"/buzz-launch") |> response(404)
 
-      conn = get(conn, ~p"/buzz-launch")
-      assert redirected_to(conn) == ~p"/docs/integrations/buzz"
+      Application.put_env(:fountain, :marketing_site, true)
+      assert conn |> get(~p"/buzz-launch") |> response(404)
     end
   end
 

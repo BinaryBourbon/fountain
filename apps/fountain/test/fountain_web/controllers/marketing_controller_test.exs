@@ -226,97 +226,82 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 
-  describe "GET /buzz-launch" do
-    test "argues the agent should outlive the laptop, honestly", %{conn: conn} do
-      body = conn |> get(~p"/buzz-launch") |> html_response(200)
+  describe "marketing that needs an extension (#1525)" do
+    # `Fountain.Marketing.available?/1` reads `config :fountain, :extensions`,
+    # and this file runs from apps/fountain, which depends on no extension.
+    # So these assertions describe a `-core` image, and the bundled shape is
+    # asserted in apps/fountain_buzz/test/fountain_buzz/marketing_test.exs.
 
-      assert body =~ "Close your laptop. Your Buzz agent keeps answering."
-      assert body =~ "hosted agents on Nostr"
-      assert body =~ "Host your Buzz agent free"
-      # The button linking the Buzz manual went with the pages themselves
-      # (#1510); the page points at /docs, which every distribution serves.
-      assert body =~ "The integration manual is under Plug into Fountain"
+    test "the catalogue still holds cards that need one" do
+      # Guard the guard. Every assertion below is a filter removing something,
+      # and a filter over a list with nothing to remove passes whatever it
+      # does. If this ever goes empty, the rest of this describe stops testing
+      # anything and must be deleted rather than left looking green.
+      needing =
+        FountainWeb.MarketingHTML.all_protocols()
+        |> Enum.filter(& &1[:requires_extension])
+        |> Enum.map(& &1.id)
 
-      assert body =~ "Take your laptop out of the loop."
-      assert body =~ "Closing the laptop takes the agent offline"
-      assert body =~ "restarts it after a node loss"
+      assert "nostr" in needing
 
-      assert body =~ "From mention to signed reply."
+      rows =
+        FountainWeb.MarketingHTML.all_protocols()
+        |> Enum.flat_map(&Map.get(&1, :works_with, []))
+        |> Enum.filter(& &1[:requires_extension])
+        |> Enum.map(& &1.name)
 
-      for step <- FountainWeb.MarketingHTML.buzz_turn_steps() do
-        assert body =~ step.title, "missing turn step #{step.n}"
-      end
-
-      assert length(Regex.scan(~r/data-role="buzz-turn-step"/, body)) == 4
-      assert body =~ "The agent must make an explicit tool call to publish."
-
-      assert body =~ "The signing key never enters the sandbox."
-      assert body =~ "The name collides with HashiCorp's"
-      assert body =~ "buzz.published"
-      assert body =~ "Recording is not gating"
-
-      assert body =~ "Give the identity a repository and the tools to use it."
-      assert body =~ "Claude Code, Codex, Gemini CLI or OpenCode"
-
-      assert body =~ "Deploy from Buzz Desktop or the API."
-      assert body =~ "buzz-backend-fountain"
-      assert body =~ "$FOUNTAIN_BASE_URL/api/buzz/agents"
-      assert body =~ "&quot;private_key_nsec&quot;"
-      assert body =~ "stores the nsec from this request and never returns it"
-      assert body =~ "updates the existing identity instead of creating a duplicate"
-
-      assert body =~ "Control it from the Buzz channel."
-
-      for owner_command <- FountainWeb.MarketingHTML.buzz_owner_commands() do
-        assert body =~ owner_command.command, "missing owner command #{owner_command.command}"
-      end
-
-      assert body =~ "fountain buzz agents set-access"
-
-      assert body =~ "What the integration does, and what it does not."
-      assert body =~ "The harness does not publish the agent's normal response."
-      assert body =~ "buzz_send_message"
-      assert body =~ "buzz_react"
-      assert body =~ "Publishing is audited, not approved."
-      assert body =~ "Direct messages remain owner-only."
-      assert body =~ "Runtime permission prompts are automatic."
-      assert body =~ "Access does not make the agent discoverable."
+      assert "fountain-buzz" in rows
     end
 
-    test "carries its own card and stays out of permanent navigation", %{conn: conn} do
-      body = conn |> get(~p"/buzz-launch") |> html_response(200)
+    test "a card whose extension is absent is not rendered" do
+      refute Enum.any?(FountainWeb.MarketingHTML.protocols(), &(&1.id == "nostr"))
+      assert FountainWeb.MarketingHTML.outbound_protocol() == nil
 
-      assert body =~ ~s(<meta property="og:title" content="Hosted Buzz agents · Fountain")
-      assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/buzz-launch")
-      assert body =~ ~s(<meta name="description" content="Keep your Buzz agent on the relay)
-
-      refute conn |> get(~p"/") |> html_response(200) =~ ~s(href="/buzz-launch")
-      refute conn |> get(~p"/built-with") |> html_response(200) =~ ~s(href="/buzz-launch")
+      # And the card the reader DOES get is unharmed: the filter walks
+      # works_with, so an over-eager one would empty a core card's rows too.
+      assert FountainWeb.MarketingHTML.tool_protocol().id == "mcp"
+      assert length(FountainWeb.MarketingHTML.tool_protocol().works_with) >= 3
     end
 
-    # `Fountain.Manual` and not `Fountain.Docs`, here and in every other link
-    # guard in this file: it is the manual this distribution serves, whatever
-    # that is. Running from apps/fountain, where no extension is on the code
-    # path, that IS the core manual — which is what makes these guards a real
-    # check that a core-owned marketing page never links to a page a core image
-    # lacks. #1525 owns the wider question of what core marketing should say
-    # about an extension a given distribution may not have.
-    test "every link into the manual resolves", %{conn: conn} do
-      body = conn |> get(~p"/buzz-launch") |> html_response(200)
+    test "a works_with row whose extension is absent is not rendered" do
+      names =
+        FountainWeb.MarketingHTML.protocols()
+        |> Enum.flat_map(& &1.works_with)
+        |> Enum.map(& &1.name)
 
-      slugs =
-        ~r/href="\/docs\/([^"#]+)/
-        |> Regex.scan(body)
-        |> Enum.map(fn [_, slug] -> slug end)
-        |> Enum.uniq()
+      refute "fountain-buzz" in names
+      assert "fountain-team" in names
+    end
 
-      # No assertion that the Buzz manual is linked. It was, until #1510 moved
-      # those pages to the extension: this template is core's, and a core
-      # distribution serves neither page, so the link went. The page points at
-      # /docs instead, which every distribution has, and that bare link does
-      # not match the regex above.
-      for slug <- slugs do
-        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
+    test "and the page says nothing about it", %{conn: conn} do
+      body = conn |> get(~p"/integrations") |> html_response(200)
+
+      # Every shape the extension had on this page: the section heading, the
+      # protocol chip, the endpoint the card advertised, and the MCP row.
+      refute body =~ "Put the agent on a Nostr relay."
+      refute body =~ "Nostr"
+      refute body =~ "POST /api/buzz/agents"
+      refute body =~ "fountain-buzz"
+    end
+  end
+
+  describe "GET /buzz-launch, on a distribution without the extension" do
+    # This file runs from apps/fountain, which depends on no extension, so
+    # `Fountain.Extensions.installed?(:buzz)` is false here exactly as it is in
+    # a `-core` image. The page's own content tests moved to
+    # apps/fountain_buzz/test/fountain_buzz/marketing_test.exs, which is the
+    # suite that has the extension installed (#1525).
+
+    test "the page is not served", %{conn: conn} do
+      # A plain 404, not a raised NoRouteError reaching the test: the endpoint
+      # renders `FountainWeb.ErrorHTML` for it, which is what a reader gets.
+      assert conn |> get(~p"/buzz-launch") |> response(404)
+    end
+
+    test "and nothing links to it", %{conn: conn} do
+      for path <- ["/", "/integrations", "/built-with"] do
+        refute conn |> get(path) |> html_response(200) =~ ~s(href="/buzz-launch"),
+               "#{path} links a page this distribution does not serve"
       end
     end
   end
@@ -356,19 +341,17 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "Start from what you have."
       assert body =~ "Connect to the same agent four ways."
       assert body =~ "Give the agent the tools it needs."
-      assert body =~ "Put the agent on a Nostr relay."
 
       assert Enum.map(FountainWeb.MarketingHTML.client_protocols(), & &1.id) ==
                ~w(agui acp openai api)
 
       assert FountainWeb.MarketingHTML.tool_protocol().id == "mcp"
-      assert FountainWeb.MarketingHTML.outbound_protocol().id == "nostr"
 
-      for name <- ~w(AG-UI ACP OpenAI-compatible MCP Nostr) do
+      for name <- ~w(AG-UI ACP OpenAI-compatible MCP) do
         assert body =~ name, "missing protocol #{name}"
       end
 
-      for name <- ["OpenBot", "Zed", "OpenClaw", "Hermes Agent", "LiteLLM", "LangChain", "Buzz"] do
+      for name <- ["OpenBot", "Zed", "OpenClaw", "Hermes Agent", "LiteLLM", "LangChain"] do
         assert body =~ name, "missing integration #{name}"
       end
 

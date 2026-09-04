@@ -653,7 +653,29 @@ defmodule FountainWeb.MarketingHTML do
   end
 
   @doc "The protocol integrations this page describes."
-  def protocols do
+  def protocols, do: protocols(all_protocols())
+
+  @doc """
+  See `protocols/0`. Takes the catalogue, so a test can pass one in.
+  """
+  def protocols(cards) when is_list(cards) do
+    cards
+    |> Enum.filter(&Fountain.Marketing.available?(&1[:requires_extension]))
+    |> Enum.map(fn card ->
+      Map.update(card, :works_with, [], fn rows ->
+        Enum.filter(rows, &Fountain.Marketing.available?(&1[:requires_extension]))
+      end)
+    end)
+  end
+
+  @doc """
+  Every protocol card, whatever this distribution installs.
+
+  `protocols/0` is what pages render. This is the catalogue behind it, and the
+  only legitimate readers are the tests that check the filter actually removes
+  something — a filter over a list with nothing to remove passes either way.
+  """
+  def all_protocols do
     [
       %{
         id: "agui",
@@ -775,13 +797,17 @@ defmodule FountainWeb.MarketingHTML do
         name: "MCP",
         long: "Model Context Protocol, both ways",
         surface: "Any MCP server, on any agent",
-        direction: "Agents call the servers you name; Fountain hosts four of its own.",
+        # No count and no list in the prose. Both are distribution-dependent
+        # (#1525): core hosts team, team-comms, gmail and caller, and each
+        # installed extension may add its own, so a number here is wrong on one
+        # image or the other. The `works_with` rows below say which, and they
+        # are filtered by what is installed.
+        direction: "Agents call the servers you name; Fountain hosts several of its own.",
         pitch:
           "Give each Fountain agent the stdio or HTTP MCP servers it needs. Fountain " <>
             "passes their declarations to the runtime without curating them. With a " <>
             "brokered Gmail Connection, the sandbox gets inbox tools without receiving " <>
-            "the OAuth token. Fountain also serves MCP tools for teammate messaging, " <>
-            "email, phone and Buzz.",
+            "the OAuth token. Fountain also serves MCP tools of its own, listed below.",
         docs: "/docs/catalog/mcp-servers",
         docs_label: "The MCP servers Fountain hosts",
         works_with: [
@@ -792,7 +818,12 @@ defmodule FountainWeb.MarketingHTML do
             note: "message a teammate, from inside the sandbox"
           },
           %{name: "fountain-comms", slug: nil, note: "a teammate's own email and phone"},
-          %{name: "fountain-buzz", slug: nil, note: "post to a Buzz channel as the agent"},
+          %{
+            name: "fountain-buzz",
+            slug: nil,
+            requires_extension: :buzz,
+            note: "post to a Buzz channel as the agent"
+          },
           %{
             name: "Any stdio or HTTP server",
             slug: nil,
@@ -847,15 +878,17 @@ defmodule FountainWeb.MarketingHTML do
         name: "Nostr",
         long: "Buzz, the other direction",
         surface: "POST /api/buzz/agents",
+        requires_extension: :buzz,
         direction: "Outbound. Fountain hosts the agent and shows up on the relay.",
         pitch:
           "Run a Buzz identity on Fountain instead of your laptop. It holds presence on " <>
             "the relay, answers a mention from its sandbox and keeps its signing key on " <>
             "the server.",
-        # /docs, not the Buzz page: that page belongs to the extension since
-        # #1510 and a core distribution does not serve it, so a card in a core
-        # image would carry a dead link. The manual is one click further in.
-        docs: "/docs",
+        # The extension's page (#1510), which is safe to name again now that
+        # `requires_extension` keeps this card out of a distribution that does
+        # not serve it (#1525). `marketing_controller_test.exs` checks every
+        # rendered `docs:` against `Fountain.Manual` rather than trusting that.
+        docs: "/docs/integrations/buzz",
         docs_label: "Buzz on Fountain",
         works_with: [
           %{name: "Buzz", slug: nil, note: "provision from the desktop, or the API"},
