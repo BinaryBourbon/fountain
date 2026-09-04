@@ -6,6 +6,7 @@ defmodule FountainWeb.ApiSpec do
 
   alias OpenApiSpex.{Components, Info, OpenApi, Paths, SecurityScheme, Server}
   alias FountainWeb.{Endpoint, Router}
+  alias FountainWeb.ApiSpec.Compose
 
   @behaviour OpenApi
 
@@ -44,5 +45,11 @@ defmodule FountainWeb.ApiSpec do
       security: [%{"bearer" => []}]
     }
     |> OpenApiSpex.resolve_schema_modules()
+    # Installed extensions describe what they serve (ADR 0043, #1506). Composed
+    # after the core resolves, so a schema title an extension shares with the
+    # core is a loud failure rather than a silent overwrite. With nothing
+    # installed this is the identity function and the spec is byte-identical to
+    # what it was before extensions existed.
+    |> Compose.compose!()
   end
 end

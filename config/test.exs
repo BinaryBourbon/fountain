@@ -153,6 +153,11 @@ config :fountain, :webhooks_enabled, true
 # `:extensions` is global application state: a test that wrote it would collide
 # with every other async test in the VM (the #1214 shape). Tests vary the
 # fixture, not the configuration.
+#
+# These are installed for the suite AND for `mix openapi.export`, which runs in
+# this env. The fixtures therefore describe no OpenAPI paths from here — that
+# flag is set in test/test_helper.exs, which only a test run loads. See
+# ExtensionFixtures.Enabled.describes_openapi_paths?/0.
 config :fountain, :extensions, [
   Fountain.ExtensionFixtures.Enabled,
   Fountain.ExtensionFixtures.Disabled,

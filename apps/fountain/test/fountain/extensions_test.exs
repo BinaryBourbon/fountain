@@ -269,6 +269,30 @@ defmodule Fountain.ExtensionsTest do
       assert {:error, message} = Extensions.validate([NoSuchModuleAnywhere])
       assert message =~ "is not a loadable module"
     end
+
+    test "on an installed extension whose migration directory is missing (#1506)" do
+      # A missing directory is the difference between "no extension migrations
+      # here" and "silently skipped them", and only the first is safe to boot
+      # through — so it is a boot failure, not a warning.
+      assert {:error, message} =
+               Extensions.validate([Fountain.ExtensionFixtures.MissingMigrations])
+
+      assert message =~ "no_such_directory"
+      assert message =~ "does not exist"
+    end
+
+    test "not on a DISABLED extension whose migration directory is missing" do
+      # It contributes no migrations here, so its directory need not exist.
+      defmodule DisabledMissingMigrations do
+        use Fountain.Extension, id: :disabled_missing_migrations
+        @impl true
+        def enabled?, do: false
+        @impl true
+        def migrations, do: [{:fountain, "no_such_directory"}]
+      end
+
+      assert Extensions.validate([DisabledMissingMigrations]) == :ok
+    end
   end
 
   describe "validate!/1" do

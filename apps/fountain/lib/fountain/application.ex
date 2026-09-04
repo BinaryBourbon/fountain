@@ -38,8 +38,15 @@ defmodule Fountain.Application do
       [
         FountainWeb.Telemetry,
         Fountain.Repo,
+        # Migrates over the one ordered path set (ADR 0043, #1506): core first,
+        # then every installed extension's. `:migrator` is Ecto's own hook for
+        # exactly this; without it the child would run `Ecto.Migrator.run/3`,
+        # which hard-codes the single core path and would silently skip an
+        # extension's migrations on every boot.
         {Ecto.Migrator,
-         repos: Application.fetch_env!(:fountain, :ecto_repos), skip: skip_migrations?()},
+         repos: Application.fetch_env!(:fountain, :ecto_repos),
+         skip: skip_migrations?(),
+         migrator: &Fountain.Migrations.run/3},
         {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Fountain.PubSub},
         # Fire-and-forget work started from a request and never awaited: the

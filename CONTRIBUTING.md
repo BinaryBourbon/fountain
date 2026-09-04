@@ -92,6 +92,34 @@ mix test apps/fountain/test/fountain/docs_test.exs
 To read a page as it will ship, start the server and open `/docs`. That route
 is the only place `docs/` is published.
 
+## Extension migrations share one `schema_migrations`
+
+A first-party extension (ADR 0043) contributes migration directories through
+`Fountain.Extension`'s `migrations/0`, and `Fountain.Migrations` appends them
+after the core's at every entrance: the boot migrator, `Fountain.Release`, and
+`mix ecto.migrate` / `ecto.rollback` / `ecto.setup` (aliased in both
+`mix.exs` files so the root and the app agree). Two rules come with that.
+
+**Version numbers are global.** Extension migrations are recorded in
+Fountain's own `schema_migrations` table, not one of their own, so a version an
+extension picks must not collide with the core's or another extension's. Ecto
+refuses to run a path set containing a duplicate version, which makes a
+collision a loud failed migrate rather than a quietly skipped migration. Keep
+generating timestamps; never hand-pick an integer.
+
+**Moving a migration between paths is not a re-run.** A version already in
+`schema_migrations` stays applied when its file moves from `priv/repo/migrations`
+into an extension's directory, because Ecto matches on the version and never on
+the path. That is what lets an extraction move a table without touching a live
+database, and
+`apps/fountain/test/fountain/extension_composition_test.exs` pins it.
+
+Migrating from the umbrella root goes through `apps/fountain` on purpose:
+`mix ecto.migrate` is a recursive task, and Mix invokes it inside each child
+project *without* resolving that child's aliases, so the root would otherwise
+report "Migrations already up" and leave an installed extension's tables
+missing. The root aliases shell into the app the way `ecto.reset` already did.
+
 ## Adding an umbrella library app
 
 Fountain's database-free subsystems were extracted as Apache-2.0 libraries
