@@ -278,7 +278,7 @@ defmodule Fountain.Umbrella.MixProject do
       status ->
         Mix.raise(
           "the prod release failed to assemble (exit status #{status}). " <>
-            "CI fails this in \"Static analysis and release checks\". A duplicate-module " <>
+            "CI fails this in \"Release boot and the API contract\". A duplicate-module " <>
             "clash between a new dependency and a prod-only one is the usual cause."
         )
     end

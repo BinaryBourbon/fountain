@@ -23,6 +23,30 @@ permissions:
 # the same job while sharing nothing with it but the checkout. #619 split them
 # so the suite runs alone on the critical path with the rest beside it.
 #
+# That "everything else" job (`checks`) then grew until it was itself the
+# critical path: 426s against 171s for the slowest test partition. Two thirds
+# of that turned out not to be analysis at all — `npm ci` runs a vulnerability
+# audit by default, and the advisories endpoint stalls from a runner rather
+# than failing fast, which cost 88s to 302s per run for a result `npm ci`
+# cannot fail on. `--no-audit` took the job to 201s.
+#
+# What was left was still the longest job, and still one sequential queue of
+# five unrelated toolchains. It is now four jobs that share nothing:
+#
+#   elixir-static         format, compile, credo, hex audit, sobelow, dialyzer
+#   release-and-contract  the prod release boot probe, and the OpenAPI document
+#                         plus the contract projected from it
+#   sdk-clients           the four SDKs, both Go modules, the Hermes plugin
+#   docs-prose            the three prose gates, when a diff touches docs
+#
+# Dialyzer is the pole in the first and the whole job is bounded by it, which
+# is the shape to remember before adding anything to `elixir-static`.
+#
+# The split is also why the three Elixir jobs get three cache keys rather than
+# sharing `-checks-`: see the note on `test`'s deps cache. `checks` used to
+# build :test, :dev AND :prod into one cached _build; each job now caches one
+# coherent tree, and `sdk-clients` needs no umbrella build at all.
+#
 # #620 then split the suite itself across three machines. ExUnit reported why:
 #
 #   Finished in 252.3 seconds (140.7s async, 111.6s sync)
@@ -524,8 +548,8 @@ jobs:
       - name: Enforce the coverage threshold
         run: elixir scripts/coverage-gate.exs
 
-  checks:
-    name: Static analysis and release checks
+  elixir-static:
+    name: Elixir static analysis
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
@@ -535,9 +559,102 @@ jobs:
     permissions:
       contents: read
 
-    # Postgres is here for the release boot check alone: /health/ready calls
+    env:
+      MIX_ENV: test
+
+    steps:
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.2"
+          otp-version: "28.3"
+
+      # Job-scoped keys — see the note in `test`.
+      - name: Restore deps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-static-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-static-
+
+      - name: Restore build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-static-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          # No bare "-build-" fallback, for the reason given in `test`.
+          restore-keys: |
+            ${{ runner.os }}-build-static-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check for unused dependencies
+        run: mix deps.unlock --unused && git diff --exit-code mix.lock
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      # --strict, matching `mix precommit`. CI used to run the default profile
+      # while precommit ran --strict, so a strict violation passed CI and only
+      # showed up for whoever ran precommit next.
+      - name: Run Credo
+        run: mix credo --strict
+
+      - name: Audit dependencies
+        # Security advisories block the build unless explicitly acknowledged in
+        # mix.exs. Retirements stay visible without breaking unrelated work: an
+        # upstream maintainer can retire a package at any moment.
+        run: elixir scripts/hex-audit-gate.exs
+
+      # Not plain `mix sobelow`: at the umbrella root sobelow detects no
+      # Phoenix app, scans nothing, and exits 0 — indistinguishable from a
+      # pass (#194, #311). The script scans a merged tree so ee/lib web
+      # modules are covered too (decisions/0010).
+      - name: Security scan (sobelow)
+        run: scripts/sobelow.sh
+
+      # The PLT encodes OTP + deps; rebuilding it cold takes minutes, so it is
+      # cached on the exact beam versions + lockfile. mix.exs pins its path to
+      # priv/plts for this cache. restore-keys deliberately omitted: a PLT from
+      # different versions would be rebuilt anyway.
+      - name: Restore dialyzer PLT cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: priv/plts
+          key: ${{ runner.os }}-plt-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+
+      # MIX_ENV=dev on purpose (the job env is test): dialyzer analyzes the
+      # shipped code; the test env would drag test/support and test-only deps
+      # into the analysis and the PLT.
+      - name: Dialyzer
+        run: MIX_ENV=dev mix dialyzer --format github
+
+  release-and-contract:
+    name: Release boot and the API contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
+
+    permissions:
+      contents: read
+
+    # Postgres is here for the release boot check: /health/ready calls
     # Fountain.Health.database/0, and the release task that runs after it
     # queries users. Both need a migrated fountain_test to answer honestly.
+    # `mix openapi.export` and `mix openapi.spec.json` boot the app too, which
+    # is why the contract steps are in this job rather than beside the clients
+    # that consume what they produce.
     env:
       MIX_ENV: test
 
@@ -581,217 +698,21 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: deps
-          key: ${{ runner.os }}-mix-checks-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-release-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-checks-
+            ${{ runner.os }}-mix-release-
 
       - name: Restore build cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: _build
-          key: ${{ runner.os }}-build-checks-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-build-release-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
           # No bare "-build-" fallback, for the reason given in `test`.
           restore-keys: |
-            ${{ runner.os }}-build-checks-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+            ${{ runner.os }}-build-release-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
 
       - name: Install dependencies
         run: mix deps.get
-
-      - name: Check for unused dependencies
-        run: mix deps.unlock --unused && git diff --exit-code mix.lock
-
-      - name: Check formatting
-        run: mix format --check-formatted
-
-      - name: Compile (warnings as errors)
-        run: mix compile --warnings-as-errors
-
-      # --strict, matching `mix precommit`. CI used to run the default profile
-      # while precommit ran --strict, so a strict violation passed CI and only
-      # showed up for whoever ran precommit next.
-      - name: Run Credo
-        run: mix credo --strict
-
-      - name: Audit dependencies
-        # Security advisories block the build unless explicitly acknowledged in
-        # mix.exs. Retirements stay visible without breaking unrelated work: an
-        # upstream maintainer can retire a package at any moment.
-        run: elixir scripts/hex-audit-gate.exs
-
-      # The Elixir SDK is a standalone Mix project. Keep its dependency graph
-      # and build artifacts separate from this umbrella's -- which also puts
-      # them outside the two caches above, so they need their own entry or
-      # every PR recompiles finch, mint, hpax, ex_doc and makeup from scratch
-      # on the critical path.
-      - name: Restore Elixir SDK cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: |
-            sdk/elixir/deps
-            sdk/elixir/_build
-          key: ${{ runner.os }}-sdk-elixir-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('sdk/elixir/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-sdk-elixir-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
-
-      - name: Elixir SDK dependencies
-        working-directory: sdk/elixir
-        run: MIX_ENV=dev mix deps.get
-
-      - name: Elixir SDK formatting
-        working-directory: sdk/elixir
-        run: mix format --check-formatted
-
-      - name: Elixir SDK compile
-        working-directory: sdk/elixir
-        run: mix compile --warnings-as-errors
-
-      - name: Elixir SDK tests
-        working-directory: sdk/elixir
-        run: mix test
-
-      - name: Elixir SDK documentation
-        working-directory: sdk/elixir
-        run: MIX_ENV=dev mix docs --warnings-as-errors
-
-      - name: Elixir SDK package dry run
-        working-directory: sdk/elixir
-        run: MIX_ENV=dev mix hex.build
-
-      # Not plain `mix sobelow`: at the umbrella root sobelow detects no
-      # Phoenix app, scans nothing, and exits 0 — indistinguishable from a
-      # pass (#194, #311). The script scans a merged tree so ee/lib web
-      # modules are covered too (decisions/0010).
-      - name: Security scan (sobelow)
-        run: scripts/sobelow.sh
-
-      # The PLT encodes OTP + deps; rebuilding it cold takes minutes, so it is
-      # cached on the exact beam versions + lockfile. mix.exs pins its path to
-      # priv/plts for this cache. restore-keys deliberately omitted: a PLT from
-      # different versions would be rebuilt anyway.
-      - name: Restore dialyzer PLT cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: priv/plts
-          key: ${{ runner.os }}-plt-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
-
-      # MIX_ENV=dev on purpose (the job env is test): dialyzer analyzes the
-      # shipped code; the test env would drag test/support and test-only deps
-      # into the analysis and the PLT.
-      - name: Dialyzer
-        run: MIX_ENV=dev mix dialyzer --format github
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: cli/go.mod
-          cache-dependency-path: |
-            cli/go.sum
-            apps/fountain_buzz/cli/go.sum
-
-      # The CLI had tests since launch that no workflow ever ran, so they gated
-      # neither a merge nor a release.
-      #
-      # `-count=1` disables Go's test cache, and it is load-bearing rather than
-      # belt-and-braces (#1542). `TestExamplesParse` reads its inputs from
-      # `examples/`, outside its own package, so Go has no reliable way to know
-      # those inputs moved — and `setup-go`'s cache is keyed on `cli/go.sum`,
-      # which does not move when an example changes. Go caches only successes,
-      # so the stale entry it kept serving was a pass from before the example
-      # that broke it existed: CI reported `ok (cached)` for a day while a
-      # fresh run failed. The suite takes about two seconds; a cache that can
-      # report green for a red tree is not worth that.
-      - name: CLI tests
-        working-directory: cli
-        run: go test -count=1 ./...
-
-      - name: CLI vet
-        working-directory: cli
-        run: go vet ./...
-
-      # The Buzz provider is a second Go module (ADR 0043 decision 6, #1508),
-      # so `go test ./...` in cli/ does not reach it. Separate steps rather
-      # than a loop, for the same reason the SDK contract checks are separate:
-      # a failing log line should name the module a contributor has to fix.
-      #
-      # It is the extension's, and it graduates with the extension (#1510) —
-      # at which point these steps move to that repository's CI and the
-      # `replace` in its go.mod becomes a version pin.
-      - name: Buzz provider tests
-        working-directory: apps/fountain_buzz/cli
-        run: go test -count=1 ./...
-
-      - name: Buzz provider vet
-        working-directory: apps/fountain_buzz/cli
-        run: go vet ./...
-
-      # The Hermes plugin (integrations/hermes) is stdlib Python; its tests
-      # run against an in-process fake Fountain and need nothing installed.
-      - name: Hermes plugin tests
-        run: python3 -m unittest discover -s integrations/hermes/tests -v
-
-      # The Python SDK is deliberately stdlib-only, so its source tests run
-      # on the same interpreter without an install step.
-      - name: Python SDK tests
-        run: python3 -m unittest discover -s sdk/python/tests -v
-
-      - name: Python SDK compiles
-        run: python3 -m compileall -q sdk/python/src sdk/python/scripts
-
-      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
-      # directly, so `npm test` needs nothing but the dev dependency on tsc —
-      # which is also what enforces `erasableSyntaxOnly`, the setting that
-      # keeps those sources runnable without a build step.
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: sdk/typescript/package-lock.json
-
-      # `--no-audit` is the whole reason this step is not the longest in CI.
-      # `npm ci` runs a vulnerability audit by default, which is one POST to
-      # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
-      # stalls from Actions runners rather than failing fast. Measured on this
-      # lockfile: 35 packages, every tarball fetched in 325ms from a warm
-      # cache, and then `reify:audit Completed in 300202ms`. The step was
-      # taking 88s to 302s depending on how far into npm's 5-minute timeout the
-      # request got, on every PR, and it made this job 426s against 171s for
-      # the slowest test partition. With the flag it is under 5s.
-      #
-      # Nothing is lost, because nothing was gated: `npm ci` does not fail on
-      # advisories, so this could only ever print "found 0 vulnerabilities"
-      # into a log. What DOES watch these packages is dependabot, which was
-      # given its two npm ecosystems in the same change that added this flag --
-      # before that the audit line was the only npm advisory signal in the
-      # repository, and it was one nobody could act on. `--no-fund` suppresses
-      # the funding notice for the same reason: it is output, not a check.
-      - name: SDK install
-        working-directory: sdk/typescript
-        run: npm ci --no-audit --no-fund
-
-      - name: SDK typecheck
-        working-directory: sdk/typescript
-        run: npm run typecheck
-
-      - name: SDK tests
-        working-directory: sdk/typescript
-        run: npm test
-
-      - name: SDK build
-        working-directory: sdk/typescript
-        run: npm run build
-
-      # `gofmt -l` prints offending files and exits 0, so the failure has to
-      # come from the emptiness check — print the list first so the log says
-      # which files to run gofmt on.
-      - name: CLI gofmt
-        run: |
-          unformatted=$(gofmt -l cli apps/fountain_buzz/cli)
-          if [ -n "$unformatted" ]; then
-            echo "gofmt needed on:" >&2
-            echo "$unformatted" >&2
-            exit 1
-          fi
 
       # For the release boot check below, not for a test suite — this job runs
       # none. /health/ready and the release task below both read the database.
@@ -931,6 +852,23 @@ jobs:
       - name: SDK wire contract is current
         run: scripts/sdk-contract/build.sh --check
 
+      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
+      # directly, so `npm test` needs nothing but the dev dependency on tsc —
+      # which is also what enforces `erasableSyntaxOnly`, the setting that
+      # keeps those sources runnable without a build step.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      # `--no-audit --no-fund`: see the sdk-clients job, which carries the
+      # measurement. Here it is only to make `npm run generate` runnable.
+      - name: SDK install
+        working-directory: sdk/typescript
+        run: npm ci --no-audit --no-fund
+
       # The TypeScript SDK's types are generated from that spec, not written by
       # hand, so a schema change in Elixir must reach
       # `sdk/typescript/src/generated`. Regenerating here and failing on a diff
@@ -948,52 +886,268 @@ jobs:
             exit 1
           fi
 
-      # Four separate steps rather than a loop, so a failing log line names the
-      # client a contributor has to go and fix. Each reads the committed
-      # contract and its own manifest; none needs the spec rebuilt above.
-      # The Swift equivalent runs inside `swift test` in the swift-sdk job.
-      - name: TypeScript SDK contract
-        working-directory: sdk/typescript
-        run: npm run verify-contract
+  sdk-clients:
+    name: SDK clients, CLI and plugins
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
 
-      - name: Python SDK contract
-        working-directory: sdk/python
-        run: python3 scripts/verify_contract.py
+    permissions:
+      contents: read
 
-      - name: Elixir SDK contract
+    # No umbrella deps/_build cache and no Postgres. Everything here either is
+    # a standalone project (sdk/elixir has its own cache below, cli/ and
+    # apps/fountain_buzz/cli are Go modules) or reads the COMMITTED
+    # sdk/contract/contract.json rather than rebuilding it -- which is the
+    # whole reason that projection is committed. The one job that does rebuild
+    # it is `release-and-contract`, and it fails there if it is stale.
+    env:
+      MIX_ENV: test
+
+    steps:
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.2"
+          otp-version: "28.3"
+
+      # The Elixir SDK is a standalone Mix project. Keep its dependency graph
+      # and build artifacts separate from this umbrella's -- which also puts
+      # them outside the two caches above, so they need their own entry or
+      # every PR recompiles finch, mint, hpax, ex_doc and makeup from scratch
+      # on the critical path.
+      - name: Restore Elixir SDK cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: |
+            sdk/elixir/deps
+            sdk/elixir/_build
+          key: ${{ runner.os }}-sdk-elixir-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('sdk/elixir/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-sdk-elixir-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+      - name: Elixir SDK dependencies
         working-directory: sdk/elixir
-        run: mix test test/contract_test.exs
+        run: MIX_ENV=dev mix deps.get
+
+      - name: Elixir SDK formatting
+        working-directory: sdk/elixir
+        run: mix format --check-formatted
+
+      - name: Elixir SDK compile
+        working-directory: sdk/elixir
+        run: mix compile --warnings-as-errors
+
+      - name: Elixir SDK tests
+        working-directory: sdk/elixir
+        run: mix test
+
+      - name: Elixir SDK documentation
+        working-directory: sdk/elixir
+        run: MIX_ENV=dev mix docs --warnings-as-errors
+
+      - name: Elixir SDK package dry run
+        working-directory: sdk/elixir
+        run: MIX_ENV=dev mix hex.build
 
       # The behavioural half (#1412). sdk/contract pins the shape of the wire;
       # these scenarios pin what a client does with it — SSE framing, cursor
       # resume, error mapping, terminal run states. They are one set of JSON
-      # files run by four adapters, so this step checks the files and the three
-      # after it run them.
+      # files run by four adapters.
       #
       # The lint is not only a format check: it validates every fixture body
       # against the schema sdk/contract/contract.json declares for that
       # operation, which is what stops a scenario going green against a
       # response the real server would never send.
+      #
+      # It runs FIRST, before any adapter. In the job this was split out of it
+      # sat directly above the three conformance runs, which is the same thing
+      # when the order is Elixir, Python, TypeScript throughout. Here the steps
+      # are grouped by language instead, so a malformed fixture would otherwise
+      # fail two adapters with a confusing message before the step that names
+      # the real problem ever ran.
       - name: SDK conformance scenarios are well formed
         run: python3 sdk/conformance/lint.py
 
-      - name: TypeScript SDK conformance
-        working-directory: sdk/typescript
-        run: npm run conformance
+      # Four separate contract checks rather than a loop, so a failing log line
+      # names the client a contributor has to go and fix. Each reads the
+      # committed contract and its own manifest; none rebuilds the spec, which
+      # `release-and-contract` does. The Swift equivalent runs inside
+      # `swift test` in the swift-sdk job.
+      - name: Elixir SDK contract
+        working-directory: sdk/elixir
+        run: mix test test/contract_test.exs
+
+      - name: Elixir SDK conformance
+        working-directory: sdk/elixir
+        run: mix test test/conformance_test.exs
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: |
+            cli/go.sum
+            apps/fountain_buzz/cli/go.sum
+
+      # The CLI had tests since launch that no workflow ever ran, so they gated
+      # neither a merge nor a release.
+      #
+      # `-count=1` disables Go's test cache, and it is load-bearing rather than
+      # belt-and-braces (#1542). `TestExamplesParse` reads its inputs from
+      # `examples/`, outside its own package, so Go has no reliable way to know
+      # those inputs moved — and `setup-go`'s cache is keyed on `cli/go.sum`,
+      # which does not move when an example changes. Go caches only successes,
+      # so the stale entry it kept serving was a pass from before the example
+      # that broke it existed: CI reported `ok (cached)` for a day while a
+      # fresh run failed. The suite takes about two seconds; a cache that can
+      # report green for a red tree is not worth that.
+      - name: CLI tests
+        working-directory: cli
+        run: go test -count=1 ./...
+
+      - name: CLI vet
+        working-directory: cli
+        run: go vet ./...
+
+      # The Buzz provider is a second Go module (ADR 0043 decision 6, #1508),
+      # so `go test ./...` in cli/ does not reach it. Separate steps rather
+      # than a loop, for the same reason the SDK contract checks are separate:
+      # a failing log line should name the module a contributor has to fix.
+      #
+      # It is the extension's, and it graduates with the extension (#1510) —
+      # at which point these steps move to that repository's CI and the
+      # `replace` in its go.mod becomes a version pin.
+      - name: Buzz provider tests
+        working-directory: apps/fountain_buzz/cli
+        run: go test -count=1 ./...
+
+      - name: Buzz provider vet
+        working-directory: apps/fountain_buzz/cli
+        run: go vet ./...
+
+      # `gofmt -l` prints offending files and exits 0, so the failure has to
+      # come from the emptiness check — print the list first so the log says
+      # which files to run gofmt on.
+      - name: CLI gofmt
+        run: |
+          unformatted=$(gofmt -l cli apps/fountain_buzz/cli)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      # The Hermes plugin (integrations/hermes) is stdlib Python; its tests
+      # run against an in-process fake Fountain and need nothing installed.
+      - name: Hermes plugin tests
+        run: python3 -m unittest discover -s integrations/hermes/tests -v
+
+      # The Python SDK is deliberately stdlib-only, so its source tests run
+      # on the same interpreter without an install step.
+      - name: Python SDK tests
+        run: python3 -m unittest discover -s sdk/python/tests -v
+
+      - name: Python SDK compiles
+        run: python3 -m compileall -q sdk/python/src sdk/python/scripts
+
+      - name: Python SDK contract
+        working-directory: sdk/python
+        run: python3 scripts/verify_contract.py
 
       - name: Python SDK conformance
         working-directory: sdk/python
         run: python3 -m unittest discover -s tests -p "test_conformance.py" -v
 
-      - name: Elixir SDK conformance
-        working-directory: sdk/elixir
-        run: mix test test/conformance_test.exs
+      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
+      # directly, so `npm test` needs nothing but the dev dependency on tsc —
+      # which is also what enforces `erasableSyntaxOnly`, the setting that
+      # keeps those sources runnable without a build step.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      # `--no-audit` is the whole reason this step is not the longest in CI.
+      # `npm ci` runs a vulnerability audit by default, which is one POST to
+      # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
+      # stalls from Actions runners rather than failing fast. Measured on this
+      # lockfile: 35 packages, every tarball fetched in 325ms from a warm
+      # cache, and then `reify:audit Completed in 300202ms`. The step was
+      # taking 88s to 302s depending on how far into npm's 5-minute timeout the
+      # request got, on every PR, and it made this job 426s against 171s for
+      # the slowest test partition. With the flag it is under 5s.
+      #
+      # Nothing is lost, because nothing was gated: `npm ci` does not fail on
+      # advisories, so this could only ever print "found 0 vulnerabilities"
+      # into a log. What DOES watch these packages is dependabot, which was
+      # given its two npm ecosystems in the same change that added this flag --
+      # before that the audit line was the only npm advisory signal in the
+      # repository, and it was one nobody could act on. `--no-fund` suppresses
+      # the funding notice for the same reason: it is output, not a check.
+      - name: SDK install
+        working-directory: sdk/typescript
+        run: npm ci --no-audit --no-fund
+
+      - name: SDK typecheck
+        working-directory: sdk/typescript
+        run: npm run typecheck
+
+      - name: SDK tests
+        working-directory: sdk/typescript
+        run: npm test
+
+      - name: SDK build
+        working-directory: sdk/typescript
+        run: npm run build
 
       # Eleven browser applications are built on this API, so the SDK's default
       # entry has to bundle for a browser — no Node built-ins reachable from it.
       - name: SDK bundles for the browser
         working-directory: sdk/typescript
         run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
+
+      - name: TypeScript SDK contract
+        working-directory: sdk/typescript
+        run: npm run verify-contract
+
+      - name: TypeScript SDK conformance
+        working-directory: sdk/typescript
+        run: npm run conformance
+
+  docs-prose:
+    name: Docs prose gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    # The complement of the `docs` job. That job carries the prose gates for a
+    # docs-ONLY diff; this carries them for a diff that touches docs AND code,
+    # which took neither branch before and so went unchecked until docs.yml ran
+    # on main. The two are mutually exclusive by the same docs_only gate.
+    #
+    # The structural half -- every page the nav names, every page on disk,
+    # every internal /docs link and every anchor -- lives in docs_test.exs and
+    # runs in the Elixir suite, so it needs nothing here. That is what
+    # `mkdocs build --strict` used to carry, and the test is the stronger of
+    # the two: MkDocs never checked anchors (#1008).
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true'
+         && needs.changes.outputs.docs_touched == 'true' }}
+
+    permissions:
+      contents: read
+
+    steps:
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
       # The complement of the `docs` job. That job carries the prose gates for
       # a docs-ONLY diff; this carries them for a diff that touches docs AND
@@ -1007,16 +1161,16 @@ jobs:
       # That is what `mkdocs build --strict` used to carry, and the test is the
       # stronger of the two: MkDocs never checked anchors (#1008).
       - name: Docs style
-        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: python3 scripts/docs-style.py
 
-      # A pinned release binary, not `go install`. This job pins Go from
-      # cli/go.mod with GOTOOLCHAIN=local, so it cannot fetch the newer
-      # toolchain the linter's module requires, and `go install` fails before
-      # the linter ever runs. The tarball needs no toolchain and is verified
-      # against its published SHA256.
+      # A pinned release binary, not `go install`. In the job this was split
+      # out of, the reason was that Go came from cli/go.mod with
+      # GOTOOLCHAIN=local and so could not fetch the newer toolchain the
+      # linter's module requires. Here the reason is simpler and stronger:
+      # this job installs no Go at all, because nothing else in it needs one.
+      # Either way the tarball needs no toolchain, and it is verified against
+      # its published SHA256.
       - name: Install the STE linter
-        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: |
           curl -fsSL -o "${RUNNER_TEMP}/vale.tar.gz" \
             https://github.com/stuffbucket/vale/releases/download/v0.15.0/vale_0.15.0_linux_amd64.tar.gz
@@ -1028,7 +1182,6 @@ jobs:
           echo "${RUNNER_TEMP}/vale" >> "$GITHUB_PATH"
 
       - name: Docs Simplified Technical English
-        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         # Plus each extension's slice of the same manual (ADR 0043, #1510).
         # Two halves, each silent without the other: these path arguments
         # decide what is walked, and `.vale-ste.yml`'s `apps/*/docs` include
@@ -1040,17 +1193,25 @@ jobs:
       # AI-writing tells, the third prose gate beside the style sheet and STE.
       # The engine is the published `sentences` package (lex00/sentences, MIT);
       # scripts/destink/destink.mjs holds the rule set, with the count each
-      # enabled and disabled rule produced over docs/. No setup-node here: this
-      # job already installed Node 24 for the SDK steps above, unconditionally.
-      # A second setup-node would re-point the npm cache at a different
-      # lockfile for the rest of the job.
+      # enabled and disabled rule produced over docs/.
       #
-      # `--no-audit --no-fund` for the reason spelled out on the SDK install
-      # step above: five packages, 5.2MB, every tarball fetched in 325ms, and
-      # then five minutes waiting on the advisories endpoint. This step was
-      # measured at 61s and 278s on consecutive runs from that alone.
+      # Its own setup-node, unlike the copy this job was split out of: that one
+      # inherited Node 24 from the SDK steps beside it and deliberately did NOT
+      # call setup-node again, because a second call would have re-pointed the
+      # npm cache at a different lockfile for the rest of the job. Here there
+      # are no SDK steps, so the gate installs the Node it needs and points the
+      # cache at its own lockfile -- the same shape the docs-only `docs` job
+      # uses.
+      - name: Set up Node for the de-stink gate
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/destink/package-lock.json
+
+      # `--no-audit --no-fund`: see the sdk-clients job. The audit request
+      # stalls for minutes from a runner and can only ever print.
       - name: Docs de-stink
-        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: |
           npm ci --prefix scripts/destink --no-audit --no-fund
           node scripts/destink/destink.mjs

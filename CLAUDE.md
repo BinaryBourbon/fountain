@@ -397,20 +397,25 @@ wrap `record/1` in a way that makes it blocking for the user.
 
 ## CI pipeline
 
-`.github/workflows/ci.yml` runs on every push to `main` and all PRs:
+`.github/workflows/ci.yml` runs on every push to `main` and all PRs. The
+gates are grouped into jobs that share nothing, so the job name in a red
+build tells you which toolchain to go and look at:
 
-1. `mix deps.unlock --unused` (fails if `mix.lock` has unused entries)
-2. `mix format --check-formatted`
-3. `mix compile --warnings-as-errors`
-4. `mix credo --strict`
-5. `mix hex.audit` (non-blocking — visible in the log, doesn't fail the build)
-6. `mix sobelow --config` (security scan)
-7. `MIX_ENV=dev mix dialyzer`
-8. Go CLI checks: `go test ./...` and `go vet ./...` in `cli/`
-9. `mix ecto.create && mix ecto.migrate`
-10. The test suite, as six partitions in six parallel jobs (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold
-11. Release boot check — builds a prod release, probes `/health` and `/health/ready`, runs a release task beside the live server
-12. `mix openapi.spec.json` + `jq empty` (OpenAPI spec validates)
+| Job | What it runs |
+|---|---|
+| **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
+| **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
+| **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
+| **sdk-clients** | The four SDKs (Elixir, TypeScript, Python, and Swift in its own `swift-sdk` job), their contract and conformance checks, both Go modules (`cli/` and `apps/fountain_buzz/cli`), and the Hermes plugin |
+| **docs-prose** | The three prose gates, when a diff touches docs *and* code. A docs-only diff gets them from the `docs` job instead |
+
+Dialyzer bounds `elixir-static` and that job bounds the others, so it is the
+first thing to look at before adding a gate there.
+
+`mix hex.audit` is not one of these: `scripts/hex-audit-gate.exs` **fails the
+build** on a security advisory unless it is acknowledged in `mix.exs`, and
+only retirements stay non-blocking (an upstream maintainer can retire a
+package at any moment, and that should not break unrelated work).
 
 On `main` the run usually short-circuits: the `already-tested` job compares
 the pushed commit's tree with the head of the merged PR and, when they are
