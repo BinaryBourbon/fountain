@@ -109,7 +109,11 @@ defmodule Fountain.TmpDirTest do
 
       assert length(files) > 100
       assert Enum.any?(files, &String.contains?(&1, "/ee/test/"))
-      assert Enum.any?(files, &String.contains?(&1, "/buzz/harness_test.exs"))
+      # A file from the deeper half of apps/fountain/test, so a glob that only
+      # reached the top level would still fail here. It used to name a Buzz
+      # test; those live in apps/fountain_buzz since #1507, which this
+      # guardrail's roots deliberately do not cover.
+      assert Enum.any?(files, &String.contains?(&1, "/conversations/attach_test.exs"))
     end
   end
 end

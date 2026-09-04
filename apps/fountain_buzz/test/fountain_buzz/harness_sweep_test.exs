@@ -1,4 +1,4 @@
-defmodule Fountain.Workers.BuzzHarnessSweepTest do
+defmodule FountainBuzz.Workers.HarnessSweepTest do
   @moduledoc """
   The balance applied to the one cost no sandbox meter sees (#1017).
 
@@ -7,10 +7,11 @@ defmodule Fountain.Workers.BuzzHarnessSweepTest do
   """
 
   use Fountain.DataCase, async: false
+  import FountainBuzz.Factory
 
-  alias Fountain.Buzz.{BootSweep, Manager}
+  alias FountainBuzz.{BootSweep, Manager}
   alias Fountain.Credits
-  alias Fountain.Workers.BuzzHarnessSweep
+  alias FountainBuzz.Workers.HarnessSweep, as: BuzzHarnessSweep
 
   setup do
     dir = Fountain.TmpDir.mkdir!("buzz-harness-sweep")
@@ -18,24 +19,24 @@ defmodule Fountain.Workers.BuzzHarnessSweepTest do
     File.write!(fake, "#!/bin/sh\nexec sleep 30\n")
     File.chmod!(fake, 0o755)
 
-    prev_path = Application.get_env(:fountain, :buzz_acp_path)
-    prev_url = Application.get_env(:fountain, :buzz_acp_base_url)
+    prev_path = Application.get_env(:fountain_buzz, :buzz_acp_path)
+    prev_url = Application.get_env(:fountain_buzz, :buzz_acp_base_url)
 
     on_exit(fn ->
       restore(:buzz_acp_path, prev_path)
       restore(:buzz_acp_base_url, prev_url)
-      Fountain.BuzzTestSupport.stop_all_harnesses!()
+      FountainBuzz.TestSupport.stop_all_harnesses!()
       File.rm_rf(dir)
     end)
 
-    Application.put_env(:fountain, :buzz_acp_path, fake)
-    Application.put_env(:fountain, :buzz_acp_base_url, "https://fountain.test")
+    Application.put_env(:fountain_buzz, :buzz_acp_path, fake)
+    Application.put_env(:fountain_buzz, :buzz_acp_base_url, "https://fountain.test")
 
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:fountain, key)
-  defp restore(key, val), do: Application.put_env(:fountain, key, val)
+  defp restore(key, nil), do: Application.delete_env(:fountain_buzz, key)
+  defp restore(key, val), do: Application.put_env(:fountain_buzz, key, val)
 
   defp drain(user_id) do
     case Credits.balance(user_id) do
@@ -58,7 +59,7 @@ defmodule Fountain.Workers.BuzzHarnessSweepTest do
     # not gone, so a top-up brings the same agent back rather than asking the
     # provider to deploy it again. `enabled` is the tenant's own lever and the
     # sweep never touches it.
-    assert Fountain.Buzz._unsafe_get_identity(identity.id).enabled
+    assert FountainBuzz._unsafe_get_identity(identity.id).enabled
   end
 
   test "starts a harness again once the tenant can spend" do
@@ -91,7 +92,7 @@ defmodule Fountain.Workers.BuzzHarnessSweepTest do
   end
 
   test "is inert with no buzz-acp binary configured" do
-    Application.delete_env(:fountain, :buzz_acp_path)
+    Application.delete_env(:fountain_buzz, :buzz_acp_path)
     refute BootSweep.enabled?()
 
     identity = insert_buzz_identity(%{"enabled" => true})

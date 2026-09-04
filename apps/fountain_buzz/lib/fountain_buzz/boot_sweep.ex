@@ -1,9 +1,9 @@
-defmodule Fountain.Buzz.BootSweep do
+defmodule FountainBuzz.BootSweep do
   @moduledoc """
   Starts a harness for every enabled Buzz identity at boot (ADR 0020, gate #736).
 
   Mirrors `Fountain.Conversations.Rehydrator`: on start it sweeps the enabled
-  identities and asks `Fountain.Buzz.Manager` to stand each one up. The sweep is a
+  identities and asks `FountainBuzz.Manager` to stand each one up. The sweep is a
   no-op unless `:buzz_acp_path` is configured — until the binary ships in the
   image (increment 2b) there is nothing to run, so this stays inert in dev, in
   test, and on any instance that has not opted in.
@@ -18,15 +18,15 @@ defmodule Fountain.Buzz.BootSweep do
 
   require Logger
 
-  alias Fountain.Buzz
-  alias Fountain.Buzz.Manager
+  alias FountainBuzz, as: Buzz
+  alias FountainBuzz.Manager
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
   @doc "Whether the sweep is enabled — i.e. a `buzz-acp` binary path is configured."
-  def enabled?, do: Application.get_env(:fountain, :buzz_acp_path) != nil
+  def enabled?, do: Application.get_env(:fountain_buzz, :buzz_acp_path) != nil
 
   @doc """
   Start a harness for every enabled identity. Safe to call repeatedly
@@ -44,7 +44,7 @@ defmodule Fountain.Buzz.BootSweep do
 
   # A harness is a standing OS process the sandbox meters never see (#1017),
   # so the balance gates it here too. Without this the sweep would undo
-  # `Fountain.Workers.BuzzHarnessSweep` on every deploy: it stops a harness
+  # `FountainBuzz.Workers.HarnessSweep` on every deploy: it stops a harness
   # whose tenant cannot spend, and the next boot stood it straight back up.
   # `check_spend/1` is `:ok` with billing off or for a comped account, so a
   # deployment without credits sweeps exactly as it always did.

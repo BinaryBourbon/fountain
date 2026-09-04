@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 #
-# Runs the test suite of every umbrella library app (apps/managoat_*) with
-# coverage, and drops each export into apps/fountain/cover so the coverage
-# job merges it with the partitions' exports and the 85% gate stands on the
-# union (scripts/coverage-gate.exs reads that one directory).
+# Runs the test suite of every umbrella app EXCEPT apps/fountain with coverage,
+# and drops each export into apps/fountain/cover so the coverage job merges it
+# with the partitions' exports and the 85% gate stands on the union
+# (scripts/coverage-gate.exs reads that one directory).
+#
+# That is two kinds of app today: a library on its way out (apps/managoat_*,
+# decisions/0037 — none right now, all nine graduated) and the Buzz extension
+# (apps/fountain_buzz, decisions/0043). They need the same treatment for the
+# same reason, so the glob is "every sibling" rather than a list to keep
+# updated.
 #
 # Why a separate script and not another partition: scripts/partition-files.sh
 # and the timings manifest are written against apps/fountain and ee/, whose
-# tests all belong to the :fountain app. A library app's tests belong to the
-# library, run from its own directory, and instrument its own modules — the
-# partitions never load them, so without this the library's coverage would be
-# unmeasured and its tests would run only when someone ran `mix test` at the
-# root. CI runs this from one partition (see ci.yml). When a library's suite
-# grows past a few seconds, give it a matrix entry of its own instead.
+# tests all belong to the :fountain app. A sibling app's tests belong to that
+# app, run from its own directory, and instrument its own modules — and
+# apps/fountain cannot load them at all, because it deliberately depends on
+# neither. Without this they would be unmeasured and would run only when
+# someone ran `mix test` at the root. CI runs this from one partition (see
+# ci.yml). When a sibling's suite grows past a few seconds, give it a matrix
+# entry of its own instead.
 #
 # Same discipline as test-partition.sh: a run that cannot prove it ran tests
 # exits nonzero, and so does one that exported no coverage.
@@ -27,16 +34,18 @@ merge_dir="apps/fountain/cover"
 mkdir -p "$merge_dir"
 
 shopt -s nullglob
-apps=(apps/managoat_*/)
+apps=()
+for dir in apps/*/; do
+  [ "$dir" = "apps/fountain/" ] && continue
+  apps+=("$dir")
+done
 shopt -u nullglob
 
-# Zero apps is the steady state since every library graduated to its own
-# repository (#1345): nothing to run, nothing to export, and the coverage
-# job's `libs=(apps/managoat_*/)` count is zero too, so the merge still
-# balances. A future library reappearing under apps/managoat_* is picked up
-# again with no change here.
+# Zero siblings is a legitimate state — a core-only checkout with every library
+# on hex and no extension — and the coverage job counts the same directories, so
+# the merge still balances.
 if [ "${#apps[@]}" -eq 0 ]; then
-  echo "no library apps under apps/managoat_*; every library is on hex (see CONTRIBUTING.md, \"Graduating a library\")"
+  echo "no sibling apps under apps/ besides fountain; nothing to run"
   exit 0
 fi
 

@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "First-party extensions: Buzz becomes an OTP app installed at build time and enabled at runtime"
-description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through six Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2 and 3 — the registry, the authenticated /api/<prefix> dispatch, the conversation MCP fan-out, and migration and OpenAPI composition. Buzz has not moved."
+description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through nine Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2, 3 and 4 — the seam, migration and OpenAPI composition, and the move itself: apps/fountain_buzz exists and core names no FountainBuzz module. The supply chain and the -core image have not moved."
 tags: [buzz, extensions, packaging, architecture, licensing]
 status: stable
 adr: "0043"
@@ -14,15 +14,18 @@ stale_after: 2026-12-03
 
 # 0043 — First-party extensions: Buzz becomes an OTP app installed at build time and enabled at runtime
 
-**Status:** Accepted — **partially built.** Gates 2 and 3 (#1505, #1506) are
-built: `Fountain.Extension`'s six callbacks, `Fountain.Extensions`, the
-authenticated `/api/<prefix>` dispatch, the conversation MCP fan-out,
-`Fountain.Migrations` and `FountainWeb.ApiSpec.Compose` all exist and are
-exercised by fixture extensions. **Not built:** `apps/fountain_buzz` and
-everything that moves into it (gates 4-6 / #1507-#1509), and the `-core` image
-and the graduation (gate 7 / #1510). Buzz is still core code, still called
-directly from `Conversations.McpServers`, and its table is still in the core
-migration path.
+**Status:** Accepted — **partially built.** Gates 2, 3 and 4 (#1505, #1506,
+#1507) are built. `Fountain.Extension` (now nine callbacks — see decision 3),
+`Fountain.Extensions`, the authenticated dispatch, the conversation MCP
+fan-out, `Fountain.Migrations` and `FountainWeb.ApiSpec.Compose` exist; and
+Buzz has moved: `apps/fountain_buzz` is an AGPL OTP application depending on
+`:fountain`, `apps/fountain/lib` names no `FountainBuzz.*` module (a guard test
+enforces it), and the bundled release includes both apps.
+
+**Not built:** the `buzz-acp`/`buzz` supply chain still belongs to core's
+Dockerfile and workflows (gate 5 / #1509 — this ADR's *distribution* half), and
+the `-core` image, the docs move and the graduation to
+`BinaryBourbon/fountain_buzz` (gate 7 / #1510). The Go CLI split is #1508.
 
 ADR [0020](0020-buzz-as-a-client-of-the-acp-gateway.md)'s hosted harness and
 brokered signer ship in the image today and keep working unchanged throughout.
@@ -125,7 +128,7 @@ module, not an atom, not an alias in a comment. It reads the configured list
 and calls the behaviour. The direction is `fountain_buzz -> fountain`, and the
 umbrella's dependency resolution proves it at compile time.
 
-### 3. `Fountain.Extension` has six callbacks, and no seventh without an ADR
+### 3. `Fountain.Extension` has nine callbacks, and no tenth without an ADR
 
 Each replaces exactly one thing the core hard-codes today.
 
@@ -134,10 +137,32 @@ Each replaces exactly one thing the core hard-codes today.
 | `id/0 :: atom()` | — | Stable identifier. Namespaces routes, telemetry and error payloads. `:buzz`. |
 | `enabled?/0 :: boolean()` | `File.exists?(buzz_acp_path)` in `runtime.exs` | Asked before every dispatch, so it must be cheap. An installed-but-not-enabled extension mounts nothing and contributes nothing, and is indistinguishable from an absent one — answering `false` is a supported state, not an error. |
 | `migrations/0 :: [{otp_app, path}]` | `buzz_identities` sitting in the core migration path | Appended after the core's at every entrance — the boot migrator's `:migrator` hook, `Fountain.Release.migrate/0` and `rollback/2`, and `mix ecto.migrate` / `ecto.rollback` / `ecto.setup` — so core ordering never depends on an extension being present. One `schema_migrations` for everyone, so version numbers are global; moving a file between paths never re-runs it, because Ecto matches on version and never on path. |
-| `api_prefix/0 :: String.t() \| nil` | the router's Buzz path segments | One lowercase `/api` segment. Validated at boot for shape, uniqueness and collision with a core route, so a bad prefix is a failed deploy rather than a route that quietly serves nothing. |
-| `api_plug/0 :: Plug.t() \| nil` | the router's Buzz lines | Mounted **inside** the existing `:api` pipeline by `FountainWeb.Plugs.ExtensionDispatch`, declared last so core routes always win, and called with the prefix moved from `path_info` to `script_name`. Authentication, the rate limit, `current_user` and the request audit stay host-owned; there is no prefix an extension can choose that reaches its plug without them. |
-| `openapi_paths/0 :: OpenApiSpex.Paths.t()` | `Paths.from_router(Router)` seeing Buzz routes directly | Returned **relative to the extension's mount**; the host prefixes with `/api/<api_prefix>`, so a described path and a served path cannot drift. Merged after the core resolves, with a path or component-title collision raising rather than letting the last writer win. **This callback exists because a forward is opaque:** `Paths.from_router/1` reads `router.__routes__()`, and the host's `forward` is one route whose plug exports no `open_api_operation/1`, so it is filtered out and the mounted routes are invisible. Verified in `deps/open_api_spex/lib/open_api_spex/path_item.ex`. |
+| `api_mounts/0 :: [{path, plug}]` | the router's Buzz lines | One to three lowercase static segments under `/api`, and the Plug behind each. Mounted **inside** the existing `:api` pipeline by `FountainWeb.Plugs.ExtensionDispatch`, declared last so core routes always win, longest mount matching first, and called with the mount moved from `path_info` to `script_name`. Authentication, the rate limit, `current_user` and the request audit stay host-owned; there is no path an extension can choose that reaches its plug without them. Validated at boot for shape, uniqueness and overlap with a core route **in either direction**, so a bad mount is a failed deploy rather than a route that quietly serves nothing. |
+| `openapi_paths/0 :: OpenApiSpex.Paths.t()` | `Paths.from_router(Router)` seeing Buzz routes directly | Absolute; the host refuses any path outside the extension's own mounts, so a described path and a served path cannot drift. Merged after the core resolves, with a path or component-title collision raising rather than letting the last writer win. **This callback exists because a forward is opaque:** `Paths.from_router/1` reads `router.__routes__()`, and the host's `forward` is one route whose plug exports no `open_api_operation/1`, so it is filtered out and the mounted routes are invisible. Verified in `deps/open_api_spex/lib/open_api_spex/path_item.ex`. |
 | `conversation_mcp_servers/2 :: [map()]` | the `buzz/2` clause in `Conversations.McpServers` | The one hot-path callback. Called per turn kick with the conversation id and callback token; returns `[]` for a conversation the extension does not claim. Host order is fixed: extensions first, in configured order, then team, team comms, caller. |
+
+**Amended 2026-09-03 (#1507): three more callbacks, and one prefix became
+mounts.** Building the move found three things the six could not express.
+
+`api_prefix/0` + `api_plug/0` became `api_mounts/0`, because Buzz serves both
+`/api/buzz/agents` and `/api/mcp/buzz/:conversation_id` and the second is not
+under the first — one prefix could not express the surface decision 6 promises
+to keep. `openapi_paths/0` became absolute in the same change, since prefixing
+mount-relative paths has no meaning for an extension holding two mounts;
+the host now checks each described path against the mounts instead, which is
+the stronger form of the same property.
+
+`admin_overview/0` and `admin_user_columns/0` exist because #1017 and #1519 put
+two Buzz figures on the admin pages while this campaign was in flight — a
+running-harness count and a per-account identity count, both measuring a
+standing OS process no sandbox meter reports. Moving Buzz would otherwise have
+deleted the only view an operator has of it. Extensions hand the console
+**data**; the console owns every element of the markup.
+
+`oban_cron/0` exists because the reconciliation sweep (#1017) is scheduled from
+`config :fountain, Oban`, and a core-only release naming a worker module it does
+not carry is a crash on start rather than a missing feature. The host merges
+extension entries into its own cron at boot.
 
 **Supervision is not a callback (amended 2026-09-03, #1505).** This table
 originally carried a seventh entry, `children/1`, aggregating the extension's
@@ -363,10 +388,13 @@ each leaves bundled behaviour green, and **none is built**.
    the router's with collision detection on both paths and component titles.
    `mix openapi.spec.json` is byte-identical for a distribution with no
    extension installed, verified against `main`.
-4. **#1507 — the move.** `apps/fountain_buzz`, `Fountain.Buzz*` renamed
-   `FountainBuzz.*`, its table, controllers, schemas, launch script, base
-   prompt and tests with it; the guard test asserting `apps/fountain/lib` is
-   Buzz-free.
+4. **#1507 — the move. Built** ([#1523](https://github.com/BinaryBourbon/fountain/pull/1523)).
+   `apps/fountain_buzz`, `Fountain.Buzz*` renamed `FountainBuzz.*`, its table,
+   controllers, schemas, launch script, base prompt and tests with it;
+   `Fountain.ExtensionGuardTest` asserting `apps/fountain/lib` names no
+   extension module, declares no Buzz route and holds no Buzz asset. The
+   published spec and `sdk/contract/contract.json` came out byte-identical,
+   which is what "the wire did not move" means.
 5. **#1508 — the Go split.** `buzz-backend-fountain` moves to the extension's
    ownership; `fountain buzz` stays in `cli/` (decision 6). Rescope the issue.
 6. **#1509 — the supply chain.** `buzz-acp.version`, `buzz-acp.source`,

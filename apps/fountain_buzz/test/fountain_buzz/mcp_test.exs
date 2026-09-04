@@ -1,7 +1,7 @@
-defmodule Fountain.Buzz.McpTest do
+defmodule FountainBuzz.McpTest do
   use ExUnit.Case, async: true
 
-  alias Fountain.Buzz.Mcp
+  alias FountainBuzz.Mcp
 
   # A ctx whose exec records the call and returns a canned result, so the tool
   # logic is tested without a real `buzz` binary or key.

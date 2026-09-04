@@ -152,7 +152,6 @@ defmodule Fountain.Conversations.McpServersTest do
       conv = insert_conversation(channel_id: Fountain.Team.channel())
       conv = %{conv | caller_tools: [%{"name" => "x"}]}
 
-      assert McpServers.buzz(conv.id, nil) == []
       assert McpServers.team(conv.id, nil) == []
       assert McpServers.team_comms(conv.id, nil) == []
       assert McpServers.caller(conv, nil) == []

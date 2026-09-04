@@ -6,7 +6,7 @@ defmodule Fountain.Extension do
   into the release, and is switched on by naming its extension module in
   configuration:
 
-      config :fountain, :extensions, [FountainBuzz.Extension]
+      config :fountain, :extensions, [MyExt.Extension]
 
   The host reaches an extension **only** through the callbacks below. Nothing
   in `apps/fountain` names an extension module, and an extension never
@@ -38,6 +38,8 @@ defmodule Fountain.Extension do
     * `c:admin_overview/0` and `c:admin_user_columns/0` — read-only numbers for
       the operator console. Data, never markup, and never a way to reach into a
       core page.
+    * `c:oban_cron/0` — periodic jobs, merged into the host's Oban cron so a
+      core-only release never names a worker it does not carry.
 
   ## Supervision is not a callback
 
@@ -84,12 +86,12 @@ defmodule Fountain.Extension do
   The paths under `/api` this extension serves, and the Plug behind each.
 
   Each entry is `{"/segment[/segment...]", plug}` — an absolute path relative to
-  `/api`, lowercase, and static. Buzz declares two, because the compatibility
-  promise in ADR 0043 keeps both of its existing paths and they are not nested
-  under one another:
+  `/api`, lowercase, and static. More than one is allowed, and the Buzz
+  extension needs it: ADR 0043's compatibility promise keeps both of its
+  existing paths and they are not nested under one another.
 
       def api_mounts do
-        [{"/buzz", FountainBuzz.Router}, {"/mcp/buzz", FountainBuzz.McpRouter}]
+        [{"/my-ext", MyExt.Router}, {"/mcp/my-ext", MyExt.McpRouter}]
       end
 
   Dispatch takes the **longest** declared mount that prefixes the request, trims
@@ -135,7 +137,7 @@ defmodule Fountain.Extension do
   which is the whole implementation for an extension with a Phoenix router:
 
       def openapi_paths do
-        Fountain.Extensions.mounted_paths("/buzz", FountainBuzz.Router)
+        Fountain.Extensions.mounted_paths("/my-ext", MyExt.Router)
       end
 
   The host refuses a path that falls outside `c:api_mounts/0`, so an extension
@@ -207,6 +209,20 @@ defmodule Fountain.Extension do
   """
   @callback admin_user_columns() :: [{header :: String.t(), %{String.t() => term()}}]
 
+  @doc """
+  Oban cron entries this extension wants scheduled, as `{crontab, worker}`.
+
+  Merged into the host's `Oban.Plugins.Cron` at boot by
+  `Fountain.Application`, because the alternative is a core-only release whose
+  `config :fountain, Oban` names a worker module it does not carry — which is a
+  crash on start, not a missing feature.
+
+  Oban-shaped on purpose. An extension shares the host's Repo, its `oban_jobs`
+  table and its queues; a second Oban instance to avoid naming the first would
+  be pretending a coupling away rather than removing it.
+  """
+  @callback oban_cron() :: [{crontab :: String.t(), worker :: module()}]
+
   @doc false
   defmacro __using__(opts) do
     id = Keyword.fetch!(opts, :id)
@@ -238,13 +254,17 @@ defmodule Fountain.Extension do
       @impl Fountain.Extension
       def admin_user_columns, do: []
 
+      @impl Fountain.Extension
+      def oban_cron, do: []
+
       defoverridable enabled?: 0,
                      api_mounts: 0,
                      conversation_mcp_servers: 2,
                      migrations: 0,
                      openapi_paths: 0,
                      admin_overview: 0,
-                     admin_user_columns: 0
+                     admin_user_columns: 0,
+                     oban_cron: 0
     end
   end
 end

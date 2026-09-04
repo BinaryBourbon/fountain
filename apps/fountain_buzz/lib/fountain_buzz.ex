@@ -1,11 +1,11 @@
-defmodule Fountain.Buzz do
+defmodule FountainBuzz do
   @moduledoc """
   Context for Buzz identities and the environment a hosted `buzz-acp` runs with
   (ADR 0020, Phase 1 — tracker #735 / gate #736).
 
   A Buzz identity binds a Nostr keypair (in a vault) to a Fountain agent. This
   context owns the tenant-scoped CRUD for those bindings and the one function
-  that turns a binding into a launch spec for `Fountain.Buzz.Harness`:
+  that turns a binding into a launch spec for `FountainBuzz.Harness`:
   `harness_launch/2` mints a scoped API key for the owner, decrypts the vault's
   `BUZZ_*` secrets **server-side**, and assembles the full process environment.
 
@@ -18,22 +18,22 @@ defmodule Fountain.Buzz do
   import Ecto.Query, only: [from: 2]
 
   alias Fountain.{Accounts, Audit, Conversations, Crypto, Environments, Repo, Vaults}
-  alias Fountain.Buzz.BuzzIdentity
+  alias FountainBuzz.Identity
 
   # ── identities (tenant-scoped) ─────────────────────────────────────────────
 
   @doc "WARNING: lookup by id without owner check. Admin/internal/supervisor use only."
-  def _unsafe_get_identity(id), do: Repo.get(BuzzIdentity, id)
+  def _unsafe_get_identity(id), do: Repo.get(Identity, id)
 
   @doc "List every enabled identity across tenants. System sweep only (the boot supervisor)."
   def _unsafe_list_enabled_identities do
-    Repo.all(from i in BuzzIdentity, where: i.enabled == true)
+    Repo.all(from i in Identity, where: i.enabled == true)
   end
 
   @doc "List identities scoped to a user."
   def list_identities(user_id) when is_binary(user_id) do
     Repo.all(
-      from i in BuzzIdentity,
+      from i in Identity,
         where: i.user_id == ^user_id,
         order_by: [desc: i.inserted_at, desc: i.id]
     )
@@ -41,7 +41,7 @@ defmodule Fountain.Buzz do
 
   @doc "Fetch one identity scoped to a user. Returns nil if missing or not owned."
   def get_identity(id, user_id) when is_binary(id) and is_binary(user_id) do
-    Repo.get_by(BuzzIdentity, id: id, user_id: user_id)
+    Repo.get_by(Identity, id: id, user_id: user_id)
   end
 
   @doc """
@@ -51,12 +51,12 @@ defmodule Fountain.Buzz do
   vault. Returns nil if the vault is not a Buzz identity vault (or not owned).
   """
   def get_identity_by_vault(vault_id, user_id) when is_binary(vault_id) and is_binary(user_id) do
-    Repo.get_by(BuzzIdentity, vault_id: vault_id, user_id: user_id)
+    Repo.get_by(Identity, vault_id: vault_id, user_id: user_id)
   end
 
   @doc "Fetch an identity by its Nostr pubkey, scoped to a user. The convergence key."
   def get_identity_by_pubkey(pubkey, user_id) when is_binary(pubkey) and is_binary(user_id) do
-    Repo.get_by(BuzzIdentity, pubkey: pubkey, user_id: user_id)
+    Repo.get_by(Identity, pubkey: pubkey, user_id: user_id)
   end
 
   @doc """
@@ -68,7 +68,7 @@ defmodule Fountain.Buzz do
   """
   @spec identity_count(binary()) :: non_neg_integer()
   def identity_count(user_id) when is_binary(user_id) do
-    Repo.aggregate(from(i in BuzzIdentity, where: i.user_id == ^user_id), :count, :id)
+    Repo.aggregate(from(i in Identity, where: i.user_id == ^user_id), :count, :id)
   end
 
   @doc """
@@ -81,7 +81,7 @@ defmodule Fountain.Buzz do
   """
   @spec identity_counts() :: %{optional(binary()) => non_neg_integer()}
   def identity_counts do
-    from(i in BuzzIdentity, group_by: i.user_id, select: {i.user_id, count(i.id)})
+    from(i in Identity, group_by: i.user_id, select: {i.user_id, count(i.id)})
     |> Repo.all()
     |> Map.new()
   end
@@ -91,7 +91,7 @@ defmodule Fountain.Buzz do
   Fountain-side of the remote-agents provider deploy (ADR 0020 Phase 3, #738).
 
   Creates the identity's vault (holding `BUZZ_PRIVATE_KEY` / `BUZZ_AUTH_TAG` /
-  `BUZZ_RELAY_URL`) and the `BuzzIdentity` that points an agent at it. **Converges
+  `BUZZ_RELAY_URL`) and the `Identity` that points an agent at it. **Converges
   on the pubkey**: called again for the same pubkey it returns the existing
   identity and refreshes the vault secrets, so a provider's repeated `deploy` is
   idempotent. Deliberately not wrapped in a transaction — audits must record
@@ -122,10 +122,10 @@ defmodule Fountain.Buzz do
   process — refusing a re-deploy would strand a running harness on stale
   credentials, which is strictly worse than letting it refresh them. What
   stops the cost for an account out of credit is
-  `Fountain.Workers.BuzzHarnessSweep`, which suspends the harness and keeps
+  `FountainBuzz.Workers.HarnessSweep`, which suspends the harness and keeps
   the row.
 
-  Returns `{:ok, %BuzzIdentity{}}` or `{:error, reason}`.
+  Returns `{:ok, %Identity{}}` or `{:error, reason}`.
   """
   def provision_identity(user_id, params, opts \\ []) when is_binary(user_id) do
     with {:ok, fields} <- validate_provision(params),
@@ -153,8 +153,16 @@ defmodule Fountain.Buzz do
     end
   end
 
+  @doc """
+  The per-account ceiling on hosted agents (#1017).
+
+  Public because the admin users column highlights a count that has reached it,
+  and the ceiling is this extension's policy rather than the console's.
+  """
+  def identity_ceiling, do: Application.get_env(:fountain_buzz, :buzz_identity_ceiling, 10)
+
   defp check_identity_ceiling(user_id) do
-    limit = Application.get_env(:fountain, :buzz_identity_ceiling, 10)
+    limit = identity_ceiling()
     count = identity_count(user_id)
 
     if count < limit do
@@ -275,7 +283,7 @@ defmodule Fountain.Buzz do
     }
 
     case get_identity_by_pubkey(fields.pubkey, user_id) do
-      %BuzzIdentity{} = existing -> update_identity(existing, attrs, opts)
+      %Identity{} = existing -> update_identity(existing, attrs, opts)
       nil -> create_identity(attrs, opts)
     end
   end
@@ -291,15 +299,15 @@ defmodule Fountain.Buzz do
   this to decide whether a converging deploy must bounce the harness. Vault
   secrets are not compared: a rotated key is the owner's `!rotate` to apply.
   """
-  @spec launch_config_changed?(BuzzIdentity.t(), BuzzIdentity.t()) :: boolean()
-  def launch_config_changed?(%BuzzIdentity{} = before, %BuzzIdentity{} = after_) do
+  @spec launch_config_changed?(Identity.t(), Identity.t()) :: boolean()
+  def launch_config_changed?(%Identity{} = before, %Identity{} = after_) do
     Enum.any?(@launch_fields, &(Map.get(before, &1) != Map.get(after_, &1)))
   end
 
   @doc """
   The MCP server entries to inject into a conversation's `session/new` so the
   sandboxed agent can post to its channel (gate #737). Returns `[]` unless the
-  conversation is Buzz-driven (its vault belongs to a BuzzIdentity); otherwise a
+  conversation is Buzz-driven (its vault belongs to a Identity); otherwise a
   one-element list pointing the agent's MCP client at Fountain's buzz endpoint,
   authenticated with the conversation's own sprite `token`.
 
@@ -311,7 +319,7 @@ defmodule Fountain.Buzz do
       when is_binary(conversation_id) and is_binary(token) and token != "" do
     with %Conversations.Conversation{vault_id: vid, user_id: uid}
          when is_binary(vid) <- fetch_conv(conversation_id),
-         %BuzzIdentity{} <- get_identity_by_vault(vid, uid) do
+         %Identity{} <- get_identity_by_vault(vid, uid) do
       [
         %{
           name: "fountain-buzz",
@@ -342,16 +350,16 @@ defmodule Fountain.Buzz do
   `name` and `relay_url`. Records `buzz_identity.created`.
   """
   def create_identity(attrs, opts \\ []) do
-    %BuzzIdentity{}
-    |> BuzzIdentity.changeset(attrs)
+    %Identity{}
+    |> Identity.changeset(attrs)
     |> Repo.insert()
     |> audited("buzz_identity.created", opts)
   end
 
   @doc "Update a Buzz identity. Records `buzz_identity.updated`."
-  def update_identity(%BuzzIdentity{} = identity, attrs, opts \\ []) do
+  def update_identity(%Identity{} = identity, attrs, opts \\ []) do
     identity
-    |> BuzzIdentity.changeset(attrs)
+    |> Identity.changeset(attrs)
     |> Repo.update()
     |> audited("buzz_identity.updated", opts)
   end
@@ -361,7 +369,7 @@ defmodule Fountain.Buzz do
   `params` (string-keyed) may carry `"respond_to"` and `"respond_to_allowlist"`,
   validated and normalised exactly as `provision_identity/3` does. Nothing else
   on the identity changes. Records `buzz_identity.updated`. The caller restarts
-  the harness (`Fountain.Buzz.Manager.restart_harness/2`) when
+  the harness (`FountainBuzz.Manager.restart_harness/2`) when
   `launch_config_changed?/2` says so — this function only persists.
 
   This changes only what the *harness accepts* — the `BUZZ_ACP_RESPOND_TO`
@@ -380,7 +388,7 @@ defmodule Fountain.Buzz do
   A later provider deploy sends the desktop's record as the whole truth and
   will overwrite what is set here.
   """
-  def update_access(%BuzzIdentity{} = identity, params, opts \\ []) when is_map(params) do
+  def update_access(%Identity{} = identity, params, opts \\ []) when is_map(params) do
     attrs =
       %{}
       |> maybe_attr("respond_to", presence(params["respond_to"]))
@@ -403,13 +411,13 @@ defmodule Fountain.Buzz do
   defp maybe_attr(attrs, key, value), do: Map.put(attrs, key, value)
 
   @doc "Delete a Buzz identity. Records `buzz_identity.deleted`."
-  def delete_identity(%BuzzIdentity{} = identity, opts \\ []) do
+  def delete_identity(%Identity{} = identity, opts \\ []) do
     identity
     |> Repo.delete()
     |> audited("buzz_identity.deleted", opts)
   end
 
-  defp audited({:ok, %BuzzIdentity{} = identity} = ok, action, opts) do
+  defp audited({:ok, %Identity{} = identity} = ok, action, opts) do
     Audit.record(%{
       user_id: identity.user_id,
       action: action,
@@ -430,7 +438,7 @@ defmodule Fountain.Buzz do
   # ── launch spec for the harness ────────────────────────────────────────────
 
   @typedoc """
-  A `Fountain.Buzz.Harness` launch spec: the command, args, env, and the id of
+  A `FountainBuzz.Harness` launch spec: the command, args, env, and the id of
   the API key minted for this run (so the caller/harness can revoke it on stop).
 
   * `:command` — path to the `buzz-acp` binary
@@ -471,13 +479,13 @@ defmodule Fountain.Buzz do
   by the identity must exist; a caller that has already established ownership of
   the identity may call this — the mint is scoped to `identity.user_id`.
   """
-  @spec harness_launch(BuzzIdentity.t(), keyword()) :: {:ok, launch()} | {:error, term()}
-  def harness_launch(%BuzzIdentity{} = identity, opts \\ []) do
-    command = opts[:buzz_acp_path] || Application.get_env(:fountain, :buzz_acp_path)
-    base_url = opts[:base_url] || Application.get_env(:fountain, :buzz_acp_base_url)
+  @spec harness_launch(Identity.t(), keyword()) :: {:ok, launch()} | {:error, term()}
+  def harness_launch(%Identity{} = identity, opts \\ []) do
+    command = opts[:buzz_acp_path] || Application.get_env(:fountain_buzz, :buzz_acp_path)
+    base_url = opts[:base_url] || Application.get_env(:fountain_buzz, :buzz_acp_base_url)
 
     fountain_bin =
-      opts[:fountain_bin] || Application.get_env(:fountain, :fountain_cli_path) || "fountain"
+      opts[:fountain_bin] || Application.get_env(:fountain_buzz, :fountain_cli_path) || "fountain"
 
     agents = opts[:agents] || 1
 
@@ -511,11 +519,11 @@ defmodule Fountain.Buzz do
   one-conversation credential does not become standing access. Scoped to the
   identity's owner. Returns `{:ok, key}` or `{:error, :not_found}`.
   """
-  def revoke_launch_key(%BuzzIdentity{} = identity, api_key_id, opts \\ []) do
+  def revoke_launch_key(%Identity{} = identity, api_key_id, opts \\ []) do
     Accounts.revoke_api_key(identity.user_id, api_key_id, opts)
   end
 
-  defp fetch_vault(%BuzzIdentity{vault_id: vault_id, user_id: user_id}) do
+  defp fetch_vault(%Identity{vault_id: vault_id, user_id: user_id}) do
     # Ownership: the identity is tenant-owned and its vault_id is a same-tenant
     # FK, so a scoped fetch confirms it rather than trusting the pointer.
     case Vaults.get_vault(vault_id, user_id) do
@@ -524,7 +532,7 @@ defmodule Fountain.Buzz do
     end
   end
 
-  defp mint_key(%BuzzIdentity{} = identity, opts) do
+  defp mint_key(%Identity{} = identity, opts) do
     name = "buzz-acp:#{identity.name}"
 
     Accounts.create_api_key(identity.user_id, name,
@@ -538,7 +546,7 @@ defmodule Fountain.Buzz do
   # BUZZ_RELAY_URL); the identity row is authoritative for the relay, so it wins.
   # The author gate is the identity's too: without BUZZ_ACP_RESPOND_TO the
   # harness defaults to owner-only whatever the desktop's record says (#790).
-  defp buzz_identity_env(vault_env, %BuzzIdentity{} = identity) do
+  defp buzz_identity_env(vault_env, %Identity{} = identity) do
     vault_env
     |> Map.put("BUZZ_RELAY_URL", identity.relay_url)
     |> maybe_put("BUZZ_ACP_DISPLAY_NAME", identity.display_name)
@@ -548,7 +556,7 @@ defmodule Fountain.Buzz do
 
   # buzz-acp warns and ignores the allowlist var outside allowlist mode; only
   # set it where it means something.
-  defp maybe_put_allowlist(env, %BuzzIdentity{respond_to: "allowlist", respond_to_allowlist: list})
+  defp maybe_put_allowlist(env, %Identity{respond_to: "allowlist", respond_to_allowlist: list})
        when is_list(list) and list != [] do
     Map.put(env, "BUZZ_ACP_RESPOND_TO_ALLOWLIST", Enum.join(list, ","))
   end
@@ -558,7 +566,7 @@ defmodule Fountain.Buzz do
   # Point the harness's ACP child at this Fountain agent + vault (+ environment
   # override, #783; + sandbox mode, ADR 0023), and keep the pool to one (the
   # desktop's 10 is not our assumption).
-  defp acp_wiring_env(%BuzzIdentity{} = identity, fountain_bin, agents) do
+  defp acp_wiring_env(%Identity{} = identity, fountain_bin, agents) do
     args =
       ["acp", "--agent", identity.agent_id, "--vault", identity.vault_id]
       |> Kernel.++(
@@ -590,8 +598,8 @@ defmodule Fountain.Buzz do
   end
 
   defp base_prompt_file do
-    Application.get_env(:fountain, :buzz_base_prompt_file) ||
-      Application.app_dir(:fountain, "priv/buzz-base-prompt.md")
+    Application.get_env(:fountain_buzz, :buzz_base_prompt_file) ||
+      Application.app_dir(:fountain_buzz, "priv/buzz-base-prompt.md")
   end
 
   defp maybe_put(map, _key, nil), do: map

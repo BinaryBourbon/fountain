@@ -390,15 +390,17 @@ jobs:
           MIX_TEST_PARTITION: ${{ matrix.partition }}
         run: scripts/test-partition.sh ${{ strategy.job-total }}
 
-      # The umbrella library apps (apps/managoat_*, decisions/0037) are not in
-      # the partition manifest: their tests belong to the library and run from
-      # its own directory, instrumenting its own modules. One partition runs
-      # them all and copies the exports into the merge directory as lib-*, so
-      # the coverage gate below stands on the union. Partition 1 rather than a
-      # job of its own because a job carries ~60s of fixed cost and the
-      # libraries' suites are seconds; give a library its own matrix entry
-      # when that stops being true.
-      - name: Run the library apps' tests with coverage
+      # The sibling umbrella apps — a managoat_* library on its way out
+      # (decisions/0037) and the Buzz extension (apps/fountain_buzz,
+      # decisions/0043) — are not in the partition manifest: their tests belong
+      # to those apps, run from their own directories and instrument their own
+      # modules, and apps/fountain cannot even load them because it depends on
+      # neither. One partition runs them all and copies the exports into the
+      # merge directory as lib-*, so the coverage gate below stands on the
+      # union. Partition 1 rather than a job of its own because a job carries
+      # ~60s of fixed cost; give a sibling its own matrix entry when its suite
+      # stops being seconds.
+      - name: Run the sibling apps' tests with coverage
         if: ${{ matrix.partition == 1 }}
         run: scripts/test-libraries.sh
 
@@ -486,13 +488,19 @@ jobs:
             echo "merged ${#exports[@]} coverage exports, expected $expected" >&2
             exit 1
           fi
-          # The library apps' exports (scripts/test-libraries.sh): one per
-          # apps/managoat_* directory, or the gate would stand on the
-          # partitions alone and the libraries' coverage would go unmeasured.
-          libs=(apps/managoat_*/)
+          # The sibling apps' exports (scripts/test-libraries.sh): one per
+          # umbrella app other than fountain — a managoat_* library on its way
+          # out (decisions/0037) or the Buzz extension (decisions/0043) — or the
+          # gate would stand on the partitions alone and their coverage would go
+          # unmeasured.
+          libs=()
+          for dir in apps/*/; do
+            [ "$dir" = "apps/fountain/" ] && continue
+            libs+=("$dir")
+          done
           lib_exports=(apps/fountain/cover/lib-*.coverdata)
           if [ "${#lib_exports[@]}" -ne "${#libs[@]}" ]; then
-            echo "merged ${#lib_exports[@]} library exports, expected ${#libs[@]} (one per apps/managoat_*)" >&2
+            echo "merged ${#lib_exports[@]} sibling exports, expected ${#libs[@]} (one per apps/* other than fountain)" >&2
             exit 1
           fi
           total=$(cat apps/fountain/cover/*.tests | awk '{s += $1} END {print s + 0}')

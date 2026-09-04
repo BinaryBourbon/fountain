@@ -24,13 +24,24 @@ defmodule Fountain.ExtensionsTest do
   import ExUnit.CaptureLog
 
   describe "configured/0 and installed/0" do
+    # These assert about the FIXTURES, not about the whole list. Which real
+    # extensions a run installs depends on the working directory — the Buzz
+    # extension is on the code path at the umbrella root and not inside
+    # apps/fountain (ADR 0043) — so a test that pinned the exact list would
+    # pass in one and fail in the other while testing nothing about the seam.
     test "configured/0 lists every extension named in config, enabled or not" do
-      assert Extensions.configured() == [Enabled, Disabled, Silent, Exploding, WrongShape]
+      configured = Extensions.configured()
+
+      for fixture <- [Enabled, Disabled, Silent, Exploding, WrongShape] do
+        assert fixture in configured
+      end
     end
 
     test "installed/0 drops the ones this deployment cannot run" do
-      assert Extensions.installed() == [Enabled, Silent, Exploding, WrongShape]
-      refute Disabled in Extensions.installed()
+      installed = Extensions.installed()
+
+      refute Disabled in installed
+      for fixture <- [Enabled, Silent, Exploding, WrongShape], do: assert(fixture in installed)
     end
 
     test "installed/0 preserves configured order" do
@@ -168,13 +179,18 @@ defmodule Fountain.ExtensionsTest do
   end
 
   describe "admin_overview/1 and admin_user_columns/1" do
-    test "collect what installed extensions report, in configured order" do
-      assert [{label, 7, opts}] = Extensions.admin_overview()
-      assert label == Enabled.overview_label()
+    test "collect what installed extensions report" do
+      assert {_label, 7, opts} =
+               Enum.find(Extensions.admin_overview(), &(elem(&1, 0) == Enabled.overview_label()))
+
       assert opts[:navigate] == "/admin/users"
 
-      assert [{header, cells}] = Extensions.admin_user_columns()
-      assert header == Enabled.column_header()
+      assert {_header, cells} =
+               Enum.find(
+                 Extensions.admin_user_columns(),
+                 &(elem(&1, 0) == Enabled.column_header())
+               )
+
       assert cells["nobody"] == %{value: 3, alert?: true}
     end
 

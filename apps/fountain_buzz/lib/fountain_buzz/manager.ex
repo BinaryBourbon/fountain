@@ -1,16 +1,16 @@
-defmodule Fountain.Buzz.Manager do
+defmodule FountainBuzz.Manager do
   @moduledoc """
   Starts and stops hosted `buzz-acp` harnesses, one per Buzz identity, across the
   cluster (ADR 0020, Phase 1 — gate #736, increment 2).
 
-  A harness is a `Fountain.Buzz.Harness` process registered in
-  `Fountain.BuzzRegistry` under its identity id and supervised by
-  `Fountain.BuzzSupervisor` (a `Horde.DynamicSupervisor`), so exactly one runs
+  A harness is a `FountainBuzz.Harness` process registered in
+  `FountainBuzz.Registry` under its identity id and supervised by
+  `FountainBuzz.Supervisor` (a `Horde.DynamicSupervisor`), so exactly one runs
   per identity cluster-wide and it survives a node loss the same way a
   `ConversationServer` does.
 
   This module is the seam between the tenant-aware context and the process tree:
-  it calls `Fountain.Buzz.harness_launch/2` (which mints the API key and decrypts
+  it calls `FountainBuzz.harness_launch/2` (which mints the API key and decrypts
   the vault) and hands the resulting spec to the supervisor.
 
   ## The child spec carries the identity id and nothing else
@@ -37,11 +37,11 @@ defmodule Fountain.Buzz.Manager do
 
   require Logger
 
-  alias Fountain.Buzz
-  alias Fountain.Buzz.{BuzzIdentity, Harness}
+  alias FountainBuzz, as: Buzz
+  alias FountainBuzz.{Identity, Harness}
 
-  @registry Fountain.BuzzRegistry
-  @supervisor Fountain.BuzzSupervisor
+  @registry FountainBuzz.Registry
+  @supervisor FountainBuzz.Supervisor
 
   @doc "The via-tuple a harness for `identity_id` is registered under."
   def via(identity_id), do: {:via, Horde.Registry, {@registry, identity_id}}
@@ -73,13 +73,13 @@ defmodule Fountain.Buzz.Manager do
   vault, builds the env) — see the moduledoc for why that happens in the child
   and not here.
 
-  `opts` are forwarded to `Fountain.Buzz.harness_launch/2` (`:buzz_acp_path`,
+  `opts` are forwarded to `FountainBuzz.harness_launch/2` (`:buzz_acp_path`,
   `:base_url`, `:agents`, attribution) and stored in the child spec, so they must
   not carry anything that goes stale. Returns `{:ok, pid}` or `{:error, reason}`;
   a launch error (`:no_buzz_acp_path`, `:vault_not_found`, …) surfaces here.
   """
-  @spec start_harness(BuzzIdentity.t(), keyword()) :: {:ok, pid()} | {:error, term()}
-  def start_harness(%BuzzIdentity{} = identity, opts \\ []) do
+  @spec start_harness(Identity.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def start_harness(%Identity{} = identity, opts \\ []) do
     case whereis(identity.id) do
       pid when is_pid(pid) -> {:ok, pid}
       nil -> start_child(identity, opts)
@@ -87,7 +87,7 @@ defmodule Fountain.Buzz.Manager do
   end
 
   @doc false
-  # The child's start function. Runs under `Fountain.BuzzSupervisor` on whichever
+  # The child's start function. Runs under `FountainBuzz.Supervisor` on whichever
   # node is starting this child — first start, restart after a crash, or Horde
   # replaying the spec after a deploy — so everything here is resolved fresh
   # each time. `:ignore` drops the spec for an identity that no longer exists or
@@ -97,7 +97,7 @@ defmodule Fountain.Buzz.Manager do
     # tenant-scoped when it was enabled, and every launch is scoped to its
     # user_id inside harness_launch/2.
     case Buzz._unsafe_get_identity(identity_id) do
-      %BuzzIdentity{enabled: true} = identity ->
+      %Identity{enabled: true} = identity ->
         with {:ok, launch} <- Buzz.harness_launch(identity, opts) do
           case Harness.start_link(harness_opts(identity, launch)) do
             {:ok, pid} ->
@@ -140,8 +140,8 @@ defmodule Fountain.Buzz.Manager do
   to drop it, then starts afresh. When none was running this is just
   `start_harness/2`. Returns what `start_harness/2` returns.
   """
-  @spec restart_harness(BuzzIdentity.t(), keyword()) :: {:ok, pid()} | {:error, term()}
-  def restart_harness(%BuzzIdentity{} = identity, opts \\ []) do
+  @spec restart_harness(Identity.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def restart_harness(%Identity{} = identity, opts \\ []) do
     :ok = stop_harness(identity.id)
     await_unregistered(identity.id, 50)
     start_harness(identity, opts)
@@ -161,7 +161,7 @@ defmodule Fountain.Buzz.Manager do
     end
   end
 
-  defp start_child(%BuzzIdentity{} = identity, opts) do
+  defp start_child(%Identity{} = identity, opts) do
     child = %{
       id: identity.id,
       start: {__MODULE__, :start_harness_link, [identity.id, opts]},
@@ -193,7 +193,7 @@ defmodule Fountain.Buzz.Manager do
     end
   end
 
-  defp harness_opts(%BuzzIdentity{} = identity, launch) do
+  defp harness_opts(%Identity{} = identity, launch) do
     [
       name: via(identity.id),
       command: launch.command,
@@ -209,11 +209,11 @@ defmodule Fountain.Buzz.Manager do
   # shipped in the release). Config can override the path; the app-dir default
   # resolves in dev, test and the release alike.
   defp launcher_path do
-    Application.get_env(:fountain, :buzz_acp_launcher) ||
-      Application.app_dir(:fountain, "priv/buzz-acp-launch.sh")
+    Application.get_env(:fountain_buzz, :buzz_acp_launcher) ||
+      Application.app_dir(:fountain_buzz, "priv/buzz-acp-launch.sh")
   end
 
-  defp revoke_orphaned_key(%BuzzIdentity{} = identity, launch) do
+  defp revoke_orphaned_key(%Identity{} = identity, launch) do
     Buzz.revoke_launch_key(identity, launch.api_key_id)
   rescue
     e -> Logger.error("failed to revoke orphaned buzz launch key: #{inspect(e)}")

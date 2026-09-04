@@ -1,4 +1,4 @@
-defmodule Fountain.BuzzCeilingTest do
+defmodule FountainBuzz.CeilingTest do
   @moduledoc """
   `BUZZ_IDENTITY_CEILING` and the spend gate on `provision_identity/3` (#1017).
 
@@ -7,11 +7,13 @@ defmodule Fountain.BuzzCeilingTest do
   """
 
   use Fountain.DataCase, async: false
+  import FountainBuzz.Factory
 
-  alias Fountain.{Buzz, Credits}
+  alias Fountain.Credits
+  alias FountainBuzz, as: Buzz
 
   setup do
-    prev = Application.get_env(:fountain, :buzz_identity_ceiling)
+    prev = Application.get_env(:fountain_buzz, :buzz_identity_ceiling)
     on_exit(fn -> restore(:buzz_identity_ceiling, prev) end)
 
     user = insert_verified_user()
@@ -31,14 +33,14 @@ defmodule Fountain.BuzzCeilingTest do
     %{user: user, params: params}
   end
 
-  defp restore(key, nil), do: Application.delete_env(:fountain, key)
-  defp restore(key, val), do: Application.put_env(:fountain, key, val)
+  defp restore(key, nil), do: Application.delete_env(:fountain_buzz, key)
+  defp restore(key, val), do: Application.put_env(:fountain_buzz, key, val)
 
   defp pubkey(n), do: String.duplicate(Integer.to_string(n, 16), 64) |> String.slice(0, 64)
 
   describe "the ceiling" do
     test "refuses a new identity once the tenant is at the limit", %{user: user, params: params} do
-      Application.put_env(:fountain, :buzz_identity_ceiling, 2)
+      Application.put_env(:fountain_buzz, :buzz_identity_ceiling, 2)
 
       assert {:ok, _} = Buzz.provision_identity(user.id, params.(pubkey(1)))
       assert {:ok, _} = Buzz.provision_identity(user.id, params.(pubkey(2)))
@@ -54,7 +56,7 @@ defmodule Fountain.BuzzCeilingTest do
       user: user,
       params: params
     } do
-      Application.put_env(:fountain, :buzz_identity_ceiling, 1)
+      Application.put_env(:fountain_buzz, :buzz_identity_ceiling, 1)
 
       assert {:ok, first} = Buzz.provision_identity(user.id, params.(pubkey(1)))
 
@@ -75,7 +77,7 @@ defmodule Fountain.BuzzCeilingTest do
     end
 
     test "a disabled identity still occupies a slot", %{user: user, params: params} do
-      Application.put_env(:fountain, :buzz_identity_ceiling, 1)
+      Application.put_env(:fountain_buzz, :buzz_identity_ceiling, 1)
 
       assert {:ok, identity} = Buzz.provision_identity(user.id, params.(pubkey(1)))
       {:ok, _} = Buzz.update_identity(identity, %{"enabled" => false})
@@ -87,7 +89,7 @@ defmodule Fountain.BuzzCeilingTest do
     end
 
     test "the ceiling is per tenant, not global", %{user: user, params: params} do
-      Application.put_env(:fountain, :buzz_identity_ceiling, 1)
+      Application.put_env(:fountain_buzz, :buzz_identity_ceiling, 1)
 
       assert {:ok, _} = Buzz.provision_identity(user.id, params.(pubkey(1)))
 

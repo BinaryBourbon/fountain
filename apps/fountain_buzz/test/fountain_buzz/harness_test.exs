@@ -1,4 +1,4 @@
-defmodule Fountain.Buzz.HarnessTest.LogSink do
+defmodule FountainBuzz.HarnessTest.LogSink do
   @moduledoc false
   # A :logger handler that forwards every event to a test process. :logger calls
   # `log/2` in the process that logged, so receiving the message is proof the
@@ -17,15 +17,15 @@ defmodule Fountain.Buzz.HarnessTest.LogSink do
   end
 end
 
-defmodule Fountain.Buzz.HarnessTest do
+defmodule FountainBuzz.HarnessTest do
   # async: false — writes fake executables and spawns OS processes.
   use ExUnit.Case, async: false
 
-  alias Fountain.Buzz.Harness
+  alias FountainBuzz.Harness
 
   # The real port middleman, shipped in priv. Every harness spawns through it,
   # so the tests exercise the exact teardown path production uses.
-  @launcher Path.expand("../../../priv/buzz-acp-launch.sh", __DIR__)
+  @launcher Path.expand("../../priv/buzz-acp-launch.sh", __DIR__)
 
   # A fake that blocks must `exec` its last command, never background it behind
   # the shell. The launcher TERMs the pid this script reports, which is the
@@ -178,7 +178,7 @@ defmodule Fountain.Buzz.HarnessTest do
     # faster, and `:sys.get_state/1` flushes a mailbox the line may not have
     # reached yet (#1469).
     handler = :"harness_log_#{System.unique_integer([:positive])}"
-    sink = Fountain.Buzz.HarnessTest.LogSink
+    sink = FountainBuzz.HarnessTest.LogSink
     :ok = :logger.add_handler(handler, sink, %{level: :info, config: %{pid: self()}})
 
     on_exit(fn ->
@@ -228,7 +228,7 @@ defmodule Fountain.Buzz.HarnessTest do
     ref = Process.monitor(pid)
 
     # What Horde.Registry sends the losing process (registry_impl.ex).
-    Process.exit(pid, {:name_conflict, {"identity-id", nil}, Fountain.BuzzRegistry, self()})
+    Process.exit(pid, {:name_conflict, {"identity-id", nil}, FountainBuzz.Registry, self()})
 
     assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, :name_conflict}}, 2_000
     assert_receive :stopped, 2_000

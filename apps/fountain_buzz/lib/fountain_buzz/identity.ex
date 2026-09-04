@@ -1,4 +1,4 @@
-defmodule Fountain.Buzz.BuzzIdentity do
+defmodule FountainBuzz.Identity do
   @moduledoc """
   A Buzz identity: the binding that lets Fountain host a Buzz agent's Nostr
   presence off the user's desktop (ADR 0020, Phase 1).

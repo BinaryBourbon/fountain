@@ -30,6 +30,8 @@ defmodule Fountain.Extensions do
 
   require Logger
 
+  alias Fountain.Extension
+
   @type t :: module()
 
   @doc "Every extension module named in configuration, in configured order."
@@ -300,9 +302,13 @@ defmodule Fountain.Extensions do
   else — an admin page is a read-only view, and losing one number is better than
   losing the page an operator opened during an incident.
   """
+  @spec admin_overview() :: [{String.t(), term()}]
+  def admin_overview, do: admin_overview(installed())
+
+  @doc "See `admin_overview/0`. Takes the list, so a test can supply one."
   @spec admin_overview([t()]) :: [{String.t(), term()}]
-  def admin_overview(modules \\ nil) do
-    Enum.flat_map(modules || installed(), fn ext ->
+  def admin_overview(modules) when is_list(modules) do
+    Enum.flat_map(modules, fn ext ->
       safe_admin(ext, :admin_overview, fn -> ext.admin_overview() end)
     end)
   end
@@ -313,9 +319,13 @@ defmodule Fountain.Extensions do
   Each is `{header, %{user_id => value}}`, built once for the page rather than
   once per row.
   """
+  @spec admin_user_columns() :: [{String.t(), %{String.t() => term()}}]
+  def admin_user_columns, do: admin_user_columns(installed())
+
+  @doc "See `admin_user_columns/0`. Takes the list, so a test can supply one."
   @spec admin_user_columns([t()]) :: [{String.t(), %{String.t() => term()}}]
-  def admin_user_columns(modules \\ nil) do
-    Enum.flat_map(modules || installed(), fn ext ->
+  def admin_user_columns(modules) when is_list(modules) do
+    Enum.flat_map(modules, fn ext ->
       safe_admin(ext, :admin_user_columns, fn -> ext.admin_user_columns() end)
     end)
   end
@@ -349,6 +359,36 @@ defmodule Fountain.Extensions do
       )
 
       []
+  end
+
+  ## ─── Oban ────────────────────────────────────────────────────────────────
+
+  @doc """
+  The host's Oban options with every installed extension's cron entries merged
+  into the `Oban.Plugins.Cron` plugin.
+
+  Core entries first, extensions after, in configured order. With nothing
+  installed this returns the options untouched — and a core-only release never
+  names a worker module it does not carry, which is the failure this exists to
+  prevent (a `config :fountain, Oban` entry for a missing module is a crash on
+  start, not a missing feature).
+  """
+  @spec oban_options(keyword()) :: keyword()
+  def oban_options(opts) do
+    case Enum.flat_map(installed(), & &1.oban_cron()) do
+      [] -> opts
+      entries -> Keyword.update!(opts, :plugins, &merge_cron(&1, entries))
+    end
+  end
+
+  defp merge_cron(plugins, entries) do
+    Enum.map(plugins, fn
+      {Oban.Plugins.Cron, cron_opts} ->
+        {Oban.Plugins.Cron, Keyword.update(cron_opts, :crontab, entries, &(&1 ++ entries))}
+
+      other ->
+        other
+    end)
   end
 
   ## ─── Validation ──────────────────────────────────────────────────────────

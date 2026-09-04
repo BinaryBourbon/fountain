@@ -3,7 +3,7 @@ defmodule FountainWeb.TeamCommsMcpController do
   The MCP endpoint a teammate's sandbox calls to use its email address and
   phone number (flag `team_comms`). Streamable-HTTP transport: one JSON-RPC
   message per POST, a JSON response back (or 202 for a notification) — the
-  same shape as `FountainWeb.BuzzMcpController`.
+  same shape as the Buzz extension's own MCP controller.
 
   The sandbox authenticates with its sprite token (already in it, so no new
   secret leaves the server). This controller checks the conversation is the

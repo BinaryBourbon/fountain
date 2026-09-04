@@ -1,4 +1,4 @@
-defmodule Fountain.Buzz.Harness do
+defmodule FountainBuzz.Harness do
   @moduledoc """
   A supervised `buzz-acp` process — one per Buzz identity (ADR 0020, Phase 1).
 
@@ -7,7 +7,7 @@ defmodule Fountain.Buzz.Harness do
   backoff, and on shutdown closes the port and runs an `:on_stop` callback (where
   the supervisor revokes the launch's API key). All the tenant-aware work —
   minting the key, decrypting the vault, building the env — happens in
-  `Fountain.Buzz.harness_launch/2` *before* this process starts, so the harness
+  `FountainBuzz.harness_launch/2` *before* this process starts, so the harness
   holds no repo and does no per-tenant query. That split is deliberate: it keeps
   this the one place that reasons about a foreign long-lived binary, and it makes
   the process testable against a fake `buzz-acp` with no database at all.
@@ -17,7 +17,7 @@ defmodule Fountain.Buzz.Harness do
 
   Start it with the launch spec fields plus lifecycle options:
 
-      Fountain.Buzz.Harness.start_link(
+      FountainBuzz.Harness.start_link(
         command: launch.command,
         args: launch.args,
         env: launch.env,                 # [{name, value}] — strings

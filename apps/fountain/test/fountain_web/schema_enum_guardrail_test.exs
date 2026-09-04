@@ -30,7 +30,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
 
   alias Fountain.Accounts.User
   alias Fountain.Agents.Agent
-  alias Fountain.Buzz.BuzzIdentity
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
   alias Fountain.Environments.Environment
   alias Fountain.Exports.Export
@@ -78,12 +77,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.Agent, "avatar_media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.AvatarRequest, "media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.ImageInput, "media_type"} => {Images, :valid_media_types},
-    {FountainWeb.Schemas.BuzzIdentity, "respond_to"} => {BuzzIdentity, :respond_to_modes},
-    {FountainWeb.Schemas.BuzzProvisionRequest, "respond_to"} => {BuzzIdentity, :respond_to_modes},
-    {FountainWeb.Schemas.BuzzIdentity, "sandbox_mode"} => {Agent, :sandbox_modes},
-    {FountainWeb.Schemas.BuzzProvisionRequest, "sandbox_mode"} => {Agent, :sandbox_modes},
-    {FountainWeb.Schemas.BuzzAccessUpdateRequest, "respond_to"} =>
-      {BuzzIdentity, :respond_to_modes},
     # The permission verdicts a policy may actually name today. Deliberately
     # `buildable_verdicts/0` and not `verdicts/0`: "ask" is a real verdict the
     # domain knows about, with nowhere to ask until #940, and both doors refuse

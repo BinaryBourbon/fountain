@@ -1,4 +1,4 @@
-defmodule FountainWeb.BuzzAgentController do
+defmodule FountainBuzz.AgentController do
   @moduledoc """
   Provision and manage hosted Buzz agents over the API (ADR 0020 Phase 3, #738).
 
@@ -13,8 +13,8 @@ defmodule FountainWeb.BuzzAgentController do
 
   require Logger
 
-  alias Fountain.Buzz
-  alias Fountain.Buzz.{BuzzIdentity, Manager}
+  alias FountainBuzz, as: Buzz
+  alias FountainBuzz.{Identity, Manager}
   alias Fountain.Vaults
   alias FountainWeb.Schemas
 
@@ -27,8 +27,16 @@ defmodule FountainWeb.BuzzAgentController do
   tags(["Buzz"])
 
   operation(:index,
+    # Pinned, and deliberately still spelling the module this controller used to
+    # be. OpenApiSpex derives operationId from module + action, so the #1507
+    # rename would have changed four of them — and ADR 0043 decision 6 promises
+    # the published spec keeps its operationIds, because the four SDKs are
+    # generated from it (#1411). The id is a wire value; the module name is not.
+    operation_id: "FountainWeb.BuzzAgentController.index",
     summary: "List hosted Buzz agents",
-    responses: [ok: {"Buzz agents", "application/json", Schemas.BuzzIdentityListResponse}]
+    responses: [
+      ok: {"Buzz agents", "application/json", FountainBuzz.Schemas.BuzzIdentityListResponse}
+    ]
   )
 
   def index(conn, _params) do
@@ -37,15 +45,22 @@ defmodule FountainWeb.BuzzAgentController do
   end
 
   operation(:create,
+    # Pinned, and deliberately still spelling the module this controller used to
+    # be. OpenApiSpex derives operationId from module + action, so the #1507
+    # rename would have changed four of them — and ADR 0043 decision 6 promises
+    # the published spec keeps its operationIds, because the four SDKs are
+    # generated from it (#1411). The id is a wire value; the module name is not.
+    operation_id: "FountainWeb.BuzzAgentController.create",
     summary: "Provision (or converge on) a hosted Buzz agent",
-    request_body: {"Provision attributes", "application/json", Schemas.BuzzProvisionRequest},
+    request_body:
+      {"Provision attributes", "application/json", FountainBuzz.Schemas.BuzzProvisionRequest},
     description:
       "Converges on the Nostr pubkey, so a provider may call it repeatedly. " <>
         "A deploy that would add a **new** hosted agent is gated by the credit " <>
         "balance and by `BUZZ_IDENTITY_CEILING`, both `402`; a converging " <>
         "deploy of an agent that already exists is not.",
     responses: [
-      created: {"Buzz agent", "application/json", Schemas.BuzzIdentityResponse},
+      created: {"Buzz agent", "application/json", FountainBuzz.Schemas.BuzzIdentityResponse},
       payment_required:
         {"Balance exhausted, or the hosted-agent ceiling is reached", "application/json",
          Schemas.Error},
@@ -68,7 +83,7 @@ defmodule FountainWeb.BuzzAgentController do
     before = Buzz.get_identity_by_pubkey(params["pubkey"] || "", user.id)
 
     case Buzz.provision_identity(user.id, attrs, actor: "api") do
-      {:ok, %BuzzIdentity{} = identity} ->
+      {:ok, %Identity{} = identity} ->
         # Best-effort eager start so a provider `deploy` sees it running; the
         # boot sweep also stands enabled identities up, so this is not load-bearing.
         # When the deploy changed a launch-relevant field (author gate, environment,
@@ -133,11 +148,18 @@ defmodule FountainWeb.BuzzAgentController do
   end
 
   operation(:update,
+    # Pinned, and deliberately still spelling the module this controller used to
+    # be. OpenApiSpex derives operationId from module + action, so the #1507
+    # rename would have changed four of them — and ADR 0043 decision 6 promises
+    # the published spec keeps its operationIds, because the four SDKs are
+    # generated from it (#1411). The id is a wire value; the module name is not.
+    operation_id: "FountainWeb.BuzzAgentController.update",
     summary: "Change who may talk to a hosted Buzz agent",
     parameters: [id: [in: :path, type: :string, description: "Buzz agent id"]],
-    request_body: {"Access attributes", "application/json", Schemas.BuzzAccessUpdateRequest},
+    request_body:
+      {"Access attributes", "application/json", FountainBuzz.Schemas.BuzzAccessUpdateRequest},
     responses: [
-      ok: {"Buzz agent", "application/json", Schemas.BuzzIdentityResponse},
+      ok: {"Buzz agent", "application/json", FountainBuzz.Schemas.BuzzIdentityResponse},
       not_found: {"Not found", "application/json", Schemas.Error},
       unprocessable_entity: {"Validation error", "application/json", Schemas.Error}
     ]
@@ -154,8 +176,8 @@ defmodule FountainWeb.BuzzAgentController do
   def update(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
 
-    with %BuzzIdentity{} = identity <- Buzz.get_identity(id, user.id),
-         {:ok, %BuzzIdentity{} = updated} <-
+    with %Identity{} = identity <- Buzz.get_identity(id, user.id),
+         {:ok, %Identity{} = updated} <-
            Buzz.update_access(identity, Map.take(params, ~w(respond_to respond_to_allowlist)),
              actor: "api"
            ) do
@@ -179,6 +201,12 @@ defmodule FountainWeb.BuzzAgentController do
   end
 
   operation(:delete,
+    # Pinned, and deliberately still spelling the module this controller used to
+    # be. OpenApiSpex derives operationId from module + action, so the #1507
+    # rename would have changed four of them — and ADR 0043 decision 6 promises
+    # the published spec keeps its operationIds, because the four SDKs are
+    # generated from it (#1411). The id is a wire value; the module name is not.
+    operation_id: "FountainWeb.BuzzAgentController.delete",
     summary: "Tear down a hosted Buzz agent",
     parameters: [id: [in: :path, type: :string, description: "Buzz agent id"]],
     responses: [
@@ -191,7 +219,7 @@ defmodule FountainWeb.BuzzAgentController do
     user = conn.assigns.current_user
 
     case Buzz.get_identity(id, user.id) do
-      %BuzzIdentity{} = identity ->
+      %Identity{} = identity ->
         Manager.stop_harness(identity.id)
         {:ok, _} = Buzz.delete_identity(identity, actor: "api")
         delete_vault(identity, user.id)
@@ -202,15 +230,15 @@ defmodule FountainWeb.BuzzAgentController do
     end
   end
 
-  defp ensure_harness(%BuzzIdentity{} = before, %BuzzIdentity{} = identity) do
+  defp ensure_harness(%Identity{} = before, %Identity{} = identity) do
     if Buzz.launch_config_changed?(before, identity),
       do: Manager.restart_harness(identity),
       else: Manager.start_harness(identity)
   end
 
-  defp ensure_harness(nil, %BuzzIdentity{} = identity), do: Manager.start_harness(identity)
+  defp ensure_harness(nil, %Identity{} = identity), do: Manager.start_harness(identity)
 
-  defp delete_vault(%BuzzIdentity{vault_id: vault_id}, user_id) do
+  defp delete_vault(%Identity{vault_id: vault_id}, user_id) do
     with %Vaults.Vault{} = vault <- Vaults.get_vault(vault_id, user_id),
          # A home built on this vault is retired first, and a running turn on
          # one refuses the delete (#1084). The harness is stopped above, so
@@ -226,7 +254,7 @@ defmodule FountainWeb.BuzzAgentController do
     :ok
   end
 
-  defp identity_json(%BuzzIdentity{} = i) do
+  defp identity_json(%Identity{} = i) do
     %{
       id: i.id,
       name: i.name,

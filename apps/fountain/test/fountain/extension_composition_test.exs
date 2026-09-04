@@ -26,9 +26,13 @@ defmodule Fountain.ExtensionCompositionTest do
 
   describe "migration_paths/1" do
     test "is the installed extensions' directories, in configured order" do
-      assert [path] = Extensions.migration_paths()
-      assert String.ends_with?(path, "/test_extension_migrations")
+      paths = Extensions.migration_paths()
+
+      # The fixture's, whatever else this run installs — which extensions are on
+      # the code path depends on the working directory (ADR 0043).
+      assert path = Enum.find(paths, &String.ends_with?(&1, "/test_extension_migrations"))
       assert File.dir?(path)
+      assert Enum.all?(paths, &File.dir?/1)
     end
 
     test "is empty with nothing installed, so an absent extension changes nothing" do
@@ -43,6 +47,7 @@ defmodule Fountain.ExtensionCompositionTest do
                Extensions.migration_paths()
 
       assert Disabled in Extensions.configured()
+      assert Extensions.migration_paths([Disabled]) == []
     end
 
     test "raises, naming the extension, when a declared directory is not there" do

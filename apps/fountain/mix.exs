@@ -131,13 +131,10 @@ defmodule Fountain.MixProject do
       "ecto.migrate": [&migrate_with_extension_paths/1],
       "ecto.rollback": [&rollback_with_extension_paths/1],
       test: ["test"],
-      # Render the served OpenAPI spec to a file (same content as
-      # /api/openapi.json — RenderSpec doesn't include open_api_spex's
-      # vendor extensions, so this must match with --vendor-extensions=false.
-      # The release workflow attaches it per tag.
-      "openapi.export": [
-        "openapi.spec.json --spec FountainWeb.ApiSpec --vendor-extensions=false ../../dist/openapi.json"
-      ]
+      # `openapi.export` moved to the umbrella root (#1507): the spec describes
+      # the running distribution, and an installed extension's operations are
+      # only on the code path there. See the root mix.exs.
+      "openapi.noop": []
     ]
   end
 

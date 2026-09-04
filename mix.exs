@@ -83,7 +83,13 @@ defmodule Fountain.Umbrella.MixProject do
   defp releases do
     [
       fountain_server: [
-        applications: [fountain: :permanent]
+        # The BUNDLED distribution (ADR 0043 decision 7): the server plus the
+        # Buzz extension. `apps/fountain` deliberately does NOT depend on
+        # :fountain_buzz — the arrow points the other way, and the compiler
+        # proves it. Inclusion is the release's decision, made here, which is
+        # what makes a core-only release a matter of dropping one line rather
+        # than untangling a dependency (gate 7, #1510).
+        applications: [fountain: :permanent, fountain_buzz: :permanent]
       ]
     ]
   end
@@ -104,6 +110,15 @@ defmodule Fountain.Umbrella.MixProject do
       # makes the child's alias run. CI, SETUP.md and CLAUDE.md all migrate from
       # the root, so without these two lines the root is the entrance that
       # quietly skips extensions.
+      # Render the served OpenAPI spec. At the UMBRELLA ROOT on purpose: the
+      # document describes the running distribution (ADR 0043), and only here
+      # is every app on the code path. Run inside apps/fountain — which is what
+      # this did until #1507 — and `Fountain.Extensions.installed/0` is empty,
+      # so the extension's operations vanish from `dist/openapi.json` and from
+      # the SDK contract projected out of it, silently and by deletion.
+      "openapi.export": [
+        "openapi.spec.json --spec FountainWeb.ApiSpec --vendor-extensions=false dist/openapi.json"
+      ],
       "ecto.migrate": ["cmd --app fountain mix ecto.migrate"],
       "ecto.rollback": ["cmd --app fountain mix ecto.rollback"],
       precommit: [
