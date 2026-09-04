@@ -18,6 +18,28 @@ Notable changes to the Fountain Swift SDK follow
   green on all 24 scenarios — including the timeout scenario `swift` skips
   (#1424), because it raises before re-reading the conversation.
 
+### Fixed
+
+- `swift test` no longer traps at teardown on Linux with
+  "Trying to access a behaviour for a task that in not in the registry"
+  (#1410). Cancelling a `URLSessionTask` is unsafe in FoundationNetworking
+  whenever the session carries a `URLCache`: the cache is read on a background
+  queue before the task's `URLProtocol` exists, so a cancel that lands in that
+  window reports its failure after the task has left the task registry, and
+  `URLSession.behaviour(for:)` traps the process. Both clients now build the
+  sessions they cancel tasks on, without a cache; the `session` a caller passes
+  supplies the configuration rather than being used directly. Fountain sends no
+  cache headers and an event stream must not be replayed from a cache, so
+  nothing is cacheable in the first place.
+- SSE connections share one `URLSession` per client instead of building one
+  each. No session is invalidated from inside a delegate callback, and
+  `invalidateAndCancel()`, which walks the task registry off the session's work
+  queue, is gone.
+- `URLSession.data(for:)` is no longer used. It holds the task in its
+  cancellation handler for the whole call and never releases it on completion,
+  so a Swift task cancelled just after a response arrived cancelled a
+  `URLSessionTask` that had already finished.
+
 ## [0.16.0] - 2026-09-03
 
 ### Added

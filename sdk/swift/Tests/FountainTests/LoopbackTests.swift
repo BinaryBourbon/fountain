@@ -134,27 +134,16 @@ private enum LoopbackError: Error {
   case failed(String)
 }
 
-/// Opt-in, and run in a process of its own.
+/// This used to be opt-in behind `FOUNTAIN_REAL_NETWORK_TESTS=1`, running in a
+/// process of its own: a real `URLSession` sharing a process with the mocked
+/// ones tripped FoundationNetworking's task registry at teardown in about a
+/// third of runs. The cause was the SDK cancelling `URLSessionTask`s that had
+/// already completed, which #1410 fixed, so it runs in the default suite.
 ///
-/// FoundationNetworking keeps one global task registry, and it traps at process
-/// teardown ("Trying to access a behaviour for a task that in not in the
-/// registry") in roughly a fifth of runs when a real `URLSession` shares a
-/// process with the mocked ones the rest of the suite installs. That is upstream
-/// of this package and reproduces without any SDK code in the path, so the test
-/// runs on its own instead: CI gives it a step, and `swift test` for everyone
-/// else stays deterministic. Alone it is stable.
-///
-///     FOUNTAIN_REAL_NETWORK_TESTS=1 swift test \
-///       --filter aRealSocketStreamsEventsThroughURLSession
-///
-/// It belongs to `TransportTests` so that setting the variable and running
-/// everything at least serializes it against the mocked tests.
+/// It belongs to `TransportTests` so that it serializes against the mocked
+/// tests, which share one `URLProtocol` handler.
 extension TransportTests {
-  @Test(
-    .enabled(
-      if: ProcessInfo.processInfo.environment["FOUNTAIN_REAL_NETWORK_TESTS"] == "1",
-      "Set FOUNTAIN_REAL_NETWORK_TESTS=1 to run this in a process of its own"))
-  func aRealSocketStreamsEventsThroughURLSession() async throws {
+  @Test func aRealSocketStreamsEventsThroughURLSession() async throws {
     let server = try LoopbackSSEServer(
       response: """
         HTTP/1.1 200 OK\r
@@ -175,16 +164,14 @@ extension TransportTests {
     server.start()
     defer { server.stop() }
 
-    // The SSE path builds its own session from this one's configuration, so this
-    // session stays unused. FoundationNetworking's task registry crashes at
-    // process teardown over a session that was never invalidated, so dispose it.
+    // The streaming session is built from this one's configuration, so this one
+    // carries only the protocol classes and stays otherwise unused.
     let session = URLSession(configuration: .ephemeral)
     defer { session.finishTasksAndInvalidate() }
     let fountain = try Fountain(
       apiKey: "loopback-secret", baseURL: "http://127.0.0.1:\(server.port)", session: session)
-    // Read to the end of the stream rather than breaking out of it. Cancelling a
-    // live task is what trips FoundationNetworking's task registry on Linux, and
-    // the server closes the connection once it has sent both events.
+    // Read to the end of the stream rather than breaking out of it: the server
+    // closes the connection once it has sent both events.
     var ids: [Int] = []
     for try await event in fountain.events(after: 10, wait: false, maxRetries: 0) {
       ids.append(event["id"]?.intValue ?? 0)

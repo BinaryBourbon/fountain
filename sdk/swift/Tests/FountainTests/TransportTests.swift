@@ -29,12 +29,10 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
   }
 }
 
-/// One session for every mocked test, not one per test. FoundationNetworking
-/// keeps a single global task registry, and a process that churns through
-/// sessions trips it at teardown ("Trying to access a behaviour for a task that
-/// in not in the registry"), which failed about one Ubuntu run in six. Sharing
-/// is safe here because `MockURLProtocol.handler` is global too, and the suite
-/// is serialized.
+/// One session for every mocked test, not one per test: `MockURLProtocol.handler`
+/// is global and the suite is serialized, so a session each would buy nothing.
+/// The client copies this configuration rather than using the session, which is
+/// how `MockURLProtocol` reaches the streams as well as the plain requests.
 private let sharedMockSession: URLSession = {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [MockURLProtocol.self]
@@ -217,8 +215,8 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
     // `.greatestFiniteMagnitude` is out of Int range, so converting it traps.
     let config = FountainConfiguration(
       baseURL: URL(string: "https://api.example.test")!, apiKey: "secret", appURL: nil)
-    // No session: the request never goes out, and a URLSession left unused
-    // trips FoundationNetworking's task registry when the process exits.
+    // No session: this only builds a request, and a client that neither
+    // requests nor streams opens no session at all.
     let http = FountainHTTPClient(configuration: config)
     let request = try http.streamRequest("/api/events/stream", query: [:], lastEventID: 0)
     #expect(request.timeoutInterval.isFinite)
