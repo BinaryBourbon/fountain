@@ -53,10 +53,6 @@ defmodule Fountain.Conversations.Conversation do
     field :permission_policy, :map
     # The caller-defined tools of the bridge (#1202, `Fountain.CallerTools`).
     field :caller_tools, {:array, :map}, default: []
-    # Internal home-identity generation. Nil is the canonical home shared by
-    # ordinary launches. Reapply gives one conversation a fresh generation so
-    # it gets a new machine without resetting conversations on the old home.
-    field :configuration_generation, Ecto.UUID
 
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0
@@ -110,8 +106,7 @@ defmodule Fountain.Conversations.Conversation do
       :environment_id,
       :channel_id,
       :permission_policy,
-      :caller_tools,
-      :configuration_generation
+      :caller_tools
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
     |> validate_length(:channel_id, max: 255)

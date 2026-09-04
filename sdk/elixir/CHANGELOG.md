@@ -2,12 +2,14 @@
 
 ## [0.2.0] - 2026-09-04
 
-- Add `Fountain.Conversation.reapply/2`, which re-selects a conversation's
-  agent, environment and vault without starting a new conversation. The id,
-  title, turns and transcript are kept, and the next prompt runs on a fresh
-  machine and a new runtime session. Pass no options to refresh the current
-  selection; an omitted key stays as it is, and `nil` under `:agent_id`,
-  `:environment_id` or `:vault_id` is sent through as an explicit null.
+- Add `Fountain.Conversation.reapply/2`, which applies a selection to the
+  machine a conversation already runs on, so its files stay where the agent
+  left them. Environment variables, the system prompt, skills and MCP
+  configuration are rewritten, and the next prompt reads them. Pass no options
+  to refresh the current selection; an omitted key stays as it is, and `nil`
+  under `:agent_id`, `:environment_id` or `:vault_id` is sent through as an
+  explicit null. A selection needing the disk rebuilt is refused with
+  `409 rebuild_required` and a `field` naming what forced it.
 
 ## [0.1.0] - 2026-09-02
 

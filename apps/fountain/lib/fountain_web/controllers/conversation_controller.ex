@@ -441,11 +441,12 @@ defmodule FountainWeb.ConversationController do
   operation(:reapply,
     summary: "Reapply a conversation's Agent, Environment and Vault",
     description:
-      "Keeps the conversation id and stored transcript, but makes its next prompt build " <>
-        "a fresh sandbox and start a new runtime session. Omitted fields keep their current " <>
-        "selection; null clears the Environment override or Vault. Refused while a turn is " <>
-        "running or the conversation is provisioning. A persistent conversation receives an " <>
-        "isolated home generation, so cotenant conversations on its old home are not reset.",
+      "Applies a selection to the machine this conversation already runs on, so its files " <>
+        "stay where the agent left them. Variables, the system prompt, skills and MCP " <>
+        "configuration are rewritten, and the next prompt reads them. Omitted fields keep " <>
+        "their current selection; null clears the Environment override or Vault. Refused " <>
+        "while a turn is running or the conversation is provisioning, and with " <>
+        "409 rebuild_required when the selection would need the disk built again.",
     parameters: [conversation_id: [in: :path, type: :string, required: true]],
     request_body:
       {"Configuration selection", "application/json", Schemas.ConversationReapplyRequest},
@@ -453,7 +454,9 @@ defmodule FountainWeb.ConversationController do
       ok: {"Reapplied conversation", "application/json", Schemas.ConversationResponse},
       not_found:
         {"Conversation or selected resource not found", "application/json", Schemas.Error},
-      conflict: {"Conversation has a running turn", "application/json", Schemas.Error},
+      conflict:
+        {"Conversation has a running turn, or the selection needs the machine rebuilt",
+         "application/json", Schemas.Error},
       gone: {"Conversation is terminated", "application/json", Schemas.Error},
       unprocessable_entity: {"Selection is not allowed", "application/json", Schemas.Error},
       service_unavailable: {"Conversation is provisioning", "application/json", Schemas.Error}

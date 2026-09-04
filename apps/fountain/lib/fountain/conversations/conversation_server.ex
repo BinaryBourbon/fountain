@@ -30,7 +30,6 @@ defmodule Fountain.Conversations.ConversationServer do
     Output,
     Pending,
     Provisioning,
-    Reapply,
     Redaction,
     SpriteEnv,
     TurnMachine
@@ -120,15 +119,15 @@ defmodule Fountain.Conversations.ConversationServer do
     result =
       case whereis(conv_id) do
         nil ->
-          wake_with_prompt(conv_id, prompt)
+          case Conversations.wake_conversation(conv_id, prompt) do
+            {:ok, _conv} -> :ok
+            {:error, :gone} -> {:error, :gone}
+            {:error, :not_found} -> {:error, :not_running}
+            {:error, _} = err -> err
+          end
 
         pid ->
-          case call_server(pid, {:send_prompt, prompt, images}) do
-            # A server the reapply's own lookup missed (`Reapply`). Waking
-            # rebuilds on the new selection, with this prompt as its first turn.
-            {:error, :stale_configuration} -> wake_with_prompt(conv_id, prompt)
-            other -> other
-          end
+          call_server(pid, {:send_prompt, prompt, images})
       end
 
     # Size and image count, never the text. A prompt is the tenant's content —
@@ -140,15 +139,6 @@ defmodule Fountain.Conversations.ConversationServer do
     })
 
     result
-  end
-
-  defp wake_with_prompt(conv_id, prompt) do
-    case Conversations.wake_conversation(conv_id, prompt) do
-      {:ok, _conv} -> :ok
-      {:error, :gone} -> {:error, :gone}
-      {:error, :not_found} -> {:error, :not_running}
-      {:error, _} = err -> err
-    end
   end
 
   # Every public entry point calls through here so a GenServer.call exit
@@ -395,16 +385,16 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @doc """
-  Stop an idle server without changing its conversation or sandbox rows.
+  Apply the conversation's current selection to the machine it is running on.
 
-  The conversation context uses this as the serialization point before it
-  reapplies configuration. A running turn is refused; an absent server is
-  already detached and succeeds. See `Fountain.Conversations.Reapply`.
+  The conversation context calls this after it writes the new selection. A
+  server that is not running needs nothing: the next wake builds from the row,
+  which already says what to build. See `Fountain.Conversations.Reapply`.
   """
-  def detach_for_reapply(conv_id) do
+  def refresh_configuration(conv_id) do
     case whereis(conv_id) do
       nil -> :ok
-      pid -> pid |> call_server(:detach_for_reapply) |> Reapply.detach_result()
+      pid -> call_server(pid, :refresh_configuration)
     end
   end
 
@@ -921,7 +911,14 @@ defmodule Fountain.Conversations.ConversationServer do
                  agent,
                  sprite_env
                ) do
-          {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+          # `build_fingerprint` records what the disk was built from, so a
+          # later reapply can tell whether a selection needs it rebuilt.
+          {:ok, _} =
+            Conversations.update_sandbox(sandbox, %{
+              status: "ready",
+              build_fingerprint: Fountain.Conversations.Reapply.fingerprint(env)
+            })
+
           Output.publish_stage(state.conversation_id, "provision", "done")
 
           # Best-effort: snapshot the fully-provisioned state so subsequent
@@ -1594,20 +1591,12 @@ defmodule Fountain.Conversations.ConversationServer do
       state = close_autonomous_turn(state, "superseded_by_prompt")
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      # A reapply replaced this machine while this server still held it
-      # (`Reapply`). Stop without touching the machine, as the detach path
-      # does, and let the caller wake onto the new selection.
-      if Reapply.superseded?(state.sandbox_id, conv) do
-        state = drop_connection(state, "configuration_reapplied")
-        {:stop, :normal, {:error, :stale_configuration}, %{state | handle: nil}}
+      with :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
+           :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
+        agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
+        {:reply, :ok, kick_turn(state, prompt, agent, images)}
       else
-        with :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
-             :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
-          agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-          {:reply, :ok, kick_turn(state, prompt, agent, images)}
-        else
-          {:error, _} = err -> {:reply, err, state}
-        end
+        {:error, _} = err -> {:reply, err, state}
       end
     end
   end
@@ -1738,14 +1727,33 @@ defmodule Fountain.Conversations.ConversationServer do
     {:stop, :normal, :ok, %{state | handle: nil}}
   end
 
-  def handle_call(:detach_for_reapply, _from, %{current_turn: turn} = state)
+  def handle_call(:refresh_configuration, _from, %{current_turn: turn} = state)
       when not is_nil(turn) do
     {:reply, {:error, :conversation_busy}, state}
   end
 
-  def handle_call(:detach_for_reapply, _from, state) do
+  # No machine in hand, so there is nothing on a disk to bring up to date.
+  def handle_call(:refresh_configuration, _from, %{handle: nil} = state) do
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:refresh_configuration, _from, state) do
+    # Skills first, while the handle is still in hand. A bundled skill is a
+    # file write; a GitHub-sourced one is a clone, and this machine's network
+    # policy is already in force, so this is best effort and says so.
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    agent = conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)
+    runtime = conv.runtime || (agent && agent.runtime) || "claude"
+
+    _ = Fountain.SandboxSkills.mount(state.handle, runtime, (agent && agent.skills) || [])
+
+    # Everything else is what a wake already does to a machine it finds: the
+    # provision continuation reads the row, sees a `ready` sandbox and takes
+    # the reattach arm, which resolves MCP servers against the new secrets and
+    # rewrites `.mcp.json`, the `.env` file and the instructions. Dropping the
+    # connection is what makes the next turn spawn a runtime that reads them.
     state = drop_connection(state, "configuration_reapplied")
-    {:stop, :normal, :ok, %{state | handle: nil}}
+    {:reply, :ok, %{state | handle: nil}, {:continue, :provision}}
   end
 
   # Catch-all: an unmatched call must not die with a FunctionClauseError at
@@ -1771,32 +1779,20 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      # A wake that could not see this server took the fresh-machine arm, lost
-      # the Horde race back to it, and handed it the prompt (`Reapply`). This
-      # server holds the machine the reapply replaced, so the prompt is dropped
-      # and logged the way a refused gate below is; stopping frees the name.
-      if Reapply.superseded?(state.sandbox_id, conv) do
-        Logger.warning(
-          "conv #{state.conversation_id}: dropping initial prompt for a replaced configuration"
-        )
+      case TurnMachine.gate(conv.user_id, state.inference_source) do
+        :ok ->
+          state = close_autonomous_turn(state, "superseded_by_prompt")
+          agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
+          {:noreply, kick_turn(state, prompt, agent, images)}
 
-        {:stop, :normal, %{drop_connection(state, "configuration_reapplied") | handle: nil}}
-      else
-        case TurnMachine.gate(conv.user_id, state.inference_source) do
-          :ok ->
-            state = close_autonomous_turn(state, "superseded_by_prompt")
-            agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-            {:noreply, kick_turn(state, prompt, agent, images)}
+        {:error, reason} ->
+          # No caller to reply to — the wake door reports the same refusal
+          # synchronously; this backstop only has to not run the turn.
+          Logger.info(
+            "conv #{state.conversation_id}: dropping initial prompt (#{inspect(reason)})"
+          )
 
-          {:error, reason} ->
-            # No caller to reply to — the wake door reports the same refusal
-            # synchronously; this backstop only has to not run the turn.
-            Logger.info(
-              "conv #{state.conversation_id}: dropping initial prompt (#{inspect(reason)})"
-            )
-
-            {:noreply, state}
-        end
+          {:noreply, state}
       end
     end
   end

@@ -34,8 +34,13 @@ defmodule FountainWeb.ConversationReapplyControllerTest do
     assert response["id"] == ctx.conv.id
     assert response["agent_id"] == ctx.agent.id
     assert response["vault_id"] == nil
-    assert response["runtime_session_id"] == nil
     assert response["sandbox_id"] == ctx.conv.sandbox_id
+
+    # The machine survives, so the runtime session on its disk is still
+    # resumable and the agent keeps its memory of this thread. The server
+    # drops the connection, which is what makes the next turn spawn a runtime
+    # that reads the new environment and the rewritten files.
+    assert response["runtime_session_id"] == "old-session"
 
     [audit] =
       Fountain.Audit.list_for_user(ctx.user.id)

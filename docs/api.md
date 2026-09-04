@@ -533,17 +533,28 @@ gets `403 sprite_may_not_answer`.
 wakes a conversation whose server died with a turn still marked `running`, so
 a turn that nothing else can close still ends.
 
-`POST /api/conversations/:id/reapply` keeps the conversation id, title, turns
-and transcript. The next prompt then starts a new machine and a new runtime
-session. Send `{}` to refresh the current Agent, Environment and Vault. Send
-any of `agent_id`, `environment_id` or `vault_id` to change one selection. An
-omitted field stays unchanged, and `null` clears the Environment override or
-the Vault. Fountain refuses the request while a turn runs. Fountain also
-refuses it while the conversation waits for its first machine. The new machine
-takes the sandbox mode of the Agent you select. One reapply moves one
-conversation. It does not reset the other conversations on a shared sandbox.
-It also leaves the Agent's persistent home in place for the next ordinary
-launch.
+`POST /api/conversations/:id/reapply` applies a selection to the machine the
+conversation already runs on. Send `{}` to refresh the current Agent,
+Environment and Vault. Send any of `agent_id`, `environment_id` or `vault_id`
+to change one selection. An omitted field stays unchanged, and `null` clears
+the Environment override or the Vault.
+
+The machine stays, so everything on its disk stays with it. Fountain rewrites
+the environment variables, the system prompt, the skills and the MCP
+configuration, and the next prompt starts a runtime that reads them.
+
+Some selections need the disk built again. Fountain refuses those with
+`409 rebuild_required` and a `field` that says which one. A different runtime
+needs it: Fountain installs the agent adapter before the network policy, and
+that policy now blocks a second install. A different set of packages,
+repositories, setup script or network policy needs it too. A machine that
+other conversations share accepts only the selection those conversations
+already have, because skills and instructions belong to the machine. For the
+rest, start a new conversation. You can also build this conversation's machine
+again with `DELETE /api/sandboxes/:id`.
+
+Fountain also refuses the request while a turn runs, and while the
+conversation waits for its first machine.
 
 The error tells you about the conversation, never about your access. A status
 of `404` means no such conversation. A status of `409 no_turn_running` means

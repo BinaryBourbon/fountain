@@ -222,6 +222,25 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # A reapply that would need the machine rebuilt (#1565). 409 rather than
+  # 422: the selection is valid, it just cannot be applied to the computer
+  # this conversation is already on. `field` says which one forced it, so a
+  # client can tell "your agent runs a different runtime" from "your
+  # environment installs different packages".
+  def call(conn, {:error, {:rebuild_required, field}}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "rebuild_required",
+      field: to_string(field),
+      message:
+        "this conversation's machine cannot be reconfigured in place because " <>
+          Fountain.Conversations.Reapply.explain(field) <>
+          "; start a new conversation, or rebuild this one's machine with " <>
+          "DELETE /api/sandboxes/:id"
+    })
+  end
+
   def call(conn, {:error, :conversation_busy}) do
     conn
     |> put_status(:conflict)

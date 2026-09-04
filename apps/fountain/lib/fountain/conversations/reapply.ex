@@ -2,71 +2,174 @@ defmodule Fountain.Conversations.Reapply do
   @moduledoc """
   Re-selecting a conversation's Agent, Environment and Vault (#1565).
 
-  A reapply keeps the conversation id, its turns and its transcript, and gives
-  the row a fresh `configuration_generation`. Nothing moves the machine at
-  that moment. The next prompt finds a conversation whose generation no longer
-  matches the sandbox it names, provisions a replacement, and retires the old
-  machine if it was this conversation's alone.
+  A reapply keeps the conversation, its id, its transcript **and its machine**.
+  What it changes is what the machine is configured with, on the machine that
+  is already there. The disk survives, so an agent's cloned repositories,
+  uncommitted work and build output are still where it left them.
 
-  ## The generation is the whole mechanism
+  ## What updates in place, and what does not
 
-  `configuration_generation` is an internal fifth leg of a persistent home's
-  identity (`_unsafe_find_home/5`). An ordinary launch stays on the canonical
-  `nil` generation, which is what makes three things true at once:
+  Most of a launch configuration is either process environment or a file, and
+  both of those can be rewritten under a running sandbox. The reattach path
+  has always done exactly this (`ConversationServer.do_reattach/6` rewrites
+  `.mcp.json`, the `.env` file and the instructions on every wake), so this is
+  the established mechanism rather than a new one.
 
-    * the home an agent identity owns is the `nil`-generation one, and every
-      ordinary launch of that agent finds it again with its disk intact, so a
-      reapply of one conversation must never destroy it (ADR 0023);
-    * a reapplied conversation gets a private generation, so it can neither
-      reset nor silently reuse the home its cotenants are still on;
-    * a persistent machine on a private generation has exactly one holder and
-      no launch can ever find it again, so it is retired with that
-      conversation rather than kept the way a canonical home is.
+  | Change | How it lands | Rebuild |
+  |---|---|---|
+  | Environment variables, Vault values | Respawn the runtime with fresh env | no |
+  | System prompt, skills, MCP servers | Rewrite the files | no |
+  | Model, permission policy | Per-turn arguments | no |
+  | Runtime (claude to codex, say) | Adapter install | **yes** |
+  | Packages, repositories, setup script | Install, clone, run | **yes** |
+  | Network policy | Egress rules, written once at provision | **yes** |
 
-  The replacement machine takes its mode from the newly selected agent, not
-  from the machine it replaces. A reapply is the one operation that can change
-  the agent, and the sandbox mode is the agent's to configure.
+  The rebuild rows are not stubbornness. The ACP adapter is an npm install
+  that provisioning deliberately does *before* the network policy is applied
+  (`Provisioning.prepare_acp_adapter/3`), so installing a different one later
+  fails in a way that reads as a protocol bug. And `git clone` refuses a
+  checkout that already exists while a setup script that starts services fails
+  on its second run, which is the same reason
+  `Provisioning.discard_interrupted_attempt/3` exists.
 
-  ## Why a running server has to check for itself
+  The network policy is the cautious one. `Egress.apply_policy/4` runs once,
+  at provision, and nothing has ever re-run it against a live machine. Rather
+  than assume it is idempotent and find out in production, a networking change
+  is refused. Relaxing that is a one-line change to `fingerprint/1`, once
+  somebody has shown the re-application is safe.
 
-  `Fountain.Conversations.reapply_conversation/3` stops the conversation's
-  server first, so nothing is left holding the replaced machine. It finds that
-  server through Horde's registry, which is a CRDT: a server on another node
-  can be invisible for a beat (#800). `superseded?/2` is the definite answer,
-  asked inside the server before it runs a turn. A server the detach missed
-  therefore refuses the turn and stops, rather than quietly running it on the
-  configuration the user replaced.
+  One gap is worth naming. A skill whose source is a GitHub repository is a
+  clone, and by the time a reapply runs the machine's network policy is
+  already in force. Bundled skills are file writes and always land; a remote
+  one may not, under a restrictive policy.
+
+  So a reapply that needs either of those is refused, and says which field
+  forced it. Start a new conversation for that, or rebuild the machine under
+  the conversation with `DELETE /api/sandboxes/:id` (#1071).
+
+  ## The cotenant rule
+
+  Skills, the instructions file and `.mcp.json` sit at per-sandbox paths
+  (`Managoat.Runtimes.Layout`), not per-conversation ones, so rewriting them
+  rewrites them for every conversation on that machine. Sharing only happens
+  on a persistent home or an explicit `sandbox_id` attach, and
+  `Conversations.check_attachable/4` already pins every conversation on a
+  machine to one `(user, agent, environment, vault)`. A conversation that has
+  the machine to itself can therefore be reconfigured freely; one that shares
+  it may only be reapplied to the selection its cotenants already have, which
+  is what a refresh is.
   """
 
-  alias Fountain.Conversations
-  alias Fountain.Conversations.Conversation
+  alias Fountain.Conversations.Sandbox
+  alias Fountain.Environments.Environment
+
+  @typedoc "Why a selection cannot be applied to the machine that is already there."
+  @type blocker ::
+          :runtime
+          | :packages
+          | :repositories
+          | :setup_script
+          | :networking
+          | :environment
+          | :shared_sandbox
 
   @doc """
-  Whether `sandbox_id` is no longer the machine `conv` wants.
+  The digest of the Environment fields that provisioning turns into disk
+  state. `nil` for no environment, which is itself a stable value to compare.
 
-  False for every conversation that has never been reapplied, because both
-  generations are then `nil`. `_unsafe_`-shaped: the caller already owns
-  `conv`, and `sandbox_id` is the machine it is holding.
+  Only the fields that shape the disk or the machine's network go in.
+  Variables and the checkpoint are deliberately absent: a variable reaches a
+  running machine on its next spawn, and the checkpoint only ever applies to a
+  machine being built.
   """
-  @spec superseded?(binary() | nil, Conversation.t()) :: boolean()
-  def superseded?(sandbox_id, %Conversation{} = conv) when is_binary(sandbox_id) do
-    # ownership: the caller already holds `conv`, and `sandbox_id` is the
-    # machine it is running on. Both belong to the same tenant by construction.
-    case Conversations._unsafe_get_sandbox(sandbox_id) do
-      %{configuration_generation: generation} -> generation != conv.configuration_generation
-      nil -> false
+  @spec fingerprint(Environment.t() | nil) :: String.t()
+  def fingerprint(nil), do: "none"
+
+  def fingerprint(%Environment{} = env) do
+    :crypto.hash(
+      :sha256,
+      :erlang.term_to_binary(
+        {env.packages, env.repositories, env.setup_script, env.networking_type,
+         env.networking_config}
+      )
+    )
+    |> Base.encode16(case: :lower)
+    |> binary_part(0, 32)
+  end
+
+  @doc """
+  Whether the machine `sandbox` already is can be reconfigured into the
+  requested selection, or the first reason it cannot.
+
+  `built_with` is the Environment the sandbox records, used only when the row
+  predates `build_fingerprint` and so cannot answer for itself.
+  """
+  @spec check(Sandbox.t() | nil, keyword()) :: :ok | {:error, {:rebuild_required, blocker()}}
+  def check(nil, _opts), do: :ok
+
+  def check(%Sandbox{} = sandbox, opts) do
+    current_runtime = Keyword.fetch!(opts, :current_runtime)
+    target_runtime = Keyword.fetch!(opts, :target_runtime)
+    target_env = Keyword.fetch!(opts, :target_environment)
+    built_with = Keyword.get(opts, :built_with)
+
+    cond do
+      target_runtime != current_runtime ->
+        {:error, {:rebuild_required, :runtime}}
+
+      built_fingerprint(sandbox, built_with) == fingerprint(target_env) ->
+        :ok
+
+      true ->
+        {:error, {:rebuild_required, build_field(built_with, target_env)}}
     end
   end
 
-  def superseded?(_sandbox_id, _conv), do: false
+  # A row written since #1565 answers for itself. An older one cannot, so the
+  # environment it records stands in: that catches a selection pointing at a
+  # different environment, and misses only an environment edited before this
+  # column existed.
+  defp built_fingerprint(%Sandbox{build_fingerprint: fp}, _built_with) when is_binary(fp), do: fp
+  defp built_fingerprint(_sandbox, built_with), do: fingerprint(built_with)
+
+  # Which field to name in the refusal. Falls back to `:environment` when the
+  # machine cannot say what it was built from and only the identity differs.
+  defp build_field(%Environment{} = was, %Environment{} = now) do
+    cond do
+      was.packages != now.packages -> :packages
+      was.repositories != now.repositories -> :repositories
+      was.setup_script != now.setup_script -> :setup_script
+      was.networking_type != now.networking_type -> :networking
+      was.networking_config != now.networking_config -> :networking
+      true -> :environment
+    end
+  end
+
+  defp build_field(_was, _now), do: :environment
 
   @doc """
-  The reply a detach should give its caller.
-
-  No live server is exactly what a detach asks for, so a server that exited
-  between the registry lookup and the call succeeded rather than failed.
+  A sentence naming what forced a rebuild, for the API error and the log.
   """
-  @spec detach_result(:ok | {:error, term()}) :: :ok | {:error, term()}
-  def detach_result({:error, :not_running}), do: :ok
-  def detach_result(other), do: other
+  @spec explain(blocker()) :: String.t()
+  def explain(:runtime),
+    do:
+      "the selected agent runs a different runtime, and the ACP adapter is installed " <>
+        "before the network policy that would now block installing another"
+
+  def explain(:packages), do: "the selected environment installs different packages"
+  def explain(:repositories), do: "the selected environment clones different repositories"
+  def explain(:setup_script), do: "the selected environment runs a different setup script"
+
+  def explain(:networking),
+    do:
+      "the selected environment applies a different network policy, and the egress rules " <>
+        "are written once, when the machine is built"
+
+  def explain(:environment),
+    do: "the selected environment builds the machine differently"
+
+  def explain(:shared_sandbox),
+    do:
+      "other conversations share this machine, and its skills, instructions and MCP " <>
+        "configuration are per-machine rather than per-conversation"
 end
