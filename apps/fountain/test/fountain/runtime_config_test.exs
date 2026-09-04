@@ -212,7 +212,7 @@ defmodule Fountain.RuntimeConfigTest do
   end
 
   describe "the egress broker (ADR 0019)" do
-    @broker_vars ~w(BROKER_URL BROKER_TOKEN BROKER_LISTEN_PORT BROKER_PROXY_URL)
+    @broker_vars ~w(BROKER_URL BROKER_TOKEN BROKER_LISTEN_PORT BROKER_PROXY_URL BROKER_TENANTS)
 
     setup %{base: base} do
       on_exit(fn -> for k <- @broker_vars, do: System.delete_env(k) end)
@@ -289,6 +289,50 @@ defmodule Fountain.RuntimeConfigTest do
         )
 
       assert cfg[:broker_listen_port] == nil
+    end
+
+    test "BROKER_TENANTS is blank for nobody, a list for some, `*` for everyone", %{base: base} do
+      on = %{
+        "BROKER_LISTEN_PORT" => "14322",
+        "BROKER_PROXY_URL" => "http://broker.example:14322"
+      }
+
+      tenants = fn value ->
+        read_prod_config(Map.merge(base, Map.put(on, "BROKER_TENANTS", value)))[:broker_tenants]
+      end
+
+      # Blank is nobody, and that is what makes the listener inert until an
+      # operator names someone.
+      assert tenants.("") == []
+
+      assert tenants.("a-user-id") == ["a-user-id"]
+      assert tenants.(" a-user-id , b-user-id ,, ") == ["a-user-id", "b-user-id"]
+
+      # The end state the ratchet widens towards. `:all` and not the string
+      # "*", so no call site can mistake a wildcard for a user id.
+      assert tenants.("*") == :all
+
+      # Trimmed like every other entry, so a manifest that pads the value
+      # brokers everyone rather than failing to boot over whitespace.
+      assert tenants.(" * ") == :all
+      assert tenants.("*,") == :all
+
+      # Nothing but separators is nobody, the same as blank.
+      assert tenants.(" , ") == []
+    end
+
+    test "a `*` mixed into a list is refused rather than read as an id", %{base: base} do
+      # Otherwise the list would silently broker one tenant whose id is "*"
+      # and nobody else, which reads at a glance like it brokers everyone.
+      assert_raise RuntimeError, ~r/BROKER_TENANTS must be either `\*` on its own/, fn ->
+        read_prod_config(
+          Map.merge(base, %{
+            "BROKER_LISTEN_PORT" => "14322",
+            "BROKER_PROXY_URL" => "http://broker.example:14322",
+            "BROKER_TENANTS" => "a-user-id,*"
+          })
+        )
+      end
     end
   end
 end

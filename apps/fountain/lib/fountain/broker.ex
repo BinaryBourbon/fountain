@@ -38,6 +38,8 @@ defmodule Fountain.Broker do
     binding of its own wins, as it wins in the environment.
   * Every other secret reaches the sandbox exactly as before.
   * Only tenants listed in `BROKER_TENANTS`: the operator ratchet of §9.
+    Blank brokers nobody, a comma separated list brokers those ids, and `*`
+    brokers every tenant, which is the end state the ratchet widens towards.
 
   ## How a value is attached
 
@@ -131,10 +133,21 @@ defmodule Fountain.Broker do
   @spec configured?() :: boolean()
   def configured?, do: backend() != nil
 
-  @doc "True when the broker is configured and this tenant is on the ratchet."
+  @doc """
+  True when the broker is configured and this tenant is on the ratchet.
+
+  `:broker_tenants` is either a list of user ids or `:all`, which
+  `BROKER_TENANTS=*` sets once a deployment has finished widening one id at
+  a time. It is never the string `"*"` inside the list: `config/runtime.exs`
+  refuses that spelling so a wildcard can never arrive disguised as an id.
+  """
   @spec enabled_for?(String.t() | nil) :: boolean()
   def enabled_for?(user_id) when is_binary(user_id) do
-    configured?() and user_id in Application.get_env(:fountain, :broker_tenants, [])
+    configured?() and
+      case Application.get_env(:fountain, :broker_tenants, []) do
+        :all -> true
+        ids when is_list(ids) -> user_id in ids
+      end
   end
 
   def enabled_for?(_), do: false

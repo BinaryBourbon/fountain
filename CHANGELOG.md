@@ -18,6 +18,27 @@ upgrade, is in
 
 ### Added
 
+- **`BROKER_TENANTS` takes `*`, so the ratchet has an end state** (ADR 0019
+  §9). The variable was a comma separated list of user ids and nothing else,
+  which is what made widening deliberate: an operator adds one id, proves it,
+  and adds the next. That is the right shape for a rollout and the wrong
+  shape for its conclusion, since the only way to say *everyone* was to
+  enumerate every account and to keep enumerating each new one. `*` on its
+  own now means every tenant. Blank still means nobody, and still is what
+  keeps the listener inert on a deployment that turns it on without naming
+  anyone. The wildcard is parsed to the atom `:all` rather than kept as a
+  member of the list, and a `*` mixed into a list is a boot error: as a list
+  member it would broker exactly one tenant whose id was the string `"*"`,
+  while reading at a glance like it brokered all of them.
+
+  One thing does not change, and it is the reason to read this before setting
+  it. A provider with no `:network_policy` capability still cannot host a
+  brokered conversation, because the `allow: [broker]` floor is what makes a
+  placeholder worthless off the box. Self-hosted runners advertise
+  `[:suspend, :attach]`, so `*` refuses every conversation placed on one with
+  `{:broker, :backend_lacks_network_policy}`. `BROKER_ALLOW_UNENFORCED` is
+  the development escape hatch and remains the wrong answer in production.
+
 - **The credit workers report on themselves, and money movement is measured
   at the ledger** (#1169). Under ADR 0031 the balance is the gate, so
   `CreditPricer`, `CreditExpirer` and `Credits.Rent` are load-bearing, and the

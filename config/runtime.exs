@@ -230,10 +230,34 @@ if broker_listen_port && is_nil(broker_proxy_url) do
   raise "BROKER_LISTEN_PORT is set, so BROKER_PROXY_URL must be set too"
 end
 
+# The operator ratchet of ADR 0019 §9. Blank is nobody, and stays nobody: a
+# deployment that turns the listener on without naming anyone brokers no
+# conversation, which is what made merging the broker inert. `*` is every
+# tenant, for a deployment that has finished widening one id at a time. A
+# comma separated list is those ids and no others.
+#
+# `*` is a distinct value rather than a member of the list because the two
+# answer different questions: a list is checked with `in`, and a wildcard
+# short-circuits it. Encoding it as the literal string "*" inside the list
+# would make any tenant whose id happened to be "*" a wildcard, and would
+# read as a normal id at every call site.
 broker_tenants =
-  case System.get_env("BROKER_TENANTS") do
-    blank when blank in [nil, ""] -> []
-    list -> list |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+  case (System.get_env("BROKER_TENANTS") || "")
+       |> String.split(",")
+       |> Enum.map(&String.trim/1)
+       |> Enum.reject(&(&1 == "")) do
+    [] ->
+      []
+
+    ["*"] ->
+      :all
+
+    ids ->
+      if "*" in ids do
+        raise "BROKER_TENANTS must be either `*` on its own or a list of user ids, not both"
+      end
+
+      ids
   end
 
 broker_session_ttl =
