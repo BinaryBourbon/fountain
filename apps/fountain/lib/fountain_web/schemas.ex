@@ -554,6 +554,40 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule ConversationReapplyRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConversationReapplyRequest",
+      description:
+        "A new desired Agent, Environment and Vault for an existing conversation. " <>
+          "Omitted fields keep their current selection. Explicit null clears the " <>
+          "Environment override or Vault. An empty object reapplies the current selection.",
+      type: :object,
+      properties: %{
+        agent_id: %Schema{
+          type: :string,
+          format: :uuid,
+          description: "Agent to use; omitted keeps the current Agent."
+        },
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Environment override to use; null returns to the selected Agent's Environment."
+        },
+        vault_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "Vault to use; null detaches the current Vault."
+        }
+      }
+    })
+  end
+
   defmodule PromptRequest do
     @moduledoc false
     require OpenApiSpex

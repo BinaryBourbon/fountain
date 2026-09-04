@@ -40,6 +40,9 @@ defmodule Fountain.Conversations.Sandbox do
     field :mode, :string, default: "ephemeral"
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime
+    # See Conversation.configuration_generation. This is part of persistent
+    # home identity but is deliberately not exposed as tenant configuration.
+    field :configuration_generation, Ecto.UUID
     belongs_to :environment, Environment
     # The identity the disk was materialized from, with the environment
     # (ADR 0023): env vars, packages, repos and setup scripts are written at
@@ -72,7 +75,8 @@ defmodule Fountain.Conversations.Sandbox do
       :environment_id,
       :agent_id,
       :vault_id,
-      :user_id
+      :user_id,
+      :configuration_generation
     ])
     |> validate_required([:sprite_name, :status, :provider, :mode, :user_id])
     |> validate_inclusion(:status, @statuses)

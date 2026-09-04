@@ -37,6 +37,26 @@ import Testing
     let url = try #require(transport.lastRequest?.url?.absoluteString)
     #expect(url == "https://fountain.test/api/conversations?roots_only=true")
   }
+
+  @Test func conversationReapplyEncodesOmittedAndClearedBindings() async throws {
+    let transport = FakeTransport(
+      json: #"{"data":{"id":"c-1","runtime":"claude","status":"idle"}}"#)
+    let client = FountainClient.fake(transport)
+    let conversation = try await client.conversations.reapply(
+      "c-1",
+      ConversationReapplyRequest(
+        agentID: "a-2", environment: .clear, vault: .use("v-2")))
+
+    #expect(conversation.id == "c-1")
+    let body = transport.lastRequest?.httpBody.flatMap {
+      try? JSONDecoder().decode(JSONValue.self, from: $0).objectValue
+    }
+    #expect(transport.lastRequest?.httpMethod == "POST")
+    #expect(transport.lastRequest?.url?.path == "/api/conversations/c-1/reapply")
+    #expect(body?["agent_id"]?.stringValue == "a-2")
+    #expect(body?["environment_id"] == JSONValue.null)
+    #expect(body?["vault_id"]?.stringValue == "v-2")
+  }
 }
 
 @Suite struct DecodingTests {

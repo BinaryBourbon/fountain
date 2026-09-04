@@ -77,6 +77,14 @@ defmodule Fountain.SurfaceTest do
     assert {:ok, 2} = Conversation.cursor(conversation)
     assert :ok = Conversation.answer(conversation, "req/1", "allow")
     assert :ok = Conversation.mark_read(conversation)
+
+    assert {:ok, %{"id" => "thread"}} =
+             Conversation.reapply(conversation,
+               agent_id: "a2",
+               environment_id: nil,
+               vault_id: "v2"
+             )
+
     assert :ok = Conversation.interrupt(conversation)
     assert :ok = Conversation.terminate(conversation)
     assert :ok = Conversation.delete(conversation)
@@ -110,6 +118,14 @@ defmodule Fountain.SurfaceTest do
                     %{path: "/api/conversations/thread/requests/req%2F1", body: permission_body}}
 
     assert Jason.decode!(permission_body) == %{"option_id" => "allow"}
+
+    assert_receive {:seen, %{path: "/api/conversations/thread/reapply", body: reapply_body}}
+
+    assert Jason.decode!(reapply_body) == %{
+             "agent_id" => "a2",
+             "environment_id" => nil,
+             "vault_id" => "v2"
+           }
   end
 
   test "root run sends all options and channel continuation uses the next turn" do
@@ -347,6 +363,9 @@ defmodule Fountain.SurfaceTest do
 
       {"POST", "/api/conversations/thread/read"} ->
         {204, [], ""}
+
+      {"POST", "/api/conversations/thread/reapply"} ->
+        json(200, %{"data" => %{"id" => "thread"}})
 
       {"POST", "/api/conversations/thread/interrupt"} ->
         {204, [], ""}

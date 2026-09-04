@@ -472,6 +472,7 @@ POST   /api/conversations                  # start (agent_id; optional vault_id,
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
 POST   /api/conversations/:id/read         # clear unread state
+POST   /api/conversations/:id/reapply      # reapply agent/environment/vault on a fresh machine
 POST   /api/conversations/:id/requests/:request_id   # answer a permission request ({option_id})
 GET    /api/conversations/:id/tree         # the whole spawn tree this conversation belongs to
 POST   /api/conversations/:id/prompts      # follow-up turn
@@ -531,6 +532,15 @@ gets `403 sprite_may_not_answer`.
 `POST /api/conversations/:id/interrupt` stops the turn in flight. It also
 wakes a conversation whose server died with a turn still marked `running`, so
 a turn that nothing else can close still ends.
+
+`POST /api/conversations/:id/reapply` keeps the conversation id, title, turns
+and transcript while selecting a fresh machine and runtime session for the
+next prompt. Send `{}` to refresh the current Agent, Environment and Vault.
+Send any of `agent_id`, `environment_id` or `vault_id` to change that binding;
+an omitted field stays unchanged, while `null` clears the Environment override
+or Vault. Fountain refuses the action while a turn runs or provisioning is in
+progress. Reapplying one conversation never resets the other conversations on
+a shared sandbox or persistent home.
 
 The error tells you about the conversation, never about your access. A status
 of `404` means no such conversation. A status of `409 no_turn_running` means

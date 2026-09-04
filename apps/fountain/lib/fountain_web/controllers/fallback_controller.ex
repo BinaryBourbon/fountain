@@ -222,6 +222,15 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, :conversation_busy}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "conversation_busy",
+      message: "the conversation has a running turn; wait for it to finish or interrupt it"
+    })
+  end
+
   # A turn refused because another conversation is running one on the same
   # sandbox and the runtime takes one at a time (ADR 0023 step 4). Not a
   # queue: the caller sends again when the other turn ends, or interrupts it.

@@ -51,6 +51,12 @@ run the turn, stream log events over SSE
 The same machine runs another turn for a follow-up prompt. You can interrupt a
 turn that runs, and you can end the whole conversation early.
 
+You can also reapply the Agent, Environment or Vault without making a new
+Conversation. Reapplication preserves the id, turns and transcript, then the
+next prompt starts a fresh machine and runtime session with the selected
+configuration. It operates on one Conversation only, even when its old
+sandbox is shared.
+
 Log events stream in real time over
 `GET /api/conversations/:id/stream`. Add `?blocks=true` and the server parses
 the runtime dialect, so a client never has to.

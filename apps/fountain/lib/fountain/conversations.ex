@@ -897,6 +897,124 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Re-resolve the Agent, Environment and Vault for an existing conversation
+  without replacing its transcript (#1565).
+
+  `conv` must come from `get_conversation/2`; the resource lookups below are
+  tenant-scoped to that owner. Omitted fields keep their current selection,
+  while explicit nil clears the Environment override or Vault. The operation
+  stops an idle live server but leaves its machine alone. A fresh internal
+  configuration generation makes the next prompt provision a new machine,
+  including for a persistent home, without resetting cotenant conversations.
+  """
+  @spec reapply_conversation(Conversation.t(), map(), keyword()) ::
+          {:ok, Conversation.t()} | {:error, term()}
+  def reapply_conversation(%Conversation{} = conv, attrs \\ %{}, opts \\ [])
+      when is_map(attrs) do
+    agent_id = reapply_value(attrs, "agent_id", conv.agent_id)
+    vault_selection = reapply_value(attrs, "vault_id", conv.vault_id)
+    environment_selection = reapply_value(attrs, "environment_id", conv.environment_id)
+
+    with :ok <- assert_reapplicable(conv),
+         %Fountain.Agents.Agent{} = agent <-
+           Fountain.Agents.get_agent(agent_id, conv.user_id) || {:error, :not_found},
+         {:ok, _runtime_module} <- Managoat.Runtimes.for_runtime(agent.runtime),
+         {:ok, _provider} <- resolve_sandbox_provider(agent),
+         {:ok, vault_id} <- resolve_vault_id(vault_selection, conv.user_id, agent),
+         {:ok, environment_id} <-
+           resolve_environment_id(environment_selection, conv.user_id, agent),
+         {:ok, _permission_policy} <- resolve_permission_policy(conv.permission_policy, agent),
+         :ok <-
+           Fountain.Conversations.ConversationServer.detach_for_reapply(conv.id),
+         :ok <- assert_no_running_turn(conv.id),
+         {:ok, updated} <-
+           update_conversation(conv, %{
+             agent_id: agent.id,
+             # ownership: `agent` was fetched above by both id and conv.user_id.
+             agent_version_id: Fountain.Agents._unsafe_current_version_id(agent.id),
+             runtime: agent.runtime,
+             vault_id: vault_id,
+             environment_id: environment_id,
+             runtime_session_id: nil,
+             status: "idle",
+             configuration_generation: Ecto.UUID.generate()
+           }) do
+      updated = _unsafe_get_conversation!(updated.id)
+      metadata = reapply_metadata(conv, updated)
+
+      publish_stage(updated.id, "configuration", "done", %{
+        event: "reapplied",
+        previous: metadata["previous"],
+        current: metadata["current"],
+        message:
+          "The configuration was reapplied. The transcript is kept; the next prompt " <>
+            "builds a fresh machine and starts a new runtime session."
+      })
+
+      Audit.record(%{
+        user_id: updated.user_id,
+        action: "conversation.configuration_reapplied",
+        resource_type: "conversation",
+        resource_id: updated.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: metadata
+      })
+
+      {:ok, updated}
+    end
+  end
+
+  defp reapply_value(attrs, key, current) do
+    atom_key = String.to_existing_atom(key)
+
+    cond do
+      Map.has_key?(attrs, key) -> Map.get(attrs, key)
+      Map.has_key?(attrs, atom_key) -> Map.get(attrs, atom_key)
+      true -> current
+    end
+  end
+
+  defp assert_reapplicable(%Conversation{status: "idle", id: id}),
+    do: assert_no_running_turn(id)
+
+  defp assert_reapplicable(%Conversation{status: "running"}),
+    do: {:error, :conversation_busy}
+
+  defp assert_reapplicable(%Conversation{status: "pending"}), do: {:error, :provisioning}
+
+  defp assert_reapplicable(%Conversation{status: status}) when status in ~w(failed terminated),
+    do: {:error, :gone}
+
+  defp assert_no_running_turn(conversation_id) do
+    if Repo.exists?(
+         from t in Turn,
+           where: t.conversation_id == ^conversation_id and t.status == "running"
+       ) do
+      {:error, :conversation_busy}
+    else
+      :ok
+    end
+  end
+
+  defp reapply_metadata(previous, current) do
+    %{
+      "previous" => %{
+        "agent_id" => previous.agent_id,
+        "agent_version_id" => previous.agent_version_id,
+        "environment_id" => previous.environment_id,
+        "vault_id" => previous.vault_id
+      },
+      "current" => %{
+        "agent_id" => current.agent_id,
+        "agent_version_id" => current.agent_version_id,
+        "environment_id" => current.environment_id,
+        "vault_id" => current.vault_id
+      }
+    }
+  end
+
+  @doc """
   Best-effort terminate the running ConversationServer (destroys the sprite
   if alive), then delete the conversation row. Cascades to turns and log
   events via the FK.
@@ -2075,7 +2193,7 @@ defmodule Fountain.Conversations do
   nil. `nil` environment and vault are part of the identity, not wildcards.
   `_unsafe_`: callers have resolved the agent tenant-scoped already.
   """
-  def _unsafe_find_home(user_id, agent_id, env_id, vault_id)
+  def _unsafe_find_home(user_id, agent_id, env_id, vault_id, generation \\ nil)
       when is_binary(user_id) and is_binary(agent_id) do
     from(s in Sandbox,
       where:
@@ -2086,6 +2204,7 @@ defmodule Fountain.Conversations do
     )
     |> where_sandbox_environment(env_id)
     |> where_sandbox_vault(vault_id)
+    |> where_sandbox_generation(generation)
     |> Repo.one()
   end
 
@@ -2096,6 +2215,12 @@ defmodule Fountain.Conversations do
     do: from(s in query, where: is_nil(s.environment_id))
 
   defp where_sandbox_environment(query, id), do: from(s in query, where: s.environment_id == ^id)
+
+  defp where_sandbox_generation(query, nil),
+    do: from(s in query, where: is_nil(s.configuration_generation))
+
+  defp where_sandbox_generation(query, generation),
+    do: from(s in query, where: s.configuration_generation == ^generation)
 
   @doc """
   Whether terminating `conv_id` leaves its sandbox standing: a home is never
@@ -2489,6 +2614,12 @@ defmodule Fountain.Conversations do
         {:error, :sandbox_identity_mismatch}
 
       sandbox.environment_id != (env_id || agent.environment_id) ->
+        {:error, :sandbox_identity_mismatch}
+
+      not is_nil(sandbox.configuration_generation) ->
+        # Reapplied homes are private continuations of an existing thread.
+        # A fresh launch belongs to the canonical nil generation and cannot
+        # attach to one merely because the public identity fields match.
         {:error, :sandbox_identity_mismatch}
 
       # The disk was shaped by the runtime that first ran on it; an agent
@@ -2975,11 +3106,18 @@ defmodule Fountain.Conversations do
   # new one. Otherwise, fall through to creating a fresh sandbox.
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: :create_new
 
-  defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
+  defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id} = conv) do
     case _unsafe_get_sandbox(sandbox_id) do
       %{status: status, sprite_name: name} = sandbox
       when status in ["ready", "suspended"] and is_binary(name) ->
-        probe_reusable_sandbox(sandbox, sandbox_id)
+        if sandbox_matches_conversation?(sandbox, conv) do
+          probe_reusable_sandbox(sandbox, sandbox_id)
+        else
+          # Reapply deliberately leaves the old machine standing until the
+          # replacement has at least acquired a server. It must never be
+          # reattached after the conversation's desired identity changed.
+          :create_new
+        end
 
       # A provision is in flight — or was, in a BEAM that is gone. The
       # caller waits for the registry before deciding which (#800).
@@ -3043,6 +3181,14 @@ defmodule Fountain.Conversations do
 
         {:error, :sprite_probe_failed}
     end
+  end
+
+  defp sandbox_matches_conversation?(%Sandbox{} = sandbox, %Conversation{} = conv) do
+    # Existing rows predate identity columns and are still reusable under the
+    # legacy checks. Generation is the explicit signal that reapply changed a
+    # conversation's desired machine; ordinary conversations and sandboxes are
+    # both nil and retain the established wake behavior.
+    sandbox.configuration_generation == conv.configuration_generation
   end
 
   def sandbox_provider_atom(%{provider: provider}) when is_binary(provider),
@@ -3167,7 +3313,19 @@ defmodule Fountain.Conversations do
     # the probe has already said this sprite is gone (ADR 0023 gate 6).
     old = if conv.sandbox_id, do: _unsafe_get_sandbox(conv.sandbox_id)
     mode = (old && old.mode) || "ephemeral"
-    if mode == "persistent", do: _ = mark_old_sandbox_terminated(conv.sandbox_id)
+    replaces_same_identity? = not is_nil(old) and sandbox_matches_conversation?(old, conv)
+
+    if mode == "persistent" and replaces_same_identity?,
+      do: _ = mark_old_sandbox_terminated(conv.sandbox_id)
+
+    retire_detached_old? =
+      not is_nil(old) and not replaces_same_identity? and
+        not _unsafe_sandbox_held_by_other?(old.id, conv.id)
+
+    reservation_opts =
+      if replaces_same_identity? or retire_detached_old?,
+        do: [exclude: conv.sandbox_id],
+        else: []
 
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_spend(conv.user_id),
@@ -3184,12 +3342,13 @@ defmodule Fountain.Conversations do
          {:ok, new_sandbox} <-
            Fountain.Quotas.with_sandbox_reservation(
              conv.user_id,
-             [exclude: conv.sandbox_id],
+             reservation_opts,
              fn ->
                create_sandbox(%{
                  environment_id: conv.environment_id || agent.environment_id,
                  agent_id: conv.agent_id,
                  vault_id: conv.vault_id,
+                 configuration_generation: conv.configuration_generation,
                  mode: mode,
                  sprite_name: sprite_name,
                  status: "pending",
@@ -3222,14 +3381,19 @@ defmodule Fountain.Conversations do
       case start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
         {:ok, _} ->
           old_sandbox_id = conv.sandbox_id
-          _ = mark_old_sandbox_terminated(old_sandbox_id)
 
           {:ok, conv} =
             update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"})
 
-          # The machine was gone for everyone on it, not just the conversation
-          # that noticed (ADR 0023 gate 5).
-          move_cotenants(old_sandbox_id, new_sandbox.id, conv.id)
+          if replaces_same_identity? do
+            _ = mark_old_sandbox_terminated(old_sandbox_id)
+
+            # The machine was gone for everyone on it, not just the conversation
+            # that noticed (ADR 0023 gate 5).
+            move_cotenants(old_sandbox_id, new_sandbox.id, conv.id)
+          else
+            retire_detached_sandbox(old, conv.id)
+          end
 
           {:ok, _unsafe_get_conversation!(conv.id)}
 
@@ -3338,6 +3502,34 @@ defmodule Fountain.Conversations do
           status: "terminated",
           terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })
+    end
+  end
+
+  # A reapply moves only one conversation. A sandbox with other holders stays
+  # for them. An unshared sandbox belongs only to the moved conversation and
+  # can be destroyed once its replacement server exists. This applies to a
+  # persistent home too: repeated reapplications must not leave one unused
+  # home per configuration generation behind.
+  defp retire_detached_sandbox(nil, _conv_id), do: :ok
+
+  defp retire_detached_sandbox(%Sandbox{} = sandbox, conv_id) do
+    if _unsafe_sandbox_held_by_other?(sandbox.id, conv_id) do
+      :ok
+    else
+      handle =
+        Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+
+      case Managoat.Sandbox.destroy(handle) do
+        :ok ->
+          mark_old_sandbox_terminated(sandbox.id)
+
+        {:error, reason} ->
+          # Leave the unheld row active so the abandoned-sandbox sweep can
+          # retry. Marking it terminal after a failed provider call would
+          # orphan a machine Fountain still knows may exist.
+          Logger.warning("detached sandbox destroy failed: #{inspect(reason)}")
+          {:error, reason}
+      end
     end
   end
 end

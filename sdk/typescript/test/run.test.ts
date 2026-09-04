@@ -35,6 +35,23 @@ beforeEach(() => {
 });
 
 describe("run", () => {
+  test("reapplies conversation bindings and preserves explicit nulls", async () => {
+    const conversation = fake.createConversation({ agent_id: "old" });
+    const result = await client().resume(conversation.id).reapply({
+      agentId: "new",
+      environmentId: null,
+      vaultId: "vault-2",
+    });
+
+    assert.equal(result.id, conversation.id);
+    const request = fake.requests.find((r) => r.path.endsWith("/reapply"));
+    assert.deepEqual(request?.body, {
+      agent_id: "new",
+      environment_id: null,
+      vault_id: "vault-2",
+    });
+  });
+
   test("resolves names, opens a conversation and returns the answer", async () => {
     fake.onTurn = (conversation, turnNumber) => {
       fake.scriptTurn(conversation.id, {

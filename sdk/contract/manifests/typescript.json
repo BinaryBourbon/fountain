@@ -64,6 +64,7 @@
     "POST /api/conversations/{conversation_id}/interrupt",
     "POST /api/conversations/{conversation_id}/prompts",
     "POST /api/conversations/{conversation_id}/read",
+    "POST /api/conversations/{conversation_id}/reapply",
     "POST /api/conversations/{conversation_id}/requests/{request_id}",
     "POST /api/conversations/{conversation_id}/terminate",
     "POST /api/environments",
@@ -97,6 +98,9 @@
     "ConversationCreateRequest": {
       "required": ["agent_id"],
       "optional": ["channel_id", "environment_id", "fresh", "images", "permission_policy", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id"]
+    },
+    "ConversationReapplyRequest": {
+      "optional": ["agent_id", "environment_id", "vault_id"]
     },
     "ConversationListResponse": { "required": ["data"] },
     "ConversationResponse": { "required": ["data"] },

@@ -384,6 +384,20 @@ defmodule Fountain.Conversations.ConversationServer do
     result
   end
 
+  @doc """
+  Stop an idle server without changing its conversation or sandbox rows.
+
+  The conversation context uses this as the serialization point before it
+  reapplies configuration. A running turn is refused; an absent server is
+  already detached and succeeds.
+  """
+  def detach_for_reapply(conv_id) do
+    case whereis(conv_id) do
+      nil -> :ok
+      pid -> call_server(pid, :detach_for_reapply)
+    end
+  end
+
   # Records a lifecycle action against the conversation's owner.
   #
   # Only on success: an attempt against a conversation that is not running
@@ -1703,6 +1717,16 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
     Output.publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
+    {:stop, :normal, :ok, %{state | handle: nil}}
+  end
+
+  def handle_call(:detach_for_reapply, _from, %{current_turn: turn} = state)
+      when not is_nil(turn) do
+    {:reply, {:error, :conversation_busy}, state}
+  end
+
+  def handle_call(:detach_for_reapply, _from, state) do
+    state = drop_connection(state, "configuration_reapplied")
     {:stop, :normal, :ok, %{state | handle: nil}}
   end
 

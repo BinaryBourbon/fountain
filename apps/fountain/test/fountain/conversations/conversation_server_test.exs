@@ -1303,6 +1303,42 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "detach_for_reapply/1" do
+    test "an idle server stops without changing or destroying its rows", %{
+      conv: conv,
+      sandbox: sandbox
+    } do
+      stub_happy_sprite()
+      test = self()
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+      {pid, ref, :alive} = start_server(conv)
+      assert :ok = GenServer.call(pid, :detach_for_reapply)
+      assert_stopped(ref)
+
+      refute_received :destroyed
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "pending"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+    end
+
+    test "a server with a running turn refuses to detach", %{conv: conv} do
+      stub_happy_sprite()
+      ref = make_ref()
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+
+      {pid, _monitor, :alive} = start_server(conv, initial_prompt: "first")
+      assert {:error, :conversation_busy} = GenServer.call(pid, :detach_for_reapply)
+      assert Process.alive?(pid)
+      GenServer.stop(pid)
+    end
+  end
+
   describe "interrupt/1 and send_prompt/3 with no running server" do
     test "interrupt reports not_running", %{conv: conv} do
       assert {:error, :not_running} = ConversationServer.interrupt(conv.id)
