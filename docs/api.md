@@ -534,13 +534,16 @@ wakes a conversation whose server died with a turn still marked `running`, so
 a turn that nothing else can close still ends.
 
 `POST /api/conversations/:id/reapply` keeps the conversation id, title, turns
-and transcript while selecting a fresh machine and runtime session for the
-next prompt. Send `{}` to refresh the current Agent, Environment and Vault.
-Send any of `agent_id`, `environment_id` or `vault_id` to change that binding;
-an omitted field stays unchanged, while `null` clears the Environment override
-or Vault. Fountain refuses the action while a turn runs or provisioning is in
-progress. Reapplying one conversation never resets the other conversations on
-a shared sandbox or persistent home.
+and transcript. The next prompt then starts a new machine and a new runtime
+session. Send `{}` to refresh the current Agent, Environment and Vault. Send
+any of `agent_id`, `environment_id` or `vault_id` to change one selection. An
+omitted field stays unchanged, and `null` clears the Environment override or
+the Vault. Fountain refuses the request while a turn runs. Fountain also
+refuses it while the conversation waits for its first machine. The new machine
+takes the sandbox mode of the Agent you select. One reapply moves one
+conversation. It does not reset the other conversations on a shared sandbox.
+It also leaves the Agent's persistent home in place for the next ordinary
+launch.
 
 The error tells you about the conversation, never about your access. A status
 of `404` means no such conversation. A status of `409 no_turn_running` means

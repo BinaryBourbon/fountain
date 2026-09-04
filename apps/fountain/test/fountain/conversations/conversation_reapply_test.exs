@@ -75,6 +75,20 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
      cotenant: cotenant}
   end
 
+  defp rebind_to_new(ctx) do
+    %{
+      "agent_id" => ctx.new_agent.id,
+      "environment_id" => ctx.new_env.id,
+      "vault_id" => ctx.new_vault.id
+    }
+  end
+
+  defp stub_started_server do
+    stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _spec ->
+      {:ok, spawn(fn -> receive do: (:stop -> :ok) end)}
+    end)
+  end
+
   test "an empty reapply keeps the selection and forces a fresh private home", ctx do
     turn = insert_turn(ctx.conv, status: "completed", prompt: "remember this")
 
@@ -161,18 +175,122 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
     assert is_binary(updated.configuration_generation)
   end
 
-  test "retires an old persistent home when this conversation was its only holder", ctx do
+  test "leaves the agent's canonical home standing, even unheld", ctx do
+    # The home belongs to the agent identity, not to this conversation
+    # (ADR 0023): the next ordinary launch of `old_agent` has to find it with
+    # its disk intact. Destroying it here reset an agent's accumulated state
+    # every time one of its conversations was reapplied.
     Repo.delete!(ctx.cotenant)
     stub(Managoat.Sandbox, :destroy, fn _handle -> :ok end)
-
-    stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _spec ->
-      {:ok, spawn(fn -> receive do: (:stop -> :ok) end)}
-    end)
+    stub_started_server()
 
     assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
     assert {:ok, woken} = Conversations.wake_conversation(updated.id)
     refute woken.sandbox_id == ctx.home.id
-    assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "terminated"
+    assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "ready"
+
+    assert Conversations._unsafe_find_home(
+             ctx.user.id,
+             ctx.old_agent.id,
+             ctx.old_env.id,
+             ctx.old_vault.id
+           ).id == ctx.home.id
+  end
+
+  test "retires the private home a previous reapply minted", ctx do
+    Repo.delete!(ctx.cotenant)
+    test = self()
+
+    stub(Managoat.Sandbox, :destroy, fn handle ->
+      send(test, {:destroyed, handle.name})
+      :ok
+    end)
+
+    stub_started_server()
+
+    assert {:ok, first} = Conversations.reapply_conversation(ctx.conv, %{})
+    assert {:ok, woken} = Conversations.wake_conversation(first.id)
+    private = Conversations._unsafe_get_sandbox!(woken.sandbox_id)
+    assert private.configuration_generation == first.configuration_generation
+    {:ok, private} = Conversations.update_sandbox(private, %{status: "ready"})
+
+    # A private home has one holder by construction and no launch can ever
+    # find it again, so the next generation is what retires it.
+    assert {:ok, second} = Conversations.reapply_conversation(woken, %{})
+    assert {:ok, _} = Conversations.wake_conversation(second.id)
+
+    assert_received {:destroyed, name}
+    assert name == private.sprite_name
+    assert Conversations._unsafe_get_sandbox!(private.id).status == "terminated"
+  end
+
+  test "builds the newly selected agent's sandbox mode, not the old machine's", ctx do
+    ephemeral_agent =
+      insert_agent(
+        user_id: ctx.user.id,
+        runtime: "claude",
+        sandbox_mode: "ephemeral"
+      )
+
+    Repo.delete!(ctx.cotenant)
+    stub(Managoat.Sandbox, :destroy, fn _handle -> :ok end)
+    stub_started_server()
+
+    assert {:ok, updated} =
+             Conversations.reapply_conversation(ctx.conv, %{"agent_id" => ephemeral_agent.id})
+
+    assert {:ok, woken} = Conversations.wake_conversation(updated.id)
+    assert Conversations._unsafe_get_sandbox!(woken.sandbox_id).mode == "ephemeral"
+  end
+
+  test "does not lock the old home out of a later launch of its own agent", ctx do
+    # The reapplied row keeps naming the old machine until its next prompt,
+    # but its runtime is already the newly selected agent's. Counting it as a
+    # tenant of that machine refused every later attach of the agent whose
+    # home it is, with `sandbox_runtime_mismatch`, until the reapplied
+    # conversation prompted again or was terminated.
+    Repo.delete!(ctx.cotenant)
+
+    assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, rebind_to_new(ctx))
+    assert updated.runtime == "codex"
+    assert updated.sandbox_id == ctx.home.id
+    assert Conversations._unsafe_sandbox_runtime(ctx.home.id) == nil
+
+    assert {:ok, attached} =
+             Conversations.start_conversation(%{
+               "sandbox_id" => ctx.home.id,
+               "agent_id" => ctx.old_agent.id,
+               "user_id" => ctx.user.id,
+               "vault_id" => ctx.old_vault.id
+             })
+
+    assert attached.sandbox_id == ctx.home.id
+    assert attached.runtime == "claude"
+  end
+
+  test "a conversation whose agent was deleted is refused, not crashed", ctx do
+    {:ok, orphan} = Conversations.update_conversation(ctx.conv, %{agent_id: nil})
+
+    assert {:error, :no_agent} = Conversations.reapply_conversation(orphan, %{})
+  end
+
+  test "reapplies a conversation that was created without a prompt", ctx do
+    # Nothing writes `idle` until a turn ends, so a promptless conversation
+    # sits at `pending` for good. Refusing it made "I picked the wrong agent
+    # before I sent anything" unreachable behind a 503 that never cleared.
+    {:ok, promptless} = Conversations.update_conversation(ctx.conv, %{status: "pending"})
+
+    assert {:ok, updated} = Conversations.reapply_conversation(promptless, rebind_to_new(ctx))
+
+    assert updated.agent_id == ctx.new_agent.id
+    assert is_binary(updated.configuration_generation)
+  end
+
+  test "still refuses while a provision is in flight", ctx do
+    {:ok, _} = Conversations.update_sandbox(ctx.home, %{status: "starting"})
+    {:ok, provisioning} = Conversations.update_conversation(ctx.conv, %{status: "pending"})
+
+    assert {:error, :provisioning} = Conversations.reapply_conversation(provisioning, %{})
   end
 
   test "explicit null clears the Environment override and Vault", ctx do

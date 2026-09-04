@@ -1321,6 +1321,18 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
     end
 
+    test "a server that exits between the lookup and the call reads as detached", %{conv: conv} do
+      dead = spawn(fn -> :ok end)
+      ref = Process.monitor(dead)
+      assert_receive {:DOWN, ^ref, :process, ^dead, _}
+
+      Mimic.stub(Horde.Registry, :lookup, fn _registry, _key -> [{dead, nil}] end)
+
+      # No live server is exactly what a detach asks for. Propagating the exit
+      # answered the reapply with `422 not_running`.
+      assert :ok = ConversationServer.detach_for_reapply(conv.id)
+    end
+
     test "a server with a running turn refuses to detach", %{conv: conv} do
       stub_happy_sprite()
       ref = make_ref()
@@ -1335,6 +1347,62 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {pid, _monitor, :alive} = start_server(conv, initial_prompt: "first")
       assert {:error, :conversation_busy} = GenServer.call(pid, :detach_for_reapply)
       assert Process.alive?(pid)
+      GenServer.stop(pid)
+    end
+  end
+
+  describe "a server that predates a reapply" do
+    # Horde's registry is a CRDT, so the reapply's own `whereis/1` can miss a
+    # live server on another node (#800) and leave it holding the machine the
+    # user just replaced. The check that catches that has to be inside the
+    # server, where the answer is definite.
+    setup %{conv: conv} do
+      stub_happy_sprite()
+      {:ok, reapplied} = Conversations.update_conversation(conv, %{status: "idle"})
+      {:ok, reapplied: reapplied}
+    end
+
+    defp reapply_behind_the_server(conv) do
+      {:ok, conv} =
+        Conversations.update_conversation(conv, %{
+          configuration_generation: Ecto.UUID.generate()
+        })
+
+      conv
+    end
+
+    test "refuses the prompt and stops instead of running the turn", %{reapplied: conv} do
+      test = self()
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+      {pid, ref, :alive} = start_server(conv)
+      _ = reapply_behind_the_server(conv)
+
+      assert {:error, :stale_configuration} =
+               GenServer.call(pid, {:send_prompt, "on the old machine", []})
+
+      assert_stopped(ref)
+
+      # The machine is left for `retire_detached_sandbox/2` to judge, exactly
+      # as the detach path leaves it.
+      refute_received :destroyed
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"
+    end
+
+    test "drops a queued initial prompt rather than run it here", %{reapplied: conv} do
+      {pid, ref, :alive} = start_server(conv)
+      _ = reapply_behind_the_server(conv)
+
+      Fountain.Conversations.ConversationServer.queue_initial_prompt(pid, "on the old machine")
+      assert_stopped(ref)
+
+      assert Conversations._unsafe_list_turns(conv.id) == []
+    end
+
+    test "runs the turn normally when the generation still matches", %{reapplied: conv} do
+      {pid, _ref, :alive} = start_server(conv)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "still mine", []})
       GenServer.stop(pid)
     end
   end

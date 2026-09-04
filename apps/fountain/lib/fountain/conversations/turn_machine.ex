@@ -1070,4 +1070,28 @@ defmodule Fountain.Conversations.TurnMachine do
   end
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
+
+  @doc """
+  Close a turn that a normally-stopping server leaves behind.
+
+  A normal stop is not restarted and its quiet timer dies with it, so a turn
+  still marked `running` would never be closed by anything else. Supervisor
+  shutdowns and crashes are left alone, because those servers come back and
+  reattach. Best-effort by design: the caller runs this on the way out, and a
+  raise here must not take anything else in `terminate/2` with it.
+  """
+  def orphan_on_normal_stop(:normal, turn, conversation_id) when not is_nil(turn) do
+    _ = Fountain.Conversations._unsafe_orphan_turn(turn, "server_terminated_normally")
+    :ok
+  rescue
+    error ->
+      Logger.error(
+        "terminate/2: orphaning turn for conv #{inspect(conversation_id)} raised: " <>
+          Exception.format(:error, error, __STACKTRACE__)
+      )
+
+      :ok
+  end
+
+  def orphan_on_normal_stop(_reason, _turn, _conversation_id), do: :ok
 end

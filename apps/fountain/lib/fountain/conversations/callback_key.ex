@@ -141,4 +141,33 @@ defmodule Fountain.Conversations.CallbackKey do
         {:error, conv}
     end
   end
+
+  @doc """
+  Revoke the key a stopping server minted, if the row still names it.
+
+  A server that stops for any reason gives its sprite's callback key back. The
+  row check keeps a server that already handed the conversation on from
+  revoking its successor's key. Best-effort: a key that is already gone or
+  inert is not an error.
+
+  If the BEAM dies hard (SIGKILL is untrappable) the `api_keys` row stays, but
+  it is not dangerous. `api_key_opts/0` sets an `expires_at`, so an unrevoked
+  key stops authentication on its own and RetentionPruner deletes long-expired
+  rows. `SandboxReaper` is the sprite half, which does not self-heal.
+  """
+  def revoke(conversation_id, key_id) when is_binary(conversation_id) and is_binary(key_id) do
+    # ownership: the caller is the conversation's own server, which established
+    # ownership before it started. The read exists only to confirm the row
+    # still names this key, and to attribute the revocation to that owner.
+    case Fountain.Conversations._unsafe_get_conversation(conversation_id) do
+      %Conversation{user_id: user_id, callback_api_key_id: ^key_id} when is_binary(user_id) ->
+        _ = Fountain.Accounts.revoke_api_key(user_id, key_id, actor: "system:conversation_server")
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  def revoke(_conversation_id, _key_id), do: :ok
 end
