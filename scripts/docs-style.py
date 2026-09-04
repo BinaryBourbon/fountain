@@ -47,8 +47,22 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DOCS = ROOT / "docs"
 ALLOW = ROOT / "scripts" / "docs-style-allow.txt"
+
+
+def doc_roots():
+    """Every directory whose markdown is published at /docs.
+
+    The host's `docs/`, plus each extension's own (ADR 0043, #1510): an
+    extension embeds its slice of the manual from `apps/<app>/docs/`, and those
+    pages are served to the same readers by the same renderer, so they are held
+    to the same style sheet.
+
+    Discovered rather than listed. A page that moved out of `docs/` and into an
+    extension would otherwise leave this gate silently, which is the failure
+    the whole file is arranged against.
+    """
+    return [ROOT / "docs"] + sorted(ROOT.glob("apps/*/docs"))
 
 FORBIDDEN = ["simply", "coming soon", "obviously"]
 LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s|\d+\.\s)")
@@ -126,7 +140,9 @@ def main():
     generated = []
     checked = 0
 
-    for path in sorted(DOCS.rglob("*.md")):
+    pages = sorted(p for root in doc_roots() for p in root.rglob("*.md"))
+
+    for path in pages:
         rel = str(path.relative_to(ROOT))
         if rel in allow:
             continue

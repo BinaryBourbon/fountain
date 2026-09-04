@@ -24,12 +24,13 @@
     >
       Host your Buzz agent free
     </a>
-    <a
-      href={~p"/docs/integrations/buzz"}
-      class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
-    >
-      Read the integration manual
-    </a>
+    <%!-- No link to the integration manual here, and none below. Those pages
+       belong to the Buzz extension since #1510, and this template is core's:
+       a core distribution serves neither, so a link would be dead on it. The
+       manual is in the sidebar at /docs on any image that carries the
+       extension, which is every image that can run a Buzz agent at all.
+       #1525 owns the wider question of what core marketing should say about
+       an extension a given distribution may not have. --%>
   </div>
   <p :if={pricing?()} class="mt-5 text-xs text-[var(--color-text-muted)]">
     {elem(opening_credit(), 0)} of credit to start, no card. Presence on the relay uses no credit. You pay only while the agent handles a mention.
@@ -303,9 +304,9 @@
     Host your Buzz agent free
   </a>
   <p class="mt-5 text-sm text-[var(--color-text-secondary)]">
-    Or read <a
-      href={~p"/docs/integrations/buzz"}
+    The integration manual is under Plug into Fountain at <a
+      href={~p"/docs"}
       class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
-    >the integration manual</a>.
+    >/docs</a>.
   </p>
 </section>

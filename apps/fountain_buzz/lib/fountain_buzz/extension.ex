@@ -110,4 +110,15 @@ defmodule FountainBuzz.Extension do
   """
   @impl true
   def oban_cron, do: [{"*/15 * * * *", FountainBuzz.Workers.HarnessSweep}]
+
+  @doc """
+  The two manual pages this extension owns (#1510).
+
+  They kept their slugs across the move, so `/docs/integrations/buzz` and
+  `/docs/catalog/mcp-servers/fountain-buzz` are the same URLs they always were
+  — on a bundled distribution. A core one serves neither, and its sidebar never
+  names them.
+  """
+  @impl true
+  def docs, do: FountainBuzz.Docs
 end

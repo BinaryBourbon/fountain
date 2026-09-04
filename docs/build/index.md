@@ -109,7 +109,7 @@ appears in both threads. Read [Team](../api.md#team).
 **A teammate is not locked to your app.** The same agent answers over
 [ACP](../integrations/acp.md) in an editor, over
 [AG-UI](../integrations/openbot.md) from another agent platform, and over
-[Nostr](../integrations/buzz.md). Where the instance allows it, the teammate
+Nostr. Where the instance allows it, the teammate
 also answers from its own email address and phone number.
 
 Each of those surfaces binds its own durable thread, by the mechanism

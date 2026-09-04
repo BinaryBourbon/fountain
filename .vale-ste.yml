@@ -57,6 +57,18 @@ files:
     - "docs/*.md"
     - "docs/**/*.md"
     - "docs/**/**/*.md"
+    # An extension's slice of the same manual (ADR 0043, #1510). Same readers,
+    # same renderer, same standard, and a page that moved out of docs/ must not
+    # leave this gate on the way.
+    #
+    # BOTH halves are needed and each is silent without the other: the path
+    # arguments (`vale lint docs apps/*/docs`, in ci.yml and CONTRIBUTING.md)
+    # decide what is walked, and these patterns decide what is linted among it.
+    # Measured: naming the directory without these patterns lints none of it.
+    # Depths spelled out for the same reason the host's are.
+    - "apps/*/docs/*.md"
+    - "apps/*/docs/**/*.md"
+    - "apps/*/docs/**/**/*.md"
   exclude:
     # A record of what happened, not a description of how the system works.
     # docs/changelog.md is a one-line snippet include of it.

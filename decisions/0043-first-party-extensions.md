@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "First-party extensions: Buzz becomes an OTP app installed at build time and enabled at runtime"
-description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through nine Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2, 3 and 4 — the seam, migration and OpenAPI composition, and the move itself: apps/fountain_buzz exists and core names no FountainBuzz module. A second extension, fountain_support, moved the problem-report feature out under three of the nine callbacks and added none. The supply chain and the -core image have not moved."
+description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through ten Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2, 3 and 4 — the seam, migration and OpenAPI composition, and the move itself: apps/fountain_buzz exists and core names no FountainBuzz module. A second extension, fountain_support, moved the problem-report feature out under three of the nine callbacks and added none. The supply chain and the -core image have not moved."
 tags: [buzz, extensions, packaging, architecture, licensing, support]
 status: stable
 adr: "0043"
@@ -34,9 +34,14 @@ against an empty database on every PR, and each release publishes
 `vX.Y.Z-core` and `vX.Y-core` beside the bare tags, with the published core
 image opened and checked for extension applications and native assets.
 
-**Not built:** the docs move (which wants either an extension-contributed
-manual seam or a documented build-time assembly step) and the graduation to
-`BinaryBourbon/fountain_buzz`. The Go CLI split is #1508.
+The docs move is built too: `docs/0` (see decision 3) and `Fountain.Manual`,
+with Buzz's two pages living in `apps/fountain_buzz/docs/` and served at the
+URLs they always had.
+
+**Not built:** the graduation to `BinaryBourbon/fountain_buzz`, which is
+deferred rather than blocked — its precondition was met by `fountain_support`
+(#1528), and the maintainer has chosen to keep the extensions in this
+repository for now. The Go CLI split is #1508.
 
 ADR [0020](0020-buzz-as-a-client-of-the-acp-gateway.md)'s hosted harness and
 brokered signer ship in the image today and keep working unchanged throughout.
@@ -139,7 +144,7 @@ module, not an atom, not an alias in a comment. It reads the configured list
 and calls the behaviour. The direction is `fountain_buzz -> fountain`, and the
 umbrella's dependency resolution proves it at compile time.
 
-### 3. `Fountain.Extension` has nine callbacks, and no tenth without an ADR
+### 3. `Fountain.Extension` has ten callbacks, and no eleventh without an ADR
 
 Each replaces exactly one thing the core hard-codes today.
 
@@ -150,6 +155,7 @@ Each replaces exactly one thing the core hard-codes today.
 | `migrations/0 :: [{otp_app, path}]` | `buzz_identities` sitting in the core migration path | Appended after the core's at every entrance — the boot migrator's `:migrator` hook, `Fountain.Release.migrate/0` and `rollback/2`, and `mix ecto.migrate` / `ecto.rollback` / `ecto.setup` — so core ordering never depends on an extension being present. One `schema_migrations` for everyone, so version numbers are global; moving a file between paths never re-runs it, because Ecto matches on version and never on path. |
 | `api_mounts/0 :: [{path, plug}]` | the router's Buzz lines | One to three lowercase static segments under `/api`, and the Plug behind each. Mounted **inside** the existing `:api` pipeline by `FountainWeb.Plugs.ExtensionDispatch`, declared last so core routes always win, longest mount matching first, and called with the mount moved from `path_info` to `script_name`. Authentication, the rate limit, `current_user` and the request audit stay host-owned; there is no path an extension can choose that reaches its plug without them. Validated at boot for shape, uniqueness and overlap with a core route **in either direction**, so a bad mount is a failed deploy rather than a route that quietly serves nothing. |
 | `openapi_paths/0 :: OpenApiSpex.Paths.t()` | `Paths.from_router(Router)` seeing Buzz routes directly | Absolute; the host refuses any path outside the extension's own mounts, so a described path and a served path cannot drift. Merged after the core resolves, with a path or component-title collision raising rather than letting the last writer win. **This callback exists because a forward is opaque:** `Paths.from_router/1` reads `router.__routes__()`, and the host's `forward` is one route whose plug exports no `open_api_operation/1`, so it is filtered out and the mounted routes are invisible. Verified in `deps/open_api_spex/lib/open_api_spex/path_item.ex`. |
+| `docs/0 :: module() \| nil` | `docs/integrations/buzz.md` and `docs/catalog/mcp-servers/fountain-buzz.md` in the host's manual | A `Managoat.Docs` instance over the extension's own `docs/`, merged by `Fountain.Manual`. Sections merge by title, so a moved page keeps its place; a slug the core manual serves, and a mount other than `/docs`, are refused at boot. |
 | `conversation_mcp_servers/2 :: [map()]` | the `buzz/2` clause in `Conversations.McpServers` | The one hot-path callback. Called per turn kick with the conversation id and callback token; returns `[]` for a conversation the extension does not claim. Host order is fixed: extensions first, in configured order, then team, team comms, caller. |
 
 **Amended 2026-09-03 (#1507): three more callbacks, and one prefix became
@@ -186,6 +192,30 @@ extension's supervisor off the host's tree by construction rather than by a
 extension's processes now start *after* the Endpoint, which is what a harness
 talking HTTP back to this server actually needs. The host aggregates no
 extension children.
+
+**Amended 2026-09-04 (#1510): a tenth, for the manual.** `docs/0` returns a
+`Managoat.Docs` instance whose pages and nav join `/docs`. The alternative this
+ADR allowed — a build-time step copying an extension's pages into the host's
+`docs/` — was rejected on inspection: it makes the *repository* the thing that
+varies, so `docs/` in git either carries pages a core distribution must not
+serve or carries nav entries pointing at files that are not there, and the
+guardrails that walk it both ways have to be taught which is which. Embedding
+each manual in its own module puts the variation where the rest of the
+distribution's already is: a core image has no extension module, so its manual
+is complete rather than pruned, and nobody has to remember to run a step.
+
+`Fountain.Manual` is the composition point, as `FountainWeb.ApiSpec.Compose` is
+for the OpenAPI document, and every renderer asks it instead of
+`Fountain.Docs`. Sections merge by title so a moved page keeps its place in the
+sidebar; a slug the core manual already serves, and a mount other than the
+host's, are refused at boot.
+
+One consequence worth stating plainly: **a core page may not link to an
+extension's page.** `Fountain.DocsTest` walks the core manual alone, so such a
+link is a dead link on a core distribution and fails there; the extension's own
+suite runs the link checks over the merged manual, which is where a link in the
+other direction is legitimate. Thirteen such links existed when Buzz's two
+pages moved, and the guardrail found all of them.
 
 **Three callbacks that will not be added.** No callback that wraps or vetoes a
 host mutation — an extension may call `Fountain.Audit`, `Billing.check_spend/1`
@@ -469,8 +499,10 @@ each leaves bundled behaviour green, and **none is built**.
    database and checks the spec it serves; `release.yml` publishes
    `vX.Y.Z-core` and `vX.Y-core` from the same tree and opens the published
    image to check it. Still open: the docs move, and
-   `BinaryBourbon/fountain_buzz` — whose precondition (a second extension
-   exercising the seam) `apps/fountain_support` met in #1528.
+   `BinaryBourbon/fountain_buzz`. The docs move landed with the `docs/0`
+   callback; the repository split is deferred by choice, not blocked — its
+   precondition (a second extension exercising the seam) `apps/fountain_support`
+   met in #1528.
 
 Outside the gate list, because it is not a Buzz gate:
 [#1528](https://github.com/BinaryBourbon/fountain/issues/1528) moved the

@@ -1012,7 +1012,13 @@ jobs:
 
       - name: Docs Simplified Technical English
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
-        run: vale lint docs
+        # Plus each extension's slice of the same manual (ADR 0043, #1510).
+        # Two halves, each silent without the other: these path arguments
+        # decide what is walked, and `.vale-ste.yml`'s `apps/*/docs` include
+        # patterns decide what is linted among it. Naming the directory alone
+        # lints none of it, which is measured in that file's comment. The
+        # subshell is empty and harmless when no extension has docs.
+        run: vale lint docs $(ls -d apps/*/docs 2>/dev/null || true)
 
       # AI-writing tells, the third prose gate beside the style sheet and STE.
       # The engine is the published `sentences` package (lex00/sentences, MIT);
@@ -1543,7 +1549,13 @@ jobs:
           echo "${RUNNER_TEMP}/vale" >> "$GITHUB_PATH"
 
       - name: Docs Simplified Technical English
-        run: vale lint docs
+        # Plus each extension's slice of the same manual (ADR 0043, #1510).
+        # Two halves, each silent without the other: these path arguments
+        # decide what is walked, and `.vale-ste.yml`'s `apps/*/docs` include
+        # patterns decide what is linted among it. Naming the directory alone
+        # lints none of it, which is measured in that file's comment. The
+        # subshell is empty and harmless when no extension has docs.
+        run: vale lint docs $(ls -d apps/*/docs 2>/dev/null || true)
 
       # AI-writing tells, the third prose gate beside the style sheet and STE.
       # The engine is the published `sentences` package (lex00/sentences, MIT);

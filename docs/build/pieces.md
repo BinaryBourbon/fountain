@@ -46,7 +46,7 @@ await fountain.run(text, { agent: "watchtower", channelId: `slack:${channel}` })
 You get the same behaviour, and one sandbox for each thread, and you use none
 of the [team API](../api.md#team) for it.
 [AG-UI](../integrations/openbot.md) binds one coworker channel to one
-conversation this way, and [Buzz](../integrations/buzz.md) binds a Nostr
+conversation this way, and Buzz binds a Nostr
 thread.
 
 ## What happens between Enter and the first word
