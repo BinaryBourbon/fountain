@@ -11,7 +11,9 @@ defmodule FountainBuzz.MarketingTest do
   The content assertions moved here wholesale from
   apps/fountain/test/fountain_web/controllers/marketing_controller_test.exs.
   """
-  use FountainWeb.ConnCase, async: true
+  # async: false — the redirect test below mutates the global :marketing_site
+  # app env that config/test.exs pins for the whole suite.
+  use FountainWeb.ConnCase, async: false
 
   test "the extension really is installed here" do
     # A diagnostic, not a guard. Every other test in this file fails if the
@@ -19,6 +21,24 @@ defmodule FountainBuzz.MarketingTest do
     # `available?/1` return false, which fails all seven. What this one buys
     # is the reason: one named failure instead of six about missing copy.
     assert Fountain.Marketing.available?(:buzz)
+  end
+
+  describe "GET /buzz-launch where the deployment is not the marketing site" do
+    # async: false in its own module — this mutates the global :marketing_site
+    # that config/test.exs pins for the whole suite, the way
+    # FountainWeb.MarketingInstanceTest does in core.
+    test "sends the visitor to the integration manual", %{conn: conn} do
+      marketing = Application.get_env(:fountain, :marketing_site)
+      on_exit(fn -> Application.put_env(:fountain, :marketing_site, marketing) end)
+      Application.put_env(:fountain, :marketing_site, false)
+
+      conn = get(conn, ~p"/buzz-launch")
+      assert redirected_to(conn) == ~p"/docs/integrations/buzz"
+
+      # The target is the extension's own manual page, so it resolves here and
+      # nowhere else. Core asserts the same route 404s instead (#1525).
+      assert match?({:ok, _}, Fountain.Manual.get("integrations/buzz"))
+    end
   end
 
   describe "GET /integrations" do
