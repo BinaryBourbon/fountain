@@ -24,7 +24,7 @@ Buzz has moved: `apps/fountain_buzz` is an AGPL OTP application depending on
 enforces it), and the bundled release includes both apps.
 
 Gate 5 (#1509) is built too: the extension owns its `buzz-acp` pin, its fork
-override and the paths its binaries install to, and `BUNDLE_BUZZ=false` builds
+override and the paths its binaries install to, and `BUNDLE_EXTENSIONS=false` builds
 a core image — no extension application in the release, no binaries in the
 image, one switch for both halves. Both images were built and their contents
 checked.
@@ -434,10 +434,14 @@ each leaves bundled behaviour green, and **none is built**.
    which is what "the wire did not move" means.
 5. **#1508 — the Go split.** `buzz-backend-fountain` moves to the extension's
    ownership; `fountain buzz` stays in `cli/` (decision 6). Rescope the issue.
+   `BUNDLE_EXTENSIONS=false` is the one switch (#1510): the release carries no
+   `apps/fountain_*` application, discovered by glob rather than listed, and
+   the image copies an empty native-asset stage.
+
 6. **#1509 — the supply chain. Built.** `buzz-acp.version` and
    `buzz-acp.source` moved to `apps/fountain_buzz`, the publish and build
    workflows read them there, and the Docker stage became a pair selected by
-   `BUNDLE_BUZZ` — the bundled image downloads and checksum-verifies both
+   `BUNDLE_EXTENSIONS` — the bundled image downloads and checksum-verifies both
    binaries, the core image copies an empty directory and refuses to contain
    one. `FountainBuzz.Assets` owns where they install and refuses a binary
    whose version does not match the pin, so a partial upgrade is an inert

@@ -127,11 +127,27 @@ defmodule Fountain.ExtensionGuardTest do
                "apps/fountain must not depend on an extension; the release owns inclusion"
       end
 
-      test "the bundled release includes it" do
-        umbrella_mix = Path.expand("../../../../mix.exs", __DIR__) |> File.read!()
+      test "the bundled release discovers it" do
+        umbrella = Path.expand("../../../..", __DIR__)
+        umbrella_mix = umbrella |> Path.join("mix.exs") |> File.read!()
 
-        assert umbrella_mix =~ "#{@extension.app}: :permanent",
-               "the bundled release must include #{@extension.app} (ADR 0043 decision 7)"
+        # Extensions are DISCOVERED from `apps/fountain_*` rather than listed
+        # (#1510), so a new one is in the bundled release from the commit that
+        # adds it and out of the core one for free. Asserting the literal name
+        # in mix.exs would therefore assert the old mechanism; what matters is
+        # that this app is one the glob finds.
+        assert umbrella_mix =~ ~s|Path.join("apps/fountain_*")|,
+               "the release must discover extensions, not list them (ADR 0043 decision 7)"
+
+        discovered =
+          umbrella
+          |> Path.join("apps/fountain_*")
+          |> Path.wildcard()
+          |> Enum.filter(&File.dir?/1)
+          |> Enum.map(&Path.basename/1)
+
+        assert to_string(@extension.app) in discovered,
+               "#{@extension.app} is not under apps/fountain_*, so no release would carry it"
       end
     end
   end
