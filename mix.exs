@@ -125,24 +125,34 @@ defmodule Fountain.Umbrella.MixProject do
         # release's decision, made here, and dropping one is a switch rather
         # than untangling a dependency.
         #
-        # Only Buzz is switchable today, because only Buzz carries native
-        # binaries whose absence is the point of a core image. `fountain_support`
-        # (#1528) is pure Elixir and rides along; #1510 should generalise this
-        # to one list when it defines the core distribution properly.
-        applications:
-          [fountain: :permanent, fountain_support: :permanent] ++ bundled_applications()
+        # `BUNDLE_EXTENSIONS=false` builds the core release: the server and
+        # nothing else. Every `apps/fountain_*` app is an extension and is
+        # discovered rather than listed, so a new one is in the bundled release
+        # from the commit that adds it and out of the core one for free.
+        applications: [fountain: :permanent] ++ extension_applications()
       ]
     ]
   end
 
-  # `BUNDLE_BUZZ=false mix release` builds the core distribution. Read from the
-  # environment rather than from Mix config because the Dockerfile already
-  # passes it as a build arg for the native-asset stage, and one switch for
-  # both halves is the point: an image cannot end up with the extension
-  # application but no binaries, or the reverse.
-  defp bundled_applications do
-    if System.get_env("BUNDLE_BUZZ", "true") == "true" do
-      [fountain_buzz: :permanent]
+  # `BUNDLE_EXTENSIONS=false mix release` builds the core distribution.
+  #
+  # Read from the environment rather than from Mix config because the Dockerfile
+  # passes the same switch as a build arg for the native-asset stage, and one
+  # switch for both halves is the point: an image cannot end up with an
+  # extension application but no binaries, or the reverse.
+  #
+  # Discovered from `apps/fountain_*` rather than listed. A `managoat_*` library
+  # under apps/ is a DEPENDENCY of fountain (decisions/0037) and belongs in both
+  # releases, which is why the glob is the naming convention and not "every
+  # sibling".
+  defp extension_applications do
+    if System.get_env("BUNDLE_EXTENSIONS", "true") == "true" do
+      __DIR__
+      |> Path.join("apps/fountain_*")
+      |> Path.wildcard()
+      |> Enum.filter(&File.dir?/1)
+      |> Enum.map(&{String.to_atom(Path.basename(&1)), :permanent})
+      |> Enum.sort()
     else
       []
     end

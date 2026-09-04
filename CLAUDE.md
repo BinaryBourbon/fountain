@@ -62,7 +62,7 @@ fountain/                  umbrella root
                            buzz-acp-publish workflow's inputs live in its app,
                            and FountainBuzz.Assets both finds the binaries and
                            refuses one whose version does not match the pin.
-                           `BUNDLE_BUZZ=false` builds the core distribution —
+                           `BUNDLE_EXTENSIONS=false` builds the core distribution —
                            no Buzz application in the release (mix.exs) and no
                            binaries in the image (Dockerfile), one switch for
                            both.

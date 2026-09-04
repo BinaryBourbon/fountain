@@ -16,7 +16,7 @@
 #     generation here — fail-fast at boot if it's missing rather than
 #     silently invalidate cookie sessions on every restart.
 #   - One Dockerfile, two distributions (ADR 0043 decision 7).
-#     `--build-arg BUNDLE_BUZZ=false` builds the CORE image: no Buzz
+#     `--build-arg BUNDLE_EXTENSIONS=false` builds the CORE image: no Buzz
 #     application in the release, no Buzz binaries, no Buzz smoke check.
 #     The default is the bundled image, which is what every existing tag
 #     has meant and what the hosted deployment runs.
@@ -24,7 +24,7 @@
 # Global scope, before the first FROM, because a `FROM` line can only
 # interpolate an ARG declared out here. Each stage that also *uses* the value
 # re-declares it; that is how build args work and not a duplication to tidy.
-ARG BUNDLE_BUZZ=true
+ARG BUNDLE_EXTENSIONS=true
 
 FROM hexpm/elixir:1.19.2-erlang-28.3-debian-trixie-20260610-slim AS build
 
@@ -56,7 +56,7 @@ COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
 # Every extension's mix.exs is COPYd whatever the distribution: the umbrella
 # loads every child's project to resolve dependencies, so a missing one fails
 # `mix deps.get` here regardless of what the release ends up carrying. What
-# BUNDLE_BUZZ decides is whether the release *includes* the Buzz application
+# BUNDLE_EXTENSIONS decides is whether the release *includes* the Buzz application
 # and whether this image carries its binaries (ADR 0043 decision 7).
 COPY apps/fountain_buzz/mix.exs ./apps/fountain_buzz/mix.exs
 COPY apps/fountain_support/mix.exs ./apps/fountain_support/mix.exs
@@ -105,11 +105,11 @@ COPY sdk/typescript/examples ./sdk/typescript/examples
 # config/runtime.exs, which demands MASTER_SECRETS_KEY and the rest of the
 # production environment that does not exist during a build. Prepending the
 # compiled ebin paths gives the same code without the config.
-# BUNDLE_BUZZ decides which applications the release carries (ADR 0043 decision
+# BUNDLE_EXTENSIONS decides which applications the release carries (ADR 0043 decision
 # 7, and see mix.exs). Declared in this stage as well as the asset stage below
 # because a build ARG is scoped to the stage that declares it — and the two must
 # agree, or the image gets the extension without its binaries or the reverse.
-ARG BUNDLE_BUZZ=true
+ARG BUNDLE_EXTENSIONS=true
 RUN mix compile \
  && elixir -e 'Enum.each(Path.wildcard("_build/prod/lib/*/ebin"), &Code.prepend_path/1); {:ok, _} = Application.ensure_all_started(:lumis); {:ok, _} = Lumis.Languages.cache(Fountain.Docs.languages())' \
  && mix release fountain_server
@@ -131,9 +131,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-amd64}" \
 # ---
 # The Buzz extension's native assets (ADR 0043, #1509). Everything in this
 # section belongs to `apps/fountain_buzz` and is present only in the BUNDLED
-# distribution: `--build-arg BUNDLE_BUZZ=false` selects the empty stage below
+# distribution: `--build-arg BUNDLE_EXTENSIONS=false` selects the empty stage below
 # instead, and the resulting image carries no Buzz binary, runs no Buzz smoke
-# check and, through `BUNDLE_BUZZ` in mix.exs, does not even include the
+# check and, through `BUNDLE_EXTENSIONS` in mix.exs, does not even include the
 # extension application.
 #
 # block/buzz publishes an amd64 .deb only, and our cluster is arm64 (ADR 0020,
@@ -147,7 +147,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-amd64}" \
 # fork — the version is then only the release name; see that workflow. #776
 # tracks repinning to upstream once block/buzz#6088 ships.)
 
-FROM debian:trixie-slim AS buzz-assets-true
+FROM debian:trixie-slim AS native-assets-true
 ARG TARGETARCH
 ARG BUZZ_ACP_VERSION=0.5.14-fountain.4
 # buzz-acp: the hosted harness (gate 2). buzz: the CLI the server-side MCP tools
@@ -169,13 +169,13 @@ RUN apt-get update -y \
 # directory that happens to be empty is a no-op, so the runtime stage below
 # needs no conditional COPY — the only thing that varies is which of these two
 # it copies from.
-FROM debian:trixie-slim AS buzz-assets-false
+FROM debian:trixie-slim AS native-assets-false
 RUN mkdir -p /out
 
-# The one line that makes an image core or bundled. `BUNDLE_BUZZ` is declared in
+# The one line that makes an image core or bundled. `BUNDLE_EXTENSIONS` is declared in
 # the global scope at the top of this file, which is the only place a FROM can
 # read an ARG from.
-FROM buzz-assets-${BUNDLE_BUZZ} AS buzz-assets
+FROM native-assets-${BUNDLE_EXTENSIONS} AS native-assets
 
 # ---
 
@@ -213,22 +213,22 @@ COPY --from=gocli /out/fountain /usr/local/bin/fountain
 #
 # buzz-acp is the harness; buzz is the CLI the extension's MCP tools shell out
 # to for signed publishes. Both our own builds, for both arches.
-COPY --from=buzz-assets /out/ /usr/local/lib/fountain-buzz/
+COPY --from=native-assets /out/ /usr/local/lib/fountain-buzz/
 
 # Fail the build now if a baked binary will not run in this image, rather than
 # at the first request, harness start or publish. The Buzz half is checked only
 # where it was meant to be copied: absent binaries are the core distribution
 # working, and absent binaries in a BUNDLED build are a broken one.
-ARG BUNDLE_BUZZ=true
+ARG BUNDLE_EXTENSIONS=true
 RUN /usr/local/bin/fountain --version >/dev/null 2>&1 \
       || { echo "the fountain CLI will not run in this image" >&2; exit 1; }
-RUN if [ "${BUNDLE_BUZZ}" = "true" ]; then \
+RUN if [ "${BUNDLE_EXTENSIONS}" = "true" ]; then \
       /usr/local/lib/fountain-buzz/buzz-acp --help >/dev/null 2>&1 \
    && /usr/local/lib/fountain-buzz/buzz --help >/dev/null 2>&1 \
         || { echo "a baked Buzz binary will not run in this image" >&2; exit 1; } ; \
     else \
       test -z "$(ls -A /usr/local/lib/fountain-buzz 2>/dev/null)" \
-        || { echo "BUNDLE_BUZZ=false but Buzz binaries were baked in" >&2; exit 1; } ; \
+        || { echo "BUNDLE_EXTENSIONS=false but Buzz binaries were baked in" >&2; exit 1; } ; \
     fi
 
 EXPOSE 4000

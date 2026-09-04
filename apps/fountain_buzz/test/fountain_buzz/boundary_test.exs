@@ -227,26 +227,30 @@ defmodule FountainBuzz.BoundaryTest do
 
       # The stages and the install path are the bundled distribution's layer and
       # belong here — one Dockerfile builds both distributions.
-      assert dockerfile =~ "BUNDLE_BUZZ"
-      assert dockerfile =~ "buzz-assets-false"
+      assert dockerfile =~ "BUNDLE_EXTENSIONS"
+      assert dockerfile =~ "native-assets-false"
     end
 
     test "the Dockerfile can build without the extension at all" do
       dockerfile = @root |> Path.join("Dockerfile") |> File.read!()
 
       # The empty-assets stage and the conditional smoke check are what make a
-      # core image possible; without either, `BUNDLE_BUZZ=false` would produce
+      # core image possible; without either, `BUNDLE_EXTENSIONS=false` would produce
       # an image that either fails to build or silently carries the binaries.
-      assert dockerfile =~ "FROM buzz-assets-${BUNDLE_BUZZ}"
-      assert dockerfile =~ "BUNDLE_BUZZ=false but Buzz binaries were baked in"
+      assert dockerfile =~ "FROM native-assets-${BUNDLE_EXTENSIONS}"
+      assert dockerfile =~ "BUNDLE_EXTENSIONS=false but Buzz binaries were baked in"
     end
 
-    test "the release includes this app only when BUNDLE_BUZZ says so" do
+    test "the release includes this app only when BUNDLE_EXTENSIONS says so" do
       mix = @root |> Path.join("mix.exs") |> File.read!()
 
-      assert mix =~ "bundled_applications",
-             "the release's applications must follow BUNDLE_BUZZ, or a core image " <>
+      assert mix =~ "extension_applications",
+             "the release's applications must follow BUNDLE_EXTENSIONS, or a core image " <>
                "would carry the extension without its binaries"
+
+      assert mix =~ ~s|Path.join("apps/fountain_*")|,
+             "extensions are discovered, not listed — a new one must be in the bundled " <>
+               "release from the commit that adds it"
     end
   end
 
