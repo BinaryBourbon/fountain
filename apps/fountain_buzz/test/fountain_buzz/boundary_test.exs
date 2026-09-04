@@ -41,10 +41,14 @@ defmodule FountainBuzz.BoundaryTest do
       assert File.dir?(path)
       assert String.contains?(path, "fountain_buzz")
 
-      # The versions are unchanged, which is what makes the move a no-op for a
-      # database that already applied them through the core path.
+      # The three versions that MOVED are unchanged, which is what makes the
+      # move a no-op for a database that already applied them through the core
+      # path. 20260904020000 was added by the move rather than moved by it —
+      # `FountainBuzz.UpgradeTest` covers what it is for.
       versions = path |> File.ls!() |> Enum.map(&String.slice(&1, 0, 14)) |> Enum.sort()
-      assert versions == ["20260816120000", "20260817030000", "20260824030000"]
+
+      assert ["20260816120000", "20260817030000", "20260824030000"] --
+               versions == []
     end
 
     test "describes only paths it serves" do

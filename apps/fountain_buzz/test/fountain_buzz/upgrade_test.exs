@@ -21,6 +21,11 @@ defmodule FountainBuzz.UpgradeTest do
 
   @moved_versions [20_260_816_120_000, 20_260_817_030_000, 20_260_824_030_000]
 
+  # Added by the move itself (#1507), not moved: it puts back the half of core's
+  # 20260817020000 that alters `buzz_identities`, for a database migrated
+  # core-only before the extension was installed.
+  @compensating_version 20_260_904_020_000
+
   test "the moved versions are recorded, and Ecto sees them as applied" do
     applied =
       Repo
@@ -69,6 +74,22 @@ defmodule FountainBuzz.UpgradeTest do
     assert updated.display_name == "after"
 
     assert FountainBuzz.get_identity(identity.id, identity.user_id).id == identity.id
+  end
+
+  test "the compensating migration is applied and added nothing twice" do
+    assert {:up, @compensating_version, _name} =
+             Repo
+             |> Ecto.Migrator.migrations(Migrations.paths(Repo))
+             |> Enum.find(&match?({_, @compensating_version, _}, &1))
+
+    # Exactly one environment_id column and one index, however the database got
+    # here — the core migration added it on a bundled database, this one adds it
+    # on a core-then-bundled database, and neither ever adds it twice.
+    assert {:ok, %{rows: [[1]]}} =
+             Repo.query("""
+             SELECT count(*) FROM information_schema.columns
+             WHERE table_name = 'buzz_identities' AND column_name = 'environment_id'
+             """)
   end
 
   test "the table still carries the columns both ALTERs added" do
