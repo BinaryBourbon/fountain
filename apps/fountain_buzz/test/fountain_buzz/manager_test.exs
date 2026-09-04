@@ -88,6 +88,41 @@ defmodule FountainBuzz.ManagerTest do
     Manager.stop_harness(second.id)
   end
 
+  # The wait #1544 needed and did not have. `Horde.Registry.lookup/2` checks
+  # the pid is alive before handing a row back, so `whereis/1` and `running?/1`
+  # report a harness gone the moment its process dies; `running_count/0` is
+  # `:ets.info(size)` over the same table and keeps counting the row until
+  # Horde's monitor reaps it. #1544 waited on the first and asserted on the
+  # second, so the wait was over before the number could move — a microsecond
+  # of daylight here, and three more red CI partitions in the week after the
+  # fix.
+  #
+  # Suspending the registry holds the two views apart for as long as this test
+  # needs: the pid is gone, the row cannot be reaped, so a wait on the row
+  # spends its tries and a wait on the pid returns at once. Reverting
+  # `await_stopped/2` to `running?/1` makes this 0 ms.
+  test "await_stopped waits for the row the count reads, not for the pid", %{fake: fake} do
+    identity = insert_buzz_identity()
+    {:ok, pid} = Manager.start_harness(identity, launch_opts(fake))
+
+    :sys.suspend(FountainBuzz.Registry)
+
+    try do
+      ref = Process.monitor(pid)
+      :ok = Manager.stop_harness(identity.id)
+      assert_receive {:DOWN, ^ref, :process, ^pid, _}, 5_000
+
+      # The two clocks, held apart.
+      assert Manager.whereis(identity.id) == nil
+      assert Manager.running_count() == 1
+
+      {elapsed_us, :ok} = :timer.tc(fn -> Manager.await_stopped(identity.id, 10) end)
+      assert elapsed_us >= 100_000
+    after
+      :sys.resume(FountainBuzz.Registry)
+    end
+  end
+
   # The contract #1533 needed and did not have: when the drain returns, the
   # registry is empty too. Asserted without `await_stopped/2`, on purpose —
   # the point is that the *drain* did the waiting, so the next module's
