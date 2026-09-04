@@ -688,9 +688,19 @@ jobs:
 
       # The CLI had tests since launch that no workflow ever ran, so they gated
       # neither a merge nor a release.
+      #
+      # `-count=1` disables Go's test cache, and it is load-bearing rather than
+      # belt-and-braces (#1542). `TestExamplesParse` reads its inputs from
+      # `examples/`, outside its own package, so Go has no reliable way to know
+      # those inputs moved — and `setup-go`'s cache is keyed on `cli/go.sum`,
+      # which does not move when an example changes. Go caches only successes,
+      # so the stale entry it kept serving was a pass from before the example
+      # that broke it existed: CI reported `ok (cached)` for a day while a
+      # fresh run failed. The suite takes about two seconds; a cache that can
+      # report green for a red tree is not worth that.
       - name: CLI tests
         working-directory: cli
-        run: go test ./...
+        run: go test -count=1 ./...
 
       - name: CLI vet
         working-directory: cli
