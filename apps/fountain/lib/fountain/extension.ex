@@ -40,6 +40,9 @@ defmodule Fountain.Extension do
       core page.
     * `c:oban_cron/0` — periodic jobs, merged into the host's Oban cron so a
       core-only release never names a worker it does not carry.
+    * `c:docs/0` — a `Managoat.Docs` instance whose pages and nav join the
+      manual at `/docs`. Its pages are embedded in the extension's own module,
+      so a core distribution serves a manual that never mentions them.
 
   ## Supervision is not a callback
 
@@ -223,6 +226,33 @@ defmodule Fountain.Extension do
   """
   @callback oban_cron() :: [{crontab :: String.t(), worker :: module()}]
 
+  @doc """
+  This extension's manual: a module that `use Managoat.Docs`, or `nil`.
+
+  The pages are embedded in the extension's own module at ITS compile time, so
+  a core distribution has neither the pages nor a nav entry naming them — the
+  manual a core image serves is complete rather than pruned, which is the
+  property that made this a callback instead of a build-time copy step.
+
+      defmodule MyExt.Docs do
+        use Managoat.Docs,
+          root: Path.expand("../..", __DIR__),
+          docs_dir: "docs",
+          nav: "docs/nav.yml",
+          mount: "/docs"
+      end
+
+  The mount must be the host's `/docs`, so a page keeps the URL it had as a
+  core page. `Fountain.Extensions.validate!/0` refuses a different mount, and
+  refuses a slug the core manual already serves — two pages at one URL is a
+  page nobody can reach.
+
+  A nav section whose title matches one of the host's appends its pages to
+  that section rather than starting a second one with the same name, so a
+  moved page stays where a reader last saw it.
+  """
+  @callback docs() :: module() | nil
+
   @doc false
   defmacro __using__(opts) do
     id = Keyword.fetch!(opts, :id)
@@ -257,6 +287,9 @@ defmodule Fountain.Extension do
       @impl Fountain.Extension
       def oban_cron, do: []
 
+      @impl Fountain.Extension
+      def docs, do: nil
+
       defoverridable enabled?: 0,
                      api_mounts: 0,
                      conversation_mcp_servers: 2,
@@ -264,7 +297,8 @@ defmodule Fountain.Extension do
                      openapi_paths: 0,
                      admin_overview: 0,
                      admin_user_columns: 0,
-                     oban_cron: 0
+                     oban_cron: 0,
+                     docs: 0
     end
   end
 end

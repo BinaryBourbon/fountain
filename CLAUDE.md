@@ -564,6 +564,14 @@ the redirects only go stale if a page's *slug* changes.
 
 Guardrails that trip people who only edit markdown:
 
+- **An extension may own pages** (ADR 0043, #1510). They live in
+  `apps/<app>/docs/` with that app's own `nav.yml`, embedded by its own
+  `use Managoat.Docs` module and merged into the sidebar by `Fountain.Manual`,
+  which is what every renderer asks instead of `Fountain.Docs`. Sections merge
+  by title, so a moved page keeps its place. A **core page must not link to
+  one** — `Fountain.DocsTest` walks the core manual alone and a core-only
+  distribution would have a dead link; the extension's own suite runs the link
+  checks over the merged manual.
 - **The nav lives only in `docs/nav.yml`.** `Fountain.Docs` parses that file's
   `nav:` block at compile time, so adding, renaming or moving a page is a
   one-file change. It used to be mirrored in `@nav` in
@@ -609,7 +617,10 @@ Guardrails that trip people who only edit markdown:
   `scripts/docs-style-allow.txt`, so a file **not** on that list is checked and
   every new page is covered by default. Cleaning a page means deleting its
   line; the list only shrinks (#911).
-- **`vale lint docs` enforces ASD-STE100 Simplified Technical English.** Every
+- **`vale lint docs $(ls -d apps/*/docs)` enforces ASD-STE100 Simplified
+  Technical English.** An extension's slice of the manual (ADR 0043) is held to
+  the same gate; vale selects from its path arguments, so those directories are
+  named explicitly, while `docs-style.py` and `destink.mjs` discover them. Every
   published page is written in it. The standard is
   `standards/simplified-technical-english.md`; config is
   `.vale-ste.yml`; the backlog is `.valeignore` and is **empty**. The linter is

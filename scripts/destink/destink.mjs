@@ -20,7 +20,7 @@
 // re-derive it. Opt-IN rather than opt-out is the safety property: a rule added upstream between
 // versions arrives off, and turning it on is a deliberate edit with a number attached.
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractProse } from "sentences/lint/markdown-prose";
@@ -31,6 +31,20 @@ import { runRules } from "sentences/lint/engine";
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = resolve(HERE, "../..");
 const DOCS = join(ROOT, "docs");
+
+// Every directory whose markdown is published at /docs: the host's, plus each
+// extension's own (ADR 0043, #1510). Discovered rather than listed, so a page
+// that moves out of docs/ into an extension does not leave this gate on the
+// way out.
+function docRoots() {
+  const apps = join(ROOT, "apps");
+  const extensionDocs = readdirSync(apps, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(apps, entry.name, "docs"))
+    .filter((dir) => existsSync(dir));
+
+  return [DOCS, ...extensionDocs];
+}
 const ALLOW = join(HERE, "allow.txt");
 
 // Rules that gate. The count is what the rule found over docs/ when it was turned on, so a
@@ -173,7 +187,9 @@ async function main() {
 
   const rules = RULES.filter((r) => ENABLED.has(r.id));
   const allow = loadAllow();
-  const files = paths.length ? paths.map((p) => resolve(p)) : walk(DOCS);
+  const files = paths.length
+    ? paths.map((p) => resolve(p))
+    : docRoots().flatMap((dir) => walk(dir));
 
   const skipped = [];
   const reports = [];

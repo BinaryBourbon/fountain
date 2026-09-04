@@ -221,7 +221,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert slugs != []
 
       for slug <- slugs do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
       end
     end
   end
@@ -233,7 +233,9 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "Close your laptop. Your Buzz agent keeps answering."
       assert body =~ "hosted agents on Nostr"
       assert body =~ "Host your Buzz agent free"
-      assert body =~ "Read the integration manual"
+      # The button linking the Buzz manual went with the pages themselves
+      # (#1510); the page points at /docs, which every distribution serves.
+      assert body =~ "The integration manual is under Plug into Fountain"
 
       assert body =~ "Take your laptop out of the loop."
       assert body =~ "Closing the laptop takes the agent offline"
@@ -292,6 +294,13 @@ defmodule FountainWeb.MarketingControllerTest do
       refute conn |> get(~p"/built-with") |> html_response(200) =~ ~s(href="/buzz-launch")
     end
 
+    # `Fountain.Manual` and not `Fountain.Docs`, here and in every other link
+    # guard in this file: it is the manual this distribution serves, whatever
+    # that is. Running from apps/fountain, where no extension is on the code
+    # path, that IS the core manual — which is what makes these guards a real
+    # check that a core-owned marketing page never links to a page a core image
+    # lacks. #1525 owns the wider question of what core marketing should say
+    # about an extension a given distribution may not have.
     test "every link into the manual resolves", %{conn: conn} do
       body = conn |> get(~p"/buzz-launch") |> html_response(200)
 
@@ -301,10 +310,13 @@ defmodule FountainWeb.MarketingControllerTest do
         |> Enum.map(fn [_, slug] -> slug end)
         |> Enum.uniq()
 
-      assert "integrations/buzz" in slugs
-
+      # No assertion that the Buzz manual is linked. It was, until #1510 moved
+      # those pages to the extension: this template is core's, and a core
+      # distribution serves neither page, so the link went. The page points at
+      # /docs instead, which every distribution has, and that bare link does
+      # not match the regex above.
       for slug <- slugs do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
       end
     end
   end
@@ -386,7 +398,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert links != []
 
       for slug <- links do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
       end
     end
 
@@ -498,7 +510,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert links != []
 
       for slug <- links do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
       end
     end
 
@@ -558,7 +570,7 @@ defmodule FountainWeb.MarketingControllerTest do
     end
 
     test "the deploy guide follows the same first-boot order", %{conn: _conn} do
-      {:ok, guide} = Fountain.Docs.get("guides/operate/deploy")
+      {:ok, guide} = Fountain.Manual.get("guides/operate/deploy")
 
       {readiness_at, _} = :binary.match(guide.body, "## Verify the instance is ready")
       {register_at, _} = :binary.match(guide.body, "## Register the first account")
@@ -577,7 +589,7 @@ defmodule FountainWeb.MarketingControllerTest do
       # instance of your own. A feature that comes off the manual's status
       # page has to come off this one, or the argument quotes a gate that no
       # longer exists.
-      {:ok, status} = Fountain.Docs.get("reference/feature-status")
+      {:ok, status} = Fountain.Manual.get("reference/feature-status")
 
       for %{name: name} <- FountainWeb.MarketingHTML.rationed_features() do
         assert body =~ name, "missing feature #{name}"
@@ -628,7 +640,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert links != []
 
       for slug <- links do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
       end
     end
 
@@ -809,7 +821,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert links != []
 
       for slug <- links do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
       end
     end
 
@@ -960,7 +972,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert links != []
 
       for slug <- links do
-        assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+        assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
       end
     end
 
@@ -1098,7 +1110,7 @@ defmodule FountainWeb.MarketingControllerTest do
         assert links != [], "#{path} links into the manual nowhere"
 
         for slug <- links do
-          assert match?({:ok, _}, Fountain.Docs.get(slug)), "/docs/#{slug} is not a page"
+          assert match?({:ok, _}, Fountain.Manual.get(slug)), "/docs/#{slug} is not a page"
         end
       end
     end

@@ -30,7 +30,7 @@ Fountain. Each client's own page carries its failure modes.
 - [Editors](../integrations/editors.md).
 - [OpenClaw](../integrations/openclaw.md).
 - [OpenBot](../integrations/openbot.md).
-- [Buzz](../integrations/buzz.md).
+- Buzz.
 
 ## A workstation that will not start
 

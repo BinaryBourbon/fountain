@@ -852,7 +852,10 @@ defmodule FountainWeb.MarketingHTML do
           "Run a Buzz identity on Fountain instead of your laptop. It holds presence on " <>
             "the relay, answers a mention from its sandbox and keeps its signing key on " <>
             "the server.",
-        docs: "/docs/integrations/buzz",
+        # /docs, not the Buzz page: that page belongs to the extension since
+        # #1510 and a core distribution does not serve it, so a card in a core
+        # image would carry a dead link. The manual is one click further in.
+        docs: "/docs",
         docs_label: "Buzz on Fountain",
         works_with: [
           %{name: "Buzz", slug: nil, note: "provision from the desktop, or the API"},

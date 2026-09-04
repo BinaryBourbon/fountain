@@ -36,7 +36,7 @@ prompt it. A `DELETE` releases the inbox and the number.
 `GET /api/team/comms` says whether this caller and this instance can offer
 one. Read [Team](../../api.md#team).
 
-This is the shape [fountain-buzz](fountain-buzz.md) has, and the argument
+This is the shape `fountain-buzz` has, and the argument
 holds more widely. When an agent needs a capability that a credential would
 grant, serve the capability. Do not ship the credential.
 
@@ -79,5 +79,5 @@ keys. If that is the wrong trade for your data, grant no contact.
 
 - [Agents as teammates](../../concepts/teammates.md).
 - [Team](../../api.md#team), the contact routes on the REST API.
-- [fountain-buzz](fountain-buzz.md), the same pattern for Nostr.
+- `fountain-buzz`, the same pattern for Nostr.
 - [MCP servers](index.md).

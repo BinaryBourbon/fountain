@@ -70,9 +70,13 @@ docs gates. If you touched `docs/`, run the three prose gates too:
 
 ```bash
 python3 scripts/docs-style.py
-vale lint docs
+vale lint docs $(ls -d apps/*/docs 2>/dev/null)
 npm ci --prefix scripts/destink && node scripts/destink/destink.mjs
 ```
+
+An extension's slice of the manual (ADR 0043) is held to the same three gates.
+`docs-style.py` and `destink.mjs` find `apps/*/docs` themselves; vale selects
+from its path arguments, so its directories are named on the command line.
 
 The third one looks for AI-writing tells. Its engine is the published
 `sentences` package, so the `npm ci` installs it (~5M) and is only needed the

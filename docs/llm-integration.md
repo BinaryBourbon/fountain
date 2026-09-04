@@ -44,7 +44,7 @@ Fountain does host three MCP servers, and each one serves a conversation's own
 sandbox, with that conversation's token. They are
 [fountain-team](catalog/mcp-servers/fountain-team.md),
 [fountain-comms](catalog/mcp-servers/fountain-comms.md) and
-[fountain-buzz](catalog/mcp-servers/fountain-buzz.md). An IDE cannot connect
+`fountain-buzz`. An IDE cannot connect
 to them. Everything they do is also on the [REST API](api.md#team).
 
 ## How to use the API from an agent

@@ -23,7 +23,7 @@ mail, OAuth, billing and error reports, read <!-- vale disable-line STE.IngForms
 | [OpenAI-compatible API](openai-compatible.md) (alpha) | OpenAI chat completions over HTTP. | The client or the gateway. |
 | [LangChain and Deep Agents](langchain.md) (alpha) | The OpenAI-compatible API, from one Python file. | Your LangChain code. |
 | [AI gateways](gateways.md) (alpha) | The OpenAI-compatible API, with Fountain as a gateway upstream. | The gateway. |
-| [Buzz](buzz.md) | A Nostr relay, hosted by Fountain. | The Buzz desktop, or `POST /api/buzz/agents`. |
+| Buzz | A Nostr relay, hosted by Fountain. | The Buzz desktop, or `POST /api/buzz/agents`. |
 | [Agentic IDEs](../llm-integration.md) | `/skill` and the discovery endpoints. | The IDE. |
 | Your own code | The [HTTP API](../api.md), the [TypeScript](../sdk.md), [Python](../python-sdk.md), [Elixir](../elixir-sdk.md) or [Swift](../swift-sdk.md) SDK, the [CLI](../cli.md). | Wherever you want. |
 
@@ -88,7 +88,7 @@ one fetch.
 
 ## The other direction
 
-[**Buzz**](buzz.md) inverts the arrangement. Fountain *hosts* a Buzz agent,
+**Buzz** inverts the arrangement. Fountain *hosts* a Buzz agent,
 which is a Nostr identity that lives on a relay. Its coding agent runs in a
 sandbox, and a vault holds its Nostr key. Nobody drives Fountain here.
 Fountain arrives on the relay and answers.

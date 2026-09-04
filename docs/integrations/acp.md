@@ -2,7 +2,7 @@
 
 `fountain acp` is the one process that each ACP client of Fountain spawns.
 [Editors](editors.md) such as Zed, [OpenClaw](openclaw.md), and the
-[Buzz](buzz.md) harness all speak the
+Buzz harness all speak the
 [Agent Client Protocol](https://agentclientprotocol.com) to it over stdio. It
 then drives a conversation in a Fountain sandbox.
 
@@ -197,4 +197,4 @@ on stdin, which proves that the process starts and finds its credentials.
 |---|---|---|
 | Zed and other ACP editors | The editor, from its agent-server config. | [Editors](editors.md) |
 | OpenClaw, on Telegram, Discord or Slack | The `acpx` plugin on the OpenClaw host. | [OpenClaw](openclaw.md) |
-| Buzz, on Nostr | `buzz-acp`, which **Fountain itself** supervises on the gateway, one for each hosted identity. | [Buzz](buzz.md) |
+| Buzz, on Nostr | `buzz-acp`, which **Fountain itself** supervises on the gateway, one for each hosted identity. | Buzz |

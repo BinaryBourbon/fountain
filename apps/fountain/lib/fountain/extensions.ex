@@ -435,7 +435,11 @@ defmodule Fountain.Extensions do
          :ok <- check_all(modules, &check_mount_shapes/1),
          :ok <- check_mounts_unique(modules),
          :ok <- check_all(modules, &check_mounts_free(&1, core_prefixes)),
-         :ok <- check_resolvable(fn -> openapi_paths(installed(modules)) end) do
+         :ok <- check_resolvable(fn -> openapi_paths(installed(modules)) end),
+         # The manual's rules live in Fountain.Manual, beside the merge that
+         # depends on them: a slug the core manual already serves, and a mount
+         # the host does not route.
+         :ok <- check_all(installed(modules), &Fountain.Manual.validate/1) do
       # Only the ones this deployment will actually run: a configured extension
       # that is off here contributes no migrations, so its directory need not be
       # present. Resolution is what checks it, so this is the same code path the
@@ -496,7 +500,9 @@ defmodule Fountain.Extensions do
     migrations: 0,
     openapi_paths: 0,
     admin_overview: 0,
-    admin_user_columns: 0
+    admin_user_columns: 0,
+    oban_cron: 0,
+    docs: 0
   ]
 
   defp check_module(module) when is_atom(module) do

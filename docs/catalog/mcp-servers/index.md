@@ -17,7 +17,7 @@ authorization chain completed against each entry on the date shown.
 | Server | Injected when | Tools |
 |---|---|---|
 | [fountain-team](fountain-team.md) | The conversation is a teammate's. | `list_teammates`, `get_teammate`, `send_to_teammate`, `wait_for_teammate`, `read_teammate` |
-| [fountain-buzz](fountain-buzz.md) | The conversation's vault holds a Buzz identity. | `buzz_send_message`, `buzz_react` |
+| `fountain-buzz` | The conversation's vault holds a Buzz identity. | `buzz_send_message`, `buzz_react` |
 | [fountain-comms](fountain-comms.md) | The teammate has a contact, behind flag `team_comms`. | `email_send`, `email_reply`, `email_list`, `email_get`, `sms_send`, `sms_list`, `my_contact_info` |
 
 All three share three properties, and each property carries weight.

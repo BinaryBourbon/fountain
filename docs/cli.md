@@ -127,7 +127,7 @@ fountain vault delete-secret <id-or-name> <key>
 ## Hosted Buzz agents
 
 These commands change the inbound gate on a hosted
-[Buzz](integrations/buzz.md) agent. The gate decides whose `@`-mention the
+Buzz agent. The gate decides whose `@`-mention the
 harness answers.
 
 The Buzz desktop refuses to change access on a provider agent it already
@@ -141,7 +141,7 @@ advertises.
 
 So open the gate here, publish that policy again, and other users can send the
 mention. Open the gate alone, and they cannot send it at all. Read
-[Who may talk to it](integrations/buzz.md#who-may-talk-to-it).
+"Who may talk to it", on the Buzz page a bundled distribution serves.
 
 ```bash
 fountain buzz agents list [--json]
