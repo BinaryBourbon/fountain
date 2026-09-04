@@ -229,6 +229,36 @@ and the context APIs, and may not interpose on them. No second hot-path
 callback beyond `conversation_mcp_servers/2`. No callback that returns SQL,
 Ecto queries or schema modules for the host to run.
 
+**Amended 2026-09-04 (#1529): a contribution is an HTTP server, never a stdio
+one.** `conversation_mcp_servers/2` reaches a runtime by exactly one path:
+`Conversations.McpServers.for_session/3` appends it after ACP conversion, into
+`session/new`'s `mcpServers`. It never reaches the sandbox's provisioned
+configuration — `write_runtime_config` is called with the agent's own servers
+and nothing else, at provision and again on wake.
+
+On the claude runtime that path is half broken upstream. `claude-agent-acp`
+never launches **stdio** servers passed through `session/new`
+(`Managoat.Runtimes.Quirks` `:claude_mcp_via_files`,
+agentclientprotocol/claude-agent-acp#883), which is why the agent's own servers
+are written into the sandbox as a project `.mcp.json` instead. The HTTP half
+works, and that was measured rather than assumed before a third extension was
+designed against it: the team tools are contributed through this callback, are
+never written to that file, and answer on claude conversations in production —
+211 `mcp__fountain-team__*` log events, 28 of them carrying a successful tool
+response, read 2026-09-04.
+
+So an extension **may contribute an HTTP MCP server and may not contribute a
+stdio one.** A stdio contribution is not refused; it is silently dropped on one
+runtime, which is the worst shape a broken contract can take. An extension that
+needs a process inside the sandbox owns getting it there itself. This is a
+constraint on the existing callback rather than a new one, and it stops being
+necessary — rather than becoming wrong — the day #883 lands and
+`Managoat.Runtimes.Claude.write_config/2` goes away.
+
+The callback set has now survived two extractions and one design without a
+tenth entry: `fountain_gmail` (#1529, **not built**) is specified against
+`api_mounts/0` and `conversation_mcp_servers/2` and adds nothing.
+
 ### 4. `fountain_buzz` starts at `apps/fountain_buzz` and may graduate
 
 It begins as an umbrella app, for the same reason every `managoat_*` library
