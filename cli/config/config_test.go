@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
+	"github.com/BinaryBourbon/fountain/cli/credentials"
 )
 
 // withCredentials points the credentials package at a temp file with the

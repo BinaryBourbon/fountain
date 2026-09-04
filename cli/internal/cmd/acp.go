@@ -12,10 +12,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/BinaryBourbon/fountain/cli/api"
+	"github.com/BinaryBourbon/fountain/cli/config"
+	"github.com/BinaryBourbon/fountain/cli/credentials"
 	"github.com/BinaryBourbon/fountain/cli/internal/acp"
-	"github.com/BinaryBourbon/fountain/cli/internal/api"
-	"github.com/BinaryBourbon/fountain/cli/internal/config"
-	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
 	"github.com/BinaryBourbon/fountain/cli/internal/output"
 	"github.com/BinaryBourbon/fountain/cli/internal/sse"
 	"github.com/BinaryBourbon/fountain/cli/internal/stream"

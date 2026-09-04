@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/BinaryBourbon/fountain/cli/credentials"
 	"github.com/BinaryBourbon/fountain/cli/internal/acp"
-	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
 	"github.com/BinaryBourbon/fountain/cli/internal/stream"
 )
 

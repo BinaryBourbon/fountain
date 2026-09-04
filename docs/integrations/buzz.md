@@ -98,8 +98,25 @@ There are two ways in.
 ### From the Buzz desktop (the provider)
 
 Fountain ships a Buzz **remote-agents provider**, `buzz-backend-fountain`. The
-Buzz desktop finds it by name and hands it a one-shot deploy. The provider
-stands the hosted agent up on your Fountain instance, then returns.
+Buzz desktop finds it by name on your `PATH` and hands it a one-shot deploy.
+The provider stands the hosted agent up on your Fountain instance, then
+returns.
+
+Each release attaches it for the same four platforms as the `fountain` binary.
+Put it on your `PATH` under its exact name, because the desktop discovers it
+by that name.
+
+```sh
+curl -fsSLo buzz-backend-fountain \
+  https://github.com/BinaryBourbon/fountain/releases/latest/download/buzz-backend-fountain-linux-amd64
+chmod +x buzz-backend-fountain
+sudo mv buzz-backend-fountain /usr/local/bin/
+```
+
+Use `buzz-backend-fountain-darwin-arm64` on an Apple Silicon Mac. The provider
+speaks to your Fountain instance over its HTTP API, so it works against a
+bundled distribution. A core distribution serves no Buzz routes, and the
+deploy gets a 404.
 
 - Its settings ask **which Fountain agent** to run as, with
   `{ "agent": "<name-or-id>" }`. They optionally ask **which environment** to

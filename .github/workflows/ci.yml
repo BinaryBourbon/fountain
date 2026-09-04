@@ -684,7 +684,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
+          cache-dependency-path: |
+            cli/go.sum
+            apps/fountain_buzz/cli/go.sum
 
       # The CLI had tests since launch that no workflow ever ran, so they gated
       # neither a merge nor a release.
@@ -704,6 +706,22 @@ jobs:
 
       - name: CLI vet
         working-directory: cli
+        run: go vet ./...
+
+      # The Buzz provider is a second Go module (ADR 0043 decision 6, #1508),
+      # so `go test ./...` in cli/ does not reach it. Separate steps rather
+      # than a loop, for the same reason the SDK contract checks are separate:
+      # a failing log line should name the module a contributor has to fix.
+      #
+      # It is the extension's, and it graduates with the extension (#1510) —
+      # at which point these steps move to that repository's CI and the
+      # `replace` in its go.mod becomes a version pin.
+      - name: Buzz provider tests
+        working-directory: apps/fountain_buzz/cli
+        run: go test -count=1 ./...
+
+      - name: Buzz provider vet
+        working-directory: apps/fountain_buzz/cli
         run: go vet ./...
 
       # The Hermes plugin (integrations/hermes) is stdlib Python; its tests
@@ -750,9 +768,8 @@ jobs:
       # come from the emptiness check — print the list first so the log says
       # which files to run gofmt on.
       - name: CLI gofmt
-        working-directory: cli
         run: |
-          unformatted=$(gofmt -l .)
+          unformatted=$(gofmt -l cli apps/fountain_buzz/cli)
           if [ -n "$unformatted" ]; then
             echo "gofmt needed on:" >&2
             echo "$unformatted" >&2
@@ -1553,7 +1570,13 @@ jobs:
 
       # docs/cli.md is diffed against the real command tree, so it is the one
       # docs page whose guard lives in the Go suite rather than the Elixir one.
+      #
+      # `-count=1` because this job is the reason #1542 exists in miniature:
+      # these tests read `docs/cli.md`, a file outside their own package, and
+      # this step runs precisely when the docs changed and `cli/` may not have.
+      # A cached pass keyed on `cli/go.sum` would be a parity check that never
+      # looked at the page it is guarding.
       - name: CLI docs parity
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}
         working-directory: cli
-        run: go test ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented|TestGeneratedCLIReferenceIsCurrent'
+        run: go test -count=1 ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented|TestGeneratedCLIReferenceIsCurrent'

@@ -66,6 +66,19 @@ fountain/                  umbrella root
                            no Buzz application in the release (mix.exs) and no
                            binaries in the image (Dockerfile), one switch for
                            both.
+                           Buzz also owns a Go module, apps/fountain_buzz/cli
+                           (#1508): the buzz-backend-fountain remote-agents
+                           provider Buzz Desktop discovers by name on PATH,
+                           Apache-2.0 like cli/ and released for the same four
+                           platforms as the fountain binary. A module of its
+                           own so Go's internal/ rule stops it reaching
+                           cli/internal/...; it uses the public cli/api +
+                           cli/credentials instead. `fountain buzz agents ...`
+                           deliberately STAYS in cli/ (ADR 0043 decision 6) —
+                           removing a subcommand from a released binary is a
+                           user-visible break with nothing bought. Run its
+                           tests from its own directory; `go test ./...` in
+                           cli/ does not reach a second module.
     (managoat_*/)          the component libraries extracted from the server
                            (ADR 0037, tracker #1334): Apache-2.0, Managoat.*
                            namespace, no reference back into Fountain. Each
