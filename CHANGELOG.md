@@ -66,6 +66,14 @@ upgrade, is in
   OpenAI-compatible gateways a current body-level fallback when they cannot
   set custom headers. Requests with no key are still rejected.
 
+- **Register your own OAuth app** (#1125). Account, then OAuth apps,
+  `fountain oauth-client`, and `/api/oauth/clients` now create tenant-owned
+  clients without an operator edit or restart. A client starts in development
+  mode and signs in only its owner. Its redirect origins are also admitted by
+  CORS. Unpublished loopback redirects can use any port. One account can
+  register a maximum of 25 apps, and only an operator can change or remove a
+  client after publication.
+
 - **Standalone consumers for the Managoat libraries** (#1365). The
   [`managoat_examples`](https://github.com/managoat/managoat_examples)
   repository has three plain Mix projects with Hex dependencies and no

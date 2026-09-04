@@ -385,8 +385,8 @@ In a browser you pass what you have.
 const fountain = new Fountain({ baseUrl, apiKey });   // from your own settings UI
 ```
 
-The server must admit your origin through `API_CORS_ORIGINS`. Otherwise each
-call fails before it starts.
+The server must admit your origin through a registered OAuth client or
+`API_CORS_ORIGINS`. Otherwise each call fails before it starts.
 
 `ConnectionError` says exactly that. "Failed to fetch" has sent more than one
 person to search their own code for an hour.

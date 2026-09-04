@@ -118,13 +118,44 @@ POST /api/oauth/token    # {grant_type: "authorization_code", code, code_verifie
 POST /api/oauth/revoke   # bearer: revoke the presented token (sign-out)
 ```
 
-You register a client on the server, in `OAUTH_CLIENTS`, with exact redirect
-URIs. A client or a redirect that nobody registered renders an error page, and
+A client or a redirect that nobody registered renders an error page, and
 Fountain redirects nowhere.
 
 A code lives five minutes, and it works once. The key is full-scope, it
 expires in 30 days, and it lists under Account, then API keys, as
 `oauth:<client_id>`.
+
+### Register your own app
+
+Register a client in the console under **Account, then OAuth apps**, with
+`fountain oauth-client create`, or through the API.
+
+```
+GET    /api/oauth/clients        # the account's clients
+POST   /api/oauth/clients        # {name, redirect_uris} -> {client_id, ...}
+GET    /api/oauth/clients/:id
+PATCH  /api/oauth/clients/:id    # rename it, or replace the redirect URIs
+DELETE /api/oauth/clients/:id
+```
+
+These routes need a full-scope key. A sandbox token cannot register a client.
+A registered client can produce a full-scope key after consent.
+
+Your client starts in **development mode**. It signs in only the account that
+registered it. Every other account gets an error page instead of a redirect.
+Only an operator can publish a client for other accounts to use. After an
+operator publishes it, only an operator can change or remove its trusted
+registration. Every other account signs in through it, and the `client_id` is
+random, so a deletion would break them all.
+
+One account can register a maximum of 25 apps.
+
+A redirect URI must match exactly and must use `https`. A URI on
+`localhost` or `127.0.0.1` can use `http` and matches on any port.
+
+The redirect origins can also call `/api` from a browser. One registration
+covers both sign-in and CORS. It needs no `OAUTH_CLIENTS` or
+`API_CORS_ORIGINS` change.
 
 ## Account state
 
@@ -985,9 +1016,9 @@ anybody creates, updates, deletes or fires a schedule. That holds for the API,
 for the page and for the scheduler. So a client lists them again, and polls
 nothing.
 
-A browser client on another origin needs `API_CORS_ORIGINS` set on the server.
-Read [configuration](configuration.md). A bearer key is the one credential
-that crosses an origin.
+A browser client on another origin needs either a registered OAuth client or
+an `API_CORS_ORIGINS` entry. Read [configuration](configuration.md). A bearer
+key is the one credential that crosses an origin.
 
 ## Support
 

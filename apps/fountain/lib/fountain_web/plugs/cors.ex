@@ -3,11 +3,12 @@ defmodule FountainWeb.Plugs.Cors do
   CORS for `/api/*`, for a browser client on another origin — the standalone
   team app (#810) is the first.
 
-  Off by default: with no configured origins the plug does nothing, and the
-  API stays same-origin + non-browser clients only, as it always was. Set
-  `API_CORS_ORIGINS` (comma-separated, exact origins such as
-  `https://team.example.com`, or `*`) to allow browsers there to call the API
-  with a bearer token. No cookies are ever allowed across origins
+  The operator's `API_CORS_ORIGINS` list is checked first. A registered OAuth
+  client's redirect origin is checked second, so registering an app is enough
+  to call the API from it without another operator setting (#1125).
+
+  With neither source, the API stays same-origin plus non-browser clients.
+  No cookies are ever allowed across origins
   (`Access-Control-Allow-Credentials` is never sent), so a session cannot be
   ridden from an allowed origin — only an explicitly presented API key works,
   which is the point.
@@ -34,7 +35,7 @@ defmodule FountainWeb.Plugs.Cors do
   @impl true
   def call(%Plug.Conn{path_info: ["api" | _]} = conn, _opts) do
     with [origin] <- get_req_header(conn, "origin"),
-         true <- allowed?(origin, origins()) do
+         true <- allowed?(origin) do
       conn = put_cors_headers(conn, origin)
 
       if preflight?(conn) do
@@ -51,8 +52,10 @@ defmodule FountainWeb.Plugs.Cors do
 
   defp origins, do: Application.get_env(:fountain, :api_cors_origins, [])
 
-  defp allowed?(_origin, []), do: false
-  defp allowed?(origin, allowed), do: "*" in allowed or origin in allowed
+  defp allowed?(origin) do
+    allowed = origins()
+    "*" in allowed or origin in allowed or Fountain.OAuth.registered_origin?(origin)
+  end
 
   defp preflight?(%Plug.Conn{method: "OPTIONS"} = conn),
     do: get_req_header(conn, "access-control-request-method") != []

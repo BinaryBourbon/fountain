@@ -15,7 +15,7 @@ Facts that shape it (ADR 0021, `docs/api.md`):
 ```ts
 import { normalizeBaseUrl } from "./settings";
 
-const CLIENT_ID = "my-app";            // = the repo name, registered in OAUTH_CLIENTS
+const CLIENT_ID = "app_xxx";           // from fountain oauth-client create
 const STASH = "my-app.oauth";
 
 function base64url(bytes: ArrayBuffer): string {

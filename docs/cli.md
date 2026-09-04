@@ -372,6 +372,26 @@ fountain keys create <name>     # prints the key once; it is not recoverable
 fountain keys revoke <id>
 ```
 
+## OAuth apps
+
+Register an app that offers "Sign in with Fountain." The registration also
+admits the app's redirect origins to the API.
+
+```bash
+fountain oauth-client list [--json]
+fountain oauth-client create <name> --redirect-uri <url> [--redirect-uri <url>]... [--json]
+fountain oauth-client update <id> [--name <name>] [--redirect-uri <url>]... [--json]
+fountain oauth-client delete <id>
+```
+
+`create` prints the generated `client_id` that your app sends. A redirect
+URI must match exactly and must use `https`. Loopback hosts can use `http`
+and match on any port.
+
+The app starts in development mode. It signs in only the account that
+registered it. `delete` stops new sign-ins, but keys already issued stay
+valid until you revoke them with `fountain keys revoke`.
+
 ## Webhooks
 
 Endpoints that Fountain sends conversation lifecycle events to. The

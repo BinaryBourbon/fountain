@@ -3278,6 +3278,98 @@ defmodule FountainWeb.Schemas do
   # created; it only exists after that definition, hence the ordering.
   list_response(ApiKeyListResponse, of: ApiKey)
 
+  defmodule OAuthClient do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthClient",
+      description:
+        "A tenant-owned OAuth client. Unpublished clients are in development " <>
+          "mode and can sign in only their owner. Their redirect origins are " <>
+          "also admitted by CORS.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        client_id: %Schema{
+          type: :string,
+          description: "The client_id sent to /oauth/authorize."
+        },
+        name: %Schema{type: :string, description: "Shown on the consent page."},
+        redirect_uris: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          description: "Exact match, except that an unpublished loopback URI matches on any port."
+        },
+        origins: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          description: "Origins derived from redirect_uris and admitted by CORS."
+        },
+        published: %Schema{
+          type: :boolean,
+          description: "False means development mode with owner-only sign-in."
+        },
+        created_at: %Schema{type: :string, format: :"date-time"},
+        updated_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [
+        :id,
+        :client_id,
+        :name,
+        :redirect_uris,
+        :origins,
+        :published,
+        :created_at,
+        :updated_at
+      ]
+    })
+  end
+
+  defmodule OAuthClientRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthClientRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, minLength: 1},
+        redirect_uris: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          minItems: 1
+        }
+      },
+      required: [:name, :redirect_uris],
+      example: %{
+        name: "Notes",
+        redirect_uris: ["https://abc123.sprites.app/callback", "http://localhost:5173/callback"]
+      }
+    })
+  end
+
+  defmodule OAuthClientUpdateRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthClientUpdateRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, minLength: 1},
+        redirect_uris: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          minItems: 1
+        }
+      },
+      example: %{name: "Notes for Fountain"}
+    })
+  end
+
+  list_response(OAuthClientListResponse, of: OAuthClient)
+
   defmodule Runner do
     @moduledoc false
     require OpenApiSpex

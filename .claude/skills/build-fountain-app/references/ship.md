@@ -1,8 +1,8 @@
 # Ship an app
 
-The only server-side facts an app depends on are `API_CORS_ORIGINS` and
-`OAUTH_CLIENTS` on the Fountain it talks to (SKILL.md §5). Everything below
-is about hosting the app itself, which needs nothing from Fountain.
+The only server-side fact an app depends on is its OAuth client registration
+on the Fountain it talks to (SKILL.md section 5). Everything below is about
+hosting the app itself.
 
 ## Static SPA
 

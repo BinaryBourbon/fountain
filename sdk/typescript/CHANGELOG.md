@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [1.21.0] — 2026-09-03
+
+### Added
+
+- Generated `OAuthClient`, `OAuthClientRequest` and client-list types, plus
+  the five `/api/oauth/clients` operations. An account can register an app
+  that offers "Sign in with Fountain" without an operator changing
+  `OAUTH_CLIENTS` or `API_CORS_ORIGINS` (#1125).
+
 ## [1.20.0] — 2026-09-03
 
 ### Changed

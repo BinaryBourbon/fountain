@@ -25,8 +25,12 @@
       "reason": "Account bootstrap and key minting. An SDK is constructed with a key it already holds; the flows that produce one belong to the console and to `fountain auth login` (#1305). Only GET /api/auth/me is modelled, because a client wants to know whose key it has."
     },
     {
-      "operations": ["POST /api/oauth/token", "POST /api/oauth/revoke"],
-      "reason": "Sign in with Fountain. The browser apps run the code+PKCE dance themselves against these two, and the token they get IS an API key, so the SDK starts after this point."
+      "operations": [
+        "POST /api/oauth/token",
+        "POST /api/oauth/revoke",
+        "* /api/oauth/clients*"
+      ],
+      "reason": "Sign in with Fountain. Browser apps run code+PKCE themselves, while client registration is account setup owned by the console and CLI. The SDK starts after either flow has produced an API key."
     },
     {
       "operations": ["* /api/account/*", "DELETE /api/account"],

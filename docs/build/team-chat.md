@@ -27,8 +27,9 @@ In Node the arguments are optional. The credentials resolve from the
 environment and from `~/.fountain/credentials`, exactly as the
 [CLI](../cli.md)'s do.
 
-In a browser you pass what the person gave you, and the server must admit
-your origin through `API_CORS_ORIGINS`. Read [how to ship it](#10-how-to-ship-it).
+In a browser you pass what the person gave you. Register the app's OAuth
+client so the server admits its origin. Read
+[how to ship it](#10-how-to-ship-it).
 
 ## 2. Hire a teammate
 
@@ -387,8 +388,8 @@ instance.
 
 | What | Why |
 |---|---|
-| `API_CORS_ORIGINS` | A browser that calls another origin's API makes a CORS request. It is off by default. It admits a bearer key that the caller presents, and no more, because a cookie never crosses an origin. |
-| `OAUTH_CLIENTS` | To offer **Sign in with Fountain**, and not ask for a pasted key. |
+| OAuth client registration | Register under Account, then OAuth apps. This enables **Sign in with Fountain** and admits the redirect origins to the API. |
+| `API_CORS_ORIGINS` and `OAUTH_CLIENTS` | Operator settings for published first-party apps. A development-mode app does not need them. |
 
 [Sign in with Fountain](../api.md#sign-in-with-fountain-oauth-20-for-browser-apps)
 is OAuth 2.0 authorization code with PKCE. The token it returns *is* an API

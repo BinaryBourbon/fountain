@@ -324,6 +324,18 @@ defmodule FountainWeb.Router do
     post "/revoke", OAuthTokenController, :revoke
   end
 
+  # OAuth clients an account registers for itself (#1125). Full scope because
+  # a client is a standing path to a full-scope key after consent.
+  scope "/api/oauth", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/clients", OAuthClientController, :index
+    post "/clients", OAuthClientController, :create
+    get "/clients/:id", OAuthClientController, :show
+    patch "/clients/:id", OAuthClientController, :update
+    delete "/clients/:id", OAuthClientController, :delete
+  end
+
   # Key management is scope-gated: the per-conversation token a sprite holds
   # must not be able to mint a second key that survives conversation teardown.
   scope "/api/auth", FountainWeb do
@@ -728,6 +740,9 @@ defmodule FountainWeb.Router do
 
       # ── Self-hosted runners (ADR 0022) ─────────────────────────────────────────────────────
       live "/account/runners", RunnersLive.Index, :index
+
+      # ── OAuth apps the account registered for itself (#1125) ───────────────────────────────
+      live "/account/oauth-apps", OAuthClientsLive.Index, :index
 
       # ── Secret bindings at the egress broker (ADR 0019 gate 1b) ────────────────────────────
       live "/account/bindings", SecretBindingsLive.Index, :index

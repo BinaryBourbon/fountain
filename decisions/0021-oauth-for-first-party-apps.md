@@ -1,22 +1,27 @@
 ---
 type: ADR
 title: "Fountain is the OAuth 2.0 authorization server for its own browser apps (code + PKCE, public clients, keys as tokens)"
-description: "The standalone team and conversations apps on other origins sign in with a Fountain session instead of a pasted API key: authorization code + PKCE (S256), public clients registered in config, redirect URIs exact, tokens are ordinary expiring API keys. No client secrets, no refresh tokens yet, no third-party clients yet."
+description: "The standalone team and conversations apps on other origins sign in with a Fountain session instead of a pasted API key: authorization code + PKCE (S256), public clients, redirect URIs exact, tokens are ordinary expiring API keys. Amended 2026-08-29 (#1125): a tenant may register its own client, unpublished, which authorizes only its owner. No client secrets, no refresh tokens yet."
 tags: [auth, oauth, api, spa]
 status: stable
 adr: "0021"
 adr_status: "Accepted"
 date: 2026-08-18
 generated: { by: human:jhgaylor, at: 2026-08-18T14:00:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-18T14:00:00-04:00 }
-stale_after: 2026-11-18
+verified: { by: human:jhgaylor, at: 2026-09-03T04:00:00-04:00 }
+stale_after: 2026-12-03
 ---
 
 # 0021 — Fountain is the OAuth 2.0 authorization server for its own browser apps
 
 **Status:** Accepted — built in [#819](https://github.com/BinaryBourbon/fountain/pull/819):
-`Fountain.OAuth`, `GET/POST /oauth/authorize`, `POST /api/oauth/token`,
+`Fountain.OAuth` over `Managoat.OAuth`, `GET/POST /oauth/authorize`, `POST /api/oauth/token`,
 `POST /api/oauth/revoke`, `OAUTH_CLIENTS`.
+
+**Amended 2026-08-29 ([#1125](https://github.com/BinaryBourbon/fountain/issues/1125)):**
+the config registry is no longer the only one. See
+[Amendment: tenant-registered clients](#amendment-tenant-registered-clients-1125)
+at the end; the two consequences it changes are marked below.
 
 ## Context
 
@@ -44,6 +49,8 @@ Fountain acts as the **OAuth 2.0 authorization server** for its own apps.
   :oauth_clients` (runtime.exs reads `OAUTH_CLIENTS` as JSON) lists
   `{id, name, redirect_uris}`. Redirect URIs match **exactly**. Two clients
   are ours; a table and an admin UI come when a third party asks.
+  *(Amended: the table exists — see below. Config clients remain, and are
+  read as published.)*
 - **Consent page** at `GET /oauth/authorize` behind the browser session:
   names the client, Allow / Deny. Signed out → the request is stashed
   (`FountainWeb.ReturnTo`) and the normal login — password or GitHub —
@@ -72,8 +79,85 @@ Fountain acts as the **OAuth 2.0 authorization server** for its own apps.
 - Every login method Fountain has now, or grows later, works for the apps for
   free — the OAuth layer sits on the session, not on a provider.
 - Adding an app = one entry in `OAUTH_CLIENTS` (and `API_CORS_ORIGINS`).
+  *(Amended: only for an app the operator vouches for. Anyone else registers
+  their own, and one registration covers both.)*
 - What this is **not**: a way for third parties to act as Fountain users. The
   registry is ours, consent is coarse (full scope), and there are no scopes
   narrower than what API keys already have. Doing that properly means a
   clients table, per-scope consent and refresh rotation — the shape is
   compatible, the work is not done.
+  *(Amended: the clients table is done and a tenant may register into it, but
+  only for itself. Per-scope consent and refresh rotation are still not
+  built, and there is still no way for a stranger's app to act as a Fountain
+  user without an operator publishing it.)*
+
+## Amendment: tenant-registered clients (#1125)
+
+**2026-08-29.** The consequence above said a third-party clients table would
+come "when a third party asks". The ask arrived in the shape the product is
+about: people build apps *inside* Fountain sandboxes, and pointing one at a
+production Fountain meant asking an operator to edit `OAUTH_CLIENTS` and
+`API_CORS_ORIGINS` and redeploy. That is not a first minute anybody finishes.
+
+### The wrong answer, on the record
+
+Wildcard the sandbox domain in both lists. Fine for CORS, a phishing kit for
+OAuth: anyone with any sandbox could start a flow with their own PKCE
+challenge and their own box as `redirect_uri`, and a consenting user's 30-day
+full-scope key would land there. **PKCE does not help when the attacker
+initiates the flow.**
+
+### What was built
+
+- **`oauth_clients`**, tenant-owned: `client_id` (generated, never supplied),
+  `name`, `redirect_uris`, a derived `origin_keys` lookup column, `published`.
+  `Fountain.OAuth.get_client/1` reads config first, so a row can never shadow
+  a first-party client.
+- **Development mode is the security boundary, not the redirect allowlist.**
+  An unpublished client authorizes **only its owner**; every other account
+  gets a rendered error page, never a redirect, and the identity check runs
+  *before* the redirect check so a stranger's error page discloses no
+  registration. Because the only account such a client can capture belongs to
+  the person who registered it, its owner may name any HTTPS redirect URI or
+  an HTTP loopback URI.
+  `published` is an operator flip with no self-serve path. Once published, the
+  owner can neither change nor delete the operator-approved registration
+  through self-service. Deleting matters as much as editing: publication moved
+  the trust boundary to every account, and the row's `client_id` is random, so
+  a deletion would break sign-in for all of them with an id nobody can
+  recreate.
+- **RFC 8252 loopback matching**, for unpublished clients only: a
+  `http://localhost` or `http://127.0.0.1` redirect matches on any port,
+  because the port a local dev server lands on is not a fact anybody
+  registered. Published clients get no such latitude.
+- **CORS reads the same table.** `API_CORS_ORIGINS` first, then any registered
+  client's redirect origin. A preflight carries no authentication, so the
+  origin is the only key there is — which is exactly why "an origin some
+  client registered" is the right predicate: admitting an origin admits
+  nobody who does not already hold a bearer key, and no cookie crosses an
+  origin either way. Loopback matches on any port here too, so the sign-in and
+  the first API call cannot disagree.
+- **`form-action` narrowed** from every client's origins to the requested
+  client's. With tenant-registered apps the old header would grow without
+  bound and hand the whole registry to any visitor.
+- **Full scope to manage clients.** `/api/oauth/clients` sits behind
+  `:require_full_scope`, not the sprite scope #1125 originally proposed. A
+  registered client is a standing way to obtain a full-scope 30-day key with
+  one consent, which is the escalation the sprite scope exists to prevent
+  (`Fountain.Accounts.ApiKey`); a sandbox token must not be able to leave one
+  behind. Registering from the console, the CLI or the API with the owner's
+  own key still removes the operator, which was the point.
+- **Twenty-five clients per account**, an abuse ceiling rather than an
+  allowance, because every row widens the deployment's CORS allowlist and
+  registration is self-serve. An operator raises it by editing the constant;
+  nobody has asked yet.
+- **Audit**: `oauth_client.created`, `.updated`, `.deleted`, and
+  `oauth.authorized` now carries the client's `resource_id`.
+
+### Still not done
+
+Per-scope consent, client secrets, refresh tokens, and a publish or review
+workflow. Publishing is SQL or a `mix` task until somebody needs more. Nothing
+here auto-registers a sandbox's redirect at spawn: explicit registration is
+one call, and auto-registration would leave stale origins admitted after the
+sandbox is gone.
