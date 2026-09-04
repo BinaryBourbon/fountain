@@ -74,9 +74,16 @@ defmodule Fountain.Accounts.Deletion do
   Returns `{:ok, summary}`. Nothing aborts before destruction: there is no
   subscription to cancel first (ADR 0031), and the Stripe customer stays for
   the refund trail.
+
+  A claimable principal this account owns (ADR 0044) goes with it. The
+  ownership row cascades either way, so the alternative is not "keep it" but
+  "leave a tenant with resources, no owner, no credential that reaches it and
+  no sweep that would ever find it" — a permanent leak of exactly the kind
+  `@non_terminal` above exists to prevent.
   """
   @spec delete_user(User.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def delete_user(%User{} = user, opts \\ []) do
+    delete_owned_principals(user, opts)
     sprites = destroy_sprites(user)
 
     Audit.record(%{
@@ -115,12 +122,43 @@ defmodule Fountain.Accounts.Deletion do
     end
   end
 
+  # ── owned principals (ADR 0044) ───────────────────────────────────────────
+
+  # Recursive only in principle: a principal is identity-less, so it can never
+  # sign in to claim one of its own, and `Principals.create_claimable/3`
+  # refuses it as an application. Each of these is therefore a leaf.
+  defp delete_owned_principals(%User{principal: true}, _opts), do: :ok
+
+  defp delete_owned_principals(%User{id: owner_id}, opts) do
+    for principal_id <- Fountain.Principals.list_owned(owner_id),
+        %User{} = principal <- [Repo.get(User, principal_id)] do
+      delete_user(principal, Keyword.put(opts, :actor, "system:owner_deleted"))
+    end
+
+    :ok
+  rescue
+    e -> Logger.warning("deleting owned principals for #{owner_id} failed: #{inspect(e)}")
+  end
+
   # ── sprites ───────────────────────────────────────────────────────────────
 
-  # Ask a live ConversationServer to tear itself down where one exists, so the
-  # sprite goes through the same path as a user-initiated terminate. Otherwise
-  # destroy the sprite directly.
-  defp destroy_sprites(%User{id: user_id}) do
+  @doc """
+  Stop every sandbox a tenant is running, and return how many sprites were
+  destroyed.
+
+  Ask a live ConversationServer to tear itself down where one exists, so the
+  sprite goes through the same path as a user-initiated terminate. Otherwise
+  destroy the sprite directly.
+
+  Public because deletion is not the only reason to stop a tenant's compute:
+  expiring or releasing a claimable principal (ADR 0044) stops it too, and
+  keeps the rows. Duplicating this would be duplicating the part that costs
+  money when it is wrong.
+  """
+  @spec destroy_sprites(User.t() | binary()) :: non_neg_integer()
+  def destroy_sprites(%User{id: user_id}), do: destroy_sprites(user_id)
+
+  def destroy_sprites(user_id) when is_binary(user_id) do
     conv_ids =
       Conversations.list_conversations(user_id)
       |> Enum.filter(&(ConversationServer.whereis(&1.id) != nil))

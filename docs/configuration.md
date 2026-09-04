@@ -157,6 +157,12 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `CREDIT_EMAIL_MESSAGE_CENTS` | — | No. | What a tenant pays for one email, in whole cents. Unset means an email burns nothing. |
 | `CREDIT_SMS_MESSAGE_CENTS` | — | No. | What a tenant pays for one SMS, sent or received, in whole cents. Unset means an SMS burns nothing. |
 | `CREDIT_PACKS_CENTS` | `1000,2500,10000` | No. | The credit packs a tenant can buy, in cents, as a list. |
+| `PRINCIPAL_DEFAULT_TTL_SECONDS` | `86400` | No. | How long a claimable principal lasts when the application names no `expires_in`. |
+| `PRINCIPAL_MAX_TTL_SECONDS` | `604800` | No. | The longest a claimable principal may last. Fountain clamps a longer `expires_in` to this. |
+| `PRINCIPAL_MAX_GRANT_CENTS` | `500` | No. | The most an application may put into one principal, in cents. |
+| `PRINCIPAL_MAX_OUTSTANDING` | `500` | No. | The most unclaimed principals one application may hold at once. |
+| `PRINCIPAL_MAX_PER_HOUR` | `500` | No. | The most principals one application may open each hour. |
+| `PRINCIPAL_PURGE_AFTER_DAYS` | `7` | No. | How long a closed grant stays readable before Fountain deletes the principal. |
 
 <!-- vale STE.IngForms = YES -->
 

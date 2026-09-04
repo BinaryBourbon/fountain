@@ -219,6 +219,40 @@ A value is **write-only**, so these endpoints report which providers hold one,
 and no more. They need a `full`-scoped key, because the token a sandbox holds
 for one conversation can neither read nor replace the account's credentials.
 
+## Claimable principals
+
+```
+POST   /api/claimable-users            # open one; Idempotency-Key header
+GET    /api/claimable-users/:id        # reconcile a lost response
+POST   /api/claimable-users/:id/claim  # attach an owner
+DELETE /api/claimable-users/:id        # abandon one
+```
+
+An application can start a computer for a visitor who has no Fountain account.
+A claimable principal is the tenant that computer belongs to. It has its own
+agents, environments, vaults, conversations and sandboxes, and no other
+principal can read them.
+
+The claim attaches an owner and moves nothing. So `principal_id` is the same
+value before and after, and so is every id under it. **Start before sign-in**
+is the guide, and
+[ADR 0044](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0044-claimable-principals.md)
+is the decision.
+
+Every route here needs a `full`-scoped key. The key a principal holds has the
+`principal` scope, which reaches the resource surface and nothing that changes
+an account. A principal therefore cannot open a second principal, mint another
+credential, or release its own grant. Each refusal is a `403` with
+`"reason": "insufficient_scope"`.
+
+Send an `Idempotency-Key` header on create and on claim. A repeat returns the
+same principal and a **new** credential, because Fountain stores no secret it
+could give you twice.
+
+A claim answers `409` when somebody claimed it first. It answers `410` when
+the grant expired, or when the application released it. It answers `403` for a
+bad token, or for an account that cannot fund the work.
+
 ## Rate limiting
 
 Fountain rate-limits a request by client IP, whether it carries auth or not.

@@ -34,6 +34,30 @@ upgrade, is in
 
 ### Added
 
+- **An application can start a computer before its visitor has an account, and
+  the visitor keeps that exact computer when they register** (#1551, ADR 0044).
+  A **claimable principal** is a `users` row with no identity, opened by a
+  trusted application over `POST /api/claimable-users` and funded out of that
+  application's own credit balance. It is a full tenant from its first request
+  — its own DEK, agents, environments, vaults, conversations and sandboxes, all
+  scoped away from every other principal — and it comes back with a
+  `principal`-scoped API key plus a one-time claim token.
+  `POST /api/claimable-users/:id/claim` attaches a registered account as the
+  principal's owner and **moves nothing**: the sandbox, the disk, the agent, the
+  conversations and every id survive the claim, because the tenant id is what a
+  sprite name is built from and a resource-by-resource transfer would hand the
+  visitor a different machine. Both a brand-new account and one that already
+  owns work claim the same way, since an owner may hold more than one principal.
+  The new scope is deliberately narrow: a principal reaches the resource
+  surface a computer is built from and nothing behind `:require_full_scope`, so
+  it cannot mint a credential, buy credit, widen its own limits, or see another
+  principal. Money follows the owner without a ledger row moving — an unclaimed
+  principal spends the application's introductory grant, a claimed one spends
+  the account's balance. `GET /api/claimable-users/:id` is the reconcile route
+  for an application that lost a response, `DELETE` abandons a grant and
+  refunds what it still holds, and an unclaimed grant expires on its own with
+  the same teardown. Guide: **Start before sign-in**.
+
 - **`BROKER_TENANTS` takes `*`, so the ratchet has an end state** (ADR 0019
   §9). The variable was a comma separated list of user ids and nothing else,
   which is what made widening deliberate: an operator adds one id, proves it,

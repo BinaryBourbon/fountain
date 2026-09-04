@@ -159,6 +159,7 @@ defmodule Fountain.Credits do
   @spec check_balance(User.t() | binary(), keyword()) :: :ok | {:error, :insufficient_credits}
   def check_balance(subject, opts \\ []) do
     min = Keyword.get(opts, :min, 1)
+    subject = billing_subject(subject)
 
     cond do
       not enabled?() -> :ok
@@ -167,6 +168,18 @@ defmodule Fountain.Credits do
       true -> {:error, :insufficient_credits}
     end
   end
+
+  # Whose money answers for this work (ADR 0044). A loaded `%User{}` that is not
+  # a principal is handed back untouched — resolving it to its own id would turn
+  # every gate into a database read and quietly stop honouring the balance the
+  # caller loaded. A principal is resolved: unclaimed, to itself and the
+  # application's introductory grant; claimed, to the account that claimed it,
+  # so a machine started anonymously keeps running on its new owner's balance.
+  defp billing_subject(%User{principal: false} = user), do: user
+  defp billing_subject(%User{id: id}), do: Fountain.Principals.billing_subject_id(id)
+
+  defp billing_subject(user_id) when is_binary(user_id),
+    do: Fountain.Principals.billing_subject_id(user_id)
 
   defp spendable(subject, now), do: balance(subject) - expired_unspent(user_id_of(subject), now)
 
@@ -229,6 +242,26 @@ defmodule Fountain.Credits do
     end
   end
 
+  @doc """
+  What the lot posted under `idempotency_key` still holds for `user_id`, in
+  cents, or zero when there is no such lot.
+
+  For a refund that must hand back only the unspent part of a specific grant
+  (ADR 0044): the balance is the wrong number there, because it also carries
+  money from somewhere else.
+  """
+  @spec lot_remaining_for(binary(), String.t()) :: non_neg_integer()
+  def lot_remaining_for(user_id, idempotency_key)
+      when is_binary(user_id) and is_binary(idempotency_key) do
+    from(e in LedgerEntry,
+      where: e.user_id == ^user_id and e.idempotency_key == ^idempotency_key,
+      select: e.remaining_cents
+    )
+    |> Repo.one()
+    |> Kernel.||(0)
+    |> max(0)
+  end
+
   @doc "One entry by idempotency key, or nil."
   @spec get_by_key(String.t()) :: LedgerEntry.t() | nil
   def get_by_key(key) when is_binary(key), do: Repo.get_by(LedgerEntry, idempotency_key: key)
@@ -274,7 +307,23 @@ defmodule Fountain.Credits do
   defaults. `Billing.check_spend/1` is this; call that, not this, from a door.
   """
   @spec gate(User.t() | binary()) :: :ok | {:error, :insufficient_credits}
-  def gate(subject), do: check_balance(subject)
+  def gate(subject) do
+    case check_balance(subject) do
+      :ok ->
+        :ok
+
+      {:error, :insufficient_credits} = refusal ->
+        # An unclaimed principal running out of its introductory grant is a
+        # thing the application that opened it needs told (ADR 0044). Stamped
+        # once on the grant, not once per refused request: this runs at every
+        # door that spends.
+        Fountain.Principals.note_budget_exhausted(subject_id(subject))
+        refusal
+    end
+  end
+
+  defp subject_id(%User{id: id}), do: id
+  defp subject_id(user_id) when is_binary(user_id), do: user_id
 
   @doc """
   The one shape every surface renders (the billing page, the dashboard,

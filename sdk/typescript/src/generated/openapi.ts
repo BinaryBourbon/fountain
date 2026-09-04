@@ -952,6 +952,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/claimable-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a claimable principal
+         * @description Creates an anonymous tenant an application can build a computer inside before its visitor has a Fountain account, and returns a scoped API key for it plus a one-time claim token. The principal is funded out of the calling account's credit balance and expires on its own. Send an `Idempotency-Key` header: replaying it returns the same principal with a fresh key and claim token.
+         */
+        post: operations["FountainWeb.ClaimableUserController.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/claimable-users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a claimable principal
+         * @description The grant's current status, for an application recovering from a lost response. Readable by the application that opened it and by the account that claimed it; anyone else gets 404, so an id cannot be probed.
+         */
+        get: operations["FountainWeb.ClaimableUserController.show"];
+        put?: never;
+        post?: never;
+        /**
+         * Abandon a claimable principal
+         * @description Revokes the principal's credentials, destroys its sandboxes and refunds what its introductory grant still holds. The grant stays readable so a lost response can still be reconciled; the principal itself is deleted a retention window later. A claimed principal belongs to the account that claimed it and cannot be released this way.
+         */
+        delete: operations["FountainWeb.ClaimableUserController.delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/claimable-users/{id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim a principal
+         * @description Attaches the calling account as the principal's owner and returns a fresh credential for it. Nothing about the machine changes: the sandbox, agent, environment, vault, conversations and every id survive the claim. The credential the application held is revoked in the same transaction. A brand-new account and an account that already owns other principals claim the same way.
+         */
+        post: operations["FountainWeb.ClaimableUserController.claim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/connection-providers": {
         parameters: {
             query?: never;
@@ -3151,6 +3215,103 @@ export interface components {
             tools?: Record<string, never>[];
             /** @description The thread key when `X-Fountain-Thread` is not set. */
             user?: string;
+        };
+        /**
+         * ClaimableUser
+         * @description A claimable principal (ADR 0044): the anonymous tenant an application opens for a visitor who has no Fountain account yet. `principal_id` is the tenant every resource it builds belongs to, and it never changes — claiming attaches an owner rather than moving anything.
+         */
+        ClaimableUser: {
+            /** @description The application's own label for itself, as given at creation. */
+            application_id: string;
+            /**
+             * Format: date-time
+             * @description When the introductory grant first refused a spend, if it has.
+             */
+            budget_exhausted_at?: string | null;
+            /** Format: date-time */
+            claimed_at?: string | null;
+            /**
+             * Format: uuid
+             * @description The account that claimed it. Only shown to that account and to the application.
+             */
+            claimed_by_user_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** @description The introductory grant, in cents. Zero when credits are off. */
+            grant_cents?: number;
+            /**
+             * Format: uuid
+             * @description The grant's id.
+             */
+            id: string;
+            max_live_sandboxes?: number | null;
+            /** @description Whatever the application stored here. */
+            metadata?: Record<string, never>;
+            /**
+             * Format: uuid
+             * @description The tenant id. Baked into every sandbox name the principal creates, and identical before and after a claim.
+             */
+            principal_id: string;
+            /** @enum {string} */
+            status: "unclaimed" | "claimed" | "expired" | "released";
+        };
+        /**
+         * ClaimableUserCreated
+         * @description The grant plus its two secrets. Both are shown once and stored only as hashes. Replaying the create with the same `Idempotency-Key` returns the same principal with a fresh pair, which invalidates this one.
+         */
+        ClaimableUserCreated: {
+            /** @description A `principal`-scoped API key for the principal, expiring with it. It reaches agents, environments, vaults, conversations and sandboxes, and nothing that manages an account. */
+            api_key: string;
+            application_id?: string;
+            /** @description The one-time capability that claims this principal. */
+            claim_token: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            expires_at: string;
+            grant_cents?: number;
+            /** Format: uuid */
+            id: string;
+            max_live_sandboxes?: number | null;
+            metadata?: Record<string, never>;
+            /** Format: uuid */
+            principal_id: string;
+            /** @enum {string} */
+            status: "unclaimed" | "claimed" | "expired" | "released";
+        };
+        /** ClaimableUserCreatedResponse */
+        ClaimableUserCreatedResponse: {
+            data: components["schemas"]["ClaimableUserCreated"];
+        };
+        /** ClaimableUserResponse */
+        ClaimableUserResponse: {
+            data: components["schemas"]["ClaimableUser"];
+        };
+        /**
+         * ClaimedPrincipal
+         * @description The result of a claim. The principal's resources are untouched: the same sandbox, agent, environment, vault and conversations, under the same ids.
+         */
+        ClaimedPrincipal: {
+            /** @description A fresh `principal`-scoped key for the claimed principal, with no expiry. The credential the application held is revoked by the claim. */
+            api_key: string;
+            /** Format: date-time */
+            claimed_at?: string;
+            /** Format: uuid */
+            principal_id: string;
+            /** @enum {string} */
+            status: "unclaimed" | "claimed" | "expired" | "released";
+            /** @description The account that now owns the principal. */
+            user: {
+                email?: string | null;
+                /** Format: uuid */
+                id?: string;
+            };
+        };
+        /** ClaimedPrincipalResponse */
+        ClaimedPrincipalResponse: {
+            data: components["schemas"]["ClaimedPrincipal"];
         };
         /**
          * Connection
@@ -7233,6 +7394,256 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CatalogResponse"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ClaimableUserController.create": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Replay-safe creation key, unique per application. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Grant */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The application's own label for itself, for the audit trail. */
+                    application_id: string;
+                    /** @description Seconds until the principal expires. Clamped to the deployment's maximum. */
+                    expires_in?: number;
+                    limits?: {
+                        max_cost_usd?: number;
+                        max_live_sandboxes?: number;
+                    };
+                    metadata?: Record<string, never>;
+                };
+            };
+        };
+        responses: {
+            /** @description Opened */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimableUserCreatedResponse"];
+                };
+            };
+            /** @description Malformed grant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The application cannot fund it */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not a full-scope key */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many principals, or too fast */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ClaimableUserController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The grant's id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grant */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimableUserResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such grant */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ClaimableUserController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The grant's id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Released */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such grant */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Already claimed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ClaimableUserController.claim": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Replaying a successful claim with this key and the same account returns the same outcome with a fresh credential. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description The grant's id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Claim */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    claim_token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Claimed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimedPrincipalResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Bad claim token, or an account that cannot claim */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such grant */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Already claimed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expired or released */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

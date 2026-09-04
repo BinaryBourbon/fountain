@@ -1006,6 +1006,16 @@ config :fountain, :credits,
   sms_message_cents: credit_cents.("CREDIT_SMS_MESSAGE_CENTS"),
   packs_cents: credit_packs
 
+# Claimable principals (ADR 0044). Defaults match config.exs; a deployment
+# that opens none of these never has to set any of them.
+config :fountain, Fountain.Principals,
+  default_ttl_seconds: whole_number.("PRINCIPAL_DEFAULT_TTL_SECONDS", 86_400),
+  max_ttl_seconds: whole_number.("PRINCIPAL_MAX_TTL_SECONDS", 604_800),
+  max_grant_cents: whole_number.("PRINCIPAL_MAX_GRANT_CENTS", 500),
+  max_outstanding_per_application: whole_number.("PRINCIPAL_MAX_OUTSTANDING", 500),
+  max_created_per_hour: whole_number.("PRINCIPAL_MAX_PER_HOUR", 500),
+  purge_after_days: whole_number.("PRINCIPAL_PURGE_AFTER_DAYS", 7)
+
 # Platform inference keys (#1388, ADR 0038 decision 3, amending ADR 0008).
 #
 # Fountain runs a tenant's agent on one of these when the tenant has no

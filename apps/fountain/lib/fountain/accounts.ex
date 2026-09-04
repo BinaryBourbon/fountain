@@ -787,16 +787,29 @@ defmodule Fountain.Accounts do
 
       %ApiKey{} = key ->
         cond do
-          ApiKey.expired?(key) -> {:error, :expired}
-          suspended?(key.user) -> {:error, :suspended}
+          ApiKey.expired?(key) ->
+            {:error, :expired}
+
+          suspended?(key.user) ->
+            {:error, :suspended}
+
           # Asserted here rather than only where keys are minted (#533). Every
           # minting path already refuses an unverified account, so this changes
           # nothing for a key issued today — but that made four call sites the
           # invariant depended on, and a fifth would have reopened the gap in
           # silence. Keys predating #314, when `POST /api/auth/token` would mint
           # for an unverified account, stop working here: that is the point.
-          is_nil(key.user.email_verified_at) -> {:error, :unverified}
-          true -> {:ok, key.user, key}
+          #
+          # A claimable principal (ADR 0044) is the one row that authenticates
+          # without ever verifying: it has no email to verify and never will.
+          # The flag is read off the already-preloaded user rather than from
+          # `claimable_users`, because this is the hottest auth path in the
+          # system and a join here would be paid by every request.
+          is_nil(key.user.email_verified_at) and not key.user.principal ->
+            {:error, :unverified}
+
+          true ->
+            {:ok, key.user, key}
         end
     end
   end
@@ -841,6 +854,42 @@ defmodule Fountain.Accounts do
     %User{}
     |> User.oauth_registration_changeset(attrs)
     |> Repo.insert()
+  end
+
+  @doc """
+  Insert a claimable principal's `users` row (ADR 0044).
+
+  An identity-less tenant: no email, no password, `principal: true`, and its
+  own wrapped DEK so that environment and vault secrets encrypt exactly as
+  they do for an ordinary account. `Fountain.Principals` owns the grant that
+  makes it temporary; this only makes the tenant.
+
+  `:sandbox_limit_override` is the principal's live-sandbox cap and is always
+  set by the caller — which is why `Fountain.Quotas` needs no knowledge of
+  principals at all: the override branch answers before the balance rule is
+  ever consulted.
+
+  Deliberately not audited here. A principal's creation is recorded once, as
+  `claimable_user.created` against the application that opened it; a second
+  `account.registered` under the principal's own id would be a trail nobody
+  can reach, on a tenant with no human behind it.
+
+  Returns `{:ok, user}` or `{:error, changeset}`. Runs in a transaction: a row
+  without a data key cannot hold a secret, so the two land together or not
+  at all.
+  """
+  @spec create_principal_user(keyword()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def create_principal_user(opts \\ []) do
+    attrs = %{sandbox_limit_override: Keyword.get(opts, :sandbox_limit_override)}
+
+    Repo.transaction(fn ->
+      with {:ok, user} <- %User{} |> User.principal_changeset(attrs) |> Repo.insert(),
+           {:ok, _udk} <- create_user_data_key(user.id) do
+        user
+      else
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
   end
 
   defp create_user_data_key(user_id) do
