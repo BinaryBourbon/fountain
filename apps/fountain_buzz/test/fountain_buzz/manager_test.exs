@@ -65,7 +65,12 @@ defmodule FountainBuzz.ManagerTest do
     assert {:ok, _pid} = Manager.start_harness(second, launch_opts(fake))
     assert Manager.running_count() == baseline + 2
 
+    # `stop_harness/1` returns once the process is down, but the registry drops
+    # the entry by monitor a moment later, so the count here raced it and
+    # periodically read 2 (#1544). `await_stopped/2` is the same wait
+    # `restart_harness/2` uses for the same reason.
     Manager.stop_harness(first.id)
+    Manager.await_stopped(first.id)
     assert Manager.running_count() == baseline + 1
     Manager.stop_harness(second.id)
   end
@@ -88,9 +93,12 @@ defmodule FountainBuzz.ManagerTest do
     assert active_key_count(identity.user_id) == 1
 
     :ok = Manager.stop_harness(identity.id)
+    Manager.await_stopped(identity.id)
 
     refute Manager.running?(identity.id)
-    # terminate_child is synchronous, so the harness's on_stop (key revoke) has run.
+    # terminate_child is synchronous, so the harness's on_stop (key revoke) has
+    # already run by the time it returns — that part needs no wait. It is the
+    # registry that lags, which is what the line above waits for (#1544).
     assert active_key_count(identity.user_id) == 0
   end
 
