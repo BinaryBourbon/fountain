@@ -1,0 +1,3 @@
+# One template, and blank issues stay on: everything that is not a flake is
+# still filed by writing it out.
+blank_issues_enabled: true

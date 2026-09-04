@@ -96,6 +96,24 @@ mix test apps/fountain/test/fountain/docs_test.exs
 To read a page as it will ship, start the server and open `/docs`. That route
 is the only place `docs/` is published.
 
+### If a test went red and then green
+
+Do not re-run it and move on. A test that passes on the second try with
+nothing changed is a flake, and an unfiled one costs its next finder the whole
+investigation over again. File it:
+
+```bash
+gh issue create --label flake --label area:testing --title "Flake: <what raced>"
+```
+
+Or use the **Flaky test** issue template, which applies the same labels. Every
+flake carries the `flake` label, so
+[the open ones](https://github.com/BinaryBourbon/fountain/issues?q=is%3Aopen+label%3Aflake)
+are one query. Search before filing — the same flake gets found repeatedly, and
+a second issue splits the evidence. What makes one actionable is in CLAUDE.md
+under *Flaky tests*: the failing assertion, a rate rather than an adjective,
+and the run URLs.
+
 ## Extension migrations share one `schema_migrations`
 
 A first-party extension (ADR 0043) contributes migration directories through
