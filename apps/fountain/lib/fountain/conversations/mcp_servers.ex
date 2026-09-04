@@ -6,8 +6,8 @@ defmodule Fountain.Conversations.McpServers do
   resolved against the environment and the secrets (`substitute_agent/3`),
   and the ones Fountain serves back to the sandbox itself, authenticated with
   the conversation's callback token (`Fountain.Conversations.CallbackKey`):
-  the Buzz reply tools, the team tools, a teammate's comms tools and the
-  caller-tool bridge. Each of those decides for itself whether this
+  installed extensions' tools, the team tools, a teammate's comms tools and
+  the caller-tool bridge. Each of those decides for itself whether this
   conversation gets it; `fountain_served/2` only asks, in the order the
   server has always appended them.
 
@@ -110,24 +110,17 @@ defmodule Fountain.Conversations.McpServers do
 
   @doc """
   The Fountain-served servers for a turn, in the order the server has always
-  appended them after the agent's own: extensions, buzz, team, team comms,
-  caller.
+  appended them after the agent's own: extensions, team, team comms, caller.
 
   Installed extensions come first (ADR 0043, #1505), in configured order, ahead
   of everything the host serves itself. That ordering is a host decision, not a
   promise to an extension — ADR 0043 fixes "extensions before team" and nothing
-  finer.
-
-  `buzz/2` is still called directly beside the fan-out because Buzz has not
-  moved yet; #1507 deletes that clause when `FountainBuzz.Extension` starts
-  answering `conversation_mcp_servers/2` for the same conversations. Until
-  then, removing it here would silently take a live integration's reply tools
-  away.
+  finer. Buzz's reply tools reach a turn through that fan-out since #1507; the
+  `buzz/2` clause that used to sit here went with them.
   """
   @spec fountain_served(map(), String.t() | nil) :: [map()]
   def fountain_served(%{id: conv_id} = conv, token) do
     extensions(conv_id, token) ++
-      buzz(conv_id, token) ++
       team(conv_id, token) ++
       team_comms(conv_id, token) ++
       caller(conv, token)
@@ -140,16 +133,6 @@ defmodule Fountain.Conversations.McpServers do
   @spec extensions(String.t() | nil, String.t() | nil) :: [map()]
   defp extensions(conv_id, token),
     do: Fountain.Extensions.conversation_mcp_servers(conv_id, token)
-
-  # The Buzz reply tools (#737), injected into `session/new` only for a
-  # Buzz-driven conversation and only once a callback token has been minted —
-  # `Fountain.Buzz` decides both. `[]` for every other conversation.
-  @spec buzz(String.t() | nil, String.t() | nil) :: [map()]
-  def buzz(conv_id, token) when is_binary(token) and is_binary(conv_id) do
-    Fountain.Buzz.conversation_mcp_servers(conv_id, token)
-  end
-
-  def buzz(_conv_id, _token), do: []
 
   # The team tools (#851), for conversations on the team channel.
   @spec team(String.t() | nil, String.t() | nil) :: [map()]

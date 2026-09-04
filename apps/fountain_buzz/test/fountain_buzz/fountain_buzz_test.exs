@@ -1,8 +1,10 @@
-defmodule Fountain.BuzzTest do
+defmodule FountainBuzz.ContextTest do
   use Fountain.DataCase, async: true
+  import FountainBuzz.Factory
 
-  alias Fountain.{Accounts, Buzz, Crypto, Vaults}
-  alias Fountain.Buzz.BuzzIdentity
+  alias Fountain.{Accounts, Crypto, Vaults}
+  alias FountainBuzz, as: Buzz
+  alias FountainBuzz.Identity
 
   describe "identities (tenant scoping)" do
     test "create/get/list are scoped to the owner" do
@@ -10,9 +12,9 @@ defmodule Fountain.BuzzTest do
       other = insert_verified_user()
       identity = insert_buzz_identity(%{"user_id" => user.id, "name" => "philo"})
 
-      assert %BuzzIdentity{name: "philo"} = Buzz.get_identity(identity.id, user.id)
+      assert %Identity{name: "philo"} = Buzz.get_identity(identity.id, user.id)
       assert Buzz.get_identity(identity.id, other.id) == nil
-      assert [%BuzzIdentity{id: id}] = Buzz.list_identities(user.id)
+      assert [%Identity{id: id}] = Buzz.list_identities(user.id)
       assert id == identity.id
       assert Buzz.list_identities(other.id) == []
     end
@@ -34,7 +36,7 @@ defmodule Fountain.BuzzTest do
       assert %{name: _} = errors_on(changeset)
 
       # Same name under a different tenant is fine.
-      assert %BuzzIdentity{} = insert_buzz_identity(%{"user_id" => other.id, "name" => "dup"})
+      assert %Identity{} = insert_buzz_identity(%{"user_id" => other.id, "name" => "dup"})
     end
 
     test "rejects a non-ws relay url and a malformed pubkey" do

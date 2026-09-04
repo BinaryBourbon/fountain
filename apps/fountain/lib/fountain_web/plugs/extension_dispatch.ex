@@ -8,20 +8,23 @@ defmodule FountainWeb.Plugs.ExtensionDispatch do
 
     * **Core routes win.** Phoenix matches routes in declaration order, so this
       plug only ever sees a request that matched no core route. An extension
-      cannot shadow `/api/agents` by declaring `"agents"` — and
-      `Fountain.Extensions.validate!/0` refuses that prefix at boot anyway, so
-      the collision is a failed deploy rather than a route quietly doing
-      nothing.
+      cannot shadow `/api/agents` by mounting there — and
+      `Fountain.Extensions.validate!/0` refuses an overlapping mount at boot
+      anyway, so the collision is a failed deploy rather than a route quietly
+      doing nothing.
     * **Authentication is not optional.** The `:api` pipeline — the rate limit,
       `TenantAPIAuth`, the request audit — has already run by the time this
       plug is called, on the host's terms. There is no prefix an extension can
       choose that reaches its plug without `conn.assigns.current_user` being
       set by the host, because there is no second door.
 
-  The extension's plug is called with the prefix moved from `path_info` to
-  `script_name`, the way `Phoenix.Router.forward/4` does it, so the extension
+  The extension's plug is called with the matched mount moved from `path_info`
+  to `script_name`, the way `Phoenix.Router.forward/4` does it, so the extension
   writes its routes relative to its own mount and its path helpers still
-  generate `/api/<prefix>/...`.
+  generate the full path.
+
+  The **longest** declared mount wins, which is what lets one extension hold
+  both `/api/buzz` and `/api/mcp/buzz` with a different plug behind each.
 
   ## What is deliberately not caught
 
@@ -43,21 +46,20 @@ defmodule FountainWeb.Plugs.ExtensionDispatch do
   def init(opts), do: opts
 
   @impl Plug
-  def call(%Plug.Conn{path_info: [prefix | rest]} = conn, _opts) do
-    case Extensions.find_by_prefix(prefix) do
+  def call(%Plug.Conn{path_info: path_info} = conn, _opts) do
+    case Extensions.find_mount(path_info) do
       nil -> not_found(conn)
-      extension -> dispatch(conn, extension, prefix, rest)
+      {_extension, mount, plug} -> dispatch(conn, plug, mount, path_info)
     end
   end
 
-  def call(conn, _opts), do: not_found(conn)
-
-  defp dispatch(conn, extension, prefix, rest) do
-    {plug, opts} = normalize(extension.api_plug())
+  defp dispatch(conn, plug_spec, mount, path_info) do
+    {plug, opts} = normalize(plug_spec)
+    rest = Enum.drop(path_info, length(mount))
 
     conn
     |> Map.put(:path_info, rest)
-    |> Map.put(:script_name, conn.script_name ++ [prefix])
+    |> Map.put(:script_name, conn.script_name ++ mount)
     |> plug.call(plug.init(opts))
   end
 

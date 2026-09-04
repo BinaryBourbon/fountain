@@ -80,18 +80,65 @@ defmodule Fountain.Umbrella.MixProject do
     ]
   end
 
+  # Migrating from the umbrella root has to reach apps/fountain — that is where
+  # the Repo's project lives — but the migration PATH SET can only be computed
+  # here, because `apps/fountain` deliberately depends on no sibling app and so
+  # cannot see an extension's `priv` at all (ADR 0043).
+  #
+  # Shelling in without the paths is how CI went red on this PR: a fresh
+  # database got no `buzz_identities`, and the core migration that alters it
+  # (20260817020000) then failed. A pre-migrated workstation database hides it
+  # completely, which is why it took a clean CI run to find.
+  #
+  # The paths are absolute because the child process runs in apps/fountain, and
+  # apps/fountain's own `ecto.migrate` alias takes an explicit
+  # `--migrations-path` at face value rather than adding its own.
+  defp migrate_in_app(args), do: run_ecto_in_app("ecto.migrate", args)
+  defp rollback_in_app(args), do: run_ecto_in_app("ecto.rollback", args)
+
+  defp run_ecto_in_app(task, args) do
+    Mix.Task.run("app.config")
+
+    args = if "--migrations-path" in args, do: args, else: args ++ migration_path_args()
+
+    Mix.Task.run("cmd", ["--app", "fountain", "mix", task] ++ args)
+  end
+
+  defp migration_path_args do
+    core = Path.expand("apps/fountain/priv/repo/migrations", File.cwd!())
+
+    [core | Fountain.Migrations.extension_paths()]
+    |> Enum.flat_map(&["--migrations-path", &1])
+  end
+
   defp releases do
     [
       fountain_server: [
-        applications: [fountain: :permanent]
+        # The BUNDLED distribution (ADR 0043 decision 7): the server plus the
+        # Buzz extension. `apps/fountain` deliberately does NOT depend on
+        # :fountain_buzz — the arrow points the other way, and the compiler
+        # proves it. Inclusion is the release's decision, made here, which is
+        # what makes a core-only release a matter of dropping one line rather
+        # than untangling a dependency (gate 7, #1510).
+        applications: [fountain: :permanent, fountain_buzz: :permanent]
       ]
     ]
   end
 
   defp aliases do
     [
-      setup: ["deps.get", "cmd --app fountain mix ecto.setup"],
-      "ecto.reset": ["cmd --app fountain mix ecto.reset"],
+      # `ecto.setup` and `ecto.reset` go through this project's `ecto.migrate`
+      # below, NOT through apps/fountain's — the app cannot see a sibling's
+      # migration path, so shelling straight into its `ecto.setup` would create
+      # a database with no extension tables (ADR 0043). Same bug CI caught on
+      # the plain `ecto.migrate` path, on the two entrances CI does not run.
+      setup: ["deps.get", "ecto.setup"],
+      "ecto.setup": [
+        "cmd --app fountain mix ecto.create",
+        "ecto.migrate",
+        "cmd --app fountain mix run priv/repo/seeds.exs"
+      ],
+      "ecto.reset": ["cmd --app fountain mix ecto.drop", "ecto.setup"],
       # Migrating from the umbrella root has to go through apps/fountain, or the
       # extension migration paths are silently dropped (ADR 0043, #1506).
       #
@@ -104,8 +151,17 @@ defmodule Fountain.Umbrella.MixProject do
       # makes the child's alias run. CI, SETUP.md and CLAUDE.md all migrate from
       # the root, so without these two lines the root is the entrance that
       # quietly skips extensions.
-      "ecto.migrate": ["cmd --app fountain mix ecto.migrate"],
-      "ecto.rollback": ["cmd --app fountain mix ecto.rollback"],
+      # Render the served OpenAPI spec. At the UMBRELLA ROOT on purpose: the
+      # document describes the running distribution (ADR 0043), and only here
+      # is every app on the code path. Run inside apps/fountain — which is what
+      # this did until #1507 — and `Fountain.Extensions.installed/0` is empty,
+      # so the extension's operations vanish from `dist/openapi.json` and from
+      # the SDK contract projected out of it, silently and by deletion.
+      "openapi.export": [
+        "openapi.spec.json --spec FountainWeb.ApiSpec --vendor-extensions=false dist/openapi.json"
+      ],
+      "ecto.migrate": [&migrate_in_app/1],
+      "ecto.rollback": [&rollback_in_app/1],
       precommit: [
         "compile --warnings-as-errors",
         &deps_unlock_unused_changes_nothing/1,

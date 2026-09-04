@@ -27,7 +27,6 @@ defmodule Fountain.AuditGuardrailTest do
   alias Fountain.{
     Agents,
     Audit,
-    Buzz,
     Conversations,
     Environments,
     InferenceCredentials,
@@ -73,9 +72,10 @@ defmodule Fountain.AuditGuardrailTest do
     {"password reset", &__MODULE__.do_password_reset/1, "auth.password.reset"},
     {"password change", &__MODULE__.do_password_change/1, "auth.password.changed"},
     {"email verification", &__MODULE__.do_verify_email/1, "auth.email.verified"},
-    {"buzz identity create", &__MODULE__.do_buzz_create/1, "buzz_identity.created"},
-    {"buzz identity update", &__MODULE__.do_buzz_update/1, "buzz_identity.updated"},
-    {"buzz identity delete", &__MODULE__.do_buzz_delete/1, "buzz_identity.deleted"},
+    # The Buzz identity events moved with the extension (#1507); they are
+    # asserted the same way in apps/fountain_buzz. ADR 0013's actor vocabulary
+    # is still the host's and still closed — an extension records through
+    # `Fountain.Audit` and gets no trail of its own.
     # Team membership: a teammate is a channel-bound conversation, so add also
     # leaves conversation.created underneath; these are the team-side events.
     {"team member add", &__MODULE__.do_team_add/1, "team.member.added"},
@@ -288,28 +288,6 @@ defmodule Fountain.AuditGuardrailTest do
 
   def do_vault_delete(user) do
     {:ok, _} = Vaults.delete_vault(insert_vault(user_id: user.id))
-  end
-
-  def do_buzz_create(user), do: {:ok, _} = Buzz.create_identity(buzz_attrs(user))
-
-  def do_buzz_update(user) do
-    {:ok, i} = Buzz.create_identity(buzz_attrs(user))
-    {:ok, _} = Buzz.update_identity(i, %{"display_name" => "x"})
-  end
-
-  def do_buzz_delete(user) do
-    {:ok, i} = Buzz.create_identity(buzz_attrs(user))
-    {:ok, _} = Buzz.delete_identity(i)
-  end
-
-  defp buzz_attrs(user) do
-    %{
-      "user_id" => user.id,
-      "agent_id" => insert_agent(user_id: user.id).id,
-      "vault_id" => insert_vault(user_id: user.id).id,
-      "name" => "buzz-#{System.unique_integer([:positive])}",
-      "relay_url" => "wss://relay.test"
-    }
   end
 
   def do_binding_create(user) do

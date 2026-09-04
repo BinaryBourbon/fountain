@@ -39,6 +39,17 @@ fountain/                  umbrella root
       test/fountain/       context unit tests (async: true, DataCase)
       test/fountain_web/   controller/LiveView integration tests
       test/support/        DataCase, ConnCase, factory.ex
+    fountain_buzz/         the Buzz extension (ADR 0043, tracker #1503): an
+                           AGPL OTP app that depends on :fountain, named in
+                           `config :fountain, :extensions` and reached only
+                           through the `Fountain.Extension` callbacks. Owns
+                           FountainBuzz.*, buzz_identities and its migrations,
+                           /api/buzz + /api/mcp/buzz, and the harness tree.
+                           `apps/fountain` depends on it in no direction and
+                           names no module of it (extension_guard_test.exs);
+                           the release's `applications:` decides inclusion.
+                           Its suite runs from its own directory, so
+                           `scripts/test-libraries.sh` runs it in CI.
     (managoat_*/)          the component libraries extracted from the server
                            (ADR 0037, tracker #1334): Apache-2.0, Managoat.*
                            namespace, no reference back into Fountain. Each
@@ -417,9 +428,16 @@ required.
 
 ## Test patterns
 
-`mix test` at the umbrella root runs core and `ee/test` together. To run a
-single ee file by path, run from `apps/fountain` (`mix test ../../ee/test/...`)
-or pass an absolute path — root-relative `ee/...` paths don't resolve.
+`mix test` at the umbrella root runs core, `ee/test` **and** every sibling app
+(`apps/fountain_buzz`). To run a single ee file by path, run from
+`apps/fountain` (`mix test ../../ee/test/...`) or pass an absolute path —
+root-relative `ee/...` paths don't resolve.
+
+`apps/fountain` deliberately depends on no sibling app, so `:fountain_buzz` is
+not on the code path there: running from `apps/fountain` (which is what CI's
+partition script does) runs core only, and `config/test.exs` installs the Buzz
+extension **only where it loads**. Run the extension's suite from
+`apps/fountain_buzz`, or from the root.
 
 ### Database tests
 

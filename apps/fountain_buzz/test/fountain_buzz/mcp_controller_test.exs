@@ -1,5 +1,6 @@
-defmodule FountainWeb.BuzzMcpControllerTest do
+defmodule FountainBuzz.McpControllerTest do
   use FountainWeb.ConnCase, async: true
+  import FountainBuzz.Factory
 
   alias Fountain.{Crypto, Vaults}
 
@@ -9,7 +10,7 @@ defmodule FountainWeb.BuzzMcpControllerTest do
     %{user: user, raw_key: raw_key}
   end
 
-  # A conversation whose vault is a BuzzIdentity vault → a "buzz-driven" conv.
+  # A conversation whose vault is a Identity vault → a "buzz-driven" conv.
   defp buzz_conversation(user) do
     agent = insert_agent(user_id: user.id)
     vault = insert_vault(user_id: user.id)
@@ -61,13 +62,13 @@ defmodule FountainWeb.BuzzMcpControllerTest do
     fake = Path.join(dir, "buzz")
     File.write!(fake, "#!/bin/sh\necho '{\"accepted\":true,\"event_id\":\"e1\"}'\n")
     File.chmod!(fake, 0o755)
-    prev = Application.get_env(:fountain, :buzz_cli_bin)
-    Application.put_env(:fountain, :buzz_cli_bin, fake)
+    prev = Application.get_env(:fountain_buzz, :buzz_cli_bin)
+    Application.put_env(:fountain_buzz, :buzz_cli_bin, fake)
 
     on_exit(fn ->
       if prev,
-        do: Application.put_env(:fountain, :buzz_cli_bin, prev),
-        else: Application.delete_env(:fountain, :buzz_cli_bin)
+        do: Application.put_env(:fountain_buzz, :buzz_cli_bin, prev),
+        else: Application.delete_env(:fountain_buzz, :buzz_cli_bin)
 
       File.rm_rf(dir)
     end)

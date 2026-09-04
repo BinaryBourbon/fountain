@@ -1,4 +1,4 @@
-defmodule FountainWeb.BuzzMcpController do
+defmodule FountainBuzz.McpController do
   @moduledoc """
   The MCP endpoint a hosted Buzz agent's sandbox calls to post to its channel
   (ADR 0020 Phase 2, gate #737). Streamable-HTTP transport: one JSON-RPC message
@@ -7,13 +7,13 @@ defmodule FountainWeb.BuzzMcpController do
   The sandbox authenticates with its sprite token (already in it, so no new
   secret leaves the server). This controller verifies the conversation is
   Buzz-driven, resolves the agent's Nostr key **server-side** from the identity's
-  vault, and hands `Fountain.Buzz.Mcp` a context that shells out to the baked
+  vault, and hands `FountainBuzz.Mcp` a context that shells out to the baked
   `buzz` CLI — the nsec never enters the sandbox.
   """
   use FountainWeb, :controller
 
-  alias Fountain.{Audit, Buzz, Conversations, Crypto, Vaults}
-  alias Fountain.Buzz.Mcp
+  alias Fountain.{Audit, Conversations, Crypto, Vaults}
+  alias FountainBuzz.Mcp
 
   @default_buzz_bin "/usr/local/lib/fountain-buzz/buzz"
 
@@ -35,7 +35,7 @@ defmodule FountainWeb.BuzzMcpController do
   # Resolve conversation → Buzz identity → vault → nsec, all scoped to the caller.
   defp build_ctx(conv_id, user) do
     with %Conversations.Conversation{} = conv <- get_conv(conv_id, user),
-         %Buzz.BuzzIdentity{} = identity <- get_identity(conv, user),
+         %FountainBuzz.Identity{} = identity <- get_identity(conv, user),
          %Vaults.Vault{} = vault <- get_vault(identity, user),
          {:ok, dek} <- Crypto.load_tenant_key(user.id) do
       env =
@@ -59,9 +59,9 @@ defmodule FountainWeb.BuzzMcpController do
   defp get_identity(%{vault_id: nil}, _user), do: :not_buzz
 
   defp get_identity(%{vault_id: vault_id}, user),
-    do: Buzz.get_identity_by_vault(vault_id, user.id) || :not_buzz
+    do: FountainBuzz.get_identity_by_vault(vault_id, user.id) || :not_buzz
 
-  defp get_vault(%Buzz.BuzzIdentity{vault_id: vault_id}, user),
+  defp get_vault(%FountainBuzz.Identity{vault_id: vault_id}, user),
     do: Vaults.get_vault(vault_id, user.id) || :no_vault
 
   # The publish is an effect, not a tenant-state mutation, so it is audited here
@@ -86,5 +86,5 @@ defmodule FountainWeb.BuzzMcpController do
   defp put_present(map, _k, nil), do: map
   defp put_present(map, k, v), do: Map.put(map, k, v)
 
-  defp buzz_bin, do: Application.get_env(:fountain, :buzz_cli_bin, @default_buzz_bin)
+  defp buzz_bin, do: Application.get_env(:fountain_buzz, :buzz_cli_bin, @default_buzz_bin)
 end

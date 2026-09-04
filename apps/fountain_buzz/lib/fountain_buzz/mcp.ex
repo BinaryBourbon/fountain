@@ -1,4 +1,4 @@
-defmodule Fountain.Buzz.Mcp do
+defmodule FountainBuzz.Mcp do
   @moduledoc """
   Server-side MCP tools that let a hosted Buzz agent post to its channel
   (ADR 0020 Phase 2, gate #737 — the reply path).

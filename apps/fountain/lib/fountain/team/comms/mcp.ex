@@ -8,7 +8,8 @@ defmodule Fountain.Team.Comms.Mcp do
   scoped to this teammate's inbox and number. Every send is a tool call
   Fountain can see and audit.
 
-  This is the pure protocol/tool layer, the same shape as `Fountain.Buzz.Mcp`:
+  This is the pure protocol/tool layer, the same shape every served tool set
+  uses (`Fountain.Team.Mcp`, and the Buzz extension's own):
   `handle/2` takes one JSON-RPC request map and a `ctx`, returns one response
   map (or `:noreply` for a notification). The transport and the `ctx`
   construction live in `FountainWeb.TeamCommsMcpController`.

@@ -1,7 +1,8 @@
-defmodule FountainWeb.BuzzAgentControllerTest do
+defmodule FountainBuzz.AgentControllerTest do
   # Every provision request calls Manager.start_harness/1 under the global
   # Horde supervisor, even when start_harness_link/2 later rejects the launch.
   use FountainWeb.ConnCase, async: false
+  import FountainBuzz.Factory
 
   alias Fountain.{Crypto, Vaults}
 
@@ -10,7 +11,7 @@ defmodule FountainWeb.BuzzAgentControllerTest do
     {_rec, raw_key} = insert_api_key(user)
     agent = insert_agent(user_id: user.id)
 
-    on_exit(fn -> Fountain.BuzzTestSupport.stop_all_harnesses!() end)
+    on_exit(fn -> FountainBuzz.TestSupport.stop_all_harnesses!() end)
 
     %{user: user, raw_key: raw_key, agent: agent}
   end
@@ -100,7 +101,7 @@ defmodule FountainWeb.BuzzAgentControllerTest do
 
     conn |> authed_with_key(raw_key) |> delete("/api/buzz/agents/#{id}") |> response(204)
 
-    assert Fountain.Buzz.get_identity(id, user.id) == nil
+    assert FountainBuzz.get_identity(id, user.id) == nil
     assert Vaults.get_vault(vault_id, user.id) == nil
   end
 
@@ -167,7 +168,7 @@ defmodule FountainWeb.BuzzAgentControllerTest do
       |> post("/api/buzz/agents", Map.put(params(agent), "environment_id", foreign.id))
 
     assert json_response(conn, 404)["error"] == "environment_not_found"
-    assert Fountain.Buzz.list_identities(agent.user_id) == []
+    assert FountainBuzz.list_identities(agent.user_id) == []
   end
 
   # #790: the provider passes the desktop's author gate through; it is stored,
@@ -288,16 +289,16 @@ defmodule FountainWeb.BuzzAgentControllerTest do
       raw_key: raw_key,
       agent: agent
     } do
-      prev = Application.get_env(:fountain, :buzz_identity_ceiling)
-      Application.put_env(:fountain, :buzz_identity_ceiling, 1)
+      prev = Application.get_env(:fountain_buzz, :buzz_identity_ceiling)
+      Application.put_env(:fountain_buzz, :buzz_identity_ceiling, 1)
 
       on_exit(fn ->
         if prev,
-          do: Application.put_env(:fountain, :buzz_identity_ceiling, prev),
-          else: Application.delete_env(:fountain, :buzz_identity_ceiling)
+          do: Application.put_env(:fountain_buzz, :buzz_identity_ceiling, prev),
+          else: Application.delete_env(:fountain_buzz, :buzz_identity_ceiling)
       end)
 
-      {:ok, _} = Fountain.Buzz.provision_identity(user.id, params(agent))
+      {:ok, _} = FountainBuzz.provision_identity(user.id, params(agent))
 
       conn =
         conn
@@ -332,7 +333,7 @@ defmodule FountainWeb.BuzzAgentControllerTest do
       # gives, carrying `upgrade_url` — not the generic 422 the catch-all
       # would have produced.
       assert %{"error" => "insufficient_credits"} = json_response(conn, 402)
-      assert Fountain.Buzz.list_identities(user.id) == []
+      assert FountainBuzz.list_identities(user.id) == []
     end
   end
 end

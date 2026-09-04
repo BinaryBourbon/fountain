@@ -34,10 +34,7 @@ defmodule FountainWeb.AdminLive.Users do
      |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin · Users")
      |> assign(:credits_enabled, Fountain.Credits.enabled?())
-     |> assign(
-       :buzz_identity_ceiling,
-       Application.get_env(:fountain, :buzz_identity_ceiling, 10)
-     )}
+     |> assign(:extension_columns, [])}
   end
 
   # Filter/sort/page state lives in the URL, so the 10s refresh, admin
@@ -322,10 +319,12 @@ defmodule FountainWeb.AdminLive.Users do
     # One grouped query, not one per row — the same contract as the sandbox
     # counts above. The page refreshes on a timer.
     contact_counts = Fountain.Team.Comms.contact_counts()
-    # Hosted Buzz agents are standing OS processes on the gateway pods that no
-    # sandbox meter reports (#1017). You cannot bound what nobody can see, so
-    # the slot count sits beside the sandbox and contact counts.
-    identity_counts = Fountain.Buzz.identity_counts()
+    # Whatever installed extensions add (ADR 0043). Each is one grouped query
+    # built once for the page, same contract as the counts above; the console
+    # names no extension module. A hosted Buzz agent is a standing OS process
+    # that no sandbox meter reports (#1017), which is why an extension gets to
+    # put a number on the row at all.
+    extension_columns = Fountain.Extensions.admin_user_columns()
 
     %{users: users, total: total} =
       Accounts.list_users_admin(
@@ -345,14 +344,37 @@ defmodule FountainWeb.AdminLive.Users do
         |> Map.put(:active_sandboxes, Map.get(sandbox_counts, u.id, 0))
         |> Map.put(:sandbox_limit, Fountain.Quotas.sandbox_limit_for(u))
         |> Map.put(:contact_count, Map.get(contact_counts, u.id, 0))
-        |> Map.put(:buzz_identity_count, Map.get(identity_counts, u.id, 0))
+        |> Map.put(
+          :extension_cells,
+          Enum.map(extension_columns, fn {_header, cells} -> Map.get(cells, u.id, 0) end)
+        )
         |> Map.put(:usage, Map.get(usage, u.id, no_usage))
       end)
 
     socket
     |> assign(:users, users)
+    |> assign(:extension_columns, extension_columns)
     |> assign(:total_users, total)
   end
+
+  # One extension-contributed number. A bare value, or
+  # `%{value: v, alert?: true}` when the extension wants it highlighted — its
+  # ceiling, its policy; the host owns the colour.
+  attr :cell, :any, required: true
+
+  defp extension_cell(assigns) do
+    {value, alert?} = normalize_cell(assigns.cell)
+    assigns = assigns |> assign(:value, value) |> assign(:alert?, alert?)
+
+    ~H"""
+    <td class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap">
+      <span class={if(@alert?, do: "text-red-600 font-medium", else: "")}>{@value}</span>
+    </td>
+    """
+  end
+
+  defp normalize_cell(%{value: value} = cell), do: {value, Map.get(cell, :alert?, false)}
+  defp normalize_cell(value), do: {value, false}
 
   defp parse_filters(params) do
     %{
@@ -499,11 +521,12 @@ defmodule FountainWeb.AdminLive.Users do
               </th>
               <th class="px-4 py-2">Sandboxes</th>
               <%!-- Standing slots: a teammate contact is rented from the
-                    balance every month, and a hosted Buzz agent is a
-                    permanent OS process on these pods that no sandbox meter
-                    reports (#1017). Both cost while nobody uses them, which
-                    is exactly why they belong on the row. --%>
-              <th class="px-4 py-2" title="Teammate contacts · hosted Buzz agents">Slots</th>
+                    balance every month and costs while nobody uses it, which
+                    is exactly why it belongs on the row. An installed
+                    extension may add its own column beside this one (#1017's
+                    hosted-agent count is now one of those). --%>
+              <th class="px-4 py-2" title="Teammate contacts">Contacts</th>
+              <th :for={{header, _cells} <- @extension_columns} class="px-4 py-2">{header}</th>
               <th class="px-4 py-2">Onboarding</th>
               <th class="px-4 py-2">
                 <.sort_header label="Last active" col="last_activity" filters={@filters} />
@@ -623,17 +646,11 @@ defmodule FountainWeb.AdminLive.Users do
               </td>
               <td
                 class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"
-                title={"#{u.contact_count} teammate contact(s) · #{u.buzz_identity_count} hosted Buzz agent(s)"}
+                title={"#{u.contact_count} teammate contact(s)"}
               >
-                <span class={
-                  if(u.buzz_identity_count >= @buzz_identity_ceiling,
-                    do: "text-red-600 font-medium",
-                    else: ""
-                  )
-                }>
-                  {u.contact_count}c · {u.buzz_identity_count}b
-                </span>
+                {u.contact_count}
               </td>
+              <.extension_cell :for={cell <- u.extension_cells} cell={cell} />
               <td class="px-4 py-2 text-zinc-500 text-xs">
                 {if u.onboarding_completed_at, do: format_date(u.onboarding_completed_at), else: "—"}
               </td>

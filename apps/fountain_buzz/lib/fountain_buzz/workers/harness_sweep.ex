@@ -1,12 +1,12 @@
-defmodule Fountain.Workers.BuzzHarnessSweep do
+defmodule FountainBuzz.Workers.HarnessSweep do
   @moduledoc """
   Stops a hosted Buzz agent's harness when its tenant runs out of credit, and
   starts it again when they top up (#1017).
 
   ## Why this exists at all
 
-  A `BuzzIdentity` is not a row. Each enabled one is a supervised `buzz-acp`
-  **OS process** on Fountain's own pods (`Fountain.Buzz.Harness`, ADR 0020),
+  A `Identity` is not a row. Each enabled one is a supervised `buzz-acp`
+  **OS process** on Fountain's own pods (`FountainBuzz.Harness`, ADR 0020),
   holding an Erlang port, a live relay connection and a long-lived API key. It
   runs whether or not anyone ever mentions the agent, so the cost is
   **standing, not usage**, and `Fountain.Billing.SandboxUsage` reports zero for
@@ -14,7 +14,7 @@ defmodule Fountain.Workers.BuzzHarnessSweep do
   measures sandboxes.
 
   So the balance could reach zero with the harnesses still up, and
-  `Fountain.Buzz.BootSweep` would stand every one of them back up on the next
+  `FountainBuzz.BootSweep` would stand every one of them back up on the next
   deploy. Under ADR 0031 the gate is the balance, and nothing was applying it
   to the one cost that is invisible to the meters.
 
@@ -45,8 +45,8 @@ defmodule Fountain.Workers.BuzzHarnessSweep do
 
   require Logger
 
-  alias Fountain.Buzz
-  alias Fountain.Buzz.{BootSweep, Manager}
+  alias FountainBuzz, as: Buzz
+  alias FountainBuzz.{BootSweep, Manager}
 
   @impl Oban.Worker
   def perform(_job) do

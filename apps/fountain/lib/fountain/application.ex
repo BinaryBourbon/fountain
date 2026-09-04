@@ -61,7 +61,10 @@ defmodule Fountain.Application do
         Fountain.FeatureFlags.Cache,
         Fountain.Analytics.Sink,
         Fountain.Team.Comms.Inbound.Seen,
-        {Oban, Application.fetch_env!(:fountain, Oban)}
+        # Extensions may add cron entries (ADR 0043, #1507). Core-only, this is
+        # the configured options untouched; nothing in config names a worker
+        # module the release might not carry.
+        {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
       ] ++
         cluster_children(cluster_topologies) ++
         [
@@ -89,28 +92,11 @@ defmodule Fountain.Application do
              max_restarts: 100,
              max_seconds: 10
            ]},
-          # Hosted buzz-acp harnesses (ADR 0020, gate #736). Same Horde shape as
-          # the conversation tree: one harness per Buzz identity, addressable
-          # cluster-wide, surviving node loss. The BootSweep stands the enabled
-          # ones up after both are ready, and is inert until a `buzz-acp` binary
-          # path is configured (increment 2b), so this adds nothing at runtime on
-          # an instance that has not opted in.
-          {Horde.Registry, [name: Fountain.BuzzRegistry, keys: :unique, members: :auto]},
           # Self-hosted runner sockets (ADR 0022): a `fountain runner` daemon
           # dials in and its connection process registers here under the
           # runner id (Fountain.Runners.Host), so `Managoat.Runner.Adapter`
           # on any node can reach it.
           {Horde.Registry, [name: Fountain.RunnerRegistry, keys: :unique, members: :auto]},
-          {Horde.DynamicSupervisor,
-           [
-             name: Fountain.BuzzSupervisor,
-             strategy: :one_for_one,
-             distribution_strategy: Horde.UniformDistribution,
-             members: :auto,
-             max_restarts: 100,
-             max_seconds: 10
-           ]},
-          Fountain.Buzz.BootSweep,
           FountainWeb.Endpoint
         ] ++ broker_children()
 

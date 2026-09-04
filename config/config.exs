@@ -28,12 +28,11 @@ config :fountain, Oban,
        # A server's autonomous quiet timer is in memory. Sweep old, silent
        # running turns whose server disappeared before that timer fired.
        {"*/5 * * * *", Fountain.Workers.AutonomousTurnReaper},
-       # Every 15 minutes: a hosted Buzz agent is a standing OS process that
-       # no sandbox meter sees (#1017), so the balance has to be applied to it
-       # out of band. Stops a harness whose tenant cannot spend, starts one
-       # whose tenant can again. Cheap — one query for the enabled identities
-       # and one gate per distinct tenant.
-       {"*/15 * * * *", Fountain.Workers.BuzzHarnessSweep},
+       # An installed extension may add entries here at boot
+       # (`Fountain.Extensions.oban_options/1`, ADR 0043). They are not listed
+       # in this file, so a core-only release never names a worker module it
+       # does not carry — which would be a crash on start, not a missing
+       # feature.
        # 05:41 UTC — after the 03:17 backup and the 04:23 retention prune, so
        # a backup always captures the accounts before the sweep removes them.
        {"41 5 * * *", Fountain.Workers.UnverifiedAccountPruner},
@@ -88,7 +87,7 @@ config :fountain, :team_contact_ceiling, 10
 # supervised `buzz-acp` OS process on Fountain's own pods (ADR 0020), so the
 # cost is standing rather than metered — no sandbox meter sees it. An abuse
 # ceiling, not an allowance (#1017).
-config :fountain, :buzz_identity_ceiling, 10
+config :fountain_buzz, :buzz_identity_ceiling, 10
 
 config :fountain, :sandboxes,
   reserve_cents: 200,

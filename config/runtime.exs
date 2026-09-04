@@ -969,7 +969,7 @@ config :fountain, :sandboxes,
 config :fountain, :team_contact_ceiling, whole_number.("TEAM_CONTACT_CEILING", 10)
 
 # Hosted Buzz agents one account may run at once — an abuse ceiling (#1017).
-config :fountain, :buzz_identity_ceiling, whole_number.("BUZZ_IDENTITY_CEILING", 10)
+config :fountain_buzz, :buzz_identity_ceiling, whole_number.("BUZZ_IDENTITY_CEILING", 10)
 
 config :fountain, :credits,
   # The opening grant a new account gets, and how many days it lasts.
@@ -1406,10 +1406,66 @@ if config_env() == :prod and server? do
     otlp_headers: otel_headers
 end
 
-# Hosted Buzz harnesses (ADR 0020, gate #736). The `buzz-acp` binary is baked
-# into the amd64 image only and the `fountain` CLI into both; point config at
-# them here so `Fountain.Buzz.BootSweep` can stand up enabled identities. On an
-# arch without buzz-acp the path stays unset and the sweep is inert.
+# The Buzz extension (ADR 0043, #1507). Naming the module here is the whole of
+# Fountain's knowledge of it: `Fountain.Extensions` reads this list and reaches
+# it only through `Fountain.Extension` callbacks. Drop this line and the release
+# serves no Buzz routes, runs no harness and applies none of its migrations —
+# which is what a core distribution is (decision 7).
+#
+# A configured module that will not load is a bad deploy and
+# `Fountain.Extensions.validate!/0` refuses to boot on it, on purpose.
+#
+# Not in :test. `config/runtime.exs` is evaluated for every environment,
+# including by `mix test`, and `config :fountain, :extensions` REPLACES the key
+# rather than appending to it — so without this guard the line below silently
+# deleted every fixture extension `config/test.exs` installs, and the seam's
+# own tests measured an empty list. The test environment's list is
+# `config/test.exs`'s to decide, because it carries the fixtures too.
+# The whole extension list, for every environment, in one declaration —
+# `config :fountain, :extensions` replaces the key rather than appending, so two
+# declarations would silently delete one another.
+#
+# The Buzz extension is installed *where it loads*. `apps/fountain` deliberately
+# depends on no sibling app, so `mix test` run from there — which is what CI's
+# partition script does — has no `:fountain_buzz` on the code path, and naming
+# it unconditionally would make `Fountain.Extensions.validate!/0` refuse to
+# boot every partition. That check working exactly as intended, on a
+# configuration that is wrong for that run.
+#
+# `Code.ensure_loaded?/1` can only answer that after compilation, which is why
+# this lives here and not in `config/test.exs`: that file is evaluated before
+# the apps are built, where the answer is always false.
+buzz_extension =
+  if Code.ensure_loaded?(FountainBuzz.Extension), do: [FountainBuzz.Extension], else: []
+
+# Fixture extensions prove the seam without Buzz (#1505). They are named here
+# rather than set per test because `:extensions` is global application state and
+# a test that wrote it would collide with every async test in the VM (#1214);
+# tests vary the fixture, not the configuration.
+#
+# The misbehaving ones each fail for a single conversation id, which is what
+# makes them safe to install beside the others and what lets the isolation tests
+# exercise the real fan-out rather than a copy of its logic.
+extension_fixtures =
+  if config_env() == :test do
+    [
+      Fountain.ExtensionFixtures.Enabled,
+      Fountain.ExtensionFixtures.Disabled,
+      Fountain.ExtensionFixtures.Silent,
+      Fountain.ExtensionFixtures.Exploding,
+      Fountain.ExtensionFixtures.WrongShape
+    ]
+  else
+    []
+  end
+
+config :fountain, :extensions, buzz_extension ++ extension_fixtures
+
+# The extension's own configuration, under its own otp_app. The `buzz-acp`
+# binary is baked into the amd64 image only and the `fountain` CLI into both;
+# point config at them here so `FountainBuzz.BootSweep` can stand up enabled
+# identities. On an arch without buzz-acp the path stays unset and the sweep is
+# inert.
 #
 # The harness's ACP child (`fountain acp`) talks back to THIS server, so its
 # base URL defaults to the loopback endpoint — no egress, no TLS, no dependence
@@ -1418,14 +1474,14 @@ if config_env() == :prod do
   buzz_acp_path = "/usr/local/lib/fountain-buzz/buzz-acp"
 
   if File.exists?(buzz_acp_path) do
-    config :fountain, :buzz_acp_path, buzz_acp_path
+    config :fountain_buzz, :buzz_acp_path, buzz_acp_path
   end
 
-  config :fountain,
+  config :fountain_buzz,
          :fountain_cli_path,
          System.get_env("FOUNTAIN_CLI_PATH", "/usr/local/bin/fountain")
 
-  config :fountain,
+  config :fountain_buzz,
          :buzz_acp_base_url,
          System.get_env("BUZZ_ACP_BASE_URL") ||
            "http://127.0.0.1:#{System.get_env("PORT", "4000")}"

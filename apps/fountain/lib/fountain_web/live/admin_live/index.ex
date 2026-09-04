@@ -20,7 +20,6 @@ defmodule FountainWeb.AdminLive.Index do
 
   alias Fountain.{Billing, Conversations}
   alias Fountain.Billing.SandboxUsage
-  alias Fountain.Buzz.Manager, as: BuzzManager
 
   @impl true
   def mount(_params, _session, socket) do
@@ -44,7 +43,10 @@ defmodule FountainWeb.AdminLive.Index do
     |> assign(:funnel, Fountain.Funnel.summary_admin())
     |> assign(:provider_spend, Billing.provider_spend())
     |> assign(:sandbox_count, Conversations._unsafe_count_sandboxes_admin())
-    |> assign(:buzz_runtime_count, BuzzManager.running_count())
+    # Whatever installed extensions report (ADR 0043). The console renders
+    # numbers it is handed; it does not know what an extension is called or
+    # what its figures mean, and `apps/fountain/lib` names no extension module.
+    |> assign(:extension_overview, Fountain.Extensions.admin_overview())
     |> assign_billing_overview()
   end
 
@@ -58,6 +60,42 @@ defmodule FountainWeb.AdminLive.Index do
       assign(socket, :billing_overview, nil)
     end
   end
+
+  # An extension's admin figure. `{label, value}` or `{label, value, opts}`,
+  # where opts may carry :navigate (make the tile a link) and :note (a line
+  # under the number). The host owns every element of the markup.
+  attr :tile, :any, required: true
+
+  defp extension_tile(assigns) do
+    {label, value, opts} = normalize_tile(assigns.tile)
+
+    assigns =
+      assigns
+      |> assign(:label, label)
+      |> assign(:value, value)
+      |> assign(:navigate, Keyword.get(opts, :navigate))
+      |> assign(:note, Keyword.get(opts, :note))
+
+    ~H"""
+    <.link
+      :if={@navigate}
+      navigate={@navigate}
+      class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+    >
+      <div class="text-xs text-zinc-500">{@label}</div>
+      <div class="text-2xl font-semibold tabular-nums">{@value}</div>
+      <div :if={@note} class="text-xs text-zinc-500">{@note}</div>
+    </.link>
+    <div :if={!@navigate} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+      <div class="text-xs text-zinc-500">{@label}</div>
+      <div class="text-2xl font-semibold tabular-nums">{@value}</div>
+      <div :if={@note} class="text-xs text-zinc-500">{@note}</div>
+    </div>
+    """
+  end
+
+  defp normalize_tile({label, value}), do: {label, value, []}
+  defp normalize_tile({label, value, opts}) when is_list(opts), do: {label, value, opts}
 
   @impl true
   def render(assigns) do
@@ -193,14 +231,11 @@ defmodule FountainWeb.AdminLive.Index do
             <div class="text-xs text-zinc-500">running now ↗</div>
           </.link>
 
-          <.link
-            navigate={~p"/admin/users"}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
-          >
-            <div class="text-xs text-zinc-500">Buzz runtimes</div>
-            <div class="text-2xl font-semibold tabular-nums">{@buzz_runtime_count}</div>
-            <div class="text-xs text-zinc-500">running now · owners ↗</div>
-          </.link>
+          <%!-- Installed extensions' figures (ADR 0043). One tile each, in
+                configured order, rendered from data the extension returns.
+                Nothing here knows what an extension is; with none installed
+                this renders nothing. --%>
+          <.extension_tile :for={tile <- @extension_overview} tile={tile} />
 
           <%!-- Hours, not money: minutes on different providers cost
                 different amounts, and only /admin/finance has the rate card

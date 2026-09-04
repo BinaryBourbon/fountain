@@ -147,21 +147,16 @@ config :fountain, :webhook_req_options, plug: {Req.Test, Fountain.Webhooks}
 config :fountain, :webhook_allow_http, true
 config :fountain, :webhooks_enabled, true
 
-# Extensions (ADR 0043, #1505). The suite installs only fixtures — the seam is
-# proven before anything moves through it, and Buzz does not become an
-# extension until #1507. Named here rather than set per test because
-# `:extensions` is global application state: a test that wrote it would collide
-# with every other async test in the VM (the #1214 shape). Tests vary the
-# fixture, not the configuration.
+# Extensions (ADR 0043) are assembled in `config/runtime.exs`, not here.
 #
-# These are installed for the suite AND for `mix openapi.export`, which runs in
-# this env. The fixtures therefore describe no OpenAPI paths from here — that
-# flag is set in test/test_helper.exs, which only a test run loads. See
-# ExtensionFixtures.Enabled.describes_openapi_paths?/0.
-config :fountain, :extensions, [
-  Fountain.ExtensionFixtures.Enabled,
-  Fountain.ExtensionFixtures.Disabled,
-  Fountain.ExtensionFixtures.Silent,
-  Fountain.ExtensionFixtures.Exploding,
-  Fountain.ExtensionFixtures.WrongShape
-]
+# `Code.ensure_loaded?/1` is the only way to ask whether a sibling app is on
+# this run's code path — `apps/fountain` depends on none of them, so running
+# from there (which is what CI's partition script does) must install none — and
+# that question can only be answered AFTER compilation. This file is evaluated
+# before it, where the answer is always false. `runtime.exs` runs after, in
+# every entry point, so the whole list is built there in one place: fixtures for
+# the suite, plus the Buzz extension where it loads.
+#
+# `config :fountain, :extensions` REPLACES the key rather than appending, which
+# is why it must be one declaration and not two — two silently deleted the
+# fixtures and made the seam's own tests measure an empty list.

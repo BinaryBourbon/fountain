@@ -97,7 +97,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
     {"POST /api/apply", 401} => :plug_status,
     {"POST /api/auth/token", 429} => :plug_status,
     {"POST /api/avatars/generate", 400} => :plug_status,
-    {"POST /api/buzz/agents", 404} => :plug_status,
     {"POST /api/conversations", 400} => :plug_status,
     {"POST /api/conversations", 409} => :plug_status,
     {"POST /api/conversations", 429} => :plug_status,

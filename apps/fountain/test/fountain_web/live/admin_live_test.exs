@@ -18,8 +18,12 @@ defmodule FountainWeb.AdminLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/admin")
       assert html =~ "Admin"
       assert html =~ "Users"
-      assert html =~ "Buzz runtimes"
-      assert html =~ "running now · owners"
+      # An installed extension's figure, rendered by the console from data
+      # (ADR 0043). Buzz's own tile is asserted in the extension's suite.
+      assert html =~ Fountain.ExtensionFixtures.Enabled.overview_label()
+      # The tile's optional note and link, so the whole `{label, value, opts}`
+      # shape is covered rather than just the label.
+      assert html =~ "contributed by an extension"
     end
 
     test "regular user is redirected away from /admin", %{conn: conn} do

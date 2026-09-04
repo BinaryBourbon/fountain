@@ -1,7 +1,7 @@
-defmodule Fountain.BuzzTestSupport do
+defmodule FountainBuzz.TestSupport do
   @moduledoc false
 
-  @supervisor Fountain.BuzzSupervisor
+  @supervisor FountainBuzz.Supervisor
   @drain_tries 500
 
   # Horde reports a child as :restarting between the old PID going down and

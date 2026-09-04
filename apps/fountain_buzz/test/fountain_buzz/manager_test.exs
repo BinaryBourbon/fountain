@@ -1,13 +1,14 @@
-defmodule Fountain.Buzz.ManagerTest do
+defmodule FountainBuzz.ManagerTest do
   # async: false — starts real harness processes under the global Horde
   # supervisor, and DataCase gives shared-mode DB so their terminate-time key
   # revocation reaches this connection.
   use Fountain.DataCase, async: false
+  import FountainBuzz.Factory
 
   import Ecto.Query
 
   alias Fountain.Accounts.ApiKey
-  alias Fountain.Buzz.Manager
+  alias FountainBuzz.Manager
   alias Fountain.Repo
 
   setup do
@@ -19,7 +20,7 @@ defmodule Fountain.Buzz.ManagerTest do
     on_exit(fn ->
       # Tear down every harness this test left running (no prod harnesses exist
       # under this supervisor in the test node) before the tmp dir goes away.
-      Fountain.BuzzTestSupport.stop_all_harnesses!()
+      FountainBuzz.TestSupport.stop_all_harnesses!()
 
       File.rm_rf(dir)
     end)
@@ -102,7 +103,7 @@ defmodule Fountain.Buzz.ManagerTest do
     {:ok, old_pid} = Manager.start_harness(identity, launch_opts(fake))
     [old_key] = active_keys(identity.user_id)
 
-    {:ok, identity} = Fountain.Buzz.update_identity(identity, %{"respond_to" => "anyone"})
+    {:ok, identity} = FountainBuzz.update_identity(identity, %{"respond_to" => "anyone"})
     assert {:ok, new_pid} = Manager.restart_harness(identity, launch_opts(fake))
 
     assert is_pid(new_pid)
@@ -177,22 +178,22 @@ defmodule Fountain.Buzz.ManagerTest do
       dir = Path.dirname(fake)
       old = Path.join(dir, "old-launch.sh")
       new = Path.join(dir, "new-launch.sh")
-      real_launcher = Application.app_dir(:fountain, "priv/buzz-acp-launch.sh")
+      real_launcher = Application.app_dir(:fountain_buzz, "priv/buzz-acp-launch.sh")
 
       for launcher <- [old, new] do
         File.write!(launcher, "#!/bin/sh\nexec \"#{real_launcher}\" \"$@\"\n")
         File.chmod!(launcher, 0o755)
       end
 
-      Application.put_env(:fountain, :buzz_acp_launcher, old)
-      on_exit(fn -> Application.delete_env(:fountain, :buzz_acp_launcher) end)
+      Application.put_env(:fountain_buzz, :buzz_acp_launcher, old)
+      on_exit(fn -> Application.delete_env(:fountain_buzz, :buzz_acp_launcher) end)
 
       assert {:ok, pid1} = Manager.start_harness_link(identity.id, launch_opts(fake))
       assert :sys.get_state(pid1).launcher == old
       GenServer.stop(pid1)
 
       # "The next release": the launcher lives somewhere else now.
-      Application.put_env(:fountain, :buzz_acp_launcher, new)
+      Application.put_env(:fountain_buzz, :buzz_acp_launcher, new)
       assert {:ok, pid2} = Manager.start_harness_link(identity.id, launch_opts(fake))
       assert :sys.get_state(pid2).launcher == new
       GenServer.stop(pid2)
@@ -202,7 +203,7 @@ defmodule Fountain.Buzz.ManagerTest do
       fake: fake
     } do
       identity = insert_buzz_identity()
-      {:ok, _} = Fountain.Buzz.update_identity(identity, %{enabled: false}, actor: "system:test")
+      {:ok, _} = FountainBuzz.update_identity(identity, %{enabled: false}, actor: "system:test")
       assert :ignore = Manager.start_harness_link(identity.id, launch_opts(fake))
       assert active_key_count(identity.user_id) == 0
 

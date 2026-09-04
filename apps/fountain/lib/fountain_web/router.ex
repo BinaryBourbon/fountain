@@ -474,10 +474,6 @@ defmodule FountainWeb.Router do
     # Full-text search across the caller's conversations (#826).
     get "/search", SearchController, :index
 
-    # MCP tools a hosted Buzz agent's sandbox calls to post to its channel
-    # (ADR 0020, #737). One JSON-RPC message per POST; the nsec is resolved
-    # server-side and never enters the sandbox.
-    post "/mcp/buzz/:conversation_id", BuzzMcpController, :handle
     # The team tools a teammate's sandbox calls to see and message the team (#851).
     post "/mcp/team/:conversation_id", TeamMcpController, :handle
 
@@ -511,10 +507,6 @@ defmodule FountainWeb.Router do
     # the agent/environment forms elsewhere (#815).
     get "/catalog", CatalogController, :show
     post "/avatars/generate", AvatarGenerateController, :create
-
-    # Hosted Buzz agents (ADR 0020, #738). `create` is the Fountain side of a
-    # remote-agents provider deploy — idempotent on the Nostr pubkey.
-    resources "/buzz/agents", BuzzAgentController, only: [:index, :create, :update, :delete]
 
     # Bulk apply for compiled fountain.yml manifests (`fountain apply`).
     post "/apply", ApplyController, :create
