@@ -32,9 +32,16 @@ defmodule FountainWeb.SchemaGuard do
   @doc """
   Watch every response the suite renders.
 
-  Attached once from `test_helper.exs`. `Plug.Telemetry` is already in the
+  Attached from `test_helper.exs`. `Plug.Telemetry` is already in the
   endpoint, so this costs nothing per test and sees every response any
   controller test produces — 146 operations, from tests that already exist.
+
+  **Every app with a helper attaches it, and calling it again is a no-op.**
+  Each umbrella app's helper runs in the same VM under a root `mix test`, and
+  each extension attaches for its own standalone run (#1536). Naively that
+  spawned a second keeper, which died on `:ets.new` against a table the first
+  one already owns — harmless, but a crash report in every run. So a second
+  call finds the table and returns.
 
   **It records rather than raises, and that is not a style choice.**
   `:telemetry` wraps a handler in a try/catch: a handler that raises is logged
@@ -46,22 +53,29 @@ defmodule FountainWeb.SchemaGuard do
   """
   @spec attach() :: :ok
   def attach do
-    keeper =
-      spawn(fn ->
-        :ets.new(@table, [:public, :named_table, :duplicate_bag])
-        Process.sleep(:infinity)
-      end)
+    if :ets.whereis(@table) == :undefined do
+      keeper =
+        spawn(fn ->
+          :ets.new(@table, [:public, :named_table, :duplicate_bag])
+          Process.sleep(:infinity)
+        end)
 
-    # The table dies with its owner, so wait for the keeper to create it before
-    # any request can look for it.
-    wait_for_table(keeper, 200)
+      # The table dies with its owner, so wait for the keeper to create it
+      # before any request can look for it.
+      wait_for_table(keeper, 200)
+    end
 
-    :telemetry.attach(
-      "schema-guard",
-      [:phoenix, :endpoint, :stop],
-      &__MODULE__.handle/4,
-      nil
-    )
+    # `:already_exists` is the second helper attaching the same handler, which
+    # is the intended outcome rather than a failure.
+    case :telemetry.attach(
+           "schema-guard",
+           [:phoenix, :endpoint, :stop],
+           &__MODULE__.handle/4,
+           nil
+         ) do
+      :ok -> :ok
+      {:error, :already_exists} -> :ok
+    end
   end
 
   defp wait_for_table(_keeper, 0), do: raise("schema guard: the violations table never appeared")
@@ -201,13 +215,38 @@ defmodule FountainWeb.SchemaGuard do
       :error ->
         {:skip, :no_route}
 
+      # An extension's routes sit behind `forward "/", ExtensionDispatch`, and a
+      # forward is opaque to `route_info/4`: the core router reports the
+      # forward's own route, `/api`, which matches no documented path. So every
+      # extension response was skipped as `:undocumented` and the guard has
+      # never seen one (ADR 0043, #1536). Re-resolve through the mount.
+      %{plug: FountainWeb.Plugs.ExtensionDispatch} ->
+        extension_template(conn)
+
       %{route: route} ->
-        {:ok, Regex.replace(~r/:([a-zA-Z_][a-zA-Z0-9_]*)/, route, "{\\1}")}
+        {:ok, spell(route)}
 
       _ ->
         {:skip, :no_route}
     end
   end
+
+  # `Fountain.Extensions` is the host's own registry, so this reads no
+  # extension module and crosses no ADR 0043 boundary.
+  defp extension_template(%Plug.Conn{} = conn) do
+    segments = conn.request_path |> String.split("/", trim: true) |> Enum.drop(1)
+
+    with {_ext, mount, plug} when is_atom(plug) <- Fountain.Extensions.find_mount(segments),
+         under = segments |> Enum.drop(length(mount)) |> Enum.join("/"),
+         %{route: route} <-
+           Phoenix.Router.route_info(plug, conn.method, "/" <> under, conn.host) do
+      {:ok, spell("/api/" <> Enum.join(mount, "/") <> route)}
+    else
+      _ -> {:skip, :no_route}
+    end
+  end
+
+  defp spell(route), do: Regex.replace(~r/:([a-zA-Z_][a-zA-Z0-9_]*)/, route, "{\\1}")
 
   defp operation(conn, template) do
     spec = spec()

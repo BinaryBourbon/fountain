@@ -67,6 +67,22 @@ defmodule Fountain.ExtensionFixtures do
         }
       })
     end
+
+    defmodule Deep do
+      @moduledoc false
+      require OpenApiSpex
+
+      OpenApiSpex.schema(%{
+        title: "FixtureDeep",
+        type: :object,
+        properties: %{
+          path_info: %OpenApiSpex.Schema{
+            type: :array,
+            items: %OpenApiSpex.Schema{type: :string}
+          }
+        }
+      })
+    end
   end
 
   defmodule Controller do
@@ -77,10 +93,20 @@ defmodule Fountain.ExtensionFixtures do
     use Phoenix.Controller, formats: [:json]
     use OpenApiSpex.ControllerSpecs
 
+    # Both operations declare every status they can render, because the schema
+    # guard resolves through `ExtensionDispatch` since #1536 and this fixture is
+    # an installed extension in the test VM like any other. Before that it was
+    # the only kind of extension there was, and none of its responses were ever
+    # checked — `:whoami` declared no 401 and `:deep` declared nothing at all.
+    # A fixture that models the seam should model a well-formed extension too.
     operation(:whoami,
       summary: "Who the host authenticated",
       operation_id: "fixtureWhoami",
-      responses: [ok: {"Whoami", "application/json", Fountain.ExtensionFixtures.Schemas.Whoami}]
+      responses: [
+        ok: {"Whoami", "application/json", Fountain.ExtensionFixtures.Schemas.Whoami},
+        unauthorized:
+          {"Missing or invalid API key", "application/json", FountainWeb.Schemas.Error}
+      ]
     )
 
     def whoami(conn, _params) do
@@ -94,7 +120,15 @@ defmodule Fountain.ExtensionFixtures do
       })
     end
 
-    operation(:deep, summary: "A nested path", operation_id: "fixtureDeep", responses: [])
+    operation(:deep,
+      summary: "A nested path",
+      operation_id: "fixtureDeep",
+      responses: [
+        ok: {"The trimmed path", "application/json", Fountain.ExtensionFixtures.Schemas.Deep},
+        unauthorized:
+          {"Missing or invalid API key", "application/json", FountainWeb.Schemas.Error}
+      ]
+    )
 
     def deep(conn, _params), do: json(conn, %{path_info: conn.path_info})
   end

@@ -6996,6 +6996,15 @@ export interface operations {
                     "application/json": components["schemas"]["BuzzIdentityListResponse"];
                 };
             };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "FountainWeb.BuzzAgentController.create": {
@@ -7021,8 +7030,26 @@ export interface operations {
                     "application/json": components["schemas"]["BuzzIdentityResponse"];
                 };
             };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Balance exhausted, or the hosted-agent ceiling is reached */
             402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The named environment does not exist */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7067,6 +7094,15 @@ export interface operations {
                     "application/json": components["schemas"]["BuzzIdentityResponse"];
                 };
             };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Not found */
             404: {
                 headers: {
@@ -7106,6 +7142,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Not found */
             404: {
                 headers: {
@@ -7141,6 +7186,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuzzIdentityResponse"];
+                };
+            };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Not found */
@@ -9346,6 +9400,15 @@ export interface operations {
                     "application/json": components["schemas"]["SupportReportListResponse"];
                 };
             };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "FountainWeb.SupportReportController.create": {
@@ -9369,6 +9432,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupportReportResponse"];
+                };
+            };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Validation errors */
@@ -9400,6 +9472,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupportReportResponse"];
+                };
+            };
+            /** @description Missing or invalid API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Not found */
