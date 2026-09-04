@@ -167,6 +167,22 @@ defmodule FountainBuzz.Manager do
   Returns `:ok` whether or not the entry went, deliberately. The caller's own
   assertion is the real check and gives the better failure message; a raise
   from in here would report the helper instead of the thing under test.
+
+  Waits on the registry *row*, not on `running?/1`. The two are different
+  clocks: `Horde.Registry.lookup/2` checks the pid is alive before handing a
+  row back, so `whereis/1` and `running?/1` report a harness gone the moment
+  its process dies, while `running_count/0` is `:ets.info(size)` over the same
+  table and keeps counting the row until Horde's monitor reaps it. Waiting on
+  the first and then reading the second is a wait that is over before the
+  number it waits for can move — which is why #1544's fix left
+  `ManagerTest "running_count counts registered harnesses cluster-wide"`
+  failing on CI three more times. The lag is a microsecond on an idle
+  laptop and as long as the registry takes to be scheduled on a loaded one.
+
+  `running_count/0` deliberately keeps counting the unreaped row: it is what
+  teardown drains against (`stop_all_harnesses!/1`), and a count that dropped
+  with the pid would let a module hand its successor a baseline still about to
+  move (#1533).
   """
   @spec await_stopped(String.t(), non_neg_integer()) :: :ok
   def await_stopped(identity_id, tries \\ 50)
@@ -174,12 +190,20 @@ defmodule FountainBuzz.Manager do
   def await_stopped(_identity_id, 0), do: :ok
 
   def await_stopped(identity_id, tries) do
-    if running?(identity_id) do
+    if registered?(identity_id) do
       Process.sleep(20)
       await_stopped(identity_id, tries - 1)
     else
       :ok
     end
+  end
+
+  # Whether the registry still holds a row for this key, alive or not — the
+  # view `running_count/0` counts, as opposed to the liveness-filtered one
+  # `whereis/1` reads.
+  defp registered?(identity_id) do
+    Horde.Registry.select(@registry, [{{:"$1", :_, :_}, [{:==, :"$1", identity_id}], [true]}]) !=
+      []
   end
 
   defp start_child(%Identity{} = identity, opts) do
