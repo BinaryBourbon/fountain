@@ -43,7 +43,15 @@ defmodule FountainSupport.ReportController do
     request_body: {"Report", "application/json", Schemas.SupportReportCreateRequest},
     responses: [
       created: {"Report", "application/json", Schemas.SupportReportResponse},
-      unprocessable_entity: {"Validation errors", "application/json", FountainWeb.Schemas.Error}
+      unprocessable_entity: {"Validation errors", "application/json", FountainWeb.Schemas.Error},
+      # Declared on every operation here rather than allowlisted, which is what
+      # #1536 asked for. `{"POST /api/support/reports", 401}` was on the core
+      # allowlist until #1528 deleted it as stale — and it was not stale, it was
+      # merely unobservable, because the staleness check reads the operations
+      # `apps/fountain` serves and that run installs no extension. `TenantAPIAuth`
+      # runs in the host's `:api` pipeline before the forward, so all three
+      # operations here can answer 401.
+      unauthorized: {"Missing or invalid API key", "application/json", FountainWeb.Schemas.Error}
     ]
   )
 
@@ -62,7 +70,10 @@ defmodule FountainSupport.ReportController do
     operation_id: "FountainWeb.SupportReportController.index",
     summary: "List the caller's reports",
     description: "Newest first, with forwarding status and the issue URL when one was created.",
-    responses: [ok: {"Reports", "application/json", Schemas.SupportReportListResponse}]
+    responses: [
+      ok: {"Reports", "application/json", Schemas.SupportReportListResponse},
+      unauthorized: {"Missing or invalid API key", "application/json", FountainWeb.Schemas.Error}
+    ]
   )
 
   def index(conn, _params) do
@@ -76,7 +87,8 @@ defmodule FountainSupport.ReportController do
     parameters: [id: [in: :path, type: :string, required: true]],
     responses: [
       ok: {"Report", "application/json", Schemas.SupportReportResponse},
-      not_found: {"Not found", "application/json", FountainWeb.Schemas.Error}
+      not_found: {"Not found", "application/json", FountainWeb.Schemas.Error},
+      unauthorized: {"Missing or invalid API key", "application/json", FountainWeb.Schemas.Error}
     ]
   )
 

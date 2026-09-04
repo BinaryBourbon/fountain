@@ -35,7 +35,15 @@ defmodule FountainBuzz.AgentController do
     operation_id: "FountainWeb.BuzzAgentController.index",
     summary: "List hosted Buzz agents",
     responses: [
-      ok: {"Buzz agents", "application/json", FountainBuzz.Schemas.BuzzIdentityListResponse}
+      ok: {"Buzz agents", "application/json", FountainBuzz.Schemas.BuzzIdentityListResponse},
+      # Declared on every operation here rather than allowlisted, which is what
+      # #1536 asked for: the schema guard could not see an extension's responses
+      # at all until it learned to resolve through `ExtensionDispatch`, and the
+      # core allowlist is the wrong home for an entry a core-only run cannot
+      # evaluate. `TenantAPIAuth` runs in the host's `:api` pipeline before the
+      # forward, so every operation below can answer 401. Core's own operations
+      # are still on the allowlist under #1432; there are 66 of those and 8 here.
+      unauthorized: {"Missing or invalid API key", "application/json", Schemas.Error}
     ]
   )
 
@@ -64,7 +72,12 @@ defmodule FountainBuzz.AgentController do
       payment_required:
         {"Balance exhausted, or the hosted-agent ceiling is reached", "application/json",
          Schemas.Error},
-      unprocessable_entity: {"Validation error", "application/json", Schemas.Error}
+      unprocessable_entity: {"Validation error", "application/json", Schemas.Error},
+      # `environment_id` naming an environment that does not exist, or belongs
+      # to somebody else. Undeclared until #1536 taught the schema guard to see
+      # this extension at all, and then found it on the first run.
+      not_found: {"The named environment does not exist", "application/json", Schemas.Error},
+      unauthorized: {"Missing or invalid API key", "application/json", Schemas.Error}
     ]
   )
 
@@ -161,7 +174,8 @@ defmodule FountainBuzz.AgentController do
     responses: [
       ok: {"Buzz agent", "application/json", FountainBuzz.Schemas.BuzzIdentityResponse},
       not_found: {"Not found", "application/json", Schemas.Error},
-      unprocessable_entity: {"Validation error", "application/json", Schemas.Error}
+      unprocessable_entity: {"Validation error", "application/json", Schemas.Error},
+      unauthorized: {"Missing or invalid API key", "application/json", Schemas.Error}
     ]
   )
 
@@ -211,7 +225,8 @@ defmodule FountainBuzz.AgentController do
     parameters: [id: [in: :path, type: :string, description: "Buzz agent id"]],
     responses: [
       no_content: "Deleted",
-      not_found: {"Not found", "application/json", Schemas.Error}
+      not_found: {"Not found", "application/json", Schemas.Error},
+      unauthorized: {"Missing or invalid API key", "application/json", Schemas.Error}
     ]
   )
 

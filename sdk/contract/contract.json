@@ -147,6 +147,11 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
@@ -857,6 +862,11 @@
         "200": {
           "application/json": {
             "ref": "BuzzIdentityListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -1625,6 +1635,11 @@
           "application/json": {
             "ref": "SupportReportListResponse"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1637,6 +1652,11 @@
         "200": {
           "application/json": {
             "ref": "SupportReportResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "404": {
@@ -2120,6 +2140,11 @@
         "200": {
           "application/json": {
             "ref": "BuzzIdentityResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "404": {
@@ -3157,7 +3182,17 @@
             "ref": "BuzzIdentityResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "402": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
           "application/json": {
             "ref": "Error"
           }
@@ -3530,6 +3565,11 @@
         "201": {
           "application/json": {
             "ref": "SupportReportResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "422": {
@@ -4284,6 +4324,11 @@
         "200": {
           "application/json": {
             "ref": "BuzzIdentityResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "404": {

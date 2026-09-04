@@ -14,6 +14,26 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   fails if the list grows past `@ceiling`, so growing it is a deliberate edit a
   reviewer sees.
 
+  ## An extension's operations do not belong here
+
+  This list is core's, and only core's. `apps/fountain` installs no extension
+  (ADR 0043, and `config/runtime.exs` asks `Code.ensure_loaded?/1`), so the
+  staleness check in `SchemaGuardrailTest` — "every entry names an operation
+  the API still serves" — cannot see an extension operation and reports any
+  entry naming one as stale.
+
+  That is not a hypothetical. `{"POST /api/support/reports", 401}` sat here
+  until #1528 deleted it as stale, and it was not stale: the operation had
+  simply moved into `apps/fountain_support`, where nothing checked it either,
+  because the schema guard could not resolve through `ExtensionDispatch` at all
+  until #1536. A ratchet cannot count what it cannot see, and the entry looked
+  like a fix landing.
+
+  So an extension declares the statuses on its own operations instead — there
+  were 8 of them across both extensions, against the 66 core operations #1432
+  still owes. `FountainWeb.ExtensionSchemaGuardCase` enforces it from each
+  extension's suite, which is the only run that can.
+
   ## The families
 
   `:plug_status` — the operation does not declare a status something in the
