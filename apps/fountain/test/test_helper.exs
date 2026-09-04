@@ -1,5 +1,25 @@
 ExUnit.start()
 
+# ─── The `-core` distribution's own assertions (#1574) ───────────────────────
+#
+# A handful of tests assert what an image *without* an extension serves: no
+# /buzz-launch, no Nostr card, no fountain-buzz row. Whether this VM is that
+# image is decided by the invocation, not by the code. `config/runtime.exs`
+# names each extension only where it loads, so `mix test` from apps/fountain —
+# what scripts/test-partition.sh runs, and what CI is therefore green on —
+# installs none, while `mix test` at the umbrella root, which CLAUDE.md's Quick
+# start gives, has :fountain_buzz on the code path and installs it. Those five
+# tests then described a distribution this VM is not, and the documented local
+# command was red on a green `main`.
+#
+# Excluded rather than duplicated: the bundled side is asserted in
+# apps/fountain_buzz/test/fountain_buzz/marketing_test.exs, which is the suite
+# that has the extension. Appended to whatever is already excluded so a
+# `--exclude` on the command line survives.
+if Fountain.Extensions.installed?(:buzz) do
+  ExUnit.configure(exclude: ExUnit.configuration()[:exclude] ++ [:core_distribution])
+end
+
 # The managoat_runner library has no config of its own and no default host on
 # purpose; its own test helper names Managoat.Runner.Host.Local. While it was
 # an umbrella app, `mix test` at the root ran its suite in this VM first and
