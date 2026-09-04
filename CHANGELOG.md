@@ -16,6 +16,22 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **Credential brokerage is on for every account on the hosted platform**
+  (ADR 0019 §9, home-cloud#163). It was limited access, enrolled by hand, and
+  named one tenant from 2026-08-25. The docs said so on six pages; they now
+  say what is true. `BROKER_TENANTS` is `*` there, the wildcard #1553 added.
+  Nothing changes for a self-hosted instance, where the broker stays off
+  until an operator sets `BROKER_LISTEN_PORT` and names tenants.
+
+  The reason to widen was the inference credential rather than tenant
+  secrets. Gate 3 covers every conversation, so the platform's own keys stop
+  entering a sandbox in the clear for everyone at once; at the time of the
+  flip every brokerable tenant secret in the deployment belonged to one
+  account and `secret_bindings` was empty. `Feature status` now lists two
+  features rather than three.
+
 ### Added
 
 - **`BROKER_TENANTS` takes `*`, so the ratchet has an end state** (ADR 0019

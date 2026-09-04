@@ -154,10 +154,10 @@ redaction that a new caller will one day forget.
 
 ## Bindings, when the broker is on
 
-!!! note "Limited access"
-    On the hosted platform the broker is on for the accounts we enrol by
-    hand. Without it, a secret enters the sandbox in the clear, and the
-    bindings page and routes are absent. Read
+!!! note "Needs the credential broker"
+    On the hosted platform the broker is on for every account. Without it, a
+    secret enters the sandbox in the clear, and the bindings page and routes
+    are absent. On your own instance, read
     [Feature status](../reference/feature-status.md).
 
 <!-- vale STE.IngForms = NO -->

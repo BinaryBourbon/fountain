@@ -1,6 +1,6 @@
 # Feature status
 
-Most of Fountain is on for every account. Three features are not. This page
+Most of Fountain is on for every account. Two features are not. This page
 lists them. Each row says who has the feature on the hosted platform, and
 how to turn it on.
 
@@ -11,7 +11,6 @@ describes one of these features.
 |---|---|---|---|
 | [Teammate email and phone](../catalog/mcp-servers/fountain-comms.md) | Alpha | Off by default. Behind the `team_comms` flag. [Ask us](../api.md#support) to turn it on for your account. | Set the AgentMail and AgentPhone keys, and add `team_comms` to `FEATURE_FLAGS_ON`. Read the [configuration reference](../configuration.md#teammate-email-and-phone). |
 | [OpenAI-compatible API](../integrations/openai-compatible.md) | Alpha | Off by default. Behind the `openai_compat` flag. [Ask us](../api.md#support) to turn it on for your account. | Add `openai_compat` to `FEATURE_FLAGS_ON`. Read the [configuration reference](../configuration.md). |
-| [Brokered credentials](../concepts/secrets.md#bindings-when-the-broker-is-on) | Limited access | Off by default. We enrol an account by hand. [Ask us](../api.md#support) to enrol yours. | Set `BROKER_LISTEN_PORT` and its siblings, and list the user ids in `BROKER_TENANTS`. Read the [configuration reference](../configuration.md). |
 
 ## What each status means
 
@@ -19,10 +18,16 @@ describes one of these features.
 shape. Its API and its tools can change between releases without an upgrade
 note. Fountain refuses a call to it with a `404` when the flag is off.
 
-**Limited access.** The feature works, and it changes what a sandbox can
-reach. We turn it on for one account at a time, and we watch the first
-conversations with you. Without it, a secret enters the sandbox in the clear,
-and the pages and routes that manage bindings are absent.
+## Brokered credentials are on for every account
+
+[Brokered credentials](../concepts/secrets.md#bindings-when-the-broker-is-on)
+are now on for every account on the hosted platform, so this page no longer
+lists them. Until 2026-09-04 we enrolled each account by hand.
+
+On your own instance they stay off until you turn them on. Set
+`BROKER_LISTEN_PORT` and its siblings, then set `BROKER_TENANTS` to `*` for
+every user, or to a list of user ids while you widen it one at a time. Read
+the [configuration reference](../configuration.md).
 
 ## Where to go next
 

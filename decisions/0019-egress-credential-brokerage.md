@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Egress credential brokerage: the sandbox holds placeholders, the broker holds the credential"
-description: "Accepted; live in production for one tenant (the maintainer), served by Fountain's own proxy since the 2026-09-03 flip. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
+description: "Accepted; live in production for every tenant since the 2026-09-04 flip, served by Fountain's own proxy since 2026-09-03. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
 tags: [security, secrets, sandbox, egress, governance]
 status: draft
 adr: "0019"
@@ -13,19 +13,34 @@ stale_after: 2027-03-03
 
 # 0019 — Egress credential brokerage
 
-**Status:** Accepted — **live in production for one tenant, on Fountain's own proxy.**
+**Status:** Accepted — **live in production for every tenant, on Fountain's own proxy.**
 `Fountain.Broker` and the provisioning wiring exist on `main` (#1090 PRs 1–3),
 behind `BROKER_LISTEN_PORT`: blank, and every conversation provisions exactly
-as it did before the module existed; set, and only the tenants in
+as it did before the module existed; set, and the tenants in
 `BROKER_TENANTS` are brokered. The proxy is `Managoat.Broker`, run inside the
 Fountain pods and published at `broker.inevitable.fyi` by the Traefik TCP
-router of §11, and the hosted deployment names **one** tenant, the
-maintainer's own account (home-cloud#131, 2026-08-25). It was a vendor
+router of §11. It was a vendor
 service, Agent Vault, until the flip of 2026-09-03; see the amendment. Its done-when was observed on a production
-Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
-is byte-for-byte on the old path. Every gate is built: 1a and 1b (placeholders, bindings), 2 (`limited` at the
+Sprites conversation the same day — see *Gate 1a* under *Gates*. Every gate is built: 1a and 1b (placeholders, bindings), 2 (`limited` at the
 broker), 3 (inference credentials) and 4 (the egress trail). #1090 is closed and each
 later gate gets its own tracker.
+
+The ratchet of §9 ran its course. The hosted deployment named **one** tenant,
+the maintainer's own account, from home-cloud#131 (2026-08-25) until
+home-cloud#163 (2026-09-04), which set `BROKER_TENANTS` to `*` and brokers
+every account. `*` is the wildcard #1553 added for exactly this end state.
+The reason to widen was gate 3 rather than tenant secrets: platform inference
+credentials reach every conversation, while at the time of the flip every
+brokerable tenant secret in the deployment belonged to the maintainer and
+`secret_bindings` was empty.
+
+**One consequence of the floor, worth stating plainly.** A provider that
+cannot enforce `allow: [broker]` cannot host a brokered conversation, so under
+`*` a self-hosted runner (`managoat_runner`, capabilities `[:suspend,
+:attach]`) refuses with `{:broker, :backend_lacks_network_policy}`.
+`BROKER_ALLOW_UNENFORCED` makes that advisory and is a development escape
+hatch. Reattach does not yet re-apply the floor to a sandbox provisioned
+before its tenant was brokered (#1555).
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
 each marked in place: §11 is a vault per *conversation*, not per tenant; the

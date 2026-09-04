@@ -83,8 +83,9 @@ out. That is deliberate, and it is not a defect. An empty allowlist that
 quietly meant "allow everything" would be the worst default for a policy whose
 whole purpose is restriction.
 
-!!! note "Limited access"
-    The broker is on for the hosted accounts we enrol by hand. Read
+!!! note "Needs the credential broker"
+    The broker is on for every account on the hosted platform. On your own
+    instance it is off until you turn it on. Read
     [Feature status](../reference/feature-status.md).
 
 On a hosted account with the egress credential broker on, the sandbox can

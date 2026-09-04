@@ -8,10 +8,11 @@ A **connection provider** says where a connection's tokens come from. It
 holds the OAuth client, the endpoints, the scopes, and the hosts the token
 goes to.
 
-!!! note "Limited access"
+!!! note "Needs the credential broker"
     Connections exist only for accounts the egress broker is on for
     (ADR 0019). Without the broker, a token would have to enter the sandbox
-    in the clear, so the page and the routes are absent. Read
+    in the clear, so the page and the routes are absent. The broker is on for
+    every account on the hosted platform. On your own instance, read
     [Feature status](../../reference/feature-status.md).
 
 ## Platform and tenant providers
