@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
+	"github.com/BinaryBourbon/fountain/cli/credentials"
 )
 
 // TestAuthLoginAPIKeyWritesCredentials is the fix for #1305: an account

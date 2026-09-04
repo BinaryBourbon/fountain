@@ -436,8 +436,22 @@ each leaves bundled behaviour green, and **none is built**.
    extension module, declares no Buzz route and holds no Buzz asset. The
    published spec and `sdk/contract/contract.json` came out byte-identical,
    which is what "the wire did not move" means.
-5. **#1508 — the Go split.** `buzz-backend-fountain` moves to the extension's
-   ownership; `fountain buzz` stays in `cli/` (decision 6). Rescope the issue.
+5. **#1508 — the Go split. Built.** `buzz-backend-fountain` and its `backend`
+   package moved to `apps/fountain_buzz/cli`, a Go module of its own, so the
+   compiler enforces the boundary the way it does on the Elixir side: Go's
+   `internal/` rule is scoped to a module path, so the provider cannot reach
+   into `cli/internal/...` even by accident. What it uses instead is the public
+   client `cli/api` + `cli/credentials`, promoted out of `cli/internal` for
+   exactly this. `fountain buzz` stayed in `cli/` (decision 6), and the issue
+   was rescoped to that split.
+
+   The gate also found that **the provider was built by nothing and attached to
+   no release**, while this ADR and `docs/integrations/buzz.md` both described
+   it as shipped — the "describes unbuilt behavior as existing" failure this
+   repository has a rule against. It now cross-compiles for the same four
+   platforms as the `fountain` binary and is attached to every release, so the
+   sentence in decision 6 below is true rather than aspirational.
+
    `BUNDLE_EXTENSIONS=false` is the one switch (#1510): the release carries no
    `apps/fountain_*` application, discovered by glob rather than listed, and
    the image copies an empty native-asset stage.

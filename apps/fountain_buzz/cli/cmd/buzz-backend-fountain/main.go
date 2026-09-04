@@ -16,9 +16,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/api"
-	"github.com/BinaryBourbon/fountain/cli/internal/backend"
-	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
+	"github.com/BinaryBourbon/fountain/apps/fountain_buzz/cli/internal/backend"
+	"github.com/BinaryBourbon/fountain/cli/api"
+	"github.com/BinaryBourbon/fountain/cli/credentials"
 )
 
 func main() {

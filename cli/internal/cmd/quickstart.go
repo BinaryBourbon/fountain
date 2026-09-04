@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/config"
+	"github.com/BinaryBourbon/fountain/cli/config"
 	"github.com/BinaryBourbon/fountain/cli/internal/output"
 	"github.com/spf13/cobra"
 )

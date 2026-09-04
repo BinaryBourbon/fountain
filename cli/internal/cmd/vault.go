@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/api"
+	"github.com/BinaryBourbon/fountain/cli/api"
 	"github.com/BinaryBourbon/fountain/cli/internal/output"
 	"github.com/spf13/cobra"
 )
