@@ -143,19 +143,40 @@ defmodule FountainBuzz.Manager do
   @spec restart_harness(Identity.t(), keyword()) :: {:ok, pid()} | {:error, term()}
   def restart_harness(%Identity{} = identity, opts \\ []) do
     :ok = stop_harness(identity.id)
-    await_unregistered(identity.id, 50)
+    await_stopped(identity.id)
     start_harness(identity, opts)
   end
 
-  # `terminate_child` is synchronous, but the registry learns of the exit by
-  # monitor; give it a moment so `start_harness`'s `whereis` does not hand back
-  # the dead pid.
-  defp await_unregistered(_identity_id, 0), do: :ok
+  @doc """
+  Wait for the registry to drop `identity_id` after a stop.
 
-  defp await_unregistered(identity_id, tries) do
+  `stop_harness/1`'s `terminate_child` returns once the process is down, but
+  the registry learns of the exit **by monitor**, so for a moment afterwards
+  `running?/1` still says yes, `whereis/1` still hands back the dead pid, and
+  `running_count/0` still counts it.
+
+  Every caller that stops a harness and then reads the registry has to wait for
+  that, which is why this is public rather than a private step of
+  `restart_harness/2`: a test asserting on the count after a stop needs the same
+  wait, and two implementations of "the registry has caught up" would be one
+  too many. That gap is exactly what made
+  `ManagerTest "running_count counts registered harnesses cluster-wide"` flaky
+  (#1544) — it read the count on the line after the stop and periodically saw
+  the harness still there.
+
+  Returns `:ok` whether or not the entry went, deliberately. The caller's own
+  assertion is the real check and gives the better failure message; a raise
+  from in here would report the helper instead of the thing under test.
+  """
+  @spec await_stopped(String.t(), non_neg_integer()) :: :ok
+  def await_stopped(identity_id, tries \\ 50)
+
+  def await_stopped(_identity_id, 0), do: :ok
+
+  def await_stopped(identity_id, tries) do
     if running?(identity_id) do
       Process.sleep(20)
-      await_unregistered(identity_id, tries - 1)
+      await_stopped(identity_id, tries - 1)
     else
       :ok
     end
