@@ -56,6 +56,11 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     # as, and how a file's bytes travel.
     {FountainWeb.Schemas.SandboxEntry, "type"} => {Fountain.SandboxFiles, :entry_types},
     {FountainWeb.Schemas.SandboxFile, "encoding"} => {Fountain.SandboxFiles, :encodings},
+    # `git status`: the porcelain letters in words, and what a caller may ask
+    # about untracked paths.
+    {FountainWeb.Schemas.SandboxChange, "index"} => {Fountain.SandboxFiles, :change_states},
+    {FountainWeb.Schemas.SandboxChange, "worktree"} => {Fountain.SandboxFiles, :change_states},
+    {FountainWeb.Schemas.SandboxStatus, "untracked"} => {Fountain.SandboxFiles, :untracked_modes},
     # Connection providers (#1186): the kinds, the client-auth methods and
     # where a client came from are the provider schema's own lists.
     {FountainWeb.Schemas.ConnectionProvider, "kind"} => {Fountain.Connections.Provider, :kinds},

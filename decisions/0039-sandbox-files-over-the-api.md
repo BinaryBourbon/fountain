@@ -1,22 +1,23 @@
 ---
 type: ADR
 title: "A sandbox's files and git diff over the API, and no exec"
-description: "Apps that watch an agent work get three read-only requests on a sandbox — a directory listing, one file, git diff — full-scope only, confined to the home and the runtime workspace, redacted like the transcript, never waking a parked sandbox. Built over the seam's existing exec, so no adapter or runner change. A raw exec endpoint is refused: it would be a second I/O path beside ACP, unmetered, unredacted and, on a runner, a shell on the user's machine behind a bearer token."
+description: "Apps that watch an agent work get four read-only requests on a sandbox — a directory listing, one file, git status, git diff — full-scope only, confined to the home and the runtime workspace, redacted like the transcript, never waking a parked sandbox. Built over the seam's existing exec, so no adapter or runner change. A raw exec endpoint is refused: it would be a second I/O path beside ACP, unmetered, unredacted and, on a runner, a shell on the user's machine behind a bearer token."
 tags: [api, sandbox, security, apps]
 status: stable
 adr: "0039"
 adr_status: "Accepted"
 date: 2026-09-02
 generated: { by: claude-fable/5.1, at: 2026-09-02T02:00:00-04:00 }
-verified: { by: claude-fable/5.1, at: 2026-09-02T02:00:00-04:00 }
+verified: { by: claude-opus/5, at: 2026-09-04T12:00:00-04:00 }
 ---
 
 # 0039 — A sandbox's files and git diff over the API, and no exec
 
 **Status:** Accepted, 2026-09-02. Built in the same PR: `Fountain.SandboxFiles`,
 `FountainWeb.SandboxFilesController`, the three routes, the SDK's
-`sandboxFiles` / `sandboxFile` / `sandboxDiff` (1.15.0). Nothing described
-here is unbuilt.
+`sandboxFiles` / `sandboxFile` / `sandboxDiff` (1.15.0). A fourth route,
+`git status`, was added on 2026-09-04 under decision 2's own procedure — see
+the amendment at the end. Nothing described here is unbuilt.
 
 ## Context
 
@@ -64,9 +65,10 @@ What the codebase already says about that request:
 
 ## Decision
 
-1. **Three read-only requests, on the sandbox, not the conversation.**
+1. **Read-only requests, on the sandbox, not the conversation.**
    `GET /api/sandboxes/:id/files` (a directory), `/file` (one file's
-   bytes) and `/diff` (`git diff`, with `staged` and `ref`). They are
+   bytes), `/diff` (`git diff`, with `staged` and `ref`) and, since the
+   2026-09-04 amendment, `/git-status`. They are
    addressed by sandbox because on a persistent home the disk is shared by
    every conversation of the identity, and a conversation-scoped read
    would mislead the app about what it is looking at.
@@ -167,3 +169,56 @@ What the codebase already says about that request:
 - **Waking a parked sandbox on read.** Rejected: unmetered provider time,
   and a surprise to a user whose parked home starts costing money because
   a dashboard polled it.
+
+## Amendment (2026-09-04): `git status`, the read a diff cannot serve
+
+Decision 2 named `git status` as the example of a further purpose-shaped
+read, and set the procedure for one: a fixed script, a named endpoint, this
+ADR amended. This is that amendment. Nothing about the shape of the decision
+changes; the fourth request is bound by every rule the first three are.
+
+**Why a fourth request rather than a flag on `/diff`.** `git diff` compares
+tracked content. A file the agent created and never staged is not in the
+index and not in any commit, so no combination of `staged` and `ref` shows
+it — the file is invisible to the endpoint that exists. That is the common
+case for an app that watches an agent work: the agent writes a new file, and
+the app that renders "what changed" renders nothing. Deletions are already
+visible (a tracked file's removal is a diff hunk), so the gap is precisely
+the untracked half, and `git status` is the command that closes it.
+
+**`/git-status`, not `/status`.** A sandbox has a `status` of its own —
+`ready`, `suspended` — and it is a field on the sandbox resource that
+decision 6 turns on. A route named `/status` under `/api/sandboxes/:id`
+would read as that field to everybody who met it before this file.
+
+**Decisions it inherits unchanged.** Full scope (3), path confinement (4),
+redaction (5) — a path is data the agent chose, so it passes the same
+replacement the transcript's bytes do — never a wake (6), over `exec` with
+the path as a positional parameter (7), and bounded (8): at most 2,000
+entries, the same 30-second timeout, no audit and no `check_spend/1`.
+
+**What is new, and what it costs.**
+
+- The response is one entry per changed path, with git's two porcelain
+  columns read separately (`index` and `worktree`), the rename origin, the
+  branch, and paths relative to `repo_root` rather than to the sandbox home.
+  A caller that mixes the two path shapes will ask `/file` for the wrong
+  thing, which is why the field is named `repo_root` and documented twice.
+- One flag, `untracked`, passing `--untracked-files` through as `normal`,
+  `all` or `no`. It is the one knob that decides whether a new directory
+  arrives as one entry or as everything beneath it, and an unignored build
+  tree makes that the difference between 1 entry and 40,000. The value never
+  reaches the command line: the script maps it to a fixed flag with a `case`.
+- `--no-optional-locks` matters more here than for a diff. A plain
+  `git status` refreshes the index, so without it a read takes `index.lock`
+  and breaks the agent's own commit. The read that observes the work must not
+  be able to stop it.
+- An internal byte cap (1 MiB) sits under the entry cap, because `-uall` on a
+  large tree is read into memory before anything counts it. A record the cap
+  cuts in half is dropped rather than half-read, and `truncated` says so.
+
+**What it does not add.** No new error, no new exit code, no seam change, no
+adapter change: the script reuses `path_not_found`, `not_a_directory` and
+`not_a_repository`, and runs through `Managoat.Sandbox.exec/4` like the other
+three. The endpoint declares its own 403 rather than take a line in the
+schema guard's allowlist, which is a ratchet for the debt #1432 already owes.

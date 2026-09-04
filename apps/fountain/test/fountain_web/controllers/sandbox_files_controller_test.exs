@@ -28,6 +28,8 @@ defmodule FountainWeb.SandboxFilesControllerTest do
 
   defp b64(bytes), do: Base.encode64(bytes)
 
+  defp record(code, path), do: code <> " " <> path <> <<0>>
+
   describe "GET /api/sandboxes/:id/files" do
     test "lists the working directory by default", ctx do
       exec_returns("directory\t\tsrc\0file\t5\tREADME\0")
@@ -269,6 +271,91 @@ defmodule FountainWeb.SandboxFilesControllerTest do
                |> authed_with_key(ctx.raw_key)
                |> get("/api/sandboxes/#{ctx.sandbox.id}/diff")
                |> json_response(422)
+    end
+  end
+
+  describe "GET /api/sandboxes/:id/git-status" do
+    test "reports untracked and deleted paths, which no diff shows together", ctx do
+      exec_returns(
+        "#{@home}\nmain\n" <>
+          record("??", "notes.md") <> record(" D", "gone.txt") <> record("A ", "new.ex")
+      )
+
+      data =
+        ctx.conn
+        |> authed_with_key(ctx.raw_key)
+        |> get("/api/sandboxes/#{ctx.sandbox.id}/git-status?untracked=all")
+        |> json_response(200)
+        |> Map.fetch!("data")
+
+      assert_received {:exec_args, [@home, "1048577", "all"]}
+
+      assert data == %{
+               "path" => @home,
+               "repo_root" => @home,
+               "branch" => "main",
+               "untracked" => "all",
+               "truncated" => false,
+               "entries" => [
+                 %{
+                   "path" => "gone.txt",
+                   "index" => "unchanged",
+                   "worktree" => "deleted",
+                   "renamed_from" => nil
+                 },
+                 %{
+                   "path" => "new.ex",
+                   "index" => "added",
+                   "worktree" => "unchanged",
+                   "renamed_from" => nil
+                 },
+                 %{
+                   "path" => "notes.md",
+                   "index" => "untracked",
+                   "worktree" => "untracked",
+                   "renamed_from" => nil
+                 }
+               ]
+             }
+    end
+
+    test "an untracked mode the enum does not name is refused before anything runs", ctx do
+      reject(&Managoat.Sandbox.exec/4)
+
+      assert %{"error" => "validation_failed", "errors" => %{"untracked" => [_ | _]}} =
+               ctx.conn
+               |> authed_with_key(ctx.raw_key)
+               |> get("/api/sandboxes/#{ctx.sandbox.id}/git-status?untracked=--ignored")
+               |> json_response(422)
+    end
+
+    test "a plain directory is 422, and a sprite key is 403", ctx do
+      exec_returns("", 6)
+
+      assert %{"error" => "not_a_repository"} =
+               ctx.conn
+               |> authed_with_key(ctx.raw_key)
+               |> get("/api/sandboxes/#{ctx.sandbox.id}/git-status?path=plain")
+               |> json_response(422)
+
+      reject(&Managoat.Sandbox.exec/4)
+
+      assert %{"reason" => "insufficient_scope"} =
+               ctx.conn
+               |> authed_with_key(ctx.sprite_key)
+               |> get("/api/sandboxes/#{ctx.sandbox.id}/git-status")
+               |> json_response(403)
+    end
+
+    test "a parked sandbox is not woken for it either", ctx do
+      parked = insert_sandbox(user_id: ctx.user.id, status: "suspended", agent_id: ctx.agent.id)
+      reject(&Managoat.Sandbox.exec/4)
+
+      assert %{"error" => "sandbox_not_ready", "status" => "suspended"} =
+               ctx.conn
+               |> authed_with_key(ctx.raw_key)
+               |> get("/api/sandboxes/#{parked.id}/git-status")
+               |> json_response(409)
     end
   end
 end

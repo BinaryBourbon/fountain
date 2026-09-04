@@ -14,6 +14,7 @@ import type {
   SandboxDiff,
   SandboxFile,
   SandboxListing,
+  SandboxStatus,
   SandboxRecord,
   SearchHit,
 } from "./types.ts";
@@ -236,9 +237,9 @@ export class Fountain {
    * name (ADR 0039). `path` is absolute or relative to the agent's working
    * directory; omit it for that directory itself.
    *
-   * The three disk reads — this, `sandboxFile` and `sandboxDiff` — are the
-   * whole of what the API offers on a disk; there is no exec, and to run a
-   * command you send a prompt. They need a `full`-scope key, answer only for
+   * The four disk reads — this, `sandboxFile`, `sandboxGitStatus` and
+   * `sandboxDiff` — are the whole of what the API offers on a disk; there is
+   * no exec, and to run a command you send a prompt. They need a `full`-scope key, answer only for
    * a `ready` sandbox (a parked one is not woken: `sandbox_not_ready`), are
    * confined to `/home/sprite` and the runtime's workspace
    * (`path_outside_sandbox`), and come back redacted — the sandbox's
@@ -260,9 +261,34 @@ export class Fountain {
   }
 
   /**
+   * `git status` of the repository containing `path` on a sandbox (default:
+   * the agent's working directory), one entry per changed path.
+   *
+   * This is the read that shows a file the agent made and never staged:
+   * `sandboxDiff` compares tracked content, so an untracked file is invisible
+   * to it whatever options it is given. Entries cover the whole repository
+   * whatever `path` names inside it, and each entry's `path` is relative to
+   * `repoRoot` rather than to the sandbox home, so do not hand one straight
+   * back to `sandboxFile` without joining it.
+   *
+   * `untracked` is `normal` (the default, an untracked directory collapses to
+   * one entry), `all` (every file under it) or `no`.
+   */
+  async sandboxGitStatus(
+    id: string,
+    opts: { path?: string; untracked?: "normal" | "all" | "no" } = {},
+  ): Promise<SandboxStatus> {
+    return this.api.data<SandboxStatus>("GET", `/api/sandboxes/${id}/git-status`, {
+      query: { path: opts.path, untracked: opts.untracked },
+    });
+  }
+
+  /**
    * `git diff` of the repository containing `path` on a sandbox (default:
    * the agent's working directory). `staged` diffs the index; `ref` diffs
-   * against a commit, branch or tag instead of HEAD.
+   * against a commit, branch or tag. With neither, the comparison is the
+   * working tree against the index, so work the agent staged is absent from
+   * it — pass `ref: "HEAD"` to see staged and unstaged together.
    */
   async sandboxDiff(
     id: string,

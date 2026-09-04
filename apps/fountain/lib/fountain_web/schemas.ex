@@ -235,7 +235,7 @@ defmodule FountainWeb.Schemas do
         ref: %Schema{
           type: :string,
           nullable: true,
-          description: "The revision diffed against, or null for HEAD."
+          description: "The revision diffed against, or null when the caller named none."
         },
         diff: %Schema{type: :string, description: "Unified diff, no colour."},
         truncated: %Schema{
@@ -244,6 +244,73 @@ defmodule FountainWeb.Schemas do
         }
       },
       required: [:path, :repo_root, :staged, :diff, :truncated]
+    })
+  end
+
+  defmodule SandboxChange do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxChange",
+      description:
+        "One path `git status` reports, relative to `repo_root` (ADR 0039). " <>
+          "An untracked file reads `untracked` on both sides, which is what git " <>
+          "reports for it and the one state a diff cannot show.",
+      type: :object,
+      properties: %{
+        path: %Schema{type: :string, description: "Relative to `repo_root`."},
+        index: %Schema{
+          type: :string,
+          enum: Fountain.SandboxFiles.change_states(),
+          description: "The staged side: what a commit would record."
+        },
+        worktree: %Schema{
+          type: :string,
+          enum: Fountain.SandboxFiles.change_states(),
+          description: "The unstaged side: what the disk holds beyond the index."
+        },
+        renamed_from: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The old path, when that side is a rename or a copy; null otherwise."
+        }
+      },
+      required: [:path, :index, :worktree]
+    })
+  end
+
+  defmodule SandboxStatus do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxStatus",
+      description: "`git status` of a repository on a sandbox, one entry per changed path.",
+      type: :object,
+      properties: %{
+        path: %Schema{
+          type: :string,
+          description: "The directory the status was asked for, absolute."
+        },
+        repo_root: %Schema{type: :string, description: "The repository's top-level directory."},
+        branch: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The checked-out branch, or null on a detached HEAD."
+        },
+        untracked: %Schema{
+          type: :string,
+          enum: Fountain.SandboxFiles.untracked_modes(),
+          description: "What was asked about untracked paths."
+        },
+        entries: %Schema{type: :array, items: SandboxChange},
+        truncated: %Schema{
+          type: :boolean,
+          description: "True when the repository holds more changes than were returned."
+        }
+      },
+      required: [:path, :repo_root, :untracked, :entries, :truncated]
     })
   end
 
@@ -1168,6 +1235,7 @@ defmodule FountainWeb.Schemas do
   item_response(SandboxListingResponse, of: SandboxListing)
   item_response(SandboxFileResponse, of: SandboxFile)
   item_response(SandboxDiffResponse, of: SandboxDiff)
+  item_response(SandboxStatusResponse, of: SandboxStatus)
 
   defmodule EnvironmentRequest do
     @moduledoc false

@@ -1580,6 +1580,59 @@
         }
       }
     },
+    "GET /api/sandboxes/{sandbox_id}/git-status": {
+      "operation_id": "FountainWeb.SandboxFilesController.git_status",
+      "path_params": [
+        "sandbox_id"
+      ],
+      "query_params": {
+        "path": {
+          "required": false,
+          "type": "string"
+        },
+        "untracked": {
+          "enum": [
+            "all",
+            "no",
+            "normal"
+          ],
+          "required": false,
+          "type": "string"
+        }
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "SandboxStatusResponse"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "503": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "GET /api/search": {
       "operation_id": "FountainWeb.SearchController.index",
       "path_params": [],
@@ -8553,6 +8606,52 @@
       },
       "type": "object"
     },
+    "SandboxChange": {
+      "properties": {
+        "index": {
+          "enum": [
+            "added",
+            "copied",
+            "deleted",
+            "ignored",
+            "modified",
+            "renamed",
+            "type_changed",
+            "unchanged",
+            "unmerged",
+            "untracked"
+          ],
+          "required": true,
+          "type": "string"
+        },
+        "path": {
+          "required": true,
+          "type": "string"
+        },
+        "renamed_from": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "worktree": {
+          "enum": [
+            "added",
+            "copied",
+            "deleted",
+            "ignored",
+            "modified",
+            "renamed",
+            "type_changed",
+            "unchanged",
+            "unmerged",
+            "untracked"
+          ],
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "SandboxConversation": {
       "properties": {
         "id": {
@@ -8878,6 +8977,53 @@
       "properties": {
         "data": {
           "ref": "SandboxDetail",
+          "required": true
+        }
+      },
+      "type": "object"
+    },
+    "SandboxStatus": {
+      "properties": {
+        "branch": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "ref": "SandboxChange"
+          },
+          "required": true,
+          "type": "array"
+        },
+        "path": {
+          "required": true,
+          "type": "string"
+        },
+        "repo_root": {
+          "required": true,
+          "type": "string"
+        },
+        "truncated": {
+          "required": true,
+          "type": "boolean"
+        },
+        "untracked": {
+          "enum": [
+            "all",
+            "no",
+            "normal"
+          ],
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SandboxStatusResponse": {
+      "properties": {
+        "data": {
+          "ref": "SandboxStatus",
           "required": true
         }
       },

@@ -49,6 +49,10 @@ export type SandboxEntry = S["SandboxEntry"];
 export type SandboxFile = S["SandboxFile"];
 /** `git diff` of a repository on a sandbox, redacted. */
 export type SandboxDiff = S["SandboxDiff"];
+/** `git status` of a repository on a sandbox, one entry per changed path. */
+export type SandboxStatus = S["SandboxStatus"];
+/** One changed path of a `SandboxStatus`. */
+export type SandboxChange = S["SandboxChange"];
 /** One prompt and everything the agent did in response. */
 export type Turn = S["Turn"];
 /** One row of a conversation's log feed. */

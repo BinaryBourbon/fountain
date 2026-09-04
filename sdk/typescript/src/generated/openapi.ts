@@ -1716,6 +1716,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandboxes/{sandbox_id}/git-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * git status on a sandbox
+         * @description `git status` of the repository containing `path` (default: the agent's working directory), one entry per changed path. This is the view that shows a file the agent created and never staged: `/diff` compares tracked content, so an untracked file is invisible to it whatever flags it is given. Entries cover the whole repository whatever `path` names inside it, and each entry's `path` is relative to `repo_root`. `index` and `worktree` are git's two porcelain columns read separately, so a file staged and then edited again reports a state in both; an untracked file reads `untracked` in both. `renamed_from` is set only where that side is a rename or a copy. `branch` is null on a detached HEAD. A directory outside any repository is `422 not_a_repository`. Full scope.
+         */
+        get: operations["FountainWeb.SandboxFilesController.git_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;
@@ -4126,6 +4146,26 @@ export interface components {
             vault_id?: string | null;
         };
         /**
+         * SandboxChange
+         * @description One path `git status` reports, relative to `repo_root` (ADR 0039). An untracked file reads `untracked` on both sides, which is what git reports for it and the one state a diff cannot show.
+         */
+        SandboxChange: {
+            /**
+             * @description The staged side: what a commit would record.
+             * @enum {string}
+             */
+            index: "added" | "copied" | "deleted" | "ignored" | "modified" | "renamed" | "type_changed" | "unchanged" | "unmerged" | "untracked";
+            /** @description Relative to `repo_root`. */
+            path: string;
+            /** @description The old path, when that side is a rename or a copy; null otherwise. */
+            renamed_from?: string | null;
+            /**
+             * @description The unstaged side: what the disk holds beyond the index.
+             * @enum {string}
+             */
+            worktree: "added" | "copied" | "deleted" | "ignored" | "modified" | "renamed" | "type_changed" | "unchanged" | "unmerged" | "untracked";
+        };
+        /**
          * SandboxConversation
          * @description A conversation on a sandbox, as the sandbox lists it.
          */
@@ -4206,7 +4246,7 @@ export interface components {
             diff: string;
             /** @description The directory the diff was asked for, absolute. */
             path: string;
-            /** @description The revision diffed against, or null for HEAD. */
+            /** @description The revision diffed against, or null when the caller named none. */
             ref?: string | null;
             /** @description The repository's top-level directory. */
             repo_root: string;
@@ -4274,6 +4314,30 @@ export interface components {
         /** SandboxResponse */
         SandboxResponse: {
             data: components["schemas"]["SandboxDetail"];
+        };
+        /**
+         * SandboxStatus
+         * @description `git status` of a repository on a sandbox, one entry per changed path.
+         */
+        SandboxStatus: {
+            /** @description The checked-out branch, or null on a detached HEAD. */
+            branch?: string | null;
+            entries: components["schemas"]["SandboxChange"][];
+            /** @description The directory the status was asked for, absolute. */
+            path: string;
+            /** @description The repository's top-level directory. */
+            repo_root: string;
+            /** @description True when the repository holds more changes than were returned. */
+            truncated: boolean;
+            /**
+             * @description What was asked about untracked paths.
+             * @enum {string}
+             */
+            untracked: "normal" | "all" | "no";
+        };
+        /** SandboxStatusResponse */
+        SandboxStatusResponse: {
+            data: components["schemas"]["SandboxStatus"];
         };
         /**
          * SearchHit
@@ -9334,7 +9398,7 @@ export interface operations {
                 path?: string;
                 /** @description Diff the index (`--cached`). */
                 staged?: boolean;
-                /** @description A commit, branch or tag to diff against instead of HEAD. */
+                /** @description A commit, branch or tag to diff against. Without it the comparison is the working tree against the index, or with `staged`, the index against HEAD. */
                 ref?: string;
                 /** @description How many bytes to return, at most 4194304 (default 262144). `truncated` says whether the content stopped short. */
                 max_bytes?: number;
@@ -9499,6 +9563,78 @@ export interface operations {
                 };
             };
             /** @description Not a directory, or outside the sandbox */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox provider unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxFilesController.git_status": {
+        parameters: {
+            query?: {
+                /** @description In-sandbox path, absolute or relative to the agent's working directory (`/home/sprite` for claude and codex, `/tmp/gemini-workspace` and `/tmp/opencode-workspace` for the others). Confined to those directories: anything else is `422 path_outside_sandbox`. */
+                path?: string;
+                /** @description What to do about untracked paths: collapse an untracked directory to one entry (`normal`), list every file under it (`all`), or leave them out (`no`). */
+                untracked?: "normal" | "all" | "no";
+            };
+            header?: never;
+            path: {
+                sandbox_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxStatusResponse"];
+                };
+            };
+            /** @description Insufficient scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such sandbox or path */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sandbox is not ready */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not a repository, or outside the sandbox */
             422: {
                 headers: {
                     [name: string]: unknown;
