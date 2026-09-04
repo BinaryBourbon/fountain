@@ -1218,38 +1218,42 @@ jobs:
           probe /health
           probe /health/ready
 
-          # The served document describes the running distribution (ADR 0043).
-          # A core release advertising an operation it cannot serve would be a
-          # lie the SDKs are generated from.
-          curl -fsS -H 'Host: 10.42.0.1' -H 'Accept: application/json' \
-            http://127.0.0.1:4000/api/openapi.json > /tmp/core-openapi.json
+          # The document describes the running distribution (ADR 0043). A core
+          # release advertising an operation it cannot serve would be a lie the
+          # SDKs are generated from.
+          #
+          # Asked of the running node with `rpc`, not fetched over HTTP. The
+          # first version curled /api/openapi.json and got a **301** — prod
+          # enforces HTTPS and only the health paths are excluded — which
+          # `curl -f` does not treat as a failure, so it wrote an empty file,
+          # `jq` exited 0 with no output, and the check passed on nothing. That
+          # is the same redirect trap the bundled boot check's own comment
+          # warns about, walked into one step later.
+          #
+          # `eval` cannot do this either: ApiSpec.spec/0 reaches the Endpoint
+          # through OpenApiSpex.Server.from_endpoint/1, which needs it started.
+          # `rpc` runs in the daemon that is already serving.
+          "$rel" rpc 'FountainWeb.ApiSpec.spec().paths |> Map.keys() |> Enum.sort() |> Enum.each(&IO.puts/1)' \
+            > /tmp/core-paths.txt
 
-          # Guard the guard. The first version of this check printed
-          # "no extension path in the core spec ( paths)" — an EMPTY count,
-          # because jq could not read the file — and passed anyway: every
-          # `jq -e ... select(...)` found nothing in nothing. A check that
-          # passes on an unreadable document is worse than no check, so the
-          # document has to be real before its contents mean anything.
-          paths=$(jq '.paths | length' /tmp/core-openapi.json) || {
-            echo "::error::/api/openapi.json did not return a readable document" >&2
-            head -c 2000 /tmp/core-openapi.json >&2 || true
-            exit 1
-          }
-          if [ -z "$paths" ] || [ "$paths" -lt 50 ]; then
-            echo "::error::the core spec has $paths paths; the API has far more" >&2
-            head -c 2000 /tmp/core-openapi.json >&2 || true
+          # Guard the guard: a spec with no paths satisfies every "describes no
+          # extension" check ever written, which is exactly how the first
+          # version of this step passed.
+          count=$(wc -l < /tmp/core-paths.txt | tr -d ' ')
+          if [ "${count:-0}" -lt 50 ]; then
+            echo "::error::the core spec has ${count:-0} paths; the API has far more" >&2
+            head -c 2000 /tmp/core-paths.txt >&2 || true
             exit 1
           fi
 
           for ext in $(ls apps | grep '^fountain_' | sed 's/^fountain_//'); do
-            if jq -e --arg p "/api/$ext" '.paths | keys[] | select(startswith($p))' \
-                 /tmp/core-openapi.json > /dev/null 2>&1; then
+            if grep -q "^/api/$ext" /tmp/core-paths.txt; then
               echo "::error::the core spec describes /api/$ext" >&2
-              jq -r '.paths | keys[]' /tmp/core-openapi.json | grep "^/api/$ext" >&2
+              grep "^/api/$ext" /tmp/core-paths.txt >&2
               exit 1
             fi
           done
-          echo "no extension path in the core spec ($paths paths)"
+          echo "no extension path in the core spec ($count paths)"
 
       # The other direction, from the same compiled tree, so the job proves the
       # switch rather than one setting of it. A release that carried nothing
