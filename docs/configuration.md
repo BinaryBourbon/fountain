@@ -337,6 +337,7 @@ image.
 |---|---|---|---|
 | `BUZZ_ACP_BASE_URL` | The loopback endpoint, `http://127.0.0.1:$PORT`. | — | The base URL that the harness's ACP child, `fountain acp`, uses to reach this instance. It defaults to the loopback, so harness traffic never leaves the pod. Override it only to point the child at a different Fountain endpoint. |
 | `FOUNTAIN_CLI_PATH` | `/usr/local/bin/fountain` | — | The path to the `fountain` CLI that the harness runs as its ACP child. The image bakes it at the default, so override it only for a layout that is not standard. |
+| `BUZZ_ACP_PATH` | Wherever the bundled image installs it, `/usr/local/lib/fountain-buzz/buzz-acp`. | — | The path to the `buzz-acp` harness binary. Set it only for an installation that is not standard. The extension finds the bundled one by itself, and a core image has none, so an unset value is correct on both. The binary must report the version in `apps/fountain_buzz/buzz-acp.version`, or no harness starts. |
 
 Upstream publishes `buzz-acp` for amd64 alone. So Fountain builds it for both
 architectures from source, and bakes it in. Read

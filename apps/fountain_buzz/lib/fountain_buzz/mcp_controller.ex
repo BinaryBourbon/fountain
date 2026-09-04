@@ -86,5 +86,5 @@ defmodule FountainBuzz.McpController do
   defp put_present(map, _k, nil), do: map
   defp put_present(map, k, v), do: Map.put(map, k, v)
 
-  defp buzz_bin, do: Application.get_env(:fountain_buzz, :buzz_cli_bin, @default_buzz_bin)
+  defp buzz_bin, do: FountainBuzz.Assets.cli_path() || @default_buzz_bin
 end

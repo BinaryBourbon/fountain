@@ -187,6 +187,69 @@ defmodule FountainBuzz.BoundaryTest do
     end
   end
 
+  describe "the supply chain belongs to the extension (#1509)" do
+    @root Path.expand("../../../..", __DIR__)
+
+    test "the pins live in this app, not at the repository root" do
+      assert File.exists?(Path.join(@root, "apps/fountain_buzz/buzz-acp.version"))
+
+      refute File.exists?(Path.join(@root, "buzz-acp.version")),
+             "the buzz-acp pin belongs to the extension, not to the repository root"
+    end
+
+    test "the pinned version is what the extension compiled against" do
+      on_disk =
+        @root |> Path.join("apps/fountain_buzz/buzz-acp.version") |> File.read!() |> String.trim()
+
+      # `Assets` reads this at compile time with an @external_resource, so a
+      # repin recompiles rather than leaving a stale expectation in the release.
+      assert FountainBuzz.Assets.pinned_version() == on_disk
+    end
+
+    test "the Dockerfile's fallback pin cannot drift from the extension's" do
+      # The download stage carries `ARG BUZZ_ACP_VERSION=<default>` so a plain
+      # `docker build` works without the build workflow passing one. That is a
+      # SECOND copy of the pin, and a second copy is a thing that drifts — an
+      # image built locally, or by any caller who forgets the build arg, would
+      # silently bake a different binary than the extension was built against.
+      #
+      # #1509 asks for the compatibility to be explicit and testable. This is
+      # the testable half; `FountainBuzz.Assets.compatible?/0` is the explicit
+      # one, and refuses at runtime what this refuses at review time.
+      dockerfile = @root |> Path.join("Dockerfile") |> File.read!()
+
+      assert [[_, default]] = Regex.scan(~r/ARG BUZZ_ACP_VERSION=(\S+)/, dockerfile)
+
+      assert default == FountainBuzz.Assets.pinned_version(),
+             "the Dockerfile defaults BUZZ_ACP_VERSION to #{default} but " <>
+               "apps/fountain_buzz/buzz-acp.version says " <>
+               "#{FountainBuzz.Assets.pinned_version()}"
+
+      # The stages and the install path are the bundled distribution's layer and
+      # belong here — one Dockerfile builds both distributions.
+      assert dockerfile =~ "BUNDLE_BUZZ"
+      assert dockerfile =~ "buzz-assets-false"
+    end
+
+    test "the Dockerfile can build without the extension at all" do
+      dockerfile = @root |> Path.join("Dockerfile") |> File.read!()
+
+      # The empty-assets stage and the conditional smoke check are what make a
+      # core image possible; without either, `BUNDLE_BUZZ=false` would produce
+      # an image that either fails to build or silently carries the binaries.
+      assert dockerfile =~ "FROM buzz-assets-${BUNDLE_BUZZ}"
+      assert dockerfile =~ "BUNDLE_BUZZ=false but Buzz binaries were baked in"
+    end
+
+    test "the release includes this app only when BUNDLE_BUZZ says so" do
+      mix = @root |> Path.join("mix.exs") |> File.read!()
+
+      assert mix =~ "bundled_applications",
+             "the release's applications must follow BUNDLE_BUZZ, or a core image " <>
+               "would carry the extension without its binaries"
+    end
+  end
+
   describe "the published titles are unchanged" do
     test "every schema keeps the title it had as a core module" do
       # A title is the component key in the published document, and the four

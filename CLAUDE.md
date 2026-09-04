@@ -57,6 +57,15 @@ fountain/                  umbrella root
                            extension needs a row in extension_guard_test.exs
                            and a boundary test of its own; adding a tenth
                            `Fountain.Extension` callback needs an ADR.
+                           Buzz also owns its supply chain (#1509):
+                           buzz-acp.version, buzz-acp.source and the
+                           buzz-acp-publish workflow's inputs live in its app,
+                           and FountainBuzz.Assets both finds the binaries and
+                           refuses one whose version does not match the pin.
+                           `BUNDLE_BUZZ=false` builds the core distribution —
+                           no Buzz application in the release (mix.exs) and no
+                           binaries in the image (Dockerfile), one switch for
+                           both.
     (managoat_*/)          the component libraries extracted from the server
                            (ADR 0037, tracker #1334): Apache-2.0, Managoat.*
                            namespace, no reference back into Fountain. Each

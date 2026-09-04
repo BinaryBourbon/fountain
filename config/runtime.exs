@@ -1467,22 +1467,16 @@ extension_fixtures =
 
 config :fountain, :extensions, installed_extensions ++ extension_fixtures
 
-# The Buzz extension's own configuration, under its own otp_app. The `buzz-acp`
-# binary is baked into the amd64 image only and the `fountain` CLI into both;
-# point config at them here so `FountainBuzz.BootSweep` can stand up enabled
-# identities. On an arch without buzz-acp the path stays unset and the sweep is
-# inert.
+# The Buzz extension's own configuration, under its own otp_app, and only what
+# an operator overrides. Where its binaries live is `FountainBuzz.Assets`'s to
+# know (#1509) — a core release's configuration has no business naming a path
+# only the bundled image has — so these exist to be *overridden* and default to
+# nothing here.
 #
 # The harness's ACP child (`fountain acp`) talks back to THIS server, so its
-# base URL defaults to the loopback endpoint — no egress, no TLS, no dependence
-# on PUBLIC_URL resolving inside the pod. Override with BUZZ_ACP_BASE_URL.
+# base URL defaults to the loopback endpoint: no egress, no TLS, no dependence
+# on PUBLIC_URL resolving inside the pod.
 if config_env() == :prod do
-  buzz_acp_path = "/usr/local/lib/fountain-buzz/buzz-acp"
-
-  if File.exists?(buzz_acp_path) do
-    config :fountain_buzz, :buzz_acp_path, buzz_acp_path
-  end
-
   config :fountain_buzz,
          :fountain_cli_path,
          System.get_env("FOUNTAIN_CLI_PATH", "/usr/local/bin/fountain")
@@ -1491,6 +1485,12 @@ if config_env() == :prod do
          :buzz_acp_base_url,
          System.get_env("BUZZ_ACP_BASE_URL") ||
            "http://127.0.0.1:#{System.get_env("PORT", "4000")}"
+
+  # Only when set. An unset BUZZ_ACP_PATH means "wherever the image installed
+  # it", which FountainBuzz.Assets answers.
+  if path = System.get_env("BUZZ_ACP_PATH") do
+    config :fountain_buzz, :buzz_acp_path, path
+  end
 end
 
 # ── CORS for /api ─────────────────────────────────────────────────────────

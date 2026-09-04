@@ -26,7 +26,7 @@ defmodule FountainBuzz.BootSweep do
   end
 
   @doc "Whether the sweep is enabled — i.e. a `buzz-acp` binary path is configured."
-  def enabled?, do: Application.get_env(:fountain_buzz, :buzz_acp_path) != nil
+  def enabled?, do: FountainBuzz.Assets.compatible?()
 
   @doc """
   Start a harness for every enabled identity. Safe to call repeatedly

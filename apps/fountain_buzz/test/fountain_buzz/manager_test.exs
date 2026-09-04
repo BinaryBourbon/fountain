@@ -14,8 +14,7 @@ defmodule FountainBuzz.ManagerTest do
   setup do
     dir = Fountain.TmpDir.mkdir!("buzz-mgr")
     fake = Path.join(dir, "buzz-acp")
-    File.write!(fake, "#!/bin/sh\nexec sleep 30\n")
-    File.chmod!(fake, 0o755)
+    FountainBuzz.TestSupport.write_fake_acp!(fake)
 
     on_exit(fn ->
       # Tear down every harness this test left running (no prod harnesses exist

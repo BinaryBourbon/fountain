@@ -16,8 +16,7 @@ defmodule FountainBuzz.Workers.HarnessSweepTest do
   setup do
     dir = Fountain.TmpDir.mkdir!("buzz-harness-sweep")
     fake = Path.join(dir, "buzz-acp")
-    File.write!(fake, "#!/bin/sh\nexec sleep 30\n")
-    File.chmod!(fake, 0o755)
+    FountainBuzz.TestSupport.write_fake_acp!(fake)
 
     prev_path = Application.get_env(:fountain_buzz, :buzz_acp_path)
     prev_url = Application.get_env(:fountain_buzz, :buzz_acp_base_url)
