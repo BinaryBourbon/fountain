@@ -12,6 +12,13 @@ defmodule FountainBuzz.ManagerTest do
   alias Fountain.Repo
 
   setup do
+    # This module asserts on a count taken across the whole cluster, so it
+    # drains before it measures rather than trusting that the previous module's
+    # teardown did (#1533). `stop_all_harnesses!/1` settles the registry as
+    # well as the supervisor, which is what makes the baseline below a fixed 0
+    # instead of a number that can still move.
+    FountainBuzz.TestSupport.stop_all_harnesses!()
+
     dir = Fountain.TmpDir.mkdir!("buzz-mgr")
     fake = Path.join(dir, "buzz-acp")
     FountainBuzz.TestSupport.write_fake_acp!(fake)
@@ -57,7 +64,13 @@ defmodule FountainBuzz.ManagerTest do
   end
 
   test "running_count counts registered harnesses cluster-wide", %{fake: fake} do
+    # Asserted, not merely taken: the drain in `setup` leaves the registry
+    # empty, so a non-zero baseline here means a neighbouring module leaked a
+    # harness. Compensating for it silently is what let #1533 read as a flake
+    # in this file rather than as a fault in the module that leaked.
     baseline = Manager.running_count()
+    assert baseline == 0
+
     first = insert_buzz_identity()
     second = insert_buzz_identity()
 
@@ -73,6 +86,21 @@ defmodule FountainBuzz.ManagerTest do
     Manager.await_stopped(first.id)
     assert Manager.running_count() == baseline + 1
     Manager.stop_harness(second.id)
+  end
+
+  # The contract #1533 needed and did not have: when the drain returns, the
+  # registry is empty too. Asserted without `await_stopped/2`, on purpose —
+  # the point is that the *drain* did the waiting, so the next module's
+  # baseline is trustworthy the instant teardown returns.
+  test "stop_all_harnesses! drains the registry, not only the supervisor", %{fake: fake} do
+    identity = insert_buzz_identity()
+    {:ok, _pid} = Manager.start_harness(identity, launch_opts(fake))
+    assert Manager.running_count() == 1
+
+    FountainBuzz.TestSupport.stop_all_harnesses!()
+
+    assert Manager.running_count() == 0
+    assert Horde.DynamicSupervisor.which_children(FountainBuzz.Supervisor) == []
   end
 
   test "start_harness is idempotent and mints no second credential", %{fake: fake} do
