@@ -23,10 +23,14 @@ defmodule Fountain.Broker.Native.RequestLog do
   ## What is stored
 
   Method, host, path, outcome, the rule that matched and the names of the
-  environment variables whose values were attached. Never a header, a body or
-  a credential. Response status and latency stay `nil` until the proxy frames
-  responses; the columns exist so this backend answers with the same shape as
-  the Agent Vault one.
+  environment variables whose values were attached, plus how the request
+  ended: the upstream status, the total duration and the terminal error
+  where forwarding did not finish. Never a header, a body or a credential.
+
+  The proxy's event is terminal (`managoat_broker` 0.3.0), so a row appears
+  when the response ends rather than when the request is sent. A `git clone`
+  or an SSE stream is one row written at the end, carrying the whole
+  duration.
   """
 
   use GenServer

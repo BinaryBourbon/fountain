@@ -468,11 +468,38 @@ defmodule FountainWeb.Telemetry do
       ),
       # The proxy's own event. A policy regression that starts denying
       # api.anthropic.com looks exactly like a spike in `denied`.
+      #
+      # `tag_values` is not decoration here. The library's `outcome` answers
+      # "did a rule apply", and a matched `:passthrough` rule -- how a host is
+      # allowed under `limited` -- applies without attaching anything, so it
+      # arrives as `:injected`, identical to a `:bearer` rule
+      # (managoat/managoat_broker#27). The series has to mean the same thing
+      # the egress row means, which is "was a credential attached".
       counter("fountain.broker.request.count",
         event_name: [:managoat, :broker, :request],
         measurement: :count,
         tags: [:outcome],
+        tag_values: &broker_request_tags/1,
         description: "Proxied requests by what the broker did: injected, passthrough or denied"
+      ),
+      # What the *origin* said, now that the proxy frames responses
+      # (managoat_broker 0.3.0, #1501 row 2). This is a different signal from
+      # `connect.count` below: that one counts connections that never reached
+      # an origin, this one counts origins that answered badly. A vendor
+      # outage and a credential that stopped working both look like a 5xx or
+      # 4xx share here and like nothing at all there.
+      #
+      # By class rather than by code: a tag straight off `status` would put
+      # every status a sandbox can provoke into the label set, and the
+      # question an alert asks is "what share of answers were bad".
+      counter("fountain.broker.upstream.count",
+        event_name: [:managoat, :broker, :request],
+        measurement: :count,
+        tags: [:status_class],
+        tag_values: &broker_upstream_tags/1,
+        description:
+          "Proxied requests by upstream status class: 2xx, 3xx, 4xx, 5xx, or none " <>
+            "where no answer arrived"
       ),
       # A sandbox presenting a token this node cannot resolve: expired,
       # revoked, or a tenant key that stopped decrypting. A storm of these is
@@ -494,6 +521,13 @@ defmodule FountainWeb.Telemetry do
       # which is what lets "how much of this broker's egress is failing" be a
       # ratio: a count of failures alone cannot tell a broken broker from a
       # busy one. `managoat_broker` 0.1.2 and later.
+      #
+      # Since 0.10.0 this counts **origin** connections rather than sandbox
+      # ones: a plain-HTTP connection is kept alive and carries several
+      # requests, dialing once each. A tunnel is still one of each. Every
+      # ratio over this event keeps the numerator and denominator it had, so
+      # home-cloud's `FountainBrokerUpstreamFailures` is unaffected; only the
+      # absolute rate on the plain path moved (#1501 row 4).
       counter("fountain.broker.connect.count",
         event_name: [:managoat, :broker, :connect],
         measurement: :count,
@@ -534,6 +568,26 @@ defmodule FountainWeb.Telemetry do
       state: Map.get(meta, :state, "exception")
     }
   end
+
+  # `outcome: :injected` with `scheme: :passthrough` is a rule that allowed a
+  # host without attaching anything. See the counter above.
+  defp broker_request_tags(%{outcome: :injected, scheme: :passthrough} = meta),
+    do: %{meta | outcome: :passthrough}
+
+  defp broker_request_tags(meta), do: meta
+
+  # `none` is a request the proxy never got an answer to at all -- an origin
+  # that would not connect, a refusal it made itself before dialing, a stream
+  # that died before a head arrived. It is deliberately a value rather than an
+  # absent series, so a ratio can exclude it by name.
+  defp broker_upstream_tags(meta) do
+    Map.put(meta, :status_class, status_class(Map.get(meta, :status)))
+  end
+
+  defp status_class(status) when is_integer(status) and status in 100..599,
+    do: "#{div(status, 100)}xx"
+
+  defp status_class(_status), do: "none"
 
   # Swoosh reports a delivery failure as an `:error` key in the stop event's
   # metadata rather than as a separate event, so the outcome has to be derived

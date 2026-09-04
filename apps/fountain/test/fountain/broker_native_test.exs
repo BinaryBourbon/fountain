@@ -560,6 +560,246 @@ defmodule Fountain.BrokerNativeTest do
     end
   end
 
+  # Row 2 of the parity tracker: the proxy frames responses now
+  # (managoat_broker 0.3.0), so its request event is terminal and can say how
+  # a request ended. `broker_requests` has had `status`, `latency_ms` and
+  # `error` nullable since the table was created, waiting for exactly this.
+  describe "how a request ended" do
+    setup %{user: user, conv: conv} do
+      pid = start_supervised!(Fountain.Broker.Native.RequestLog)
+      Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, self(), pid)
+      assert :ok = Native.attach_telemetry()
+      {:ok, _} = Broker.prepare(conv.id, %{"GITHUB_TOKEN" => "ghp_real"}, %{}, user_id: user.id)
+      {:ok, log: pid}
+    end
+
+    defp emit(measurements, meta, conv, user) do
+      :telemetry.execute(
+        [:managoat, :broker, :request],
+        measurements,
+        Map.merge(
+          %{
+            method: "GET",
+            host: "api.github.com",
+            path: "/user",
+            outcome: :injected,
+            rule: "github-api",
+            scheme: :bearer,
+            status: nil,
+            error: nil,
+            meta: %{
+              "conversation_id" => conv.id,
+              "user_id" => user.id,
+              "credential_keys" => %{"github-api" => ["GITHUB_TOKEN"]}
+            }
+          },
+          meta
+        )
+      )
+    end
+
+    test "the status, the total duration and the terminal error reach the row", ctx do
+      %{user: user, conv: conv, log: log} = ctx
+
+      emit(
+        %{count: 1, duration: System.convert_time_unit(1_500, :millisecond, :native)},
+        %{status: 200},
+        conv,
+        user
+      )
+
+      emit(%{count: 1, duration: 0}, %{status: 502, error: :credential_missing}, conv, user)
+
+      assert :ok = Fountain.Broker.Native.RequestLog.flush(log)
+      assert {:ok, %{events: [refused, ok]}} = Broker.request_log(conv.id)
+
+      assert ok.status == 200
+      assert ok.latency_ms == 1_500
+      assert ok.error == nil
+
+      # 0.6.2: a matched rule whose credential the host could not supply is a
+      # 502 with a reason, where it used to raise and drop the connection.
+      assert refused.status == 502
+      assert refused.error == "credential_missing"
+    end
+
+    test "an event with no duration and no status stores neither", ctx do
+      %{user: user, conv: conv, log: log} = ctx
+      emit(%{count: 1}, %{}, conv, user)
+
+      assert :ok = Fountain.Broker.Native.RequestLog.flush(log)
+      assert {:ok, %{events: [event]}} = Broker.request_log(conv.id)
+      assert event.status == nil
+      assert event.latency_ms == nil
+      assert event.error == nil
+    end
+
+    # managoat/managoat_broker#27, found building managoat/airlock. `outcome`
+    # answers "did a rule apply", so a matched `:passthrough` rule -- how a
+    # host is allowed under `limited` -- arrives as `:injected`, identical to
+    # a `:bearer` rule. Reading the verdict off `outcome` alone would make an
+    # allowed host's row claim a credential went to it.
+    test "an allowed host is not recorded as a credentialed one", ctx do
+      %{user: user, conv: conv, log: log} = ctx
+
+      emit(
+        %{count: 1, duration: 0},
+        %{host: "pypi.org", rule: "allow-pypi-org", scheme: :passthrough, status: 200},
+        conv,
+        user
+      )
+
+      assert :ok = Fountain.Broker.Native.RequestLog.flush(log)
+      assert {:ok, %{events: [event]}} = Broker.request_log(conv.id)
+
+      # `service` promises "the binding that matched, and so which credential
+      # was attached". No credential was attached, so it names nothing.
+      assert event.service == nil
+      assert event.credential_keys == []
+      assert Fountain.Repo.one!(Fountain.Broker.Native.Request).outcome == "passthrough"
+    end
+
+    test "a credentialed rule still names its binding and its keys", ctx do
+      %{user: user, conv: conv, log: log} = ctx
+      emit(%{count: 1, duration: 0}, %{status: 200}, conv, user)
+
+      assert :ok = Fountain.Broker.Native.RequestLog.flush(log)
+      assert {:ok, %{events: [event]}} = Broker.request_log(conv.id)
+      assert event.service == "github-api"
+      assert event.credential_keys == ["GITHUB_TOKEN"]
+      assert Fountain.Repo.one!(Fountain.Broker.Native.Request).outcome == "injected"
+    end
+
+    test "the log line carries the ending, and an allowed host does not read as injected", ctx do
+      %{user: user, conv: conv} = ctx
+
+      previous = Logger.level()
+      Logger.configure(level: :info)
+      on_exit(fn -> Logger.configure(level: previous) end)
+
+      log =
+        capture_log(fn ->
+          emit(
+            %{count: 1, duration: System.convert_time_unit(42, :millisecond, :native)},
+            %{status: 200},
+            conv,
+            user
+          )
+
+          emit(
+            %{count: 1, duration: 0},
+            %{host: "pypi.org", rule: "allow-pypi-org", scheme: :passthrough, status: 200},
+            conv,
+            user
+          )
+        end)
+
+      assert log =~ "injected github-api 200 42ms"
+      assert log =~ "allowed allow-pypi-org 200"
+      refute log =~ "injected allow-pypi-org"
+    end
+  end
+
+  # Row 1: `:substitute` reaches the request target as well as header values
+  # since managoat_broker 0.2.0, so a credential a client puts in a URL is
+  # brokered. The tracker asks for the redaction half to be asserted here
+  # rather than read out of the library's changelog.
+  describe "a credential in the URL" do
+    setup do
+      Ecto.Adapters.SQL.Sandbox.mode(Fountain.Repo, {:shared, self()})
+      {:ok, rig: Fountain.BrokerProxyRig.start()}
+    end
+
+    test "is substituted in the path and the query, and logged as the placeholder", ctx do
+      %{user: user, conv: conv, rig: rig} = ctx
+      placeholder = Broker.placeholder("TELEGRAM_TOKEN")
+
+      {:ok, session} =
+        Broker.prepare(
+          conv.id,
+          %{"TELEGRAM_TOKEN" => "8199:tg-secret-value"},
+          %{"TELEGRAM_TOKEN" => [binding("TELEGRAM_TOKEN", rig.origin_host, "substitute")]},
+          user_id: user.id
+        )
+
+      echo =
+        rig
+        |> Fountain.BrokerProxyRig.tunnel(session)
+        |> Fountain.BrokerProxyRig.request(
+          "GET /bot#{placeholder}/sendMessage?key=#{placeholder} HTTP/1.1\r\n" <>
+            "Host: #{rig.origin_host}\r\nConnection: close\r\n\r\n"
+        )
+
+      # The bot-API shape Agent Vault shipped a preset for. A colon is legal
+      # unencoded in a path segment and the credential goes in byte for byte,
+      # so `8199:tg-secret-value` arrives as itself.
+      assert echo["path"] == "/bot8199:tg-secret-value/sendMessage"
+      assert echo["query"] == "key=8199:tg-secret-value"
+
+      # Telemetry is derived from the target the client sent, before
+      # substitution, so a placeholder in a path is logged as the placeholder
+      # and a placeholder in a query is not logged at all.
+      assert [event] = Fountain.BrokerProxyRig.rows(rig, conv.id)
+      assert event.path == "/bot#{placeholder}/sendMessage"
+      assert event.service == "telegram-token-localhost-#{rig.origin_port}"
+      assert event.credential_keys == ["TELEGRAM_TOKEN"]
+      assert event.status == 200
+      refute inspect(event) =~ "tg-secret-value"
+    end
+
+    # managoat_broker 0.5.0 refuses a rule whose placeholder is too short,
+    # has no boundary or holds no letter or digit, because substitution is a
+    # literal find-and-replace and a placeholder like `id` would rewrite every
+    # `id` in every matching path. Every placeholder Fountain mints is
+    # `__<key>__`, which satisfies it -- this is the guard that says so if the
+    # rule ever changes.
+    test "every placeholder Fountain mints is one the proxy will accept" do
+      keys =
+        Broker.catalog_keys() ++
+          Map.keys(Broker.inference_keys()) ++
+          ~w(A X1 TELEGRAM_TOKEN some-lowercase-key)
+
+      for key <- keys do
+        placeholder = Broker.placeholder(key)
+
+        assert Managoat.Broker.Injector.valid_placeholder?(placeholder),
+               "#{key} mints #{placeholder}, which the proxy would refuse"
+      end
+    end
+  end
+
+  # Row 3: IPv6 upstreams (managoat_broker 0.4.0). Almost nothing to build
+  # here, with one exception the tracker names: a literal in a rule pattern
+  # has to be bracketed, and `networking_config.allowed_hosts` is where a
+  # tenant would write a bare one.
+  describe "an IPv6 allowed host" do
+    test "is bracketed before it becomes a rule pattern" do
+      network = {:limited, ["::1", "2001:DB8::1", "[fd00::1]:8443", "example.com"]}
+
+      assert [one, two, three, four] = Native.rules_for(%{}, %{}, network)
+      assert one.pattern == "[::1]"
+
+      # Downcased on the way, which changes nothing: the library matches an
+      # address pattern by value rather than by spelling.
+      assert two.pattern == "[2001:db8::1]"
+
+      # Already bracketed, and carrying a port, so it is left exactly alone.
+      assert three.pattern == "[fd00::1]:8443"
+      assert four.pattern == "example.com"
+    end
+
+    test "a bare literal and its bracketed twin are one rule, not two" do
+      assert [rule] = Native.rules_for(%{}, %{}, {:limited, ["::1", "[::1]"]})
+      assert rule.pattern == "[::1]"
+    end
+
+    test "pattern_for leaves a name, an IPv4 literal and a host:port alone" do
+      for host <- ["example.com", "*.example.com", "127.0.0.1", "example.com:8443"] do
+        assert Native.pattern_for(host) == host
+      end
+    end
+  end
+
   test "the reaper leaves a live session alone", %{user: user, conv: conv} do
     {:ok, _} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
     assert %{sessions: 0, requests: 0} = Fountain.Workers.BrokerReaper.run()

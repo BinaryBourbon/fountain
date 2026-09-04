@@ -3459,22 +3459,25 @@ export interface components {
         };
         /**
          * EgressEvent
-         * @description One outbound HTTP request the sandbox made through the egress broker (ADR 0019). `service` names the binding that matched, and so which credential was attached; null means the request passed through with none.
+         * @description One outbound HTTP request the sandbox made through the egress broker (ADR 0019). The row is written when the request ends, so a streamed response is recorded when the stream finishes rather than when it starts.
          */
         EgressEvent: {
             /** Format: date-time */
             at?: string | null;
             credential_keys: string[];
-            /** @description The broker's error code, such as `no_match`, when it refused. */
+            /** @description Why forwarding did not complete, such as `upstream_closed`, `credential_missing` or `request_timeout`. Null on a request that did. */
             error?: string | null;
             /** @description Host and port, as the sandbox dialed it. */
             host: string;
             id: number;
+            /** @description How long the whole request took, request head through response body, not time to first byte. */
             latency_ms?: number | null;
             method: string;
+            /** @description The URL path. A query string is never recorded: it can hold a credential. */
             path: string;
+            /** @description The binding that matched, and so which credential was attached. Null when none was: a passthrough host, or a host allowed under `limited` with no credential bound to it. */
             service?: string | null;
-            /** @description The upstream status, or the broker's refusal. */
+            /** @description The upstream status, or the broker's own refusal. Null where no answer arrived. */
             status?: number | null;
         };
         /** EgressListResponse */

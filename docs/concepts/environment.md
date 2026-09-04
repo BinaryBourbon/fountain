@@ -96,6 +96,9 @@ request log, `GET /api/conversations/:id/egress`, shows each decision. List what
 `registry.npmjs.org` for the agent's adapter. A host with a bound credential,
 such as the model's API, needs no entry.
 
+Put an IPv6 address in square brackets, such as `[2001:db8::1]`. Without them
+there is no way to tell the port apart from the address.
+
 Not every backend can hold egress. Sprites, E2B and Daytona can. A
 [self-hosted runner](../integrations/runners.md) cannot. The agent selects the
 backend, and the environment sets the policy. Fountain therefore compares the

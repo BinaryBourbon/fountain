@@ -70,6 +70,7 @@ defmodule Fountain.BrokerProxyRig do
     log = start_supervised!(Fountain.Broker.Native.RequestLog)
     Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, self(), log)
     :ok = Native.attach_telemetry()
+    watch_requests()
 
     {Managoat.Broker, listener_opts} = Native.listener_spec()
 
@@ -92,11 +93,54 @@ defmodule Fountain.BrokerProxyRig do
     }
   end
 
-  @doc "Flush the request-log buffer and return the conversation's rows, newest first."
-  def rows(rig, conversation_id) do
+  @doc """
+  Wait for the proxy's terminal event, flush the writer, and return the
+  conversation's rows, newest first.
+
+  The wait is the point. Since `managoat_broker` 0.3.0 the request event is
+  **terminal**: it fires when the response body completes, and the library
+  relays every byte to the client before showing it to the framer. So a test
+  that has read its whole response has not necessarily seen the row yet, and
+  flushing straight away finds an empty buffer perhaps one run in twenty.
+  Waiting on the event rather than sleeping is what keeps this deterministic.
+  """
+  def rows(rig, conversation_id, expected \\ 1) do
+    await_requests(conversation_id, expected)
     :ok = Fountain.Broker.Native.RequestLog.flush(rig.log)
     {:ok, %{events: events}} = Broker.request_log(conversation_id)
     events
+  end
+
+  # Telemetry handlers are global and other modules run beside this one, so
+  # the handler forwards the conversation id and `await_requests/2` receives
+  # selectively on it rather than counting every event on the node.
+  defp watch_requests do
+    id = "broker-rig-#{System.unique_integer([:positive])}"
+    test = self()
+
+    :telemetry.attach(
+      id,
+      [:managoat, :broker, :request],
+      fn _event, _measurements, meta, _config ->
+        case Map.get(meta, :meta) do
+          %{"conversation_id" => conv} when is_binary(conv) -> send(test, {:broker_request, conv})
+          _ -> :ok
+        end
+      end,
+      nil
+    )
+
+    ExUnit.Callbacks.on_exit(fn -> :telemetry.detach(id) end)
+  end
+
+  defp await_requests(_conversation_id, 0), do: :ok
+
+  defp await_requests(conversation_id, n) do
+    receive do
+      {:broker_request, ^conversation_id} -> await_requests(conversation_id, n - 1)
+    after
+      5_000 -> raise "no broker request event for #{conversation_id} within 5s"
+    end
   end
 
   @doc """
