@@ -94,13 +94,11 @@ defmodule FountainWeb.SchemaWrappersTest do
     Schemas.VaultListResponse,
     Schemas.VaultResponse,
     Schemas.VaultSecretListResponse,
-    Schemas.VaultSecretResponse,
-    Schemas.SupportReportResponse,
-    Schemas.SupportReportListResponse
+    Schemas.VaultSecretResponse
   ]
 
-  test "all 24 generated envelopes exist and keep the envelope invariants" do
-    assert length(@generated) == 24
+  test "all 22 generated envelopes exist and keep the envelope invariants" do
+    assert length(@generated) == 22
 
     for mod <- @generated do
       assert Code.ensure_loaded?(mod), "#{inspect(mod)} was not defined"

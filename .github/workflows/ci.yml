@@ -391,8 +391,8 @@ jobs:
         run: scripts/test-partition.sh ${{ strategy.job-total }}
 
       # The sibling umbrella apps — a managoat_* library on its way out
-      # (decisions/0037) and the Buzz extension (apps/fountain_buzz,
-      # decisions/0043) — are not in the partition manifest: their tests belong
+      # (decisions/0037) and the first-party extensions (apps/fountain_buzz and
+      # apps/fountain_support, decisions/0043) — are not in the partition manifest: their tests belong
       # to those apps, run from their own directories and instrument their own
       # modules, and apps/fountain cannot even load them because it depends on
       # neither. One partition runs them all and copies the exports into the
@@ -490,7 +490,7 @@ jobs:
           fi
           # The sibling apps' exports (scripts/test-libraries.sh): one per
           # umbrella app other than fountain — a managoat_* library on its way
-          # out (decisions/0037) or the Buzz extension (decisions/0043) — or the
+          # out (decisions/0037) or a first-party extension (decisions/0043) — or the
           # gate would stand on the partitions alone and their coverage would go
           # unmeasured.
           libs=()

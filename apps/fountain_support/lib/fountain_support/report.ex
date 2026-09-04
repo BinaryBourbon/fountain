@@ -1,10 +1,10 @@
-defmodule Fountain.Support.Report do
+defmodule FountainSupport.Report do
   @moduledoc """
   A problem report a user filed from a client — the "Report a problem" button
   in fountain-team, or `POST /api/support/reports` from anything else. Carries
   what the client knew at the time (conversation, agent, sandbox, presence,
   recent events, app version) so triage starts with the facts, and an optional
-  screenshot. Forwarded to the operator by `Fountain.Workers.SupportForward`.
+  screenshot. Forwarded to the operator by `FountainSupport.Workers.Forward`.
   """
   use Ecto.Schema
   import Ecto.Changeset

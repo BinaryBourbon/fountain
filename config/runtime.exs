@@ -1104,8 +1104,14 @@ if config_env() == :prod do
   # Optional (#843): where "Report a problem" reports are forwarded besides
   # SUPPORT_EMAIL — a GitHub issue in this repo, created with this token
   # (needs `issues:write`). Unset, reports stay on the row and in the mail.
-  config :fountain, :support_github_repo, System.get_env("SUPPORT_GITHUB_REPO")
-  config :fountain, :support_github_token, System.get_env("SUPPORT_GITHUB_TOKEN")
+  #
+  # Under `:fountain_support` rather than `:fountain` since #1528: these two
+  # exist for the extension and nothing else, so a core-only release reads no
+  # key for a feature it does not carry. SUPPORT_EMAIL above stays the host's,
+  # because the account emails and the team-comms replies name it too.
+  # Configuring an extension that is not installed is inert, not an error.
+  config :fountain_support, :support_github_repo, System.get_env("SUPPORT_GITHUB_REPO")
+  config :fountain_support, :support_github_token, System.get_env("SUPPORT_GITHUB_TOKEN")
 
   # "" counts as unset for the adapter choice (#396): docker-compose.yml passes
   # `${RESEND_API_KEY:-}` / `${SMTP_HOST:-}` / `${SMTP_USERNAME:-}`, which
@@ -1406,42 +1412,42 @@ if config_env() == :prod and server? do
     otlp_headers: otel_headers
 end
 
-# The Buzz extension (ADR 0043, #1507). Naming the module here is the whole of
+# The first-party extensions (ADR 0043). Naming a module here is the whole of
 # Fountain's knowledge of it: `Fountain.Extensions` reads this list and reaches
-# it only through `Fountain.Extension` callbacks. Drop this line and the release
-# serves no Buzz routes, runs no harness and applies none of its migrations —
-# which is what a core distribution is (decision 7).
+# each one only through `Fountain.Extension` callbacks. Drop a line and the
+# release serves none of that extension's routes, runs none of its jobs and
+# applies none of its migrations — which is what a core distribution is
+# (decision 7).
 #
 # A configured module that will not load is a bad deploy and
 # `Fountain.Extensions.validate!/0` refuses to boot on it, on purpose.
 #
-# Not in :test. `config/runtime.exs` is evaluated for every environment,
-# including by `mix test`, and `config :fountain, :extensions` REPLACES the key
-# rather than appending to it — so without this guard the line below silently
-# deleted every fixture extension `config/test.exs` installs, and the seam's
-# own tests measured an empty list. The test environment's list is
-# `config/test.exs`'s to decide, because it carries the fixtures too.
-# The whole extension list, for every environment, in one declaration —
+# The whole extension list, for every environment, in ONE declaration —
 # `config :fountain, :extensions` replaces the key rather than appending, so two
-# declarations would silently delete one another.
+# declarations would silently delete one another. That is not hypothetical: it
+# happened in #1507, where a second declaration deleted every fixture extension
+# `config/test.exs` installs and the seam's own tests measured an empty list.
 #
-# The Buzz extension is installed *where it loads*. `apps/fountain` deliberately
+# Each extension is installed *where it loads*. `apps/fountain` deliberately
 # depends on no sibling app, so `mix test` run from there — which is what CI's
-# partition script does — has no `:fountain_buzz` on the code path, and naming
-# it unconditionally would make `Fountain.Extensions.validate!/0` refuse to
-# boot every partition. That check working exactly as intended, on a
-# configuration that is wrong for that run.
+# partition script does — has neither `:fountain_buzz` nor `:fountain_support`
+# on the code path, and naming them unconditionally would make
+# `Fountain.Extensions.validate!/0` refuse to boot every partition. That check
+# working exactly as intended, on a configuration that is wrong for that run.
 #
 # `Code.ensure_loaded?/1` can only answer that after compilation, which is why
 # this lives here and not in `config/test.exs`: that file is evaluated before
 # the apps are built, where the answer is always false.
-buzz_extension =
-  if Code.ensure_loaded?(FountainBuzz.Extension), do: [FountainBuzz.Extension], else: []
+installed_extensions =
+  Enum.filter(
+    [FountainBuzz.Extension, FountainSupport.Extension],
+    &Code.ensure_loaded?/1
+  )
 
-# Fixture extensions prove the seam without Buzz (#1505). They are named here
-# rather than set per test because `:extensions` is global application state and
-# a test that wrote it would collide with every async test in the VM (#1214);
-# tests vary the fixture, not the configuration.
+# Fixture extensions prove the seam without a real one (#1505). They are named
+# here rather than set per test because `:extensions` is global application
+# state and a test that wrote it would collide with every async test in the VM
+# (#1214); tests vary the fixture, not the configuration.
 #
 # The misbehaving ones each fail for a single conversation id, which is what
 # makes them safe to install beside the others and what lets the isolation tests
@@ -1459,9 +1465,9 @@ extension_fixtures =
     []
   end
 
-config :fountain, :extensions, buzz_extension ++ extension_fixtures
+config :fountain, :extensions, installed_extensions ++ extension_fixtures
 
-# The extension's own configuration, under its own otp_app. The `buzz-acp`
+# The Buzz extension's own configuration, under its own otp_app. The `buzz-acp`
 # binary is baked into the amd64 image only and the `fountain` CLI into both;
 # point config at them here so `FountainBuzz.BootSweep` can stand up enabled
 # identities. On an arch without buzz-acp the path stays unset and the sweep is

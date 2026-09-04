@@ -1,10 +1,10 @@
-defmodule Fountain.SupportTest do
+defmodule FountainSupport.ContextTest do
   use Fountain.DataCase, async: true
   import Swoosh.TestAssertions
 
-  alias Fountain.Support
-  alias Fountain.Support.Report
-  alias Fountain.Workers.SupportForward
+  alias FountainSupport, as: Support
+  alias FountainSupport.Report
+  alias FountainSupport.Workers.Forward
 
   setup do
     %{user: insert_verified_user()}
@@ -25,7 +25,7 @@ defmodule Fountain.SupportTest do
       assert r.message == "teammate says starting forever"
       assert r.status == "new"
       assert r.context == ctx
-      assert_enqueued(worker: SupportForward, args: %{"report_id" => r.id})
+      assert_enqueued(worker: Forward, args: %{"report_id" => r.id})
 
       event =
         user.id
@@ -78,12 +78,12 @@ defmodule Fountain.SupportTest do
     end
   end
 
-  describe "SupportForward" do
+  describe "Forward" do
     test "with nothing configured the report is marked forwarded (the row is the inbox)", %{
       user: user
     } do
       {:ok, r} = Support.create_report(user.id, %{"category" => "bug", "message" => "x"})
-      assert :ok = perform_job(SupportForward, %{"report_id" => r.id})
+      assert :ok = perform_job(Forward, %{"report_id" => r.id})
 
       assert %Report{status: "forwarded", forwarded_at: %DateTime{}} =
                Support.get_report(r.id, user.id)
@@ -105,7 +105,7 @@ defmodule Fountain.SupportTest do
       end
 
       assert {:ok, "https://github.com/o/r/issues/7"} =
-               SupportForward.github(r, user, {"o/r", "tok"}, request)
+               Forward.github(r, user, {"o/r", "tok"}, request)
 
       assert_received {:github, "https://api.github.com/repos/o/r/issues", opts}
       assert opts[:json].title == "[bug] first line"
@@ -120,7 +120,7 @@ defmodule Fountain.SupportTest do
     test "a GitHub failure is reported, not raised", %{user: user} do
       {:ok, r} = Support.create_report(user.id, %{"category" => "bug", "message" => "x"})
       request = fn _url, _opts -> {:ok, %Req.Response{status: 401, body: %{}}} end
-      assert {:error, "github 401"} = SupportForward.github(r, user, {"o/r", "bad"}, request)
+      assert {:error, "github 401"} = Forward.github(r, user, {"o/r", "bad"}, request)
     end
 
     test "the email carries the body and the screenshot as an attachment", %{user: user} do
@@ -133,7 +133,7 @@ defmodule Fountain.SupportTest do
           "screenshot" => %{"data" => png, "media_type" => "image/png"}
         })
 
-      assert {:ok, nil} = SupportForward.email(r, user, "support@example.com")
+      assert {:ok, nil} = Forward.email(r, user, "support@example.com")
 
       assert_email_sent(fn mail ->
         assert mail.subject =~ "[stuck] stuck at starting"

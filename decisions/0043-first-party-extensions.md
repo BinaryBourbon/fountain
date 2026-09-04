@@ -1,21 +1,22 @@
 ---
 type: ADR
 title: "First-party extensions: Buzz becomes an OTP app installed at build time and enabled at runtime"
-description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through nine Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2, 3 and 4 — the seam, migration and OpenAPI composition, and the move itself: apps/fountain_buzz exists and core names no FountainBuzz module. The supply chain and the -core image have not moved."
-tags: [buzz, extensions, packaging, architecture, licensing]
+description: "Buzz leaves the Fountain core as fountain_buzz, an AGPL OTP application depending on :fountain that the host reaches only through nine Fountain.Extension callbacks. Build-time install, runtime enable, no hot code loading. The bundled image keeps every Buzz path, command and provider behavior; a new -core image carries none of it. Built so far: gates 2, 3 and 4 — the seam, migration and OpenAPI composition, and the move itself: apps/fountain_buzz exists and core names no FountainBuzz module. A second extension, fountain_support, moved the problem-report feature out under three of the nine callbacks and added none. The supply chain and the -core image have not moved."
+tags: [buzz, extensions, packaging, architecture, licensing, support]
 status: stable
 adr: "0043"
 adr_status: "Accepted"
 date: 2026-09-03
-generated: { by: claude-opus/5, at: 2026-09-03T17:00:17-04:00 }
-verified: { by: claude-opus/5, at: 2026-09-03T17:00:17-04:00 }
-stale_after: 2026-12-03
+generated: { by: claude-opus/5, at: 2026-09-04T00:00:00-04:00 }
+verified: { by: claude-opus/5, at: 2026-09-04T00:00:00-04:00 }
+stale_after: 2026-12-04
 ---
 
 # 0043 — First-party extensions: Buzz becomes an OTP app installed at build time and enabled at runtime
 
 **Status:** Accepted — **partially built.** Gates 2, 3 and 4 (#1505, #1506,
-#1507) are built. `Fountain.Extension` (now nine callbacks — see decision 3),
+#1507) are built, and so is the second extension (#1528, `fountain_support`),
+which used three of the nine callbacks and added none. `Fountain.Extension` (now nine callbacks — see decision 3),
 `Fountain.Extensions`, the authenticated dispatch, the conversation MCP
 fan-out, `Fountain.Migrations` and `FountainWeb.ApiSpec.Compose` exist; and
 Buzz has moved: `apps/fountain_buzz` is an AGPL OTP application depending on
@@ -199,6 +200,34 @@ and does not apply. `fountain_buzz` gets its own guard, asserting the rules that
 actually bind it: `apps/fountain/lib` mentions no `Buzz` or `FountainBuzz`
 identifier, declares no Buzz route, and holds no Buzz migration.
 
+**Amended 2026-09-04 (#1528): `fountain_support` is the second one, and it
+starts the same way.** The problem-report feature — `Fountain.Support`, its
+table, its controller, its OpenAPI schemas and its forwarder — became
+`apps/fountain_support`, an AGPL umbrella app under `FountainSupport.*` on the
+same terms. It exists to prove the seam against a second feature *without*
+widening it: it implements `api_mounts/0`, `migrations/0` and `openapi_paths/0`
+and inherits the contribute-nothing default for the other six. In particular it
+needs no `oban_cron/0` entry, because its one background job is enqueued by its
+own context rather than scheduled from the host's configuration; and it starts
+no processes, so its `mix.exs` declares no `mod:` at all.
+
+Two things the second extraction settled that the first did not have to:
+
+  * **Shared configuration stays the host's.** `SUPPORT_GITHUB_REPO` and
+    `SUPPORT_GITHUB_TOKEN` exist for this feature and moved to
+    `:fountain_support` with it. `SUPPORT_EMAIL` did not: the account emails and
+    the team-comms replies name the same address (#450), so it stays
+    `config :fountain, :support_email` and the extension reads it the way any
+    caller would. The rule is that a key with one consumer moves and a key the
+    host also reads does not — the alternative is one env var writing two config
+    keys, or core reading an extension's.
+  * **A core guardrail with an extension row moves the row, not the rule.** The
+    audit guardrail's `support.report.created` entry, four schema-enum rows, two
+    envelope entries and one schema-guard allowlist line each left core for
+    `FountainSupport.BoundaryTest`, which checks the same properties from the
+    extension's side. That is the same treatment #1507 gave Buzz's seven, and it
+    is why an extension needs a boundary test rather than only a guard test.
+
 ### 5. AGPL-3.0-or-later, `FountainBuzz.*`, and not a component library
 
 `apps/fountain_buzz/lib` is AGPL-3.0-or-later, like `apps/fountain` (ADR
@@ -328,10 +357,12 @@ anything back and does not delete a row.
   2.0) gate hosted Buzz agents through `Billing.check_spend/1`, a host API; the
   extension (AGPL) calls it like any other caller. Neither directory learns
   about the other.
-- **This is the template for the next one.** Team comms, the Gmail tools and
-  the caller-tool bridge sit in the same `fountain_served/2` list with the same
-  shape. None of them moves in this campaign, and if `Fountain.Extension` turns
-  out to fit them, that is the evidence that justifies graduating it.
+- **This is the template for the next one, and #1528 is the next one.**
+  `fountain_support` moved the problem-report feature out with three of the nine
+  callbacks and no tenth, which is the evidence decision 3 asked for: the seam
+  fits a second feature without widening. Team comms, the Gmail tools and the
+  caller-tool bridge sit in the same `fountain_served/2` list with the same
+  shape; none of them moves in this campaign.
 - **What we give up:** a `managoat_buzz` library that other people could use.
   Nothing about hosted Buzz agents is useful without Fountain's tenants,
   vaults, agents and conversations, so there was nothing there to give.
@@ -403,3 +434,9 @@ each leaves bundled behaviour green, and **none is built**.
 7. **#1510 — graduation and distributions.** The `-core` image and its boot
    check, the docs move, and — only once `Fountain.Extension` has stopped
    moving — `BinaryBourbon/fountain_buzz`.
+
+Outside the gate list, because it is not a Buzz gate:
+[#1528](https://github.com/BinaryBourbon/fountain/issues/1528) moved the
+problem-report feature into `apps/fountain_support` — **built**. It is the
+second consumer decision 4 named as a precondition for graduating
+`Fountain.Extension`, and it added no callback.

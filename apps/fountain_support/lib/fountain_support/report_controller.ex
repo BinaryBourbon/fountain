@@ -1,14 +1,20 @@
-defmodule FountainWeb.SupportReportController do
+defmodule FountainSupport.ReportController do
   @moduledoc """
   Problem reports over the API (#843): what the "Report a problem" button in a
   client files. The report is stored with the context the client had and
   forwarded to the operator out of band; the caller gets an id to quote.
+
+  Mounted by the host at `/api/support` (ADR 0043, #1528), inside the existing
+  `:api` pipeline — so the rate limit, `TenantAPIAuth`, `current_user` and the
+  request audit have already run by the time an action here does. There is no
+  pipeline in this app: an extension gets a mount point, not a door of its own.
   """
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.Support
-  alias FountainWeb.{Audited, Schemas}
+  alias FountainSupport, as: Support
+  alias FountainSupport.Schemas
+  alias FountainWeb.Audited
 
   action_fallback FountainWeb.FallbackController
 
@@ -19,6 +25,13 @@ defmodule FountainWeb.SupportReportController do
   tags(["Support"])
 
   operation(:create,
+    # Pinned, and deliberately still spelling the module this controller used to
+    # be. OpenApiSpex derives operationId from module + action, so the #1528
+    # rename would have changed all three — and the published spec is what the
+    # four SDKs are generated from (#1411), so the id is a wire value even
+    # though it looks like a module name. The same reasoning pinned Buzz's four
+    # in #1507.
+    operation_id: "FountainWeb.SupportReportController.create",
     summary: "File a problem report",
     description:
       "Stores the report with whatever `context` the client attaches (conversation, " <>
@@ -30,7 +43,7 @@ defmodule FountainWeb.SupportReportController do
     request_body: {"Report", "application/json", Schemas.SupportReportCreateRequest},
     responses: [
       created: {"Report", "application/json", Schemas.SupportReportResponse},
-      unprocessable_entity: {"Validation errors", "application/json", Schemas.Error}
+      unprocessable_entity: {"Validation errors", "application/json", FountainWeb.Schemas.Error}
     ]
   )
 
@@ -45,6 +58,8 @@ defmodule FountainWeb.SupportReportController do
   end
 
   operation(:index,
+    # Pinned; see create/2.
+    operation_id: "FountainWeb.SupportReportController.index",
     summary: "List the caller's reports",
     description: "Newest first, with forwarding status and the issue URL when one was created.",
     responses: [ok: {"Reports", "application/json", Schemas.SupportReportListResponse}]
@@ -55,11 +70,13 @@ defmodule FountainWeb.SupportReportController do
   end
 
   operation(:show,
+    # Pinned; see create/2.
+    operation_id: "FountainWeb.SupportReportController.show",
     summary: "Show one report",
     parameters: [id: [in: :path, type: :string, required: true]],
     responses: [
       ok: {"Report", "application/json", Schemas.SupportReportResponse},
-      not_found: {"Not found", "application/json", Schemas.Error}
+      not_found: {"Not found", "application/json", FountainWeb.Schemas.Error}
     ]
   )
 

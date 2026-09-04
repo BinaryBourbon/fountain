@@ -1,4 +1,4 @@
-defmodule Fountain.Workers.SupportForward do
+defmodule FountainSupport.Workers.Forward do
   @moduledoc """
   Deliver one support report to the operator: a GitHub issue when
   `SUPPORT_GITHUB_REPO` + `SUPPORT_GITHUB_TOKEN` are configured, and/or an
@@ -7,17 +7,29 @@ defmodule Fountain.Workers.SupportForward do
   not an error — the report is still on the row for `GET /api/support/reports`
   and the admin to read — and the job completes. A transport failure retries
   (three attempts), then the row carries `forward_error`.
+
+  The extension's only background job, and the reason it needs no `oban_cron/0`
+  entry: `FountainSupport.create_report/3` enqueues it, so nothing in the host's
+  configuration ever names this module. The queue, the job table and the Oban
+  instance are the host's — an extension shares them (ADR 0043 decision 3)
+  rather than running a second Oban to avoid saying the word.
   """
   use Oban.Worker, queue: :mailer, max_attempts: 3, unique: [keys: [:report_id], period: 3600]
 
   require Logger
   import Swoosh.Email
 
-  alias Fountain.{Accounts, Mailer, Support}
-  alias Fountain.Support.Report
+  alias Fountain.{Accounts, Mailer}
+  alias FountainSupport, as: Support
+  alias FountainSupport.Report
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"report_id" => id}}) do
+    # ownership: a background job with no requester in scope. The id came from
+    # `create_report/3`, which had already established the tenant; forwarding is
+    # to the operator, not to a caller, so there is nobody here to scope to.
+    # This was exempt as `lib/fountain/workers/` before #1528 moved the file;
+    # saying it out loud at the call site is the better version of that.
     case Support._unsafe_get_report(id) do
       nil ->
         :ok
