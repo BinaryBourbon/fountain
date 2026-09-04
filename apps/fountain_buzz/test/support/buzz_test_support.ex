@@ -21,6 +21,8 @@ defmodule FountainBuzz.TestSupport do
     path
   end
 
+  alias FountainBuzz.Manager
+
   @supervisor FountainBuzz.Supervisor
   @drain_tries 500
 
@@ -60,11 +62,42 @@ defmodule FountainBuzz.TestSupport do
 
     case Horde.DynamicSupervisor.which_children(@supervisor) do
       [] ->
-        :ok
+        await_registry_drained!(tries)
 
       _children ->
         Process.sleep(10)
         stop_all_harnesses!(tries - 1)
+    end
+  end
+
+  # An empty supervisor is not the whole drain. The registry learns of an exit
+  # **by monitor**, so it keeps counting a harness for a moment after
+  # `terminate_child/2` has returned — `Manager.await_stopped/2` documents the
+  # same lag, and #1544 is what it looks like inside one test.
+  #
+  # Across modules it looks like #1533 instead: teardown returns, the next
+  # module reads `running_count/0` as its baseline, and the entry this drain
+  # already killed disappears afterwards, moving the count under a test that
+  # took the number as fixed. So teardown means "nothing is registered", not
+  # "nothing is supervised".
+  defp await_registry_drained!(0) do
+    raise """
+    BuzzRegistry still counts #{Manager.running_count()} harness(es) after \
+    BuzzSupervisor drained.
+
+    The supervisor is empty, so these are registry entries for processes that \
+    are already down, and something is stopping Horde from reaping them. \
+    Leaving them would hand the next module a `running_count/0` baseline that \
+    changes under it (#1533).
+    """
+  end
+
+  defp await_registry_drained!(tries) do
+    if Manager.running_count() == 0 do
+      :ok
+    else
+      Process.sleep(10)
+      await_registry_drained!(tries - 1)
     end
   end
 end
