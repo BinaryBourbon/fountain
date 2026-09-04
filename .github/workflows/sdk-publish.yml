@@ -88,10 +88,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "version $version already on npm: $published (publish: $needed)"
 
+      # `--no-audit --no-fund`: see the SDK install step in ci.yml's `checks`
+      # job. The audit endpoint stalls for minutes from a runner and `npm ci`
+      # never fails on what it returns. This is the publish path, so the delay
+      # sat between a merged version bump and the package being on npm.
       - name: Install
         if: steps.release.outputs.needed == 'yes'
         working-directory: sdk/typescript
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       # `prepublishOnly` runs these again. They are here as their own steps so a
       # failure names the gate that failed, instead of surfacing as a publish
