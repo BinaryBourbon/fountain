@@ -101,7 +101,7 @@ defmodule Fountain.Umbrella.MixProject do
 
     args = if "--migrations-path" in args, do: args, else: args ++ migration_path_args()
 
-    Mix.Task.run("cmd", ["--app", "fountain", "mix", task] ++ args)
+    Mix.Task.run("do", ["--app", "fountain", "cmd", "mix", task] ++ args)
   end
 
   defp migration_path_args do
@@ -166,12 +166,21 @@ defmodule Fountain.Umbrella.MixProject do
       # a database with no extension tables (ADR 0043). Same bug CI caught on
       # the plain `ecto.migrate` path, on the two entrances CI does not run.
       setup: ["deps.get", "ecto.setup"],
+      # `cmd` under `do --app`, rather than `do --app <task>` directly (#1526,
+      # replacing the deprecated `cmd --app`): `mix do --app` narrows only a
+      # task that is `@recursive`, and none of ecto.create, ecto.drop,
+      # ecto.migrate, ecto.rollback or run is one. Handed the task directly,
+      # `do --app fountain ecto.create` drops the narrowing and runs at the
+      # umbrella root, and `do --app fountain run priv/repo/seeds.exs` fails
+      # outright ("No such file"), because the relative path resolves against
+      # the root. `mix cmd` IS recursive, so the --app narrows *it* and the
+      # command runs inside apps/fountain, which is what `cmd --app` did.
       "ecto.setup": [
-        "cmd --app fountain mix ecto.create",
+        "do --app fountain cmd mix ecto.create",
         "ecto.migrate",
-        "cmd --app fountain mix run priv/repo/seeds.exs"
+        "do --app fountain cmd mix run priv/repo/seeds.exs"
       ],
-      "ecto.reset": ["cmd --app fountain mix ecto.drop", "ecto.setup"],
+      "ecto.reset": ["do --app fountain cmd mix ecto.drop", "ecto.setup"],
       # Migrating from the umbrella root has to go through apps/fountain, or the
       # extension migration paths are silently dropped (ADR 0043, #1506).
       #
