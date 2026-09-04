@@ -23,6 +23,15 @@ defmodule Fountain.Application do
     # Counts metering events this node drops, for /admin/finance (#1038).
     Fountain.Billing.Reconciliation.attach_drop_counter()
 
+    # Extensions (ADR 0043, #1505). Raises on a duplicate id, a malformed or
+    # duplicated API prefix, a prefix a core route already claims, or a
+    # half-declared HTTP surface — before a single child starts, so a
+    # misconfigured deployment fails to boot instead of serving a surface
+    # nobody checked. An extension's own processes are not started here: it is
+    # an OTP application depending on :fountain, so OTP starts it after this
+    # one returns and stops it before this one goes away.
+    Fountain.Extensions.validate!()
+
     cluster_topologies = Application.get_env(:libcluster, :topologies, [])
 
     children =

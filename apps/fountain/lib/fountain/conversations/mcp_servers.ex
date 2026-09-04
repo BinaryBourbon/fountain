@@ -110,15 +110,36 @@ defmodule Fountain.Conversations.McpServers do
 
   @doc """
   The Fountain-served servers for a turn, in the order the server has always
-  appended them after the agent's own: buzz, team, team comms, caller.
+  appended them after the agent's own: extensions, buzz, team, team comms,
+  caller.
+
+  Installed extensions come first (ADR 0043, #1505), in configured order, ahead
+  of everything the host serves itself. That ordering is a host decision, not a
+  promise to an extension — ADR 0043 fixes "extensions before team" and nothing
+  finer.
+
+  `buzz/2` is still called directly beside the fan-out because Buzz has not
+  moved yet; #1507 deletes that clause when `FountainBuzz.Extension` starts
+  answering `conversation_mcp_servers/2` for the same conversations. Until
+  then, removing it here would silently take a live integration's reply tools
+  away.
   """
   @spec fountain_served(map(), String.t() | nil) :: [map()]
   def fountain_served(%{id: conv_id} = conv, token) do
-    buzz(conv_id, token) ++
+    extensions(conv_id, token) ++
+      buzz(conv_id, token) ++
       team(conv_id, token) ++
       team_comms(conv_id, token) ++
       caller(conv, token)
   end
+
+  # Every installed extension's contribution. `Fountain.Extensions` contains a
+  # failure to the extension that caused it: a raise here costs that
+  # extension's servers and leaves the rest of this list intact, because the
+  # alternative is one broken optional integration ending an unrelated turn.
+  @spec extensions(String.t() | nil, String.t() | nil) :: [map()]
+  defp extensions(conv_id, token),
+    do: Fountain.Extensions.conversation_mcp_servers(conv_id, token)
 
   # The Buzz reply tools (#737), injected into `session/new` only for a
   # Buzz-driven conversation and only once a callback token has been minted —

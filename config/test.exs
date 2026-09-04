@@ -146,3 +146,17 @@ config :fountain, :analytics_instance, "test"
 config :fountain, :webhook_req_options, plug: {Req.Test, Fountain.Webhooks}
 config :fountain, :webhook_allow_http, true
 config :fountain, :webhooks_enabled, true
+
+# Extensions (ADR 0043, #1505). The suite installs only fixtures — the seam is
+# proven before anything moves through it, and Buzz does not become an
+# extension until #1507. Named here rather than set per test because
+# `:extensions` is global application state: a test that wrote it would collide
+# with every other async test in the VM (the #1214 shape). Tests vary the
+# fixture, not the configuration.
+config :fountain, :extensions, [
+  Fountain.ExtensionFixtures.Enabled,
+  Fountain.ExtensionFixtures.Disabled,
+  Fountain.ExtensionFixtures.Silent,
+  Fountain.ExtensionFixtures.Exploding,
+  Fountain.ExtensionFixtures.WrongShape
+]

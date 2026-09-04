@@ -189,10 +189,11 @@ defmodule Fountain.Conversations.McpServersTest do
   end
 
   describe "fountain_served/2" do
-    test "is buzz, team, team comms, caller, in that order" do
-      # No Buzz identity and no teammate contact on this row, so the first
-      # and third lists are empty; the order of the two that remain is the
-      # order the server appended them before #1371.
+    test "is extensions, buzz, team, team comms, caller, in that order" do
+      # No Buzz identity and no teammate contact on this row, so those lists
+      # are empty; the order of the ones that remain is the order the server
+      # appended them before #1371, with installed extensions prepended by
+      # #1505.
       conv = insert_conversation(channel_id: Fountain.Team.channel())
       conv = %{conv | caller_tools: [%{"name" => "x"}]}
 
@@ -204,6 +205,46 @@ defmodule Fountain.Conversations.McpServersTest do
 
     test "is empty for an ordinary conversation" do
       assert McpServers.fountain_served(insert_conversation(), "tok") == []
+    end
+  end
+
+  describe "fountain_served/2 and extensions (ADR 0043, #1505)" do
+    alias Fountain.ExtensionFixtures
+
+    test "an installed extension's servers come first, ahead of the host's own" do
+      # The fixture claims one fixed conversation id, so this is the only test
+      # in the suite that sees its contribution — every other conversation is a
+      # fresh UUID and gets nothing.
+      conv = %{
+        id: ExtensionFixtures.Enabled.claimed_conversation_id(),
+        caller_tools: [%{"name" => "x"}]
+      }
+
+      assert [%{"name" => "fixture"}, %{name: "fountain-caller"}] =
+               McpServers.fountain_served(conv, "tok")
+    end
+
+    test "an extension contributes nothing to a conversation it does not claim" do
+      conv = %{id: Ecto.UUID.generate(), caller_tools: [%{"name" => "x"}]}
+
+      assert [%{name: "fountain-caller"}] = McpServers.fountain_served(conv, "tok")
+    end
+
+    test "a disabled extension contributes nothing even to the claimed conversation" do
+      # ExtensionFixtures.Disabled returns a server unconditionally and is in
+      # :extensions. If installed/0 stopped filtering, it would appear here.
+      conv = %{id: ExtensionFixtures.Enabled.claimed_conversation_id(), caller_tools: []}
+
+      names = conv |> McpServers.fountain_served("tok") |> Enum.map(& &1["name"])
+      refute "disabled-should-never-appear" in names
+    end
+
+    test "extensions are not consulted without a callback token" do
+      # The whole list is gated on the conversation-scoped credential: an
+      # extension's servers are authenticated with it or they are not served.
+      conv = %{id: ExtensionFixtures.Enabled.claimed_conversation_id(), caller_tools: []}
+
+      assert McpServers.fountain_served(conv, nil) == []
     end
   end
 end
