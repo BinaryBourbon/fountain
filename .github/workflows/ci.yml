@@ -1082,17 +1082,11 @@ jobs:
       - name: Swift SDK conformance
         run: swift test --configuration debug -Xswiftc -warnings-as-errors --filter ConformanceTests
 
+      # Includes the loopback streaming test, which used to need a process of
+      # its own while the SDK still cancelled finished URLSessionTasks and
+      # tripped FoundationNetworking's task registry at teardown (#1410).
       - name: Swift debug tests
         run: swift test --configuration debug -Xswiftc -warnings-as-errors
-
-      # Its own process: a real URLSession and the suite's mocked ones share
-      # FoundationNetworking's global task registry, which traps at teardown.
-      - name: Swift streaming test over a real socket
-        env:
-          FOUNTAIN_REAL_NETWORK_TESTS: "1"
-        run: |
-          swift test --configuration debug -Xswiftc -warnings-as-errors \
-            --filter aRealSocketStreamsEventsThroughURLSession
 
       - name: Swift release build
         run: swift build --configuration release -Xswiftc -warnings-as-errors

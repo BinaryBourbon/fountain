@@ -118,9 +118,7 @@ private func openStream(
             query: [
               "streams": streams, "wait": wait ? nil : "false", "blocks": blocks ? "true" : nil,
             ], lastEventID: lastID)
-          for try await item in SSEConnection.stream(
-            request: request, configuration: http.sessionConfiguration)
-          {
+          for try await item in http.streamer.stream(request: request) {
             switch item {
             case .opened:
               attempt = 0
@@ -162,52 +160,127 @@ func streamEvents(
 
 /// URLSessionDataDelegate is used instead of URLSession.AsyncBytes because the
 /// latter is unavailable in FoundationNetworking on Linux.
-private enum SSEItem: Sendable {
+enum SSEItem: Sendable {
   case opened
   case event(JSONObject)
 }
 
-private final class SSEConnection: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-  private let continuation: AsyncThrowingStream<SSEItem, Error>.Continuation
+/// One `URLSession` for every SSE connection a client opens, and one delegate
+/// that fans its callbacks back out by `URLSessionTask.taskIdentifier`.
+///
+/// A delegate that holds per-connection state needs a session of its own, which
+/// is why this used to build one per connection. Releasing that delegate meant
+/// invalidating that session, from inside its own `didCompleteWithError`, with
+/// `invalidateAndCancel()` — which reads the task registry off the session's
+/// work queue and cancels every task on it whatever state it is in. So: one
+/// session, invalidated once with `finishTasksAndInvalidate()` when the client
+/// that owns it is released, and never from inside a callback (#1410).
+final class SSEStreamer: @unchecked Sendable {
+  private let configuration: URLSessionConfiguration
+  /// A separate object rather than `self`, because the session holds its
+  /// delegate until it is invalidated. Were `self` the delegate, `deinit` would
+  /// wait on the invalidation it is meant to perform.
+  private let delegate = SSEDelegate()
   private let lock = NSLock()
-  private var response: HTTPURLResponse?
-  private var buffer = Data()
-  private var errorBody = Data()
   private var session: URLSession?
-  private var task: URLSessionDataTask?
-  private var finished = false
 
-  static func stream(request: URLRequest, configuration: URLSessionConfiguration)
-    -> AsyncThrowingStream<SSEItem, Error>
-  {
+  init(configuration: URLSessionConfiguration) {
+    self.configuration = configuration
+  }
+
+  deinit { session?.finishTasksAndInvalidate() }
+
+  func stream(request: URLRequest) -> AsyncThrowingStream<SSEItem, Error> {
     AsyncThrowingStream { continuation in
-      let connection = SSEConnection(continuation: continuation)
-      let session = URLSession(
-        configuration: configuration, delegate: connection, delegateQueue: nil)
-      connection.session = session
-      let task = session.dataTask(with: request)
-      connection.task = task
+      let task = openSession().dataTask(with: request)
+      let connection = SSEConnection(continuation: continuation, task: task)
+      // Registered before `resume()`, so no callback can arrive before the
+      // delegate can route it.
+      delegate.register(connection, for: task)
       continuation.onTermination = { _ in connection.cancel() }
       task.resume()
     }
   }
 
-  init(continuation: AsyncThrowingStream<SSEItem, Error>.Continuation) {
-    self.continuation = continuation
+  /// Built on the first stream, so a client that never streams never makes one.
+  private func openSession() -> URLSession {
+    lock.lock()
+    defer { lock.unlock() }
+    if let session { return session }
+    let created = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    session = created
+    return created
+  }
+}
+
+/// Task identifiers are unique for the life of a session, so a finished task
+/// never hands its slot to a later one.
+private final class SSEDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+  private let lock = NSLock()
+  private var connections: [Int: SSEConnection] = [:]
+
+  func register(_ connection: SSEConnection, for task: URLSessionDataTask) {
+    lock.lock()
+    defer { lock.unlock() }
+    connections[task.taskIdentifier] = connection
+  }
+
+  private func connection(for task: URLSessionTask) -> SSEConnection? {
+    lock.lock()
+    defer { lock.unlock() }
+    return connections[task.taskIdentifier]
+  }
+
+  private func take(_ task: URLSessionTask) -> SSEConnection? {
+    lock.lock()
+    defer { lock.unlock() }
+    return connections.removeValue(forKey: task.taskIdentifier)
   }
 
   func urlSession(
     _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
   ) {
-    self.response = response as? HTTPURLResponse
-    if let response = self.response, (200..<300).contains(response.statusCode) {
-      continuation.yield(.opened)
-    }
+    connection(for: dataTask)?.receive(response)
     completionHandler(.allow)
   }
 
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    connection(for: dataTask)?.receive(data)
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    take(task)?.complete(error)
+  }
+}
+
+/// The per-connection half: the parse buffer, the status, and the continuation
+/// the events go to. It owns no session, and invalidates none.
+private final class SSEConnection: @unchecked Sendable {
+  private let continuation: AsyncThrowingStream<SSEItem, Error>.Continuation
+  private let task: URLSessionDataTask
+  private let lock = NSLock()
+  private var response: HTTPURLResponse?
+  private var buffer = Data()
+  private var errorBody = Data()
+  private var finished = false
+
+  init(
+    continuation: AsyncThrowingStream<SSEItem, Error>.Continuation, task: URLSessionDataTask
+  ) {
+    self.continuation = continuation
+    self.task = task
+  }
+
+  func receive(_ response: URLResponse) {
+    let http = response as? HTTPURLResponse
+    lock.lock()
+    self.response = http
+    lock.unlock()
+    if let http, (200..<300).contains(http.statusCode) { continuation.yield(.opened) }
+  }
+
+  func receive(_ data: Data) {
     lock.lock()
     defer { lock.unlock() }
     guard !finished else { return }
@@ -219,7 +292,7 @@ private final class SSEConnection: NSObject, URLSessionDataDelegate, @unchecked 
     drainCompleteMessages()
   }
 
-  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+  func complete(_ error: Error?) {
     lock.lock()
     guard !finished else {
       lock.unlock()
@@ -233,7 +306,6 @@ private final class SSEConnection: NSObject, URLSessionDataDelegate, @unchecked 
     let response = self.response
     let body = errorBody
     lock.unlock()
-    defer { session.finishTasksAndInvalidate() }
     if let error {
       continuation.finish(throwing: error)
       return
@@ -276,15 +348,17 @@ private final class SSEConnection: NSObject, URLSessionDataDelegate, @unchecked 
     }
   }
 
-  private func cancel() {
+  /// A consumer that walks away from a live stream has to cancel the task, or
+  /// a tail would hold the connection open forever. A consumer that read to the
+  /// end has nothing to cancel. This is safe to call whatever the task is doing
+  /// only because the session carries no `URLCache` — see
+  /// `FountainHTTPClient.transportConfiguration(from:)`.
+  func cancel() {
     lock.lock()
     let alreadyFinished = finished
     finished = true
     lock.unlock()
-    if !alreadyFinished {
-      task?.cancel()
-      session?.invalidateAndCancel()
-    }
+    if !alreadyFinished { task.cancel() }
   }
 }
 

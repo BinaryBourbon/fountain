@@ -21,6 +21,12 @@ public final class Fountain: @unchecked Sendable {
   /// Throws when a base URL supplied by an argument, the environment or the CLI
   /// credentials file is not a valid http(s) URL. It is never replaced with a
   /// different host.
+  ///
+  /// `session` supplies the configuration this client transports on — protocol
+  /// classes, headers, cookie and credential storage, proxies, timeouts — not
+  /// the session itself. The client builds its own, because it cancels the
+  /// tasks it starts and on Linux that is only safe on a session it made
+  /// (`FountainHTTPClient.transportConfiguration(from:)`).
   public init(
     apiKey: String? = nil,
     baseURL: String? = nil,
