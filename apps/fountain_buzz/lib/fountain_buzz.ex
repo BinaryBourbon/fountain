@@ -481,7 +481,7 @@ defmodule FountainBuzz do
   """
   @spec harness_launch(Identity.t(), keyword()) :: {:ok, launch()} | {:error, term()}
   def harness_launch(%Identity{} = identity, opts \\ []) do
-    command = opts[:buzz_acp_path] || Application.get_env(:fountain_buzz, :buzz_acp_path)
+    command = opts[:buzz_acp_path] || FountainBuzz.Assets.acp_path()
     base_url = opts[:base_url] || Application.get_env(:fountain_buzz, :buzz_acp_base_url)
 
     fountain_bin =

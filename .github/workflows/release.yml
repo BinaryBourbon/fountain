@@ -228,7 +228,7 @@ jobs:
 
       - name: Read buzz-acp pin
         id: buzzver
-        run: echo "version=$(tr -d '[:space:]' < buzz-acp.version)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(tr -d '[:space:]' < apps/fountain_buzz/buzz-acp.version)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0

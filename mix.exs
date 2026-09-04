@@ -114,19 +114,38 @@ defmodule Fountain.Umbrella.MixProject do
   defp releases do
     [
       fountain_server: [
-        # The BUNDLED distribution (ADR 0043 decision 7): the server plus every
-        # first-party extension. `apps/fountain` deliberately does NOT depend on
-        # :fountain_buzz or :fountain_support — the arrow points the other way,
-        # and the compiler proves it. Inclusion is the release's decision, made
-        # here, which is what makes a core-only release a matter of dropping
-        # lines rather than untangling a dependency (gate 7, #1510).
-        applications: [
-          fountain: :permanent,
-          fountain_buzz: :permanent,
-          fountain_support: :permanent
-        ]
+        # One release name, two distributions (ADR 0043 decision 7). The name
+        # stays `fountain_server` in both, because it is `bin/fountain_server`
+        # in the image's CMD, in every `bin/migrate` and in the operator's
+        # muscle memory — a core release is a different set of applications,
+        # not a different product.
+        #
+        # `apps/fountain` deliberately depends on NO extension — the arrow
+        # points the other way and the compiler proves it — so inclusion is the
+        # release's decision, made here, and dropping one is a switch rather
+        # than untangling a dependency.
+        #
+        # Only Buzz is switchable today, because only Buzz carries native
+        # binaries whose absence is the point of a core image. `fountain_support`
+        # (#1528) is pure Elixir and rides along; #1510 should generalise this
+        # to one list when it defines the core distribution properly.
+        applications:
+          [fountain: :permanent, fountain_support: :permanent] ++ bundled_applications()
       ]
     ]
+  end
+
+  # `BUNDLE_BUZZ=false mix release` builds the core distribution. Read from the
+  # environment rather than from Mix config because the Dockerfile already
+  # passes it as a build arg for the native-asset stage, and one switch for
+  # both halves is the point: an image cannot end up with the extension
+  # application but no binaries, or the reverse.
+  defp bundled_applications do
+    if System.get_env("BUNDLE_BUZZ", "true") == "true" do
+      [fountain_buzz: :permanent]
+    else
+      []
+    end
   end
 
   defp aliases do

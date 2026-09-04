@@ -23,10 +23,16 @@ Buzz has moved: `apps/fountain_buzz` is an AGPL OTP application depending on
 `:fountain`, `apps/fountain/lib` names no `FountainBuzz.*` module (a guard test
 enforces it), and the bundled release includes both apps.
 
-**Not built:** the `buzz-acp`/`buzz` supply chain still belongs to core's
-Dockerfile and workflows (gate 5 / #1509 — this ADR's *distribution* half), and
-the `-core` image, the docs move and the graduation to
-`BinaryBourbon/fountain_buzz` (gate 7 / #1510). The Go CLI split is #1508.
+Gate 5 (#1509) is built too: the extension owns its `buzz-acp` pin, its fork
+override and the paths its binaries install to, and `BUNDLE_BUZZ=false` builds
+a core image — no extension application in the release, no binaries in the
+image, one switch for both halves. Both images were built and their contents
+checked.
+
+**Not built:** a core-image *boot* check (gate 7 / #1510 — the image builds and
+its contents are asserted, but nothing has yet started one against a database),
+the docs move, and the graduation to `BinaryBourbon/fountain_buzz`. The Go CLI
+split is #1508.
 
 ADR [0020](0020-buzz-as-a-client-of-the-acp-gateway.md)'s hosted harness and
 brokered signer ship in the image today and keep working unchanged throughout.
@@ -428,9 +434,14 @@ each leaves bundled behaviour green, and **none is built**.
    which is what "the wire did not move" means.
 5. **#1508 — the Go split.** `buzz-backend-fountain` moves to the extension's
    ownership; `fountain buzz` stays in `cli/` (decision 6). Rescope the issue.
-6. **#1509 — the supply chain.** `buzz-acp.version`, `buzz-acp.source`,
-   `buzz-acp-publish.yml` and the `buzzacp` Docker stage become the extension's,
-   and the bundled image assembles them as an extension layer.
+6. **#1509 — the supply chain. Built.** `buzz-acp.version` and
+   `buzz-acp.source` moved to `apps/fountain_buzz`, the publish and build
+   workflows read them there, and the Docker stage became a pair selected by
+   `BUNDLE_BUZZ` — the bundled image downloads and checksum-verifies both
+   binaries, the core image copies an empty directory and refuses to contain
+   one. `FountainBuzz.Assets` owns where they install and refuses a binary
+   whose version does not match the pin, so a partial upgrade is an inert
+   extension and a log line rather than a harness crash-loop per identity.
 7. **#1510 — graduation and distributions.** The `-core` image and its boot
    check, the docs move, and — only once `Fountain.Extension` has stopped
    moving — `BinaryBourbon/fountain_buzz`.

@@ -1,6 +1,26 @@
 defmodule FountainBuzz.TestSupport do
   @moduledoc false
 
+  @doc """
+  A stand-in `buzz-acp` that blocks, and answers `--version` with the pin.
+
+  `FountainBuzz.Assets.compatible?/0` refuses a binary whose version does not
+  match `apps/fountain_buzz/buzz-acp.version` (#1509), so a fake that cannot
+  answer would make every harness test exercise the refusal path rather than
+  the thing it is about. Reporting the pin is what makes it a stand-in and not
+  merely an executable file.
+  """
+  def write_fake_acp!(path) do
+    File.write!(path, """
+    #!/bin/sh
+    if [ "$1" = "--version" ]; then echo "buzz-acp #{FountainBuzz.Assets.pinned_version()}"; exit 0; fi
+    exec sleep 30
+    """)
+
+    File.chmod!(path, 0o755)
+    path
+  end
+
   @supervisor FountainBuzz.Supervisor
   @drain_tries 500
 

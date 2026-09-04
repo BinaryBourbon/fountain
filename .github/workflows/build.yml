@@ -158,7 +158,7 @@ jobs:
           persist-credentials: false
 
       - name: Read buzz-acp pin
-        run: echo "BUZZ_ACP_VERSION=$(tr -d '[:space:]' < buzz-acp.version)" >> "$GITHUB_ENV"
+        run: echo "BUZZ_ACP_VERSION=$(tr -d '[:space:]' < apps/fountain_buzz/buzz-acp.version)" >> "$GITHUB_ENV"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
