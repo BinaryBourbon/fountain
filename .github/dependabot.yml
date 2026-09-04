@@ -32,3 +32,24 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # The two npm lockfiles. Added when `npm ci` in CI lost its implicit
+  # `npm audit` call: that call printed advisories and could not fail a build,
+  # while costing 88s to 302s per run waiting on an endpoint that stalls from a
+  # runner. Removing it left these packages watched by nothing at all, so the
+  # signal moves here, where it arrives as a PR someone can merge.
+  - package-ecosystem: npm
+    directory: /sdk/typescript
+    schedule:
+      interval: weekly
+    groups:
+      sdk-typescript:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /scripts/destink
+    schedule:
+      interval: weekly
+    groups:
+      destink:
+        update-types: [minor, patch]

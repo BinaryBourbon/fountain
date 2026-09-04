@@ -748,9 +748,26 @@ jobs:
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
 
+      # `--no-audit` is the whole reason this step is not the longest in CI.
+      # `npm ci` runs a vulnerability audit by default, which is one POST to
+      # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
+      # stalls from Actions runners rather than failing fast. Measured on this
+      # lockfile: 35 packages, every tarball fetched in 325ms from a warm
+      # cache, and then `reify:audit Completed in 300202ms`. The step was
+      # taking 88s to 302s depending on how far into npm's 5-minute timeout the
+      # request got, on every PR, and it made this job 426s against 171s for
+      # the slowest test partition. With the flag it is under 5s.
+      #
+      # Nothing is lost, because nothing was gated: `npm ci` does not fail on
+      # advisories, so this could only ever print "found 0 vulnerabilities"
+      # into a log. What DOES watch these packages is dependabot, which was
+      # given its two npm ecosystems in the same change that added this flag --
+      # before that the audit line was the only npm advisory signal in the
+      # repository, and it was one nobody could act on. `--no-fund` suppresses
+      # the funding notice for the same reason: it is output, not a check.
       - name: SDK install
         working-directory: sdk/typescript
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: SDK typecheck
         working-directory: sdk/typescript
@@ -1027,10 +1044,15 @@ jobs:
       # job already installed Node 24 for the SDK steps above, unconditionally.
       # A second setup-node would re-point the npm cache at a different
       # lockfile for the rest of the job.
+      #
+      # `--no-audit --no-fund` for the reason spelled out on the SDK install
+      # step above: five packages, 5.2MB, every tarball fetched in 325ms, and
+      # then five minutes waiting on the advisories endpoint. This step was
+      # measured at 61s and 278s on consecutive runs from that alone.
       - name: Docs de-stink
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: |
-          npm ci --prefix scripts/destink
+          npm ci --prefix scripts/destink --no-audit --no-fund
           node scripts/destink/destink.mjs
 
   swift-sdk:
@@ -1568,9 +1590,11 @@ jobs:
           cache: npm
           cache-dependency-path: scripts/destink/package-lock.json
 
+      # `--no-audit --no-fund`: see the SDK install step in `checks`. The audit
+      # request stalls for minutes from a runner and can only ever print.
       - name: Docs de-stink
         run: |
-          npm ci --prefix scripts/destink
+          npm ci --prefix scripts/destink --no-audit --no-fund
           node scripts/destink/destink.mjs
 
       - name: Set up Go
