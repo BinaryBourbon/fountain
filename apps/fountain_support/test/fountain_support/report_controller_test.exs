@@ -1,4 +1,4 @@
-defmodule FountainWeb.SupportReportControllerTest do
+defmodule FountainSupport.ReportControllerTest do
   use FountainWeb.ConnCase, async: true
 
   setup do

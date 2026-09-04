@@ -1,7 +1,7 @@
-defmodule FountainWeb.SupportReportJSON do
+defmodule FountainSupport.ReportJSON do
   @moduledoc false
 
-  alias Fountain.Support.Report
+  alias FountainSupport.Report
 
   def index(%{reports: reports}), do: %{data: Enum.map(reports, &data/1)}
   def show(%{report: report}), do: %{data: data(report)}

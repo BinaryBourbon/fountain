@@ -71,18 +71,27 @@ defmodule FountainWeb.Plugs.CastRenderErrorTest do
     end
 
     test "a value the operation refuses is rendered by this plug, not by the default", ctx do
-      # `category` is an enum in the spec, so CastAndValidate rejects this
-      # before SupportReportController ever runs. Before #1431 the body was
-      # `{"errors": [{"title": …, "source": {"pointer": "/category"}}]}` — an
+      # `runtime` is an enum in the spec, so CastAndValidate rejects this before
+      # AgentController ever runs. Before #1431 the body was
+      # `{"errors": [{"title": …, "source": {"pointer": "/runtime"}}]}` — an
       # array keyed by pointer, which no declared schema described and which
       # every SDK's `fieldErrors` read as empty.
+      #
+      # This used `POST /api/support/reports` until #1528 moved that operation
+      # into the `fountain_support` extension, which is not on the code path
+      # when this app's suite runs alone. Any core operation with an enum makes
+      # the same point; the extension checks its own rendering from its side.
       body =
         build_conn()
         |> authed_with_key(ctx.raw_key)
-        |> post_json("/api/support/reports", %{"category" => "rant", "message" => "x"})
+        |> post_json("/api/agents", %{
+          "name" => "cast-render",
+          "model" => "anthropic/claude-opus-5",
+          "runtime" => "rant"
+        })
         |> json_response(422)
 
-      assert %{"error" => "validation_failed", "errors" => %{"category" => [message]}} = body
+      assert %{"error" => "validation_failed", "errors" => %{"runtime" => [message]}} = body
       assert is_binary(message)
     end
   end

@@ -1,20 +1,27 @@
-defmodule Fountain.Support do
+defmodule FountainSupport do
   @moduledoc """
   Problem reports from users, filed from a client with the context the client
   had (#843). The report is stored, audited, and forwarded to the operator
   out of band — email to `SUPPORT_EMAIL`, a GitHub issue when
   `SUPPORT_GITHUB_REPO` + `SUPPORT_GITHUB_TOKEN` are set — by
-  `Fountain.Workers.SupportForward`, so a slow or broken forwarder never
+  `FountainSupport.Workers.Forward`, so a slow or broken forwarder never
   fails the user's request.
 
   Tenant-scoped like everything else: a user sees only their own reports.
   The screenshot is bytes on the row (5 MB max), never in the audit trail
   or the forwarded mail body beyond "attached".
+
+  The extension's context (ADR 0043, #1528). It was `Fountain.Support` until
+  the move; the module name changed and nothing on the wire did. It consumes
+  the host's public facilities — `Repo`, `Audit`, `Accounts`, `Mailer`,
+  `Apps`, image decoding and the shared Oban — and owns every report-specific
+  policy: the table, the validation, the audit metadata shape and where a
+  report is forwarded.
   """
   import Ecto.Query
 
   alias Fountain.{Audit, Repo}
-  alias Fountain.Support.Report
+  alias FountainSupport.Report
 
   @doc """
   File a report. `attrs` is the API body: `category`, `message`, optional
@@ -66,7 +73,17 @@ defmodule Fountain.Support do
     report |> Report.forward_changeset(attrs) |> Repo.update()
   end
 
-  @doc "Where reports go: the configured targets, for the forwarder and the docs."
+  @doc """
+  Where reports go: the configured targets, for the forwarder and the docs.
+
+  The two configurations sit under different otp_apps on purpose.
+  `SUPPORT_GITHUB_REPO` / `SUPPORT_GITHUB_TOKEN` exist for this feature and
+  nothing else, so they moved to `:fountain_support` with it (#1528).
+  `SUPPORT_EMAIL` is the host's "contact support" address (#450): the account
+  emails and the team-comms replies name it too, so it stays the host's key and
+  this reads it the way any caller would. Moving it would have meant one env var
+  writing two config keys, or core reading the extension's.
+  """
   @spec targets() :: %{email: String.t() | nil, github: {String.t(), String.t()} | nil}
   def targets do
     email =
@@ -76,8 +93,8 @@ defmodule Fountain.Support do
       end
 
     github =
-      case {Application.get_env(:fountain, :support_github_repo),
-            Application.get_env(:fountain, :support_github_token)} do
+      case {Application.get_env(:fountain_support, :support_github_repo),
+            Application.get_env(:fountain_support, :support_github_token)} do
         {repo, token} when is_binary(repo) and repo != "" and is_binary(token) and token != "" ->
           {repo, token}
 
@@ -90,7 +107,7 @@ defmodule Fountain.Support do
 
   defp enqueue_forward(%Report{id: id}) do
     %{"report_id" => id}
-    |> Fountain.Workers.SupportForward.new()
+    |> FountainSupport.Workers.Forward.new()
     |> Oban.insert()
     |> case do
       {:ok, _} ->

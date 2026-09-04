@@ -6,10 +6,10 @@
 # (scripts/coverage-gate.exs reads that one directory).
 #
 # That is two kinds of app today: a library on its way out (apps/managoat_*,
-# decisions/0037 — none right now, all nine graduated) and the Buzz extension
-# (apps/fountain_buzz, decisions/0043). They need the same treatment for the
-# same reason, so the glob is "every sibling" rather than a list to keep
-# updated.
+# decisions/0037 — none right now, all nine graduated) and a first-party
+# extension (apps/fountain_buzz and apps/fountain_support, decisions/0043).
+# They need the same treatment for the same reason, so the glob is "every
+# sibling" rather than a list to keep updated.
 #
 # Why a separate script and not another partition: scripts/partition-files.sh
 # and the timings manifest are written against apps/fountain and ee/, whose

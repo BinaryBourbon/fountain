@@ -49,7 +49,7 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   # The list may shrink, never grow, without a deliberate edit here and in the
   # guardrail's own ceiling.
   @entries %{
-    # ── plug_status (68) ─────────────────────────────
+    # ── plug_status (66) ─────────────────────────────
     {"DELETE /api/account", 401} => :plug_status,
     {"DELETE /api/agents/{id}", 401} => :plug_status,
     {"DELETE /api/conversations/{id}", 401} => :plug_status,
@@ -109,7 +109,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
     {"POST /api/conversations/{conversation_id}/prompts", 503} => :plug_status,
     {"POST /api/conversations/{conversation_id}/terminate", 503} => :plug_status,
     {"POST /api/environments", 401} => :plug_status,
-    {"POST /api/support/reports", 401} => :plug_status,
     {"POST /api/team/{agent_id}/contact", 424} => :plug_status,
     {"POST /api/vaults", 401} => :plug_status,
     {"POST /api/webhooks", 403} => :plug_status,

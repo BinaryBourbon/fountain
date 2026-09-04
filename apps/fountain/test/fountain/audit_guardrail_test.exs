@@ -96,7 +96,6 @@ defmodule Fountain.AuditGuardrailTest do
     {"team contact opt-out", &__MODULE__.do_contact_opt_out/1, "team.contact.opted_out"},
     {"team contact opt-in", &__MODULE__.do_contact_opt_in/1, "team.contact.opted_in"},
     {"team contact release", &__MODULE__.do_contact_release/1, "team.contact.released"},
-    {"support report create", &__MODULE__.do_support_create/1, "support.report.created"},
     {"runner register", &__MODULE__.do_runner_register/1, "runner.registered"},
     {"runner delete", &__MODULE__.do_runner_delete/1, "runner.deleted"},
     # Outbound webhooks (ADR 0024). The auto-disable path is the one with no
@@ -469,15 +468,6 @@ defmodule Fountain.AuditGuardrailTest do
 
     s
   end
-
-  def do_support_create(user),
-    do:
-      {:ok, _} =
-        Fountain.Support.create_report(user.id, %{
-          "category" => "bug",
-          "message" => "it broke",
-          "context" => %{"conversation_id" => "x"}
-        })
 
   # The flag is flipped for the duration of the call only; the providers are
   # the Req.Test plugs from config/test.exs, stubbed in this process.

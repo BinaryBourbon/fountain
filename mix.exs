@@ -114,13 +114,17 @@ defmodule Fountain.Umbrella.MixProject do
   defp releases do
     [
       fountain_server: [
-        # The BUNDLED distribution (ADR 0043 decision 7): the server plus the
-        # Buzz extension. `apps/fountain` deliberately does NOT depend on
-        # :fountain_buzz — the arrow points the other way, and the compiler
-        # proves it. Inclusion is the release's decision, made here, which is
-        # what makes a core-only release a matter of dropping one line rather
-        # than untangling a dependency (gate 7, #1510).
-        applications: [fountain: :permanent, fountain_buzz: :permanent]
+        # The BUNDLED distribution (ADR 0043 decision 7): the server plus every
+        # first-party extension. `apps/fountain` deliberately does NOT depend on
+        # :fountain_buzz or :fountain_support — the arrow points the other way,
+        # and the compiler proves it. Inclusion is the release's decision, made
+        # here, which is what makes a core-only release a matter of dropping
+        # lines rather than untangling a dependency (gate 7, #1510).
+        applications: [
+          fountain: :permanent,
+          fountain_buzz: :permanent,
+          fountain_support: :permanent
+        ]
       ]
     ]
   end

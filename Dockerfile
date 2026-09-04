@@ -43,11 +43,12 @@ RUN mix local.hex --force \
 COPY mix.exs mix.lock coverage.exs ./
 COPY config ./config
 COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
-# The Buzz extension (ADR 0043, #1507). This image is the BUNDLED distribution,
-# so it carries both apps; a core-only image drops this line and the release's
-# `applications:` entry, and carries no Buzz code, routes, migrations or
-# binaries (gate 7, #1510).
+# The first-party extensions (ADR 0043, #1507 and #1528). This image is the
+# BUNDLED distribution, so it carries every app; a core-only image drops these
+# lines and the release's `applications:` entries, and carries no extension
+# code, routes, migrations or binaries (gate 7, #1510).
 COPY apps/fountain_buzz/mix.exs ./apps/fountain_buzz/mix.exs
+COPY apps/fountain_support/mix.exs ./apps/fountain_support/mix.exs
 # One line per umbrella library app (decisions/0037), when there is one: the
 # umbrella loads every child's mix.exs to resolve deps, so a missing one fails
 # `mix deps.get` here. Every managoat_* library has graduated to hex (#1345,

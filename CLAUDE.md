@@ -39,17 +39,24 @@ fountain/                  umbrella root
       test/fountain/       context unit tests (async: true, DataCase)
       test/fountain_web/   controller/LiveView integration tests
       test/support/        DataCase, ConnCase, factory.ex
-    fountain_buzz/         the Buzz extension (ADR 0043, tracker #1503): an
-                           AGPL OTP app that depends on :fountain, named in
-                           `config :fountain, :extensions` and reached only
-                           through the `Fountain.Extension` callbacks. Owns
+    fountain_buzz/         the two first-party extensions (ADR 0043, tracker
+    fountain_support/      #1503 and #1528). Each is an AGPL OTP app that
+                           depends on :fountain, is named in
+                           `config :fountain, :extensions` and is reached only
+                           through the `Fountain.Extension` callbacks. Buzz owns
                            FountainBuzz.*, buzz_identities and its migrations,
-                           /api/buzz + /api/mcp/buzz, and the harness tree.
-                           `apps/fountain` depends on it in no direction and
-                           names no module of it (extension_guard_test.exs);
-                           the release's `applications:` decides inclusion.
-                           Its suite runs from its own directory, so
-                           `scripts/test-libraries.sh` runs it in CI.
+                           /api/buzz + /api/mcp/buzz, and the harness tree;
+                           Support owns FountainSupport.*, support_reports,
+                           /api/support and the report forwarder.
+                           `apps/fountain` depends on neither in any direction
+                           and names no module of either
+                           (extension_guard_test.exs); the release's
+                           `applications:` decides inclusion. Their suites run
+                           from their own directories, so
+                           `scripts/test-libraries.sh` runs them in CI. A new
+                           extension needs a row in extension_guard_test.exs
+                           and a boundary test of its own; adding a tenth
+                           `Fountain.Extension` callback needs an ADR.
     (managoat_*/)          the component libraries extracted from the server
                            (ADR 0037, tracker #1334): Apache-2.0, Managoat.*
                            namespace, no reference back into Fountain. Each
@@ -429,15 +436,15 @@ required.
 ## Test patterns
 
 `mix test` at the umbrella root runs core, `ee/test` **and** every sibling app
-(`apps/fountain_buzz`). To run a single ee file by path, run from
-`apps/fountain` (`mix test ../../ee/test/...`) or pass an absolute path —
-root-relative `ee/...` paths don't resolve.
+(`apps/fountain_buzz`, `apps/fountain_support`). To run a single ee file by
+path, run from `apps/fountain` (`mix test ../../ee/test/...`) or pass an
+absolute path — root-relative `ee/...` paths don't resolve.
 
-`apps/fountain` deliberately depends on no sibling app, so `:fountain_buzz` is
-not on the code path there: running from `apps/fountain` (which is what CI's
-partition script does) runs core only, and `config/test.exs` installs the Buzz
-extension **only where it loads**. Run the extension's suite from
-`apps/fountain_buzz`, or from the root.
+`apps/fountain` deliberately depends on no sibling app, so neither
+`:fountain_buzz` nor `:fountain_support` is on the code path there: running from
+`apps/fountain` (which is what CI's partition script does) runs core only, and
+`config/runtime.exs` installs each extension **only where it loads**. Run an
+extension's suite from its own directory, or from the root.
 
 ### Database tests
 
