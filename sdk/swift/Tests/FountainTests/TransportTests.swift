@@ -189,8 +189,18 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
   }
 
   @Test func successfulEmptySSEConnectionsResetRetryBudget() async throws {
+    // Counted by path, not by call, for the reason
+    // `anEventStreamOpensNothingUntilItIsIterated` counts by cursor: a stream
+    // an earlier test left retrying reaches this handler too, and an extra
+    // connection it made would move the run that carries the event. Only this
+    // test asks for this path.
+    let path = "/api/events/retry-budget"
     let counter = LockedCounter()
-    MockURLProtocol.handler = { _, protocolInstance in
+    MockURLProtocol.handler = { request, protocolInstance in
+      guard request.url?.path == path else {
+        protocolInstance.respond(headers: ["Content-Type": "text/event-stream"])
+        return
+      }
       let count = counter.increment()
       let body = count == 7 ? "id: 7\nevent: output\ndata: {\"kind\":\"output\"}\n\n" : ""
       protocolInstance.respond(
@@ -200,9 +210,7 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
       baseURL: URL(string: "https://api.example.test")!, apiKey: "secret", appURL: nil)
     let http = FountainHTTPClient(configuration: config, session: mockSession())
     var ids: [Int] = []
-    for try await event in streamPath(
-      http: http, path: "/api/events/stream", maxRetries: 5, retryDelay: 0)
-    {
+    for try await event in streamPath(http: http, path: path, maxRetries: 5, retryDelay: 0) {
       ids.append(event["id"]?.intValue ?? 0)
       break
     }
