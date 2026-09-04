@@ -30,6 +30,7 @@ defmodule Fountain.AuditGuardrailTest do
     Conversations,
     Environments,
     InferenceCredentials,
+    Principals,
     Vaults,
     Webhooks
   }
@@ -133,7 +134,14 @@ defmodule Fountain.AuditGuardrailTest do
     # host still records them, whichever door the grant came through.
     {"oauth authorize", &__MODULE__.do_oauth_authorize/1, "oauth.authorized"},
     {"oauth device approve", &__MODULE__.do_oauth_device_approve/1, "oauth.device_approved"},
-    {"oauth device deny", &__MODULE__.do_oauth_device_deny/1, "oauth.device_denied"}
+    {"oauth device deny", &__MODULE__.do_oauth_device_deny/1, "oauth.device_denied"},
+    # Claimable principals (ADR 0044). The trail is written against the
+    # *application* that opened the principal, because a principal that
+    # expires unclaimed is a tenant nobody can ever sign in to read it from.
+    # The user each entry is exercised with here is that application.
+    {"claimable principal create", &__MODULE__.do_claimable_create/1, "claimable_user.created"},
+    {"claimable principal claim", &__MODULE__.do_claimable_claim/1, "claimable_user.claimed"},
+    {"claimable principal release", &__MODULE__.do_claimable_release/1, "claimable_user.released"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -651,5 +659,23 @@ defmodule Fountain.AuditGuardrailTest do
   def do_oauth_device_deny(user) do
     {:ok, %{user_code: code}} = Fountain.OAuth.start_device_grant()
     :ok = Fountain.OAuth.deny_device_grant(code, user.id)
+  end
+
+  # ── claimable principals (ADR 0044) ──────────────────────────────────────
+
+  def do_claimable_create(app) do
+    {:ok, _} = Principals.create_claimable(app, %{"application_id" => "guardrail"})
+  end
+
+  def do_claimable_claim(app) do
+    {:ok, %{claimable: c, claim_token: token}} =
+      Principals.create_claimable(app, %{"application_id" => "guardrail"})
+
+    {:ok, _} = Principals.claim(c.id, token, insert_verified_user())
+  end
+
+  def do_claimable_release(app) do
+    {:ok, %{claimable: c}} = Principals.create_claimable(app, %{"application_id" => "guardrail"})
+    {:ok, _} = Principals.release(c)
   end
 end

@@ -438,6 +438,55 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "billing_disabled", billing: "disabled"})
   end
 
+  # ── claimable principals (ADR 0044) ───────────────────────────────────────
+  #
+  # Named rather than left to the 422 safety net below, because an application
+  # recovering from a lost response branches on exactly these: a claim it lost
+  # the response to (409) reads differently from one it was too late for (410),
+  # and both read differently from a bad token (403).
+
+  def call(conn, {:error, :already_claimed}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{error: "already_claimed", reason: "already_claimed"})
+  end
+
+  def call(conn, {:error, reason}) when reason in [:expired, :released] do
+    conn
+    |> put_status(:gone)
+    |> json(%{error: to_string(reason), reason: to_string(reason)})
+  end
+
+  def call(conn, {:error, :invalid_claim_token}) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{error: "invalid_claim_token", reason: "invalid_claim_token"})
+  end
+
+  # The claiming account, not the grant: verified, not suspended, and able to
+  # fund the work the claim moves onto its ledger.
+  def call(conn, {:error, :ineligible}) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{
+      error: "this account cannot claim a principal",
+      reason: "ineligible_claimer"
+    })
+  end
+
+  def call(conn, {:error, reason})
+      when reason in [:too_many_outstanding_principals, :principal_rate_limited] do
+    conn
+    |> put_status(:too_many_requests)
+    |> json(%{error: to_string(reason), reason: to_string(reason)})
+  end
+
+  def call(conn, {:error, {:invalid, message}}) when is_binary(message) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: message, reason: "invalid_request"})
+  end
+
   def call(conn, {:error, reason}) when is_binary(reason) do
     conn
     |> put_status(:bad_request)

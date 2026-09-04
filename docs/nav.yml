@@ -135,6 +135,7 @@ nav:
       - The shape everyone clones: build/index.md
       - A team chat, end to end: build/team-chat.md
       - What each piece does: build/pieces.md
+      - Start before sign-in: build/anonymous-visitors.md
   - Plug into Fountain:
       - Overview: integrations/clients.md
       - fountain acp (reference): integrations/acp.md

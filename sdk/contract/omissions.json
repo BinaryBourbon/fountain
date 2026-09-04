@@ -25,6 +25,10 @@
       "reason": "Account bootstrap and key minting. An SDK is constructed with a key it already holds; the flows that produce one belong to the console and to `fountain auth login` (#1305). Only GET /api/auth/me is modelled, because a client wants to know whose key it has."
     },
     {
+      "operations": ["* /api/claimable-users*"],
+      "reason": "Claimable principals (ADR 0044). A trusted application opens and claims these with its own full-scope key; the credential that comes back is an ordinary API key, so an SDK's job starts after this point and every endpoint it already models is what the principal then uses. Paddock is the first caller and reaches these four over plain HTTP."
+    },
+    {
       "operations": ["POST /api/oauth/token", "POST /api/oauth/revoke"],
       "reason": "Sign in with Fountain. The browser apps run the code+PKCE dance themselves against these two, and the token they get IS an API key, so the SDK starts after this point."
     },

@@ -599,11 +599,18 @@ defmodule Fountain.Billing do
     now = Keyword.get(opts, :now, DateTime.utc_now())
     event_limit = Keyword.get(opts, :event_limit, 10)
 
-    comped = Repo.one(from(u in User, where: u.comped, select: count(u.id))) || 0
-    total = Repo.one(from(u in User, select: count(u.id))) || 0
+    # Claimable principals are `users` rows (ADR 0044) and are excluded from all
+    # three counts. A principal is not an account somebody holds, and its
+    # balance is not a second sale: the money in it came out of the balance of
+    # the application that opened it, which this panel already counted when
+    # that application bought it.
+    accounts = from(u in User, where: u.principal == false)
+
+    comped = Repo.one(from(u in accounts, where: u.comped, select: count(u.id))) || 0
+    total = Repo.one(from(u in accounts, select: count(u.id))) || 0
 
     funded =
-      Repo.one(from(u in User, where: u.credit_balance_cents > 0, select: count(u.id))) || 0
+      Repo.one(from(u in accounts, where: u.credit_balance_cents > 0, select: count(u.id))) || 0
 
     deferred = Fountain.Billing.Finance.deferred_cents()
     %{start: month_start} = month_range(0, now: now)

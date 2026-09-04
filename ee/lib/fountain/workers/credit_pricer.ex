@@ -190,7 +190,7 @@ defmodule Fountain.Workers.CreditPricer do
         false
 
       cents ->
-        case Credits.debit(turn.user_id, cents, "burn_turn",
+        case Credits.debit(payer(turn.user_id), cents, "burn_turn",
                idempotency_key: "burn_turn:#{turn.id}",
                resource_type: "turn",
                resource_id: turn.id,
@@ -278,7 +278,7 @@ defmodule Fountain.Workers.CreditPricer do
         false
 
       cents ->
-        case Credits.debit(turn.user_id, cents, "burn_inference",
+        case Credits.debit(payer(turn.user_id), cents, "burn_inference",
                idempotency_key: "burn_inference:#{turn.id}",
                resource_type: "turn",
                resource_id: turn.id,
@@ -363,7 +363,7 @@ defmodule Fountain.Workers.CreditPricer do
   end
 
   defp price_message(message, cents) do
-    case Credits.debit(message.user_id, cents, "burn_message",
+    case Credits.debit(payer(message.user_id), cents, "burn_message",
            idempotency_key: "burn_message:#{message.id}",
            resource_type: "comms_message",
            resource_id: message.id,
@@ -385,4 +385,10 @@ defmodule Fountain.Workers.CreditPricer do
         false
     end
   end
+
+  # Whose ledger the burn lands on (ADR 0044). The work is the principal's and
+  # every `resource_id` here still names it; only the money follows the account
+  # that claimed it, so usage before and after a claim is charged to the right
+  # side without a single ledger row ever moving.
+  defp payer(user_id), do: Fountain.Principals.billing_subject_id(user_id)
 end
