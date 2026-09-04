@@ -142,7 +142,9 @@ defmodule Fountain.Billing.SandboxUsage do
   Active seconds per `{user_id, provider}` over `[period_start, period_end)`.
 
   Pass `user_id: id` to scope to a single tenant — the same computation, one
-  tenant's rows. `:now` pins the clock (tests).
+  tenant's rows. `:now` pins the clock (tests); a test driving a surface end to
+  end, with nowhere to pass an option, pins the same clock with
+  `Application.put_env(:fountain, Fountain.Billing.SandboxUsage, now: dt)`.
 
   A still-running sandbox accrues only up to *now*, never to a `period_end`
   that has not happened yet: asked about the current month, this reports what
@@ -154,7 +156,7 @@ defmodule Fountain.Billing.SandboxUsage do
   @spec attribution(DateTime.t(), DateTime.t(), keyword()) :: [row()]
   def attribution(%DateTime{} = period_start, %DateTime{} = period_end, opts \\ []) do
     sandboxes = overlapping_sandboxes(period_start, period_end, opts)
-    ceiling = earliest(period_end, Keyword.get(opts, :now) || DateTime.utc_now())
+    ceiling = earliest(period_end, Keyword.get(opts, :now) || now())
 
     overlapping =
       sandboxes
@@ -379,6 +381,20 @@ defmodule Fountain.Billing.SandboxUsage do
     stop = earliest(to, ceiling)
 
     stop |> DateTime.diff(start, :second) |> max(0)
+  end
+
+  # The clock every window is clipped against. `:now` on the call is the way to
+  # pin it; this is for a test that drives a surface end to end and has nowhere
+  # to pass one. The dashboard's turn-hours tile is that case: the console has
+  # no month picker, so the tile can only be read against the running month,
+  # and a two-hour turn seeded at the month's start does not exist yet during
+  # the month's first two hours (#1586). Unset outside tests, so this is one
+  # application-env read per attribution pass.
+  defp now do
+    case Application.get_env(:fountain, __MODULE__, [])[:now] do
+      %DateTime{} = pinned -> pinned
+      nil -> DateTime.utc_now()
+    end
   end
 
   defp earliest(a, b), do: if(DateTime.compare(a, b) == :gt, do: b, else: a)

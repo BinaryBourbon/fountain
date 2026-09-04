@@ -13,6 +13,15 @@ defmodule FountainWeb.DashboardLiveTest do
 
   defp max_dt(a, b), do: if(DateTime.compare(a, b) == :gt, do: a, else: b)
 
+  # This module is `async: false`, so the pin is not visible to another test
+  # running beside it; restored either way.
+  defp pin_usage_clock(%DateTime{} = at) do
+    key = Fountain.Billing.SandboxUsage
+    original = Application.get_env(:fountain, key, [])
+    Application.put_env(:fountain, key, Keyword.put(original, :now, at))
+    on_exit(fn -> Application.put_env(:fountain, key, original) end)
+  end
+
   setup %{conn: conn} do
     user = insert_verified_user()
 
@@ -123,6 +132,19 @@ defmodule FountainWeb.DashboardLiveTest do
   end
 
   describe "turn hours" do
+    # Every usage window is clipped at *now* (`SandboxUsage.attribution/3`), so
+    # ten hours seeded at the month's start have not happened yet during the
+    # month's first ten hours, and the tile reads less than the two this test
+    # asserts. The finance panel escaped that by reading the closed previous
+    # month (#1317); the dashboard has no month picker, so the clock is what
+    # moves instead (#1586). Pinned an hour past the seeded data, which is what
+    # every other hour of the month already looks like.
+    setup do
+      {period_start, _} = Fountain.Billing.current_month_range()
+      pin_usage_clock(DateTime.add(period_start, 11 * 3600, :second))
+      :ok
+    end
+
     test "the tile reports turn time, not the wall-clock the sandbox was awake", %{
       conn: conn,
       user: user
