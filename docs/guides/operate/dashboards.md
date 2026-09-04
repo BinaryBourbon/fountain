@@ -102,6 +102,33 @@ Read this one for cost drivers.
 - **Sandbox-minutes accrued per hour**. An estimate. See the traps below.
 - **Funded accounts**. Counts, never revenue. The ledger holds the money.
 
+The credit machinery has a row of its own. It answers two questions apart from
+each other, because a worker can run on schedule and still move no money.
+
+- **Time since each credit worker last finished**. The pricer runs every ten
+  minutes. The expirer and the rent collector run once a day. A worker with no
+  bar has not run since the last rollout. Read the empty space as silence,
+  never as zero.
+- **Money through the ledger per hour, by reason**. The number comes from the
+  ledger write itself, so it cannot drift from the ledger. The reasons are a
+  closed set, so no cent moves without a line here.
+- **Debits in the last day, by reason**. The same series, restricted to the
+  rows that take money out.
+- **Turns completed, last day**, beside **Burned on turns, last day**. Read the
+  two together. Turns with no money against them mean a broken pricer. Both at
+  zero mean an idle day.
+- **Stripe webhooks failed, last hour**. Purchases, refunds and disputes all
+  arrive on one endpoint. A rejected signature answers 400, so the global 5xx
+  rate never carried these.
+- **Emails that failed to send, last hour**. This path carries the credits-low,
+  credits-exhausted and rent-due notices. A failure here is an account that
+  never learns its balance ran out.
+
+The alerts over these same metrics live in the hosted overlay, not in the
+shipped chart. `FountainCreditPricerPricedNothing` is the reason. Turns bill on
+platform-paid providers only, so an instance on self-hosted runners completes
+turns and correctly burns nothing.
+
 ## PostHog
 
 Both dashboards live in the project the instance reports into.
@@ -198,6 +225,10 @@ duplicate first, then adds the providers together.
 ```promql
 sum(max by (provider) (fountain_sandboxes_by_provider_count{status=~"pending|starting|ready"}))
 ```
+
+The credit worker stamp needs `max` for a different reason. Only the pod that
+ran the Oban job holds `fountain_credits_worker_run_last_run_unix`, so an `avg`
+reads whichever replica answered and goes stale when the leader moves.
 
 The other order multiplies the total by the replica count.
 
