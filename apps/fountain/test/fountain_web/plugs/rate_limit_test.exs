@@ -74,16 +74,26 @@ defmodule FountainWeb.Plugs.RateLimitTest do
     end
 
     test "resets the window after the window_ms has elapsed" do
-      # Use a very short window (1 ms) so we can expire it immediately.
-      opts = %{bucket: unique_bucket(), max: 1, window_ms: 1}
+      # A full-length window, and the row is aged rather than slept through.
+      #
+      # This used to run a 1 ms window so a 5 ms sleep could expire it, which
+      # made that millisecond do two contradictory jobs: outlast the two bumps
+      # below, and be short enough to sleep past. On a loaded run the scheduler
+      # put a millisecond between the bumps, the second one opened a *new*
+      # window and answered `:ok`, and the test failed on its own setup line
+      # having never reached the reset it is about (#1575).
+      opts = %{bucket: unique_bucket(), max: 1, window_ms: 60_000}
       key = {opts.bucket, self()}
 
-      RateLimit.bump(key, opts)
+      assert :ok = RateLimit.bump(key, opts)
       # Exhaust the single slot
       assert {:limited, _} = RateLimit.bump(key, opts)
 
-      # Wait long enough for the window to expire
-      Process.sleep(5)
+      # Age the window past the cutoff. The table is public and the row shape
+      # is the one `evict_expired/1` selects on, so this drives the same
+      # `started_at < cutoff` branch a wall-clock wait would, with no clock.
+      [{^key, started_at, count}] = :ets.lookup(RateLimit.table(), key)
+      :ets.insert(RateLimit.table(), {key, started_at - opts.window_ms - 1, count})
 
       # New window — should be :ok again
       assert :ok = RateLimit.bump(key, opts)
