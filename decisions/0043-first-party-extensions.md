@@ -29,10 +29,14 @@ a core image — no extension application in the release, no binaries in the
 image, one switch for both halves. Both images were built and their contents
 checked.
 
-**Not built:** a core-image *boot* check (gate 7 / #1510 — the image builds and
-its contents are asserted, but nothing has yet started one against a database),
-the docs move, and the graduation to `BinaryBourbon/fountain_buzz`. The Go CLI
-split is #1508.
+Gate 7's distribution half is built too: CI builds and boots a core release
+against an empty database on every PR, and each release publishes
+`vX.Y.Z-core` and `vX.Y-core` beside the bare tags, with the published core
+image opened and checked for extension applications and native assets.
+
+**Not built:** the docs move (which wants either an extension-contributed
+manual seam or a documented build-time assembly step) and the graduation to
+`BinaryBourbon/fountain_buzz`. The Go CLI split is #1508.
 
 ADR [0020](0020-buzz-as-a-client-of-the-acp-gateway.md)'s hosted harness and
 brokered signer ship in the image today and keep working unchanged throughout.
@@ -302,7 +306,7 @@ reading:
 
 ### 7. Two images from one repository; uninstall is a config change, not a migration
 
-**Distribution.** `ghcr.io/binarybourbon/fountain:vX.Y.Z` stays the **bundled**
+**Distribution.** Built. `ghcr.io/binarybourbon/fountain:vX.Y.Z` stays the **bundled**
 image — extension compiled in, `buzz-acp` and `buzz` binaries present — because
 that is what runs in production and what every existing tag has meant.
 `…:vX.Y.Z-core` is the same tree built without `apps/fountain_buzz` and without
@@ -446,9 +450,13 @@ each leaves bundled behaviour green, and **none is built**.
    one. `FountainBuzz.Assets` owns where they install and refuses a binary
    whose version does not match the pin, so a partial upgrade is an inert
    extension and a log line rather than a harness crash-loop per identity.
-7. **#1510 — graduation and distributions.** The `-core` image and its boot
-   check, the docs move, and — only once `Fountain.Extension` has stopped
-   moving — `BinaryBourbon/fountain_buzz`.
+7. **#1510 — graduation and distributions. Distributions built.** CI's
+   `core-distribution` job builds a core release, boots it against an empty
+   database and checks the spec it serves; `release.yml` publishes
+   `vX.Y.Z-core` and `vX.Y-core` from the same tree and opens the published
+   image to check it. Still open: the docs move, and
+   `BinaryBourbon/fountain_buzz` — whose precondition (a second extension
+   exercising the seam) `apps/fountain_support` met in #1528.
 
 Outside the gate list, because it is not a Buzz gate:
 [#1528](https://github.com/BinaryBourbon/fountain/issues/1528) moved the

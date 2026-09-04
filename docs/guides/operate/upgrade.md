@@ -28,6 +28,29 @@ under two tags, next to the tags that track development.
 | `latest` | On each merge to `main`. | Nothing you keep in production, because it moves under you. |
 | `sha-<commit>` | Never. | To reproduce exactly what one commit built. |
 
+## Two distributions
+
+Each tag above names the **bundled** image: the server plus the first-party
+extensions, which is what this project has always published. Each release also
+publishes the same version with a `-core` suffix.
+
+| Tag | Contains |
+|---|---|
+| `vX.Y.Z` and `vX.Y` | The server, the Buzz extension and the support extension, plus the `buzz-acp` and `buzz` executables the Buzz extension runs. |
+| `vX.Y.Z-core` and `vX.Y-core` | The server. No extension, no extension route, no extension migration and no extension executable. |
+
+Use the bundled image unless you know you want the other one. The hosted
+deployment runs it, and we triage a bug report against it.
+
+The core image is smaller and has less surface to attack. It is also what to
+build an extension of your own against. The cost: hosted Buzz agents
+(`/api/buzz/agents` and the Nostr harness) and the problem-report endpoint
+answer `404`, because the code that serves them is not installed.
+
+To move between them, pull the other tag and restart. Extension tables stay in
+the database. A core image does not create them. It also does not drop the ones
+a bundled image made, so a move back finds your rows where you left them.
+
 Releases v0.2.1 and earlier are older than the image tags. They exist as
 `sha-` tags alone.
 
