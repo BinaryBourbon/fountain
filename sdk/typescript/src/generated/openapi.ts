@@ -1280,7 +1280,7 @@ export interface paths {
         put?: never;
         /**
          * Reapply a conversation's Agent, Environment and Vault
-         * @description Keeps the conversation id and stored transcript, but makes its next prompt build a fresh sandbox and start a new runtime session. Omitted fields keep their current selection; null clears the Environment override or Vault. Refused while a turn is running or the conversation is provisioning. A persistent conversation receives an isolated home generation, so cotenant conversations on its old home are not reset.
+         * @description Applies a selection to the machine this conversation already runs on, so its files stay where the agent left them. Variables, the system prompt, skills and MCP configuration are rewritten, and the next prompt reads them. Omitted fields keep their current selection; null clears the Environment override or Vault. Refused while a turn is running or the conversation is provisioning, and with 409 rebuild_required when the selection would need the disk built again.
          */
         post: operations["FountainWeb.ConversationController.reapply"];
         delete?: never;
@@ -8462,7 +8462,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Conversation has a running turn */
+            /** @description Conversation has a running turn, or the selection needs the machine rebuilt */
             409: {
                 headers: {
                     [name: string]: unknown;
