@@ -124,22 +124,34 @@ defmodule Fountain.CreditsTest do
       assert entry.resource_id == "2026-08"
     end
 
-    test "concurrent posts of one key move the balance once" do
+    # Two posters, not the eight this used to fan out to. The eight were not
+    # racing: under the SQL sandbox every task borrows the *test's* one
+    # connection, so eight `insert_and_move/3` transactions run one after
+    # another on a single Postgres backend (measured: one backend pid, and
+    # four 200 ms transactions taking 814 ms). What eight bought was eight
+    # serialized transactions queued on that connection, which is what DBConnection
+    # dropped on a loaded full-suite run (#1568) — a failure with no bearing
+    # on the property below.
+    #
+    # So this asserts the *contract* — one key posts one row, the rest report
+    # `:duplicate`, and the balance moves once — and cannot assert the
+    # simultaneity. The unique index is what makes that safe in production,
+    # and `insert_and_move/3` detects the duplicate after attempting the
+    # insert rather than by a lookup first precisely because two posters can
+    # be simultaneous there.
+    test "posting one key from several processes moves the balance once" do
       user = insert_empty_user()
 
       results =
-        1..8
+        1..2
         |> Task.async_stream(
-          fn _ ->
-            Ecto.Adapters.SQL.Sandbox.allow(Repo, self(), self())
-            Credits.grant(user.id, 100, "purchase", idempotency_key: "race")
-          end,
-          max_concurrency: 8
+          fn _ -> Credits.grant(user.id, 100, "purchase", idempotency_key: "race") end,
+          max_concurrency: 2
         )
         |> Enum.map(fn {:ok, r} -> r end)
 
       assert Enum.count(results, &match?({:ok, %LedgerEntry{}}, &1)) == 1
-      assert Enum.count(results, &match?({:ok, :duplicate, _}, &1)) == 7
+      assert Enum.count(results, &match?({:ok, :duplicate, _}, &1)) == 1
       assert Credits.balance(reload(user)) == 100
     end
   end

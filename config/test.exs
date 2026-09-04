@@ -4,7 +4,28 @@ config :fountain, Fountain.Repo,
   url:
     System.get_env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fountain_test"),
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 20
+  pool_size: 20,
+  # The sandbox gives a test *one* connection, which every process the test
+  # fans work out to shares: `Task.async_stream` in a test body, a supervised
+  # task under `Fountain.TaskSupervisor`, and Ecto's own parallel preloader,
+  # which fans out over `Task.async_stream` whenever two or more associations
+  # are still to fetch. Those are not parallel under the sandbox — they are a
+  # queue on one connection, and four 200 ms transactions measured 814 ms.
+  #
+  # DBConnection then drops a waiter once the queue has been slow for a whole
+  # `queue_interval`, and the 50 ms / 1 s defaults are sized for a pool with
+  # spare connections rather than for a queue that is a queue by construction.
+  # On a loaded workstation that dropped real tests: #1524 (Ecto's preloader,
+  # waits of 121-160 ms) and #1568 (the credit ledger's concurrent-post test,
+  # 263 ms), neither of them a defect in the code under test.
+  #
+  # 200 ms / 5 s tolerates about 5 s of continuous backlog on one connection,
+  # against the ~250 ms the real failures waited. A genuinely stuck connection
+  # still surfaces — as the test's own timeout, with the stack of whatever is
+  # holding it, which says more than a dropped checkout does. Measured with a
+  # 40-task probe: 30 of 40 dropped at the defaults, 0 of 40 here.
+  queue_target: 200,
+  queue_interval: 5_000
 
 config :fountain, FountainWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
