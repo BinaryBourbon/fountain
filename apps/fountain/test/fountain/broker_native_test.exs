@@ -51,6 +51,34 @@ defmodule Fountain.BrokerNativeTest do
       refute Broker.enabled_for?("someone-else")
     end
 
+    test ":all brokers every tenant, including one nobody enumerated", %{user: user} do
+      Application.put_env(:fountain, :broker_tenants, :all)
+
+      assert Broker.enabled_for?(user.id)
+      assert Broker.enabled_for?(Ecto.UUID.generate())
+      assert Broker.enabled_for?("someone-else")
+    end
+
+    test ":all still needs a backend, so off is still off" do
+      Application.put_env(:fountain, :broker_tenants, :all)
+      Application.delete_env(:fountain, :broker_listen_port)
+
+      refute Broker.configured?()
+      refute Broker.enabled_for?(Ecto.UUID.generate())
+    end
+
+    test "an empty list brokers nobody, which is what a blank BROKER_TENANTS means", %{user: user} do
+      Application.put_env(:fountain, :broker_tenants, [])
+
+      assert Broker.configured?()
+      refute Broker.enabled_for?(user.id)
+    end
+
+    test "a nil user id is never brokered, whatever the ratchet says" do
+      Application.put_env(:fountain, :broker_tenants, :all)
+      refute Broker.enabled_for?(nil)
+    end
+
     test "with neither variable there is no backend and nothing answers" do
       Application.delete_env(:fountain, :broker_listen_port)
       assert Broker.backend() == nil
