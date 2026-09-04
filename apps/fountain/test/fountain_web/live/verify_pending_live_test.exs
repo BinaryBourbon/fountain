@@ -8,6 +8,16 @@ defmodule FountainWeb.VerifyPendingLiveTest do
   alias Fountain.Repo
   alias Fountain.Workers.VerificationEmail
 
+  # Every advance off this page is out of band: the LiveView re-reads the row
+  # on a broadcast or on its own poll, redirects, and the test proxy relays
+  # that to this process. `assert_redirect/2` waits ExUnit's
+  # `assert_receive_timeout` — 100 ms — for the whole round trip, which is
+  # thin under a partition running 20 cases at once. Measured over 20 advances
+  # on a loaded machine: 0-34 ms, median 3, and one full-suite run in eight (#1592)
+  # went over the 100. Nothing here is racing; the redirect either happens or
+  # it does not, so the only question is how long to wait for it.
+  @advance_timeout 2_000
+
   setup %{conn: conn} do
     user = insert_user()
     %{conn: login_user(conn, user), user: user}
@@ -67,7 +77,7 @@ defmodule FountainWeb.VerifyPendingLiveTest do
       # phone: verify_email/1 is what every verification route ends up calling.
       {:ok, _verified} = Accounts.verify_email(user)
 
-      assert_redirect(lv, "/dashboard")
+      assert_redirect(lv, "/dashboard", @advance_timeout)
     end
 
     test "an onboarded user is advanced to the conversation list", %{conn: conn, user: user} do
@@ -80,7 +90,7 @@ defmodule FountainWeb.VerifyPendingLiveTest do
 
       {:ok, _verified} = Accounts.verify_email(user)
 
-      assert_redirect(lv, "/dashboard")
+      assert_redirect(lv, "/dashboard", @advance_timeout)
     end
 
     test "the poll advances even when the broadcast never arrives", %{conn: conn, user: user} do
@@ -96,7 +106,7 @@ defmodule FountainWeb.VerifyPendingLiveTest do
 
       send(lv.pid, :check_verification)
 
-      assert_redirect(lv, "/dashboard")
+      assert_redirect(lv, "/dashboard", @advance_timeout)
     end
 
     test "a broadcast that does not match the database does not advance", %{
