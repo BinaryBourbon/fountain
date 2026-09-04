@@ -165,7 +165,8 @@ On a hosted account with the egress credential broker on, a secret can have
 one or more **bindings**. A binding names a host. By default the broker
 replaces the secret's placeholder wherever it appears in a request to that
 host. The agent uses the placeholder as it would use the secret, in any
-header, query, path or body. It never has to know the shape the API wants.
+header, in the query or in the path. It never has to know the shape the API
+wants. The broker does not rewrite a request body.
 Four other shapes are there for an API the agent cannot address itself. A
 bearer header. Basic auth with a username of yours, which the client encodes
 before it leaves. A header with an optional prefix. Custom headers with
@@ -185,8 +186,11 @@ placeholder that keeps the vendor's prefix, such as
 
 After a conversation, `GET /api/conversations/:id/egress` lists what left the
 sandbox through the broker. Each row shows the host, the binding that matched
-and so the credential attached, the status, and the latency. A refused host
-shows the refusal. The list stays for `BROKER_LOG_RETENTION_HOURS` after the
+and so the credential attached, the status, and the latency. A row for a host
+you allowed, but bound no credential to, names no binding. A refused host
+shows the refusal. The broker writes a row when the request ends, so a long
+stream gets its row at the end of the stream. The latency is the duration of
+the whole request, not the time to the first byte. The list stays for `BROKER_LOG_RETENTION_HOURS` after the
 conversation ends. The route needs a key with full scope. The token a sandbox
 holds cannot read it. Read the
 [Conversations section](../api.md#conversations) of the API reference.

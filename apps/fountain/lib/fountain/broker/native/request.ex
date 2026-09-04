@@ -20,9 +20,19 @@ defmodule Fountain.Broker.Native.Request do
   nobody thinks of as sensitive. `broker_native_test.exs` pins it against
   the real proxy rather than against the library's changelog.
 
-  `status`, `latency_ms` and `error` are nullable and unwritten: the proxy
-  relays raw bytes and does not frame responses. They exist so this backend
-  returns the same shape as the Agent Vault one.
+  `status`, `latency_ms` and `error` are how the request ended, written from
+  the proxy's terminal event (`managoat_broker` 0.3.0, #1501 row 2). They
+  stay null where the ending supplied none: `status` on a request the proxy
+  never got an answer to, `error` on one that completed. `latency_ms` is
+  total duration -- the request head arriving through the response body
+  ending -- not time to first byte, so a stream's row says how long the
+  stream ran.
+
+  `outcome` is `injected` only where a credential was actually attached. The
+  proxy reports a matched `:passthrough` rule as `:injected` too, because
+  from its side a rule applied; `Fountain.Broker.Native` separates them on
+  the event's `scheme` so an allowed host does not read as a credentialed
+  one.
   """
   use Ecto.Schema
 

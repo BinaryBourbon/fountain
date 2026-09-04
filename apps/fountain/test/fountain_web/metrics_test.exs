@@ -280,6 +280,55 @@ defmodule FountainWeb.MetricsTest do
       refute body =~ "conv_id="
     end
 
+    test "a proxied request lands in the scrape by outcome and by upstream status class" do
+      # Two series off one event (#1501 row 2). `request_count` answers "what
+      # did the broker do", `upstream_count` "what did the origin say" -- the
+      # second is only possible now that the proxy frames responses.
+      for {scheme, status} <- [{:bearer, 200}, {:passthrough, 503}, {nil, nil}] do
+        :telemetry.execute([:managoat, :broker, :request], %{count: 1, duration: 0}, %{
+          method: "GET",
+          host: "api.example.com",
+          path: "/v1/x",
+          outcome: if(scheme, do: :injected, else: :denied),
+          rule: scheme && "a-rule",
+          scheme: scheme,
+          status: status,
+          error: nil,
+          meta: %{"conversation_id" => Ecto.UUID.generate()}
+        })
+      end
+
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      for status_class <- ~w(2xx 5xx none) do
+        assert Regex.match?(
+                 ~r/fountain_broker_upstream_count\{[^}]*status_class="#{status_class}"[^}]*\}/,
+                 body
+               ),
+               "status_class=#{status_class} is missing from the scrape"
+      end
+
+      # A matched `:passthrough` rule reaches the event as `outcome: :injected`
+      # -- from the proxy's side a rule applied. The series has to mean "was a
+      # credential attached", or an allowlisted host reads as a credentialed
+      # one (managoat/managoat_broker#27).
+      for outcome <- ~w(injected passthrough denied) do
+        assert Regex.match?(
+                 ~r/fountain_broker_request_count\{[^}]*outcome="#{outcome}"[^}]*\}/,
+                 body
+               ),
+               "outcome=#{outcome} is missing from the scrape"
+      end
+
+      # The status itself is metadata, never a label on these series: one
+      # series per status a sandbox can provoke is what the class exists to
+      # avoid. Scoped to the broker metrics on purpose -- the scrape is the
+      # whole node, and other producers label by status legitimately.
+      refute Regex.match?(~r/fountain_broker_[a-z_]*\{[^}]*[^_]status="/, body)
+      refute body =~ ~s(host="api.example.com")
+    end
+
     test "broker connect outcomes land in the scrape, so the failure ratio has both halves (#1170)" do
       # FountainBrokerUpstreamFailures divides upstream_failed by the
       # connections that dialled out at all. Both label values have to reach

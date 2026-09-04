@@ -664,7 +664,11 @@ bare id and opencode only knows `provider/model_id` — fixed in #1157; the
 rerun called `api.anthropic.com` through the matched service and Anthropic
 answered "credit balance is too low", which only an authenticated key gets,
 so the substitution holds there as well). Gemini is covered by the same
-substitution mechanism on `?key=` and remains unverified live.
+substitution mechanism on `?key=` and remains unverified live. (Measured
+2026-09-03 and settled the other way: gemini-cli sends the key in
+`x-goog-api-key` and never in the query, so the header half is what carries
+it. Query substitution exists again as of the parity close-out below, and is
+not what makes Gemini work.)
 
 **Gate 4 — built 2026-08-25.** The join is the vault name: §11's vault per
 conversation is exactly what the empty `actor_*` fields on a session-scoped
@@ -770,7 +774,9 @@ the component-libraries plan ([0037](0037-component-libraries.md)). Decided
   deliberately not ported from Agent Vault (path/query/body substitution,
   WebSocket frame rewriting, auth rate limiting, body caps, IPv6 upstreams)
   and adds header-value substitution so gate 3's inference placeholders are
-  replaced natively.
+  replaced natively. **All but three of those gaps have since closed** — see
+  the parity amendment below; this paragraph describes what shipped in
+  September 2026, not the scope today.
 - **Fountain runs it beside Agent Vault** (PR B). `Fountain.Broker` is a
   facade over two backends with every public function's name and arity
   unchanged: `Fountain.Broker.AgentVault` (the vendor client, selected by
@@ -808,9 +814,9 @@ auth-failure limiter, by design, and no vaults.
 Gate 4's stored request log **is** built on this backend (#1486): a
 `broker_requests` row per proxied request, written from the proxy's telemetry
 by a buffered writer, read by `GET /api/conversations/:id/egress`, swept by
-the reaper on `BROKER_LOG_RETENTION_HOURS`. Response status and latency stay
-unset until the byte pump frames responses, which is the one thing the Agent
-Vault log had that this one does not.
+the reaper on `BROKER_LOG_RETENTION_HOURS`. Response status and latency were
+the one thing the Agent Vault log had that this one did not, because the byte
+pump did not frame responses. That closed with the parity work below.
 
 ### What the flip cost, and what caught it
 
@@ -829,3 +835,92 @@ proxies feature by feature and found nothing here, because this is not a
 feature. It is what a proxy does with a connection after it refuses one, and
 only a real client on the real path exercised it.
 
+## Amendment (2026-09-03): the Agent Vault parity gaps are closed, except three kept on purpose
+
+The flip left a list of conscious deviations (#1359 was the pre-flip ledger,
+managoat/managoat_broker#5 the library's plan, #1501 Fountain's half). The
+library closed every row worth closing between 0.1.3 and 0.11.0;
+`apps/fountain/mix.exs` moves from `~> 0.1.0` to `~> 0.11.0` and takes them.
+The pin stays patch-level on purpose: pre-1.0 this library makes breaking
+changes in a minor bump, so a minor reaches Fountain when someone edits that
+line, never by resolution.
+
+**What the broker can now do that it could not.**
+
+- **A credential in a URL is brokered.** `:substitute` reaches the request
+  target as well as header values, so the bot-API shape
+  `/bot<token>/sendMessage` and a `?key=` parameter both work, over `CONNECT`
+  and absolute-form alike. There is deliberately **no new `auth_type`** for
+  it: a tenant declares that a key has a placeholder, and the proxy finds it
+  wherever the client put it. `SecretBindings.Binding.@auth_types` is
+  unchanged. The credential is written byte for byte, so one needing
+  percent-encoding is declared already encoded, and one that cannot be
+  written where its placeholder sits (a space or control character in a
+  target, CRLF in a header value) is refused with 403 rather than mangled.
+- **The egress log says how a request ended.** The request event is terminal,
+  so `broker_requests.status`, `.latency_ms` and `.error` are written from it,
+  which is the three columns the table was created with, nullable, for this.
+  A consequence worth knowing: a row appears when the response **ends**, so a
+  streamed reply is recorded when the stream finishes, and `latency_ms` is
+  total duration rather than time to first byte. That is Agent Vault's
+  semantics, not a compromise.
+- **An IPv6-only origin resolves and connects**, with the SSRF guard extended
+  to IPv6 first, including the four forms that embed an IPv4 address, which a
+  range check alone calls public. Fountain's one job here is that a literal in
+  a rule pattern must be bracketed, so `networking_config.allowed_hosts`
+  brackets a bare one before it becomes a pattern. An unbracketed literal
+  matches nothing rather than matching elsewhere, which under `limited` would
+  have been an allowlist entry that silently allowed nothing.
+- **Plain HTTP keeps the sandbox's connection alive**, so `apt` gets one
+  connection instead of one per request. Two consequences here: the session
+  store is resolved per request on that path rather than per connection (each
+  absolute-form request carries its own `Proxy-Authorization`, and trusting
+  the first would serve a token nobody checked), and
+  `[:managoat, :broker, :connect]` counts **origin** connections rather than
+  sandbox ones. Every ratio over that event keeps the numerator and
+  denominator it had, so home-cloud's `FountainBrokerUpstreamFailures` is
+  unaffected; only the absolute rate on that path moved.
+- **A request body is capped** at 1 GiB and **reading one request** at five
+  minutes, both Agent Vault's own defaults, and both left at the library's
+  default rather than configured here. A response body is uncapped, which
+  Agent Vault's default was too.
+
+**One correction the parity work forced, which was Fountain's bug and not the
+library's.** The event's `outcome` answers "did a rule apply", and a matched
+`:passthrough` rule, the documented way a host is allowed under `limited`,
+applies without attaching anything, so it arrives as `:injected` exactly as a
+`:bearer` rule does. `broker_requests` derived its verdict from `outcome`
+alone, so an allowed host's row named an `ALLOW` rule in `service` and read as
+though a credential had gone to it. The 0.11.0 event carries `scheme`, which
+is the field that separates them; the row and the
+`fountain.broker.request.count` series now both mean "was a credential
+attached". Found building managoat/airlock's egress record
+(managoat/managoat_broker#27) rather than here, which is the argument for the
+same event having more than one consumer.
+
+**Three deviations stay, and they are decisions rather than a backlog.**
+
+- **No WebSocket frame rewriting.** Substitution reaches the upgrade request
+  like any other; frames after it are piped as bytes. Rewriting them means a
+  frame-aware proxy handling masking, fragmentation, control-frame
+  interleaving and negotiated compression before substitution is even
+  correct, and nothing in the catalog or any binding sends a credential inside
+  a frame.
+- **No request-body substitution.** The same reasoning one layer down: the
+  proxy streams request bodies rather than materialising them, which is what
+  lets a large upload through at all, and no binding needs it.
+- **The label half of the proxy credential is unchecked.** The random session
+  token is the whole binding; the label exists because git refuses a proxy URL
+  carrying a user and no password.
+
+**Auth-failure rate limiting is no longer settled.** This ADR recorded that
+the native proxy has no limiter "by design", and the reason was #1206: Agent
+Vault's limiter was keyed by TCP peer address, every sandbox reached it
+through a small pool of shared NAT egress addresses, and one tenant's
+bad-credential burst returned 429 to another tenant's valid clone. The
+condition attached to that decision was to revisit it if the assumption
+changed, and then to key the limiter on something better than the peer
+address. managoat/managoat_broker#22 argues it has changed: Agent Vault itself
+had a second, scope-keyed limiter resolved after authentication, alongside the
+IP-keyed one that caused the incident. That is an open library decision rather
+than a Fountain one, and nothing here changes until it lands.

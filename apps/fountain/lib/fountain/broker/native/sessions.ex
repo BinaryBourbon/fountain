@@ -8,9 +8,17 @@ defmodule Fountain.Broker.Native.Sessions do
   under the tenant's DEK (exactly as the environment and vault rows hold
   the same values); the unmatched-host policy; a TTL; and a `meta` map with
   the conversation and user ids for the request log. `lookup/1` is what the
-  proxy calls on every new sandbox connection, on whichever replica the
-  ingress chose: the raw token from the header in, the decrypted session
-  out, or `:error` for a token that is unknown, expired or undecryptable.
+  proxy calls to resolve a token, on whichever replica the ingress chose: the
+  raw token from the header in, the decrypted session out, or `:error` for a
+  token that is unknown, expired or undecryptable.
+
+  It is called **once per tunnel, and once per request on the plain path**.
+  Since `managoat_broker` 0.10.0 an absolute-form connection stays alive and
+  carries several requests, each with its own `Proxy-Authorization`, and
+  trusting the first would serve a token the proxy never checked (#1501 row
+  4). That is one indexed lookup and one AES open per request there; the
+  traffic is `apt` and its kin, and a tunnel -- which is every inference
+  call, every clone and every `npm install` -- is unchanged at one.
 
   A session is not tenant-editable state and is not audited: it is
   provisioning machinery, created and deleted with the sandbox it serves,

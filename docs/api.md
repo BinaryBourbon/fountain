@@ -453,8 +453,10 @@ GET    /api/conversations/:id/egress       # what left the sandbox through the b
 is on for the account. Read [Feature status](reference/feature-status.md). It
 lists each request that left the sandbox through the broker, with the host,
 the binding that matched, the status and the latency. A refused host shows
-the refusal. The list stays for `BROKER_LOG_RETENTION_HOURS` after the
-conversation ends.
+the refusal. The broker writes a row when the request ends, so a long stream
+gets its row at the end of the stream. The latency is the duration of the
+whole request, not the time to the first byte. The list stays for
+`BROKER_LOG_RETENTION_HOURS` after the conversation ends.
 <!-- vale STE.IngForms = YES -->
 
 A turn carries `image_count`. The image endpoint takes a `position` into that

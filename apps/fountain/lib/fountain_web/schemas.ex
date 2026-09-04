@@ -3503,27 +3503,46 @@ defmodule FountainWeb.Schemas do
       title: "EgressEvent",
       description:
         "One outbound HTTP request the sandbox made through the egress broker " <>
-          "(ADR 0019). `service` names the binding that matched, and so which " <>
-          "credential was attached; null means the request passed through with none.",
+          "(ADR 0019). The row is written when the request ends, so a streamed " <>
+          "response is recorded when the stream finishes rather than when it starts.",
       type: :object,
       properties: %{
         id: %Schema{type: :integer},
         at: %Schema{type: :string, format: :"date-time", nullable: true},
         method: %Schema{type: :string},
         host: %Schema{type: :string, description: "Host and port, as the sandbox dialed it."},
-        path: %Schema{type: :string},
-        service: %Schema{type: :string, nullable: true},
+        path: %Schema{
+          type: :string,
+          description: "The URL path. A query string is never recorded: it can hold a credential."
+        },
+        service: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The binding that matched, and so which credential was attached. Null when " <>
+              "none was: a passthrough host, or a host allowed under `limited` with no " <>
+              "credential bound to it."
+        },
         credential_keys: %Schema{type: :array, items: %Schema{type: :string}},
         status: %Schema{
           type: :integer,
           nullable: true,
-          description: "The upstream status, or the broker's refusal."
+          description:
+            "The upstream status, or the broker's own refusal. Null where no answer arrived."
         },
-        latency_ms: %Schema{type: :integer, nullable: true},
+        latency_ms: %Schema{
+          type: :integer,
+          nullable: true,
+          description:
+            "How long the whole request took, request head through response body, " <>
+              "not time to first byte."
+        },
         error: %Schema{
           type: :string,
           nullable: true,
-          description: "The broker's error code, such as `no_match`, when it refused."
+          description:
+            "Why forwarding did not complete, such as `upstream_closed`, " <>
+              "`credential_missing` or `request_timeout`. Null on a request that did."
         }
       },
       required: [:id, :method, :host, :path, :credential_keys]

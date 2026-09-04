@@ -46,9 +46,24 @@ defmodule Fountain.Broker do
   sends the shape the API wants and nothing has to be told how. A binding's
   explicit shape (bearer, api-key, custom) additionally sets a header the
   agent did not send; `basic` is the one case substitution cannot reach,
-  because the client base64-encodes the value before it leaves. Agent Vault
-  substitutes in the path, query, headers and body; the native proxy in
-  header values only (its README lists the deviations).
+  because the client base64-encodes the value before it leaves.
+
+  Substitution reaches **header values and the request target** — the path
+  and the query — since `managoat_broker` 0.2.0 (#1501 row 1). So a
+  credential a client puts in a URL is brokered: the bot-API shape
+  `/bot<token>/sendMessage`, or a `?key=` parameter. A tenant declares that
+  a key has a placeholder and nothing more; there is deliberately no
+  `auth_type` for *where* the placeholder sits, because the proxy finds it.
+  A request body is still not rewritten, and that is a recorded deviation
+  from Agent Vault rather than an oversight (ADR 0019's parity amendment).
+
+  Two consequences of substituting into a URL are worth knowing before
+  writing a binding. The credential replaces the placeholder **byte for
+  byte** — nothing is percent-encoded on the way in — so a credential that
+  needs encoding is declared already encoded. And a credential the proxy
+  cannot write where its placeholder sits is refused with a 403 rather than
+  mangled: a space or a control character in a target, a CR or LF in a
+  header value.
 
   ## The network policy (gate 2)
 
@@ -209,22 +224,21 @@ defmodule Fountain.Broker do
 
   # Inference credentials (gate 3): the env var each runtime reads, the host
   # it talks to, and the prefix its vendor's tokens carry. Substitution
-  # rewrites the placeholder wherever it appears in a **header value**, which
-  # is every shape these runtimes actually send — Anthropic's `x-api-key`, the
-  # OAuth bearer, OpenAI's bearer, Gemini's `x-goog-api-key`.
+  # rewrites the placeholder wherever it appears in a header value or in the
+  # request target, which covers every shape these runtimes send — Anthropic's
+  # `x-api-key`, the OAuth bearer, OpenAI's bearer, Gemini's `x-goog-api-key`,
+  # and now a `?key=` query parameter as well.
   #
-  # This comment used to claim substitution also covered "Gemini's `?key=`
-  # query parameter". It does not, on either backend that matters:
-  # `Fountain.Broker.Native` substitutes in header values only, where Agent
-  # Vault also rewrote path, query and body (#1359 row 1). Measured 2026-09-03
-  # against gemini-cli 0.58.0 — the sandbox images pin no version, so this is
-  # what a sandbox runs — by hooking `fetch` under the sandbox's own env
-  # (`GEMINI_API_KEY` set, no base-URL override, so `getAuthTypeFromEnv`
+  # The query half arrived with `managoat_broker` 0.2.0 (#1501 row 1). It is
+  # not what makes Gemini work, and the measurement that established that is
+  # worth keeping, because the obvious way to repeat it is wrong. Measured
+  # 2026-09-03 against gemini-cli 0.58.0 — the sandbox images pin no version,
+  # so this is what a sandbox runs — by hooking `fetch` under the sandbox's own
+  # env (`GEMINI_API_KEY` set, no base-URL override, so `getAuthTypeFromEnv`
   # resolves `gemini-api-key`): every call to generativelanguage.googleapis.com
   # carries the key in `x-goog-api-key` and nothing in the query string. The
   # `?key=` form is real but belongs to the Live API's audio and music
-  # WebSockets, which an ACP turn never opens. Header substitution is therefore
-  # sufficient for Gemini and query substitution is not needed for the flip.
+  # WebSockets, which an ACP turn never opens.
   #
   # Note `GOOGLE_GEMINI_BASE_URL` outranks `GEMINI_API_KEY` in that
   # resolution, so pointing the CLI at a local capture changes the auth type
@@ -482,8 +496,11 @@ defmodule Fountain.Broker do
   The broker's request log for a conversation, newest first (gate 4): what
   actually left the sandbox, to which host, with which credential attached,
   and what came back. `before:` pages by the previous page's oldest `id`.
-  `status`, `latency_ms` and `error` are unset until the proxy frames
-  responses (#1486).
+
+  A row is written when the request **ends**, so a streamed reply appears
+  when the stream finishes and its `latency_ms` is the whole duration
+  (#1501 row 2). `status` is null where the proxy never got an answer,
+  `error` is null where it did.
   """
   @spec request_log(String.t(), keyword()) ::
           {:ok, %{events: [egress_event()], next: integer() | nil}} | {:error, term()}

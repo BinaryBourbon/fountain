@@ -7,11 +7,10 @@ defmodule Fountain.Broker.Native do
   `prepare/4` maps the conversation's brokered keys and bindings to
   `Managoat.Broker.Rule`s and stores them, encrypted under the tenant's DEK,
   as a `Fountain.Broker.Native.Sessions` row keyed by the hash of a fresh
-  token. The proxy resolves the token back to the rules on every new sandbox
-  connection through the `Managoat.Broker.Store` behaviour that module
-  implements, on whichever replica the ingress chose. `release/1` deletes
-  the conversation's rows; `Fountain.Workers.BrokerReaper` sweeps the
-  expired ones.
+  token. The proxy resolves the token back to the rules through the
+  `Managoat.Broker.Store` behaviour that module implements, on whichever
+  replica the ingress chose. `release/1` deletes the conversation's rows;
+  `Fountain.Workers.BrokerReaper` sweeps the expired ones.
 
   The listener is started by `Fountain.Application` from `listener_spec/0`.
   Its root CA is derived from `ca_seed/0`, thirty-two bytes HKDF-derived from
@@ -23,9 +22,11 @@ defmodule Fountain.Broker.Native do
   naming the conversation, method, host, path and outcome, never a header,
   and buffers a `broker_requests` row through
   `Fountain.Broker.Native.RequestLog` for `GET /api/conversations/:id/egress`
-  to read back (gate 4, #1486). Response status and latency stay unset until
-  the proxy frames responses; everything else the Agent Vault backend
-  returned is there.
+  to read back (gate 4, #1486). Since `managoat_broker` 0.3.0 the event is
+  **terminal** — it fires when the response body completes or fails, not
+  when the request is sent — so the row also carries the upstream status,
+  the total duration and the reason where forwarding did not finish (#1501
+  row 2). A long-lived stream is therefore recorded when it ends.
 
   `emit_telemetry/0` is the poller tick behind the `fountain_broker_*`
   gauges (#1170): the listener, the live session count and the CA's
@@ -105,17 +106,18 @@ defmodule Fountain.Broker.Native do
   # the row goes through a cast, never a synchronous insert on the proxy's
   # own connection process.
   @doc false
-  def handle_request(_event, _measurements, meta, _config) do
+  def handle_request(_event, measurements, meta, _config) do
     session = Map.get(meta, :meta) || %{}
     conv = session["conversation_id"]
 
     Logger.info(
       "broker: conv #{conv || "?"} #{meta.method} #{meta.host}#{meta.path} " <>
-        describe(meta.outcome, meta.rule)
+        describe(meta.outcome, Map.get(meta, :scheme), meta.rule) <>
+        ending(meta, measurements)
     )
 
     if is_binary(conv) and is_binary(session["user_id"]) do
-      RequestLog.record(row(meta, session, conv))
+      RequestLog.record(row(meta, measurements, session, conv))
     end
 
     :ok
@@ -133,8 +135,9 @@ defmodule Fountain.Broker.Native do
   # attached, never the values: the same thing an audit row records for a
   # secret. The rule-to-keys map rides on the session's `meta`, put there by
   # `prepare/4`, because the proxy knows only the rule that matched.
-  defp row(meta, session, conv) do
-    rule = meta.rule && to_string(meta.rule)
+  defp row(meta, measurements, session, conv) do
+    {outcome, credentialed?} = verdict(meta.outcome, Map.get(meta, :scheme))
+    rule = if credentialed?, do: meta.rule && to_string(meta.rule)
 
     %{
       conversation_id: conv,
@@ -142,12 +145,45 @@ defmodule Fountain.Broker.Native do
       method: clip(meta.method, 16),
       host: clip(meta.host, 255),
       path: clip(meta.path, 2048),
-      outcome: to_string(meta.outcome),
+      outcome: outcome,
       service: rule && clip(rule, 255),
       credential_keys: (rule && get_in(session, ["credential_keys", rule])) || [],
+      status: Map.get(meta, :status),
+      latency_ms: latency_ms(measurements),
+      error: meta |> Map.get(:error) |> error_string(),
       inserted_at: DateTime.utc_now()
     }
   end
+
+  # What the row says happened, and whether `service` may name a binding.
+  #
+  # `outcome` answers "did a rule apply". A matched `:passthrough` rule —
+  # which is how a host is allowed under `limited` — applies without
+  # attaching anything, so it arrives as `:injected`, identical to a
+  # `:bearer` rule. Deriving the verdict from `outcome` alone would make an
+  # allowed host's row read as though a credential had been sent to it, and
+  # `service` would name the `ALLOW` rule where the schema promises "the
+  # binding that matched, and so which credential was attached".
+  #
+  # `scheme` (managoat_broker 0.11.0) is the field that tells the two apart.
+  # Found building managoat/airlock's egress record
+  # (managoat/managoat_broker#27); Fountain had the same exposure.
+  defp verdict(:injected, :passthrough), do: {"passthrough", false}
+  defp verdict(:injected, _scheme), do: {"injected", true}
+  defp verdict(outcome, _scheme), do: {to_string(outcome), false}
+
+  # The proxy measures monotonically in native units, from the request head
+  # arriving to the response body completing or failing (managoat_broker
+  # 0.3.0). It is total duration rather than time to first byte, so a
+  # streamed reply is recorded when the stream ends and its row carries how
+  # long the whole thing took.
+  defp latency_ms(%{duration: duration}) when is_integer(duration),
+    do: System.convert_time_unit(duration, :native, :millisecond)
+
+  defp latency_ms(_measurements), do: nil
+
+  defp error_string(nil), do: nil
+  defp error_string(error), do: clip(error, 255)
 
   # Postgres counts `varchar(n)` in characters, so does `String.slice/3`, and
   # slicing on graphemes cannot produce the invalid UTF-8 that would make the
@@ -155,9 +191,21 @@ defmodule Fountain.Broker.Native do
   defp clip(nil, _max), do: ""
   defp clip(value, max), do: value |> to_string() |> String.slice(0, max)
 
-  defp describe(:injected, rule), do: "injected #{rule}"
-  defp describe(:passthrough, _), do: "passthrough"
-  defp describe(:denied, _), do: "denied"
+  defp describe(:injected, :passthrough, rule), do: "allowed #{rule}"
+  defp describe(:injected, _scheme, rule), do: "injected #{rule}"
+  defp describe(:passthrough, _scheme, _rule), do: "passthrough"
+  defp describe(:denied, _scheme, _rule), do: "denied"
+  defp describe(outcome, _scheme, _rule), do: to_string(outcome)
+
+  # How it ended, appended to the request line: the status the sandbox saw,
+  # how long it took, and the reason where forwarding did not complete.
+  defp ending(meta, measurements) do
+    ms = latency_ms(measurements)
+
+    [Map.get(meta, :status), ms && "#{ms}ms", Map.get(meta, :error)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map_join(&" #{&1}")
+  end
 
   # ---------------------------------------------------------------------------
   # The backend
@@ -220,12 +268,18 @@ defmodule Fountain.Broker.Native do
   defp policy_for({:limited, _hosts}), do: :deny
 
   @doc """
-  The rules a set of brokered keys turns into, in the order the proxy
-  consults them: one per binding (plus a header-value substitution twin for
-  every header-setting shape, so the placeholder is replaced wherever a
-  client puts it), the catalog pair for a GitHub key with no bindings of
-  its own, then under `limited` a passthrough per allowed host that no
-  credentialed rule already covers.
+  The rules a set of brokered keys turns into: one per binding (plus a
+  substitution twin for every header-setting shape, so the placeholder is
+  replaced wherever a client puts it -- a header value, the path or the
+  query), the catalog pair for a GitHub key with no bindings of its own,
+  then under `limited` a passthrough per allowed host that no credentialed
+  rule already covers.
+
+  Order is not the tie-breaker it once was. Since `managoat_broker` 0.7.0
+  the **most specific** matched rule sets the header, and declaration order
+  only breaks a tie between equally specific rules. Nothing here writes a
+  generic default and then an override, so this list resolves as it always
+  did; the change matters to anyone who adds one.
   """
   @spec rules_for(%{String.t() => String.t()}, Broker.bindings(), Broker.network()) :: [Rule.t()]
   def rules_for(brokered, bindings, network) do
@@ -242,7 +296,7 @@ defmodule Fountain.Broker.Native do
 
   defp binding_rules(key, value, binding, brokered) do
     name = Broker.service_name(key, binding.host)
-    base = %Rule{name: name, pattern: binding.host, scheme: :passthrough}
+    base = %Rule{name: name, pattern: pattern_for(binding.host), scheme: :passthrough}
     twin = %{base | scheme: :substitute, placeholder: Broker.placeholder(key), credential: value}
 
     case binding.auth_type do
@@ -317,11 +371,36 @@ defmodule Fountain.Broker.Native do
 
     hosts
     |> Enum.map(&(&1 |> to_string() |> String.trim() |> String.downcase()))
-    |> Enum.reject(&(&1 == "" or MapSet.member?(taken, &1)))
-    |> Enum.uniq()
-    |> Enum.map(fn host ->
-      %Rule{name: Broker.service_name("ALLOW", host), pattern: host, scheme: :passthrough}
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.map(&{&1, pattern_for(&1)})
+    |> Enum.reject(fn {_host, pattern} -> MapSet.member?(taken, pattern) end)
+    |> Enum.uniq_by(&elem(&1, 1))
+    |> Enum.map(fn {host, pattern} ->
+      %Rule{name: Broker.service_name("ALLOW", host), pattern: pattern, scheme: :passthrough}
     end)
+  end
+
+  @doc """
+  A host as a `Managoat.Broker.Rule` pattern.
+
+  Everything a tenant types is already one, with a single exception: an IPv6
+  literal has to be **bracketed** (`[::1]`, `[::1]:8443`), because in a bare
+  one there is no telling which colon separates the port. The library matches
+  a bare literal against nothing rather than guessing, so
+  `allowed_hosts: ["::1"]` would silently allow no host at all under
+  `limited`, which is the worst way for a rule to be wrong
+  (`managoat_broker` 0.4.0, #1501 row 3).
+
+  Only an unambiguous case is rewritten: the whole string parses as an IPv6
+  address. A tenant who wants a port on one writes the brackets, because
+  `::1:8443` genuinely cannot be told apart from an address.
+  """
+  @spec pattern_for(String.t()) :: String.t()
+  def pattern_for(host) when is_binary(host) do
+    case :inet.parse_ipv6strict_address(String.to_charlist(host)) do
+      {:ok, _address} -> "[" <> host <> "]"
+      {:error, _} -> host
+    end
   end
 
   @doc "Delete the conversation's sessions. Its tokens stop working at once."
@@ -331,8 +410,8 @@ defmodule Fountain.Broker.Native do
 
   @doc """
   The conversation's egress rows, newest first (gate 4, #1486). The same
-  shape the Agent Vault backend answered with, except that `status`,
-  `latency_ms` and `error` are `nil` until the proxy frames responses.
+  shape the Agent Vault backend answered with, `status`, `latency_ms` and
+  `error` included since the proxy started framing responses (#1501 row 2).
   """
   @spec request_log(String.t(), keyword()) ::
           {:ok, %{events: [Broker.egress_event()], next: integer() | nil}}
