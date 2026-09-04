@@ -691,19 +691,20 @@ a reset. Fountain destroys the machine, keeps the conversations, and builds a
 new machine on the next prompt. A request also gets `409 sandbox_mid_turn`
 while a conversation on one of those sandboxes runs a turn.
 
-### Files and git diff
+### Files, git status and git diff
 
-Three read-only requests show the disk of a sandbox. An app that watches an
+Four read-only requests show the disk of a sandbox. An app that watches an
 agent uses them when the transcript is not enough. There is no request that
 runs a command. To run a command, send a prompt.
 
 ```
 GET /api/sandboxes/:id/files?path=src           # list a directory
 GET /api/sandboxes/:id/file?path=src/app.ex     # read a file
+GET /api/sandboxes/:id/git-status?untracked=all # what changed
 GET /api/sandboxes/:id/diff?path=repo&staged=true&ref=main
 ```
 
-All three need a key with the `full` scope. The `sprite` key that a sandbox
+All four need a key with the `full` scope. The `sprite` key that a sandbox
 holds gets `403 insufficient_scope`. A `path` is absolute, or relative to the
 current directory of the agent. That directory is `/home/sprite` for claude
 and codex, `/tmp/gemini-workspace` for gemini, and `/tmp/opencode-workspace`
@@ -731,6 +732,29 @@ the top directory of that repository. `staged=true` compares the index
 a flag or a range gets `422 invalid_ref`. A `ref` that git does not know gets
 `404 ref_not_found`. A directory outside a repository gets
 `422 not_a_repository`. `max_bytes` and `truncated` work as for `file`.
+
+With no `ref` and no `staged`, `diff` compares the disk against the index. A
+file that the agent staged is absent from that comparison. To see staged and
+unstaged work in one response, pass `ref=HEAD`.
+
+The `git-status` request returns one entry for each path that git reports. It
+is the one request of the four that shows a file the agent made and never
+staged. The `diff` request compares tracked content, so an untracked file
+stays invisible to it. The entries cover the whole repository, whatever
+`path` names inside it. Each entry has a `path`, an `index`, a `worktree` and
+a `renamed_from`. The `path` field is relative to `repo_root`, not to the
+sandbox home. The `index` field is the staged side. The `worktree` field is
+the unstaged side. Each of the two holds one of `unchanged`, `added`,
+`modified`, `deleted`, `renamed`, `copied`, `type_changed`, `unmerged`,
+`untracked` or `ignored`. An untracked file reads `untracked` in both, as git
+reports it. A file that you stage and then edit again reads a state in both.
+The `renamed_from` field holds the old path for a rename or a copy, and null
+for the rest. The `branch` field is null on a detached HEAD. The default
+`untracked=normal` collapses an untracked directory to one entry. The
+`untracked=all` form lists every file under that directory. The
+`untracked=no` form omits untracked paths. The response holds at most 2000
+entries. The `truncated` field is `true` when the repository holds more. A
+directory outside a repository gets `422 not_a_repository`.
 
 Fountain redacts every response. Each value of the environment and the vault
 of the sandbox reads `[REDACTED]`, as it does in the transcript. Values

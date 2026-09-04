@@ -413,7 +413,8 @@ defmodule FountainWeb.Router do
     get "/egress", ConversationController, :egress, as: :conversation_egress
   end
 
-  # A sandbox's disk, read-only (ADR 0039): a listing, a file, `git diff`.
+  # A sandbox's disk, read-only (ADR 0039): a listing, a file, `git status`
+  # and `git diff`.
   # Full scope for the same reason as the egress log: a sandbox's own
   # `sprite` token must not read another sandbox of the tenant, whose disk
   # was built from a different vault.
@@ -423,6 +424,11 @@ defmodule FountainWeb.Router do
     get "/files", SandboxFilesController, :index, as: :sandbox_files
     get "/file", SandboxFilesController, :show, as: :sandbox_file
     get "/diff", SandboxFilesController, :diff, as: :sandbox_diff
+
+    # `git-status`, not `status`: a sandbox already has a `status` of its own
+    # (`ready`, `suspended`), and that is what a caller reading the route
+    # would expect back from it.
+    get "/git-status", SandboxFilesController, :git_status, as: :sandbox_git_status
   end
 
   # The daemon's socket skips content negotiation like the SSE routes do: a

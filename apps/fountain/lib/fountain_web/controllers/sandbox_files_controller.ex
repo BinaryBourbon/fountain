@@ -1,8 +1,8 @@
 defmodule FountainWeb.SandboxFilesController do
   @moduledoc """
-  A sandbox's disk, read-only: a directory listing, one file and `git diff`
-  (ADR 0039). What an app that watches an agent work needs once the
-  transcript is not enough — and deliberately not exec.
+  A sandbox's disk, read-only: a directory listing, one file, `git status`
+  and `git diff` (ADR 0039). What an app that watches an agent work needs
+  once the transcript is not enough — and deliberately not exec.
 
   Full scope only: a sandbox's own `sprite` token must not be able to read
   another sandbox of the same tenant, whose disk holds a different vault.
@@ -126,7 +126,9 @@ defmodule FountainWeb.SandboxFilesController do
         in: :query,
         type: :string,
         required: false,
-        description: "A commit, branch or tag to diff against instead of HEAD."
+        description:
+          "A commit, branch or tag to diff against. Without it the comparison is the " <>
+            "working tree against the index, or with `staged`, the index against HEAD."
       ],
       max_bytes: @max_bytes_param
     ],
@@ -149,6 +151,57 @@ defmodule FountainWeb.SandboxFilesController do
              max_bytes: integer(params["max_bytes"])
            ) do
       json(conn, %{data: diff})
+    end
+  end
+
+  operation(:git_status,
+    summary: "git status on a sandbox",
+    description:
+      "`git status` of the repository containing `path` (default: the agent's working " <>
+        "directory), one entry per changed path. This is the view that shows a file the " <>
+        "agent created and never staged: `/diff` compares tracked content, so an " <>
+        "untracked file is invisible to it whatever flags it is given. Entries cover the " <>
+        "whole repository whatever `path` names inside it, and each entry's `path` is " <>
+        "relative to `repo_root`. `index` and `worktree` are git's two porcelain columns " <>
+        "read separately, so a file staged and then edited again reports a state in both; " <>
+        "an untracked file reads `untracked` in both. `renamed_from` is set only where " <>
+        "that side is a rename or a copy. `branch` is null on a detached HEAD. " <>
+        "A directory outside any repository is `422 not_a_repository`. Full scope.",
+    parameters: [
+      sandbox_id: [in: :path, type: :string, required: true],
+      path: @path_param,
+      untracked: [
+        in: :query,
+        type: %OpenApiSpex.Schema{
+          type: :string,
+          enum: SandboxFiles.untracked_modes(),
+          default: "normal"
+        },
+        required: false,
+        description:
+          "What to do about untracked paths: collapse an untracked directory to one " <>
+            "entry (`normal`), list every file under it (`all`), or leave them out (`no`)."
+      ]
+    ],
+    responses: [
+      ok: {"Status", "application/json", Schemas.SandboxStatusResponse},
+      # Declared rather than added to the schema guard's allowlist, where the
+      # sibling reads sit: the list is a ratchet for what #1432 already owes,
+      # and a new operation has no business growing it.
+      forbidden: {"Insufficient scope", "application/json", Schemas.Error},
+      not_found: {"No such sandbox or path", "application/json", Schemas.Error},
+      conflict: @not_ready,
+      unprocessable_entity:
+        {"Not a repository, or outside the sandbox", "application/json", Schemas.Error},
+      service_unavailable: @unreachable
+    ]
+  )
+
+  def git_status(conn, %{"sandbox_id" => id} = params) do
+    with {:ok, sandbox} <- fetch(conn, id),
+         {:ok, status} <-
+           SandboxFiles.status(sandbox, params["path"], untracked: params["untracked"]) do
+      json(conn, %{data: status})
     end
   end
 
