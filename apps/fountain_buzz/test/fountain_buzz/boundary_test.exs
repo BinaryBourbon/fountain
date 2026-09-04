@@ -59,6 +59,54 @@ defmodule FountainBuzz.BoundaryTest do
     end
   end
 
+  describe "every route this extension serves is described, or excepted" do
+    # `FountainWeb.ApiSpecTest`'s "every /api/ route is in the spec" walks
+    # `FountainWeb.Router.__routes__/0`, which stopped including these when they
+    # moved (#1507). Without this the extension's routes would have escaped that
+    # guard entirely — the API would be free to grow an undocumented operation
+    # and no check anywhere would notice.
+
+    # `/api/mcp/buzz/:conversation_id` is not in the spec and was not before the
+    # move either (it was an `@exceptions` entry in core's test): it is a
+    # JSON-RPC transport the sandbox posts to with a conversation-scoped token,
+    # not an operation a client codes against.
+    @excepted_routes [{"/mcp/buzz/{conversation_id}", :post}]
+
+    test "every mounted route has an OpenAPI operation" do
+      described = Fountain.Extensions.openapi_paths([Extension]) |> Map.keys() |> MapSet.new()
+
+      undocumented =
+        for {mount, router} <- Extension.api_mounts(),
+            route <- router.__routes__(),
+            path = open_api_path(mount <> route.path),
+            not MapSet.member?(described, "/api" <> path),
+            {path, route.verb} not in @excepted_routes,
+            do: {path, route.verb}
+
+      assert undocumented == [],
+             "these extension routes have no OpenAPI operation: #{inspect(undocumented)}"
+    end
+
+    test "every exception is still a live route" do
+      live =
+        for {mount, router} <- Extension.api_mounts(),
+            route <- router.__routes__(),
+            do: {open_api_path(mount <> route.path), route.verb}
+
+      assert Enum.reject(@excepted_routes, &(&1 in live)) == [],
+             "an exception names a route this extension no longer serves"
+    end
+
+    defp open_api_path(path) do
+      path
+      |> String.split("/")
+      |> Enum.map_join("/", fn
+        ":" <> segment -> "{#{segment}}"
+        segment -> segment
+      end)
+    end
+  end
+
   describe "audit events survived the move" do
     # These three used to be rows in `Fountain.AuditGuardrailTest`'s table.
     # ADR 0013's rule is unchanged by the extraction: a context records its own

@@ -127,8 +127,18 @@ defmodule Fountain.Umbrella.MixProject do
 
   defp aliases do
     [
-      setup: ["deps.get", "cmd --app fountain mix ecto.setup"],
-      "ecto.reset": ["cmd --app fountain mix ecto.reset"],
+      # `ecto.setup` and `ecto.reset` go through this project's `ecto.migrate`
+      # below, NOT through apps/fountain's — the app cannot see a sibling's
+      # migration path, so shelling straight into its `ecto.setup` would create
+      # a database with no extension tables (ADR 0043). Same bug CI caught on
+      # the plain `ecto.migrate` path, on the two entrances CI does not run.
+      setup: ["deps.get", "ecto.setup"],
+      "ecto.setup": [
+        "cmd --app fountain mix ecto.create",
+        "ecto.migrate",
+        "cmd --app fountain mix run priv/repo/seeds.exs"
+      ],
+      "ecto.reset": ["cmd --app fountain mix ecto.drop", "ecto.setup"],
       # Migrating from the umbrella root has to go through apps/fountain, or the
       # extension migration paths are silently dropped (ADR 0043, #1506).
       #
