@@ -228,9 +228,16 @@ defmodule FountainWeb.MarketingControllerTest do
 
   describe "marketing that needs an extension (#1525)" do
     # `Fountain.Marketing.available?/1` reads `config :fountain, :extensions`,
-    # and this file runs from apps/fountain, which depends on no extension.
-    # So these assertions describe a `-core` image, and the bundled shape is
+    # so these assertions describe a `-core` image, and the bundled shape is
     # asserted in apps/fountain_buzz/test/fountain_buzz/marketing_test.exs.
+    #
+    # Which of the two this VM is depends on the invocation rather than on the
+    # code: from apps/fountain, which is what CI's partition script runs, no
+    # extension is on the code path; from the umbrella root, `:fountain_buzz`
+    # is, and these correctly-written assertions describe a distribution this
+    # VM is not (#1574). The tag is what keeps them out of that run —
+    # test_helper.exs excludes it when the extension is really installed.
+    @describetag :core_distribution
 
     test "the catalogue still holds cards that need one" do
       # Guard the guard. Every assertion below is a filter removing something,
@@ -286,11 +293,12 @@ defmodule FountainWeb.MarketingControllerTest do
   end
 
   describe "GET /buzz-launch, on a distribution without the extension" do
-    # This file runs from apps/fountain, which depends on no extension, so
-    # `Fountain.Extensions.installed?(:buzz)` is false here exactly as it is in
-    # a `-core` image. The page's own content tests moved to
-    # apps/fountain_buzz/test/fountain_buzz/marketing_test.exs, which is the
-    # suite that has the extension installed (#1525).
+    # Run from apps/fountain, `Fountain.Extensions.installed?(:buzz)` is false
+    # exactly as it is in a `-core` image; run from the umbrella root it is
+    # true, so this is tagged and excluded there (#1574). The page's own
+    # content tests moved to apps/fountain_buzz/test/fountain_buzz/marketing_test.exs,
+    # which is the suite that has the extension installed (#1525).
+    @describetag :core_distribution
 
     test "the page is not served", %{conn: conn} do
       # A plain 404, not a raised NoRouteError reaching the test: the endpoint
