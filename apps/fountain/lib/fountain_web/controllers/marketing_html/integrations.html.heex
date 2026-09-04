@@ -148,8 +148,13 @@
   </div>
 </section>
 
-<%!-- Outbound --%>
-<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+<%!-- Outbound. The whole section, not just the card: the heading and the
+      standfirst name the integration too, so a distribution that does not
+      install it has nothing to say here (#1525). --%>
+<section
+  :if={outbound_protocol()}
+  class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]"
+>
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
       Put the agent on a Nostr relay.

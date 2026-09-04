@@ -24,4 +24,31 @@ defmodule Fountain.Marketing do
   @doc "Whether `/` serves the product pitch rather than a plain front door."
   @spec site?() :: boolean()
   def site?, do: Application.get_env(:fountain, :marketing_site, false)
+
+  @doc """
+  Whether marketing that needs an extension has one to talk about (#1525).
+
+  The pitch describes what a deployment can do, and a core distribution
+  (`BUNDLE_EXTENSIONS=false`) can do less: `/buzz-launch` sells hosted Nostr
+  identities, and the `POST /api/buzz/agents` on the integrations page is a
+  path that answers 404 there. A page selling an endpoint the image does not
+  serve is marketing that lies.
+
+  So the copy carries a requirement and this answers it. `nil` means the
+  content needs nothing and is always shown, which is nearly all of it.
+
+  The argument is an **extension id** — a value out of
+  `config :fountain, :extensions`, not a module — so core still names no
+  extension code and `Fountain.ExtensionGuardTest` stays green. That is the
+  whole reason `Fountain.Extension` has an `id/0` at all.
+
+  Contrast `FountainWeb.Plugs.ExtensionDispatch`, which answers one uniform
+  404 for every unknown `/api` path precisely so a client cannot learn the
+  installed set from a status code. The opposite is right here: marketing is
+  public copy about this deployment, and what it must not do is claim a
+  capability that is absent.
+  """
+  @spec available?(atom() | nil) :: boolean()
+  def available?(nil), do: true
+  def available?(id) when is_atom(id), do: Fountain.Extensions.installed?(id)
 end

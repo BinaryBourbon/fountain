@@ -54,6 +54,21 @@ defmodule Fountain.Extensions do
   def installed(modules) when is_list(modules), do: Enum.filter(modules, &enabled?/1)
 
   @doc """
+  Whether an extension with this id is installed here.
+
+  What a surface asks when it needs to know whether a capability is present in
+  this distribution *without naming a module*: an id is a value in
+  configuration, not a code reference, so a core-owned caller can ask and
+  `Fountain.ExtensionGuardTest` stays green. That is what `id/0` is for, and
+  `Fountain.Marketing.available?/1` is the caller it was added for (#1525).
+
+  `false` on a core distribution, and on a bundled one where the extension is
+  configured but answers `enabled?/0` with `false`.
+  """
+  @spec installed?(atom()) :: boolean()
+  def installed?(id) when is_atom(id), do: Enum.any?(installed(), &(&1.id() == id))
+
+  @doc """
   The installed extension that serves `path_info`, as `{extension, mount, plug}`.
 
   `mount` is the matched mount's segments, so the caller can trim exactly what

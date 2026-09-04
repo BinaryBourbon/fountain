@@ -1288,6 +1288,48 @@ jobs:
           done
           echo "no extension path in the core spec ($count paths)"
 
+          # And the sales copy describes the same distribution (#1525). The
+          # pitch pages are core's and some of what they advertise needs an
+          # extension: /buzz-launch is entirely about one, and the Nostr card
+          # on /integrations names POST /api/buzz/agents, a path the check
+          # above just proved this release does not serve.
+          #
+          # `rpc` again, and for a second reason beyond the 301: what is being
+          # asserted is the data behind the pages, and reading it directly says
+          # which card was dropped rather than which string went missing.
+          "$rel" rpc '
+            catalogue = FountainWeb.MarketingHTML.all_protocols()
+            rendered = FountainWeb.MarketingHTML.protocols()
+            needs = fn cards -> cards |> Enum.filter(& &1[:requires_extension]) |> Enum.map(& &1.id) end
+            rows = rendered |> Enum.flat_map(& &1.works_with) |> Enum.filter(& &1[:requires_extension])
+            IO.puts("catalogue=" <> Enum.join(needs.(catalogue), ","))
+            IO.puts("rendered=" <> Enum.join(needs.(rendered), ","))
+            IO.puts("rows=" <> Enum.join(Enum.map(rows, & &1.name), ","))
+            IO.puts("available=" <> to_string(Fountain.Marketing.available?(:buzz)))
+          ' > /tmp/core-marketing.txt
+
+          cat /tmp/core-marketing.txt
+          . /tmp/core-marketing.txt
+
+          # Guard the guard, the same way the spec check above does: if no card
+          # declares `requires_extension` any more, every assertion below is
+          # true of a page that simply has nothing left to hide.
+          if [ -z "$catalogue" ]; then
+            echo "::error::no marketing card declares requires_extension; this check tests nothing" >&2
+            exit 1
+          fi
+
+          if [ -n "$rendered" ] || [ -n "$rows" ]; then
+            echo "::error::the core release advertises an extension it cannot serve: $rendered $rows" >&2
+            exit 1
+          fi
+
+          if [ "$available" != "false" ]; then
+            echo "::error::Fountain.Marketing.available?(:buzz) is $available in the core release" >&2
+            exit 1
+          fi
+          echo "core marketing hides the $catalogue card(s) it cannot back"
+
       # The other direction, from the same compiled tree, so the job proves the
       # switch rather than one setting of it. A release that carried nothing
       # either way would pass every check above.
