@@ -335,8 +335,9 @@ The same write-only rule covers a vault secret value.
 ## Secret bindings
 
 <!-- vale STE.IngForms = NO -->
-Limited access. These routes answer only when the credential broker is on
-for the account. Read [Feature status](reference/feature-status.md), and
+These routes answer only when the credential broker is on for the account.
+The broker is on for every account on the hosted platform. Read
+[Feature status](reference/feature-status.md), and
 [Where a secret comes from](concepts/secrets.md#bindings-when-the-broker-is-on)
 for what a binding does.
 
@@ -355,8 +356,9 @@ cannot reach these routes. They need a full-scope key.
 
 ## Connections
 
-Limited access. These routes answer only when the credential broker is on
-for the account. Elsewhere they answer 404 `connections_not_enabled`. Read
+These routes answer only when the credential broker is on for the account.
+Elsewhere they answer 404 `connections_not_enabled`. The broker is on for
+every account on the hosted platform. Read
 [Connections](catalog/connections/index.md) for what a connection is.
 
 ```

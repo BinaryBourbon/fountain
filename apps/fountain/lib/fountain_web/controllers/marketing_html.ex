@@ -1528,9 +1528,9 @@ defmodule FountainWeb.MarketingHTML do
         name: "Brokered credentials",
         blurb:
           "The real token never enters the sandbox. The broker attaches it on the way out, and the transcript keeps a placeholder.",
-        hosted: "Limited access. We enroll an account by hand.",
+        hosted: "On for every account.",
         yours:
-          "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL, and list the tenants in BROKER_TENANTS.",
+          "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL, and set BROKER_TENANTS to * or to a list of user ids.",
         docs: "/docs/concepts/secrets"
       }
     ]
