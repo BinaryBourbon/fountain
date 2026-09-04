@@ -27,7 +27,12 @@ func TestExamplesParse(t *testing.T) {
 
 	knownKinds := map[string]bool{"Environment": true, "Vault": true, "Agent": true}
 	total := 0
+	checked := 0
 	for _, f := range files {
+		if notOurs[filepath.ToSlash(f)] {
+			continue
+		}
+		checked++
 		docs, err := readFile(f)
 		if err != nil {
 			t.Errorf("%s: %v", f, err)
@@ -64,4 +69,29 @@ func TestExamplesParse(t *testing.T) {
 	if total == 0 {
 		t.Fatal("no resource documents under examples/")
 	}
+	// A skip-list entry naming a file that is no longer there is the same hazard
+	// in miniature: it reads as "checked and excused" when nothing was excused,
+	// and it is how the list grows to cover files that do not exist while a real
+	// manifest quietly goes unchecked. The list may only name files the walk
+	// actually found.
+	if matched := len(files) - checked; matched < len(notOurs) {
+		t.Errorf("the skip list names %d files but only %d of them are under examples/; delete the %d stale entr%s", len(notOurs), matched, len(notOurs)-matched, map[bool]string{true: "y", false: "ies"}[len(notOurs)-matched == 1])
+	}
+}
+
+// notOurs are files under examples/ that are YAML but are not Fountain
+// manifests, so `fountain apply` never reads them and the assertions above do
+// not apply. They are third-party configuration that an example needs in order
+// to be runnable at all.
+//
+// An explicit list rather than a filename convention (`*fountain.yml`), and
+// deliberately so: a convention would silently stop checking a real manifest
+// somebody named differently, which is the same shape of hole as the one that
+// hid this test's failure for a day (#1542). Anything new under examples/ is
+// checked until a person adds it here with a reason.
+var notOurs = map[string]bool{
+	// LiteLLM's own proxy config, read by the litellm container (#1479).
+	"../../../examples/litellm-gateway/config.yaml": true,
+	// Compose file that stands the example's two containers up (#1479).
+	"../../../examples/litellm-gateway/docker-compose.yml": true,
 }

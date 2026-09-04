@@ -57,9 +57,11 @@ jobs:
       # A release used to cross-compile without ever running the suite, so a
       # binary could ship with failing tests. Run once on the host platform —
       # cross-compiled test binaries cannot be executed here anyway.
+      # `-count=1` for the same reason as ci.yml: a cached pass can outlive the
+      # tree that earned it (#1542), and a release must not ship on one.
       - name: Test
         working-directory: cli
-        run: go test ./...
+        run: go test -count=1 ./...
 
       - name: Build
         env:
