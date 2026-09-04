@@ -12,6 +12,14 @@ defmodule Fountain.Broker.Native.Request do
   *names* of the environment variables whose values the proxy attached, which
   is the same thing the audit trail records for a secret event.
 
+  `path` is the URL path alone. A query string is dropped by the library
+  before the event is emitted (`managoat_broker` 0.1.3, row 0 of #1501) and
+  never reaches this column: a query can hold a credential the proxy never
+  brokered, a signed URL being one in itself, so the "never record values"
+  rule of `decisions/0013-audit-trail.md` would be broken here by a column
+  nobody thinks of as sensitive. `broker_native_test.exs` pins it against
+  the real proxy rather than against the library's changelog.
+
   `status`, `latency_ms` and `error` are nullable and unwritten: the proxy
   relays raw bytes and does not frame responses. They exist so this backend
   returns the same shape as the Agent Vault one.

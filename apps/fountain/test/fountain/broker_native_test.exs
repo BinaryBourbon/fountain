@@ -500,6 +500,66 @@ defmodule Fountain.BrokerNativeTest do
     end
   end
 
+  # Row 0 of the parity tracker (#1501, managoat/managoat_broker#5): the
+  # library's request event carries the URL path alone. Before 0.1.3 an
+  # origin-form request inside a CONNECT tunnel was logged with its whole
+  # target, so `GET /x?token=... HTTP/1.1` put the query into
+  # `broker_requests.path` -- a `decisions/0013` "never record values"
+  # violation through a column nobody thought of as sensitive, and a query
+  # can hold a credential this proxy never brokered.
+  #
+  # #1501 asks for this to be confirmed against the release rather than read
+  # out of a changelog, which is why it drives the real listener over a real
+  # tunnel instead of executing the telemetry event by hand.
+  describe "the request log never holds a query string" do
+    setup do
+      Ecto.Adapters.SQL.Sandbox.mode(Fountain.Repo, {:shared, self()})
+      {:ok, rig: Fountain.BrokerProxyRig.start()}
+    end
+
+    test "a tunnelled request logs its path and drops the query", ctx do
+      %{user: user, conv: conv, rig: rig} = ctx
+      {:ok, session} = Broker.prepare(conv.id, %{}, %{}, user_id: user.id)
+
+      echo =
+        rig
+        |> Fountain.BrokerProxyRig.tunnel(session)
+        |> Fountain.BrokerProxyRig.request(
+          "GET /user?access_token=squirrel_in_the_query HTTP/1.1\r\n" <>
+            "Host: #{rig.origin_host}\r\nConnection: close\r\n\r\n"
+        )
+
+      # The origin still gets the target byte for byte: this drops the query
+      # from the log, not from the request.
+      assert echo["path"] == "/user"
+      assert echo["query"] == "access_token=squirrel_in_the_query"
+
+      assert [event] = Fountain.BrokerProxyRig.rows(rig, conv.id)
+      assert event.path == "/user"
+      refute inspect(event) =~ "squirrel_in_the_query"
+    end
+
+    test "so does an absolute-form plain request", ctx do
+      %{user: user, conv: conv, rig: rig} = ctx
+      port = Fountain.BrokerProxyRig.start_http_origin()
+      {:ok, session} = Broker.prepare(conv.id, %{}, %{}, user_id: user.id)
+
+      echo =
+        Fountain.BrokerProxyRig.plain_request(
+          rig,
+          session,
+          "http://localhost:#{port}/user?access_token=squirrel_in_the_query",
+          "localhost:#{port}"
+        )
+
+      assert echo["query"] == "access_token=squirrel_in_the_query"
+
+      assert [event] = Fountain.BrokerProxyRig.rows(rig, conv.id)
+      assert event.path == "/user"
+      refute inspect(event) =~ "squirrel_in_the_query"
+    end
+  end
+
   test "the reaper leaves a live session alone", %{user: user, conv: conv} do
     {:ok, _} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
     assert %{sessions: 0, requests: 0} = Fountain.Workers.BrokerReaper.run()
