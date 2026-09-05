@@ -168,6 +168,8 @@ upgrade, is in
 
 ### Fixed
 
+- The CLI displays published code changes with their URL, and renders unknown system notices as a dim line.
+
 - Deduplicate database gauges across replicas in sandbox, conversation and Oban alerts.
 - Label turn duration and first-output metrics by sandbox provider so hosted alerts can exclude self-hosted runners.
 
