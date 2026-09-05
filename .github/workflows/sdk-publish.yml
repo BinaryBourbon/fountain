@@ -27,6 +27,13 @@ on:
       - "sdk/typescript/**"
   workflow_dispatch:
 
+# Hold the registry read and publish in one critical section. Keep pending
+# releases: the default one-slot queue cancels an intermediate version.
+concurrency:
+  group: npm-fountain-sdk-publish
+  queue: max
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -129,7 +136,9 @@ jobs:
         working-directory: sdk/typescript
         env:
           FOUNTAIN_CI_PUBLISH: "1"
-        run: npm publish
+        run: |
+          tag="$(node ../../scripts/sdk-publish-tag.mjs)"
+          npm publish --tag "$tag"
 
       # After the fact, and only on success: which commit produced which
       # version. A failed publish leaves no tag to clean up.
