@@ -72,6 +72,32 @@ defmodule FountainWeb.DocsControllerTest do
     end
   end
 
+  describe "runtime landing pages" do
+    for {slug, name} <- [
+          {"claude", "Claude Code"},
+          {"codex", "Codex"},
+          {"gemini", "Gemini CLI"},
+          {"opencode", "OpenCode"}
+        ] do
+      @slug slug
+      @name name
+      test "#{name} has a titled page with an executable request", %{conn: conn} do
+        body = conn |> get("/docs/catalog/runtimes/#{@slug}") |> html_response(200)
+        assert body =~ "<title>Docs · Run #{@name} as an API</title>"
+
+        code =
+          Regex.scan(~r{<pre\b[^>]*>(.*?)</pre>}s, body, capture: :all_but_first)
+          |> List.flatten()
+          |> Enum.join("\n")
+
+        assert code =~ "FOUNTAIN_AGENT_ID"
+        assert code =~ "agent_id"
+        refute code =~ "--8<--"
+        assert body =~ "https://fountain-conversations.demo.managoat.com/"
+      end
+    end
+  end
+
   # The search index (#1009) is served as a `<script type="application/json">`
   # block the page's own JS reads with `JSON.parse`. HEEx treats a `<script>`
   # body as raw text and does not interpolate `{...}` inside one, so the
