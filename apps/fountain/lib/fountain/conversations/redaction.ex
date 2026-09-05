@@ -136,4 +136,43 @@ defmodule Fountain.Conversations.Redaction do
   catch
     :error, :badarg -> :ok
   end
+
+  @doc """
+  A `ConversationServer` state with every secret in it replaced, for
+  `format_status/1` (#315).
+
+  An unhandled raise in any callback logs `State:` through `inspect`. Without
+  this that meant plaintext env secrets, the raw tenant DEK, decrypted BYO
+  inference credentials, the callback API key and the platform Sprites token
+  (inside `sprite.client`) on stdout and, with `SENTRY_DSN` set, in a Sentry
+  event body. Sentry's PlugContext scrubbing never sees process crash reports,
+  so the redaction has to happen at the server.
+
+  Key names are kept and only values are replaced, so crash reports stay
+  debuggable.
+  """
+  def server_state(state) do
+    %{
+      state
+      | handle: state.handle && %{state.handle | private: nil},
+        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, "[REDACTED]"} end),
+        tenant_key: secret(state.tenant_key),
+        inference_credentials: secrets(state.inference_credentials),
+        callback_token: secret(state.callback_token)
+    }
+  end
+
+  @doc false
+  def server_status(status) do
+    Map.new(status, fn
+      {:state, %{conversation_id: _} = state} -> {:state, server_state(state)}
+      other -> other
+    end)
+  end
+
+  defp secrets(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
+  defp secrets(other), do: secret(other)
+
+  defp secret(nil), do: nil
+  defp secret(_present), do: "[REDACTED]"
 end

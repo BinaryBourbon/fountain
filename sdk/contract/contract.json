@@ -3562,6 +3562,52 @@
         }
       }
     },
+    "POST /api/conversations/{conversation_id}/reapply": {
+      "operation_id": "FountainWeb.ConversationController.reapply",
+      "path_params": [
+        "conversation_id"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "ConversationReapplyRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "ConversationResponse"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "410": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "503": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "POST /api/conversations/{conversation_id}/requests/{request_id}": {
       "operation_id": "FountainWeb.ConversationController.answer_request",
       "path_params": [
@@ -7283,6 +7329,28 @@
           },
           "required": true,
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ConversationReapplyRequest": {
+      "properties": {
+        "agent_id": {
+          "format": "uuid",
+          "required": false,
+          "type": "string"
+        },
+        "environment_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "vault_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
         }
       },
       "type": "object"

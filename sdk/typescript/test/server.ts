@@ -328,6 +328,13 @@ export class FakeFountain {
 
       if (rest === "" && req.method === "GET") return json(res, 200, { data: summary(conversation) });
       if (rest === "/turns") return json(res, 200, { data: conversation.turns });
+      if (rest === "/reapply" && req.method === "POST") {
+        const input = (body ?? {}) as Record<string, unknown>;
+        if ("agent_id" in input) conversation.agent_id = input.agent_id as string;
+        if ("environment_id" in input) conversation.environment_id = input.environment_id as string | null;
+        if ("vault_id" in input) conversation.vault_id = input.vault_id as string | null;
+        return json(res, 200, { data: summary(conversation) });
+      }
       if (rest === "/prompts" && req.method === "POST") {
         const turnNumber = conversation.turns.length + 1;
         conversation.turns.push({ turn_number: turnNumber, status: "running" });

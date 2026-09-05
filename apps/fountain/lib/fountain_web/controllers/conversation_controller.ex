@@ -438,6 +438,46 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
+  operation(:reapply,
+    summary: "Reapply a conversation's Agent, Environment and Vault",
+    description:
+      "Applies a selection to the machine this conversation already runs on, so its files " <>
+        "stay where the agent left them. Variables, the system prompt, skills and MCP " <>
+        "configuration are rewritten, and the next prompt reads them. Omitted fields keep " <>
+        "their current selection; null clears the Environment override or Vault. Refused " <>
+        "while a turn is running or the conversation is provisioning, and with " <>
+        "409 rebuild_required when the selection would need the disk built again.",
+    parameters: [conversation_id: [in: :path, type: :string, required: true]],
+    request_body:
+      {"Configuration selection", "application/json", Schemas.ConversationReapplyRequest},
+    responses: [
+      ok: {"Reapplied conversation", "application/json", Schemas.ConversationResponse},
+      not_found:
+        {"Conversation or selected resource not found", "application/json", Schemas.Error},
+      conflict:
+        {"Conversation has a running turn, or the selection needs the machine rebuilt",
+         "application/json", Schemas.Error},
+      gone: {"Conversation is terminated", "application/json", Schemas.Error},
+      unprocessable_entity: {"Selection is not allowed", "application/json", Schemas.Error},
+      service_unavailable: {"Conversation is provisioning", "application/json", Schemas.Error}
+    ]
+  )
+
+  def reapply(conn, %{"conversation_id" => id} = params) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      conv ->
+        with {:ok, updated} <-
+               Conversations.reapply_conversation(conv, params, Audited.attribution(conn)) do
+          render(conn, :show, conversation: updated)
+        end
+    end
+  end
+
   operation(:answer_request,
     summary: "Answer a permission request",
     description:

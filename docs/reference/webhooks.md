@@ -72,6 +72,7 @@ counter uses the same pair as its tags.
 | `model` | `failed` | The runtime or the provider refused the model the agent asks for. |
 | `session` | `done` | The runtime reported a session id for the conversation. |
 | `sandbox` | `done` | Fountain reclaimed the sandbox. The conversation stays resumable. |
+| `configuration` | `done` | Someone reapplied the conversation's Agent, Environment or Vault. The next prompt starts a new machine. |
 | `terminate` | `done` | The conversation ended. |
 
 An endpoint filter accepts three shapes.

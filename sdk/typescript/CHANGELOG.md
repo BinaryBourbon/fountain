@@ -10,6 +10,22 @@ server releases.
 
 ---
 
+## [1.21.0] — 2026-09-04
+
+### Added
+
+- `conversation.reapply(options)` applies a selection to the machine a
+  conversation already runs on, so its files stay where the agent left them.
+  Environment variables, the system prompt, skills and MCP configuration are
+  rewritten, and the next prompt reads them. Call it with no argument to
+  refresh the current selection; an omitted `agentId`, `environmentId` or
+  `vaultId` stays as it is, and `null` under either of the last two clears it.
+  A selection needing the disk rebuilt (a different runtime, packages,
+  repositories, setup script or network policy) is refused with
+  `409 rebuild_required` and a `field` naming it.
+
+---
+
 ## [1.20.0] — 2026-09-03
 
 ### Changed

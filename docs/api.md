@@ -472,6 +472,7 @@ POST   /api/conversations                  # start (agent_id; optional vault_id,
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
 POST   /api/conversations/:id/read         # clear unread state
+POST   /api/conversations/:id/reapply      # reapply agent/environment/vault on a fresh machine
 POST   /api/conversations/:id/requests/:request_id   # answer a permission request ({option_id})
 GET    /api/conversations/:id/tree         # the whole spawn tree this conversation belongs to
 POST   /api/conversations/:id/prompts      # follow-up turn
@@ -531,6 +532,41 @@ gets `403 sprite_may_not_answer`.
 `POST /api/conversations/:id/interrupt` stops the turn in flight. It also
 wakes a conversation whose server died with a turn still marked `running`, so
 a turn that nothing else can close still ends.
+
+`POST /api/conversations/:id/reapply` applies a selection to the machine the
+conversation already runs on. Send `{}` to refresh the current Agent,
+Environment and Vault. Send any of `agent_id`, `environment_id` or `vault_id`
+to change one selection. An omitted field stays unchanged, and `null` clears
+the Environment override or the Vault.
+
+The machine stays, so everything on its disk stays with it. Fountain rewrites
+the environment variables, the system prompt, the skills and the MCP
+configuration, and the next prompt starts a runtime that reads them.
+Reapplication also updates the sandbox's binding identity, so later
+attachments must select the new Agent, Environment and Vault. If the target
+identity already has a persistent home, the request fails without changing
+either binding.
+
+A sleeping conversation applies the changes on its next wake. A configuration
+revision prevents a prompt from starting against settings a live server has
+not loaded yet. Fountain removes obsolete managed skills while preserving
+other files in the skills directory. On older sandboxes without a skill
+manifest, named skills are recovered from the recorded Agent version and
+GitHub skill names from the installer's source lock. Entries with no ownership
+record are preserved.
+
+Some selections need the disk built again. Fountain refuses those with
+`409 rebuild_required` and a `field` that says which one. A different runtime
+needs it: Fountain installs the agent adapter before the network policy, and
+that policy now blocks a second install. A different set of packages,
+repositories, setup script or network policy needs it too. A machine that
+other conversations share accepts only the selection those conversations
+already have, because skills and instructions belong to the machine. For the
+rest, start a new conversation. You can also build this conversation's machine
+again with `DELETE /api/sandboxes/:id`.
+
+Fountain also refuses the request while a turn runs, and while the
+conversation waits for its first machine.
 
 The error tells you about the conversation, never about your access. A status
 of `404` means no such conversation. A status of `409 no_turn_running` means

@@ -86,6 +86,19 @@ defmodule Fountain.Conversation do
 
   def tree(value), do: HTTP.data(value.http, "GET", "/api/conversations/#{value.id}/tree")
 
+  @doc "Reapply bindings on a fresh machine while preserving the conversation and transcript."
+  def reapply(value, opts \\ []) do
+    body =
+      [:agent_id, :environment_id, :vault_id]
+      |> Enum.reduce(%{}, fn key, acc ->
+        if Keyword.has_key?(opts, key),
+          do: Map.put(acc, Atom.to_string(key), Keyword.get(opts, key)),
+          else: acc
+      end)
+
+    HTTP.data(value.http, "POST", "/api/conversations/#{value.id}/reapply", body: body)
+  end
+
   @doc "Fetches all history pages, requesting server-parsed blocks."
   def history(value, opts \\ []),
     do:

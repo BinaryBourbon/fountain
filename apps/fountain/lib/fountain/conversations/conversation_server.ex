@@ -14,7 +14,6 @@ defmodule Fountain.Conversations.ConversationServer do
   require OpenTelemetry.Tracer
 
   alias Fountain.{
-    Accounts,
     Agents,
     Conversations,
     Environments,
@@ -31,6 +30,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Output,
     Pending,
     Provisioning,
+    Redaction,
     SpriteEnv,
     TurnMachine
   }
@@ -384,6 +384,20 @@ defmodule Fountain.Conversations.ConversationServer do
     result
   end
 
+  @doc """
+  Apply the conversation's current selection to the machine it is running on.
+
+  The conversation context calls this after it writes the new selection. A
+  server that is not running needs nothing: the next wake builds from the row,
+  which already says what to build. See `Fountain.Conversations.Reapply`.
+  """
+  def refresh_configuration(conv_id, revision \\ nil) do
+    case whereis(conv_id) do
+      nil -> :ok
+      pid -> call_server(pid, {:refresh_configuration, revision})
+    end
+  end
+
   # Records a lifecycle action against the conversation's owner.
   #
   # Only on success: an attempt against a conversation that is not running
@@ -466,6 +480,7 @@ defmodule Fountain.Conversations.ConversationServer do
       current_command: nil,
       current_command_ref: nil,
       current_turn: nil,
+      configuration_revision: 0,
       runtime_session_id: nil,
       # OTel span context for the in-flight turn (started in kick_turn,
       # ended in the :exit / :interrupt handlers).
@@ -616,6 +631,13 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @impl true
+  def handle_continue({:reapply_prompt, prompt, images}, state) do
+    case handle_continue(:provision, state) do
+      {:noreply, fresh} -> handle_cast({:initial_prompt, prompt, images}, fresh)
+      stopped -> stopped
+    end
+  end
+
   def handle_continue(:provision, state) do
     conv = Conversations._unsafe_get_conversation(state.conversation_id)
     sandbox = state.sandbox_id && Conversations._unsafe_get_sandbox(state.sandbox_id)
@@ -697,6 +719,7 @@ defmodule Fountain.Conversations.ConversationServer do
           %{
             state
             | user_id: conv.user_id,
+              configuration_revision: conv.configuration_revision,
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
               inference_credentials: inference_creds,
@@ -897,7 +920,15 @@ defmodule Fountain.Conversations.ConversationServer do
                  agent,
                  sprite_env
                ) do
-          {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+          # `build_fingerprint` records what the disk was built from, so a
+          # later reapply can tell whether a selection needs it rebuilt.
+          {:ok, _} =
+            Conversations.update_sandbox(sandbox, %{
+              status: "ready",
+              build_fingerprint: Fountain.Conversations.Reapply.fingerprint(env),
+              applied_skills: skills
+            })
+
           Output.publish_stage(state.conversation_id, "provision", "done")
 
           # Best-effort: snapshot the fully-provisioned state so subsequent
@@ -905,7 +936,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # doesn't block the user's first turn.
           maybe_create_checkpoint_async(handle, env)
 
-          state = forget_runtime_session(state, conv)
+          state = TurnMachine.forget_runtime_session(state, conv)
 
           # Dated from the sandbox row, not from now, so the absolute lifetime
           # ceiling survives a restart and a reattach rather than resetting.
@@ -1150,6 +1181,8 @@ defmodule Fountain.Conversations.ConversationServer do
         handle,
         Fountain.Conversations.Identity.disk_env(sprite_env)
       )
+
+      Fountain.Conversations.Reapply.mount_skills(handle, conv, agent)
 
       # Same for the agent's system prompt: an edit reaches the existing
       # computer on its next wake (#848).
@@ -1573,7 +1606,7 @@ defmodule Fountain.Conversations.ConversationServer do
       with :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
            :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-        {:reply, :ok, kick_turn(state, prompt, agent, images)}
+        Fountain.Conversations.Reapply.reply(kick_turn(state, prompt, agent, images))
       else
         {:error, _} = err -> {:reply, err, state}
       end
@@ -1706,6 +1739,23 @@ defmodule Fountain.Conversations.ConversationServer do
     {:stop, :normal, :ok, %{state | handle: nil}}
   end
 
+  def handle_call({:refresh_configuration, revision}, from, state) do
+    if revision == state.configuration_revision,
+      do: {:reply, :ok, state},
+      else: handle_call(:refresh_configuration, from, state)
+  end
+
+  def handle_call(:refresh_configuration, _from, %{current_turn: turn} = state)
+      when not is_nil(turn), do: {:reply, {:error, :conversation_busy}, state}
+
+  def handle_call(:refresh_configuration, _from, %{handle: nil} = state),
+    do: {:reply, :ok, state}
+
+  def handle_call(:refresh_configuration, _from, state) do
+    state = drop_connection(state, "configuration_reapplied")
+    {:reply, :ok, %{state | handle: nil}, {:continue, :provision}}
+  end
+
   # Catch-all: an unmatched call must not die with a FunctionClauseError at
   # the callback head — that exception's message embeds the full state
   # (plaintext secrets included) in the crash report, and format_status/1
@@ -1733,7 +1783,7 @@ defmodule Fountain.Conversations.ConversationServer do
         :ok ->
           state = close_autonomous_turn(state, "superseded_by_prompt")
           agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-          {:noreply, kick_turn(state, prompt, agent, images)}
+          kick_turn(state, prompt, agent, images)
 
         {:error, reason} ->
           # No caller to reply to — the wake door reports the same refusal
@@ -1868,7 +1918,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # with the outgoing env, not a replacement: the refused OAuth token is
     # still sitting in the sprite's `/home/sprite/.env` until a wake rewrites
     # it, so it stays worth scrubbing.
-    Fountain.Conversations.Redaction.put(
+    Redaction.put(
       state.conversation_id,
       state.sprite_env ++ fallback_env
     )
@@ -2197,96 +2247,23 @@ defmodule Fountain.Conversations.ConversationServer do
   # revoke the SURVIVING server's live credential — its sprite then 401'd
   # on every callback and sub-agent spawn, surfaced nowhere. If the row has
   # moved past our key, a successor owns the live credential and ours is
-  # already dead or inert.
-  #
-  # If the BEAM crashes hard (SIGKILL — untrappable) the row in `api_keys`
-  # is left behind, but it is not dangerous: `CallbackKey.api_key_opts/0`
-  # sets an `expires_at`, so an un-revoked key stops authenticating on its
-  # own, and RetentionPruner deletes long-expired rows. See SandboxReaper
-  # for the sprite half, which does not self-heal.
+  # already dead or inert. `CallbackKey.revoke/2` has the rest.
   @impl true
   def terminate(reason, state) do
-    Fountain.Conversations.Redaction.delete(state.conversation_id)
+    Redaction.delete(state.conversation_id)
+    _ = CallbackKey.revoke(state.conversation_id, state.callback_api_key_id)
 
-    if state.conversation_id && state.callback_api_key_id do
-      case Conversations._unsafe_get_conversation(state.conversation_id) do
-        %Conversation{user_id: user_id, callback_api_key_id: row_id}
-        when is_binary(user_id) and row_id == state.callback_api_key_id ->
-          _ =
-            Accounts.revoke_api_key(user_id, state.callback_api_key_id,
-              actor: "system:conversation_server"
-            )
-
-        _ ->
-          :ok
-      end
-    end
-
-    # A normal stop is not restarted, and its quiet timer dies with it. Leave
-    # supervisor shutdowns and crashes running for reattach. This stays last
-    # and best-effort so it cannot skip callback-key revocation.
-    if reason == :normal and state.current_turn do
-      try do
-        _ =
-          Conversations._unsafe_orphan_turn(state.current_turn, "server_terminated_normally")
-      rescue
-        error ->
-          Logger.error(
-            "terminate/2: orphaning turn for conv #{inspect(state.conversation_id)} raised: " <>
-              Exception.format(:error, error, __STACKTRACE__)
-          )
-      end
-    end
-
+    # Last and best-effort, so it cannot skip the revocation above.
+    _ = TurnMachine.orphan_on_normal_stop(reason, state.current_turn, state.conversation_id)
     :ok
   end
 
-  # Redacts secrets from crash reports and :sys.get_status output (#315). An
-  # unhandled raise in any callback logs `State:` via inspect — without this,
-  # that meant plaintext env secrets, the raw tenant DEK, decrypted BYO
-  # inference credentials, the callback API key, and the platform Sprites
-  # token (inside sprite.client) on stdout and, with SENTRY_DSN set, in a
-  # Sentry event body. Sentry's PlugContext scrubbing never sees process
-  # crash reports, so the redaction has to happen here.
-  #
-  # Key names are kept (values replaced) so crash reports stay debuggable.
+  # Keeps secrets out of crash reports and :sys.get_status output (#315). The
+  # redactor itself is `Redaction.server_state/1`.
   @impl true
-  def format_status(status) do
-    Map.new(status, fn
-      {:state, %{conversation_id: _} = state} -> {:state, redact_state(state)}
-      other -> other
-    end)
-  end
-
-  defp redact_state(state) do
-    %{
-      state
-      | handle: state.handle && %{state.handle | private: nil},
-        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, "[REDACTED]"} end),
-        tenant_key: redact(state.tenant_key),
-        inference_credentials: redact_map(state.inference_credentials),
-        callback_token: redact(state.callback_token)
-    }
-  end
-
-  defp redact_map(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
-  defp redact_map(other), do: redact(other)
-
-  defp redact(nil), do: nil
-  defp redact(_present), do: "[REDACTED]"
+  def format_status(status), do: Redaction.server_status(status)
 
   # ── turns ─────────────────────────────────────────────────────────────────
-
-  # A runtime session cannot follow the conversation onto a fresh sandbox
-  # (`TurnMachine.reset_runtime_session/2`, #778). Done inside the server
-  # rather than by the wake caller: the caller's row update races this
-  # server's own read of the row in handle_continue.
-  defp forget_runtime_session(%{runtime_session_id: nil} = state, _conv), do: state
-
-  defp forget_runtime_session(state, conv) do
-    TurnMachine.reset_runtime_session(conv, state.conversation_id)
-    %{state | runtime_session_id: nil}
-  end
 
   @doc """
   The options a sprite's callback key is minted with: `CallbackKey.api_key_opts/0`.
@@ -2346,9 +2323,21 @@ defmodule Fountain.Conversations.ConversationServer do
   defp kick_turn(state, prompt, agent, images) do
     state = touch_activity(state)
 
-    case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt) do
-      {:ok, conv, turn} -> run_turn(state, conv, turn, prompt, agent, images)
-      :at_capacity -> state
+    case TurnMachine.open(
+           state.conversation_id,
+           state.sandbox_id,
+           prompt,
+           state.configuration_revision
+         ) do
+      {:ok, conv, turn} ->
+        {:noreply, run_turn(state, conv, turn, prompt, agent, images)}
+
+      :at_capacity ->
+        {:noreply, state}
+
+      :configuration_changed ->
+        state = drop_connection(state, "configuration_reapplied")
+        {:noreply, %{state | handle: nil}, {:continue, {:reapply_prompt, prompt, images}}}
     end
   end
 

@@ -8,6 +8,8 @@ from .http import HttpClient
 from .run import Run
 from .sse import stream_events
 
+_UNSET = object()
+
 
 class Conversation:
     def __init__(self, http: HttpClient, conversation_id: str, cursor: int = 0) -> None:
@@ -101,6 +103,30 @@ class Conversation:
 
     def tree(self) -> Any:
         return self._http.data("GET", "/api/conversations/%s/tree" % self.id)
+
+    def reapply(
+        self,
+        *,
+        agent_id: Optional[str] = None,
+        environment_id: Any = _UNSET,
+        vault_id: Any = _UNSET,
+    ) -> Dict[str, Any]:
+        """Reapply bindings on a fresh machine while preserving this thread.
+
+        Omitted values keep their current binding. Pass ``None`` for the
+        environment or vault to clear it. Calling with no arguments refreshes
+        the current configuration.
+        """
+        body: Dict[str, Any] = {}
+        if agent_id is not None:
+            body["agent_id"] = agent_id
+        if environment_id is not _UNSET:
+            body["environment_id"] = environment_id
+        if vault_id is not _UNSET:
+            body["vault_id"] = vault_id
+        return self._http.data(
+            "POST", "/api/conversations/%s/reapply" % self.id, body=body
+        )
 
     def interrupt(self) -> None:
         self._http.request("POST", "/api/conversations/%s/interrupt" % self.id)

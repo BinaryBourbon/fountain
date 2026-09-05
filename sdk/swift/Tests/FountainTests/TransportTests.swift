@@ -43,6 +43,21 @@ private func mockSession() -> URLSession { sharedMockSession }
 
 private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value) }
 
+private func requestBody(_ request: URLRequest) -> Data? {
+  if let body = request.httpBody { return body }
+  guard let stream = request.httpBodyStream else { return nil }
+  stream.open()
+  defer { stream.close() }
+  var output = Data()
+  var buffer = [UInt8](repeating: 0, count: 1024)
+  while true {
+    let count = stream.read(&buffer, maxLength: buffer.count)
+    if count <= 0 { break }
+    output.append(contentsOf: buffer.prefix(count))
+  }
+  return output
+}
+
 @Suite(.serialized) struct TransportTests {
   @Test func httpClientBuildsAuthenticatedRequestAndTypedError() async throws {
     MockURLProtocol.handler = { request, protocolInstance in
@@ -79,6 +94,26 @@ private func json(_ value: JSONValue) -> Data { try! JSONEncoder().encode(value)
       apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
     let result = try await fountain.connections.providers.discover("provider one")
     #expect(result["ok"]?.boolValue == true)
+  }
+
+  @Test func conversationReapplyPreservesExplicitNulls() async throws {
+    MockURLProtocol.handler = { request, protocolInstance in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path == "/api/conversations/conversation-1/reapply")
+      let body = requestBody(request).flatMap {
+        try? JSONDecoder().decode(JSONValue.self, from: $0)
+      }
+      #expect(body?["agent_id"]?.stringValue == "agent-2")
+      #expect(body?["environment_id"] == .null)
+      #expect(body?["vault_id"]?.stringValue == "vault-2")
+      protocolInstance.respond(
+        data: json(["data": ["id": "conversation-1", "status": "idle"]] as JSONValue))
+    }
+    let fountain = try Fountain(
+      apiKey: "secret", baseURL: "https://api.example.test", session: mockSession())
+    let result = try await fountain.resume("conversation-1").reapply(
+      agentID: "agent-2", environmentID: .null, vaultID: "vault-2")
+    #expect(result["id"]?.stringValue == "conversation-1")
   }
 
   @Test func globalSSEUsesLastEventIDAndNoAfterOrWaitDefaults() async throws {

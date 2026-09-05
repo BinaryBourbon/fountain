@@ -42,6 +42,15 @@ public struct ConversationsResource: Sendable {
     try await client.send(.delete, "/api/conversations/\(id)")
   }
 
+  /// Reapply bindings on a fresh machine while preserving the conversation,
+  /// transcript and turn history. An empty request refreshes the current setup.
+  public func reapply(
+    _ id: String,
+    _ request: ConversationReapplyRequest = ConversationReapplyRequest()
+  ) async throws -> Conversation {
+    try await client.data(.post, "/api/conversations/\(id)/reapply", body: request)
+  }
+
   /// Queue a follow-up turn. The 200 is not the answer — the words arrive
   /// on the stream. Throws `.conversationBusy` mid-turn; queue and retry
   /// on turn end.

@@ -89,6 +89,21 @@ public final class Conversation: @unchecked Sendable {
   public func tree() async throws -> JSONObject {
     try await http.data("GET", "/api/conversations/\(id)/tree")
   }
+
+  /// Reapply bindings on a fresh machine while preserving this thread.
+  /// Omit a value to keep it; pass `.null` for environment or vault to clear it.
+  public func reapply(
+    agentID: String? = nil,
+    environmentID: JSONValue? = nil,
+    vaultID: JSONValue? = nil
+  ) async throws -> JSONObject {
+    var body: JSONObject = [:]
+    if let agentID { body["agent_id"] = .string(agentID) }
+    if let environmentID { body["environment_id"] = environmentID }
+    if let vaultID { body["vault_id"] = vaultID }
+    return try await http.data("POST", "/api/conversations/\(id)/reapply", body: body)
+  }
+
   public func interrupt() async throws {
     _ = try await http.request("POST", "/api/conversations/\(id)/interrupt")
   }

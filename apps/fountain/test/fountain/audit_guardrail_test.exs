@@ -57,6 +57,8 @@ defmodule Fountain.AuditGuardrailTest do
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
     {"conversation caller tools", &__MODULE__.do_caller_tools/1, "conversation.caller_tools_set"},
+    {"conversation configuration reapply", &__MODULE__.do_conv_reapply/1,
+     "conversation.configuration_reapplied"},
     {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
@@ -395,6 +397,12 @@ defmodule Fountain.AuditGuardrailTest do
       Conversations.set_caller_tools(conv, [
         %{"name" => "lookup", "description" => "", "parameters" => %{}}
       ])
+  end
+
+  def do_conv_reapply(user) do
+    agent = insert_agent(user_id: user.id)
+    conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+    {:ok, _} = Conversations.reapply_conversation(conv)
   end
 
   def do_sandbox_reset(user) do

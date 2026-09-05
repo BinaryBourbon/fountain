@@ -32,6 +32,7 @@ defmodule Fountain.Webhooks.Events do
     {"model", ~w(failed)},
     {"session", ~w(done)},
     {"sandbox", ~w(done)},
+    {"configuration", ~w(done)},
     {"terminate", ~w(done)}
   ]
 

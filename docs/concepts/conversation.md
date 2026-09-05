@@ -51,6 +51,16 @@ run the turn, stream log events over SSE
 The same machine runs another turn for a follow-up prompt. You can interrupt a
 turn that runs, and you can end the whole conversation early.
 
+You can also reapply the Agent, Environment or Vault to a Conversation that
+exists. A reapply keeps the id, the turns, the transcript and the machine, so
+the files the agent has on disk stay where it left them. Fountain rewrites the
+variables, the system prompt, the skills and the MCP configuration, and the
+next prompt starts a runtime that reads them.
+
+Fountain refuses a selection that needs the disk built again, and the answer
+says which field needs it. A different runtime needs it, and so does a
+different set of packages, repositories or setup script.
+
 Log events stream in real time over
 `GET /api/conversations/:id/stream`. Add `?blocks=true` and the server parses
 the runtime dialect, so a client never has to.

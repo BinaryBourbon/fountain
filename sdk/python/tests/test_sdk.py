@@ -214,6 +214,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(
                 201, {"data": {"id": "c-1", "status": "running", "turn_count": 1}}
             )
+        if parsed.path == "/api/conversations/c-1/reapply":
+            return self._json(
+                200, {"data": {"id": "c-1", "status": "idle", **(body or {})}}
+            )
         return self._json(404, {"error": "not_found"})
 
 
@@ -350,6 +354,29 @@ class TurnTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_conversation_reapply_preserves_explicit_nulls(self):
+        with FakeFountain() as fake:
+            conversation = Fountain(base_url=fake.base_url, api_key="fk_test").resume(
+                "c-1"
+            )
+            result = conversation.reapply(
+                agent_id="agent-2", environment_id=None, vault_id="vault-2"
+            )
+            self.assertEqual(result["id"], "c-1")
+            request = next(
+                request
+                for request in fake.state.requests
+                if request[:2] == ("POST", "/api/conversations/c-1/reapply")
+            )
+            self.assertEqual(
+                request[3],
+                {
+                    "agent_id": "agent-2",
+                    "environment_id": None,
+                    "vault_id": "vault-2",
+                },
+            )
+
     def test_run_resolves_names_streams_and_returns_result(self):
         with FakeFountain() as fake:
             client = Fountain(

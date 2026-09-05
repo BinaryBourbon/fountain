@@ -572,6 +572,7 @@ defmodule FountainWeb.Router do
 
     resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt
+      post "/reapply", ConversationController, :reapply, as: :reapply
       post "/interrupt", ConversationController, :interrupt, as: :interrupt
       post "/terminate", ConversationController, :terminate, as: :terminate
       get "/turns", ConversationController, :turns, as: :turns
