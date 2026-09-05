@@ -471,7 +471,7 @@ defmodule Fountain.Conversations.ConversationServer do
       # ended in the :exit / :interrupt handlers).
       current_turn_span: nil,
       # Aggregate-metric bookkeeping for the in-flight turn (#536, #535):
-      # `%{started_mono: ms, runtime: "claude", first_output?: bool}`, set
+      # `%{started_mono: ms, runtime: "claude", provider: "sprites", first_output?: bool}`, set
       # once the turn's command is spawned and dropped on every terminal
       # path. nil whenever no turn is running. Monotonic rather than the
       # turn row's timestamps because `now/0` truncates to the second,
@@ -2514,11 +2514,12 @@ defmodule Fountain.Conversations.ConversationServer do
                   current_turn: turn,
                   runtime_session_id: runtime_session_id,
                   current_turn_span: turn_span,
-                  turn_metrics: %{
-                    started_mono: turn_started_mono,
-                    runtime: conv.runtime,
-                    first_output?: false
-                  },
+                  turn_metrics:
+                    TurnMachine.start_metrics(
+                      conv.runtime,
+                      state.handle.provider,
+                      turn_started_mono
+                    ),
                   stream_tracer: stream_tracer,
                   acp_peer: peer,
                   acp_peer_mon: peer_mon
@@ -2710,11 +2711,8 @@ defmodule Fountain.Conversations.ConversationServer do
           touch_activity(state)
           | current_turn: turn,
             current_turn_span: turn_span,
-            turn_metrics: %{
-              started_mono: started_mono,
-              runtime: conv.runtime,
-              first_output?: false
-            },
+            turn_metrics:
+              TurnMachine.start_metrics(conv.runtime, state.handle.provider, started_mono),
             stream_tracer: tracer
         }
 

@@ -19,11 +19,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
     machine = %TurnMachine{
       conversation_id: conv.id,
       row: row,
-      metrics: %{
-        started_mono: System.monotonic_time(:millisecond),
-        runtime: "claude",
-        first_output?: false
-      }
+      metrics: TurnMachine.start_metrics("claude", :runner, System.monotonic_time(:millisecond))
     }
 
     {:ok, user: user, agent: agent, conv: conv, row: row, machine: machine}
@@ -291,7 +287,12 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
 
       assert_receive {:telemetry, [:fountain, :turn, :completed], %{duration_ms: _},
-                      %{runtime: "claude", status: "completed", conv_id: conv_id}}
+                      %{
+                        runtime: "claude",
+                        provider: "runner",
+                        status: "completed",
+                        conv_id: conv_id
+                      }}
 
       assert conv_id == conv.id
     end
@@ -336,7 +337,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert once.metrics.first_output?
 
       assert_receive {:telemetry, [:fountain, :turn, :first_output], %{elapsed_ms: _},
-                      %{runtime: "claude"}}
+                      %{runtime: "claude", provider: "runner"}}
 
       assert TurnMachine.maybe_emit_first_output(once) == once
       refute_receive {:telemetry, [:fountain, :turn, :first_output], _, _}, 50
