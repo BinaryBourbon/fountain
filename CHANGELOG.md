@@ -168,6 +168,9 @@ upgrade, is in
 
 ### Fixed
 
+- Deduplicate database gauges across replicas in sandbox, conversation and Oban alerts.
+- Label turn duration and first-output metrics by sandbox provider so hosted alerts can exclude self-hosted runners.
+
 - **ACP `session/new` carried the agent's unsubstituted MCP configuration**
   (#1404). Fountain resolves `${VAR}` references once at provision and writes
   the sandbox's `.mcp.json` from the result, but the turn path re-read the

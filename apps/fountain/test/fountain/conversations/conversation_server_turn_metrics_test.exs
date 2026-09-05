@@ -78,6 +78,7 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
 
       assert_received {:turn_completed, measurements, metadata}
       assert metadata.runtime == "gemini"
+      assert metadata.provider == "sprites"
       assert metadata.status == "completed"
 
       # Metadata, never a tag: it's what makes the JSON log line point at a
@@ -177,6 +178,7 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
 
       assert_received {:first_output, measurements, metadata}
       assert metadata.runtime == "gemini"
+      assert metadata.provider == "sprites"
       assert metadata.conv_id == conv.id
       assert is_integer(measurements.elapsed_ms)
       assert measurements.elapsed_ms >= 0

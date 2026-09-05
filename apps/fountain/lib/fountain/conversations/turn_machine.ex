@@ -457,6 +457,17 @@ defmodule Fountain.Conversations.TurnMachine do
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
   end
 
+  @doc "Start one turn's measurements with the provider of the computer it runs on."
+  @spec start_metrics(String.t(), atom(), integer()) :: map()
+  def start_metrics(runtime, provider, started_mono) do
+    %{
+      started_mono: started_mono,
+      runtime: runtime,
+      provider: to_string(provider),
+      first_output?: false
+    }
+  end
+
   # Emit the aggregate turn-duration event (#536). Called from every path
   # that ends a turn which actually ran: the :exit handler, the mid-turn
   # {:error, ...} handler (#413) and :interrupt.
@@ -466,7 +477,7 @@ defmodule Fountain.Conversations.TurnMachine do
   # dashboard/alert signal.
   #
   # Tags are `runtime` (four values, gated by Runtimes.for_runtime/1 on the
-  # only path that starts a server) and the terminal `status`
+  # only path that starts a server), the sandbox `provider`, and terminal `status`
   # (completed/failed/interrupted). conv_id rides along as metadata — it is
   # what makes the JSON log line actionable, and as a tag it would mint a
   # time series per conversation.
@@ -476,7 +487,12 @@ defmodule Fountain.Conversations.TurnMachine do
   def emit_completed(%__MODULE__{metrics: metrics} = turn, status) do
     Fountain.Telemetry.event(
       [:turn, :completed],
-      %{runtime: metrics.runtime, status: status, conv_id: turn.conversation_id},
+      %{
+        runtime: metrics.runtime,
+        provider: metrics.provider,
+        status: status,
+        conv_id: turn.conversation_id
+      },
       %{duration_ms: System.monotonic_time(:millisecond) - metrics.started_mono}
     )
   end
@@ -500,7 +516,7 @@ defmodule Fountain.Conversations.TurnMachine do
   def maybe_emit_first_output(%__MODULE__{metrics: %{first_output?: false} = metrics} = turn) do
     Fountain.Telemetry.event(
       [:turn, :first_output],
-      %{runtime: metrics.runtime, conv_id: turn.conversation_id},
+      %{runtime: metrics.runtime, provider: metrics.provider, conv_id: turn.conversation_id},
       %{elapsed_ms: System.monotonic_time(:millisecond) - metrics.started_mono}
     )
 

@@ -208,6 +208,8 @@ spec:
               run, and grep the app logs for "provisioning exceeded".
 
         - alert: FountainSandboxBudgetExceeded
+          # OpsGauges polls the same database on each replica. Deduplicate
+          # each status before adding them; event counters still need sum.
           # Instance-wide concurrency ceiling (#405). Every sprite bills to
           # your single SPRITES_TOKEN and the only enforced cap is per-tenant
           # (default 5), so total concurrent spend is otherwise
@@ -215,7 +217,7 @@ spec:
           # operator knob, not a law: size it to what you are willing to pay
           # for.
           expr: |
-            sum(fountain_sandboxes_count{namespace="fountain", status=~"pending|starting|ready"}) > 50
+            sum(max by (namespace, status) (fountain_sandboxes_count{namespace="fountain", status=~"pending|starting|ready"})) > 50
           for: 10m
           labels:
             severity: warning
@@ -236,7 +238,7 @@ spec:
           # sandbox rows are wrong — the drift SandboxReaper measures — and
           # shares the same 50 knob.
           expr: |
-            sum(fountain_conversations_count{namespace="fountain", status=~"pending|running"}) > 50
+            sum(max by (namespace, status) (fountain_conversations_count{namespace="fountain", status=~"pending|running"})) > 50
           for: 10m
           labels:
             severity: warning
@@ -330,7 +332,7 @@ spec:
           # for 7 days until Oban's pruner removes them, and an alert that
           # stays red for a week trains people to ignore it.
           expr: |
-            delta(fountain_oban_queue_depth{namespace="fountain", state="discarded"}[2h]) > 0
+            delta((max by (namespace, queue, state) (fountain_oban_queue_depth{namespace="fountain", state="discarded"}))[2h:1m]) > 0
           labels:
             severity: critical
           annotations:
@@ -346,7 +348,7 @@ spec:
           # available = runnable now but not picked up. A sustained backlog
           # means concurrency is saturated or a worker is wedged.
           expr: |
-            fountain_oban_queue_depth{namespace="fountain", state="available"} > 25
+            max by (namespace, queue, state) (fountain_oban_queue_depth{namespace="fountain", state="available"}) > 25
           for: 30m
           labels:
             severity: warning
