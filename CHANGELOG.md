@@ -168,6 +168,8 @@ upgrade, is in
 
 ### Fixed
 
+- `/api/auth/me` now returns the presented API key's `expires_at`, or null for a key without an expiry, as its schema declares.
+
 - Deduplicate database gauges across replicas in sandbox, conversation and Oban alerts.
 - Label turn duration and first-output metrics by sandbox provider so hosted alerts can exclude self-hosted runners.
 
