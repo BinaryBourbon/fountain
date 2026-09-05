@@ -536,7 +536,50 @@ defmodule FountainWeb.OpenAIControllerTest do
 
       conn = chat(conn, raw_key, request("offline", "hello"), [{"x-fountain-thread", "t2"}])
 
-      assert json_response(conn, 409)["error"] == "no_runner_online"
+      assert %{
+               "error" => %{
+                 "code" => "no_runner_online",
+                 "type" => "conflict_error",
+                 "message" => message,
+                 "param" => nil
+               }
+             } =
+               json_response(conn, 409)
+
+      assert message =~ "start `fountain runner`"
+    end
+
+    for stream <- [false, true] do
+      @stream stream
+      test "sandbox capacity refusal has an OpenAI envelope with stream=#{stream}", %{
+        conn: conn,
+        user: user,
+        agent: agent,
+        raw_key: raw_key
+      } do
+        _conv = bound_conversation(user, agent, "capacity")
+
+        expect(ConversationServer, :send_prompt, fn _id, _prompt, [], _opts ->
+          {:error, :sandbox_at_capacity}
+        end)
+
+        conn =
+          chat(conn, raw_key, request("pr-reviewer", "hello", %{"stream" => @stream}), [
+            {"x-fountain-thread", "capacity"}
+          ])
+
+        assert %{
+                 "error" => %{
+                   "code" => "sandbox_at_capacity",
+                   "type" => "conflict_error",
+                   "message" => message,
+                   "param" => nil
+                 }
+               } = json_response(conn, 409)
+
+        assert message =~ "another conversation"
+        assert get_resp_header(conn, "retry-after") == ["5"]
+      end
     end
 
     test "a busy thread is 409 with Retry-After, not a queue", %{
