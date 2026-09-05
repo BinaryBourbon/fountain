@@ -39,8 +39,12 @@ def main():
             for fires in (False, True):
                 values = ("30+0x120" if fires else "20+0x120") if state == "available" else (
                     "0+0x59 1+0x60" if fires else "1+0x120")
-                # delta extrapolates the 119 observed intervals across the 120-minute window.
-                value = 30 if state == "available" else 120 / 119
+                # Assert alert membership rather than delta's fractional
+                # extrapolation, which differs between Prometheus 2 and 3.
+                expression = rules[alert]["expr"]
+                if state == "discarded":
+                    expression = f"({expression.strip()}) > bool 0"
+                value = 30 if state == "available" else 1
                 series = [
                     {"series": f'fountain_oban_queue_depth{{namespace="fountain",queue="default",state="{state}",pod="pod-{pod}"}}',
                      "values": values}
@@ -52,7 +56,7 @@ def main():
                 cases.append({
                     "name": f"{alert}: {replicas} replicas, fires={fires}",
                     "interval": "1m", "input_series": series,
-                    "promql_expr_test": [{"expr": rules[alert]["expr"], "eval_time": "120m",
+                    "promql_expr_test": [{"expr": expression, "eval_time": "120m",
                                           "exp_samples": [{"labels": f'{{namespace="fountain",queue="default",state="{state}"}}',
                                                            "value": value}] if fires else []}],
                 })
