@@ -4,9 +4,11 @@ Fountain runs a conversation on a pluggable sandbox backend, behind the
 `Managoat.Sandbox` behaviour. Today those are Sprites, E2B, Daytona and the
 self-hosted runner. This page is the practical checklist for another one.
 The behaviour and the three hosted adapters are the `managoat_sandbox`
-library, in `apps/managoat_sandbox`. The runner adapter lives in Fountain and
-implements the behaviour from outside the library, which is the shape a new
-adapter can take too.
+library, published on [Hex](https://hex.pm/packages/managoat_sandbox) with
+source in [managoat/managoat_sandbox](https://github.com/managoat/managoat_sandbox).
+Fountain pins it in `apps/fountain/mix.exs`. The runner adapter is a separate
+[managoat_runner library](https://github.com/managoat/managoat_runner) that
+implements the same behaviour.
 
 Three places hold the contract itself.
 [ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md)
@@ -72,15 +74,23 @@ gRPC dependency.
 
 ## The code checklist
 
-Registration centers on `apps/fountain/lib/fountain/sandbox.ex`. The changeset
+A provider change crosses two repositories. Open the adapter and conformance
+PR in the library, publish its Hex release, then bump Fountain's dependency
+pin and register the provider here. Follow the
+[component library contribution recipes](https://github.com/BinaryBourbon/fountain/blob/main/CONTRIBUTING.md#graduating-a-library)
+for the library gates, release and consumer PR. A local path override can test
+the two changes together before release; the committed pin must name a
+published version.
+
+Registration centers on `apps/fountain/lib/fountain/sandbox_providers.ex`. The changeset
 validations and the schema-enum guardrail derive from `known_providers/0`.
 Three lists are still literals, and the guardrail is what catches the drift.
 Those are the `sandbox_provider` enums in `fountain_web/schemas.ex`, on Agent,
 AgentCreate and AgentUpdate, and the `SANDBOX_PROVIDER` boot check in
 `config/runtime.exs`. Budget for those edits.
 
-1. **Adapter modules**, under
-   `apps/managoat_sandbox/lib/managoat/sandbox/<provider>/`. You need the
+1. **Adapter modules**, in the `managoat/managoat_sandbox` repository, under
+   `lib/managoat/sandbox/<provider>/`. You need the
    adapter, with `@behaviour Managoat.Sandbox`, an API client, and whatever stream or
    command-server processes the provider needs. Keep the provider's secrets
    out of an inspection of `Handle.private`. The struct already excludes
