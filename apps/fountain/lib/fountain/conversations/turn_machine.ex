@@ -683,8 +683,8 @@ defmodule Fountain.Conversations.TurnMachine do
   ends.
   """
   @spec open(String.t(), String.t(), String.t()) ::
-          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity
-  def open(conversation_id, sandbox_id, prompt) do
+          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity | :configuration_changed
+  def open(conversation_id, sandbox_id, prompt, revision \\ nil) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
 
@@ -698,9 +698,12 @@ defmodule Fountain.Conversations.TurnMachine do
 
     capacity = Managoat.Runtimes.ACP.concurrency(conv.runtime)
 
-    case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity) do
+    case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity, revision) do
       {:ok, turn} ->
         {:ok, conv, turn}
+
+      {:error, :configuration_changed} ->
+        :configuration_changed
 
       {:error, :sandbox_at_capacity} ->
         publish_stage(conversation_id, "sandbox", "done", %{
@@ -1070,6 +1073,17 @@ defmodule Fountain.Conversations.TurnMachine do
   end
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
+
+  # A runtime session cannot follow the conversation onto a fresh sandbox
+  # (`TurnMachine.reset_runtime_session/2`, #778). Done inside the server
+  # rather than by the wake caller: the caller's row update races this
+  # server's own read of the row in handle_continue.
+  def forget_runtime_session(%{runtime_session_id: nil} = state, _conv), do: state
+
+  def forget_runtime_session(state, conv) do
+    reset_runtime_session(conv, state.conversation_id)
+    %{state | runtime_session_id: nil}
+  end
 
   @doc """
   Close a turn that a normally-stopping server leaves behind.

@@ -1323,6 +1323,74 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
+    test "a sleeping conversation reconciles skills on its next wake", ctx do
+      stub_happy_sprite()
+
+      {:ok, _} =
+        Conversations.update_sandbox(ctx.sandbox, %{
+          status: "ready",
+          agent_id: ctx.agent.id,
+          environment_id: ctx.env.id,
+          build_fingerprint: Fountain.Conversations.Reapply.fingerprint(ctx.env)
+        })
+
+      {:ok, conv} =
+        Conversations.update_conversation(ctx.conv, %{runtime: "claude", status: "idle"})
+
+      skills = [%{"name" => "fresh", "content" => "Updated skill"}]
+      {:ok, _} = Fountain.Agents.update_agent(ctx.agent, %{skills: skills})
+      test = self()
+
+      Mimic.expect(Fountain.SandboxSkills, :reconcile, fn _, "claude", ^skills, _ ->
+        send(test, :skills_reconciled)
+        :ok
+      end)
+
+      assert {:ok, updated} = Conversations.reapply_conversation(conv, %{})
+      {pid, _, :alive} = start_server(updated)
+      assert_received :skills_reconciled
+      assert :sys.get_state(pid).configuration_revision == updated.configuration_revision
+      GenServer.stop(pid)
+    end
+
+    test "a prompt reloads configuration when the refresh notification was missed", ctx do
+      stub_happy_sprite()
+      {pid, _, :alive} = start_server(ctx.conv)
+      # The harness server is deliberately outside the registry. Reapply can
+      # therefore commit while it is alive without delivering a notification.
+      {:ok, conv} =
+        Conversations.update_conversation(ctx.conv, %{runtime: "claude", status: "idle"})
+
+      {:ok, _} =
+        Environments.update_environment(ctx.env, %{env_vars: %{"REAPPLY_MARKER" => "fresh"}})
+
+      test = self()
+
+      Mimic.stub(Fountain.SandboxSkills, :reconcile, fn _, _, _, _ ->
+        send(test, :reloaded_before_spawn)
+        :ok
+      end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _, _, _, opts ->
+        send(test, {:spawned, opts[:env]})
+        {:error, {:unavailable, :test_finished}}
+      end)
+
+      assert {:ok, updated} = Conversations.reapply_conversation(conv, %{})
+      assert :sys.get_state(pid).configuration_revision == 0
+      assert :ok = GenServer.call(pid, {:send_prompt, "after reapply", []})
+      state = :sys.get_state(pid)
+      assert state.configuration_revision == updated.configuration_revision
+      assert_received :reloaded_before_spawn
+      assert_received {:spawned, env}
+      assert {"REAPPLY_MARKER", "fresh"} in env
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.prompt == "after reapply"
+      # A delayed notification for the revision already loaded is harmless.
+      assert :ok = GenServer.call(pid, {:refresh_configuration, updated.configuration_revision})
+      GenServer.stop(pid)
+    end
+
     test "a server with a running turn refuses", %{conv: conv} do
       stub_happy_sprite()
       ref = make_ref()

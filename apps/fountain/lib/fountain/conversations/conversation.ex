@@ -28,6 +28,7 @@ defmodule Fountain.Conversations.Conversation do
   schema "conversations" do
     field :runtime, :string
     field :status, :string, default: "pending"
+    field :configuration_revision, :integer, default: 0
     field :runtime_session_id, :string
     field :source, :string, default: "api"
     field :parent_conversation_id, :binary_id

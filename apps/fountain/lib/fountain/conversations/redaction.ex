@@ -162,6 +162,14 @@ defmodule Fountain.Conversations.Redaction do
     }
   end
 
+  @doc false
+  def server_status(status) do
+    Map.new(status, fn
+      {:state, %{conversation_id: _} = state} -> {:state, server_state(state)}
+      other -> other
+    end)
+  end
+
   defp secrets(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
   defp secrets(other), do: secret(other)
 

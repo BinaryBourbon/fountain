@@ -918,6 +918,51 @@ defmodule Fountain.Conversations do
           {:ok, Conversation.t()} | {:error, term()}
   def reapply_conversation(%Conversation{} = conv, attrs \\ %{}, opts \\ [])
       when is_map(attrs) do
+    with {:ok, {previous, updated}} <-
+           Reapply.transaction(conv.sandbox_id, fn ->
+             # Ownership was established by the caller. Re-read under the lock
+             # so concurrent reapplications preserve each other's omitted fields.
+             current =
+               Repo.one!(from c in Conversation, where: c.id == ^conv.id, lock: "FOR UPDATE")
+
+             if current.sandbox_id == conv.sandbox_id,
+               do: do_reapply_conversation(current, attrs),
+               else: {:error, :provisioning}
+           end) do
+      metadata = reapply_metadata(previous, updated)
+
+      Audit.record(%{
+        user_id: updated.user_id,
+        action: "conversation.configuration_reapplied",
+        resource_type: "conversation",
+        resource_id: updated.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: metadata
+      })
+
+      broadcast_sidebar_update(updated.user_id)
+
+      with :ok <-
+             Fountain.Conversations.ConversationServer.refresh_configuration(
+               updated.id,
+               updated.configuration_revision
+             ) do
+        publish_stage(updated.id, "configuration", "done", %{
+          event: "reapplied",
+          previous: metadata["previous"],
+          current: metadata["current"],
+          message:
+            "The configuration was reapplied on this machine. The transcript and the " <>
+              "files on disk are kept; the next prompt starts a new runtime session."
+        })
+
+        {:ok, updated}
+      end
+    end
+  end
+
+  defp do_reapply_conversation(conv, attrs) do
     agent_id = reapply_value(attrs, "agent_id", conv.agent_id)
     vault_selection = reapply_value(attrs, "vault_id", conv.vault_id)
     environment_selection = reapply_value(attrs, "environment_id", conv.environment_id)
@@ -940,35 +985,12 @@ defmodule Fountain.Conversations do
              # ownership: `agent` was fetched above by both id and conv.user_id.
              agent_version_id: Fountain.Agents._unsafe_current_version_id(agent.id),
              vault_id: vault_id,
-             environment_id: environment_id
-           ) do
-      # The row is what a wake reads, so a conversation with no live server is
-      # already reconfigured. A live one is holding the old environment in a
-      # spawned process and the old files on disk, and has to be told.
-      _ = Fountain.Conversations.ConversationServer.refresh_configuration(conv.id)
-
-      metadata = reapply_metadata(conv, updated)
-
-      publish_stage(updated.id, "configuration", "done", %{
-        event: "reapplied",
-        previous: metadata["previous"],
-        current: metadata["current"],
-        message:
-          "The configuration was reapplied on this machine. The transcript and the " <>
-            "files on disk are kept; the next prompt starts a new runtime session."
-      })
-
-      Audit.record(%{
-        user_id: updated.user_id,
-        action: "conversation.configuration_reapplied",
-        resource_type: "conversation",
-        resource_id: updated.id,
-        actor: Keyword.get(opts, :actor, "self"),
-        request_ip: Keyword.get(opts, :request_ip),
-        metadata: metadata
-      })
-
-      {:ok, updated}
+             environment_id: environment_id,
+             runtime: agent.runtime,
+             configuration_revision: conv.configuration_revision + 1
+           ),
+         :ok <- Reapply.update_identity(conv, agent, environment_id, vault_id) do
+      {:ok, {conv, Repo.preload(updated, :sandbox, force: true)}}
     end
   end
 
@@ -1050,7 +1072,6 @@ defmodule Fountain.Conversations do
 
     if count == 1 do
       updated = _unsafe_get_conversation!(conv.id)
-      broadcast_sidebar_update(updated.user_id)
       {:ok, updated}
     else
       {:error, :conversation_busy}
@@ -1270,34 +1291,31 @@ defmodule Fountain.Conversations do
   capacity is used up by another conversation's running turn.
 
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`: `:unbounded` (claude,
-  codex — several processes on one disk is the laptop shape) inserts exactly
-  as `_unsafe_create_turn/1` does; an integer is checked and inserted under
-  a per-sandbox advisory lock, so two conversations prompting the same
+  codex — several processes on one disk is the laptop shape) has no capacity
+  limit. All inserts take the sandbox lock and check the server's configuration
+  revision against reapply; integer capacities are checked under that lock
+  too, so two conversations prompting the same
   opencode or gemini machine at the same moment cannot both win. Answers
   `{:error, :sandbox_at_capacity}` rather than queueing (ADR 0023 step 4).
   Usage is recorded after the transaction commits, never inside it.
   """
-  def _unsafe_create_turn_on_sandbox(attrs, _sandbox_id, :unbounded),
-    do: _unsafe_create_turn(attrs)
-
-  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
-      when is_binary(sandbox_id) and is_integer(capacity) and capacity > 0 do
+  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity, revision \\ nil) do
     conv_id = Map.fetch!(attrs, :conversation_id)
 
     result =
-      Repo.transaction(fn ->
-        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
-          @sandbox_lock_namespace,
-          :erlang.phash2(sandbox_id)
-        ])
+      Reapply.transaction(sandbox_id, fn ->
+        conv = Repo.one!(from c in Conversation, where: c.id == ^conv_id, lock: "FOR UPDATE")
 
-        if _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
-          Repo.rollback(:sandbox_at_capacity)
-        else
-          case %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
-            {:ok, turn} -> turn
-            {:error, changeset} -> Repo.rollback(changeset)
-          end
+        cond do
+          not is_nil(revision) and conv.configuration_revision != revision ->
+            {:error, :configuration_changed}
+
+          capacity != :unbounded and
+              _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity ->
+            {:error, :sandbox_at_capacity}
+
+          true ->
+            %Turn{} |> Turn.changeset(attrs) |> Repo.insert()
         end
       end)
 
@@ -2632,7 +2650,7 @@ defmodule Fountain.Conversations do
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
          :ok <- check_attach_capacity(sandbox, agent, attrs["prompt"]),
          {:ok, conv} <-
-           create_conversation(%{
+           create_attached_conversation(sandbox, agent, vault_id, env_id, %{
              sandbox_id: sandbox.id,
              agent_id: agent.id,
              # Ownership: agent came from the scoped get_agent above.
@@ -2674,6 +2692,15 @@ defmodule Fountain.Conversations do
       nil -> {:error, :not_found}
       {:error, _} = err -> err
     end
+  end
+
+  defp create_attached_conversation(sandbox, agent, vault_id, env_id, attrs) do
+    Reapply.transaction(sandbox.id, fn ->
+      sandbox = _unsafe_get_sandbox!(sandbox.id)
+
+      with :ok <- check_attachable(sandbox, agent, vault_id, env_id),
+           do: create_conversation(attrs)
+    end)
   end
 
   defp deliver_attach_prompt(conv, attrs, opts) do

@@ -63,6 +63,80 @@ defmodule Fountain.Conversations.Reapply do
   alias Fountain.Conversations.Sandbox
   alias Fountain.Environments.Environment
 
+  import Ecto.Query
+  alias Fountain.{Conversations, Repo}
+
+  @doc false
+  def transaction(sandbox_id, fun) do
+    Repo.transaction(fn ->
+      if sandbox_id do
+        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(sandbox_id)])
+      end
+
+      case fun.() do
+        {:ok, value} -> value
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  @doc false
+  def update_identity(%{sandbox_id: nil}, _agent, _env_id, _vault_id), do: :ok
+
+  def update_identity(conv, agent, env_id, vault_id) do
+    # ownership: conv came from the tenant-scoped API fetch or its own server.
+    sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    # Older disks have no manifest. Seed reconciliation from the configuration
+    # recorded before this reapply, not the newly selected agent's skills.
+    previous = sandbox.applied_skills || previous_skills(conv)
+
+    case Conversations.update_sandbox(sandbox, %{
+           agent_id: agent.id,
+           environment_id: env_id || agent.environment_id,
+           vault_id: vault_id,
+           applied_skills: previous
+         }) do
+      {:ok, _} -> :ok
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  defp previous_skills(%{agent_version_id: nil}), do: []
+
+  defp previous_skills(conv) do
+    # The conversation's own version; ownership was checked at the API door.
+    case Repo.one(
+           from v in Fountain.Agents.AgentVersion,
+             where: v.id == ^conv.agent_version_id and v.user_id == ^conv.user_id
+         ) do
+      nil -> []
+      version -> version.config["skills"] || []
+    end
+  end
+
+  @doc false
+  def mount_skills(handle, conv, agent) do
+    # ownership: conv came from the tenant-scoped API fetch or its own server.
+    sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    skills = (agent && agent.skills) || []
+    runtime = conv.runtime || (agent && agent.runtime) || "claude"
+
+    with :ok <-
+           Fountain.SandboxSkills.reconcile(
+             handle,
+             runtime,
+             skills,
+             sandbox.applied_skills || previous_skills(conv)
+           ),
+         {:ok, _} <- Conversations.update_sandbox(sandbox, %{applied_skills: skills}) do
+      :ok
+    end
+  end
+
+  @doc false
+  def reply({:noreply, state}), do: {:reply, :ok, state}
+  def reply({:noreply, state, continuation}), do: {:reply, :ok, state, continuation}
+
   @typedoc "Why a selection cannot be applied to the machine that is already there."
   @type blocker ::
           :runtime

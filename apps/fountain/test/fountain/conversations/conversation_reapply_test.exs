@@ -126,7 +126,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
     test "tells the live server to apply it, and keeps the runtime session", ctx do
       test = self()
 
-      stub(Fountain.Conversations.ConversationServer, :refresh_configuration, fn id ->
+      stub(Fountain.Conversations.ConversationServer, :refresh_configuration, fn id, _revision ->
         send(test, {:refreshed, id})
         :ok
       end)
@@ -311,6 +311,115 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       {:ok, provisioning} = Conversations.update_conversation(ctx.conv, %{status: "pending"})
 
       assert {:error, :provisioning} = Conversations.reapply_conversation(provisioning, %{})
+    end
+  end
+
+  describe "binding and turn admission regressions" do
+    test "legacy skill cleanup keeps the pre-reapply version as its source", ctx do
+      old = [%{"name" => "removed", "content" => "Old instructions"}]
+      {:ok, _} = Agents.update_agent(ctx.agent, %{skills: old})
+
+      {:ok, conv} =
+        Conversations.update_conversation(ctx.conv, %{
+          agent_version_id: Agents._unsafe_current_version_id(ctx.agent.id)
+        })
+
+      {:ok, _} = Agents.update_agent(ctx.agent, %{skills: []})
+      assert {:ok, _} = Conversations.reapply_conversation(conv, %{})
+      assert Conversations._unsafe_get_sandbox!(ctx.sandbox.id).applied_skills == old
+    end
+
+    test "attachments use the new sandbox identity", ctx do
+      assert {:ok, updated} =
+               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
+
+      attrs = %{
+        "user_id" => ctx.user.id,
+        "agent_id" => ctx.agent.id,
+        "sandbox_id" => ctx.sandbox.id
+      }
+
+      assert {:ok, _} =
+               Conversations.start_conversation(Map.put(attrs, "vault_id", updated.vault_id))
+
+      assert {:error, :sandbox_identity_mismatch} =
+               Conversations.start_conversation(Map.put(attrs, "vault_id", ctx.old_vault.id))
+    end
+
+    test "a conflicting persistent home rolls back both bindings", ctx do
+      {:ok, _} = Conversations.update_sandbox(ctx.sandbox, %{mode: "persistent"})
+
+      insert_sandbox(
+        user_id: ctx.user.id,
+        mode: "persistent",
+        status: "ready",
+        agent_id: ctx.agent.id,
+        environment_id: ctx.old_env.id,
+        vault_id: ctx.new_vault.id
+      )
+
+      assert {:error, %Ecto.Changeset{}} =
+               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
+
+      assert Conversations._unsafe_get_conversation!(ctx.conv.id).vault_id == ctx.old_vault.id
+      assert Conversations._unsafe_get_sandbox!(ctx.sandbox.id).vault_id == ctx.old_vault.id
+    end
+
+    test "omitted fields use the latest committed selection", ctx do
+      assert {:ok, _} =
+               Conversations.reapply_conversation(ctx.conv, %{"vault_id" => ctx.new_vault.id})
+
+      assert {:ok, updated} =
+               Conversations.reapply_conversation(ctx.conv, %{
+                 "environment_id" => ctx.sibling_env.id
+               })
+
+      assert updated.vault_id == ctx.new_vault.id
+      assert updated.configuration_revision == 2
+    end
+
+    test "a stale server cannot open a turn after reapply", ctx do
+      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+
+      for capacity <- [:unbounded, 1] do
+        assert {:error, :configuration_changed} =
+                 Conversations._unsafe_create_turn_on_sandbox(
+                   %{
+                     conversation_id: ctx.conv.id,
+                     turn_number: 1,
+                     prompt: "hello",
+                     status: "running"
+                   },
+                   ctx.sandbox.id,
+                   capacity,
+                   ctx.conv.configuration_revision
+                 )
+      end
+
+      assert Conversations._unsafe_list_turns(ctx.conv.id) == []
+
+      assert {:ok, _, _} =
+               Fountain.Conversations.TurnMachine.open(
+                 ctx.conv.id,
+                 ctx.sandbox.id,
+                 "hello",
+                 updated.configuration_revision
+               )
+
+      assert {:error, :conversation_busy} = Conversations.reapply_conversation(updated, %{})
+    end
+
+    test "refresh failures are returned without a successful lifecycle event", ctx do
+      Mimic.expect(Fountain.Conversations.ConversationServer, :refresh_configuration, fn _, _ ->
+        {:error, :provisioning}
+      end)
+
+      assert {:error, :provisioning} = Conversations.reapply_conversation(ctx.conv, %{})
+
+      refute Enum.any?(
+               Conversations._unsafe_list_log_events(ctx.conv.id),
+               &(&1.stage == "configuration")
+             )
     end
   end
 

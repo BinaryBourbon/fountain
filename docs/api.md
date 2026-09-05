@@ -542,6 +542,18 @@ the Environment override or the Vault.
 The machine stays, so everything on its disk stays with it. Fountain rewrites
 the environment variables, the system prompt, the skills and the MCP
 configuration, and the next prompt starts a runtime that reads them.
+Reapplication also updates the sandbox's binding identity, so later
+attachments must select the new Agent, Environment and Vault. If the target
+identity already has a persistent home, the request fails without changing
+either binding.
+
+A sleeping conversation applies the changes on its next wake. A configuration
+revision prevents a prompt from starting against settings a live server has
+not loaded yet. Fountain removes obsolete managed skills while preserving
+other files in the skills directory. On older sandboxes without a skill
+manifest, named skills are recovered from the recorded Agent version and
+GitHub skill names from the installer's source lock. Entries with no ownership
+record are preserved.
 
 Some selections need the disk built again. Fountain refuses those with
 `409 rebuild_required` and a `field` that says which one. A different runtime

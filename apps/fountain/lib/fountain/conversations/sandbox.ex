@@ -46,6 +46,7 @@ defmodule Fountain.Conversations.Sandbox do
     # asked for would need the disk rebuilt, rather than assuming it would.
     # See `Fountain.Conversations.Reapply`.
     field :build_fingerprint, :string
+    field :applied_skills, {:array, :map}
     belongs_to :environment, Environment
     # The identity the disk was materialized from, with the environment
     # (ADR 0023): env vars, packages, repos and setup scripts are written at
@@ -76,6 +77,7 @@ defmodule Fountain.Conversations.Sandbox do
       :terminated_at,
       :last_resumed_at,
       :build_fingerprint,
+      :applied_skills,
       :environment_id,
       :agent_id,
       :vault_id,

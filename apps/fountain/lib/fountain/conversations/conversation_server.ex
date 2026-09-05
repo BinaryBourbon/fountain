@@ -391,10 +391,10 @@ defmodule Fountain.Conversations.ConversationServer do
   server that is not running needs nothing: the next wake builds from the row,
   which already says what to build. See `Fountain.Conversations.Reapply`.
   """
-  def refresh_configuration(conv_id) do
+  def refresh_configuration(conv_id, revision \\ nil) do
     case whereis(conv_id) do
       nil -> :ok
-      pid -> call_server(pid, :refresh_configuration)
+      pid -> call_server(pid, {:refresh_configuration, revision})
     end
   end
 
@@ -480,6 +480,7 @@ defmodule Fountain.Conversations.ConversationServer do
       current_command: nil,
       current_command_ref: nil,
       current_turn: nil,
+      configuration_revision: 0,
       runtime_session_id: nil,
       # OTel span context for the in-flight turn (started in kick_turn,
       # ended in the :exit / :interrupt handlers).
@@ -630,6 +631,13 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @impl true
+  def handle_continue({:reapply_prompt, prompt, images}, state) do
+    case handle_continue(:provision, state) do
+      {:noreply, fresh} -> handle_cast({:initial_prompt, prompt, images}, fresh)
+      stopped -> stopped
+    end
+  end
+
   def handle_continue(:provision, state) do
     conv = Conversations._unsafe_get_conversation(state.conversation_id)
     sandbox = state.sandbox_id && Conversations._unsafe_get_sandbox(state.sandbox_id)
@@ -711,6 +719,7 @@ defmodule Fountain.Conversations.ConversationServer do
           %{
             state
             | user_id: conv.user_id,
+              configuration_revision: conv.configuration_revision,
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
               inference_credentials: inference_creds,
@@ -916,7 +925,8 @@ defmodule Fountain.Conversations.ConversationServer do
           {:ok, _} =
             Conversations.update_sandbox(sandbox, %{
               status: "ready",
-              build_fingerprint: Fountain.Conversations.Reapply.fingerprint(env)
+              build_fingerprint: Fountain.Conversations.Reapply.fingerprint(env),
+              applied_skills: skills
             })
 
           Output.publish_stage(state.conversation_id, "provision", "done")
@@ -926,7 +936,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # doesn't block the user's first turn.
           maybe_create_checkpoint_async(handle, env)
 
-          state = forget_runtime_session(state, conv)
+          state = TurnMachine.forget_runtime_session(state, conv)
 
           # Dated from the sandbox row, not from now, so the absolute lifetime
           # ceiling survives a restart and a reattach rather than resetting.
@@ -1171,6 +1181,8 @@ defmodule Fountain.Conversations.ConversationServer do
         handle,
         Fountain.Conversations.Identity.disk_env(sprite_env)
       )
+
+      Fountain.Conversations.Reapply.mount_skills(handle, conv, agent)
 
       # Same for the agent's system prompt: an edit reaches the existing
       # computer on its next wake (#848).
@@ -1594,7 +1606,7 @@ defmodule Fountain.Conversations.ConversationServer do
       with :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
            :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-        {:reply, :ok, kick_turn(state, prompt, agent, images)}
+        Fountain.Conversations.Reapply.reply(kick_turn(state, prompt, agent, images))
       else
         {:error, _} = err -> {:reply, err, state}
       end
@@ -1727,31 +1739,19 @@ defmodule Fountain.Conversations.ConversationServer do
     {:stop, :normal, :ok, %{state | handle: nil}}
   end
 
-  def handle_call(:refresh_configuration, _from, %{current_turn: turn} = state)
-      when not is_nil(turn) do
-    {:reply, {:error, :conversation_busy}, state}
+  def handle_call({:refresh_configuration, revision}, from, state) do
+    if revision == state.configuration_revision,
+      do: {:reply, :ok, state},
+      else: handle_call(:refresh_configuration, from, state)
   end
 
-  # No machine in hand, so there is nothing on a disk to bring up to date.
-  def handle_call(:refresh_configuration, _from, %{handle: nil} = state) do
-    {:reply, :ok, state}
-  end
+  def handle_call(:refresh_configuration, _from, %{current_turn: turn} = state)
+      when not is_nil(turn), do: {:reply, {:error, :conversation_busy}, state}
+
+  def handle_call(:refresh_configuration, _from, %{handle: nil} = state),
+    do: {:reply, :ok, state}
 
   def handle_call(:refresh_configuration, _from, state) do
-    # Skills first, while the handle is still in hand. A bundled skill is a
-    # file write; a GitHub-sourced one is a clone, and this machine's network
-    # policy is already in force, so this is best effort and says so.
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    agent = conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)
-    runtime = conv.runtime || (agent && agent.runtime) || "claude"
-
-    _ = Fountain.SandboxSkills.mount(state.handle, runtime, (agent && agent.skills) || [])
-
-    # Everything else is what a wake already does to a machine it finds: the
-    # provision continuation reads the row, sees a `ready` sandbox and takes
-    # the reattach arm, which resolves MCP servers against the new secrets and
-    # rewrites `.mcp.json`, the `.env` file and the instructions. Dropping the
-    # connection is what makes the next turn spawn a runtime that reads them.
     state = drop_connection(state, "configuration_reapplied")
     {:reply, :ok, %{state | handle: nil}, {:continue, :provision}}
   end
@@ -1783,7 +1783,7 @@ defmodule Fountain.Conversations.ConversationServer do
         :ok ->
           state = close_autonomous_turn(state, "superseded_by_prompt")
           agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-          {:noreply, kick_turn(state, prompt, agent, images)}
+          kick_turn(state, prompt, agent, images)
 
         {:error, reason} ->
           # No caller to reply to — the wake door reports the same refusal
@@ -2261,25 +2261,9 @@ defmodule Fountain.Conversations.ConversationServer do
   # Keeps secrets out of crash reports and :sys.get_status output (#315). The
   # redactor itself is `Redaction.server_state/1`.
   @impl true
-  def format_status(status) do
-    Map.new(status, fn
-      {:state, %{conversation_id: _} = state} -> {:state, Redaction.server_state(state)}
-      other -> other
-    end)
-  end
+  def format_status(status), do: Redaction.server_status(status)
 
   # ── turns ─────────────────────────────────────────────────────────────────
-
-  # A runtime session cannot follow the conversation onto a fresh sandbox
-  # (`TurnMachine.reset_runtime_session/2`, #778). Done inside the server
-  # rather than by the wake caller: the caller's row update races this
-  # server's own read of the row in handle_continue.
-  defp forget_runtime_session(%{runtime_session_id: nil} = state, _conv), do: state
-
-  defp forget_runtime_session(state, conv) do
-    TurnMachine.reset_runtime_session(conv, state.conversation_id)
-    %{state | runtime_session_id: nil}
-  end
 
   @doc """
   The options a sprite's callback key is minted with: `CallbackKey.api_key_opts/0`.
@@ -2339,9 +2323,21 @@ defmodule Fountain.Conversations.ConversationServer do
   defp kick_turn(state, prompt, agent, images) do
     state = touch_activity(state)
 
-    case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt) do
-      {:ok, conv, turn} -> run_turn(state, conv, turn, prompt, agent, images)
-      :at_capacity -> state
+    case TurnMachine.open(
+           state.conversation_id,
+           state.sandbox_id,
+           prompt,
+           state.configuration_revision
+         ) do
+      {:ok, conv, turn} ->
+        {:noreply, run_turn(state, conv, turn, prompt, agent, images)}
+
+      :at_capacity ->
+        {:noreply, state}
+
+      :configuration_changed ->
+        state = drop_connection(state, "configuration_reapplied")
+        {:noreply, %{state | handle: nil}, {:continue, {:reapply_prompt, prompt, images}}}
     end
   end
 
