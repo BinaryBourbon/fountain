@@ -134,10 +134,22 @@ defmodule Fountain.Environments do
   """
   def update_environment(%Environment{} = env, attrs, opts \\ []) do
     changeset = Environment.changeset(env, attrs)
+    result = Repo.update(changeset)
 
-    changeset
-    |> Repo.update()
-    |> audited("environment.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
+    # A save that moves nothing is not a change, and records nothing
+    # (CLAUDE.md, "Only record what happened"). `Repo.update` already skips
+    # the SQL for an empty changeset, so an idempotent re-apply of a manifest
+    # left a trail of `environment.updated` rows with an empty changed list
+    # against a row nobody had touched (#1636).
+    if changeset.changes == %{} do
+      result
+    else
+      audited(
+        result,
+        "environment.updated",
+        merge_metadata(opts, Audit.changed_fields(changeset))
+      )
+    end
   end
 
   @doc """

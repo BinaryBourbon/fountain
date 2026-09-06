@@ -24,10 +24,15 @@ defmodule FountainWeb.ApplyController do
         "`agent`, `environment` and `vault`, and a schedule's `teammate`. Every " <>
         "kind is keyed by the document's `name`, except `Webhook`, which is keyed " <>
         "by `spec.url`. A `Webhook` created here returns its signing secret once, " <>
-        "on that result row. Apply is additive: a document dropped from the " <>
+        "on that result row. A `Teammate` is read as a whole declaration, so an " <>
+        "absent `environment` or `vault` clears that binding, and moving either " <>
+        "retires the computer the old binding named (refused with an error on " <>
+        "that row while a turn is running on it). Two Teammate documents may not " <>
+        "name the same agent. Apply is additive: a document dropped from the " <>
         "manifest leaves its record in place. Application is best-effort per " <>
-        "resource: the response is 200 even when individual resources fail, with " <>
-        "per-resource errors in the result entries.",
+        "resource: the response is 200 even when an individual resource fails " <>
+        "validation, is refused by its context or raises, with per-resource " <>
+        "errors in the result entries.",
     request_body: {"Compiled manifest", "application/json", Schemas.ApplyRequest},
     responses: [
       ok: {"Per-resource results", "application/json", Schemas.ApplyResponse},

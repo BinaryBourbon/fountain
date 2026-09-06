@@ -25,15 +25,28 @@ defmodule Fountain.Manifest do
   A teammate is one agent's membership of the team, so the document's `name`
   is what the teammate is called and the resolved `agent` is what it
   reconciles against. Re-applying a Teammate with a different `name` renames
-  it rather than adding a second membership for the same agent.
+  it rather than adding a second membership for the same agent, and two
+  documents naming one agent are refused past the first: they describe one
+  record, so without the refusal each pass would rename the other's
+  conversation and no apply would ever be `unchanged`.
 
-  Application is best-effort per resource, mirroring the CLI's previous
-  one-call-per-resource behavior: a resource that fails validation is
-  reported in its result entry and does not stop the rest of the manifest.
+  A Teammate document is also the only one read as a whole declaration. On
+  the other five an absent `spec` key leaves that column alone; on a Teammate
+  an absent `environment` or `vault` clears the binding, back to the agent's
+  own environment and no vault. Moving either id moves the teammate's
+  computer, which `Fountain.Team.update_teammate/4` retires and refuses
+  mid-turn (#1084).
+
+  Application is best-effort per resource: a document that fails validation,
+  that a context refuses, or that raises is reported in its own result entry
+  and does not stop the rest of the manifest.
 
   Apply is additive. A document removed from the manifest leaves its record
-  in place; there is no prune.
+  in place; there is no prune. A `Webhook` whose `spec.url` changes is a new
+  endpoint for that reason, and the one the old URL named keeps delivering.
   """
+
+  require Logger
 
   alias Fountain.{Agents, Crypto, Environments, Team, Vaults, Webhooks}
   alias Fountain.Team.Schedules
@@ -76,38 +89,81 @@ defmodule Fountain.Manifest do
 
     dek = if Enum.any?(envs ++ vaults, &has_secrets?/1), do: load_dek!(user_id)
 
-    {env_results, env_ids} = reconcile(envs, &apply_environment(user_id, &1, dek, opts))
-    {vault_results, vault_ids} = reconcile(vaults, &apply_vault(user_id, &1, dek, opts))
-    {agent_results, agent_ids} = reconcile(agents, &apply_agent(user_id, &1, env_ids, opts))
+    {env_results, env_ids} =
+      reconcile("Environment", envs, fn res, _claimed ->
+        apply_environment(user_id, res, dek, opts)
+      end)
+
+    {vault_results, vault_ids} =
+      reconcile("Vault", vaults, fn res, _claimed -> apply_vault(user_id, res, dek, opts) end)
+
+    {agent_results, agent_ids} =
+      reconcile("Agent", agents, fn res, _claimed -> apply_agent(user_id, res, env_ids, opts) end)
 
     refs = %{agents: agent_ids, environments: env_ids, vaults: vault_ids}
 
     {teammate_results, teammate_ids} =
-      reconcile(teammates, &apply_teammate(user_id, &1, refs, opts))
+      reconcile("Teammate", teammates, fn res, claimed ->
+        apply_teammate(user_id, res, refs, claimed, opts)
+      end)
 
     known_teammates = teammate_refs(user_id, schedules, teammate_ids)
+
+    {schedule_results, _} =
+      reconcile("Schedule", schedules, fn res, _claimed ->
+        apply_schedule(user_id, res, known_teammates, opts)
+      end)
+
+    {webhook_results, _} =
+      reconcile("Webhook", webhooks, fn res, _claimed -> apply_webhook(user_id, res, opts) end)
 
     results =
       env_results ++
         vault_results ++
         agent_results ++
         teammate_results ++
-        Enum.map(schedules, &apply_schedule(user_id, &1, known_teammates, opts)) ++
-        Enum.map(webhooks, &apply_webhook(user_id, &1, opts)) ++
+        schedule_results ++
+        webhook_results ++
         Enum.map(invalid, &invalid_result/1)
 
     {:ok, results}
   end
 
-  # Each kind that can be referenced by a later one returns `{result, id}`,
-  # so the pass leaves behind the name → id map the next pass resolves against.
-  defp reconcile(resources, fun) do
+  # One pass over one kind. Every `apply_*` returns `{result, id}`, so the
+  # pass leaves behind the name → id map the next pass resolves against, and
+  # hands each document the map built so far (which is how a second Teammate
+  # naming an agent already claimed is caught).
+  defp reconcile(kind, resources, fun) do
     Enum.map_reduce(resources, %{}, fn res, acc ->
-      case fun.(res) do
+      case guarded(kind, res["name"], fn -> fun.(res, acc) end) do
         {result, nil} -> {result, acc}
         {result, id} -> {result, Map.put(acc, res["name"], id)}
       end
     end)
+  end
+
+  # Best-effort per resource means per resource. The Teammate pass reaches
+  # Horde, the sandbox quota lock, the credit gate and the sandbox provider,
+  # and a raise or an exit there would abandon a call that has already
+  # committed the environments, vaults and agents above it, leaving the caller
+  # a 500 and no rows at all. Reported as this document's error instead, and
+  # logged, because a crash in a context is still a defect worth a stacktrace.
+  defp guarded(kind, name, fun) do
+    fun.()
+  rescue
+    error ->
+      Logger.error(
+        "apply: #{kind} #{inspect(name)} raised: " <>
+          Exception.format(:error, error, __STACKTRACE__)
+      )
+
+      {result(kind, str(name), :error, %{"base" => [Exception.message(error)]}, []), nil}
+  catch
+    thrown, reason ->
+      Logger.error("apply: #{kind} #{inspect(name)} #{thrown}: #{inspect(reason)}")
+
+      {result(kind, str(name), :error, %{"base" => ["apply failed: #{inspect(reason)}"]}, []),
+       nil}
   end
 
   # Keeps the `via: apply` marker the ApplyController used to attach when it
@@ -215,11 +271,12 @@ defmodule Fountain.Manifest do
   # Adding one opens the teammate's conversation, which provisions its
   # computer; re-applying only moves the name, environment and vault the next
   # computer is built from, and never provisions a second one.
-  defp apply_teammate(user_id, %{"name" => name} = res, refs, opts) do
+  defp apply_teammate(user_id, %{"name" => name} = res, refs, claimed, opts) do
     spec = spec_of(res)
 
     with :ok <- validate_keys(res, ~w(name agent environment vault)),
          {:ok, agent_id} <- require_ref("agent", user_id, spec["agent"], refs.agents),
+         :ok <- unclaimed(name, agent_id, claimed),
          {:ok, env_id} <-
            resolve_ref("environment", user_id, spec["environment"], refs.environments),
          {:ok, vault_id} <- resolve_ref("vault", user_id, spec["vault"], refs.vaults) do
@@ -227,6 +284,24 @@ defmodule Fountain.Manifest do
       reconcile_teammate(user_id, name, agent_id, attrs, opts)
     else
       {:error, errors} -> {result("Teammate", name, :error, errors, []), nil}
+    end
+  end
+
+  # A teammate is one agent's membership of the team, so two documents naming
+  # the same agent describe one record: without this the second renames the
+  # first's conversation on every pass and the manifest is never idempotent.
+  # Two documents sharing a name are refused for the same reason — a Schedule
+  # naming that teammate could not say which one it meant.
+  defp unclaimed(name, agent_id, claimed) do
+    cond do
+      Map.has_key?(claimed, name) ->
+        {:error, %{"name" => ["is already used by another Teammate document"]}}
+
+      agent_id in Map.values(claimed) ->
+        {:error, %{"agent" => ["is already claimed by another Teammate document"]}}
+
+      true ->
+        :ok
     end
   end
 
@@ -240,10 +315,12 @@ defmodule Fountain.Manifest do
           {:error, reason} -> {result("Teammate", name, :error, context_errors(reason), []), nil}
         end
 
-      %{conversation: before} ->
-        case Team.update_teammate(user_id, agent_id, attrs, opts) do
-          {:ok, conv} ->
-            {result("Teammate", name, verdict(before, conv), nil, [], conv.id), agent_id}
+      teammate ->
+        # The teammate map is handed on rather than the agent id: listing the
+        # roster is several queries and this call site has just done it.
+        case Team.update_teammate(user_id, teammate, attrs, opts) do
+          {:ok, conv, action} ->
+            {result("Teammate", name, action, nil, [], conv.id), agent_id}
 
           {:error, reason} ->
             {result("Teammate", name, :error, context_errors(reason), []), nil}
@@ -263,7 +340,7 @@ defmodule Fountain.Manifest do
 
       reconcile_schedule(user_id, name, agent_id, attrs, opts)
     else
-      {:error, errors} -> result("Schedule", name, :error, errors, [])
+      {:error, errors} -> {result("Schedule", name, :error, errors, []), nil}
     end
   end
 
@@ -278,10 +355,10 @@ defmodule Fountain.Manifest do
 
     case outcome do
       {:ok, schedule} ->
-        result("Schedule", name, verdict(existing, schedule), nil, [], schedule.id)
+        {result("Schedule", name, verdict(existing, schedule), nil, [], schedule.id), nil}
 
       {:error, reason} ->
-        result("Schedule", name, :error, context_errors(reason), [])
+        {result("Schedule", name, :error, context_errors(reason), []), nil}
     end
   end
 
@@ -295,16 +372,19 @@ defmodule Fountain.Manifest do
 
       case reconcile_webhook(user_id, existing, attrs, opts) do
         {:ok, endpoint, secret} ->
-          %{
-            result("Webhook", name, verdict(existing, endpoint), nil, [], endpoint.id)
-            | secret: secret
-          }
+          row =
+            %{
+              result("Webhook", name, verdict(existing, endpoint), nil, [], endpoint.id)
+              | secret: secret
+            }
+
+          {row, nil}
 
         {:error, reason} ->
-          result("Webhook", name, :error, context_errors(reason), [])
+          {result("Webhook", name, :error, context_errors(reason), []), nil}
       end
     else
-      {:error, errors} -> result("Webhook", name, :error, errors, [])
+      {:error, errors} -> {result("Webhook", name, :error, errors, []), nil}
     end
   end
 
@@ -331,6 +411,9 @@ defmodule Fountain.Manifest do
   defp resolve_ref(field, user_id, ref, ids) when is_binary(ref) do
     case ids[ref] || tenant_ref(field, user_id, ref) do
       nil -> {:error, %{field => ["#{field} not found: #{ref}"]}}
+      # Two teammates answer to this name, so the document does not say which
+      # record it means. Guessing would bind a schedule to the wrong agent.
+      :ambiguous -> {:error, %{field => ["#{field} name is not unique: #{ref}"]}}
       id -> {:ok, id}
     end
   end
@@ -357,12 +440,21 @@ defmodule Fountain.Manifest do
   # The teammates a Schedule may name: the ones this manifest just reconciled,
   # over the ones the tenant already has. Skipped entirely when the manifest
   # holds no schedules, because listing the team is several queries.
+  #
+  # A teammate's name is its conversation's title, or its agent's name, and
+  # neither is unique. A name two of the tenant's teammates answer to maps to
+  # `:ambiguous` and fails the Schedule row that uses it; a name this manifest
+  # reconciled is unique among the documents (`unclaimed/3`) and wins.
   defp teammate_refs(_user_id, [], teammate_ids), do: teammate_ids
 
   defp teammate_refs(user_id, _schedules, teammate_ids) do
     user_id
     |> Team.list_teammates()
-    |> Map.new(&{&1.name, &1.agent.id})
+    |> Enum.group_by(& &1.name, & &1.agent.id)
+    |> Map.new(fn
+      {name, [agent_id]} -> {name, agent_id}
+      {name, _several} -> {name, :ambiguous}
+    end)
     |> Map.merge(teammate_ids)
   end
 
@@ -491,6 +583,8 @@ defmodule Fountain.Manifest do
   defp str(_value), do: ""
 
   # What a context refused with, as the per-field errors an apply row carries.
+  # Every reason a Teammate or Schedule document can actually provoke is named
+  # here, because `inspect/1` on a bare atom is not a sentence anyone acts on.
   defp context_errors(%Ecto.Changeset{} = changeset), do: changeset_errors(changeset)
   defp context_errors(:not_found), do: %{"agent" => ["is not the caller's"]}
 
@@ -504,16 +598,43 @@ defmodule Fountain.Manifest do
   defp context_errors(:vault_not_allowed), do: %{"vault" => ["is not allowed by the agent"]}
   defp context_errors(:insufficient_credits), do: %{"base" => ["out of credit"]}
 
+  # The same hazard `Agent` reports, from the teammate's side: rebinding moves
+  # the computer out from under a turn that is running on it.
+  defp context_errors(:sandbox_mid_turn),
+    do: %{
+      "base" => [
+        "the teammate is running a turn on its computer; changing its environment " <>
+          "or vault rebuilds that computer, so retry once the turn ends"
+      ]
+    }
+
+  defp context_errors(:provisioning), do: %{"base" => ["the computer is still starting"]}
+  defp context_errors(:busy), do: %{"base" => ["the teammate is running a turn"]}
+  defp context_errors(:runner_offline), do: %{"base" => ["the teammate's machine is offline"]}
+  defp context_errors(:fleet_full), do: %{"base" => ["the fleet is at capacity"]}
+
   defp context_errors({:sandbox_quota_exceeded, %{count: count, limit: limit}}),
     do: %{"base" => ["sandbox quota: #{count}/#{limit}"]}
 
+  defp context_errors({:sandbox_not_attachable, status}),
+    do: %{"base" => ["the teammate's computer is #{status}"]}
+
+  defp context_errors({:sandbox_not_resettable, status}),
+    do: %{"base" => ["the teammate's computer is #{status}"]}
+
   defp context_errors(other), do: %{"base" => [inspect(other)]}
 
+  # String keys throughout. `traverse_errors/2` keys by field atom, while the
+  # hand-built maps above key by string, and a caller reading a result row
+  # should not have to know which branch produced it. The wire shape does not
+  # change: JSON stringifies either one.
   defp changeset_errors(changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
       Enum.reduce(opts, msg, fn {key, value}, acc ->
         String.replace(acc, "%{#{key}}", to_string(value))
       end)
     end)
+    |> Map.new(fn {field, messages} -> {to_string(field), messages} end)
   end
 end

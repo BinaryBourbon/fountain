@@ -334,7 +334,9 @@ A `Schedule` names a `teammate`. Each name resolves against the manifest
 first, then against the records your account already holds.
 
 The `metadata.name` is the key for five of the kinds. A `Webhook` is keyed by
-its `spec.url`, so the document name is a label alone.
+its `spec.url`, so the document name is a label alone. Change that URL and the
+next apply creates a second endpoint. The first one stays, and keeps
+delivering, until you delete it with `fountain webhooks delete`.
 
 ```yaml
 ---
@@ -372,8 +374,21 @@ spec:
 
 A `Teammate` document adds the agent to the team, which opens the teammate's
 conversation and starts its computer. A later apply moves the name, the
-environment and the vault the next computer is built from. It starts no
-second computer.
+environment and the vault the teammate is bound to. It starts no second
+computer.
+
+A `Teammate` document is the whole teammate. Drop `environment` or `vault`
+from it and the next apply clears that binding, which puts the teammate back
+on the agent's own environment and on no vault. The other five kinds behave
+the other way around, where an absent `spec` key leaves that field alone.
+
+A teammate's computer is built for one environment and one vault. Move either
+of them and Fountain retires that computer, so the teammate's next message
+builds a new one with the files and tools of a fresh machine. It refuses the
+row while a turn is still running there, and prints what to do about it.
+
+Two `Teammate` documents cannot name the same agent. An agent is on the team
+once, so the second document fails and the first one applies.
 
 A `Webhook` that an apply creates prints its signing secret one time. Save it
 then. An apply that updates the same endpoint prints no secret.

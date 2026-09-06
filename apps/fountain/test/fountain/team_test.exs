@@ -200,7 +200,7 @@ defmodule Fountain.TeamTest do
       vault = insert_vault(user_id: user.id)
       conv = insert_teammate_conv(user, agent)
 
-      assert {:ok, updated} =
+      assert {:ok, updated, :updated} =
                Team.update_teammate(
                  user.id,
                  agent.id,
@@ -233,7 +233,7 @@ defmodule Fountain.TeamTest do
       vault = insert_vault(user_id: user.id)
       insert_teammate_conv(user, agent, environment_id: env.id, vault_id: vault.id, title: "Ada")
 
-      assert {:ok, updated} =
+      assert {:ok, updated, :updated} =
                Team.update_teammate(user.id, agent.id, %{"environment_id" => ""})
 
       assert updated.environment_id == nil
@@ -247,7 +247,7 @@ defmodule Fountain.TeamTest do
       insert_teammate_conv(user, agent, title: "Ada")
       before = length(Audit.list_recent_for_user(user.id, 50))
 
-      assert {:ok, _} = Team.update_teammate(user.id, agent.id, %{"name" => "Ada"})
+      assert {:ok, _, :unchanged} = Team.update_teammate(user.id, agent.id, %{"name" => "Ada"})
       assert length(Audit.list_recent_for_user(user.id, 50)) == before
     end
 
@@ -283,6 +283,125 @@ defmodule Fountain.TeamTest do
                Team.update_teammate(user.id, agent.id, %{
                  "vault_id" => insert_vault(user_id: other.id).id
                })
+    end
+
+    # #1084 from the teammate's side: a home is keyed on (user, agent,
+    # environment, vault), so rebinding a teammate moves its computer out from
+    # under it. Refused mid-turn, and retired once the new binding is written.
+    test "the computer the binding moved away from is retired" do
+      user = insert_active_user()
+      env = insert_env(user_id: user.id)
+      other = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id, environment_id: env.id, sandbox_mode: "persistent")
+
+      home =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: env.id,
+          provider: "sprites"
+        )
+
+      insert_teammate_conv(user, agent, sandbox: home, environment_id: env.id)
+
+      test = self()
+
+      stub(Managoat.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
+
+      assert {:ok, _, :updated} =
+               Team.update_teammate(user.id, agent.id, %{"environment_id" => other.id})
+
+      assert_received {:destroyed, name}
+      assert name == home.sprite_name
+      assert Conversations._unsafe_get_sandbox!(home.id).status == "terminated"
+    end
+
+    test "a rebinding is refused while a turn runs on that computer" do
+      user = insert_active_user()
+      env = insert_env(user_id: user.id)
+      other = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id, environment_id: env.id, sandbox_mode: "persistent")
+
+      home =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: env.id,
+          provider: "sprites"
+        )
+
+      conv =
+        insert_teammate_conv(user, agent,
+          sandbox: home,
+          environment_id: env.id,
+          status: "running"
+        )
+
+      insert_turn(conv, status: "running")
+
+      assert {:error, :sandbox_mid_turn} =
+               Team.update_teammate(user.id, agent.id, %{"environment_id" => other.id})
+
+      # The refusal is the whole answer: the binding did not move and the
+      # machine is still there.
+      assert Conversations.get_conversation(conv.id, user.id).environment_id == env.id
+      assert Conversations._unsafe_get_sandbox!(home.id).status == "ready"
+    end
+
+    test "a name-only change leaves the computer alone, mid-turn or not" do
+      user = insert_active_user()
+      env = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id, environment_id: env.id, sandbox_mode: "persistent")
+
+      home =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: env.id,
+          provider: "sprites"
+        )
+
+      conv =
+        insert_teammate_conv(user, agent,
+          sandbox: home,
+          environment_id: env.id,
+          status: "running"
+        )
+
+      insert_turn(conv, status: "running")
+
+      assert {:ok, _, :updated} = Team.update_teammate(user.id, agent.id, %{"name" => "Ada"})
+      assert Conversations._unsafe_get_sandbox!(home.id).status == "ready"
+    end
+
+    test "an ephemeral computer is not a home and is left standing" do
+      user = insert_active_user()
+      env = insert_env(user_id: user.id)
+      other = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id, environment_id: env.id)
+
+      sandbox =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "ephemeral",
+          agent_id: agent.id,
+          environment_id: env.id,
+          provider: "sprites"
+        )
+
+      insert_teammate_conv(user, agent, sandbox: sandbox, environment_id: env.id)
+
+      assert {:ok, _, :updated} =
+               Team.update_teammate(user.id, agent.id, %{"environment_id" => other.id})
+
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
     end
 
     test "an agent that is not on the team is not found" do

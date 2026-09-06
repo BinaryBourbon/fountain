@@ -34,6 +34,8 @@ upgrade, is in
   their teammate; webhooks are keyed by URL and hand back their signing secret
   on the apply that creates them. Result rows now report `unchanged` when the
   record already matched the document. Apply stays additive and prunes nothing.
+  Rebinding a teammate retires the computer its old environment and vault named,
+  and is refused while a turn is running on it.
 
 ### Fixed
 
@@ -67,6 +69,8 @@ upgrade, is in
 
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
+- Updating an environment, vault, agent or webhook endpoint with values it already
+  holds no longer records an `*.updated` audit event naming no changed fields.
 
 ### Changed
 

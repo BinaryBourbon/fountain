@@ -2,7 +2,18 @@ defmodule Fountain.ManifestTest do
   use Fountain.DataCase, async: true
   use Mimic
 
-  alias Fountain.{Agents, Audit, Crypto, Environments, Manifest, Team, Vaults, Webhooks}
+  alias Fountain.{
+    Agents,
+    Audit,
+    Conversations,
+    Crypto,
+    Environments,
+    Manifest,
+    Team,
+    Vaults,
+    Webhooks
+  }
+
   alias Fountain.Team.Schedules
 
   setup do
@@ -247,7 +258,7 @@ defmodule Fountain.ManifestTest do
         ])
 
       assert [
-               %{name: "broken", action: :error, errors: %{model: _}},
+               %{name: "broken", action: :error, errors: %{"model" => _}},
                %{name: "ok-agent", action: :created}
              ] = results
     end
@@ -314,7 +325,7 @@ defmodule Fountain.ManifestTest do
   describe "apply_manifest/2 the whole estate" do
     @hook_url "https://hooks.example.com/fountain"
 
-    defp estate_manifest do
+    defp estate_manifest(vault_spec \\ %{"secrets" => %{"GH" => "ghp_x"}}) do
       # Deliberately out of order: the six kinds reconcile in a fixed order,
       # whatever the file says.
       [
@@ -333,10 +344,13 @@ defmodule Fountain.ManifestTest do
           "vault" => "alice"
         }),
         agent_resource("ada", %{"environment" => "proj"}),
-        vault_resource("alice", %{"secrets" => %{"GH" => "ghp_x"}}),
+        vault_resource("alice", vault_spec),
         env_resource("proj", %{"setup_script" => "echo hi"})
       ]
     end
+
+    defp actions_for(user),
+      do: user.id |> Audit.list_recent_for_user(500) |> Enum.map(& &1.action)
 
     test "all six kinds apply in one request, and a second apply changes nothing",
          %{user: user} do
@@ -402,6 +416,214 @@ defmodule Fountain.ManifestTest do
       end
     end
 
+    # CLAUDE.md: "Only record what happened. ... a no-op sync records nothing."
+    # An apply that writes nothing must leave the trail exactly as it found it,
+    # or every CI run adds six rows saying a record nobody touched was updated.
+    test "an identical re-apply writes no audit rows at all", %{user: user} do
+      inert_start_child()
+      resources = estate_manifest(%{})
+
+      {:ok, first} = Manifest.apply_manifest(user.id, resources)
+      assert Enum.all?(first, &(&1.action == :created))
+      before = actions_for(user)
+
+      {:ok, second} = Manifest.apply_manifest(user.id, resources)
+      assert Enum.all?(second, &(&1.action == :unchanged))
+      assert actions_for(user) == before
+    end
+
+    # The one thing a no-op apply does write: an inline secret is encrypted
+    # again every time, because the stored ciphertext cannot be compared with
+    # the plaintext given.
+    test "a re-apply with inline secrets writes only the secret events", %{user: user} do
+      inert_start_child()
+      resources = estate_manifest()
+
+      {:ok, _} = Manifest.apply_manifest(user.id, resources)
+      before = actions_for(user)
+
+      {:ok, second} = Manifest.apply_manifest(user.id, resources)
+      assert Enum.all?(second, &(&1.action == :unchanged))
+
+      added = actions_for(user) -- before
+      assert added == ["vault.secret.write"]
+    end
+
+    test "the update path is audited with the request's attribution", %{user: user} do
+      inert_start_child()
+      opts = [actor: "api", request_ip: "203.0.113.5"]
+      {:ok, _} = Manifest.apply_manifest(user.id, estate_manifest(%{}), opts)
+      before = user.id |> Audit.list_recent_for_user(500) |> length()
+
+      moved = [
+        env_resource("proj", %{"setup_script" => "echo hi"}),
+        vault_resource("alice"),
+        agent_resource("ada", %{"environment" => "proj"}),
+        teammate_resource("Ada of proj", %{"agent" => "ada", "environment" => "proj"}),
+        schedule_resource("standup", %{
+          "teammate" => "Ada of proj",
+          "cron" => "@daily",
+          "prompt" => "What is on today?"
+        }),
+        webhook_resource("ci", %{"url" => @hook_url, "description" => "CI"})
+      ]
+
+      {:ok, results} = Manifest.apply_manifest(user.id, moved, opts)
+
+      assert Enum.map(results, &{&1.kind, &1.action}) == [
+               {"Environment", :unchanged},
+               {"Vault", :unchanged},
+               {"Agent", :unchanged},
+               {"Teammate", :updated},
+               {"Schedule", :updated},
+               {"Webhook", :updated}
+             ]
+
+      events = Audit.list_recent_for_user(user.id, 500)
+      added = Enum.take(events, length(events) - before)
+
+      for action <- ~w(team.updated team.schedule.updated webhook_endpoint.updated) do
+        event = Enum.find(added, &(&1.action == action))
+
+        assert event,
+               "the update path left no #{action}; saw #{inspect(Enum.map(added, & &1.action))}"
+
+        assert event.actor == "api"
+        assert to_string(event.request_ip) == "203.0.113.5"
+      end
+    end
+
+    test "a second Teammate naming the same agent fails instead of renaming the first",
+         %{user: user} do
+      inert_start_child()
+
+      {:ok, results} =
+        Manifest.apply_manifest(user.id, [
+          agent_resource("ada"),
+          teammate_resource("Ada", %{"agent" => "ada"}),
+          teammate_resource("Ada again", %{"agent" => "ada"}),
+          teammate_resource("Ada", %{"agent" => "ada"})
+        ])
+
+      assert [
+               %{kind: "Agent", action: :created},
+               %{name: "Ada", action: :created},
+               %{name: "Ada again", action: :error, errors: dup_agent},
+               %{name: "Ada", action: :error, errors: dup_name}
+             ] = results
+
+      assert dup_agent == %{"agent" => ["is already claimed by another Teammate document"]}
+      assert dup_name == %{"name" => ["is already used by another Teammate document"]}
+      assert [%{name: "Ada"}] = Team.list_teammates(user.id)
+    end
+
+    # Without the claim check the second document renamed the first's
+    # conversation on every pass, so no apply was ever `unchanged`.
+    test "a manifest with a duplicate Teammate is still idempotent for the rest",
+         %{user: user} do
+      inert_start_child()
+
+      resources = [
+        agent_resource("ada"),
+        teammate_resource("Ada", %{"agent" => "ada"}),
+        teammate_resource("Ada again", %{"agent" => "ada"})
+      ]
+
+      {:ok, _} = Manifest.apply_manifest(user.id, resources)
+      {:ok, second} = Manifest.apply_manifest(user.id, resources)
+
+      assert Enum.map(second, & &1.action) == [:unchanged, :unchanged, :error]
+      assert [%{name: "Ada"}] = Team.list_teammates(user.id)
+    end
+
+    # The Teammate pass reaches Horde, the quota lock, the credit gate and the
+    # sandbox provider. A raise there used to abandon the whole call after the
+    # environments, vaults and agents had already been committed.
+    test "an exception in one document fails that row and not the request", %{user: user} do
+      stub(Fountain.Conversations, :start_or_resume_conversation, fn _attrs, _opts ->
+        raise "the sandbox provider fell over"
+      end)
+
+      {:ok, results} =
+        Manifest.apply_manifest(user.id, [
+          env_resource("proj"),
+          agent_resource("ada"),
+          teammate_resource("Ada", %{"agent" => "ada"}),
+          webhook_resource("ci", %{"url" => @hook_url})
+        ])
+
+      assert [
+               %{kind: "Environment", action: :created},
+               %{kind: "Agent", action: :created},
+               %{kind: "Teammate", action: :error, errors: errors},
+               %{kind: "Webhook", action: :created}
+             ] = results
+
+      assert errors == %{"base" => ["the sandbox provider fell over"]}
+      # The documents on either side of it were still applied.
+      assert Environments.get_environment_by_name("proj", user.id)
+      assert [_endpoint] = Webhooks.list_endpoints(user.id)
+    end
+
+    test "a Schedule naming a teammate two of them answer to fails that row", %{user: user} do
+      inert_start_child()
+      one = insert_agent(user_id: user.id, name: "one")
+      two = insert_agent(user_id: user.id, name: "two")
+      {:ok, _} = Team.add_teammate(user.id, one.id, %{"name" => "Ada"})
+      {:ok, _} = Team.add_teammate(user.id, two.id, %{"name" => "Ada"})
+
+      {:ok, [%{kind: "Schedule", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [
+          schedule_resource("s", %{"teammate" => "Ada", "cron" => "@daily", "prompt" => "x"})
+        ])
+
+      assert errors == %{"teammate" => ["teammate name is not unique: Ada"]}
+    end
+
+    test "a Teammate mid-turn on the computer it would rebind fails that row", %{user: user} do
+      env = insert_env(user_id: user.id, name: "proj")
+      other = insert_env(user_id: user.id, name: "other")
+
+      agent =
+        insert_agent(
+          user_id: user.id,
+          name: "ada",
+          environment_id: other.id,
+          sandbox_mode: "persistent"
+        )
+
+      home =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: other.id,
+          provider: "sprites"
+        )
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox: home,
+          status: "running",
+          channel_id: Team.channel()
+        )
+
+      insert_turn(conv, status: "running")
+
+      {:ok, [%{kind: "Teammate", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [
+          teammate_resource("Ada", %{"agent" => "ada", "environment" => "proj"})
+        ])
+
+      assert %{"base" => [message]} = errors
+      assert message =~ "running a turn"
+      assert Conversations.get_conversation(conv.id, user.id).environment_id == nil
+      assert env.id
+    end
+
     test "re-applying a Teammate moves its name, environment and vault", %{user: user} do
       inert_start_child()
 
@@ -431,6 +653,56 @@ defmodule Fountain.ManifestTest do
       assert [%{name: "Ada of proj", conversation: conv}] = Team.list_teammates(user.id)
       assert conv.environment_id == Environments.get_environment_by_name("proj", user.id).id
       assert conv.vault_id == Vaults.get_vault_by_name("alice", user.id).id
+    end
+
+    # A Teammate document is the whole teammate, unlike the other five kinds,
+    # where an absent spec key leaves the column alone. Dropping `environment`
+    # therefore puts the teammate back on the agent's own environment.
+    test "dropping a Teammate's environment and vault clears the bindings", %{user: user} do
+      inert_start_child()
+
+      bound = [
+        env_resource("proj"),
+        vault_resource("alice"),
+        agent_resource("ada"),
+        teammate_resource("Ada", %{
+          "agent" => "ada",
+          "environment" => "proj",
+          "vault" => "alice"
+        })
+      ]
+
+      {:ok, _} = Manifest.apply_manifest(user.id, bound)
+      assert [%{conversation: conv}] = Team.list_teammates(user.id)
+      assert conv.environment_id
+      assert conv.vault_id
+
+      unbound = List.replace_at(bound, 3, teammate_resource("Ada", %{"agent" => "ada"}))
+      {:ok, results} = Manifest.apply_manifest(user.id, unbound)
+
+      assert %{kind: "Teammate", action: :updated} = List.last(results)
+      assert [%{conversation: cleared}] = Team.list_teammates(user.id)
+      assert cleared.environment_id == nil
+      assert cleared.vault_id == nil
+
+      # And it settles: a third apply of the same file writes nothing.
+      {:ok, again} = Manifest.apply_manifest(user.id, unbound)
+      assert Enum.all?(again, &(&1.action == :unchanged))
+    end
+
+    test "changing a Webhook's url leaves the old endpoint and adds a new one", %{user: user} do
+      {:ok, [%{action: :created}]} =
+        Manifest.apply_manifest(user.id, [webhook_resource("ci", %{"url" => @hook_url})])
+
+      {:ok, [%{action: :created, secret: secret}]} =
+        Manifest.apply_manifest(user.id, [
+          webhook_resource("ci", %{"url" => "https://hooks.example.com/second"})
+        ])
+
+      assert String.starts_with?(secret, "whsec_")
+      # No prune: the endpoint the old URL named is still there and still
+      # delivering, and has to be deleted through its own route.
+      assert length(Webhooks.list_endpoints(user.id)) == 2
     end
 
     test "a Teammate naming an unknown agent, environment or vault fails only its own row",
@@ -527,8 +799,10 @@ defmodule Fountain.ManifestTest do
           "prompt" => "x"
         })
 
-      assert errors == errors_on(changeset)
-      assert Map.has_key?(errors, :cron)
+      # Same content, keyed by string: an apply row's errors are string-keyed
+      # whichever branch produced them.
+      assert errors == Map.new(errors_on(changeset), fn {k, v} -> {to_string(k), v} end)
+      assert Map.has_key?(errors, "cron")
       assert Schedules.list_schedules(user.id, agent.id) == []
     end
 
@@ -598,7 +872,7 @@ defmodule Fountain.ManifestTest do
 
       assert good.action == :created
       assert bad.action == :error
-      assert Map.has_key?(bad.errors, :url)
+      assert Map.has_key?(bad.errors, "url")
       assert Webhooks.list_endpoints(user.id) == []
     end
 

@@ -23,7 +23,13 @@ The `metadata.name` is the upsert key for five of the six kinds. If a resource w
 
 ## The team kinds
 
-A `Teammate` puts an agent on the team, which opens its conversation and provisions its computer. Re-applying moves what the teammate is called and which environment and vault the *next* computer is built from — it never provisions a second one, and it never resurrects a computer that is gone (message the teammate for that). A `Schedule` is a cron that runs a teammate with a prompt, keyed by its name under its teammate. A `Webhook` is an endpoint Fountain POSTs conversation lifecycle events to; the apply that creates one prints its signing secret **once**, and no later apply ever prints it again.
+A `Teammate` puts an agent on the team, which opens its conversation and provisions its computer. Re-applying moves what the teammate is called and which environment and vault it is bound to — it never provisions a second one, and it never resurrects a computer that is gone (message the teammate for that). A `Schedule` is a cron that runs a teammate with a prompt, keyed by its name under its teammate. A `Webhook` is an endpoint Fountain POSTs conversation lifecycle events to; the apply that creates one prints its signing secret **once**, and no later apply ever prints it again.
+
+Three things about these that surprise people:
+
+- **A `Teammate` doc is the whole teammate.** Unlike the other five kinds, where an absent `spec` key leaves that column alone, dropping `environment` or `vault` from a Teammate doc *clears* that binding — back to the agent's own environment and no vault. That is what makes the doc a declaration rather than a patch.
+- **Rebinding moves the computer.** A home is keyed on `(user, agent, environment, vault)`, so changing either id retires the machine the old key named; the teammate's next message builds a fresh one. Refused with an error on that row while a turn is still running there — the same refusal `Agent`'s `environment` gives (#1084).
+- **Two Teammate docs can't name the same agent**, and a `Webhook` whose `spec.url` changes creates a *second* endpoint (nothing is pruned; delete the old one with `fountain webhooks delete`).
 
 ```yaml
 ---
@@ -61,6 +67,10 @@ spec:
 ## Nothing is pruned
 
 Apply is additive. Deleting a doc from the manifest leaves its record in place; delete it through its own command or the console.
+
+## What the trail says
+
+Each applied row leaves its context's own audit event, with the actor and IP of the request that applied it: `team.member.added` / `team.updated` for a Teammate, `team.schedule.created` / `team.schedule.updated` for a Schedule, and `webhook_endpoint.created` / `webhook_endpoint.updated` for a Webhook — the `webhook_endpoint` prefix the webhook routes have always written, not a shorter `webhook` one. An `unchanged` row writes nothing at all.
 
 ## Example
 

@@ -2326,8 +2326,9 @@ defmodule Fountain.Conversations do
 
   `opts[:reason]` says *why*, and reaches every transcript on the machine and
   the audit row: `"home_reset"` (the owner asked — the default),
-  `"environment_changed"`, `"environment_deleted"` or `"vault_deleted"` when
-  the identity moved out from under the home (#1084).
+  `"environment_changed"`, `"environment_deleted"`, `"vault_deleted"` or
+  `"teammate_rebound"` when the identity moved out from under the home
+  (#1084, #1636).
 
   See `create_agent/2` for the rest of `opts` (`:actor`, `:request_ip`).
   """
@@ -2433,6 +2434,11 @@ defmodule Fountain.Conversations do
 
   defp reset_message("vault_deleted"),
     do: "The vault this machine was built for was deleted. " <> @reset_tail
+
+  defp reset_message("teammate_rebound"),
+    do:
+      "The teammate moved to a different environment or vault, so this machine is no " <>
+        "longer its " <> @reset_tail
 
   defp reset_message(_owner), do: "The sandbox was reset by its owner. " <> @reset_tail
 

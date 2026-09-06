@@ -167,7 +167,18 @@ resolves against the manifest first, then against the records the account
 already holds. A name that matches neither fails that document alone.
 
 The document name is the key for five of the kinds. `Webhook` is the
-exception, and is keyed by `spec.url`.
+exception, and is keyed by `spec.url`. Change that URL and the apply creates
+a second endpoint. The first one stays, and keeps delivering, until you
+delete it through the webhook routes.
+
+A `Teammate` document is the whole teammate. Drop `environment` or `vault`
+from it and the apply clears that binding, which puts the teammate back on
+the agent's own environment and on no vault. The other five kinds behave the
+other way around, where an absent `spec` key leaves that field alone.
+
+Rebinding a teammate moves its computer. Fountain retires the machine the old
+binding named, so the next message builds one from the new environment and
+vault. It refuses the whole row while a turn is running on that machine.
 
 Each result row reports `created`, `updated`, `unchanged` or `error`. A
 second apply of an unchanged manifest reports `unchanged` for every row.
@@ -180,6 +191,14 @@ carries no secret.
 
 Apply is additive. A document that you delete from the manifest leaves its
 record in place. There is no prune.
+
+The audit trail names each applied row. Teammate rows record `team.member.added`
+and `team.updated`, schedule rows record `team.schedule.created` and
+`team.schedule.updated`, and webhook rows record `webhook_endpoint.created` and
+`webhook_endpoint.updated`. The webhook actions carry the `webhook_endpoint`
+prefix that the webhook routes have always written, not a shorter `webhook`
+one. Each row carries the actor and the IP address of the request that applied
+it.
 
 See [CLI](cli.md) for the workflow and the Apply operation in the
 [generated reference](/api/docs) for its wire format. Unknown configuration

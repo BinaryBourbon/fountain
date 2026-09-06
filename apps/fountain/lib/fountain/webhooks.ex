@@ -122,11 +122,15 @@ defmodule Fountain.Webhooks do
 
       case Repo.update(changeset) do
         {:ok, updated} ->
-          audit(
-            updated,
-            "webhook_endpoint.updated",
-            merge_metadata(opts, Audit.changed_fields(changeset))
-          )
+          # A save that moves nothing records nothing, the same rule
+          # `Fountain.Environments.update_environment/3` follows (#1636).
+          if changeset.changes != %{} do
+            audit(
+              updated,
+              "webhook_endpoint.updated",
+              merge_metadata(opts, Audit.changed_fields(changeset))
+            )
+          end
 
           {:ok, updated}
 

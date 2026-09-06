@@ -449,7 +449,8 @@ defmodule Fountain.AuditGuardrailTest do
       channel_id: Fountain.Team.channel()
     )
 
-    {:ok, _} = Fountain.Team.update_teammate(user.id, agent.id, %{"vault_id" => vault.id})
+    {:ok, _, :updated} =
+      Fountain.Team.update_teammate(user.id, agent.id, %{"vault_id" => vault.id})
   end
 
   def do_team_rotate(user) do
