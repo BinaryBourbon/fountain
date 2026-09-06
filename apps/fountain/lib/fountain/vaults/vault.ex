@@ -23,9 +23,12 @@ defmodule Fountain.Vaults.Vault do
     timestamps(type: :utc_datetime)
   end
 
+  @doc false
+  def cast_fields, do: [:name, :description, :metadata, :user_id]
+
   def changeset(vault, attrs) do
     vault
-    |> cast(attrs, [:name, :description, :metadata, :user_id])
+    |> cast(attrs, cast_fields())
     |> validate_required([:name])
     |> validate_length(:name, min: 1, max: 200)
     |> unique_constraint(:name, name: :vaults_user_id_name_index)
