@@ -58,7 +58,7 @@ defmodule FountainWeb.ApiPipelineResponsesTest do
     assert response.content["application/json"].schema.properties[:upgrade_url]
 
     assert spec.paths["/api/conversations"].post.responses[422].content["application/json"].schema ==
-             %OpenApiSpex.Reference{"$ref": "#/components/schemas/ChangesetError"}
+             %OpenApiSpex.Reference{"$ref": "#/components/schemas/UnprocessableEntityError"}
   end
 
   test "real pipeline refusals validate without an allowlist" do

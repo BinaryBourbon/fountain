@@ -192,6 +192,29 @@ defmodule Fountain.Vaults do
   end
 
   @doc """
+  Change an existing secret's advisory expiry. Omission keeps it; nil clears it.
+  The owning vault must come from a tenant-scoped fetch. Values remain write-only.
+  """
+  def update_secret_metadata(%Vault{} = vault, key, attrs, opts \\ []) do
+    # Ownership: callers establish access through the owning vault.
+    case _unsafe_get_secret(vault.id, key) do
+      nil ->
+        {:error, :not_found}
+
+      secret ->
+        changeset = VaultSecret.metadata_changeset(secret, attrs)
+
+        if changeset.valid? and changeset.changes == %{} do
+          {:ok, secret}
+        else
+          changeset
+          |> Repo.update()
+          |> audited_secret(vault, key, "vault.secret.update", opts)
+        end
+    end
+  end
+
+  @doc """
   Delete a vault secret.
 
   Takes the owning vault as well as the secret — see

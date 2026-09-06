@@ -1504,7 +1504,7 @@ export interface paths {
         };
         /**
          * Stream every conversation's events (SSE)
-         * @description One `text/event-stream` carrying the log events of every conversation the caller owns that is not finished, each payload the shape of `GET /api/conversations/:id/stream` plus `conversation_id`. A `conversations` event (data `{reason: changed}`) is sent, debounced, when the list changes — created, titled, read, deleted, finished — and the stream follows a new conversation on its own; the client re-lists. `Last-Event-ID` replays what was missed across every followed conversation. `?streams=` filters as elsewhere; `?blocks=true` adds server-parsed blocks. Heartbeats every 15 s; closes after 60 s idle so the client reconnects. The first byte is a `: connected` comment.
+         * @description One `text/event-stream` carrying the log events of every conversation the caller owns, including conversations that finish before discovery, each payload the shape of `GET /api/conversations/:id/stream` plus `conversation_id`. A `conversations` event (data `{reason: changed}`) is sent, debounced, when the list changes — created, titled, read, deleted, finished — and the stream follows a new conversation on its own; the client re-lists. `Last-Event-ID` replays what was missed across all owned conversations, including finished ones. Without a cursor, only events recorded after connection are sent. `?streams=` filters as elsewhere; `?blocks=true` adds server-parsed blocks. Heartbeats every 15 s; closes after 60 s idle so the client reconnects. The first byte is a `: connected` comment.
          */
         get: operations["FountainWeb.EventsController.stream"];
         put?: never;
@@ -2159,7 +2159,11 @@ export interface paths {
         delete: operations["FountainWeb.VaultSecretController.delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a vault secret's expiry
+         * @description Changes expiry without replacing the value. Null clears expiry; omission keeps it. Expiry is advisory and does not revoke the credential.
+         */
+        patch: operations["FountainWeb.VaultSecretController.update"];
         trace?: never;
     };
     "/api/webhooks": {
@@ -3143,6 +3147,7 @@ export interface components {
                 /** @description The managers provisioning installs from an environment's `packages`. */
                 package_managers: string[];
                 runtimes: string[];
+                sandbox_api_access?: ("owner" | "none")[];
                 sandbox_providers: {
                     default: string;
                     enabled: string[];
@@ -3500,6 +3505,11 @@ export interface components {
             runtime: "claude" | "codex" | "gemini" | "opencode";
             runtime_session_id?: string | null;
             sandbox?: components["schemas"]["Sandbox"] | null;
+            /**
+             * @description Immutable sandbox callback credential policy. none never issues a callback token.
+             * @enum {string}
+             */
+            sandbox_api_access?: "owner" | "none";
             /** Format: uuid */
             sandbox_id?: string | null;
             /** @enum {string} */
@@ -3538,6 +3548,11 @@ export interface components {
             } | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
+            /**
+             * @description none omits the sandbox Fountain credential on provision and every wake. Requires a fresh ephemeral sandbox; unavailable on attach or policy-changing channel resume.
+             * @enum {string}
+             */
+            sandbox_api_access?: "owner" | "none";
             /**
              * Format: uuid
              * @description Attach the conversation to a sandbox you already have instead of provisioning one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or suspended (409 sandbox_not_attachable), and built for the same agent, environment and vault as this launch (422 sandbox_identity_mismatch; 422 sandbox_runtime_mismatch if the agent's runtime changed since). The conversation opens idle on that machine; a prompt here wakes it. Several conversations then run on one disk at once, except on opencode and gemini, where a second turn is refused with 409 sandbox_at_capacity while one runs.
@@ -4740,6 +4755,17 @@ export interface components {
             output: number;
         };
         /**
+         * UnprocessableEntityError
+         * @description A rejected request. Field validation failures include errors; other refusals carry an error and may include a message.
+         */
+        UnprocessableEntityError: {
+            error: string;
+            errors?: {
+                [key: string]: string[];
+            };
+            message?: string;
+        };
+        /**
          * UsageTotal
          * @description Running sums of `input` and `output` over the turns that reported a usage.
          */
@@ -4802,6 +4828,14 @@ export interface components {
         /** VaultSecretListResponse */
         VaultSecretListResponse: {
             data: components["schemas"]["VaultSecret"][];
+        };
+        /** VaultSecretMetadataRequest */
+        VaultSecretMetadataRequest: {
+            /**
+             * Format: date-time
+             * @description Advisory expiry. Null clears it; omission keeps the current value.
+             */
+            expires_at?: string | null;
         };
         /** VaultSecretRequest */
         VaultSecretRequest: {
@@ -8260,7 +8294,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChangesetError"];
+                    "application/json": components["schemas"]["UnprocessableEntityError"];
                 };
             };
         };
@@ -10012,6 +10046,8 @@ export interface operations {
                 roots_only?: boolean;
                 /** @description Only this agent's conversations (#832). */
                 agent_id?: string;
+                /** @description Only conversations on this sandbox. Combined with the other filters. */
+                sandbox_id?: string;
                 /** @description Only conversations bound to this channel — `fountain:team` for the team's. A conversation unbound by removing its teammate no longer matches; a teammate's full history is `GET /api/team/:agent_id/conversations`. */
                 channel_id?: string;
                 /** @description Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary. */
@@ -10066,6 +10102,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Invalid filter */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangesetError"];
                 };
             };
             /** @description Too Many Requests */
@@ -10183,7 +10228,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChangesetError"];
+                    "application/json": components["schemas"]["UnprocessableEntityError"];
                 };
             };
             /** @description Too Many Requests */
@@ -15453,6 +15498,89 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.VaultSecretController.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vault_id: string;
+                /** @description Secret key. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Secret metadata */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["VaultSecretMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Vault Secret */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VaultSecretResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No acceptable representation */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangesetError"];
                 };
             };
             /** @description Too Many Requests */

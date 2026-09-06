@@ -36,6 +36,12 @@ defmodule FountainWeb.ConversationController do
         required: false,
         description: "Only this agent's conversations (#832)."
       ],
+      sandbox_id: [
+        in: :query,
+        schema: %OpenApiSpex.Schema{type: :string, format: :uuid},
+        required: false,
+        description: "Only conversations on this sandbox. Combined with the other filters."
+      ],
       channel_id: [
         in: :query,
         type: :string,
@@ -55,7 +61,8 @@ defmodule FountainWeb.ConversationController do
     ],
     responses: [
       ok: {"Conversations", "application/json", Schemas.ConversationListResponse},
-      bad_request: {"Unknown status", "application/json", Schemas.Error}
+      bad_request: {"Unknown status", "application/json", Schemas.Error},
+      unprocessable_entity: {"Invalid filter", "application/json", Schemas.ChangesetError}
     ]
   )
 
@@ -70,6 +77,7 @@ defmodule FountainWeb.ConversationController do
             roots_only: roots_only,
             agent_id: params["agent_id"],
             channel_id: params["channel_id"],
+            sandbox_id: params["sandbox_id"],
             status: statuses
           )
       )
@@ -395,7 +403,8 @@ defmodule FountainWeb.ConversationController do
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
       not_found: {"Agent not found", "application/json", Schemas.Error},
-      unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
+      unprocessable_entity:
+        {"Validation error", "application/json", Schemas.UnprocessableEntityError},
       payment_required:
         {"Insufficient credits", "application/json",
          %OpenApiSpex.Schema{

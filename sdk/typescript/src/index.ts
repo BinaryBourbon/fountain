@@ -60,6 +60,7 @@ export type {
   TurnState,
   Vault,
   VaultInput,
+  VaultSecretMetadataPatch,
 } from "./types.ts";
 
 import { Fountain } from "./client.ts";

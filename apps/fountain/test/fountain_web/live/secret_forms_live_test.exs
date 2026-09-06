@@ -121,6 +121,53 @@ defmodule FountainWeb.SecretFormsLiveTest do
       assert Vaults.decrypted_env(vault, dek) == %{"TOKEN" => "v1"}
     end
 
+    test "edits and clears expiry without loading a key or changing the value", %{
+      conn: conn,
+      user: user,
+      vault: vault
+    } do
+      secret = insert_vault_secret(vault, key: "TOKEN", value: "secret-expiry-sentinel")
+      {:ok, dek} = Crypto.load_tenant_key(user.id)
+      {:ok, view, _html} = live(conn, ~p"/vaults/#{vault.id}/edit")
+      stub(Crypto, :load_tenant_key, fn _ -> flunk("metadata edit loaded the tenant key") end)
+
+      html =
+        view
+        |> form("#vault-secret-expiry-#{secret.id}", secret: %{expires_at: "2027-01-15"})
+        |> render_submit()
+
+      assert html =~ "Secret expiry saved"
+      assert Fountain.Repo.reload!(secret).expires_at == ~U[2027-01-15 23:59:59Z]
+      assert Fountain.Repo.reload!(secret).value_ciphertext == secret.value_ciphertext
+      refute_in_state(view, dek)
+      refute_in_state(view, "secret-expiry-sentinel")
+
+      view
+      |> form("#vault-secret-expiry-#{secret.id}", secret: %{expires_at: ""})
+      |> render_submit()
+
+      assert Fountain.Repo.reload!(secret).expires_at == nil
+      assert Fountain.Repo.reload!(secret).value_ciphertext == secret.value_ciphertext
+    end
+
+    test "expiry edit refuses foreign keys and invalid dates", %{conn: conn, vault: vault} do
+      other = insert_vault(user_id: insert_verified_user().id)
+      foreign = insert_vault_secret(other, key: "FOREIGN")
+      own = insert_vault_secret(vault, key: "OWN", expires_at: "2027-01-15T00:00:00Z")
+      {:ok, view, _} = live(conn, ~p"/vaults/#{vault.id}/edit")
+
+      assert render_submit(view, "update_secret_expiry", %{
+               "secret" => %{"key" => "FOREIGN", "expires_at" => "2028-01-01"}
+             }) =~ "Secret no longer exists"
+
+      assert render_submit(view, "update_secret_expiry", %{
+               "secret" => %{"key" => "OWN", "expires_at" => "bad-date"}
+             }) =~ "Enter a valid expiry date"
+
+      assert Fountain.Repo.reload!(foreign).expires_at == nil
+      assert Fountain.Repo.reload!(own).expires_at == own.expires_at
+    end
+
     test "add_secret records an optional expiry date and renders its status",
          %{conn: conn, vault: vault} do
       {:ok, view, _html} = live(conn, ~p"/vaults/#{vault.id}/edit")
