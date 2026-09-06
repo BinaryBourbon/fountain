@@ -47,18 +47,40 @@ export function turnMetadata(event) {
   try { return JSON.parse(event.data); } catch { throw new Error('Turn stage metadata is not JSON'); }
 }
 
-export async function performTurn(ctx, conversation, prompt, number, after) {
+export async function performTurn(ctx, conversation, prompt, number, after, { verifyStreaming = false } = {}) {
+  const startedMs = performance.now();
   const signal = phaseSignal(ctx.signal, ctx.config.execution.turn_ms);
   ctx.fixtures.reserveTurn(conversation.id, ctx.config.execution.max_turns);
   const queued = await ctx.client.request('POST', `/api/conversations/${conversation.id}/prompts`, { body: { prompt }, expected: 200, signal });
   ensure(queued.body.status === 'queued', 'Prompt was not acknowledged as queued');
   let startedId;
-  const streamed = await watchUntil(ctx.client, conversation.id, signal, event => {
+  const isDone = event => {
     const meta = turnMetadata(event);
     if (meta?.turn_number !== number) return false;
     if (event.state === 'started') startedId = meta.turn_id ?? event.turn_id;
     return event.state === 'done';
-  }, { after });
+  };
+  let streamed;
+  if (verifyStreaming) {
+    const initial = await watchUntil(ctx.client, conversation.id, signal, async (event, frame) => {
+      if (isDone(event)) throw new Error('Turn completed before incremental output could be verified');
+      if (event.kind !== 'output' || !startedId || event.turn_id !== startedId) return false;
+      const { body } = await ctx.client.request('GET', `/api/conversations/${conversation.id}/turns`, { expected: 200, signal });
+      ensure(body.data.some(turn => turn.id === startedId && turn.status === 'running'), 'Output arrived after the turn finished; ingress may be buffering SSE');
+      ctx.report.streaming = { provision_cursor: after, reconnect_cursor: event.id,
+        observed_running_turn_id: startedId, output_received_ms: frame.receivedMs - startedMs, incremental_output_verified: true };
+      return true;
+    }, { after });
+    // Let at least one persisted event be missed while disconnected. Then the
+    // reconnect must replay it before entering the live tail.
+    const missed = await waitFor(ctx.client, `/api/conversations/${conversation.id}/events?after=${initial.cursor}&limit=1&blocks=true`, signal, events => events.length > 0);
+    ensure(missed[0].id > initial.cursor, 'No durable event accumulated during the disconnection');
+    ctx.report.streaming.missed_event_id = missed[0].id;
+    const resumed = await watchUntil(ctx.client, conversation.id, signal, isDone, { after: initial.cursor });
+    ensure(resumed.events.some(frame => frame.event.id === missed[0].id), 'Reconnect lost the event persisted while disconnected');
+    streamed = { cursor: resumed.cursor, events: [...initial.events, ...resumed.events] };
+    ctx.report.streaming.resumed_events = resumed.events.length;
+  } else streamed = await watchUntil(ctx.client, conversation.id, signal, isDone, { after });
   ensure(typeof startedId === 'string', `Turn ${number} had no start event`);
   const turns = await waitFor(ctx.client, `/api/conversations/${conversation.id}/turns`, signal, rows =>
     rows.some(row => row.turn_number === number && row.status === 'completed'));

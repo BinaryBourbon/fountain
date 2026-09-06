@@ -10,7 +10,7 @@ import { basic } from '../profiles/basic.mjs';
 import { execution } from '../profiles/execution.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe, basic, execution };
+export const profiles = { probe, basic, execution, streaming: execution };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -36,12 +36,13 @@ export function configFrom(path, env = process.env) {
   requireThat(Array.isArray(config.profiles) && config.profiles.length > 0 && new Set(config.profiles).size === config.profiles.length &&
     config.profiles.every(name => Object.hasOwn(profiles, name)), 'Unknown, empty, or duplicate profile selection');
   requireThat(Object.keys(config.credentials).every(k => ['primary', 'secondary'].includes(k)), 'Unknown credential role');
-  if (config.profiles.some(name => ['basic', 'execution'].includes(name))) {
+  requireThat(!(config.profiles.includes('execution') && config.profiles.includes('streaming')), 'Select streaming or execution; streaming already includes execution');
+  if (config.profiles.some(name => ['basic', 'execution', 'streaming'].includes(name))) {
     requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Selected profile requires credentials.secondary environment variable');
     config.secondaryKey = env[config.credentials.secondary];
     requireThat(typeof config.secondaryKey === 'string' && config.secondaryKey.trim().length > 0, `Missing test credential: ${config.credentials.secondary}`);
   }
-  if (config.profiles.includes('execution')) {
+  if (config.profiles.some(name => ['execution', 'streaming'].includes(name))) {
     const settings = config.execution;
     requireThat(settings && Object.keys(settings).every(k => ['runtime', 'model', 'sandbox_provider', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit execution configuration');
     requireThat(['claude', 'codex', 'gemini', 'opencode'].includes(settings.runtime) &&
@@ -130,7 +131,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         const available = { runtimes: body.data?.runtimes, sandbox_providers: body.data?.sandbox_providers?.enabled };
         requireThat(Object.values(available).every(Array.isArray), 'Catalog capability arrays missing');
         report.capabilities = available;
-        if (config.profiles.includes('execution')) {
+        if (config.profiles.some(name => ['execution', 'streaming'].includes(name))) {
           requireThat(available.runtimes.includes(config.execution.runtime), 'Execution runtime is unavailable');
           requireThat(available.sandbox_providers.includes(config.execution.sandbox_provider), 'Execution sandbox provider is unavailable');
         }
