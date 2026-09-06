@@ -488,3 +488,80 @@ The workflow accepts `profile: mcp` for manual public or rollout checks. Store
 `FOUNTAIN_MCP_ADMIN_KEY` in the selected protected GitHub environment. MCP is not
 part of scheduled canaries. A local receiver or SDK diagnostic does not count
 as a deployed Fountain runtime/provider verdict.
+
+## Webhook delivery and retry
+
+The independent `webhooks` profile covers the outbound-delivery half of #1616.
+It provisions a run-owned conversation without a prompt, registers an endpoint
+through `POST /api/webhooks`, then terminates the conversation. This produces
+the documented `conversation.terminate.done` event with zero inference turns.
+The signing secret is accepted only from the endpoint's creation response and
+is checked for disclosure in subsequent public responses before redaction.
+
+The controlled receiver verifies the HMAC over the timestamp and exact raw
+body bytes, with a five-minute replay window. It also verifies the event
+headers, attempt counter and metadata-only payload. It returns one 503 for the
+first valid event and 200 for later valid deliveries. The suite requires an
+automatic later attempt; it never invokes the test-send or redeliver APIs.
+Each receiver receipt must match a public delivery record, and the payload
+must match the conversation event's ID, timestamp, stage, state and duration.
+Conversation status remains advisory, as the
+[webhook contract](../docs/reference/webhooks.md#the-payload) specifies.
+
+Delivery is at least once and unordered. Multiple successful deliveries,
+repeated attempts and out-of-order public rows are retained for analysis.
+They do not fail merely because there are more than two records. The profile
+observes for a configured window after successful retry, then reports that
+window and all observed delivery IDs. This does not assert that duplicates
+can never arrive later. The receiver response precedes Fountain's delivery
+record write; the suite waits for these two evidence sources to agree.
+
+Run `deployed/receivers/webhooks.mjs` from the suite checkout on one controlled
+HTTPS origin. Route the origin to one process and disable request/header
+logging. Set `FOUNTAIN_WEBHOOK_ADMIN_KEY` to at least 32 random characters.
+Provide `TLS_CERT_FILE` and `TLS_KEY_FILE`, or explicitly set
+`RECEIVER_TLS_AT_INGRESS=true` behind HTTPS ingress. The default port is 8080.
+The origin must resolve publicly and be reachable from Fountain's outbound
+workers and from the suite. Fountain's SSRF protections remain in force.
+
+The receiver keeps signing secrets in memory to verify HMACs. It never returns
+or logs them. Runs expire after 15 minutes; capacity is 32 runs, 64 deliveries
+per run and 16 KiB per request. Invalid signatures and unexpected payload
+fields are rejected and recorded as booleans without their raw values. Only
+verified metadata payloads and generated receipts appear in observations.
+Browser origins are rejected. Deleting the receiver run removes its secret.
+
+Copy `deployed/webhooks.example.json` and set the real origins and dedicated
+account credentials. Pin the runtime, model and provider for provisioning.
+The second account must be distinct and verified. Exactly zero prompts and
+at least four resources must be authorized. A run is bounded to ten minutes;
+the default delivery deadline is three minutes and duplicate observation is
+30 seconds. The endpoint API, signed dispatch and automatic retry are all
+required verdicts. A missing worker queue or disabled dispatch fails the
+selected profile.
+
+```bash
+node deployed/cli.mjs run \
+  --config /tmp/fountain-webhooks.json \
+  --out /tmp/fountain-webhooks-001
+```
+
+Cleanup first attempts to disable and delete the endpoint, then verifies 404.
+A failed disable reply does not prevent deletion. Endpoint cleanup precedes
+conversation cleanup so teardown does not queue more outbound events. Lost
+creation replies retain the endpoint description and exact target URL for
+ownership checks. The receiver has a separate `webhook-receiver.json` intent
+manifest. The ordinary cleanup command handles both manifests with the
+original target configuration. Cleanup failures remain explicit; expiry of a
+receiver run does not prove that a Fountain endpoint was deleted.
+
+The report distinguishes provisioning, registration, conversation-event and
+background-delivery failures. A separate cleanup snapshot retains the final
+receiver observations and public delivery records when those reads succeed.
+The analyzed window and snapshot are labeled separately.
+
+Manual CI selection is `profile: webhooks`, with
+`FOUNTAIN_WEBHOOK_ADMIN_KEY` in the selected protected environment. It is not
+part of scheduled canaries. The schedule half of #1616 remains separate work;
+`one_off` on the current schedule API selects a fresh conversation per firing,
+not a cron that deletes itself after one firing.
