@@ -30,6 +30,12 @@ upgrade, is in
 
 ### Fixed
 
+- Reattach and idle-process cleanup recover conversation identity from a Sprites
+  process's environment after its command changes. Unidentified processes are
+  never selected by list order on a shared sandbox. ACP updates from another
+  session are discarded and foreign permission requests are cancelled before
+  policy evaluation (#1658).
+
 - A runtime confirming a model in its own canonical designation is no longer
   read as a substitution (`managoat_acp` 0.2.2). Claude's adapter accepts
   `claude-opus-5` and confirms `opus`, and `claude-sonnet-5` and confirms

@@ -32,7 +32,13 @@ defmodule Fountain.Conversations.RunnerRecoveryTest do
     Mimic.stub(Managoat.Sandbox, :write_file, fn _, _, _, _ -> :ok end)
 
     Mimic.stub(Managoat.Sandbox, :list_sessions, fn _ ->
-      {:ok, [%Managoat.Sandbox.Session{id: "live-command"}]}
+      {:ok,
+       [
+         %Managoat.Sandbox.Session{
+           id: "live-command",
+           command: "env FOUNTAIN_CONVERSATION_ID=#{conv.id} claude-agent-acp"
+         }
+       ]}
     end)
 
     Mimic.stub(Managoat.Sandbox, :attach, fn _, "live-command", _ ->
