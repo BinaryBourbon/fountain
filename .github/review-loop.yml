@@ -2,12 +2,20 @@
 version: 1
 reviewers:
   - id: qa-team
+    runtime: codex
+    model: openai/gpt-6-astra
     instructions: .github/review/correctness.md
   - id: security-audit
+    runtime: codex
+    model: openai/gpt-6-astra
     instructions: .github/review/tenant-isolation.md
   - id: product-api
+    runtime: claude
+    model: anthropic/opus
     instructions: .github/review/api-compatibility.md
   - id: xp-reviewer
+    runtime: claude
+    model: anthropic/opus
     instructions: .github/review/simplicity.md
 triage:
   blocking_severity: medium
