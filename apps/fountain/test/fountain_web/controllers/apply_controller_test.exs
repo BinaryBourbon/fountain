@@ -11,6 +11,82 @@ defmodule FountainWeb.ApplyControllerTest do
     {:ok, user: user, raw_key: raw_key}
   end
 
+  describe "POST /api/apply — the webhook scope boundary" do
+    setup %{user: user} do
+      {_key, sprite_key} = insert_sprite_api_key(user)
+      %{sprite_key: sprite_key}
+    end
+
+    test "a sandbox token cannot create a webhook endpoint through a manifest", %{
+      conn: conn,
+      user: user,
+      sprite_key: sprite_key
+    } do
+      payload = %{
+        "resources" => [
+          %{"kind" => "Environment", "name" => "proj", "spec" => %{"setup_script" => "echo hi"}},
+          %{
+            "kind" => "Webhook",
+            "name" => "ops",
+            "spec" => %{"url" => "https://example.test/hook", "event_types" => ["*"]}
+          }
+        ]
+      }
+
+      conn = conn |> authed_with_key(sprite_key) |> post_json(~p"/api/apply", payload)
+
+      body = json_response(conn, 403)
+      assert body["reason"] == "insufficient_scope"
+      assert body["required_scope"] == "full"
+
+      # Refused before any resource is written, so the environment sharing the
+      # manifest with the webhook does not land either.
+      assert Fountain.Environments.list_environments(user.id) == []
+      assert Fountain.Webhooks.list_endpoints(user.id) == []
+    end
+
+    test "a sandbox token may still apply a manifest with no webhook in it", %{
+      conn: conn,
+      user: user,
+      sprite_key: sprite_key
+    } do
+      payload = %{
+        "resources" => [
+          %{"kind" => "Environment", "name" => "proj", "spec" => %{"setup_script" => "echo hi"}}
+        ]
+      }
+
+      conn = conn |> authed_with_key(sprite_key) |> post_json(~p"/api/apply", payload)
+
+      assert %{"data" => %{"results" => [%{"action" => "created"}]}} = json_response(conn, 200)
+      assert [_] = Fountain.Environments.list_environments(user.id)
+    end
+
+    test "a full-scope key applies the same webhook manifest", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      payload = %{
+        "resources" => [
+          %{
+            "kind" => "Webhook",
+            "name" => "ops",
+            "spec" => %{"url" => "https://example.test/hook", "event_types" => ["*"]}
+          }
+        ]
+      }
+
+      conn = conn |> authed_with_key(raw_key) |> post_json(~p"/api/apply", payload)
+
+      assert %{"data" => %{"results" => [%{"action" => "created", "secret" => secret}]}} =
+               json_response(conn, 200)
+
+      assert is_binary(secret)
+      assert [_] = Fountain.Webhooks.list_endpoints(user.id)
+    end
+  end
+
   describe "POST /api/apply" do
     test "applies a full manifest in one request", %{conn: conn, user: user, raw_key: raw_key} do
       payload = %{
