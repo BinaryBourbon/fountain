@@ -21,9 +21,9 @@ function observerConfig(config, expected_digest) {
 }
 
 export function validateRecoveryDeployment(config) {
-  check(config?.adapter === 'kubernetes' && config.environment === 'staging', 'Recovery requires an explicit staging target');
+  check(config?.adapter === 'kubernetes' && ['staging', 'production'].includes(config.environment), 'Recovery requires an explicit staging or production target');
   const keys = ['adapter', 'environment', 'base_url', 'context', 'namespace', 'deployment', 'service', 'container',
-    'deployment_uid', 'before_image', 'target_image', 'before_digest', 'target_digest', 'timeout_ms'];
+    'deployment_uid', 'before_image', 'target_image', 'before_digest', 'target_digest', 'timeout_ms', 'allow_production_restart'];
   check(Object.keys(config).every(key => keys.includes(key)), 'Unknown recovery deployment setting');
   const url = new URL(config.base_url);
   check(url.protocol === 'https:' && url.origin === config.base_url && !url.username && !url.password,
@@ -34,6 +34,11 @@ export function validateRecoveryDeployment(config) {
   check(uuid.test(config.deployment_uid), 'Recovery requires a pinned deployment UID');
   check(Number.isInteger(config.timeout_ms) && config.timeout_ms >= 1000 && config.timeout_ms <= 300000,
     'Recovery rollout timeout must be 1–300 seconds');
+  if (config.environment === 'production') {
+    check(config.allow_production_restart === true, 'Production recovery requires allow_production_restart:true');
+    check(config.before_image === config.target_image && config.before_digest === config.target_digest,
+      'Production recovery restarts the pinned serving image; release upgrades and downgrades require a separate deployment');
+  } else check(config.allow_production_restart === undefined, 'Production restart acknowledgement belongs only to a production target');
   return config;
 }
 
@@ -76,7 +81,7 @@ function kubernetesIO(config) {
 
 function guardedState(config, state, identities) {
   const { namespace, deployment, service } = state;
-  check(namespace.metadata?.labels?.['fountain.dev/environment'] === 'staging', 'Namespace is not labelled staging');
+  check(namespace.metadata?.labels?.['fountain.dev/environment'] === config.environment, `Namespace is not labelled ${config.environment}`);
   check(deployment.metadata?.labels?.['fountain.dev/recovery-tests'] === 'enabled', 'Deployment has not enabled recovery tests');
   check(deployment.metadata?.uid === config.deployment_uid, 'Deployment UID changed');
   for (const resource of [namespace, deployment, service]) {
@@ -103,6 +108,30 @@ function tests(state) {
     { op: 'test', path: `/spec/template/spec/containers/${state.index}/image`, value: state.image }];
 }
 
+function rolloutCount(value, replicas, round) {
+  if (Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === 'string' && /^(?:100|[0-9]{1,2})%$/.test(value)) return round(replicas * Number(value.slice(0, -1)) / 100);
+  throw new Error('Invalid production rolling-update quantity');
+}
+
+// Admission checks run before either preparation or the fault mutation. They
+// deliberately do not gate restoration: an unhealthy rollout still needs to
+// remove its own marker and restore its recorded template using the CAS guards.
+function productionAdmission(config, state) {
+  if (config.environment !== 'production') return;
+  const { spec, status, metadata } = state.deployment;
+  const replicas = spec.replicas;
+  check(Number.isInteger(replicas) && replicas >= 2, 'Production recovery requires at least two replicas');
+  check((spec.strategy?.type ?? 'RollingUpdate') === 'RollingUpdate', 'Production recovery requires RollingUpdate');
+  const rolling = spec.strategy?.rollingUpdate ?? {};
+  check(rolloutCount(rolling.maxUnavailable ?? '25%', replicas, Math.floor) === 0 &&
+    rolloutCount(rolling.maxSurge ?? '25%', replicas, Math.ceil) === 1,
+  'Production recovery requires zero unavailable replicas and exactly one surge replica');
+  check(status?.observedGeneration === metadata.generation &&
+    ['replicas', 'updatedReplicas', 'readyReplicas', 'availableReplicas'].every(key => status[key] === replicas) && !status.unavailableReplicas,
+  'Production recovery requires a fully available, converged deployment');
+}
+
 // Control-plane evidence is separate from the recovery profile's public API assertions.
 export class RecoveryDeployment {
   constructor(config, journalPath, overrides = {}) {
@@ -125,6 +154,7 @@ export class RecoveryDeployment {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     const raw = await this.io.read(signal);
     const state = guardedState(this.config, raw);
+    productionAdmission(this.config, state);
     check(state.image === this.config.before_image && state.marker === undefined, 'Deployment does not match the unclaimed baseline');
     const before = await this.io.observe(this.config.before_digest, signal);
     check(before.deployment_uid === this.config.deployment_uid && before.service_uid === raw.service.metadata.uid &&
@@ -140,6 +170,7 @@ export class RecoveryDeployment {
   async roll(signal) {
     check(this.record?.phase === 'prepared', 'Recovery rollout has already been attempted or was not prepared');
     const state = guardedState(this.config, await this.io.read(signal), this.record);
+    productionAdmission(this.config, state);
     check(state.image === this.config.before_image && state.marker === undefined &&
       state.deployment.metadata.generation === this.record.before.generation, 'Deployment changed before recovery rollout');
     const patch = tests(state);

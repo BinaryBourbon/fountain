@@ -9,7 +9,7 @@ import { ensure } from './execution.mjs';
 export function validateRecovery(config, env) {
   const settings = config.recovery;
   ensure(config.profiles.length === 1 && !config.execution && !config.deployment && !config.fixture,
-    'Run recovery independently with its own staging deployment configuration');
+    'Run recovery independently with its own explicit deployment configuration');
   ensure(settings && Object.keys(settings).every(k => ['deployment', 'relay', 'runner_id', 'provision_ms', 'turn_ms', 'idle_wait_ms', 'max_turns'].includes(k)),
     'Expected explicit recovery settings');
   validateRecoveryDeployment(settings.deployment);
@@ -23,7 +23,8 @@ export function validateRecovery(config, env) {
   ensure(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(relay.runner_name), 'Invalid dedicated runner name');
   ensure(Number.isInteger(relay.disconnect_ms) && relay.disconnect_ms >= 5000 && relay.disconnect_ms <= 60000,
     'Recovery requires a 5–60 second runner disconnection');
-  for (const [key, minimum, maximum] of [['provision_ms', 1000, 300000], ['turn_ms', 10000, 360000], ['idle_wait_ms', 60000, 600000]]) {
+  const production = settings.deployment.environment === 'production';
+  for (const [key, minimum, maximum] of [['provision_ms', 1000, 300000], ['turn_ms', 10000, 360000], ['idle_wait_ms', 60000, production ? 4200000 : 600000]]) {
     ensure(Number.isInteger(settings[key]) && settings[key] >= minimum && settings[key] <= maximum, `Invalid recovery ${key}`);
   }
   ensure(settings.turn_ms >= settings.deployment.timeout_ms + 30000 && settings.max_turns === 4,
@@ -53,7 +54,7 @@ export async function restoreRecoveryControls(ctx, directory, runId) {
     const restored = await ctx.check('recovery/deployment-cleanup', async () => {
       const control = await RecoveryDeployment.resume(resolve(directory, 'recovery.json'));
       ensure(control.record.run_id === runId && isDeepStrictEqual(control.config, ctx.config.recovery.deployment),
-        'Recovery journal differs from the selected run or staging target');
+        'Recovery journal differs from the selected run or deployment target');
       report.restored = await control.restore(AbortSignal.timeout(ctx.config.recovery.deployment.timeout_ms + 30000));
     });
     ok &&= restored;

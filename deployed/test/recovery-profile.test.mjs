@@ -49,7 +49,7 @@ test('terminal public evidence fails recovery immediately instead of waiting for
   assert.equal(recoveredAttachment([attached], 'turn-2'), attached);
   assert.throws(() => recoveredAttachment([attached, event], 'turn-2'), /ended before permission/);
 });
-test('recovery selection pins staging, independent controls, a dedicated runner and four prompts', t => {
+test('recovery selection pins an explicit environment, independent controls, a dedicated runner and four prompts', t => {
   const dir = mkdtempSync(join(tmpdir(), 'fountain-recovery-config-'));
   t.after(() => rmSync(dir, { force: true, recursive: true }));
   const example = JSON.parse(readFileSync(new URL('../recovery.example.json', import.meta.url)));
@@ -67,6 +67,24 @@ test('recovery selection pins staging, independent controls, a dedicated runner 
   }
   assert.throws(() => ciConfig({ SUITE_ENABLED: 'true', SUITE_TARGET: 'production', SUITE_PROFILE: 'recovery',
     SUITE_TARGET_JSON: JSON.stringify(example) }));
+});
+
+test('production budgets the existing hourly idle policy without changing staging or ordinary run limits', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'fountain-production-config-'));
+  t.after(() => rmSync(dir, { force: true, recursive: true }));
+  const example = JSON.parse(readFileSync(new URL('../recovery-production.example.json', import.meta.url)));
+  const path = join(dir, 'target.json');
+  const env = { FOUNTAIN_SUITE_KEY: 'primary', FOUNTAIN_SUITE_OTHER_KEY: 'secondary', FOUNTAIN_RELAY_ADMIN_KEY: 'x'.repeat(40) };
+  const parse = value => { writeFileSync(path, JSON.stringify(value)); return configFrom(path, env); };
+  const production = parse(example);
+  assert.equal(production.recovery.idle_wait_ms, 4200000);
+  assert.equal(production.limits.run_ms, 7200000);
+  assert.equal(production.fixture.max_turns, 4);
+  for (const mutate of [c => c.recovery.deployment.allow_production_restart = false,
+    c => c.limits.run_ms = 1800000, c => c.limits.run_ms = 7200001, c => c.recovery.idle_wait_ms = 4200001]) {
+    const changed = structuredClone(example); mutate(changed); assert.throws(() => parse(changed));
+  }
+  assert.throws(() => parse({ base_url: example.base_url, credentials: example.credentials, profiles: ['probe'], limits: { run_ms: 7200000 } }));
 });
 
 test('interrupted cleanup checks both control manifests and preserves failure without mutating another run', async t => {

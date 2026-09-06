@@ -118,7 +118,8 @@ export function configFrom(path, env = process.env) {
   const limits = config.limits ?? {};
   requireThat(Object.keys(limits).every(k => ['request_ms', 'run_ms', 'cleanup_ms', 'resources'].includes(k)), 'Unknown limit');
   config.limits = {
-    request_ms: positive(limits.request_ms, 10000, 120000), run_ms: positive(limits.run_ms, 120000, 3600000),
+    request_ms: positive(limits.request_ms, 10000, 120000),
+    run_ms: positive(limits.run_ms, 120000, config.profiles.includes('recovery') && config.recovery.deployment.environment === 'production' ? 7200000 : 3600000),
     cleanup_ms: positive(limits.cleanup_ms, 30000, 300000), resources: positive(limits.resources, 20, 100),
   };
   if (config.profiles.includes('browser')) validateBrowser(config, env);
@@ -136,8 +137,11 @@ export function configFrom(path, env = process.env) {
     requireThat(config.limits.run_ms <= 900000 && config.limits.resources >= 4 && config.limits.cleanup_ms >= 30000, 'Schedules require a fifteen-minute run bound, four resources and thirty seconds for cleanup');
   }
   if (config.profiles.includes('recovery')) {
-    requireThat(config.limits.run_ms <= 1800000 && config.limits.resources >= 3 && config.limits.cleanup_ms >= 30000,
-      'Recovery requires a thirty-minute run bound, three resources and thirty seconds for fixture cleanup');
+    const production = config.recovery.deployment.environment === 'production';
+    requireThat(config.limits.run_ms <= (production ? 7200000 : 1800000) && config.limits.resources >= 3 && config.limits.cleanup_ms >= 30000,
+      'Recovery requires its environment-specific run bound, three resources and thirty seconds for fixture cleanup');
+    if (production) requireThat(config.limits.run_ms >= config.recovery.idle_wait_ms + 4 * config.recovery.turn_ms + config.recovery.provision_ms + 300000,
+      'Production recovery must budget the existing idle policy, four turns, provisioning and control overhead');
   }
   for (const field of ['required_capabilities', 'optional_capabilities']) {
     config[field] ??= {};
