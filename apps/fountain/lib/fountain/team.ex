@@ -558,15 +558,21 @@ defmodule Fountain.Team do
   defp bindings_allowed(user_id, %Agents.Agent{} = agent, changes) do
     options = addable_options(user_id, agent)
 
-    with :ok <- binding_allowed(changes, :environment_id, options.environments, :environment) do
-      binding_allowed(changes, :vault_id, options.vaults, :vault)
+    with :ok <-
+           binding_allowed(
+             changes,
+             :environment_id,
+             options.environments,
+             :environment_not_allowed
+           ) do
+      binding_allowed(changes, :vault_id, options.vaults, :vault_not_allowed)
     end
   end
 
-  defp binding_allowed(changes, field, allowed, what) do
+  defp binding_allowed(changes, field, allowed, refusal) do
     case Map.get(changes, field) do
       nil -> :ok
-      id -> if Enum.any?(allowed, &(&1.id == id)), do: :ok, else: {:error, :"#{what}_not_allowed"}
+      id -> if Enum.any?(allowed, &(&1.id == id)), do: :ok, else: {:error, refusal}
     end
   end
 
