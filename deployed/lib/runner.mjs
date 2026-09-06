@@ -10,6 +10,7 @@ import { atomicJson, Fixtures } from './fixtures.mjs';
 import { probe } from '../profiles/probe.mjs';
 import { basic } from '../profiles/basic.mjs';
 import { execution } from '../profiles/execution.mjs';
+import { deterministic } from '../profiles/deterministic.mjs';
 import { schedules } from '../profiles/schedules.mjs';
 import { webhooks } from '../profiles/webhooks.mjs';
 import { ControlledReceiverSession, controlledOrigin } from './controlled-receiver.mjs';
@@ -20,7 +21,7 @@ import { secrets } from '../profiles/secrets.mjs';
 import { receiverOrigins, ReceiverSession } from './receiver.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe, basic, execution, streaming: execution, secrets, mcp, webhooks, schedules };
+export const profiles = { probe, basic, execution, streaming: execution, secrets, mcp, webhooks, schedules, deterministic };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -32,7 +33,7 @@ function positive(value, fallback, max) {
 
 export function configFrom(path, env = process.env) {
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'mcp', 'webhooks', 'schedules'];
+  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'mcp', 'webhooks', 'schedules', 'fixture'];
   requireThat(Object.keys(config).every(key => allowed.includes(key)), 'Unknown configuration field');
   const url = new URL(config.base_url);
   requireThat(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash,
@@ -47,7 +48,7 @@ export function configFrom(path, env = process.env) {
     config.profiles.every(name => Object.hasOwn(profiles, name)), 'Unknown, empty, or duplicate profile selection');
   requireThat(Object.keys(config.credentials).every(k => ['primary', 'secondary'].includes(k)), 'Unknown credential role');
   requireThat(!(config.profiles.includes('execution') && config.profiles.includes('streaming')), 'Select streaming or execution; streaming already includes execution');
-  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'secrets', 'mcp', 'webhooks', 'schedules'].includes(name))) {
+  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'secrets', 'mcp', 'webhooks', 'schedules', 'deterministic'].includes(name))) {
     requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Selected profile requires credentials.secondary environment variable');
     config.secondaryKey = env[config.credentials.secondary];
     requireThat(typeof config.secondaryKey === 'string' && config.secondaryKey.trim().length > 0, `Missing test credential: ${config.credentials.secondary}`);
@@ -98,6 +99,15 @@ export function configFrom(path, env = process.env) {
     config.schedules.start_ms = positive(config.schedules.start_ms, 180000, 300000);
     config.schedules.observe_ms = positive(config.schedules.observe_ms, 120000, 180000);
     requireThat(config.schedules.start_ms >= 60000 && config.schedules.observe_ms >= 120000, 'Schedule windows must cover at least one dispatch minute and two observation minutes');
+  }
+  if (config.profiles.includes('deterministic')) {
+    requireThat(config.profiles.length === 1 && !config.execution, 'Run deterministic fixture separately from real-model profiles');
+    const fixture = config.fixture;
+    requireThat(fixture && Object.keys(fixture).every(k => ['sandbox_provider', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit fixture configuration');
+    requireThat(['sprites', 'e2b', 'daytona', 'runner'].includes(fixture.sandbox_provider), 'Pin a fixture sandbox provider');
+    fixture.provision_ms = positive(fixture.provision_ms, 120000, 300000);
+    fixture.turn_ms = positive(fixture.turn_ms, 30000, 60000);
+    requireThat(fixture.max_turns === 7, 'Fixture requires an explicit seven-prompt budget');
   }
   config.contract = config.contract ? resolve(dirname(path), config.contract) : contractPath;
   const limits = config.limits ?? {};
@@ -181,7 +191,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     if (config.webhooks) redactor.add(env[config.webhooks.admin_credential]);
     report.target = config.base_url;
     report.profiles = config.profiles;
-    report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0 };
+    report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
     const contract = new Contract(config.contract);
     report.contract_sha256 = contract.sha256;
     const timeout = AbortSignal.timeout(config.limits.run_ms);
@@ -214,6 +224,10 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         if (config.profiles.some(name => ['execution', 'streaming', 'secrets', 'mcp', 'webhooks', 'schedules'].includes(name))) {
           requireThat(available.runtimes.includes(config.execution.runtime), 'Execution runtime is unavailable');
           requireThat(available.sandbox_providers.includes(config.execution.sandbox_provider), 'Execution sandbox provider is unavailable');
+        }
+        if (config.profiles.includes('deterministic')) {
+          requireThat(available.runtimes.includes('fountain-fixture'), 'Deterministic runtime is not enabled on this target');
+          requireThat(available.sandbox_providers.includes(config.fixture.sandbox_provider), 'Fixture sandbox provider is unavailable');
         }
         for (const [kind, names] of Object.entries(config.required_capabilities)) {
           for (const name of names) requireThat(available[kind].includes(name), `Missing required ${kind}: ${name}`);
@@ -268,7 +282,8 @@ export async function run({ configPath, out, manifestPath, signal, env = process
       const failures = await fixtures.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
       report.cleanup = { failures, remaining: fixtures.remainingCount() };
       if (fixtures.manifest.schedule) report.cleanup.schedule = { state: fixtures.manifest.schedule.state, deleted: fixtures.manifest.schedule.deleted, conversations: fixtures.manifest.schedule.conversations, remaining_sandbox_ids: fixtures.manifest.schedule.remaining_sandbox_ids ?? [] };
-      report.inference_attempts = fixtures.manifest.inference_attempts ?? 0;
+      report.prompt_attempts = fixtures.manifest.inference_attempts ?? 0;
+      report.inference_attempts = config.profiles.includes('deterministic') ? 0 : report.prompt_attempts;
       if (failures.length) {
         report.status = 'cleanup_failed';
         report.checks.push({ name: 'cleanup', status: 'failed', duration_ms: 0, error: 'Resources remain; see cleanup manifest and result.json' });

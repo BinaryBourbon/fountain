@@ -33,7 +33,7 @@ defmodule Fountain.Conversations.ConnectionTest do
 
     spawn_link(fn ->
       receive do
-        {:"$gen_call", from, {:prompt, prompt, images}} ->
+        {:"$gen_call", from, {:prompt, prompt, images, _opts}} ->
           send(test, {:prompted, prompt, images})
           GenServer.reply(from, reply)
           Process.sleep(:infinity)

@@ -69,6 +69,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"environment secret delete", &__MODULE__.do_env_secret_delete/1,
      "environment.secret.delete"},
     {"vault secret write", &__MODULE__.do_vault_secret_write/1, "vault.secret.write"},
+    {"vault secret update", &__MODULE__.do_vault_secret_update/1, "vault.secret.update"},
     {"vault secret delete", &__MODULE__.do_vault_secret_delete/1, "vault.secret.delete"},
     {"password reset", &__MODULE__.do_password_reset/1, "auth.password.reset"},
     {"password change", &__MODULE__.do_password_change/1, "auth.password.changed"},
@@ -611,6 +612,14 @@ defmodule Fountain.AuditGuardrailTest do
   def do_vault_secret_write(user) do
     vault = insert_vault(user_id: user.id)
     {:ok, _} = Vaults.upsert_secret(vault, %{"key" => "K", "value" => "v"}, dek!(user.id))
+  end
+
+  def do_vault_secret_update(user) do
+    vault = insert_vault(user_id: user.id)
+    secret = insert_vault_secret(vault, key: "TOKEN")
+
+    {:ok, _} =
+      Vaults.update_secret_metadata(vault, secret.key, %{"expires_at" => "2027-01-15T00:00:00Z"})
   end
 
   def do_vault_secret_delete(user) do

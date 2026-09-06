@@ -19,12 +19,27 @@
             "ref": "AccountDeletedResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -43,12 +58,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -66,6 +96,11 @@
             "ref": "AccountDeletedResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -76,7 +111,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -95,7 +140,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -109,7 +174,22 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -137,6 +217,16 @@
           "application/json": {
             "ref": "Error"
           }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -152,7 +242,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -171,12 +276,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -195,7 +315,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -214,7 +349,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -228,7 +378,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -243,7 +413,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -257,12 +447,32 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -281,7 +491,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -295,9 +520,24 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -306,6 +546,11 @@
           }
         },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -324,7 +569,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -338,7 +598,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -352,12 +632,32 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "424": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -372,7 +672,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -386,12 +706,32 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -406,7 +746,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -425,7 +785,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -441,12 +816,27 @@
             "ref": "BillingResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -462,7 +852,22 @@
             "ref": "ExportListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -480,12 +885,27 @@
             "ref": "ExportResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -503,12 +923,27 @@
             "type": "string"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -524,7 +959,22 @@
             "ref": "InferenceCredentialListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -540,7 +990,22 @@
             "ref": "OnboardingResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -562,7 +1027,22 @@
             "ref": "AdminAuditListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -584,7 +1064,22 @@
             "ref": "AdminEventListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -600,7 +1095,22 @@
             "ref": "AdminSandboxListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -663,7 +1173,27 @@
             "ref": "AdminUserListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -681,12 +1211,27 @@
             "ref": "AdminUserResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -723,6 +1268,26 @@
           "application/json": {
             "ref": "AgentListResponse"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -737,7 +1302,27 @@
             "ref": "AgentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -756,7 +1341,22 @@
             "type": "string"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -774,7 +1374,27 @@
             "ref": "AgentVersionListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -793,7 +1413,32 @@
             "ref": "AgentVersionResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -839,6 +1484,26 @@
           "application/json": {
             "ref": "Error"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -860,6 +1525,16 @@
           "application/json": {
             "ref": "Error"
           }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -873,6 +1548,21 @@
           }
         },
         "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -892,6 +1582,21 @@
           "application/json": {
             "ref": "Error"
           }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -902,6 +1607,26 @@
         "200": {
           "application/json": {
             "ref": "CatalogResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -922,7 +1647,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -943,7 +1683,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -966,7 +1721,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -987,7 +1757,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1008,7 +1793,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1031,7 +1831,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1054,6 +1869,11 @@
           "required": false,
           "type": "boolean"
         },
+        "sandbox_id": {
+          "format": "uuid",
+          "required": false,
+          "type": "string"
+        },
         "status": {
           "required": false,
           "type": "string"
@@ -1066,6 +1886,31 @@
           }
         },
         "400": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "ChangesetError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1093,12 +1938,27 @@
             "ref": "EgressListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1139,7 +1999,32 @@
             "ref": "LogEventListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1177,7 +2062,22 @@
             "type": "string"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1195,7 +2095,27 @@
             "ref": "ConversationTreeResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1213,7 +2133,27 @@
             "ref": "TurnListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1234,7 +2174,22 @@
             "type": "string"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1252,7 +2207,27 @@
             "ref": "ConversationResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1266,6 +2241,26 @@
         "200": {
           "application/json": {
             "ref": "EnvironmentListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -1281,7 +2276,27 @@
             "ref": "SecretListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1299,7 +2314,27 @@
             "ref": "EnvironmentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1330,6 +2365,21 @@
           "text/event-stream": {
             "type": "string"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1343,6 +2393,21 @@
           }
         },
         "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1404,6 +2469,11 @@
           "application/json": {
             "ref": "Error"
           }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1426,6 +2496,26 @@
           "application/json": {
             "ref": "Error"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1440,7 +2530,27 @@
             "ref": "SandboxResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1476,9 +2586,24 @@
             "ref": "SandboxDiffResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -1487,6 +2612,11 @@
           }
         },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1519,9 +2649,24 @@
             "ref": "SandboxFileResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -1530,6 +2675,11 @@
           }
         },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1558,9 +2708,24 @@
             "ref": "SandboxListingResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -1569,6 +2734,11 @@
           }
         },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1625,7 +2795,27 @@
             "ref": "Error"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1646,7 +2836,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1667,7 +2872,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1684,6 +2904,21 @@
           }
         },
         "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1706,7 +2941,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1721,6 +2971,26 @@
           "application/json": {
             "ref": "TeammateListResponse"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1732,6 +3002,26 @@
           "application/json": {
             "ref": "TeamCommsStatusResponse"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1742,6 +3032,26 @@
         "200": {
           "application/json": {
             "ref": "TeamScheduleListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -1770,6 +3080,21 @@
           "text/event-stream": {
             "type": "string"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1784,7 +3109,27 @@
             "ref": "TeammateResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1802,7 +3147,27 @@
             "ref": "TeammateConversationListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1819,6 +3184,26 @@
           "application/json": {
             "ref": "TeamScheduleListResponse"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -1834,7 +3219,27 @@
             "ref": "TeamScheduleResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1848,6 +3253,26 @@
         "200": {
           "application/json": {
             "ref": "VaultListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -1863,7 +3288,27 @@
             "ref": "VaultResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1881,7 +3326,27 @@
             "ref": "VaultSecretListResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1898,6 +3363,21 @@
           }
         },
         "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1920,7 +3400,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1949,7 +3444,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -1964,6 +3474,11 @@
           "application/json": {
             "ref": "HealthResponse"
           }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
         }
       }
     },
@@ -1974,6 +3489,11 @@
         "200": {
           "application/json": {
             "ref": "ReadinessResponse"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "503": {
@@ -2047,6 +3567,52 @@
             },
             "type": "object"
           }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "properties": {
+              "error": {
+                "properties": {
+                  "code": {
+                    "nullable": true,
+                    "required": false,
+                    "type": "string"
+                  },
+                  "message": {
+                    "required": false,
+                    "type": "string"
+                  },
+                  "param": {
+                    "nullable": true,
+                    "required": false,
+                    "type": "string"
+                  },
+                  "type": {
+                    "required": false,
+                    "type": "string"
+                  }
+                },
+                "required": false,
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -2101,6 +3667,16 @@
             "type": "object"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "properties": {
@@ -2131,6 +3707,11 @@
             },
             "type": "object"
           }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
         }
       }
     },
@@ -2153,9 +3734,24 @@
             "ref": "AgentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -2166,6 +3762,11 @@
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -2194,12 +3795,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2230,12 +3846,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2261,14 +3892,34 @@
             "ref": "EnvironmentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -2297,12 +3948,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2328,12 +3994,32 @@
             "ref": "TeammateResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2359,12 +4045,32 @@
             "ref": "TeammateResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2391,12 +4097,32 @@
             "ref": "TeamScheduleResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2422,14 +4148,86 @@
             "ref": "VaultResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "PATCH /api/vaults/{vault_id}/secrets/{id}": {
+      "operation_id": "FountainWeb.VaultSecretController.update",
+      "path_params": [
+        "id",
+        "vault_id"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "VaultSecretMetadataRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "VaultSecretResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -2458,12 +4256,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2487,6 +4300,11 @@
             "ref": "StripeUrlResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -2497,7 +4315,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2518,9 +4346,19 @@
             "ref": "ExportResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "429": {
@@ -2539,7 +4377,22 @@
             "ref": "OnboardingResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2557,12 +4410,27 @@
             "ref": "AdminReapResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2588,6 +4456,11 @@
             "ref": "AdminUserResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -2598,7 +4471,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2624,6 +4507,11 @@
             "ref": "AdminUserResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -2634,7 +4522,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2660,6 +4558,11 @@
             "ref": "AdminUserResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -2670,7 +4573,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2696,6 +4609,11 @@
             "ref": "AdminUserResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -2706,7 +4624,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2732,6 +4660,11 @@
             "ref": "AdminUserResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
@@ -2742,7 +4675,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2766,9 +4709,29 @@
             "ref": "AgentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -2842,7 +4805,27 @@
             "ref": "Error"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2866,9 +4849,29 @@
             "ref": "ApplyResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -2900,7 +4903,17 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -2914,6 +4927,11 @@
         "201": {
           "application/json": {
             "ref": "DeviceAuthResponse"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         }
       }
@@ -2938,6 +4956,11 @@
         "400": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         }
       }
@@ -2969,9 +4992,19 @@
             "ref": "AuthError"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "AuthError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -2991,6 +5024,11 @@
         "200": {
           "application/json": {
             "ref": "EmailChangedResponse"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "422": {
@@ -3015,6 +5053,11 @@
         "200": {
           "application/json": {
             "ref": "MessageResponse"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         }
       }
@@ -3046,9 +5089,19 @@
             "ref": "AuthError"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "AuthError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -3075,9 +5128,14 @@
             "ref": "AuthError"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
-            "ref": "ChangesetError"
+            "ref": "UnprocessableEntityError"
           }
         }
       }
@@ -3098,6 +5156,11 @@
           "application/json": {
             "ref": "MessageResponse"
           }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
         }
       }
     },
@@ -3116,6 +5179,11 @@
         "200": {
           "application/json": {
             "ref": "MessageResponse"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "422": {
@@ -3152,7 +5220,17 @@
             "ref": "AuthError"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3174,6 +5252,11 @@
         "200": {
           "application/json": {
             "ref": "VerifyEmailResponse"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "422": {
@@ -3200,7 +5283,32 @@
             "ref": "AvatarGenerateResponse"
           }
         },
+        "400": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3239,12 +5347,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3322,6 +5445,11 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "429": {
           "application/json": {
             "ref": "Error"
@@ -3375,12 +5503,22 @@
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "409": {
           "application/json": {
             "ref": "Error"
           }
         },
         "410": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3409,12 +5547,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3437,12 +5590,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3471,6 +5639,16 @@
             "ref": "ConversationResponse"
           }
         },
+        "400": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "402": {
           "application/json": {
             "properties": {
@@ -3486,14 +5664,39 @@
             "type": "object"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "409": {
           "application/json": {
             "ref": "Error"
           }
         },
         "422": {
           "application/json": {
-            "ref": "ChangesetError"
+            "ref": "UnprocessableEntityError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "503": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -3505,12 +5708,37 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "503": {
           "application/json": {
             "ref": "Error"
           }
@@ -3541,7 +5769,47 @@
             "ref": "Error"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "402": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "410": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "503": {
           "application/json": {
             "ref": "Error"
           }
@@ -3555,7 +5823,27 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3582,9 +5870,24 @@
             "ref": "PermissionAnswerResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -3593,6 +5896,11 @@
           }
         },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3606,7 +5914,32 @@
       ],
       "responses": {
         "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "503": {
           "application/json": {
             "ref": "Error"
           }
@@ -3630,9 +5963,29 @@
             "ref": "EnvironmentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -3656,14 +6009,34 @@
             "ref": "SecretResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -3672,7 +6045,27 @@
       "operation_id": "FountainWeb.OAuthTokenController.revoke",
       "path_params": [],
       "responses": {
-        "204": {}
+        "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
       }
     },
     "POST /api/oauth/token": {
@@ -3695,6 +6088,11 @@
         "400": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         }
       }
@@ -3721,12 +6119,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3755,7 +6168,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3784,12 +6212,32 @@
             "ref": "TeammateResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3815,9 +6263,24 @@
             "ref": "TeammateResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -3826,6 +6289,16 @@
           }
         },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "424": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3858,7 +6331,27 @@
             "ref": "Error"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3894,7 +6387,27 @@
             "ref": "Error"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3920,12 +6433,32 @@
             "ref": "TeamScheduleResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3949,7 +6482,27 @@
             "ref": "Error"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -3973,9 +6526,29 @@
             "ref": "VaultResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -3999,14 +6572,34 @@
             "ref": "VaultSecretResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -4033,7 +6626,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -4057,7 +6665,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -4080,7 +6703,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -4103,7 +6741,22 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -4308,6 +6961,16 @@
             "type": "object"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "properties": {
@@ -4340,6 +7003,42 @@
           }
         },
         "409": {
+          "application/json": {
+            "properties": {
+              "error": {
+                "properties": {
+                  "code": {
+                    "nullable": true,
+                    "required": false,
+                    "type": "string"
+                  },
+                  "message": {
+                    "required": false,
+                    "type": "string"
+                  },
+                  "param": {
+                    "nullable": true,
+                    "required": false,
+                    "type": "string"
+                  },
+                  "type": {
+                    "required": false,
+                    "type": "string"
+                  }
+                },
+                "required": false,
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "500": {
           "application/json": {
             "properties": {
               "error": {
@@ -4391,12 +7090,27 @@
             "ref": "InferenceCredentialResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "403": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -4432,9 +7146,24 @@
             "ref": "AgentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "409": {
@@ -4445,6 +7174,11 @@
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -4468,6 +7202,16 @@
             "ref": "AgentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
@@ -4484,6 +7228,11 @@
           }
         },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -4514,12 +7263,27 @@
             "ref": "Error"
           }
         },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
           "application/json": {
             "ref": "Error"
           }
@@ -4545,14 +7309,34 @@
             "ref": "EnvironmentResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -4576,14 +7360,34 @@
             "ref": "VaultResponse"
           }
         },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "404": {
           "application/json": {
             "ref": "Error"
           }
         },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
           }
         }
       }
@@ -5030,6 +7834,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -5169,6 +7974,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -5300,6 +8106,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -6322,6 +9129,17 @@
               "required": true,
               "type": "array"
             },
+            "sandbox_api_access": {
+              "items": {
+                "enum": [
+                  "none",
+                  "owner"
+                ],
+                "type": "string"
+              },
+              "required": false,
+              "type": "array"
+            },
             "sandbox_providers": {
               "properties": {
                 "default": {
@@ -7121,6 +9939,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -7140,6 +9959,14 @@
             }
           ],
           "required": false
+        },
+        "sandbox_api_access": {
+          "enum": [
+            "none",
+            "owner"
+          ],
+          "required": false,
+          "type": "string"
         },
         "sandbox_id": {
           "format": "uuid",
@@ -7243,6 +10070,14 @@
           "type": "object"
         },
         "prompt": {
+          "required": false,
+          "type": "string"
+        },
+        "sandbox_api_access": {
+          "enum": [
+            "none",
+            "owner"
+          ],
           "required": false,
           "type": "string"
         },
@@ -8070,6 +10905,21 @@
       },
       "type": "object"
     },
+    "NegotiationError": {
+      "properties": {
+        "errors": {
+          "properties": {
+            "detail": {
+              "required": true,
+              "type": "string"
+            }
+          },
+          "required": true,
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "OAuthTokenRequest": {
       "properties": {
         "client_id": {
@@ -8577,6 +11427,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -9864,6 +12715,44 @@
           "required": false,
           "type": "string"
         },
+        "model_selection": {
+          "nullable": true,
+          "properties": {
+            "effective_model": {
+              "nullable": true,
+              "required": false,
+              "type": "string"
+            },
+            "error": {
+              "required": false,
+              "type": "string"
+            },
+            "requested_model": {
+              "nullable": true,
+              "required": false,
+              "type": "string"
+            },
+            "source": {
+              "enum": [
+                "runtime",
+                "selection_ack"
+              ],
+              "nullable": true,
+              "required": false,
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "failed",
+                "selected"
+              ],
+              "required": false,
+              "type": "string"
+            }
+          },
+          "required": false,
+          "type": "object"
+        },
         "origin": {
           "enum": [
             "autonomous",
@@ -9940,6 +12829,29 @@
         "output": {
           "required": true,
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "UnprocessableEntityError": {
+      "properties": {
+        "error": {
+          "required": true,
+          "type": "string"
+        },
+        "errors": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "required": false,
+          "type": "object"
+        },
+        "message": {
+          "required": false,
+          "type": "string"
         }
       },
       "type": "object"
@@ -10076,6 +12988,18 @@
           },
           "required": true,
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "VaultSecretMetadataRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "nullable": true,
+          "required": false,
+          "type": "string"
         }
       },
       "type": "object"

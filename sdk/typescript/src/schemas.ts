@@ -61,6 +61,7 @@ export type Block = S["Block"];
 /** A stored secret. Values are write-only — the API never returns them. */
 export type Secret = S["Secret"];
 export type VaultSecret = S["VaultSecret"];
+export type VaultSecretMetadataPatch = S["VaultSecretMetadataRequest"];
 
 // ── the team ─────────────────────────────────────────────────────────────────
 

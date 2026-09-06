@@ -60,6 +60,10 @@ thresholds or selectors in the overlay.
 | `FountainUnhandledExceptions` | Request handlers raise exceptions. |
 | `FountainDatabasePoolSaturated` | Requests wait for database connections. |
 | `FountainProvisionFailures` | Sandbox provision attempts fail. |
+| `FountainStageFailures` | A stage after provisioning fails more than twice in 30 minutes. |
+| `FountainTurnFailureRate` | More than 25% of at least ten terminal turns fail per provider over 30 minutes. |
+| `FountainReattachFailures` | A conversation reattach fails within the last hour. |
+| `FountainTurnFirstOutputSlow` | Observed first-output p95 exceeds 30 seconds for 15 minutes, with at least ten samples per window. |
 | `FountainProvisionDeadlineExceeded` | A provision attempt reaches its watchdog deadline. |
 | `FountainSandboxBudgetExceeded` | Sandbox concurrency exceeds the configured budget. |
 | `FountainConversationsAboveBudget` | Live conversations exceed the configured budget. |
@@ -68,6 +72,17 @@ thresholds or selectors in the overlay.
 | `FountainObanJobsRaising` | Background jobs raise exceptions. |
 | `FountainObanJobsDiscarded` | Background jobs exhaust their retries. |
 | `FountainObanQueueBacklog` | A background queue has a sustained backlog. |
+
+Turn alerts group by provider and sum event counters across replicas.
+The first-output rule measures turns that produce output. A turn that emits
+nothing produces no latency sample. Use conversation failure events and
+deployed execution checks to investigate that case.
+
+These rules do not add an automatic rollback. Before you enable them, assign
+an alert receiver and tune the thresholds for your traffic. The hosted
+overlay requires its own rollout; a merge of this file does not update it.
+Run `python3 scripts/test-alerts.py` with PyYAML and `promtool` installed to
+check the shipped expressions and their failure fixtures.
 
 ### Added by the hosted overlay
 

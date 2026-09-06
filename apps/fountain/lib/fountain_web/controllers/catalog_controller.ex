@@ -51,6 +51,7 @@ defmodule FountainWeb.CatalogController do
 
     json(conn, %{
       data: %{
+        sandbox_api_access: Fountain.Conversations.Conversation.sandbox_api_access_modes(),
         runtimes: runtimes,
         models: Map.new(runtimes, &{&1, ModelCatalog.suggestions(&1)}),
         model_providers: Model.providers(),

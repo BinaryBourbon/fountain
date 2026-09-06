@@ -31,6 +31,7 @@ defmodule FountainWeb.AvatarGenerateController do
         "provider refused.",
     request_body: {"Base and mood", "application/json", Schemas.AvatarGenerateRequest},
     responses: [
+      bad_request: {"Invalid request", "application/json", Schemas.Error},
       ok: {"Generated image", "application/json", Schemas.AvatarGenerateResponse},
       unprocessable_entity:
         {"No OpenAI credential, or unknown base/mood", "application/json", Schemas.Error},

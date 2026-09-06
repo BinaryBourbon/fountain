@@ -9,10 +9,9 @@ defmodule Fountain.Conversations.Connection do
 
   The distinction the module exists for: a turn ends when the agent answers,
   the connection ends when the sandbox stops being this server's. Between the
-  two, an idle adapter sits on the machine and the next prompt rides it — no
-  spawn, no handshake, no `session/resume`, no model pin — so a background
-  task it left running keeps running and the runtime's per-session grants
-  survive. `Fountain.Conversations.TurnMachine` owns the turn itself and
+  two, an idle adapter stays on the machine. The next turn selects its model
+  and sends its prompt without a spawn, handshake or `session/resume`.
+  Background tasks and the runtime's per-session grants survive. `Fountain.Conversations.TurnMachine` owns the turn itself and
   answers `autonomous_turn?/1`; what a turn ends with is the server's, because
   ending one resolves what is pending and stamps the row.
 
@@ -25,7 +24,7 @@ defmodule Fountain.Conversations.Connection do
   require OpenTelemetry.Tracer
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Output, TurnMachine}
+  alias Fountain.Conversations.{Output, Provisioning, TurnMachine}
 
   @type t :: %__MODULE__{
           peer: pid() | nil,
@@ -89,7 +88,7 @@ defmodule Fountain.Conversations.Connection do
   @doc """
   This turn rides the open connection: no spawn, no handshake.
 
-  `Peer.prompt/3` reuses the session already open, so a background task keeps
+  `Peer.prompt/4` reuses the session already open, so a background task keeps
   running and the runtime's per-session grants survive (#817). Returns the
   turn span, the tracer over it and the monotonic stamp the turn's metrics
   start from; `{:error, reason}` when the idle peer would not take the prompt
@@ -107,7 +106,9 @@ defmodule Fountain.Conversations.Connection do
         ) ::
           {:ok, term(), term(), integer()} | {:error, term()}
   def resume(%__MODULE__{} = conn, conversation_id, user_id, conv, turn, prompt, images) do
-    turn_span = TurnMachine.open_span(user_id, conv, turn, :continue, TurnMachine.agent_for(conv))
+    agent = TurnMachine.agent_for(conv)
+    model = agent && Managoat.Runtimes.Model.acp_model(conv.runtime || agent.runtime, agent.model)
+    turn_span = TurnMachine.open_span(user_id, conv, turn, :continue, agent)
 
     previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)
 
@@ -120,7 +121,7 @@ defmodule Fountain.Conversations.Connection do
 
     started_mono = System.monotonic_time(:millisecond)
 
-    case Managoat.ACP.Peer.prompt(conn.peer, prompt, images) do
+    case Managoat.ACP.Peer.prompt(conn.peer, prompt, images, model: model) do
       :ok ->
         OpenTelemetry.Tracer.set_current_span(previous_span)
         {:ok, turn_span, Managoat.ACP.Tracer.new(turn_span, prefix: "fountain"), started_mono}
@@ -133,6 +134,19 @@ defmodule Fountain.Conversations.Connection do
         OpenTelemetry.Tracer.set_current_span(previous_span)
         TurnMachine.end_span(turn_span, :error, %{"error" => "peer_refused_reuse"})
         {:error, reason}
+    end
+  end
+
+  # A persistent sandbox can predate the deployed adapter pin. Check it when
+  # opening a connection, preserving its disk and runtime session. Reused
+  # connections keep their process until they close.
+  @doc "Check the adapter pin and spawn a fresh command on the existing sandbox."
+  @spec spawn_command(map(), String.t(), String.t(), list(), keyword()) ::
+          {:ok, Managoat.Sandbox.Command.t()} | {:error, term()}
+  def spawn_command(state, runtime, cmd, args, opts) do
+    with {:ok, opts} <- Fountain.Conversations.CodexTransport.spawn_opts(state, runtime, opts),
+         :ok <- Provisioning.prepare_acp_adapter(state.handle, runtime, state.sprite_env) do
+      Managoat.Sandbox.spawn(state.handle, cmd, args, opts)
     end
   end
 

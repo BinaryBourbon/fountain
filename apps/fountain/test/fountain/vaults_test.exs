@@ -19,6 +19,27 @@ defmodule Fountain.VaultsTest do
     end
   end
 
+  describe "update_secret_metadata/4" do
+    test "invalid metadata leaves the secret and audit trail unchanged" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+      secret = insert_vault_secret(vault, key: "TOKEN", expires_at: "2027-01-15T00:00:00Z")
+
+      assert {:error, changeset} =
+               Vaults.update_secret_metadata(vault, secret.key, %{"expires_at" => "invalid"})
+
+      assert errors_on(changeset).expires_at != []
+      stored = Repo.reload!(secret)
+      assert stored.expires_at == secret.expires_at
+      assert stored.value_ciphertext == secret.value_ciphertext
+
+      refute Repo.exists?(
+               from a in Fountain.Audit.Event,
+                 where: a.user_id == ^user.id and a.action == "vault.secret.update"
+             )
+    end
+  end
+
   describe "get_vault/2" do
     test "returns vault scoped to user" do
       user = insert_verified_user()
