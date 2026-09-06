@@ -10,6 +10,34 @@ defmodule FountainWeb.ApplyControllerTest do
   end
 
   describe "POST /api/apply" do
+    test "an Agent naming an environment rather than an id fails that row (#1679)", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      payload = %{
+        "resources" => [
+          %{
+            "kind" => "Agent",
+            "name" => "prod-steward",
+            "spec" => %{
+              "model" => "anthropic/claude-sonnet-4-6",
+              "runtime" => "claude",
+              "environment_id" => "toolchain"
+            }
+          }
+        ]
+      }
+
+      conn = conn |> authed_with_key(raw_key) |> post_json(~p"/api/apply", payload)
+
+      assert %{"data" => %{"results" => [row]}} = json_response(conn, 200)
+      assert row["action"] == "error"
+
+      assert row["errors"]["environment_id"] == [
+               ~s(must be an id, but "toolchain" is not one)
+             ]
+    end
+
     test "an Agent naming a vault rather than an id fails that row, not the request (#1679)", %{
       conn: conn,
       raw_key: raw_key

@@ -229,6 +229,14 @@ defmodule Fountain.Agents do
   # the environment's secrets and checkpoints materialise inside the
   # agent's sprite. The error mirrors a nonexistent id so a foreign
   # environment UUID can't be confirmed by probing.
+  # A changeset that has already failed is not worth a database round trip, and
+  # the id it carries may be a value the query cannot dump: a name where an id
+  # belongs raises `Ecto.Query.CastError` out of `Repo`, which reaches the
+  # caller as a 500 rather than the 422 the changeset was about to return
+  # (#1679). The ownership rule below still runs on every changeset that could
+  # otherwise succeed, which is the only one whose answer changes anything.
+  defp validate_environment_owner(%Ecto.Changeset{valid?: false} = changeset), do: changeset
+
   defp validate_environment_owner(changeset) do
     env_id = Ecto.Changeset.get_change(changeset, :environment_id)
     user_id = Ecto.Changeset.get_field(changeset, :user_id)

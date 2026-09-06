@@ -127,6 +127,15 @@ defmodule Fountain.AgentsTest do
   end
 
   describe "update_agent/2" do
+    test "a name where an environment id belongs is a changeset error, not a raise (#1679)" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      assert {:error, changeset} = Agents.update_agent(agent, %{"environment_id" => "toolchain"})
+      assert %{environment_id: [message]} = errors_on(changeset)
+      assert message == ~s(must be an id, but "toolchain" is not one)
+    end
+
     test "updates agent fields" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
