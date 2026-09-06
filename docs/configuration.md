@@ -362,7 +362,11 @@ Without PostHog you can force a flag on for each user.
 |---|---|---|---|
 | `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key. That is the public `phc_…` token, and not a personal key. Unset, Fountain looks up no flag remotely. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
-| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms` or `openai_compat`. It wins over PostHog. |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms`, `connections` or `openai_compat`. It wins over PostHog. |
+
+For a hosted Connections rollout, leave the global override unset. Enable
+`connections` for the intended test accounts in PostHog, with evaluation
+runtime set to `all`. Enable the credential broker too.
 
 ## Product analytics
 

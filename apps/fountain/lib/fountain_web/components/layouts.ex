@@ -100,13 +100,17 @@ defmodule FountainWeb.Layouts do
               />
               <.nav_link href={~p"/account/runners"} label="Runners" current={@current_path} />
               <.nav_link
-                :if={assigns[:current_user] && Fountain.Broker.enabled_for?(assigns.current_user.id)}
+                :if={
+                  assigns[:current_user] && Fountain.Connections.enabled_for?(assigns.current_user.id)
+                }
                 href={~p"/account/bindings"}
                 label="Credential bindings"
                 current={@current_path}
               />
               <.nav_link
-                :if={assigns[:current_user] && Fountain.Broker.enabled_for?(assigns.current_user.id)}
+                :if={
+                  assigns[:current_user] && Fountain.Connections.enabled_for?(assigns.current_user.id)
+                }
                 href={~p"/account/connections"}
                 label="Connections"
                 current={@current_path}

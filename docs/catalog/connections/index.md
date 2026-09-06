@@ -8,7 +8,12 @@ A **connection provider** says where a connection's tokens come from. It
 holds the OAuth client, the endpoints, the scopes, and the hosts the token
 goes to.
 
-!!! note "Needs the credential broker"
+!!! note "Connections"
+
+    Connections and credential binding management also need the `connections`
+    feature flag. On your own instance, add `connections` to `FEATURE_FLAGS_ON`
+    after configuring the broker and provider apps. Hosted accounts are enrolled
+    separately; see [feature status](../../reference/feature-status.md).
     Connections exist only for accounts the egress broker is on for
     (ADR 0019). Without the broker, a token would have to enter the sandbox
     in the clear, so the page and the routes are absent. The broker is on for

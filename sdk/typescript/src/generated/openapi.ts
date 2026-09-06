@@ -2864,10 +2864,12 @@ export interface components {
          * @description Identity of the account the bearer token belongs to.
          */
         AuthMeResponse: {
-            /** @description Whether this account's conversations run behind the egress credential broker (ADR 0019): secrets with bindings stay at the broker, a limited environment is enforced there, and /api/secret-bindings and /api/conversations/:id/egress have content. Read-only; an operator sets it. */
+            /** @description Whether this account's conversations run behind the egress credential broker (ADR 0019): secrets with bindings stay at the broker, a limited environment is enforced there, and /api/conversations/:id/egress has content. Connections availability is separate. Read-only; an operator sets it. */
             brokered?: boolean;
             /** @description Null when billing is off. */
             comped?: boolean | null;
+            /** @description Whether Connections and credential binding management are enabled for this account. */
+            connections_enabled?: boolean;
             /** Format: email */
             email: string;
             email_verified: boolean;

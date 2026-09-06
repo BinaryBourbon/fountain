@@ -10,14 +10,13 @@ defmodule FountainWeb.SecretBindingController do
       DELETE /api/secret-bindings/:id        — unbind
 
   Every route answers 404 `brokerage_not_enabled` for an account the broker
-  is not on for: the feature does not exist there, and the console does not
+  or Connections flag is not on for: the feature does not exist there, and the console does not
   show it either.
   """
 
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.Broker
   alias Fountain.SecretBindings
   alias Fountain.SecretBindings.Catalog
   alias FountainWeb.Audited
@@ -142,7 +141,7 @@ defmodule FountainWeb.SecretBindingController do
   defp binding_attrs(params), do: Map.take(params, @fields)
 
   defp require_brokerage(conn, _opts) do
-    if Broker.enabled_for?(conn.assigns.current_user.id) do
+    if Fountain.Connections.enabled_for?(conn.assigns.current_user.id) do
       conn
     else
       conn

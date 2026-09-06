@@ -42,11 +42,11 @@ defmodule FountainWeb.OpenGraph do
     end
   end
 
-  @doc "Alt text for the card image: the headline on the site, the brand elsewhere."
+  @doc "Alt text for the marketing card; the brand on instance and custom cards."
   @spec image_alt() :: String.t()
   def image_alt do
-    if Fountain.Marketing.site?(),
-      do: "Run coding agents on ready machines. Wake for a prompt; park when quiet.",
+    if Fountain.Marketing.site?() and is_nil(Fountain.Brand.assets_url()),
+      do: "Fountain Conversations with a code diff, beside Workbench on a phone.",
       else: Fountain.Brand.name()
   end
 

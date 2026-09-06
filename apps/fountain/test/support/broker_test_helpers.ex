@@ -6,6 +6,20 @@ defmodule Fountain.BrokerTestHelpers do
 
   import ExUnit.Callbacks, only: [on_exit: 1]
 
+  def enable_connections_for(user_ids) do
+    enable_broker_for(user_ids)
+    previous = Application.get_env(:fountain, :feature_flag_overrides, %{})
+    on_exit(fn -> Application.put_env(:fountain, :feature_flag_overrides, previous) end)
+
+    Application.put_env(
+      :fountain,
+      :feature_flag_overrides,
+      Map.put(previous, "connections", true)
+    )
+
+    :ok
+  end
+
   @keys [:broker_listen_port, :broker_proxy_url, :broker_tenants]
 
   def enable_broker_for(user_ids) when is_list(user_ids) do

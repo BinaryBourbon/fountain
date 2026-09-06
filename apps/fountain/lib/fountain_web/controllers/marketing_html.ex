@@ -1118,7 +1118,12 @@ defmodule FountainWeb.MarketingHTML do
             name: "Conversations",
             host: "fountain-conversations.demo.managoat.com",
             url: "https://fountain-conversations.demo.managoat.com/",
-            source: "https://github.com/managoat/fountain-conversations",
+            source: "https://github.com/managoat/demos/tree/main/apps/fountain-conversations",
+            screenshot: %{
+              src: "/images/apps/conversations.jpg",
+              alt:
+                "Conversations showing a cart task, tool calls, an expanded code diff, and tests in progress"
+            },
             blurb:
               "Start a run and watch the agent work turn by turn. Switch among chat, timeline and raw views of the same conversation, including the sandbox it shares with related runs.",
             shows:
@@ -1135,7 +1140,12 @@ defmodule FountainWeb.MarketingHTML do
             name: "Team",
             host: "fountain-team.demo.managoat.com",
             url: "https://fountain-team.demo.managoat.com/",
-            source: "https://github.com/managoat/fountain-team",
+            source: "https://github.com/managoat/demos/tree/main/apps/fountain-team",
+            screenshot: %{
+              src: "/images/apps/team.jpg",
+              alt:
+                "Team with Builder, Reviewer, and Researcher in the roster and Builder’s thread open"
+            },
             blurb:
               "Message your agents as teammates. Keep a roster beside the thread, schedule recurring routines, attach images and search the conversation history.",
             shows: "the team API, SSE streaming, schedules and usage",
@@ -1151,7 +1161,11 @@ defmodule FountainWeb.MarketingHTML do
             name: "Workbench",
             host: "fountain-workbench.demo.managoat.com",
             url: "https://fountain-workbench.demo.managoat.com",
-            source: "https://github.com/managoat/fountain-workbench",
+            source: "https://github.com/managoat/demos/tree/main/apps/fountain-workbench",
+            screenshot: %{
+              src: "/images/apps/workbench.jpg",
+              alt: "Workbench with a storefront work item and Builder assigned to it"
+            },
             blurb:
               "A shared engineering workbench. Each project bundles a reusable environment and credentials with its work items, so assigning an agent takes one prompt.",
             shows:

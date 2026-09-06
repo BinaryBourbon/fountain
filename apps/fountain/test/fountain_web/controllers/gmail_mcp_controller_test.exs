@@ -19,7 +19,7 @@ defmodule FountainWeb.GmailMcpControllerTest do
       )
 
     conv = insert_conversation(%{user_id: user.id, agent: agent, status: "idle"})
-    enable_broker_for([user.id])
+    enable_connections_for([user.id])
 
     {:ok, user: user, raw_key: raw_key, conv: conv, agent: agent, connection: connection}
   end
@@ -33,6 +33,12 @@ defmodule FountainWeb.GmailMcpControllerTest do
       "method" => method,
       "params" => params
     })
+  end
+
+  test "the rollout flag refuses Gmail even when the broker is on", ctx do
+    Application.put_env(:fountain, :feature_flag_overrides, %{"connections" => false})
+    response = rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/list", %{})
+    assert response.status == 403
   end
 
   test "serves tools/list for a conversation whose agent names the connection", ctx do
@@ -218,7 +224,7 @@ defmodule FountainWeb.GmailMcpControllerTest do
 
     other = insert_verified_user()
     {_k, other_key} = insert_sprite_api_key(other)
-    enable_broker_for([ctx.user.id, other.id])
+    enable_connections_for([ctx.user.id, other.id])
     assert rpc(ctx.conn, other_key, ctx.conv, ctx.connection, "tools/list") |> json_response(404)
 
     theirs = insert_connection(other)

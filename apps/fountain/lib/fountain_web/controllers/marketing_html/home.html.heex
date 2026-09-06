@@ -32,7 +32,7 @@
       what was above it. --%>
 
 <%!-- Hero --%>
-<section class="max-w-5xl mx-auto px-6 py-20 text-center" data-role="hero">
+<section class="max-w-5xl mx-auto px-6 py-12 text-center" data-role="hero">
   <%!-- On a branded hosted site, say what this is before the pitch. The engine
         is open source and nothing is held back from it (ADR 0034), so a reader
         who will never use the hosted product learns that in the first line
@@ -55,6 +55,35 @@
     Open Conversations to give an agent a task, follow its tools and changes, and send a follow-up.
     Each conversation has a real computer that keeps its files between prompts.
   </p>
+  <figure class="mb-8" data-role="product-screenshots">
+    <div class="flex items-center justify-center gap-3 sm:gap-5">
+      <a href="/images/apps/conversations.jpg" class="min-w-0 flex-1">
+        <img
+          src="/images/apps/conversations.jpg"
+          alt="Conversations showing a cart task, tool calls, an expanded code diff, and tests in progress"
+          width="973"
+          height="791"
+          fetchpriority="high"
+          class="w-full rounded-xl border border-[var(--color-border)] shadow-lg"
+        />
+      </a>
+      <a
+        href="/images/apps/workbench-mobile.jpg"
+        class="block w-[24%] shrink-0 overflow-hidden rounded-[1.5rem] border-[5px] border-zinc-800 bg-zinc-800 shadow-lg sm:rounded-[2rem] sm:border-[7px]"
+      >
+        <img
+          src="/images/apps/workbench-mobile.jpg"
+          alt="Workbench on a phone, with a cart work item assigned to Builder"
+          width="390"
+          height="844"
+          class="w-full"
+        />
+      </a>
+    </div>
+    <figcaption class="mt-4 text-xs text-[var(--color-text-muted)]">
+      Real app screens with a seeded local example.
+    </figcaption>
+  </figure>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-5">
     <a
       href="https://fountain-conversations.demo.managoat.com/"
@@ -106,6 +135,17 @@
           {app.glyph}
         </div>
         <h3 class="mt-4 text-lg font-semibold text-[var(--color-text-primary)]">{app.name}</h3>
+        <a href={app.screenshot.src} class="mt-4 block" aria-label={"View #{app.name} screenshot"}>
+          <img
+            src={app.screenshot.src}
+            alt={app.screenshot.alt}
+            width="973"
+            height="791"
+            loading="lazy"
+            decoding="async"
+            class="w-full rounded-lg border border-[var(--color-border)]"
+          />
+        </a>
         <p class="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed flex-1">
           {app.flagship.homepage}
         </p>

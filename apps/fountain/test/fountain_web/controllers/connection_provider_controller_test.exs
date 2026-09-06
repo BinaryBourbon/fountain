@@ -10,7 +10,7 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
   setup %{conn: conn} do
     user = insert_verified_user()
     {:ok, {_key, raw}} = Fountain.Accounts.create_api_key(user.id, "t")
-    enable_broker_for([user.id])
+    enable_connections_for([user.id])
 
     conn =
       conn
@@ -105,7 +105,7 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
 
   test "is tenant-scoped and needs a full-scope key", %{conn: conn, user: user} do
     other = insert_verified_user()
-    enable_broker_for([user.id, other.id])
+    enable_connections_for([user.id, other.id])
     theirs = insert_provider(other)
 
     assert conn |> get("/api/connection-providers/#{theirs.id}") |> json_response(404)

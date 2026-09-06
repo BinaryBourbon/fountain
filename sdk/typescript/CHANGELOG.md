@@ -10,6 +10,12 @@ server releases.
 
 ---
 
+## [1.20.1] — 2026-09-05
+
+### Added
+
+- `me()` exposes `connections_enabled` separately from the account’s `brokered` status.
+
 ## [1.20.0] — 2026-09-03
 
 ### Changed
