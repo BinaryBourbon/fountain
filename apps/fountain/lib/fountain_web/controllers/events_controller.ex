@@ -147,15 +147,21 @@ defmodule FountainWeb.EventsController do
   # have a higher id than an event from a not-yet-followed conversation, so it
   # must trigger the same drain rather than advancing the cursor past that row.
   defp replay(conn, state) do
-    events =
-      Conversations.list_user_log_events(state.user_id, state.last_id, streams: state.streams)
+    events = Conversations.list_user_log_events(state.user_id, state.last_id)
 
     result =
       Enum.reduce_while(events, {:ok, conn, state.last_id}, fn {ev, runtime},
-                                                               {:ok, acc, _last_id} ->
-        case write_event(acc, ev, runtime, state) do
+                                                               {:ok, acc, last_id} ->
+        # Advance over filtered rows too: otherwise a busy excluded stream is
+        # scanned again on every notification until a matching row arrives.
+        result =
+          if Conversations.event_in_streams?(ev, state.streams),
+            do: write_event(acc, ev, runtime, state),
+            else: {:ok, acc}
+
+        case result do
           {:ok, c} -> {:cont, {:ok, c, ev.id}}
-          {:error, _} -> {:halt, {:closed, acc, state.last_id}}
+          {:error, _} -> {:halt, {:closed, acc, last_id}}
         end
       end)
 

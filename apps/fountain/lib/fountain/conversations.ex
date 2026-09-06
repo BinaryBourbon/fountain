@@ -1630,11 +1630,10 @@ defmodule Fountain.Conversations do
   Durable events after a user's cursor, including conversations that have finished.
   Returns at most 500 rows in id order, with each conversation's runtime for blocks.
   """
-  def list_user_log_events(user_id, after_id, opts \\ []) when is_binary(user_id) do
+  def list_user_log_events(user_id, after_id) when is_binary(user_id) do
     user_log_events_query(user_id)
     |> where([e], e.id > ^after_id)
     |> order_by([e], asc: e.id)
-    |> apply_streams_filter(Keyword.get(opts, :streams))
     |> limit(500)
     |> select([e, c], {e, c.runtime})
     |> Repo.all()
