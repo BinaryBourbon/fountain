@@ -2,12 +2,12 @@
 
 Four independent reviewers examine the entire current PR, including any fixes:
 
-| Reviewer | Focus |
-|---|---|
-| `qa-team` | Correctness, regression tests, database behavior, concurrency and recovery |
-| `security-audit` | Tenant isolation, secrets, injection and authorization boundaries |
-| `product-api` | Documented product intent, naming, rollout and client compatibility |
-| `xp-reviewer` | Simplicity, useful tests and maintainability |
+| Reviewer | Runtime / model | Focus |
+|---|---|---|
+| `qa-team` | Codex / GPT-6 Astra | Correctness, regression tests, database behavior, concurrency and recovery |
+| `security-audit` | Codex / GPT-6 Astra | Tenant isolation, secrets, injection and authorization boundaries |
+| `product-api` | Claude / Opus | Documented product intent, naming, rollout and client compatibility |
+| `xp-reviewer` | Claude / Opus | Simplicity, useful tests and maintainability |
 
 The PostHog-inspired cycle is review → triage → permitted fix → checks and
 independent verification → four fresh reviews. Review Loop posts inline finding
@@ -29,8 +29,8 @@ failed check or human objection can invalidate an earlier approval. Repository
 policy and all reviewer/setup instructions come from the trusted base revision.
 A PR cannot authorize itself by editing these files.
 
-All four reviewers use the operator-selected Codex/OpenAI model. Parallelism is
-bounded by host and Fountain capacity. The repository policy permits four
+Reviewer runtimes and models are pinned in `.github/review-loop.yml`. The fixer
+uses the operator-selected default. Parallelism is bounded by host and Fountain capacity. The repository policy permits four
 reviewers at once, 30 tasks, 500,000 reported tokens and 120 minutes per run.
 Daily budgets are separate operator settings. Neither token nor task counts
 are dollar-cost reporting.
