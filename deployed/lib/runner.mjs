@@ -7,9 +7,10 @@ import { Client, Redactor } from './http.mjs';
 import { atomicJson, Fixtures } from './fixtures.mjs';
 import { probe } from '../profiles/probe.mjs';
 import { basic } from '../profiles/basic.mjs';
+import { execution } from '../profiles/execution.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe, basic };
+export const profiles = { probe, basic, execution };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -21,7 +22,7 @@ function positive(value, fallback, max) {
 
 export function configFrom(path, env = process.env) {
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits'];
+  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution'];
   requireThat(Object.keys(config).every(key => allowed.includes(key)), 'Unknown configuration field');
   const url = new URL(config.base_url);
   requireThat(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash,
@@ -35,10 +36,20 @@ export function configFrom(path, env = process.env) {
   requireThat(Array.isArray(config.profiles) && config.profiles.length > 0 && new Set(config.profiles).size === config.profiles.length &&
     config.profiles.every(name => Object.hasOwn(profiles, name)), 'Unknown, empty, or duplicate profile selection');
   requireThat(Object.keys(config.credentials).every(k => ['primary', 'secondary'].includes(k)), 'Unknown credential role');
-  if (config.profiles.includes('basic')) {
-    requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Basic profile requires credentials.secondary environment variable');
+  if (config.profiles.some(name => ['basic', 'execution'].includes(name))) {
+    requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Selected profile requires credentials.secondary environment variable');
     config.secondaryKey = env[config.credentials.secondary];
     requireThat(typeof config.secondaryKey === 'string' && config.secondaryKey.trim().length > 0, `Missing test credential: ${config.credentials.secondary}`);
+  }
+  if (config.profiles.includes('execution')) {
+    const settings = config.execution;
+    requireThat(settings && Object.keys(settings).every(k => ['runtime', 'model', 'sandbox_provider', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit execution configuration');
+    requireThat(['claude', 'codex', 'gemini', 'opencode'].includes(settings.runtime) &&
+      typeof settings.model === 'string' && /^[a-z0-9_-]+\/[a-z0-9._-]+$/.test(settings.model) &&
+      ['sprites', 'e2b', 'daytona', 'runner'].includes(settings.sandbox_provider), 'Pin an execution runtime, model, and sandbox provider');
+    settings.provision_ms = positive(settings.provision_ms, 120000, 300000);
+    settings.turn_ms = positive(settings.turn_ms, 90000, 300000);
+    requireThat(settings.max_turns === 2, 'Execution must explicitly authorize max_turns: 2');
   }
   config.contract = config.contract ? resolve(dirname(path), config.contract) : contractPath;
   const limits = config.limits ?? {};
@@ -96,7 +107,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     redactor.add(config.secondaryKey);
     report.target = config.base_url;
     report.profiles = config.profiles;
-    report.limits = { ...config.limits, concurrency: 1, inference_turns: 0 };
+    report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0 };
     const contract = new Contract(config.contract);
     report.contract_sha256 = contract.sha256;
     const timeout = AbortSignal.timeout(config.limits.run_ms);
@@ -119,6 +130,10 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         const available = { runtimes: body.data?.runtimes, sandbox_providers: body.data?.sandbox_providers?.enabled };
         requireThat(Object.values(available).every(Array.isArray), 'Catalog capability arrays missing');
         report.capabilities = available;
+        if (config.profiles.includes('execution')) {
+          requireThat(available.runtimes.includes(config.execution.runtime), 'Execution runtime is unavailable');
+          requireThat(available.sandbox_providers.includes(config.execution.sandbox_provider), 'Execution sandbox provider is unavailable');
+        }
         for (const [kind, names] of Object.entries(config.required_capabilities)) {
           for (const name of names) requireThat(available[kind].includes(name), `Missing required ${kind}: ${name}`);
         }
@@ -144,6 +159,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     if (fixtures) {
       const failures = await fixtures.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
       report.cleanup = { failures, remaining: fixtures.manifest.resources.filter(r => r.state !== 'cleaned').length };
+      report.inference_attempts = fixtures.manifest.inference_attempts ?? 0;
       if (failures.length) {
         report.status = 'cleanup_failed';
         report.checks.push({ name: 'cleanup', status: 'failed', duration_ms: 0, error: 'Resources remain; see cleanup manifest and result.json' });

@@ -7,9 +7,10 @@ catalog capabilities, liveness and database readiness. The `basic` profile
 adds resource CRUD, validation errors, key revocation, tenant isolation, and
 an independent check of the instance's advertised response schemas.
 
-The execution, integration, recovery and browser profiles in tracker #1606
-are not implemented yet. A passing probe does not prove that conversations
-work, and selecting an unimplemented profile fails setup.
+The `execution` profile verifies two real tool-using turns on a fresh
+ephemeral sandbox. Streaming reconnect conformance, integration, recovery and
+browser profiles remain tracked in #1606. A passing probe does not prove
+that conversations work, and selecting an unimplemented profile fails setup.
 
 ## Run
 
@@ -50,6 +51,47 @@ No configured sandbox is needed for `probe`.
 ```
 
 ## Results and limits
+
+For a real conversation, use two verified accounts and configure inference
+credentials on the primary account outside the suite. Select `execution` and
+pin its runtime, model and sandbox provider explicitly. This profile creates
+its own empty environment and agent and never attaches to an existing sandbox.
+
+```json
+{
+  "base_url": "https://your-fountain.example",
+  "credentials": {
+    "primary": "FOUNTAIN_SUITE_KEY",
+    "secondary": "FOUNTAIN_SUITE_OTHER_KEY"
+  },
+  "profiles": ["execution"],
+  "execution": {
+    "runtime": "claude",
+    "model": "anthropic/claude-haiku-4-5",
+    "sandbox_provider": "sprites",
+    "provision_ms": 120000,
+    "turn_ms": 90000,
+    "max_turns": 2
+  },
+  "limits": { "request_ms": 30000, "run_ms": 330000, "cleanup_ms": 90000, "resources": 5 }
+}
+```
+
+Execution observes provisioning through real SSE, writes a random nonce file
+in turn one, reads it in a follow-up, and checks the bytes through the sandbox
+file API. Both turns must have durable completion records and persisted tool
+activity. It checks the second tenant cannot read the conversation, events,
+stream or file, or interrupt/terminate the conversation. It then verifies
+terminal conversation/sandbox state before cleanup deletes the transcript and
+parent fixtures. Usage and IDs remain in the report after deletion.
+
+The fixture manifest records each prompt attempt **before** sending it. A
+lost reply still consumes the two-attempt budget; prompts are never retried
+automatically. Provisioning, each turn, the overall run, and cleanup have
+separate deadlines. A stream that ends early fails the execution check;
+automatic replay/reconnect assertions belong to #1610. SSE traces record
+redacted frames with receive times, and a closed consumer releases its HTTP
+connection. Each stream is capped at 4 MiB.
 
 For `basic`, supply two **different** verified test accounts through explicit
 environment-variable names. Two keys for the same account fail before any
@@ -104,10 +146,12 @@ and the number of created resources. HTTP responses are capped at 2 MiB and
 redirects are not followed. SIGINT/SIGTERM cancel requests and then allow the
 bounded cleanup pass. SIGKILL cannot run cleanup.
 
-The initial profiles invoke **zero inference turns**. They therefore do not
-estimate or enforce a monetary budget. Future execution profiles must account
-for accepted turns and runtime and distinguish any configured monetary
-estimate from a provider-enforced hard limit before invoking inference.
+`probe` and `basic` invoke **zero inference turns**. `execution` submits at
+most two prompts and records provider-reported usage. It does not enforce a
+monetary cap: prompt count and client deadlines are bounded, but model/tool
+activity inside a turn and provider charges are not a fixed price. Cleanup
+terminates the conversation after failure or cancellation; an unavailable
+server/provider can prevent that, which leaves a visible cleanup failure.
 
 The result explicitly reports that deployment revision is unverified. A URL
 and a successful response do not establish image identity. Confirmed rollout
@@ -133,9 +177,13 @@ visible match, it remains unresolved: the original request may still commit.
 Retry cleanup after the server settles and investigate a persistently
 unresolved intent; absence at one instant is not proof of successful cleanup.
 
-The foundation supports named agent, environment, vault and API-key fixtures.
-Conversation/sandbox lifecycle cleanup will be added with the execution
-profile. Keep manifests until every entry is cleaned. A cleanup failure stays
+The runner supports named agent, environment, vault and API-key fixtures,
+plus ephemeral conversations linked to its own recorded agent/environment.
+Conversation ownership is checked using the run-specific channel ID and both
+parent IDs. Cleanup verifies that the sandbox is terminal before deleting the
+conversation; it does not use the persistent-sandbox reset endpoint. A failed
+conversation cleanup retains its parent fixtures so ownership evidence is not
+lost. Keep manifests until every entry is cleaned. A cleanup failure stays
 visible even when the assertions themselves passed.
 
 ## Develop the suite

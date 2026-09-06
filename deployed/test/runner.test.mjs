@@ -74,7 +74,7 @@ test('missing credential and unknown profile are setup failures before network t
   const missing = await f.execute({}, { env: {} });
   assert.equal(missing.code, 2);
   assert.equal(f.requests.length, 0);
-  assert.equal((await f.execute({ profiles: ['execution'] })).code, 2);
+  assert.equal((await f.execute({ profiles: ['unbuilt-profile'] })).code, 2);
   assert.equal(f.requests.length, 0);
 });
 
