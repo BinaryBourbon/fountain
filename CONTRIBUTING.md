@@ -66,7 +66,8 @@ the alias still exits 0. Confirm you reached `N tests, 0 failures`.
 
 CI additionally runs `hex.audit`, the Go CLI checks (`go test ./...`,
 `go vet ./...` in `cli/`), a release boot check, OpenAPI validation, and the
-docs gates. If you touched `docs/`, run the three prose gates too:
+docs gates. If you touched `docs/` or an extension manual, read the three prose reports too.
+They advise on wording in CI; findings do not block a merge:
 
 ```bash
 python3 scripts/docs-style.py
@@ -428,3 +429,15 @@ to `main`.
 If your change is architecturally significant, or constrains future work, write
 an ADR using [`decisions/0001-template.md`](decisions/0001-template.md) and
 refresh the index (`scripts/decisions-index.sh`) in the same PR.
+
+## CI maintenance
+
+`CI required` is the aggregate merge check. It verifies every job expected for
+full CI, a docs-only PR, or main's tested-tree reuse path. `Detect secrets`
+is a separate required check. Configure these after the workflow has landed;
+see `scripts/ci/README.md` for activation and test-timing refresh commands.
+
+The six test jobs export complete module timings alongside their coverage.
+Refresh the manifest when new files accumulate or partitions drift. Partition
+1's allocation includes a reserve for the sibling suites, which run after its
+core tests. Keep that reserve in line with the CI step's observed duration.
