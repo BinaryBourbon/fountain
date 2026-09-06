@@ -30,6 +30,14 @@ upgrade, is in
 
 ### Fixed
 
+- A runtime confirming a model in its own canonical designation is no longer
+  read as a substitution (`managoat_acp` 0.2.2). Claude's adapter accepts
+  `claude-opus-5` and confirms `opus`, and `claude-sonnet-5` and confirms
+  `sonnet`; strict equality failed those turns before any prompt was written,
+  so every claude agent stopped answering while codex, which echoes the id
+  verbatim, kept working. A confirmation naming a genuinely different model
+  still fails the turn, as does an outright refusal.
+
 - The model catalog no longer suggests ids the pinned ACP adapters refuse.
   `claude-sonnet-4-6`, `claude-opus-4-7` and `claude-opus-4-8` are refused by
   `claude-agent-acp` 0.66.0, and `gpt-5.3-codex` by `codex-acp` 1.10.0. All
