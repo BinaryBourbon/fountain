@@ -187,9 +187,14 @@ defmodule Fountain.Conversations.TurnMachine do
       is_map(labels) ->
         # Written here rather than handed back as an effect: nothing about it
         # is the server's — no state, no process, no timer — and this machine
-        # already writes what a report means (`Labels.stamp/2` merges,
-        # validates and logs a stamp the limits refuse).
-        Labels.stamp(turn.conversation_id, labels)
+        # already writes what a report means.
+        #
+        # Ownership: `turn.conversation_id` is the id this machine's own
+        # `ConversationServer` was started with, so the unscoped write below
+        # cannot name another conversation, of this tenant or any other.
+        # Nothing a stamp contains can fail the turn; `_unsafe_stamp/2` logs
+        # and drops instead.
+        Labels._unsafe_stamp(turn.conversation_id, labels)
         {turn, []}
 
       stream == "acp" and Managoat.ACP.Protocol.session_metadata?(data) ->

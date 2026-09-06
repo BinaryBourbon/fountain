@@ -40,7 +40,8 @@ upgrade, is in
   strings. Set them on creation or with `PATCH /api/conversations/:id/labels`,
   which merges. A running agent stamps its own conversation with the
   `_fountain/labels` ACP extension notification, and a sandbox callback token
-  can label only the conversation it was minted for. `GET /api/conversations`
+  can label only the conversation it was minted for, on every door that writes
+  labels. `GET /api/conversations`
   and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
   filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
   and the console's conversation lists render them as chips.

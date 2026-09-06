@@ -14,10 +14,12 @@ defmodule Fountain.Conversations.Labels do
 
     * at most 32 entries;
     * a key is a non-empty string of at most 64 bytes;
-    * a value is a string of at most 256 bytes.
+    * a value is a string of at most 256 bytes;
+    * neither may contain a NUL byte, which Postgres refuses inside `jsonb`.
 
   A refusal names the offending key, because a caller sending thirty-two of
-  them cannot otherwise tell which one Fountain disliked.
+  them cannot otherwise tell which one Fountain disliked. On a merge the key
+  named is one the caller actually sent — see `check_merge/2`.
 
   ## Merge, and how a key is removed
 
@@ -58,7 +60,10 @@ defmodule Fountain.Conversations.Labels do
   Validate the `:labels` change on a conversation changeset.
 
   Called from `Fountain.Conversations.Conversation.changeset/2`, which is the
-  only writer of the column, so every door inherits it.
+  only writer of the column, so every door inherits it. It sees the *merged*
+  map, which is the right thing to enforce and the wrong thing to word a
+  count refusal from; `Fountain.Conversations._unsafe_merge_labels/3` runs
+  `check_merge/2` first for that reason.
   """
   @spec changeset(Ecto.Changeset.t()) :: Ecto.Changeset.t()
   def changeset(changeset) do
@@ -77,18 +82,81 @@ defmodule Fountain.Conversations.Labels do
   """
   @spec check(term()) :: :ok | {:error, String.t()}
   def check(labels) when is_map(labels) do
-    with :ok <- check_count(labels), do: check_entries(labels)
+    with :ok <- check_entries(labels), do: check_count(labels)
   end
 
   def check(_labels), do: {:error, "must be an object of string keys and string values"}
+
+  @doc """
+  Check what merging `incoming` into `current` would produce, wording the
+  refusal from the write the caller actually made.
+
+  `check/1` alone would blame an arbitrary key for the count: merging one new
+  label into a conversation that already holds 32 puts a *pre-existing* key
+  over the boundary in sorted order, and telling somebody their write of
+  `run` failed because of `env` — a label they never touched — sends them to
+  fix the wrong thing. So the count is reported against the first key this
+  write adds.
+
+  Entry-level problems need no such care: `current` is already on the row and
+  therefore already legal, so any entry `check/1` rejects came from
+  `incoming`.
+  """
+  @spec check_merge(map(), term()) :: :ok | {:error, String.t()}
+  def check_merge(current, incoming) when is_map(current) and is_map(incoming) do
+    merged = merge(current, incoming)
+
+    with :ok <- check_entries(merged) do
+      check_merged_count(current, incoming, merged)
+    end
+  end
+
+  def check_merge(_current, incoming), do: check(incoming)
+
+  defp check_merged_count(current, incoming, merged) do
+    if map_size(merged) > @max_entries do
+      {:error,
+       "at most #{@max_entries} labels; #{describe(blamed_key(current, incoming, merged))} does not fit"}
+    else
+      :ok
+    end
+  end
+
+  # The first key of this write that does not fit.
+  #
+  # The labels already on the row are kept — the caller did not ask to change
+  # them — so the room left is the ceiling minus what survives the merge, and
+  # what spills past it is one of the keys this write added. Adding `run` to a
+  # conversation that already holds 32 therefore names `run`, and sending 33
+  # at once names the 33rd rather than the first.
+  #
+  # The fallback covers a write that adds nothing and is over the limit
+  # anyway, which only a row already past the ceiling can produce.
+  defp blamed_key(current, incoming, merged) do
+    retained = Enum.count(Map.keys(current), &(not removed?(incoming, &1)))
+
+    added =
+      incoming
+      |> Enum.reject(fn {key, value} -> is_nil(value) or Map.has_key?(current, key) end)
+      |> Enum.map(&elem(&1, 0))
+      |> Enum.sort_by(&describe/1)
+      |> Enum.drop(max(@max_entries - retained, 0))
+
+    case added do
+      [key | _] -> key
+      [] -> merged |> Map.keys() |> Enum.sort_by(&describe/1) |> Enum.at(@max_entries)
+    end
+  end
+
+  defp removed?(incoming, key), do: Map.has_key?(incoming, key) and is_nil(Map.get(incoming, key))
 
   defp check_count(labels) do
     if map_size(labels) > @max_entries do
       # Sorted, so the key named is the same one on every run rather than
       # whichever the map happened to iterate to last.
-      over = labels |> Map.keys() |> Enum.map(&describe/1) |> Enum.sort() |> Enum.at(@max_entries)
+      over = labels |> Map.keys() |> Enum.sort_by(&describe/1) |> Enum.at(@max_entries)
 
-      {:error, "at most #{@max_entries} labels; #{over} is over the limit"}
+      {:error, "at most #{@max_entries} labels; #{describe(over)} does not fit"}
     else
       :ok
     end
@@ -119,21 +187,44 @@ defmodule Fountain.Conversations.Labels do
   defp check_entry(key, value) when byte_size(value) > @max_value_bytes,
     do: {:error, "label #{describe(key)} has a value longer than #{@max_value_bytes} bytes"}
 
-  defp check_entry(_key, _value), do: :ok
+  # Postgres refuses a NUL byte inside a jsonb string, so without this clause
+  # the write reaches `Repo.update` and comes back as a raised
+  # `Postgrex.Error` — a 500 on the HTTP doors, and on the ACP path a raise
+  # that would travel up through the turn machine and take the conversation's
+  # server down with the turn it was running.
+  defp check_entry(key, value) do
+    cond do
+      nul?(key) -> {:error, "label key #{describe(key)} must not contain a NUL byte"}
+      nul?(value) -> {:error, "label #{describe(key)} must not have a NUL byte in its value"}
+      true -> :ok
+    end
+  end
+
+  defp nul?(binary) when is_binary(binary), do: String.contains?(binary, <<0>>)
 
   # The key, quoted, for a message a caller reads. An over-long key is cut
   # rather than echoed whole: the message identifies which entry to fix, and a
-  # 4KB key in an error body helps nobody.
+  # 4KB key in an error body helps nobody. Cut by bytes, because bytes are
+  # what the limit is measured in — and then backed off to a whole codepoint,
+  # since a message sliced through the middle of one is not valid UTF-8 and
+  # `Jason.encode!` would raise on it instead of rendering the 422.
   defp describe(key) when is_binary(key) do
     shown =
       if byte_size(key) > @max_key_bytes,
-        do: String.slice(key, 0, @max_key_bytes) <> "...",
+        do: cut(key, @max_key_bytes) <> "...",
         else: key
 
     ~s("#{shown}")
   end
 
   defp describe(key), do: inspect(key)
+
+  defp cut(_binary, bytes) when bytes <= 0, do: ""
+
+  defp cut(binary, bytes) do
+    candidate = binary_part(binary, 0, bytes)
+    if String.valid?(candidate), do: candidate, else: cut(binary, bytes - 1)
+  end
 
   @doc """
   Merge `incoming` into `current`. A key with a `nil` value is removed; a key
@@ -177,31 +268,54 @@ defmodule Fountain.Conversations.Labels do
   Merge the labels an agent stamped on its own run over the ACP extension
   notification (#1637).
 
-  Ownership is the caller's: only the turn machine of the conversation's own
-  server reaches this, and it holds that conversation's id. Recorded as
-  `sprite` — code in the sandbox acting on the tenant's behalf (ADR 0013).
+  Unscoped, hence the prefix: it takes a bare conversation id and writes to
+  that row without a `user_id` and without a credential check. The only
+  caller is `Fountain.Conversations.TurnMachine`, running inside the
+  conversation's own `ConversationServer`, holding the id that server was
+  started with — so it cannot name another tenant's conversation, or another
+  conversation of the same tenant. A request-shaped caller wants
+  `Fountain.Conversations.set_conversation_labels/4`, which scopes by
+  `user_id` and applies the sandbox rule.
 
-  A stamp the limits refuse is logged and dropped. The run is mid-turn and
-  doing real work, and losing the turn because a value was 300 bytes long
-  would be the worse outcome.
+  Recorded as `sprite` — code in the sandbox acting on the tenant's behalf
+  (ADR 0013).
+
+  **Nothing a label contains can take the turn down.** A stamp the limits
+  refuse is logged and dropped, and so is one that raises on its way to the
+  database. The run is mid-turn and doing real work, and losing it because a
+  value was 300 bytes long, or held a byte `jsonb` will not store, would be
+  the worse outcome by a distance.
   """
-  @spec stamp(String.t() | nil, map()) :: :ok
-  def stamp(conversation_id, labels)
+  @spec _unsafe_stamp(String.t() | nil, map()) :: :ok
+  def _unsafe_stamp(conversation_id, labels)
 
-  def stamp(conversation_id, labels) when is_binary(conversation_id) and is_map(labels) do
-    # ownership: the ConversationServer established it at start, and the id
-    # here is the one its own turn machine holds. No request reaches this.
+  def _unsafe_stamp(conversation_id, labels)
+      when is_binary(conversation_id) and is_map(labels) do
+    # ownership: `conversation_id` is the id the calling `ConversationServer`
+    # was started with, held by its own turn machine. It cannot name another
+    # conversation, so both unscoped calls below are on this server's own row.
     with %{} = conv <- Fountain.Conversations._unsafe_get_conversation(conversation_id),
-         {:error, changeset} <- Fountain.Conversations.merge_labels(conv, labels, actor: "sprite") do
+         {:error, changeset} <-
+           Fountain.Conversations._unsafe_merge_labels(conv, labels, actor: "sprite") do
       Logger.warning(
         "conv #{conversation_id}: refused _fountain/labels update: #{inspect(changeset.errors)}"
       )
     end
 
     :ok
+  rescue
+    error ->
+      # The belt to `check_entry/2`'s braces. Every shape we know of is
+      # refused above with a message; this is here so that a shape we do not
+      # know of costs the stamp and not the turn.
+      Logger.warning(
+        "conv #{conversation_id}: _fountain/labels update raised: #{Exception.message(error)}"
+      )
+
+      :ok
   end
 
-  def stamp(_conversation_id, _labels), do: :ok
+  def _unsafe_stamp(_conversation_id, _labels), do: :ok
 
   @doc """
   Every `label` value in a raw query string, in the order they were sent.
@@ -239,6 +353,4 @@ defmodule Fountain.Conversations.Labels do
       end
     end)
   end
-
-  def parse_filter(value) when is_binary(value), do: parse_filter([value])
 end

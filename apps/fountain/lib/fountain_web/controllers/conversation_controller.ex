@@ -10,9 +10,15 @@ defmodule FountainWeb.ConversationController do
   alias Fountain.Conversations.{ConversationServer, LogEvent}
   alias FountainWeb.Audited
   alias FountainWeb.LabelFilter
+  alias FountainWeb.SandboxKey
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
+
+  # Before the cast, and only where the parameter exists: `label` is a
+  # repeated key, and the cast reads query parameters out of Plug, which
+  # keeps only the last of them. See the plug's moduledoc.
+  plug FountainWeb.Plugs.RepeatedQueryParam, "label" when action in [:index]
 
   plug OpenApiSpex.Plug.CastAndValidate,
     replace_params: false,
@@ -61,14 +67,17 @@ defmodule FountainWeb.ConversationController do
       ],
       label: [
         in: :query,
-        type: :string,
+        schema: %OpenApiSpex.Schema{type: :array, items: %OpenApiSpex.Schema{type: :string}},
+        style: :form,
+        explode: true,
         required: false,
         description:
-          "Only conversations carrying this `key:value` label (#1637). Repeatable, and " <>
-            "combined with AND: `?label=env:prod&label=drift:true` keeps the conversations " <>
-            "with both. The value splits on its first colon only, so `label=path:a:b` " <>
-            "matches the label `path` with the value `a:b`. 400 `invalid_label_filter` on " <>
-            "a value with no colon or an empty key."
+          "Only conversations carrying these `key:value` labels (#1637). Repeat the " <>
+            "parameter to combine them with AND: `?label=env:prod&label=drift:true` keeps " <>
+            "the conversations that carry both. `label[]=` is accepted as well. Each value " <>
+            "splits on its first colon only, so `label=path:a:b` matches the label `path` " <>
+            "with the value `a:b`. 400 `invalid_label_filter` on a value with no colon or " <>
+            "an empty key."
       ]
     ],
     responses: [
@@ -164,51 +173,15 @@ defmodule FountainWeb.ConversationController do
 
   def labels(conn, %{"conversation_id" => id} = params) do
     user = conn.assigns.current_user
+    opts = SandboxKey.opts(conn) ++ Audited.attribution(conn)
 
-    case params["labels"] do
-      labels when is_map(labels) ->
-        opts = [sandbox_key_id: sandbox_key_id(conn)] ++ Audited.attribution(conn)
-
-        id
-        |> Conversations.set_conversation_labels(user.id, labels, opts)
-        |> labels_response(conn, user)
-
-      _ ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "labels_required", message: "labels must be an object"})
-    end
-  end
-
-  defp labels_response({:ok, conv}, conn, user) do
-    # Re-read annotated, so this renders the same conversation object every
-    # other conversation route does rather than one with a null turn_count.
-    render(conn, :show,
-      conversation: Conversations.get_conversation_with_activity(conv.id, user.id)
-    )
-  end
-
-  # Named, and 403 rather than 404: the holder knows the conversation exists —
-  # it is one of the account's — and the refusal is about which credential is
-  # asking. The same shape as `sprite_may_not_answer` on the answer route.
-  defp labels_response({:error, :sprite_may_not_label_another_conversation}, conn, _user) do
-    conn
-    |> put_status(:forbidden)
-    |> json(%{error: "sprite_may_not_label_another_conversation"})
-  end
-
-  defp labels_response({:error, _} = error, _conn, _user), do: error
-
-  # The api key on the request when it is a sandbox's per-conversation token,
-  # and nil for the account's own key. `Conversations.set_conversation_labels/4`
-  # is what turns that into the ownership rule.
-  defp sandbox_key_id(conn) do
-    case conn.assigns[:current_api_key] do
-      %Fountain.Accounts.ApiKey{id: id, scopes: scopes} ->
-        if "sprite" in scopes, do: id
-
-      _ ->
-        nil
+    with {:ok, conv} <-
+           Conversations.set_conversation_labels(id, user.id, params["labels"], opts) do
+      # Re-read annotated, so this renders the same conversation object every
+      # other conversation route does rather than one with a null turn_count.
+      render(conn, :show,
+        conversation: Conversations.get_conversation_with_activity(conv.id, user.id)
+      )
     end
   end
 
@@ -481,6 +454,9 @@ defmodule FountainWeb.ConversationController do
         "With `channel_id`, resumes the latest live conversation already bound to that " <>
         "channel for the same agent and vault (200, `meta.resumed: true`) instead of " <>
         "opening a new one (201). " <>
+        "`labels` (#1637) are stamped on the new conversation; with `channel_id`, a resume " <>
+        "merges them into the conversation it hands back, and a sandbox callback token " <>
+        "resuming a conversation it was not minted for is refused with 403. " <>
         "Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. " <>
         "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
@@ -491,6 +467,9 @@ defmodule FountainWeb.ConversationController do
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
+      forbidden:
+        {"A sandbox token labelling the conversation a resume landed on", "application/json",
+         Schemas.Error},
       not_found: {"Agent not found", "application/json", Schemas.Error},
       unprocessable_entity:
         {"Validation error", "application/json", Schemas.UnprocessableEntityError},
@@ -528,9 +507,14 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("parent_conversation_id", parent_id)
       |> Map.put("user_id", user.id)
 
+    # `SandboxKey.opts/1` rides along because a `channel_id` resume lands on an
+    # *existing* conversation and merges this request's labels into it (#1637);
+    # without it a sandbox token could relabel any conversation of the tenant
+    # by resuming its channel.
+    opts = SandboxKey.opts(conn) ++ Audited.attribution(conn)
+
     with :ok <- Billing.check_spend(user),
-         {:ok, conv, outcome} <-
-           Conversations.start_or_resume_conversation(params, Audited.attribution(conn)) do
+         {:ok, conv, outcome} <- Conversations.start_or_resume_conversation(params, opts) do
       # 201 when a conversation was opened; 200 when `channel_id` resumed an
       # existing one (#774). Same body either way, so a client that ignores
       # the status still gets the id it needs.

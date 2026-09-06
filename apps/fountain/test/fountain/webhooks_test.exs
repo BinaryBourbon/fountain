@@ -213,7 +213,7 @@ defmodule Fountain.WebhooksTest do
 
     test "the payload carries the conversation's labels (#1637)", %{user: user, conv: conv} do
       {endpoint, _} = endpoint_for(user, %{"event_types" => ["*"]})
-      {:ok, _} = Conversations.merge_labels(conv, %{"env" => "prod", "drift" => "true"})
+      {:ok, _} = Conversations._unsafe_merge_labels(conv, %{"env" => "prod", "drift" => "true"})
 
       Conversations.publish_stage(conv.id, "turn", "done", %{turn_id: nil})
 

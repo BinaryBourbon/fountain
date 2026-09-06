@@ -906,28 +906,34 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
-  Merge `labels` into `conversation_id`'s, for the owner of that conversation
-  (#1637).
+  Merge `labels` into `conversation_id`'s. **The door every request-shaped
+  caller uses** (#1637).
 
   Merge, not replace: a key that is not named is left alone and a key whose
   value is `nil` is removed, so a run can stamp one outcome without reading
-  the rest first. `Conversations.Labels` owns the limits, and the changeset
-  refuses a write that breaks one with the offending key named.
+  the rest first. `Conversations.Labels` owns the limits, and a write that
+  breaks one comes back as a changeset naming the offending key.
 
   **A sandbox may label its own conversation only.** Pass
-  `sandbox_key_id: key.id` when the caller authenticated with a
+  `sandbox_key_id: key.id` whenever the caller authenticated with a
   `sprite`-scoped token: the conversation must be the one that token was
   minted for (`callback_api_key_id`), or the write is refused with
   `:sprite_may_not_label_another_conversation`. Without that check a worker
-  holding an account-scoped callback key could relabel every other run on
-  the account, which is exactly the loop ADR 0045 describes.
+  holding an account-scoped callback key could relabel every other run on the
+  account, which is exactly the loop ADR 0045 describes. That is why the
+  check lives here and not in each controller: `PATCH .../labels`, the team
+  message and a `channel_id` resume all write labels, and the rule has to
+  hold on the door rather than on whichever of them remembered.
+
+  `labels` that is not a map at all is a validation failure, not a silent
+  no-op, so every door refuses `{"labels": "env=prod"}` the same way.
 
   Tenant-scoped: an id belonging to another account reads as `:not_found`.
   """
-  @spec set_conversation_labels(binary(), binary(), map(), keyword()) ::
+  @spec set_conversation_labels(binary(), binary(), term(), keyword()) ::
           {:ok, Conversation.t()} | {:error, term()}
   def set_conversation_labels(conversation_id, user_id, labels, opts \\ [])
-      when is_binary(conversation_id) and is_binary(user_id) and is_map(labels) do
+      when is_binary(conversation_id) and is_binary(user_id) do
     case get_conversation(conversation_id, user_id) do
       nil ->
         {:error, :not_found}
@@ -935,7 +941,7 @@ defmodule Fountain.Conversations do
       %Conversation{} = conv ->
         if sandbox_owns?(conv, Keyword.get(opts, :sandbox_key_id)) do
           # Ownership: `conv` came from the tenant-scoped fetch above.
-          merge_labels(conv, labels, opts)
+          _unsafe_merge_labels(conv, labels, opts)
         else
           {:error, :sprite_may_not_label_another_conversation}
         end
@@ -948,52 +954,83 @@ defmodule Fountain.Conversations do
   defp sandbox_owns?(%Conversation{callback_api_key_id: id}, key_id), do: id == key_id
 
   @doc """
-  Merge `labels` into a conversation the caller already owns.
+  Merge `labels` into a conversation row, with no tenant scoping and no
+  credential rule.
 
-  Ownership is the caller's job: `conv` must have come from a tenant-scoped
-  fetch, or from a process that established ownership when it started (the
-  ConversationServer, on the ACP extension notification). Public callers want
-  `set_conversation_labels/4`.
+  Unscoped, hence the prefix. The legitimate callers are
+  `set_conversation_labels/4`, which scopes and applies the sandbox rule
+  before delegating here, and `Labels._unsafe_stamp/2`, which runs inside the
+  conversation's own server and holds the row that server was started for. A
+  request path that calls this directly has skipped the rule that stops one
+  sandbox relabelling another, so do not add one.
 
   A merge that changes nothing writes nothing and records nothing — a
   deterministic run re-stamping the same outcome on every tick is the normal
   case. Audited as `conversation.labels_set` with the keys written and the
   keys removed, never the values (ADR 0013).
   """
-  @spec merge_labels(Conversation.t(), map(), keyword()) ::
+  @spec _unsafe_merge_labels(Conversation.t(), term(), keyword()) ::
           {:ok, Conversation.t()} | {:error, Ecto.Changeset.t()}
-  def merge_labels(%Conversation{} = conv, labels, opts \\ []) when is_map(labels) do
+  def _unsafe_merge_labels(conv, labels, opts \\ [])
+
+  def _unsafe_merge_labels(%Conversation{} = conv, labels, opts) when is_map(labels) do
     current = conv.labels || %{}
     merged = Labels.merge(current, labels)
 
-    if merged == current do
-      {:ok, conv}
-    else
-      {written, removed} = Labels.changed_keys(current, labels)
-
-      conv
-      |> Conversation.changeset(%{labels: merged})
-      |> Repo.update()
-      |> tap(fn
-        {:ok, updated} ->
-          Audit.record(%{
-            user_id: updated.user_id,
-            action: "conversation.labels_set",
-            resource_type: "conversation",
-            resource_id: updated.id,
-            actor: Keyword.get(opts, :actor, "self"),
-            request_ip: Keyword.get(opts, :request_ip),
-            metadata: %{
-              "keys" => written,
-              "removed_keys" => removed,
-              "label_count" => map_size(merged)
-            }
-          })
-
-        _ ->
-          :ok
-      end)
+    cond do
+      merged == current -> {:ok, conv}
+      true -> write_labels(conv, current, labels, merged, opts)
     end
+  end
+
+  # Anything that is not a map is a validation failure with the same shape a
+  # broken limit produces, so a caller reads one answer whichever door it
+  # came through.
+  def _unsafe_merge_labels(%Conversation{} = conv, labels, _opts) do
+    {:error, label_refusal(conv, Labels.check(labels))}
+  end
+
+  defp write_labels(conv, current, labels, merged, opts) do
+    case Labels.check_merge(current, labels) do
+      :ok ->
+        {written, removed} = Labels.changed_keys(current, labels)
+
+        conv
+        |> Conversation.changeset(%{labels: merged})
+        |> Repo.update()
+        |> tap(fn
+          {:ok, updated} -> record_labels_set(updated, written, removed, merged, opts)
+          _ -> :ok
+        end)
+
+      refusal ->
+        {:error, label_refusal(conv, refusal)}
+    end
+  end
+
+  defp record_labels_set(conv, written, removed, merged, opts) do
+    Audit.record(%{
+      user_id: conv.user_id,
+      action: "conversation.labels_set",
+      resource_type: "conversation",
+      resource_id: conv.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{
+        "keys" => written,
+        "removed_keys" => removed,
+        "label_count" => map_size(merged)
+      }
+    })
+  end
+
+  # `Labels.check_merge/2` words the refusal from the write the caller made;
+  # this is what turns that sentence into the `errors.labels` a 422 renders,
+  # the same key the changeset validator would have used.
+  defp label_refusal(%Conversation{} = conv, {:error, message}) do
+    conv
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.add_error(:labels, message)
   end
 
   def update_conversation(%Conversation{} = conv, attrs) do
@@ -1927,10 +1964,16 @@ defmodule Fountain.Conversations do
   # A resume lands on the conversation the binding already has, so labels on
   # the request are merged into it rather than dropped (#1637). A caller that
   # sends none changes nothing, and the resume stays the silent path it was.
-  defp resume_labels(%Conversation{} = conv, labels, opts) when is_map(labels),
-    do: merge_labels(conv, labels, opts)
+  #
+  # Through `set_conversation_labels/4` rather than the writer beneath it:
+  # this runs on `POST /api/conversations`, which a sandbox's own token may
+  # call, and a resume names an *existing* conversation. Writing here
+  # directly would let a sprite minted for one conversation relabel any other
+  # of the tenant's by resuming its channel.
+  defp resume_labels(%Conversation{} = conv, nil, _opts), do: {:ok, conv}
 
-  defp resume_labels(%Conversation{} = conv, _labels, _opts), do: {:ok, conv}
+  defp resume_labels(%Conversation{} = conv, labels, opts),
+    do: set_conversation_labels(conv.id, conv.user_id, labels, opts)
 
   # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
   # request may send a string. Anything else is not a request.

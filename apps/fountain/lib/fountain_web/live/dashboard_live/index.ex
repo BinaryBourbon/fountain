@@ -59,14 +59,9 @@ defmodule FountainWeb.DashboardLive.Index do
     user = socket.assigns.current_user
 
     labels =
-      uri
-      |> URI.parse()
-      |> Map.get(:query)
-      |> Conversations.Labels.from_query_string()
-      |> Conversations.Labels.parse_filter()
-      |> case do
+      case FountainWeb.LabelFilter.from_uri(uri) do
         {:ok, labels} -> labels
-        {:error, :invalid_label_filter} -> %{}
+        {:error, _invalid} -> %{}
       end
 
     {:noreply,

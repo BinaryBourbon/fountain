@@ -1577,6 +1577,58 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
     end
 
+    # Postgres refuses a NUL inside a jsonb string. Before `check_entry/2`
+    # rejected it, the write raised a Postgrex.Error inside the turn machine,
+    # which travelled up through `drive_turn/2` and killed the server and the
+    # turn it was running — a label costing a run.
+    test "a NUL byte in a stamp costs the stamp and not the turn", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "_fountain/labels",
+        "labels" => %{"note" => "before\u0000after"}
+      })
+
+      assert labels_of(conv.id) == %{}
+      assert Process.alive?(pid)
+
+      # The turn still ends, and a later legal stamp still lands.
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"env" => "prod"}})
+      assert labels_of(conv.id) == %{"env" => "prod"}
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+    end
+
+    # The extension is recognised by a decode, not by a substring: the cheap
+    # `String.contains?` in front of it is an optimisation, and agent prose
+    # that happens to mention the kind is still prose.
+    test "agent output that mentions the kind is still transcript", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "agent_message_chunk",
+        "content" => %{
+          "type" => "text",
+          "text" => ~s|stamp it with {"sessionUpdate":"_fountain/labels"}|
+        }
+      })
+
+      events = Conversations._unsafe_list_log_events(conv.id)
+      assert Enum.any?(events, &(&1.stream == "acp" and &1.data =~ "_fountain/labels"))
+
+      # And it labelled nothing.
+      assert labels_of(conv.id) == %{}
+    end
+
     test "a stamp out of turn opens no autonomous turn", %{conv: conv, pid: pid, ref: ref} do
       prompt_id = drive_to_prompt(pid, ref)
       reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})

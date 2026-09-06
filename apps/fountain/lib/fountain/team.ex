@@ -393,14 +393,15 @@ defmodule Fountain.Team do
   # On the fresh path they ride in the create attrs instead, so a conversation
   # that never existed is not labelled twice.
   #
-  # Ownership: `conv` came from `get_teammate/2`, which is scoped to the user.
+  # Through `Conversations.set_conversation_labels/4`, not the writer beneath
+  # it: this route accepts a sandbox's own `sprite` token, and the teammate's
+  # conversation is somebody else's conversation as far as that token is
+  # concerned. The door is where the rule lives, so the refusal is the same
+  # one `PATCH .../labels` gives.
   defp label(%Conversation{} = conv, opts) do
     case Keyword.get(opts, :labels) do
-      labels when is_map(labels) and map_size(labels) > 0 ->
-        Conversations.merge_labels(conv, labels, opts)
-
-      _ ->
-        {:ok, conv}
+      nil -> {:ok, conv}
+      labels -> Conversations.set_conversation_labels(conv.id, conv.user_id, labels, opts)
     end
   end
 

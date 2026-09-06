@@ -1158,7 +1158,7 @@ export interface paths {
         put?: never;
         /**
          * Start a conversation
-         * @description Creates a sandbox + conversation pair, starts the runtime in a fresh sprite, and (if `prompt` is supplied) sends it as turn 1. With `channel_id`, resumes the latest live conversation already bound to that channel for the same agent and vault (200, `meta.resumed: true`) instead of opening a new one (201). Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.
+         * @description Creates a sandbox + conversation pair, starts the runtime in a fresh sprite, and (if `prompt` is supplied) sends it as turn 1. With `channel_id`, resumes the latest live conversation already bound to that channel for the same agent and vault (200, `meta.resumed: true`) instead of opening a new one (201). `labels` (#1637) are stamped on the new conversation; with `channel_id`, a resume merges them into the conversation it hands back, and a sandbox callback token resuming a conversation it was not minted for is refused with 403. Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.
          */
         post: operations["FountainWeb.ConversationController.create"];
         delete?: never;
@@ -10108,8 +10108,8 @@ export interface operations {
                 channel_id?: string;
                 /** @description Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary. */
                 status?: string;
-                /** @description Only conversations carrying this `key:value` label (#1637). Repeatable, and combined with AND: `?label=env:prod&label=drift:true` keeps the conversations with both. The value splits on its first colon only, so `label=path:a:b` matches the label `path` with the value `a:b`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
-                label?: string;
+                /** @description Only conversations carrying these `key:value` labels (#1637). Repeat the parameter to combine them with AND: `?label=env:prod&label=drift:true` keeps the conversations that carry both. `label[]=` is accepted as well. Each value splits on its first colon only, so `label=path:a:b` matches the label `path` with the value `a:b`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
+                label?: string[];
             };
             header?: never;
             path?: never;
@@ -10244,7 +10244,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Forbidden */
+            /** @description A sandbox token labelling the conversation a resume landed on */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14344,8 +14344,8 @@ export interface operations {
     "FountainWeb.TeamController.conversations": {
         parameters: {
             query?: {
-                /** @description Only conversations carrying this `key:value` label (#1637). Repeatable and AND-combined, exactly as on `GET /api/conversations`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
-                label?: string;
+                /** @description Only conversations carrying these `key:value` labels (#1637). Repeatable and AND-combined, exactly as on `GET /api/conversations`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
+                label?: string[];
             };
             header?: never;
             path: {
@@ -14548,7 +14548,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Forbidden */
+            /** @description A sandbox token labelling another conversation */
             403: {
                 headers: {
                     [name: string]: unknown;

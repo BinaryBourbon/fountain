@@ -403,7 +403,7 @@ defmodule Fountain.AuditGuardrailTest do
   def do_labels(user) do
     conv = insert_conversation(user_id: user.id, agent: insert_agent(user_id: user.id))
 
-    {:ok, _} = Conversations.merge_labels(conv, %{"env" => "prod"})
+    {:ok, _} = Conversations._unsafe_merge_labels(conv, %{"env" => "prod"})
   end
 
   def do_sandbox_reset(user) do

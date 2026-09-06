@@ -1866,8 +1866,11 @@
           "type": "string"
         },
         "label": {
+          "items": {
+            "type": "string"
+          },
           "required": false,
-          "type": "string"
+          "type": "array"
         },
         "roots_only": {
           "required": false,
@@ -3147,8 +3150,11 @@
       ],
       "query_params": {
         "label": {
+          "items": {
+            "type": "string"
+          },
           "required": false,
-          "type": "string"
+          "type": "array"
         }
       },
       "responses": {

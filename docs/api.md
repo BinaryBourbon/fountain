@@ -261,6 +261,10 @@ key `path` for the value `apps/fountain:lib`. A value with no colon, or with
 an empty key, returns 400 `invalid_label_filter`. The same parameter works on
 `GET /api/team/{agent_id}/conversations`.
 
+The parameter is an array in the OpenAPI document, with `style: form` and
+`explode: true`. A client that builds arrays as `label[]=env:prod` is
+accepted too.
+
 `PATCH /api/conversations/{id}/labels` merges labels into a conversation. A
 key the body does not name stays as it is. A key with a `null` value is
 removed.
@@ -274,18 +278,22 @@ curl --fail-with-body -X PATCH \
 ```
 
 A conversation holds at most 32 labels. A key is at most 64 bytes and a value
-is at most 256 bytes. A write over any of those limits returns 422 and names
-the offending key under `errors.labels`. The count applies to the merged
-result, so a merge can fail against labels that are already there.
-
-The account's own API key can label any of its conversations. A sandbox
-callback token can label only the conversation it was minted for. Another
-conversation returns 403 `sprite_may_not_label_another_conversation`.
+is at most 256 bytes. Neither can contain a NUL byte. A write that breaks one
+of these limits returns 422 and names the offending key under
+`errors.labels`. The count applies to the merged result, so a merge can fail
+against labels that are already there. The key named is one you sent, and
+never one that was already on the conversation.
 
 `POST /api/team/{agent_id}/messages` also takes `labels`. Fountain merges them
 into the conversation that receives the message, before it queues the turn.
 `POST /api/conversations` with a `channel_id` that resumes an existing
 conversation merges them into that conversation.
+
+The account's own API key can label any of its conversations. A sandbox
+callback token can label only the conversation it was minted for. Another
+conversation returns 403 `sprite_may_not_label_another_conversation`. This
+applies to all three doors that write labels, which are the labels route, a
+team message, and a `channel_id` resume.
 
 `conversation.*` webhook payloads carry `labels` under `data`. See
 [Webhooks](reference/webhooks.md).
@@ -306,7 +314,7 @@ underscore for extensions.
 Fountain merges the map with the same rules as the route. A `null` value
 removes a key. The notification never reaches the transcript, and it opens no
 turn of its own. A stamp that breaks a limit is logged and dropped, and the
-turn continues.
+turn continues. Nothing in a stamp can end a run.
 
 ### Workers without Fountain API access
 

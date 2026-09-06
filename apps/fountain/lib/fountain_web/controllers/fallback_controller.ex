@@ -106,6 +106,24 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # A sandbox's per-conversation token naming a conversation it was not minted
+  # for (#1637). 403 rather than 404: the holder knows the conversation exists
+  # — it belongs to the account the token authenticates as — and what is being
+  # refused is the credential, not the id. The same shape and the same reason
+  # as `sprite_may_not_answer` on the permission route.
+  #
+  # Here rather than in a controller because three doors write labels: the
+  # labels route, a team message, and a `channel_id` resume on conversation
+  # create.
+  def call(conn, {:error, :sprite_may_not_label_another_conversation}) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{
+      error: "sprite_may_not_label_another_conversation",
+      message: "a sandbox callback token may label only the conversation it was minted for"
+    })
+  end
+
   # An unknown or cross-tenant parent conversation. 404 rather than 403 so the
   # caller cannot use the response to probe which conversation ids exist.
   def call(conn, {:error, :parent_not_found}) do
