@@ -278,7 +278,7 @@ defmodule Fountain.Agents.Agent do
           is_map(entry) and Map.has_key?(entry, "connection")
         end)
         |> Enum.reject(fn {_name, %{"connection" => id}} ->
-          is_binary(id) and match?({:ok, _}, Ecto.UUID.cast(id))
+          is_binary(id) and match?({:ok, _}, Ecto.UUID.dump(id))
         end)
         |> Enum.map(fn {name, _} ->
           {:mcp_servers, "#{name}: connection must be a connection id"}
