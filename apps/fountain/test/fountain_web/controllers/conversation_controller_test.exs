@@ -796,6 +796,51 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body["error"] == "sprite_may_not_answer"
     end
 
+    test "a running turn is a 400, and the request is still there", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = waiting_conv(user)
+      {:ok, _} = Fountain.Conversations.update_conversation(conv, %{status: "running"})
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/7.abc", %{"option_id" => "yes"})
+        |> json_response(400)
+
+      assert body["error"] == "conversation_busy"
+
+      assert [%{request_id: "7.abc"}] =
+               Fountain.Conversations._unsafe_list_pending_requests(conv.id)
+    end
+
+    test "a resolved-but-undelivered answer says so in its own words", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      # Distinct from the 409 below, which tells a client somebody else
+      # answered. Here the answer landed and the agent has not heard it.
+      conv = waiting_conv(user)
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+        {:error, :busy}
+      end)
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/7.abc", %{"option_id" => "yes"})
+        |> json_response(409)
+
+      assert body["error"] == "permission_answer_not_delivered"
+      assert body["message"] =~ "Send a prompt"
+    end
+
     test "a request nobody is waiting on is a 409", %{conn: conn, user: user, raw_key: raw_key} do
       conv = waiting_conv(user)
 

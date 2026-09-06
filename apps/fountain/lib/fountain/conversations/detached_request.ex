@@ -42,13 +42,17 @@ defmodule Fountain.Conversations.DetachedRequest do
 
   ## The deadline
 
-  In seconds, most specific first:
+  In seconds:
 
   1. `_meta.fountain.timeout` on the `session/request_permission` params;
   2. `ask_timeout` in the effective permission policy
      (`Fountain.PermissionPolicy`);
   3. the global `:permission_ask_timeout_seconds` ceiling, five minutes by
      default.
+
+  Where 1 and 2 are both set the **shorter** wins: 1 is written inside the
+  sandbox and 2 is the tenant's, so the agent bounds its own wait and cannot
+  extend the tenant's. Either alone is honoured, and neither leaves 3.
 
   Only a detached request reads 1 and 2. A request held inside a running turn
   keeps the global ceiling, which still has to sit under the idle bound.
@@ -82,12 +86,20 @@ defmodule Fountain.Conversations.DetachedRequest do
 
   `params` is the request's own `session/request_permission` params (nil when
   none reached us) and `policy_seconds` the effective `ask_timeout`.
+
+  **The shorter of the two, where both are set.** The request comes from
+  inside the sandbox and the policy comes from the tenant, so letting the
+  request name the longer one would let an agent hold a tool open for days
+  against a policy that said minutes. Either alone is honoured; neither
+  leaves the global ceiling.
   """
   @spec timeout_ms(map() | nil, pos_integer() | nil) :: pos_integer()
   def timeout_ms(params, policy_seconds) do
-    case timeout_seconds(params) || policy_seconds do
-      seconds when is_integer(seconds) and seconds > 0 -> seconds * 1000
-      _ -> Lifecycle.ask_timeout_ms()
+    case {timeout_seconds(params), policy_seconds} do
+      {nil, nil} -> Lifecycle.ask_timeout_ms()
+      {request, nil} -> request * 1000
+      {nil, policy} -> policy * 1000
+      {request, policy} -> min(request, policy) * 1000
     end
   end
 

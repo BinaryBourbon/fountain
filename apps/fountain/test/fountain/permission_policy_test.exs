@@ -80,11 +80,30 @@ defmodule Fountain.PermissionPolicyTest do
                {:error, {:permission_policy_widens, "ask_timeout"}}
     end
 
-    test "a launch that names one where the agent named none is not a widening" do
-      # There is nothing to widen: with no agent value the global ceiling
-      # applies, and that ceiling is what a request escapes by detaching at
-      # all. Refusing here would make the key unusable per launch.
-      assert PermissionPolicy.check_narrows(%{}, %{"ask_timeout" => 86_400}) == :ok
+    test "with no agent value, the ceiling the host passes is what a launch may not exceed" do
+      # A longer wait is more time for the tool to be approved, so longer is
+      # looser. Without the ceiling an agent that never set the key would let
+      # any launch buy days, which is the escalation the rule exists to stop.
+      assert PermissionPolicy.check_narrows(%{}, %{"ask_timeout" => 60}, 300) == :ok
+
+      assert PermissionPolicy.check_narrows(%{}, %{"ask_timeout" => 86_400}, 300) ==
+               {:error, {:permission_policy_widens, "ask_timeout"}}
+    end
+
+    test "the agent's own value outranks the ceiling, in both directions" do
+      assert PermissionPolicy.check_narrows(
+               %{"ask_timeout" => 86_400},
+               %{"ask_timeout" => 3600},
+               300
+             ) == :ok
+
+      assert PermissionPolicy.check_narrows(%{"ask_timeout" => 60}, %{"ask_timeout" => 120}, 300) ==
+               {:error, {:permission_policy_widens, "ask_timeout"}}
+    end
+
+    test "a launch that names none is never a widening" do
+      assert PermissionPolicy.check_narrows(%{"ask_timeout" => 60}, %{}, 300) == :ok
+      assert PermissionPolicy.check_narrows(%{}, %{}, 300) == :ok
     end
   end
 

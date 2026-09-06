@@ -79,8 +79,10 @@ upgrade, is in
   goes idle and the sandbox suspends as usual. `GET /api/conversations/{id}`
   lists such requests as `pending_requests`, and answering one opens a new turn
   carrying the request id and the chosen option, which wakes the sandbox. The
-  wait is bounded by `_meta.fountain.timeout` on the request, else an
-  `ask_timeout` in the permission policy, else the existing 5 minute ceiling.
+  wait is bounded by `_meta.fountain.timeout` on the request and by an
+  `ask_timeout` in the permission policy, the shorter of the two, else the
+  existing 5 minute ceiling. An answer is refused, and the request kept, when
+  the conversation cannot take the turn that carries it.
 
 ### Fixed
 

@@ -66,16 +66,15 @@ defmodule Fountain.Conversations.Pending do
   """
   @spec ask(map(), term(), String.t(), list()) :: map()
   def ask(state, request_id, tool, options) do
+    params = DetachedRequest.params_for(state.acp_request_params, request_id)
+
+    # Consumed, so dropped. Those params are the agent's whole request,
+    # `rawInput` included, and that is tenant data with no reason to sit in a
+    # server's state for the life of a connection.
+    state = %{state | acp_request_params: nil}
+
     over(state, fn pending, turn ->
-      ask(
-        pending,
-        state.conversation_id,
-        turn,
-        request_id,
-        tool,
-        options,
-        DetachedRequest.params_for(state.acp_request_params, request_id)
-      )
+      ask(pending, state.conversation_id, turn, request_id, tool, options, params)
     end)
   end
 

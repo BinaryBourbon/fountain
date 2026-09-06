@@ -23,6 +23,7 @@ defmodule Fountain.Conversations do
     TurnImage
   }
 
+  alias Fountain.Conversations.Lifecycle
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
 
@@ -3006,34 +3007,72 @@ defmodule Fountain.Conversations do
   end
 
   # A request nobody is holding open any more: resolve the row, then open the
-  # turn that tells the agent. The order is the same as the in-turn path's —
-  # resolve, record, then act — so a crash between the two cannot leave a
-  # request answered twice.
+  # turn that tells the agent.
+  #
+  # Every gate the wake path would apply is applied **first**, before the row
+  # is touched. Resolving and then failing to deliver loses the answer with
+  # nothing to retry from, and hands the caller a 409 that says somebody else
+  # answered — which is a lie about what happened.
   defp answer_detached_permission(conv, turn, user_id, option_id, opts) do
     request = turn.pending_permission
     request_id = request["request_id"]
 
-    cond do
-      not DetachedRequest.offered?(request, option_id) ->
-        {:error, :unknown_option}
+    if DetachedRequest.offered?(request, option_id) do
+      with :ok <- _unsafe_resume_gate(conv),
+           :ok <- _unsafe_resolve_detached_request(turn, "answered", option_id),
+           :ok <-
+             record_permission_answered(
+               turn.conversation_id,
+               user_id,
+               request_id,
+               option_id,
+               opts
+             ) do
+        resume_after_request(turn, request, "answered", option_id, opts)
+      end
+    else
+      {:error, :unknown_option}
+    end
+  end
 
-      # A turn of its own is already running, and the resume turn cannot queue
-      # behind it. Refused before the row is touched, so the request is still
-      # there to answer once the conversation is idle again.
-      conv.status == "running" ->
+  @doc """
+  Whether a resume turn can be opened on this conversation right now (#1635).
+
+  The gates the wake will run, run before the request row is resolved. The
+  three answers differ in what a caller should do about them:
+
+  * `:ok` — go ahead.
+  * `{:error, :busy}` — a turn is running, so the resume turn cannot queue
+    behind it. Retry when the conversation is idle; the sweep does, a minute
+    later.
+  * `{:error, :gone}` — the conversation is over, so no turn will ever carry
+    the answer.
+
+  Anything else is the account's own refusal (suspended, out of credit), and
+  is retryable once the account is not.
+
+  WARNING: not scoped by owner. The answer door establishes ownership first;
+  the sweep is a system sweep.
+  """
+  @spec _unsafe_resume_gate(Conversation.t() | binary()) :: :ok | {:error, term()}
+  def _unsafe_resume_gate(conv_id) when is_binary(conv_id) do
+    case _unsafe_get_conversation(conv_id) do
+      nil -> {:error, :gone}
+      conv -> _unsafe_resume_gate(conv)
+    end
+  end
+
+  def _unsafe_resume_gate(%Conversation{} = conv) do
+    cond do
+      conv.status in ["terminated", "failed"] ->
+        {:error, :gone}
+
+      conv.status != "idle" ->
         {:error, :busy}
 
       true ->
-        with :ok <- _unsafe_resolve_detached_request(turn, "answered", option_id),
-             :ok <-
-               record_permission_answered(
-                 turn.conversation_id,
-                 user_id,
-                 request_id,
-                 option_id,
-                 opts
-               ) do
-          resume_after_request(turn, request, "answered", option_id, opts)
+        with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id) do
+          Fountain.Billing.check_spend(conv.user_id)
         end
     end
   end
@@ -3138,9 +3177,29 @@ defmodule Fountain.Conversations do
     option_id = DetachedRequest.deny_option_id(request)
     actor = Keyword.get(opts, :actor, "system:detached_request_sweeper")
 
-    with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
-      record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
-      resume_after_request(turn, request, "timeout", option_id, actor: actor)
+    # The gate first, for the same reason the answer door applies it first: a
+    # request resolved into a prompt nobody can deliver is gone, the agent is
+    # never told, and there is no second copy to retry from. The deadline has
+    # passed either way, so leaving the row is the safe half of the trade —
+    # the sweep is back in a minute.
+    #
+    # A conversation that is over is the exception: no turn will ever carry
+    # the denial, so the request is resolved and the card stops waiting.
+    case _unsafe_resume_gate(turn.conversation_id) do
+      :ok ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          resume_after_request(turn, request, "timeout", option_id, actor: actor)
+        end
+
+      {:error, :gone} ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          :ok
+        end
+
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -3158,16 +3217,19 @@ defmodule Fountain.Conversations do
       :ok ->
         :ok
 
-      {:error, reason} = err ->
-        # The request is resolved either way; what failed is delivering the
-        # outcome. Logged with both ids because the row no longer holds them.
+      {:error, reason} ->
+        # The gates above passed and the row is already resolved, so this is a
+        # race rather than a refusal: something took the conversation between
+        # the two. Its own error would tell the caller to retry an answer that
+        # no longer exists, so it becomes one that says what actually
+        # happened.
         Logger.warning(
           "conv #{turn.conversation_id}: resolved detached request " <>
             "#{request["request_id"]} but could not open the turn that carries " <>
             "the answer: #{inspect(reason)}"
         )
 
-        err
+        {:error, :answer_not_delivered}
     end
   end
 
@@ -3231,7 +3293,12 @@ defmodule Fountain.Conversations do
              PermissionPolicy.verdicts(agent.permission_policy),
              verdicts
            ),
-         :ok <- PermissionPolicy.check_narrows(agent.permission_policy, policy) do
+         :ok <-
+           PermissionPolicy.check_narrows(
+             agent.permission_policy,
+             policy,
+             div(Lifecycle.ask_timeout_ms(), 1000)
+           ) do
       {:ok, policy}
     end
   end

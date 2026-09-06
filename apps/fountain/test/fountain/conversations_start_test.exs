@@ -415,6 +415,17 @@ defmodule Fountain.ConversationsStartTest do
                launch(ctx, agent, %{"execute" => "ask", "ask_timeout" => 86_400})
     end
 
+    test "a launch cannot buy a longer wait than the global ceiling the agent left", ctx do
+      agent = insert_agent(user_id: ctx.user.id, permission_policy: %{"execute" => "ask"})
+      ceiling = div(Fountain.Conversations.Lifecycle.ask_timeout_ms(), 1000)
+
+      assert {:error, {:permission_policy_widens, "ask_timeout"}} =
+               launch(ctx, agent, %{"execute" => "ask", "ask_timeout" => ceiling + 1})
+
+      assert {:ok, conv} = launch(ctx, agent, %{"execute" => "ask", "ask_timeout" => ceiling})
+      assert conv.permission_policy["ask_timeout"] == ceiling
+    end
+
     test "an ask_timeout that is not seconds is refused at the door", ctx do
       agent = insert_agent(user_id: ctx.user.id)
       assert {:error, :permission_policy_invalid} = launch(ctx, agent, %{"ask_timeout" => "soon"})

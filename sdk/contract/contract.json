@@ -5942,7 +5942,17 @@
             "ref": "PermissionAnswerResponse"
           }
         },
+        "400": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "402": {
           "application/json": {
             "ref": "Error"
           }
@@ -7897,12 +7907,19 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
           "properties": {
@@ -8050,12 +8067,19 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
           "properties": {
@@ -8195,12 +8219,19 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
           "properties": {
@@ -10060,12 +10091,19 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
           "properties": {
@@ -10209,12 +10247,19 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
           "properties": {

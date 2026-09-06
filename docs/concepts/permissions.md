@@ -127,6 +127,22 @@ picked, or the rejection the expiry chose from the agent's own list. It is null
 where the agent offered no rejection at all. The agent decides what to do with
 it.
 
+The turn's `origin` is `user`, like any other prompted turn. A client that
+wants to render this as a system event and not as something a person typed can
+tell it by the prompt itself, which is one JSON object whose only key is
+`fountain/permission_answer`.
+
+The connection the request was raised on is closed when the turn ends
+`waiting`, so the resume turn starts a fresh one. The old peer is still holding
+that request, and the runtimes number their requests from 0 on each turn, so
+keeping it would make the resume turn's first request collide with the one it
+still holds.
+
+An answer is refused, and the request left where it is, when the conversation
+cannot take the turn that carries it. A turn of its own is running, the account
+is suspended, or the balance is spent. Answer again once that is fixed. The
+expiry sweep does the same, and comes back a minute later.
+
 ### The deadline
 
 A detached request is refused when its deadline passes, and the refusal opens
@@ -136,8 +152,17 @@ from the first of these that is set.
 1. `_meta.fountain.timeout` on the `session/request_permission` itself, in
   seconds. The agent sets this per request.
 2. `ask_timeout` in the permission policy, in seconds. This is the one policy
-  key that names no tool. A launch may shorten it and may not lengthen it.
+  key that names no tool.
 3. The 5 minute ceiling, which is what an in-turn request gets.
+
+Where the request and the policy both name one, the **shorter** wins. The
+request is written inside the sandbox and the policy belongs to the tenant, so
+an agent can bound its own wait and cannot extend the tenant's.
+
+A launch policy may shorten the agent's `ask_timeout` and may not lengthen it.
+Where the agent named none, the 5 minute ceiling is what a launch may only
+shorten. A longer wait is more time for somebody to approve the tool, so
+longer is looser.
 
 Only a detached request reads the first two. A request inside a turn always
 gets the 5 minute ceiling, because the turn holding it keeps the sandbox from

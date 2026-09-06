@@ -116,9 +116,19 @@ defmodule Fountain.Conversations.DetachedRequestTest do
   end
 
   describe "the deadline" do
-    test "the request's own _meta wins over the policy" do
+    test "the shorter of the request and the policy wins, either way round" do
+      # The request is written inside the sandbox and the policy is the
+      # tenant's, so an agent may bound its own wait and may not extend one.
+      long = %{"_meta" => %{"fountain" => %{"timeout" => 172_800}}}
+      short = %{"_meta" => %{"fountain" => %{"timeout" => 60}}}
+
+      assert DetachedRequest.timeout_ms(long, 600) == 600_000
+      assert DetachedRequest.timeout_ms(short, 600) == 60_000
+    end
+
+    test "the request alone is honoured, past the policy's absence" do
       params = %{"_meta" => %{"fountain" => %{"timeout" => 172_800}}}
-      assert DetachedRequest.timeout_ms(params, 600) == 172_800_000
+      assert DetachedRequest.timeout_ms(params, nil) == 172_800_000
     end
 
     test "the policy is used when the request names none" do
@@ -273,6 +283,43 @@ defmodule Fountain.Conversations.DetachedRequestTest do
       assert Repo.reload(turn).waiting
     end
 
+    test "a spent balance refuses the answer, and the request survives to be answered again" do
+      # The wake would refuse this anyway; running the gate first is what keeps
+      # the answer from being resolved into a prompt nobody delivers, and the
+      # caller from being told somebody else answered.
+      %{user: user, conv: conv, turn: turn} = waiting_conversation()
+      drain_credit(user)
+
+      assert {:error, :insufficient_credits} =
+               Conversations.answer_permission_request(conv.id, user.id, "7.abc", "allow")
+
+      assert Repo.reload(turn).waiting
+      refute Repo.reload(turn).pending_permission == nil
+
+      # Topped up, the same answer lands.
+      {:ok, _} = Fountain.Credits.grant(user.id, 500, "grant_admin", idempotency_key: "topup")
+      record_wake()
+
+      assert :ok = Conversations.answer_permission_request(conv.id, user.id, "7.abc", "allow")
+      refute Repo.reload(turn).waiting
+    end
+
+    test "a delivery that fails after the row is resolved says so in its own words" do
+      # The gates passed and something took the conversation in between. The
+      # answer is gone, so the caller must not be told to retry it, and must
+      # not be told somebody else answered either.
+      %{user: user, conv: conv, turn: turn} = waiting_conversation()
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+        {:error, :busy}
+      end)
+
+      assert {:error, :answer_not_delivered} =
+               Conversations.answer_permission_request(conv.id, user.id, "7.abc", "allow")
+
+      refute Repo.reload(turn).waiting
+    end
+
     test "a terminated conversation cannot carry an answer, so the request is left alone" do
       %{user: user, conv: conv, turn: turn} = waiting_conversation()
       {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
@@ -322,6 +369,55 @@ defmodule Fountain.Conversations.DetachedRequestTest do
       assert denied.metadata["verdict"] == "timeout"
     end
 
+    test "a running turn leaves the request for the next sweep" do
+      # The denial is owed, but the turn that carries it cannot queue behind a
+      # turn already in flight. Resolving anyway would lose it with nothing to
+      # retry from.
+      %{conv: conv, turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
+      reject(&ConversationServer.send_prompt/4)
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+
+      reloaded = Repo.reload(turn)
+      assert reloaded.waiting
+      assert reloaded.pending_permission["request_id"] == "7.abc"
+      assert request_stages(conv.id, "done") == []
+    end
+
+    test "a spent balance leaves the request for the next sweep" do
+      %{user: user, conv: conv, turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      drain_credit(user)
+
+      # No `reject/1` here: the second half of this test needs the delivery to
+      # work. The untouched row and the silent stream are what say the first
+      # sweep delivered nothing.
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+      assert Repo.reload(turn).waiting
+      assert request_stages(conv.id, "done") == []
+
+      # And it is not lost: the next sweep, after a top-up, carries it.
+      {:ok, _} = Fountain.Credits.grant(user.id, 500, "grant_admin", idempotency_key: "topup")
+      record_wake()
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 1
+      refute Repo.reload(turn).waiting
+    end
+
+    test "a conversation that is over resolves the request without a resume turn" do
+      # No turn will ever carry the denial, so the card stops waiting rather
+      # than the sweep finding the same row every minute forever.
+      %{conv: conv, turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
+      reject(&ConversationServer.send_prompt/4)
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 1
+
+      refute Repo.reload(turn).waiting
+      assert [%{"outcome" => "timeout"}] = request_stages(conv.id, "done")
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+    end
+
     test "a request still inside its deadline is left alone" do
       %{turn: turn} = waiting_conversation(deadline: hours_from_now(24))
 
@@ -366,6 +462,21 @@ defmodule Fountain.Conversations.DetachedRequestTest do
       assert [event] = request_stages(conv.id, "done")
       assert event["detached"] == true
     end
+  end
+
+  # `insert_verified_user/1` holds the $5 opening credit (ADR 0031), so
+  # refusal has to be arranged rather than assumed. Exactly the balance, so a
+  # later grant puts the account back above zero rather than into a hole no
+  # top-up in a test would fill.
+  defp drain_credit(user) do
+    balance = Repo.reload!(user).credit_balance_cents
+
+    if balance > 0 do
+      {:ok, _} =
+        Fountain.Credits.debit(user.id, balance, "burn_turn", idempotency_key: "drain-#{user.id}")
+    end
+
+    :ok
   end
 
   defp request_stages(conv_id, state) do

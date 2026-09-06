@@ -381,14 +381,19 @@ defmodule FountainWeb.Schemas do
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is not a verdict. Absent leaves the global ask timeout. A request " <>
-                  "may override it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission. A launch may only shorten it."
+                  "is a number rather than a verdict, which is why the value schema " <>
+                  "below is a union. Absent leaves the global ask timeout. A request " <>
+                  "may shorten it with `_meta.fountain.timeout` on its own " <>
+                  "session/request_permission, and may not lengthen it. A launch may " <>
+                  "only shorten what the agent set, or the global ask timeout where " <>
+                  "the agent set nothing."
             }
           },
           additionalProperties: %Schema{
-            type: :string,
-            enum: Managoat.ACP.Permissions.buildable_verdicts()
+            oneOf: [
+              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
+              %Schema{type: :integer, minimum: 1}
+            ]
           },
           description:
             "The per-launch permission override this conversation was started with, or " <>
@@ -567,14 +572,19 @@ defmodule FountainWeb.Schemas do
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is not a verdict. Absent leaves the global ask timeout. A request " <>
-                  "may override it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission. A launch may only shorten it."
+                  "is a number rather than a verdict, which is why the value schema " <>
+                  "below is a union. Absent leaves the global ask timeout. A request " <>
+                  "may shorten it with `_meta.fountain.timeout` on its own " <>
+                  "session/request_permission, and may not lengthen it. A launch may " <>
+                  "only shorten what the agent set, or the global ask timeout where " <>
+                  "the agent set nothing."
             }
           },
           additionalProperties: %Schema{
-            type: :string,
-            enum: Managoat.ACP.Permissions.buildable_verdicts()
+            oneOf: [
+              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
+              %Schema{type: :integer, minimum: 1}
+            ]
           },
           description:
             "Per-launch permission override (#939). Keys are matched against the tool " <>
@@ -895,14 +905,19 @@ defmodule FountainWeb.Schemas do
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is not a verdict. Absent leaves the global ask timeout. A request " <>
-                  "may override it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission. A launch may only shorten it."
+                  "is a number rather than a verdict, which is why the value schema " <>
+                  "below is a union. Absent leaves the global ask timeout. A request " <>
+                  "may shorten it with `_meta.fountain.timeout` on its own " <>
+                  "session/request_permission, and may not lengthen it. A launch may " <>
+                  "only shorten what the agent set, or the global ask timeout where " <>
+                  "the agent set nothing."
             }
           },
           additionalProperties: %Schema{
-            type: :string,
-            enum: Managoat.ACP.Permissions.buildable_verdicts()
+            oneOf: [
+              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
+              %Schema{type: :integer, minimum: 1}
+            ]
           },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>
@@ -1083,14 +1098,19 @@ defmodule FountainWeb.Schemas do
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is not a verdict. Absent leaves the global ask timeout. A request " <>
-                  "may override it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission. A launch may only shorten it."
+                  "is a number rather than a verdict, which is why the value schema " <>
+                  "below is a union. Absent leaves the global ask timeout. A request " <>
+                  "may shorten it with `_meta.fountain.timeout` on its own " <>
+                  "session/request_permission, and may not lengthen it. A launch may " <>
+                  "only shorten what the agent set, or the global ask timeout where " <>
+                  "the agent set nothing."
             }
           },
           additionalProperties: %Schema{
-            type: :string,
-            enum: Managoat.ACP.Permissions.buildable_verdicts()
+            oneOf: [
+              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
+              %Schema{type: :integer, minimum: 1}
+            ]
           },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>
@@ -1228,14 +1248,19 @@ defmodule FountainWeb.Schemas do
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
-                  "is not a verdict. Absent leaves the global ask timeout. A request " <>
-                  "may override it with `_meta.fountain.timeout` on its own " <>
-                  "session/request_permission. A launch may only shorten it."
+                  "is a number rather than a verdict, which is why the value schema " <>
+                  "below is a union. Absent leaves the global ask timeout. A request " <>
+                  "may shorten it with `_meta.fountain.timeout` on its own " <>
+                  "session/request_permission, and may not lengthen it. A launch may " <>
+                  "only shorten what the agent set, or the global ask timeout where " <>
+                  "the agent set nothing."
             }
           },
           additionalProperties: %Schema{
-            type: :string,
-            enum: Managoat.ACP.Permissions.buildable_verdicts()
+            oneOf: [
+              %Schema{type: :string, enum: Managoat.ACP.Permissions.buildable_verdicts()},
+              %Schema{type: :integer, minimum: 1}
+            ]
           },
           description:
             "Per-tool permission policy: a map of key to verdict, plus an optional " <>

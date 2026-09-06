@@ -59,6 +59,12 @@ defmodule Fountain.Workers.DetachedRequestSweeper do
   # a legitimate caller. The resolution is guarded on the request id, so a
   # client answering in the same second wins or loses cleanly rather than
   # both landing.
+  #
+  # A conversation that cannot take the resume turn right now — a turn of its
+  # own is running, the account is suspended, the balance is spent — leaves
+  # the row exactly as it was. The deadline has passed, so the denial is owed
+  # either way, but resolving it into a prompt nobody delivers loses it with
+  # nothing to retry from. This runs every minute; the next one carries it.
   defp expire(%Turn{} = turn) do
     case Conversations._unsafe_expire_detached_request(turn) do
       :ok ->
@@ -73,14 +79,12 @@ defmodule Fountain.Workers.DetachedRequestSweeper do
         false
 
       {:error, reason} ->
-        Logger.warning(
-          "detached_request_sweeper: could not resume conversation " <>
-            "#{turn.conversation_id} after denying its request: #{inspect(reason)}"
+        Logger.info(
+          "detached_request_sweeper: leaving the request on turn #{turn.id} " <>
+            "(conversation #{turn.conversation_id}) for the next sweep: #{inspect(reason)}"
         )
 
-        # The request itself is resolved either way; only the resume turn
-        # failed to open, and that is what the log line is for.
-        true
+        false
     end
   end
 end

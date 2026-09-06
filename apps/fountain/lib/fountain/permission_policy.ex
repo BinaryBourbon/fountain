@@ -101,11 +101,18 @@ defmodule Fountain.PermissionPolicy do
   `:ok`, or `{:error, {:permission_policy_widens, key}}` naming the first key
   the launch would loosen — the same shape `Managoat.ACP.Permissions.check_narrows/2`
   returns, so a caller checks both and reports either the same way.
+
+  `ceiling_seconds` is what applies when the agent names no `ask_timeout`, and
+  it is the host's own global ask timeout. Without it an agent that never set
+  the key would let any launch buy a wait of days, which is the escalation the
+  narrowing rule exists to stop: a longer wait is more time for somebody to
+  approve the tool, so longer is looser. The host reads its configuration and
+  passes it, as `Managoat.ACP.Permissions.ask_timeout_ms/1` is given its own.
   """
-  @spec check_narrows(map() | nil, map() | nil) ::
+  @spec check_narrows(map() | nil, map() | nil, pos_integer() | nil) ::
           :ok | {:error, {:permission_policy_widens, String.t()}}
-  def check_narrows(agent, launch) do
-    case {ask_timeout_seconds(agent), ask_timeout_seconds(launch)} do
+  def check_narrows(agent, launch, ceiling_seconds \\ nil) do
+    case {ask_timeout_seconds(agent) || ceiling_seconds, ask_timeout_seconds(launch)} do
       {a, l} when is_integer(a) and is_integer(l) and l > a ->
         {:error, {:permission_policy_widens, @ask_timeout}}
 

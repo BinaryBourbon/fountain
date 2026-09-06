@@ -557,8 +557,12 @@ defmodule FountainWeb.ConversationController do
     responses: [
       ok: {"Answered", "application/json", Schemas.PermissionAnswerResponse},
       not_found: {"Not found", "application/json", Schemas.Error},
-      conflict: {"Already resolved", "application/json", Schemas.Error},
-      unprocessable_entity: {"Unknown option", "application/json", Schemas.Error}
+      conflict:
+        {"Already resolved, or resolved but not delivered", "application/json", Schemas.Error},
+      unprocessable_entity: {"Unknown option", "application/json", Schemas.Error},
+      bad_request: {"Busy", "application/json", Schemas.Error},
+      payment_required: {"Insufficient credits", "application/json", Schemas.Error},
+      forbidden: {"The sandbox may not answer", "application/json", Schemas.Error}
     ]
   )
 
@@ -610,6 +614,22 @@ defmodule FountainWeb.ConversationController do
   # A turn is running, so the resume turn a detached answer opens cannot queue
   # behind it (#1635). The request is untouched; try again when it is idle.
   defp answer_response({:error, :busy}, _conn), do: {:error, "conversation_busy"}
+
+  # The request was resolved and the turn that carries it back could not be
+  # opened. Its own code, because the 409 above tells a client to give up on a
+  # request somebody else took, and this one has to say the opposite: the
+  # answer landed, the agent has not heard it, and a prompt is what wakes it.
+  defp answer_response({:error, :answer_not_delivered}, conn) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "permission_answer_not_delivered",
+      message:
+        "The answer was recorded and the request is resolved, but the turn that " <>
+          "carries it to the agent could not be opened. Send a prompt to the " <>
+          "conversation to wake it."
+    })
+  end
 
   # Everything else renders through the FallbackController, for the reason
   # `do_prompt/5` gives: an error shape this function has not learned used to

@@ -31,7 +31,8 @@ defmodule Fountain.Conversations.TurnMachine do
       its row, its stage, its timeout (the pending family, #1375);
     * `:detach_permission` — the turn is ending `waiting` and its request
       outlives it (#1635); applied before `{:finish, …}`, which then leaves
-      the request alone;
+      the request alone, and followed by `{:drop_connection, …}`, because
+      the peer is still holding the request it raised;
     * `{:finish, status, span_attrs, stage_meta}` — end the turn: the
       server resolves what is pending, cancels the quiet timer, then calls
       `finish/4`;
@@ -365,17 +366,29 @@ defmodule Fountain.Conversations.TurnMachine do
   # denied, the turn still ends `completed`, and the sandbox parks on the
   # usual bound with the card still up. With nothing held it means nothing,
   # and the turn ends as any other completed turn does.
+  #
+  # **The connection goes with it**, which the usual end (#817) keeps alive.
+  # The peer still holds the request it raised: `hold_permission` filled its
+  # single `pending_permission` slot, and only an answer or a denial clears
+  # it — neither of which the detached path sends, since the answer arrives
+  # as a new turn instead. claude-agent-acp and codex both number their
+  # requests from 0 *per turn* (`mint_request_id/1`), so the resume turn's
+  # first `session/request_permission` would arrive under the same JSON-RPC
+  # id, match the peer's `held?/2` against the stale hold, and be swallowed:
+  # no response, no report, no card, no timeout, and an agent blocked with
+  # nothing to reclaim it (`SANDBOX_MAX_LIFETIME_HOURS` is 0 by default).
+  # A fresh peer costs one handshake, and is what the idle park does minutes
+  # later anyway.
   def handle(%__MODULE__{} = turn, {:done, stop_reason, usage}, ctx) do
     status = if stop_reason in ["refusal", "cancelled"], do: "failed", else: "completed"
     record_usage(turn, with_inference(usage, ctx))
+    finish = {:finish, status, %{"stop_reason" => stop_reason}, %{stop_reason: stop_reason}}
 
-    detach = if waiting?(stop_reason, turn.row), do: [:detach_permission], else: []
-
-    {turn,
-     detach ++
-       [
-         {:finish, status, %{"stop_reason" => stop_reason}, %{stop_reason: stop_reason}}
-       ]}
+    if waiting?(stop_reason, turn.row) do
+      {turn, [:detach_permission, finish, {:drop_connection, "permission_detached"}]}
+    else
+      {turn, [finish]}
+    end
   end
 
   # #655: the org has refused this account's Claude OAuth token. Left alone,
@@ -611,8 +624,12 @@ defmodule Fountain.Conversations.TurnMachine do
   # already looks. The `request`/`started` event announced the request; this
   # is what tells a card watching the stream that the request outlived the
   # turn and by when it has to be answered.
+  #
+  # The two fields are prefixed rather than bare. A client pairs a permission
+  # card to its resolution on `request_id`, and a bare one on a `turn` event
+  # would pair to a card that event is not about.
   defp waiting_meta(%{waiting: true, pending_permission: %{"request_id" => id}} = row) do
-    %{waiting: true, request_id: id, deadline: row.permission_deadline}
+    %{waiting: true, waiting_request_id: id, waiting_deadline: row.permission_deadline}
   end
 
   defp waiting_meta(_row), do: %{}

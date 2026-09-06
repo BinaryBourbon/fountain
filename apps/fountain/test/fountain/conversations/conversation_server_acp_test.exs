@@ -1414,6 +1414,21 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       end)
     end
 
+    # The detach closes the connection, so a resume turn re-handshakes:
+    # `initialize`, then `session/resume` (the caps advertise it), then the
+    # prompt. Returns the prompt's params.
+    defp drive_to_resume_prompt(pid, ref) do
+      %{"id" => init_id, "method" => "initialize"} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      %{"id" => session_id, "method" => "session/resume"} = next_write()
+      reply(pid, ref, session_id, %{})
+
+      %{"method" => "session/prompt", "params" => params} = next_write()
+      settle(pid)
+      params
+    end
+
     defp stages(conv_id, stage, state) do
       conv_id
       |> Conversations._unsafe_list_log_events()
@@ -1466,9 +1481,13 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       assert [done] = stages(conv.id, "turn", "done")
       assert done["waiting"] == true
-      assert done["request_id"] == request_id
       assert done["stop_reason"] == "waiting"
-      assert done["deadline"]
+      assert done["waiting_deadline"]
+
+      # Prefixed, so a client pairing permission cards on `request_id` does not
+      # pair one to this event.
+      assert done["waiting_request_id"] == request_id
+      refute Map.has_key?(done, "request_id")
     end
 
     test "waiting with nothing held is an ordinary completed turn" do
@@ -1561,13 +1580,32 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert_in_delta DateTime.diff(deadline, DateTime.utc_now()), expected, 30
     end
 
+    test "the turn's end closes the connection, so the resume turn gets a fresh peer" do
+      # The peer holds the request it raised in a single slot that only an
+      # answer or a denial clears, and the detached path sends neither. Keeping
+      # the connection would carry that hold into the resume turn.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      _request_id = raise_permission_with(pid, ref, 407, %{})
+      assert :sys.get_state(pid).acp_peer
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+
+      state = :sys.get_state(pid)
+      assert state.acp_peer == nil
+      assert state.current_command == nil
+    end
+
     test "answering opens a new turn whose prompt carries the request and the option" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
       {pid, ref} = start_acp_turn(conv)
       prompt_id = drive_to_prompt(pid, ref)
 
-      request_id = raise_permission_with(pid, ref, 407, %{})
+      request_id = raise_permission_with(pid, ref, 408, %{})
       reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
       register(pid, conv.id)
 
@@ -1578,8 +1616,9 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       settle(pid)
 
-      # A new `session/prompt` on the same connection, and it is the answer.
-      assert %{"method" => "session/prompt", "params" => params} = next_write()
+      # A fresh connection: the old one went with the detach, so the resume
+      # turn handshakes and resumes the session on the same disk.
+      params = drive_to_resume_prompt(pid, ref)
       assert [%{"type" => "text", "text" => text}] = params["prompt"]
 
       assert %{"fountain/permission_answer" => answer} = Jason.decode!(text)
@@ -1587,10 +1626,96 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert answer["option_id"] == "yes"
       assert answer["outcome"] == "answered"
       assert answer["tool"] == "Bash"
+    end
 
-      # The old JSON-RPC id is never answered: the peer's connection outlived
-      # the turn, and answering it would resolve a request nobody is on.
-      refute_receive {:wrote, _}, 200
+    test "a colliding request id in the resume turn is reported, carded and timed" do
+      # claude-agent-acp and codex number their requests from 0 per turn, so
+      # the resume turn's first request arrives under the id the detached one
+      # used. Against a kept peer it matched the stale hold and vanished.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      first_id = raise_permission_with(pid, ref, 0, %{})
+      assert first_id =~ ~r/^0\./
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+      register(pid, conv.id)
+
+      assert :ok = Conversations.answer_permission_request(conv.id, user.id, first_id, "yes")
+      settle(pid)
+      _params = drive_to_resume_prompt(pid, ref)
+
+      # The same JSON-RPC id the detached request used.
+      second_id = raise_permission_with(pid, ref, 0, %{})
+
+      assert second_id =~ ~r/^0\./
+      refute second_id == first_id
+
+      turn = :sys.get_state(pid).current_turn
+      assert turn.pending_permission["request_id"] == second_id
+      assert turn.pending_permission["tool"] == "Bash"
+
+      started =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "request" and &1.state == "started"))
+        |> Enum.map(&Jason.decode!(&1.data))
+
+      assert Enum.map(started, & &1["request_id"]) == [first_id, second_id]
+
+      # And it is timed, so nobody answering still ends it.
+      assert :sys.get_state(pid).permission_timer
+      send(pid, {:permission_timeout, second_id})
+      settle(pid)
+
+      assert %{"id" => 0, "result" => %{"outcome" => %{"optionId" => "no"}}} = next_write()
+    end
+
+    test "a restart between the detach and the answer changes nothing: the row drives it" do
+      # Nothing about a detached request lives in a process. The server that
+      # raised it is gone by the time it is answered in the normal case
+      # (the sandbox parked), so a deploy in the middle has to be the same
+      # thing happening sooner.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 413, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+
+      # The BEAM this was raised on goes away.
+      GenServer.stop(pid)
+
+      # Ownership: the tenant-scoped answer door below establishes it; this is
+      # the assertion that the row alone still describes the request.
+      assert [%{request_id: ^request_id, tool: "Bash"}] =
+               Conversations._unsafe_list_pending_requests(conv.id)
+
+      # No server, so the answer takes the wake path.
+      test = self()
+
+      Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+      end)
+
+      Mimic.stub(ConversationServer, :queue_initial_prompt, fn _pid, prompt ->
+        send(test, {:resume_prompt, prompt})
+        :ok
+      end)
+
+      assert :ok = Conversations.answer_permission_request(conv.id, user.id, request_id, "yes")
+
+      assert_receive {:resume_prompt, prompt}
+
+      assert %{
+               "fountain/permission_answer" => %{
+                 "request_id" => ^request_id,
+                 "option_id" => "yes"
+               }
+             } =
+               Jason.decode!(prompt)
     end
 
     test "answering is refused for the sandbox's own token" do
@@ -1599,7 +1724,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {pid, ref} = start_acp_turn(conv)
       prompt_id = drive_to_prompt(pid, ref)
 
-      request_id = raise_permission_with(pid, ref, 408, %{})
+      request_id = raise_permission_with(pid, ref, 412, %{})
       reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
 
       assert {:error, :sprite_may_not_answer} =
@@ -1660,7 +1785,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Fountain.Workers.DetachedRequestSweeper.sweep_expired_requests() == 1
       settle(pid)
 
-      assert %{"method" => "session/prompt", "params" => params} = next_write()
+      params = drive_to_resume_prompt(pid, ref)
       assert [%{"text" => text}] = params["prompt"]
 
       assert %{"fountain/permission_answer" => answer} = Jason.decode!(text)

@@ -2577,9 +2577,9 @@ defmodule Fountain.Conversations.ConversationServer do
     # Resolve a held permission request as the turn ends (#940): a card left
     # open is a client waiting on an answer that can never come, and the
     # turn's `pending_permission` would stay set on a turn that is over.
-    # Unless the agent asked to keep it (#1635): `:detach_permission` ran
-    # first and marked the row, and the answer that can still come is a new
-    # turn rather than this peer, so the card stays up on purpose.
+    # Unless the agent asked to keep it (#1635): `:detach_permission` marked
+    # the row first, the connection is dropped right after this (the peer is
+    # still holding the request), and the answer arrives as a new turn.
     state =
       if Pending.detached?(state.current_turn),
         do: state,
