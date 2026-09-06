@@ -56,7 +56,14 @@ defmodule Fountain.Agents.Agent do
     timestamps(type: :utc_datetime)
   end
 
-  def runtimes, do: @runtimes
+  @doc "Every runtime that can appear in persisted data, including the opt-in test fixture."
+  def known_runtimes, do: @runtimes ++ ["fountain-fixture"]
+
+  def runtimes do
+    if Fountain.DeployedACPFixture.enabled?(),
+      do: known_runtimes(),
+      else: @runtimes
+  end
 
   @sandbox_modes ~w(ephemeral persistent)
 
@@ -87,7 +94,8 @@ defmodule Fountain.Agents.Agent do
     agent
     |> cast(attrs, cast_fields())
     |> validate_required([:name, :model, :runtime])
-    |> validate_inclusion(:runtime, @runtimes)
+    |> validate_inclusion(:runtime, runtimes())
+    |> validate_fixture_account()
     |> validate_inclusion(:sandbox_mode, @sandbox_modes)
     |> validate_format(:model, ~r{^[a-z0-9_-]+/[a-z0-9._-]+$},
       message: "must be in canonical provider/model_id form"
@@ -100,6 +108,23 @@ defmodule Fountain.Agents.Agent do
     |> validate_permission_policy()
     |> unique_constraint(:name, name: :agents_user_id_name_index)
     |> foreign_key_constraint(:environment_id)
+  end
+
+  defp validate_fixture_account(changeset) do
+    if get_field(changeset, :runtime) == "fountain-fixture" do
+      changeset =
+        if Fountain.DeployedACPFixture.allowed?(get_field(changeset, :user_id)),
+          do: changeset,
+          else: add_error(changeset, :runtime, "fixture is not enabled for this account")
+
+      Enum.reduce([:skills, :mcp_servers, :system], changeset, fn field, acc ->
+        if get_field(acc, field) in [nil, [], %{}, ""],
+          do: acc,
+          else: add_error(acc, field, "is not supported by the scripted fixture")
+      end)
+    else
+      changeset
+    end
   end
 
   # claude / codex / gemini each drive a single provider's CLI and take a
@@ -118,6 +143,14 @@ defmodule Fountain.Agents.Agent do
   # The model id itself is never checked — a model released since the last
   # deploy has to work the day it ships.
   defp validate_model_provider(changeset) do
+    if get_field(changeset, :runtime) == "fountain-fixture" do
+      validate_inclusion(changeset, :model, ["fixture/deterministic-v1"])
+    else
+      validate_packaged_model_provider(changeset)
+    end
+  end
+
+  defp validate_packaged_model_provider(changeset) do
     case Model.provider(get_field(changeset, :model)) do
       nil -> changeset
       actual -> validate_provider(changeset, actual, get_field(changeset, :runtime))
@@ -195,7 +228,7 @@ defmodule Fountain.Agents.Agent do
     runtime = Ecto.Changeset.get_field(changeset, :runtime)
 
     if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
-         Managoat.Runtimes.ACP.asks_permission?(runtime) do
+         Fountain.RuntimeDispatch.asks_permission?(runtime) do
       []
     else
       [

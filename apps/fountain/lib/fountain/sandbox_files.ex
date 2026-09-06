@@ -106,7 +106,7 @@ defmodule Fountain.SandboxFiles do
   def cwd(%Sandbox{} = sandbox) do
     case with_agent(sandbox) do
       %Sandbox{agent: %{runtime: runtime}} when is_binary(runtime) ->
-        Managoat.Runtimes.ACP.cwd(runtime)
+        Fountain.RuntimeDispatch.cwd(runtime)
 
       _ ->
         @home

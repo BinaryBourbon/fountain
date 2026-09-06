@@ -102,6 +102,8 @@ defmodule Fountain.Agents.ModelCatalog do
   model id under a known provider.
   """
   @spec suggestions(String.t() | nil) :: [String.t()]
+  def suggestions("fountain-fixture"), do: ["fixture/deterministic-v1"]
+
   def suggestions(runtime) do
     case Model.provider_for_runtime(runtime) do
       nil -> Enum.flat_map(Model.providers(), &suggestions_for_provider/1)

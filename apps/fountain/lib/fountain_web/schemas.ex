@@ -111,7 +111,7 @@ defmodule FountainWeb.Schemas do
         id: %Schema{type: :string, format: :uuid},
         status: %Schema{type: :string, enum: ~w(pending running idle failed terminated)},
         title: %Schema{type: :string, nullable: true},
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
         mid_turn: %Schema{
           type: :boolean,
           description: "True while this conversation is running a turn on the machine."
@@ -339,7 +339,7 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           description: "Per-launch environment override; null means the agent's environment."
         },
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
         acp: %Schema{
           type: :boolean,
           readOnly: true,
@@ -687,10 +687,11 @@ defmodule FountainWeb.Schemas do
               "codex, google for gemini; opencode accepts any of the three. Other " <>
               "providers are rejected: Fountain has no credentials to export for " <>
               "them. The model id is not checked against a list, so a newly " <>
-              "released model works without a Fountain release.",
+              "released model works without a Fountain release. The isolated fountain-fixture " <>
+              "runtime is the exception: it accepts only fixture/deterministic-v1.",
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
         acp: %Schema{
           type: :boolean,
           readOnly: true,
@@ -860,7 +861,7 @@ defmodule FountainWeb.Schemas do
           type: :string,
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
         sandbox_provider: %Schema{
           type: :string,
           enum: ~w(sprites e2b daytona runner),
@@ -978,7 +979,7 @@ defmodule FountainWeb.Schemas do
         description: %Schema{type: :string},
         system: %Schema{type: :string},
         model: %Schema{type: :string, pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"},
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
         sandbox_provider: %Schema{
           type: :string,
           enum: ~w(sprites e2b daytona runner),
