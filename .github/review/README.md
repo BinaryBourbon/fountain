@@ -55,7 +55,9 @@ rerunning until it turns green is not evidence that the defect was fixed.
 
 Merge this configuration through Fountain's normal reviewed PR process. Its
 own changes require human review; no live run can use its policy before merge.
-Configure repository variables `REVIEW_LOOP_URL` to
+The dispatch workflow uses the public `managoat/review-loop-action` at an
+immutable release commit, with no inline script. Configure repository variables
+`REVIEW_LOOP_URL` to
 `https://review-loop.demo.managoat.com` and `REVIEW_LOOP_ENABLED` to `true` after
 the policy is trusted. The workflow admits opened, updated, reopened or
 ready-for-review PRs from branches in this repository. Draft and fork PRs are
