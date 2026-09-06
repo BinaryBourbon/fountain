@@ -287,6 +287,7 @@ defmodule FountainWeb.OpenAIController do
     ],
     request_body: {"Chat-completions request", "application/json", @chat_request},
     responses: [
+      internal_server_error: {"Internal error", "application/json", @openai_error},
       ok:
         {"The completion (or, with `stream: true`, its SSE stream)", "application/json",
          @chat_response},
@@ -302,6 +303,7 @@ defmodule FountainWeb.OpenAIController do
       "OpenAI's `GET /v1/models`, so a base-URL client's model picker fills itself. Each " <>
         "agent is a model whose `id` is the agent's name.",
     responses: [
+      not_found: {"Not found", "application/json", @openai_error},
       ok:
         {"Model list", "application/json",
          %OpenApiSpex.Schema{

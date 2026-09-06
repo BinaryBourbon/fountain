@@ -101,6 +101,9 @@ defmodule Fountain.Conversations.CallbackKey do
   revoking `previous_key_id` — the one THIS server previously minted (a
   re-provision or reattach within one server life) — when there is one.
 
+  A `sandbox_api_access: "none"` conversation never mints a key and returns
+  `{:ok, nil, nil, conv}` on every provision and reattach.
+
   Returns `{:ok, plaintext, key_id, conv}` with the row now pointing at the
   key, or `{:error, conv}` when the mint failed; the caller holds the
   plaintext, since the durable record is a hash in `api_keys` which cannot
@@ -115,7 +118,19 @@ defmodule Fountain.Conversations.CallbackKey do
   row is pruned by RetentionPruner.
   """
   @spec rotate(Conversation.t(), String.t() | nil) ::
-          {:ok, String.t(), String.t(), Conversation.t()} | {:error, Conversation.t()}
+          {:ok, String.t() | nil, String.t() | nil, Conversation.t()}
+          | {:error, Conversation.t()}
+  def rotate(%Conversation{sandbox_api_access: "none"} = conv, previous_key_id) do
+    # No mint occurs, including on provision, wake or reattach. A stale local
+    # pointer is revoked defensively; unrelated conversations keep their keys.
+    for key_id <- Enum.uniq([previous_key_id, conv.callback_api_key_id]), not is_nil(key_id) do
+      Accounts.revoke_api_key(conv.user_id, key_id, actor: "system:conversation_server")
+    end
+
+    {:ok, conv} = Conversations.update_conversation(conv, %{callback_api_key_id: nil})
+    {:ok, nil, nil, conv}
+  end
+
   def rotate(%Conversation{} = conv, previous_key_id) do
     if previous_key_id do
       _ =

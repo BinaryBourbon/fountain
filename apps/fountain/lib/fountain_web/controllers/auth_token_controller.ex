@@ -33,6 +33,7 @@ defmodule FountainWeb.AuthTokenController do
     security: [],
     request_body: {"Credentials", "application/json", Schemas.AuthTokenRequest, required: true},
     responses: [
+      too_many_requests: {"Rate limited", "application/json", Schemas.Error},
       created: {"A new API key", "application/json", Schemas.AuthTokenResponse},
       unauthorized: {"Invalid email or password", "application/json", Schemas.Error},
       forbidden: {"Email not verified", "application/json", Schemas.AuthError},

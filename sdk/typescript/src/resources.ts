@@ -15,6 +15,8 @@ import type {
   Vault,
   VaultInput,
   VaultPatch,
+  VaultSecret,
+  VaultSecretMetadataPatch,
 } from "./types.ts";
 
 /**
@@ -91,7 +93,7 @@ class Collection<T extends { id: string }, Input, Patch> {
  * never read it back out.
  */
 class Secrets {
-  private readonly http: HttpClient;
+  protected readonly http: HttpClient;
   private readonly resolver: Resolver;
   private readonly parentPath: string;
   private readonly what: string;
@@ -134,9 +136,18 @@ class Secrets {
     await this.http.request("DELETE", `${await this.parentId(parent)}/secrets/${encodeURIComponent(key)}`);
   }
 
-  private async parentId(nameOrId: string): Promise<string> {
+  protected async parentId(nameOrId: string): Promise<string> {
     const { id } = await this.resolver.resolve(this.parentPath, this.what, nameOrId);
     return `${this.parentPath}/${id}`;
+  }
+}
+
+/** Vault metadata can change without reading or replacing its secret value. */
+class VaultSecrets extends Secrets {
+  async update(parent: string, key: string, patch: VaultSecretMetadataPatch): Promise<VaultSecret> {
+    return this.http.data<VaultSecret>(
+      "PATCH", `${await this.parentId(parent)}/secrets/${encodeURIComponent(key)}`, { body: patch },
+    );
   }
 }
 
@@ -243,10 +254,10 @@ export class ConnectionProviders {
 
 /** The vaults on this account, and their secrets. */
 export class Vaults extends Collection<Vault, VaultInput, VaultPatch> {
-  readonly secrets: Secrets;
+  readonly secrets: VaultSecrets;
 
   constructor(http: HttpClient, resolver: Resolver) {
     super(http, resolver, "/api/vaults", "vault");
-    this.secrets = new Secrets(http, resolver, this.path, this.what);
+    this.secrets = new VaultSecrets(http, resolver, this.path, this.what);
   }
 }

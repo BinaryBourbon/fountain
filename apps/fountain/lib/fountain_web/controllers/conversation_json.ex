@@ -52,6 +52,7 @@ defmodule FountainWeb.ConversationJSON do
       agent_version: agent_version_number(c),
       vault_id: c.vault_id,
       environment_id: c.environment_id,
+      sandbox_api_access: c.sandbox_api_access,
       permission_policy: c.permission_policy,
       runtime: c.runtime,
       # Derived, never stored — the same signal as on an agent (#702). A
@@ -186,6 +187,7 @@ defmodule FountainWeb.ConversationJSON do
       image_count: length(t.images || []),
       # The end-of-turn figure as the runtime reported it (#827); null when
       # it reported none or the turn predates the column.
+      model_selection: t.model_selection,
       usage: t.usage && usage_data(t.usage)
     }
   end

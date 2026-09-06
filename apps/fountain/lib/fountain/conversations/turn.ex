@@ -40,6 +40,8 @@ defmodule Fountain.Conversations.Turn do
     # never summed from the live `usage_update`s (their meaning differs per
     # runtime). nil when the runtime reported nothing.
     field :usage, :map
+    # ACP selection evidence, distinct from the agent's saved configuration.
+    field :model_selection, :map
     # The assistant's text for the turn — its events' `text` blocks, joined —
     # materialised by `Conversations._unsafe_update_turn/2` when the turn
     # ends, for `Fountain.Search` (#826). nil while the turn runs and on
@@ -67,6 +69,7 @@ defmodule Fountain.Conversations.Turn do
       :acp_prompt_id,
       :pending_permission,
       :usage,
+      :model_selection,
       :reply_text,
       :origin,
       :conversation_id
