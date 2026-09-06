@@ -646,6 +646,9 @@ func formatStreamJSONLine(line string) string {
 	}
 	t, _ := msg["type"].(string)
 	switch t {
+	case "system":
+		return formatSystemEvent(msg)
+
 	case "assistant":
 		message, _ := msg["message"].(map[string]any)
 		content, _ := message["content"].([]any)
@@ -691,4 +694,39 @@ func formatStreamJSONLine(line string) string {
 		}
 	}
 	return ""
+}
+
+// System notices are useful progress, not turn failures. Unknown subtypes
+// stay visible without dumping their payload into the terminal.
+func formatSystemEvent(msg map[string]any) string {
+	field := func(key string) string {
+		value, _ := msg[key].(string)
+		return strings.Join(strings.Fields(value), " ")
+	}
+	subtype := field("subtype")
+	if subtype != "code_change_published" {
+		if subtype == "" {
+			subtype = "notice"
+		}
+		return "\n\x1b[2m▸ system: " + subtype + "\x1b[0m\n"
+	}
+	label := "published"
+	if provider := field("provider"); provider != "" {
+		label += ": " + provider
+		if provider == "github" {
+			label += " pull request"
+		}
+	}
+	reference := field("repo")
+	if identifier := field("identifier"); identifier != "" {
+		reference += "#" + identifier
+	}
+	if reference != "" {
+		label += " " + reference
+	}
+	result := "\n▸ " + label + "\n"
+	if url := field("url"); url != "" {
+		result += "  " + url + "\n"
+	}
+	return result
 }

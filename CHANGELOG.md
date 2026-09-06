@@ -170,6 +170,7 @@ upgrade, is in
 
 ### Fixed
 
+- The CLI displays published code changes with their URL, and renders unknown system notices as a dim line.
 - `/api/auth/me` now returns the presented API key's `expires_at`, or null for a key without an expiry, as its schema declares.
 
 - Deduplicate database gauges across replicas in sandbox, conversation and Oban alerts.
