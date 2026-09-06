@@ -32,6 +32,35 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
   end
 
   describe "a fresh provision" do
+    test "none launches the real conversation server without a callback credential", %{
+      user: user,
+      agent: agent
+    } do
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox_api_access: "none")
+      test = self()
+      stub_happy_sprite()
+      stub_turn_boundary()
+
+      Mimic.stub(Fountain.Conversations.Provisioning, :write_env_file, fn _h, env ->
+        send(test, {:none_env_file, env})
+        :ok
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "review local files")
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      assert_receive {:none_env_file, file_env}, 2_000
+      assert_receive {:spawned, _cmd, _args, opts}, 2_000
+
+      for env <- [file_env, Keyword.fetch!(opts, :env)] do
+        refute Enum.any?(env, fn {key, _} -> key == "FOUNTAIN_TOKEN" end)
+      end
+
+      state = :sys.get_state(pid)
+      assert state.callback_token == nil
+      assert state.callback_api_key_id == nil
+      assert Fountain.Accounts.list_api_keys(user.id) == []
+    end
+
     test "keeps the identity off the disk and on the process", %{user: user, agent: agent} do
       conv = insert_conversation(user_id: user.id, agent: agent)
       test = self()
@@ -78,7 +107,7 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
   describe "a reattach after a deploy" do
     # A `ready` sandbox with a `running` ACP turn is what a server finds after
     # a restart. The prompt id makes the attach a real one (#772).
-    defp reattach_fixture(%{user: user, agent: agent}) do
+    defp reattach_fixture(%{user: user, agent: agent} = ctx) do
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
 
       conv =
@@ -87,7 +116,8 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
           user_id: user.id,
           sandbox: sandbox,
           status: "running",
-          runtime_session_id: "sess_live"
+          runtime_session_id: "sess_live",
+          sandbox_api_access: Map.get(ctx, :sandbox_api_access, "owner")
         )
 
       turn =
@@ -110,6 +140,30 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
       |> Conversations._unsafe_list_log_events()
       |> Enum.filter(&(&1.kind == "stage" and &1.stage == "reattach"))
       |> Enum.map(&Jason.decode!(&1.data))
+    end
+
+    test "none remains credential-free when a real server reattaches after restart", ctx do
+      {conv, _turn} = reattach_fixture(Map.put(ctx, :sandbox_api_access, "none"))
+      stub_happy_sprite()
+      ref = stub_turn_boundary()
+      test = self()
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _ ->
+        {:ok, [tagged("none-session", conv.id)]}
+      end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :attach, fn _, id, _ ->
+        send(test, {:none_attached, id})
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
+
+      {pid, _mon, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      assert_receive {:none_attached, "none-session"}, 2_000
+      state = :sys.get_state(pid)
+      assert state.callback_token == nil
+      assert state.callback_api_key_id == nil
+      assert Fountain.Accounts.list_api_keys(ctx.user.id) == []
     end
 
     test "binds to the session tagged with this conversation, not the head", ctx do

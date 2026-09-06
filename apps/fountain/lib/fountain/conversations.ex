@@ -1769,7 +1769,8 @@ defmodule Fountain.Conversations do
                  {:ok, fresh} <- start_conversation(attrs, opts),
                  do: {:ok, fresh, :created}
           else
-            {:ok, conv, :resumed}
+            with :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+                 do: {:ok, conv, :resumed}
           end
 
         nil ->
@@ -1869,6 +1870,7 @@ defmodule Fountain.Conversations do
                                 agent's own (#783); subject to `agent.allowed_environment_ids`
     - `permission_policy`     — optional per-tool permission override (#939); may only
                                 narrow the agent's own policy, never widen it
+    - `sandbox_api_access`    — "owner" (default) or "none"; none requires a fresh ephemeral sandbox
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
     - `title`                 — optional display title (the team page names a teammate with it)
@@ -1890,6 +1892,7 @@ defmodule Fountain.Conversations do
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
+         {:ok, api_access} <- resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
@@ -1938,6 +1941,7 @@ defmodule Fountain.Conversations do
              parent_conversation_id: parent_id,
              channel_id: attrs["channel_id"],
              title: attrs["title"],
+             sandbox_api_access: api_access,
              permission_policy: perm_policy,
              caller_tools: attrs["caller_tools"] || []
            }) do
@@ -2040,6 +2044,31 @@ defmodule Fountain.Conversations do
       {:error, _} = err ->
         err
     end
+  end
+
+  defp resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],
+    do: {:ok, "owner"}
+
+  defp resolve_sandbox_api_access("none", "ephemeral"), do: {:ok, "none"}
+  defp resolve_sandbox_api_access(_access, _mode), do: {:error, :invalid_sandbox_api_access}
+
+  defp check_sandbox_api_resume(_conv, nil), do: :ok
+  defp check_sandbox_api_resume(%Conversation{sandbox_api_access: access}, access), do: :ok
+  defp check_sandbox_api_resume(_conv, _access), do: {:error, :invalid_sandbox_api_access}
+
+  defp check_sandbox_api_attach(sandbox, access) do
+    # A fresh none launch must never inherit another conversation's credential,
+    # and attaching an owner conversation must not inject one into its machine.
+    has_none =
+      Repo.exists?(
+        from(c in Conversation,
+          where: c.sandbox_id == ^sandbox.id and c.sandbox_api_access == "none"
+        )
+      )
+
+    if access in [nil, "owner"] and not has_none,
+      do: :ok,
+      else: {:error, :invalid_sandbox_api_access}
   end
 
   # The launch's sandbox mode: the agent's default unless the launch names
@@ -2409,6 +2438,7 @@ defmodule Fountain.Conversations do
          # with no platform key configured runs no query here.
          :ok <- Fountain.PlatformInference.gate(user_id, agent.model),
          %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
+         :ok <- check_sandbox_api_attach(sandbox, attrs["sandbox_api_access"]),
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
          :ok <- check_attach_capacity(sandbox, agent, attrs["prompt"]),
          {:ok, conv} <-

@@ -43,6 +43,12 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # list of atoms is stringified first — the domain keeps them as atoms, the
   # wire carries strings.
   @derived %{
+    {FountainWeb.Schemas.Conversation, "sandbox_api_access"} =>
+      {Conversation, :sandbox_api_access_modes},
+    {FountainWeb.Schemas.ConversationCreateRequest, "sandbox_api_access"} =>
+      {Conversation, :sandbox_api_access_modes},
+    {FountainWeb.Schemas.CatalogResponse, "data.sandbox_api_access.[]"} =>
+      {Conversation, :sandbox_api_access_modes},
     {FountainWeb.Schemas.Connection, "status"} => {Fountain.Connections.Connection, :statuses},
     # Claimable principals (ADR 0044). Three schemas restate the same list,
     # which is exactly the drift this test exists for.

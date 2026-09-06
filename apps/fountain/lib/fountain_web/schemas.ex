@@ -321,6 +321,12 @@ defmodule FountainWeb.Schemas do
               "endpoints; null elsewhere and wherever agent_version_id is null."
         },
         vault_id: %Schema{type: :string, format: :uuid, nullable: true},
+        sandbox_api_access: %Schema{
+          type: :string,
+          enum: ~w(owner none),
+          description:
+            "Immutable sandbox callback credential policy. none never issues a callback token."
+        },
         permission_policy: %Schema{
           type: :object,
           nullable: true,
@@ -471,6 +477,12 @@ defmodule FountainWeb.Schemas do
               "(404 otherwise) and satisfy the agent's allowed_environment_ids when that " <>
               "allowlist is set (422 environment_not_allowed). Part of the channel_id " <>
               "resume key."
+        },
+        sandbox_api_access: %Schema{
+          type: :string,
+          enum: ~w(owner none),
+          description:
+            "none omits the sandbox Fountain credential on provision and every wake. Requires a fresh ephemeral sandbox; unavailable on attach or policy-changing channel resume."
         },
         permission_policy: %Schema{
           type: :object,
@@ -2563,6 +2575,10 @@ defmodule FountainWeb.Schemas do
         data: %Schema{
           type: :object,
           properties: %{
+            sandbox_api_access: %Schema{
+              type: :array,
+              items: %Schema{type: :string, enum: ~w(owner none)}
+            },
             runtimes: %Schema{type: :array, items: %Schema{type: :string}},
             models: %Schema{
               type: :object,
