@@ -178,7 +178,15 @@ other way around, where an absent `spec` key leaves that field alone.
 
 Rebinding a teammate moves its computer. Fountain retires the machine the old
 binding named, so the next message builds one from the new environment and
-vault. It refuses the whole row while a turn is running on that machine.
+vault. It refuses the whole row while a turn is running on that machine. A
+conversation that shared the retired machine, and that names a different
+environment or vault, does not follow the teammate onto the new one. It
+builds a machine from what it names on its own next message.
+
+Fountain keeps one machine for each agent, environment and vault. The row
+fails when the agent already has one on the environment and vault the
+teammate moves to. Fountain does not join the teammate to that machine.
+Reset or delete the machine first, then apply again.
 
 Each result row reports `created`, `updated`, `unchanged` or `error`. A
 second apply of an unchanged manifest reports `unchanged` for every row.

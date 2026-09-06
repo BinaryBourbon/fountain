@@ -141,6 +141,64 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert Conversations._unsafe_get_conversation!(ctx.b.id).sandbox_id == woken.sandbox_id
   end
 
+  # #1636: co-tenants normally share one identity, because attaching to a
+  # machine requires the same agent, environment and vault. Rebinding a
+  # teammate moves one conversation's environment while its co-tenants keep
+  # theirs, and the replacement a wake builds carries only the waking
+  # conversation's pair. Handing it to the other one would run it on another
+  # binding's environment files and vault material, and would make the machine
+  # depend on which conversation happened to wake first.
+  describe "a co-tenant that declares a different identity" do
+    setup ctx do
+      other_env = insert_env(user_id: ctx.user.id)
+      {:ok, b} = Conversations.update_conversation(ctx.b, %{environment_id: other_env.id})
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+      {:ok, _} = Conversations.reset_sandbox(ctx.home)
+      Map.merge(ctx, %{other_env: other_env, b: b})
+    end
+
+    test "waking the one that kept the identity leaves the rebound one behind", ctx do
+      assert {:ok, woken_a} = Conversations.wake_conversation(ctx.a.id)
+      refute woken_a.sandbox_id == ctx.home.id
+      assert Conversations._unsafe_get_sandbox!(woken_a.sandbox_id).environment_id == ctx.env.id
+
+      # It did not follow: it names something else, so it keeps the retired
+      # row until its own wake.
+      assert Conversations._unsafe_get_conversation!(ctx.b.id).sandbox_id == ctx.home.id
+
+      assert {:ok, woken_b} = Conversations.wake_conversation(ctx.b.id)
+      refute woken_b.sandbox_id == woken_a.sandbox_id
+
+      assert Conversations._unsafe_get_sandbox!(woken_b.sandbox_id).environment_id ==
+               ctx.other_env.id
+    end
+
+    test "waking the rebound one first does not pull the other onto its machine", ctx do
+      assert {:ok, woken_b} = Conversations.wake_conversation(ctx.b.id)
+
+      assert Conversations._unsafe_get_sandbox!(woken_b.sandbox_id).environment_id ==
+               ctx.other_env.id
+
+      assert Conversations._unsafe_get_conversation!(ctx.a.id).sandbox_id == ctx.home.id
+
+      assert {:ok, woken_a} = Conversations.wake_conversation(ctx.a.id)
+      refute woken_a.sandbox_id == woken_b.sandbox_id
+      assert Conversations._unsafe_get_sandbox!(woken_a.sandbox_id).environment_id == ctx.env.id
+    end
+
+    test "the one left behind is told its machine is gone", ctx do
+      assert {:ok, _} = Conversations.wake_conversation(ctx.a.id)
+
+      messages =
+        ctx.b.id
+        |> Conversations._unsafe_list_log_events(0)
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "sandbox"))
+        |> Enum.map(&Jason.decode!(&1.data)["message"])
+
+      assert Enum.any?(messages, &(&1 =~ "different environment"))
+    end
+  end
+
   test "records sandbox.reset with the actor", ctx do
     stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(ctx.home, actor: "api", request_ip: "10.0.0.1")

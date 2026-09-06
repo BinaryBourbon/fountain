@@ -479,13 +479,21 @@ defmodule Fountain.Team do
   committed one. An ephemeral computer is a conversation's own and is left
   alone.
 
+  A rebinding onto an identity the agent already has a live home for is
+  refused with `{:error, :destination_home_occupied}`, and nothing is written.
+  There is one home per `(user, agent, environment, vault)`, and the wake path
+  builds a home rather than attaching to one, so writing the binding anyway
+  would leave a teammate that cannot wake at all. Merging the teammate onto
+  the machine that is already there is deliberately not done here; it needs
+  the readiness, runtime and quota checks `attach_conversation/3` makes.
+
   Returns `{:ok, conv, :updated}`, or `{:ok, conv, :unchanged}` when `attrs`
   matched the teammate already. `{:error, :not_found}` when the agent is not
   on the team, `{:error, :environment_not_allowed}` / `{:error,
   :vault_not_allowed}` when an id is not the caller's own or not on the
-  agent's allowlist, `{:error, :sandbox_mid_turn}` as above. Audited as
-  `team.updated` with the changed field names, and nothing is recorded when
-  nothing changed.
+  agent's allowlist, `{:error, :sandbox_mid_turn}` and `{:error,
+  :destination_home_occupied}` as above. Audited as `team.updated` with the
+  changed field names, and nothing is recorded when nothing changed.
 
   The second argument is the agent's id, or the teammate map a caller already
   holds from `get_teammate/2` or `list_teammates/1` for the same `user_id` —
@@ -504,10 +512,12 @@ defmodule Fountain.Team do
   def update_teammate(user_id, %{agent: agent, conversation: conv}, attrs, opts)
       when is_binary(user_id) and is_map(attrs) and is_list(opts) do
     changes = binding_changes(attrs, conv)
+    identity = effective_identity(conv, agent, changes)
     # Ownership: `conv` and `agent` came from the scoped get_teammate.
-    orphans = homes_orphaned_by_rebinding(conv, agent, changes)
+    orphans = homes_orphaned_by_rebinding(conv, identity)
 
     with :ok <- bindings_allowed(user_id, agent, changes),
+         :ok <- destination_free(user_id, agent, conv, identity),
          :ok <- no_home_mid_turn(orphans) do
       write_bindings(user_id, conv, changes, orphans, opts)
     end
@@ -523,28 +533,56 @@ defmodule Fountain.Team do
     |> Map.new()
   end
 
-  # The teammate's computer, when the new binding no longer names it. The
-  # identity a home is found under is the *effective* pair, so a cleared
-  # override falls back to the agent's own environment before the comparison.
-  # Nothing moves for a name-only change, and nothing is orphaned by a
-  # rebinding that keeps the same pair.
-  defp homes_orphaned_by_rebinding(
-         %Conversation{sandbox: %Sandbox{} = home} = conv,
-         agent,
-         changes
-       ) do
-    env_id = Map.get(changes, :environment_id, conv.environment_id) || agent.environment_id
-    vault_id = Map.get(changes, :vault_id, conv.vault_id)
+  # The pair a machine for this teammate would be built from once `changes`
+  # land. A cleared override falls back to the agent's own environment, which
+  # is what a sandbox row carries and what `_unsafe_find_home/4` looks up by.
+  defp effective_identity(%Conversation{} = conv, %Agents.Agent{} = agent, changes) do
+    {Map.get(changes, :environment_id, conv.environment_id) || agent.environment_id,
+     Map.get(changes, :vault_id, conv.vault_id)}
+  end
 
+  # The teammate's computer, when the new binding no longer names it. Nothing
+  # moves for a name-only change, and nothing is orphaned by a rebinding that
+  # keeps the same pair.
+  defp homes_orphaned_by_rebinding(%Conversation{sandbox: %Sandbox{} = home}, identity) do
     if home.mode == "persistent" and home.status not in ["terminated", "failed"] and
-         {home.environment_id, home.vault_id} != {env_id, vault_id} do
+         {home.environment_id, home.vault_id} != identity do
       [home]
     else
       []
     end
   end
 
-  defp homes_orphaned_by_rebinding(_conv, _agent, _changes), do: []
+  defp homes_orphaned_by_rebinding(_conv, _identity), do: []
+
+  # One live home per identity, enforced by `sandboxes_home_identity_index`.
+  # If the agent already has a home for the pair this rebinding moves to, the
+  # teammate would be written onto an identity it cannot wake into: the wake
+  # path provisions a *new* home rather than attaching to an existing one, and
+  # the index rejects the insert, so the teammate is stranded and re-applying
+  # the same manifest reports `unchanged` and does not recover it.
+  #
+  # Refused rather than merged. Attaching to the machine that is already there
+  # is the other half of this and needs its own change — readiness, the
+  # runtime the disk was shaped for, and the quota a second tenant of that
+  # machine implies are all checks `attach_conversation/3` makes and this
+  # function does not. Refusing cannot strand anybody; attaching wrongly can.
+  #
+  # Ownership: `agent` and `conv` came from the scoped get_teammate, and a
+  # home carries the same `user_id` as the identity it is keyed on.
+  defp destination_free(user_id, %Agents.Agent{} = agent, %Conversation{} = conv, identity) do
+    {env_id, vault_id} = identity
+
+    if identity == effective_identity(conv, agent, %{}) do
+      :ok
+    else
+      case Conversations._unsafe_find_home(user_id, agent.id, env_id, vault_id) do
+        nil -> :ok
+        %Sandbox{id: id} when id == conv.sandbox_id -> :ok
+        %Sandbox{} -> {:error, :destination_home_occupied}
+      end
+    end
+  end
 
   # Asked before anything is written, so a mid-turn refusal costs the caller
   # nothing. Ownership: the homes came from the scoped get_teammate's

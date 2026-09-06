@@ -624,6 +624,54 @@ defmodule Fountain.ManifestTest do
       assert env.id
     end
 
+    # A rebind onto an identity that already has a computer is refused rather
+    # than merged onto that computer. The row says what to do about it.
+    test "a Teammate rebound onto an occupied computer fails that row", %{user: user} do
+      env = insert_env(user_id: user.id, name: "proj")
+
+      agent =
+        insert_agent(user_id: user.id, name: "ada", sandbox_mode: "persistent")
+
+      home =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: nil,
+          provider: "sprites"
+        )
+
+      occupied =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: env.id,
+          provider: "sprites"
+        )
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox: home,
+          status: "idle",
+          channel_id: Team.channel()
+        )
+
+      {:ok, [%{kind: "Teammate", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [
+          teammate_resource("Ada", %{"agent" => "ada", "environment" => "proj"})
+        ])
+
+      assert %{"base" => [message]} = errors
+      assert message =~ "already has a computer on that environment and vault"
+      assert Conversations.get_conversation(conv.id, user.id).environment_id == nil
+      assert Conversations._unsafe_get_sandbox!(occupied.id).status == "ready"
+    end
+
     test "re-applying a Teammate moves its name, environment and vault", %{user: user} do
       inert_start_child()
 

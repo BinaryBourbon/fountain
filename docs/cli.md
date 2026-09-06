@@ -385,7 +385,15 @@ the other way around, where an absent `spec` key leaves that field alone.
 A teammate's computer is built for one environment and one vault. Move either
 of them and Fountain retires that computer, so the teammate's next message
 builds a new one with the files and tools of a fresh machine. It refuses the
-row while a turn is still running there, and prints what to do about it.
+row while a turn is still running there, and prints what to do about it. A
+conversation that shared the retired computer, and that names a different
+environment or vault, does not follow the teammate. It builds a machine of
+its own from what it names.
+
+Fountain keeps one computer for each agent, environment and vault. It refuses
+the row when the agent already has a computer on the environment and vault
+you are moving the teammate to. It does not join the teammate to that
+computer. Reset or remove the computer first, then apply again.
 
 Two `Teammate` documents cannot name the same agent. An agent is on the team
 once, so the second document fails and the first one applies.

@@ -28,7 +28,7 @@ A `Teammate` puts an agent on the team, which opens its conversation and provisi
 Three things about these that surprise people:
 
 - **A `Teammate` doc is the whole teammate.** Unlike the other five kinds, where an absent `spec` key leaves that column alone, dropping `environment` or `vault` from a Teammate doc *clears* that binding — back to the agent's own environment and no vault. That is what makes the doc a declaration rather than a patch.
-- **Rebinding moves the computer.** A home is keyed on `(user, agent, environment, vault)`, so changing either id retires the machine the old key named; the teammate's next message builds a fresh one. Refused with an error on that row while a turn is still running there — the same refusal `Agent`'s `environment` gives (#1084).
+- **Rebinding moves the computer.** A home is keyed on `(user, agent, environment, vault)`, so changing either id retires the machine the old key named; the teammate's next message builds a fresh one. Refused with an error on that row while a turn is still running there — the same refusal `Agent`'s `environment` gives (#1084). A conversation that *shared* that machine and names a different environment or vault does not follow the teammate; it builds its own on its next prompt. And because there is only ever one home per identity, a rebind onto an identity the agent **already** has a home for is **refused**, not merged onto that home — reset or remove the existing one first (#1636).
 - **Two Teammate docs can't name the same agent**, and a `Webhook` whose `spec.url` changes creates a *second* endpoint (nothing is pruned; delete the old one with `fountain webhooks delete`).
 
 ```yaml

@@ -54,7 +54,8 @@ defmodule FountainWeb.ApplyController do
     if conn.halted do
       conn
     else
-      with {:ok, results} <- Manifest.apply_manifest(user.id, resources, Audited.attribution(conn)) do
+      with {:ok, results} <-
+             Manifest.apply_manifest(user.id, resources, Audited.attribution(conn)) do
         render(conn, :create, results: results)
       end
     end

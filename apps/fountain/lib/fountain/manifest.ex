@@ -608,6 +608,17 @@ defmodule Fountain.Manifest do
       ]
     }
 
+  # One live computer per (agent, environment, vault): the teammate cannot be
+  # moved onto an identity that already has one, because its next wake would
+  # build a second and the index refuses it. Named so the row says what to do.
+  defp context_errors(:destination_home_occupied),
+    do: %{
+      "base" => [
+        "this agent already has a computer on that environment and vault; " <>
+          "reset or remove it before binding the teammate to them"
+      ]
+    }
+
   defp context_errors(:provisioning), do: %{"base" => ["the computer is still starting"]}
   defp context_errors(:busy), do: %{"base" => ["the teammate is running a turn"]}
   defp context_errors(:runner_offline), do: %{"base" => ["the teammate's machine is offline"]}
