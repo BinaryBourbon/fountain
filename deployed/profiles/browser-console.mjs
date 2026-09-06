@@ -1,6 +1,7 @@
 import { reserveBrowserFixture, adoptBrowserFixture } from '../lib/browser-fixtures.mjs';
 import { ensure } from '../lib/execution.mjs';
 import { browserCredentials } from './browser-credentials.mjs';
+import { waitForLiveView } from '../lib/browser-liveview.mjs';
 
 // Called with a fresh browser context by the browser driver. All writes go
 // through visible console forms. Public API reads independently establish
@@ -29,6 +30,7 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
   await evidence.step('console/create-agent', async () => {
     const intent = reserveBrowserFixture(fixtures, 'agent');
     await page.goto(`${config.base_url}/agents/new`);
+    await waitForLiveView(page);
     await page.getByLabel('Name', { exact: true }).fill(intent.name);
     await page.getByLabel('Description', { exact: true }).fill('Dedicated deployed browser fixture');
     await page.getByLabel('System prompt', { exact: true }).fill('Perform only the requested small file task. Use a shell tool. Do not access the network or start background work.');
@@ -49,6 +51,7 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
 
   await evidence.step('console/edit-agent', async () => {
     await page.goto(`${config.base_url}/agents/${agent.id}/edit`);
+    await waitForLiveView(page);
     const description = `Browser edit verified for ${report.run_id}`;
     await page.getByLabel('Description', { exact: true }).fill(description);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -61,6 +64,7 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
   await evidence.step('console/api-key-lifecycle', async () => {
     const intent = reserveBrowserFixture(fixtures, 'api_key');
     await page.goto(`${config.base_url}/api-keys`);
+    await waitForLiveView(page);
     await page.getByLabel('Key label', { exact: true }).fill(intent.name);
     await page.getByRole('button', { name: 'Create key', exact: true }).click();
     await page.getByText('New API key created', { exact: true }).waitFor({ state: 'visible' });
@@ -73,6 +77,7 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
     ensure(me.body.id === report.owner_id, 'UI key authenticated as another account');
     await page.getByRole('button', { name: "I've copied it, dismiss", exact: true }).click();
     if (settings.conversations) await handoff(agent, key);
+    await waitForLiveView(page);
     const row = page.getByRole('row').filter({ hasText: intent.name });
     page.once('dialog', dialog => dialog.accept());
     await row.getByRole('button', { name: 'Revoke', exact: true }).click();

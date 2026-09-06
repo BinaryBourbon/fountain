@@ -1,5 +1,6 @@
 import { credentialPath, credentialStatus, reserveCredential } from '../lib/browser-credentials.mjs';
 import { ensure } from '../lib/execution.mjs';
+import { waitForLiveView } from '../lib/browser-liveview.mjs';
 
 export async function browserCredentials(ctx, page, evidence) {
   const { config, fixtures, client, report, env, redactor, signal } = ctx;
@@ -10,6 +11,7 @@ export async function browserCredentials(ctx, page, evidence) {
   await evidence.step('console/credential-validation', async () => {
     const before = await client.request('GET', credentialPath, { expected: 200, recordBody: false });
     await page.goto(`${config.base_url}/account/inference-credentials`);
+    await waitForLiveView(page);
     ensure(await form().locator('input[name="value"]').getAttribute('type') === 'password', 'Credential field must hide its value');
     await form().getByRole('button', { name: 'Save', exact: true }).click();
     await page.getByText('Paste a value before saving.', { exact: true }).waitFor({ state: 'visible' });
@@ -37,6 +39,7 @@ export async function browserCredentials(ctx, page, evidence) {
 
   return async () => evidence.step('console/credential-clear', async () => {
     await page.goto(`${config.base_url}/account/inference-credentials`);
+    await waitForLiveView(page);
     await form().getByRole('button', { name: 'Clear', exact: true }).click();
     await page.getByText('Credential cleared.', { exact: true }).waitFor({ state: 'visible' });
     ensure(!await credentialStatus(client, provider, signal), 'Cleared provider credential remains set');
