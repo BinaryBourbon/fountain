@@ -3,7 +3,9 @@
 This suite runs outside Fountain against a base URL. It requires Node 24 or
 newer and no package install, Elixir application, database connection, or SDK
 credential store. The initial `probe` profile checks authenticated identity,
-catalog capabilities, liveness and database readiness.
+catalog capabilities, liveness and database readiness. The `basic` profile
+adds resource CRUD, validation errors, key revocation, tenant isolation, and
+an independent check of the instance's advertised response schemas.
 
 The execution, integration, recovery and browser profiles in tracker #1606
 are not implemented yet. A passing probe does not prove that conversations
@@ -48,6 +50,36 @@ No configured sandbox is needed for `probe`.
 ```
 
 ## Results and limits
+
+For `basic`, supply two **different** verified test accounts through explicit
+environment-variable names. Two keys for the same account fail before any
+fixture mutation. This profile includes the probe checks, so select `basic`
+alone. Neither account needs inference credentials or a sandbox provider.
+
+```json
+{
+  "base_url": "http://localhost:4000",
+  "credentials": {
+    "primary": "FOUNTAIN_SUITE_KEY",
+    "secondary": "FOUNTAIN_SUITE_OTHER_KEY"
+  },
+  "profiles": ["basic"]
+}
+```
+
+Basic creates an environment, vault, agent, and disposable API key. It verifies
+read/update/list/delete behavior, field errors, missing resources, and denied
+cross-tenant reads and mutations. The agent uses the built-in Claude runtime
+with a model identifier accepted by the API; it is never started. A metadata
+update keeps the run-owned name stable for interrupted-run recovery.
+
+Actual responses always validate against the pinned contract. A separate
+check compares the advertised operations, statuses and response schema shapes
+for the exercised API surface, permitting compatible added properties. It
+does not fetch the advertised schema to redefine the expected responses.
+Schema failures stay failures; there is no blanket bypass for the broader
+schema gaps tracked in #1432 and #1444. The OpenAPI document is summarized by
+hash/version rather than copied into response traces.
 
 Every initialized run writes `result.json` and `junit.xml`, with check durations
 and failures. `http.jsonl` contains bounded JSON response evidence and request
