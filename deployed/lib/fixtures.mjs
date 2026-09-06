@@ -2,6 +2,7 @@ import { writeFileSync, renameSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { cleanupSchedule, validateScheduleManifest } from './scheduled-fixtures.mjs';
+import { cleanupCredential, validateCredentialManifest } from './browser-credentials.mjs';
 
 const collections = { agent: '/api/agents', environment: '/api/environments', vault: '/api/vaults', binding: '/api/secret-bindings', api_key: '/api/auth/api-keys', conversation: '/api/conversations', webhook: '/api/webhooks' };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -47,17 +48,19 @@ export class Fixtures {
       }
     }
     validateScheduleManifest(existing);
+    validateCredentialManifest(existing);
     return new Fixtures(path, client, { existing });
   }
   save() { atomicJson(this.path, this.manifest); }
   remainingCount() {
     const s = this.manifest.schedule;
     return this.manifest.resources.filter(r => r.state !== 'cleaned').length +
-      (s ? Number(s.state !== 'cleaned') + s.conversations.filter(c => c.state !== 'cleaned').length : 0);
+      (s ? Number(s.state !== 'cleaned') + s.conversations.filter(c => c.state !== 'cleaned').length : 0) +
+      Number(Boolean(this.manifest.browser_credential && this.manifest.browser_credential.state !== 'cleaned'));
   }
   async create(kind, attrs = {}) {
     if (!collections[kind]) throw new Error('Unsupported fixture kind');
-    if (this.manifest.resources.length + (this.manifest.schedule ? 2 : 0) >= this.maxResources) throw new Error('Fixture resource budget exhausted');
+    if (this.manifest.resources.length + (this.manifest.schedule ? 2 : 0) + Number(Boolean(this.manifest.browser_credential)) >= this.maxResources) throw new Error('Fixture resource budget exhausted');
     const resource = { kind, name: `suite-${this.manifest.run_id}-${kind}-${this.manifest.resources.length}`, state: 'pending' };
     if (kind === 'webhook') {
       if (typeof attrs.url !== 'string' || !attrs.url.startsWith('https://')) throw new Error('Webhook requires an explicit HTTPS target');
@@ -198,6 +201,7 @@ export class Fixtures {
         r.state = 'cleaned'; this.save();
       } catch (error) { failures.push({ kind: r.kind, id: r.id, error: error.message }); }
     }
+    failures.push(...await cleanupCredential(this, signal));
     return failures;
   }
 }

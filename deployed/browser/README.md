@@ -29,10 +29,34 @@ key, revokes it through the console, and requires a 401 from the revoked key.
 Each creation intent is saved before clicking. A lost reply leaves an exact
 run-owned name for the standard cleanup command to recover.
 
-Credential coverage currently checks that the selected provider's input masks
-its value and an empty submission produces validation feedback without changing
-provider status. It does **not** claim successful provider validation or storage
-of a valid credential. That part of #1618 remains unfinished.
+The default credential check requires a masked input and empty-submission
+feedback without changing provider status. To exercise valid setup, add
+`browser.credential_setup` with the following settings and provide the value
+through the named environment variable.
+
+```json
+{
+  "mode": "save_and_clear",
+  "exclusive_account": true,
+  "value": "FOUNTAIN_BROWSER_PROVIDER_KEY"
+}
+```
+
+Reserve this test account exclusively until cleanup finishes. This setting is
+an operator assertion, not a server lock. The provider status API exposes no
+revision or compare-and-swap operation, so this mode cannot safely share an
+account with another writer. An already-set provider is refused. Increase the
+resource budget to three for console checks or five for the app journey.
+
+Setup runs before agent creation. It submits the supplied value once, requires
+the console's successful provider-validation message and public set status,
+and leaves the credential available during the optional app prompts. At the
+end, the console clears it and the API must report unset. Failure cleanup uses
+the public DELETE endpoint. The manifest records provider, initial unset state,
+account reservation and progress; it never records the value. An unset provider
+with an unresolved save intent remains pending because the save could still
+commit. Keep the account reserved until that submission is reconciled.
+This path has automated cleanup tests but still needs live browser validation.
 
 Evidence is an allowlisted `browser.jsonl` action/response trace plus cropped
 static-heading screenshots. Native Playwright traces, videos, HAR, DOM dumps,
@@ -88,7 +112,7 @@ it with 401.
 
 This path verifies OAuth denial and API-key authentication. It does not verify
 a successful OAuth grant. A complete authenticated live handoff verdict,
-valid provider credential save/clear, successful OAuth authorization, and the
+live provider credential save/clear, successful OAuth authorization, and the
 isolated fresh-Compose registration case remain unfinished under #1618.
 
 The app source is maintained separately in

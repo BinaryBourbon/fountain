@@ -1,5 +1,6 @@
 import { reserveBrowserFixture, adoptBrowserFixture } from '../lib/browser-fixtures.mjs';
 import { ensure } from '../lib/execution.mjs';
+import { browserCredentials } from './browser-credentials.mjs';
 
 // Called with a fresh browser context by the browser driver. All writes go
 // through visible console forms. Public API reads independently establish
@@ -23,6 +24,7 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
     report.browser.console.sign_in = true;
   });
 
+  const clearCredential = await browserCredentials(ctx, page, evidence);
   let agent;
   await evidence.step('console/create-agent', async () => {
     const intent = reserveBrowserFixture(fixtures, 'agent');
@@ -81,17 +83,6 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
     await evidence.heading(page, 'api-keys', 'API keys');
   });
 
-  await evidence.step('console/credential-validation', async () => {
-    const before = await client.request('GET', '/api/account/inference-credentials', { expected: 200, recordBody: false });
-    await page.goto(`${config.base_url}/account/inference-credentials`);
-    const form = page.locator('form').filter({ has: page.locator(`input[name="provider"][value="${settings.credential_provider}"]`) });
-    ensure(await form.locator('input[name="value"]').getAttribute('type') === 'password', 'Credential field must hide its value');
-    await form.getByRole('button', { name: 'Save', exact: true }).click();
-    await page.getByText('Paste a value before saving.', { exact: true }).waitFor({ state: 'visible' });
-    const after = await client.request('GET', '/api/account/inference-credentials', { expected: 200, recordBody: false });
-    ensure(JSON.stringify(before.body) === JSON.stringify(after.body), 'Empty credential submission changed provider configuration');
-    report.browser.console.credential_validation = { provider: settings.credential_provider, mode: 'empty_submission', saved_credential_verified: false };
-    await evidence.heading(page, 'inference-credentials', 'Inference credentials');
-  });
+  await clearCredential();
   return agent;
 }

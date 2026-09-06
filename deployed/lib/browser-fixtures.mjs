@@ -8,7 +8,7 @@ const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 // The ordinary cleanup command already understands these manifest entries.
 export function reserveBrowserFixture(fixtures, kind) {
   ensure(Object.hasOwn(collections, kind), 'Unsupported browser fixture kind');
-  ensure(fixtures.manifest.resources.length < fixtures.maxResources, 'Fixture resource budget exhausted');
+  ensure(fixtures.manifest.resources.length + Number(Boolean(fixtures.manifest.browser_credential)) < fixtures.maxResources, 'Fixture resource budget exhausted');
   const resource = { kind, name: `suite-${fixtures.manifest.run_id}-${kind}-${fixtures.manifest.resources.length}`, state: 'pending' };
   fixtures.manifest.resources.push(resource);
   fixtures.save();

@@ -200,7 +200,10 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     if (config.mcp) redactor.add(env[config.mcp.admin_credential]);
     if (config.webhooks) redactor.add(env[config.webhooks.admin_credential]);
     if (config.recovery) redactor.add(env[config.recovery.relay.admin_credential]);
-    if (config.browser) { redactor.add(env[config.browser.email]); redactor.add(env[config.browser.password]); }
+    if (config.browser) {
+      redactor.add(env[config.browser.email]); redactor.add(env[config.browser.password]);
+      if (config.browser.credential_setup) redactor.add(env[config.browser.credential_setup.value]?.trim());
+    }
     report.target = config.base_url;
     report.profiles = config.profiles;
     report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? config.browser?.conversations?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
@@ -300,6 +303,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     if (fixtures) {
       const failures = await fixtures.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
       report.cleanup = { failures, remaining: fixtures.remainingCount() };
+      if (fixtures.manifest.browser_credential) report.cleanup.provider_setup = { ...fixtures.manifest.browser_credential };
       if (fixtures.manifest.schedule) report.cleanup.schedule = { state: fixtures.manifest.schedule.state, deleted: fixtures.manifest.schedule.deleted, conversations: fixtures.manifest.schedule.conversations, remaining_sandbox_ids: fixtures.manifest.schedule.remaining_sandbox_ids ?? [] };
       report.prompt_attempts = fixtures.manifest.inference_attempts ?? 0;
       report.inference_attempts = config.profiles.some(name => ['deterministic', 'recovery'].includes(name)) ? 0 : report.prompt_attempts;
