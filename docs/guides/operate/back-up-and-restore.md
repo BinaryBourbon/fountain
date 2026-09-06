@@ -104,6 +104,10 @@ The Kubernetes CronJob has the
 [Sentry Crons check-in](../../integrations/sentry.md#crons-an-alert-when-a-scheduled-job-stops)
 built in. Set `SENTRY_DSN`, then arm the monitor's schedule.
 
+The portable alerts cover the dump CronJob. If you use CNPG for point-in-time
+recovery, add the separate base-backup and WAL alerts described in
+[Which alerts you get](observability.md#which-alerts-you-get).
+
 On compose, read the dates on the service's log lines.
 
 ```bash
