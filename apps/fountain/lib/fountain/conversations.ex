@@ -2698,9 +2698,15 @@ defmodule Fountain.Conversations do
   defp resolve_parent_id("", _user_id), do: {:ok, nil}
 
   defp resolve_parent_id(id, user_id) when is_binary(id) and is_binary(user_id) do
-    case get_conversation(id, user_id) do
-      nil -> {:error, :parent_not_found}
-      conv -> {:ok, conv.id}
+    # A header that is not a uuid is not a conversation anyone owns, and the
+    # lookup would raise `Ecto.Query.CastError` out of the query rather than
+    # answer — a 500 and a dropped connection for a caller's typo (#1679).
+    # Refused as an unknown parent, which is what it is.
+    with {:ok, _} <- Ecto.UUID.cast(id),
+         conv when not is_nil(conv) <- get_conversation(id, user_id) do
+      {:ok, conv.id}
+    else
+      _ -> {:error, :parent_not_found}
     end
   end
 

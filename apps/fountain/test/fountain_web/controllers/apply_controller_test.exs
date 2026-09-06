@@ -10,6 +10,43 @@ defmodule FountainWeb.ApplyControllerTest do
   end
 
   describe "POST /api/apply" do
+    test "an Agent naming a vault rather than an id fails that row, not the request (#1679)", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      payload = %{
+        "resources" => [
+          %{
+            "kind" => "Vault",
+            "name" => "prod-creds",
+            "spec" => %{"secrets" => %{"GH" => "ghp_x"}}
+          },
+          %{
+            "kind" => "Agent",
+            "name" => "prod-steward",
+            "spec" => %{
+              "model" => "anthropic/claude-sonnet-4-6",
+              "runtime" => "claude",
+              "allowed_vault_ids" => ["prod-creds"]
+            }
+          }
+        ]
+      }
+
+      conn = conn |> authed_with_key(raw_key) |> post_json(~p"/api/apply", payload)
+
+      assert %{"data" => %{"results" => results}} = json_response(conn, 200)
+
+      assert [
+               %{"kind" => "Vault", "name" => "prod-creds", "action" => "created"},
+               %{"kind" => "Agent", "name" => "prod-steward", "action" => "error"} = agent_row
+             ] = results
+
+      assert agent_row["errors"]["allowed_vault_ids"] == [
+               ~s(must be a list of ids, but "prod-creds" is not one)
+             ]
+    end
+
     test "applies a full manifest in one request", %{conn: conn, user: user, raw_key: raw_key} do
       payload = %{
         "resources" => [

@@ -1088,6 +1088,26 @@ defmodule FountainWeb.ConversationControllerTest do
 
       assert json_response(conn, 201)
     end
+
+    test "returns 404 when the header is not a conversation id (#1679)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("x-fountain-parent-conversation-id", "my-other-conversation")
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 404) == %{"error" => "parent_conversation_not_found"}
+    end
   end
 
   describe "POST /api/conversations with environment_id (#783)" do
