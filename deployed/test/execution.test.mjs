@@ -150,3 +150,48 @@ test('execution requires an explicit two-turn authorization and both credentials
   assert.equal(configFrom(path, env).execution.max_turns, 2);
   assert.throws(() => configFrom(path, { TEST_KEY: env.TEST_KEY }), /Missing test credential/);
 });
+
+test('persistent cleanup preserves the home for lifecycle assertions, then resets only its recorded owner', async t => {
+  const calls = [];
+  let f, agent, environment, conv, terminated = false, reset = false;
+  ({ f, agent, environment } = fixtures(t, async (method, path) => {
+    calls.push([method, path]);
+    if (path.endsWith('/terminate')) { terminated = true; return { status: 204 }; }
+    if (path === `/api/sandboxes/${conv.sandbox_id}`) {
+      if (method === 'DELETE') { reset = true; return { status: 204 }; }
+      return { status: 200, body: { data: { mode: 'persistent', status: reset ? 'terminated' : 'ready', agent_id: agent.id, environment_id: environment.id } } };
+    }
+    if (method === 'GET' && path.includes('/conversations/')) return { status: 200, body: { data: { ...conv, channel_id: conv.name, status: terminated ? 'terminated' : 'idle', sandbox: { mode: 'persistent' } } } };
+    if (method === 'GET') return { status: 200, body: { data: path.includes('agents') ? agent : environment } };
+    return { status: 204 };
+  }));
+  conv = { kind: 'conversation', id: randomUUID(), name: `suite-${f.manifest.run_id}-conversation-2`, agent_id: agent.id, environment_id: environment.id, sandbox_id: randomUUID(), sandbox_mode: 'persistent', state: 'created' };
+  f.manifest.resources.push(conv); f.save();
+  await f.terminateConversation(conv, { ...conv, channel_id: conv.name, sandbox: { mode: 'persistent' } }, AbortSignal.timeout(1000), { preserveHome: true });
+  assert.equal(terminated, true); assert.equal(reset, false);
+  assert.deepEqual(await f.cleanup(AbortSignal.timeout(1000)), []);
+  assert.equal(reset, true);
+  const deletes = calls.filter(([method]) => method === 'DELETE').map(([, path]) => path);
+  assert.deepEqual(deletes, [`/api/sandboxes/${conv.sandbox_id}`, `/api/conversations/${conv.id}`, `/api/environments/${environment.id}`, `/api/agents/${agent.id}`]);
+});
+
+test('persistent cleanup refuses changed ownership and retains parents and cleanup intent', async t => {
+  let f, agent, environment, conv;
+  const deletes = [];
+  ({ f, agent, environment } = fixtures(t, async (method, path) => {
+    if (method === 'DELETE') deletes.push(path);
+    if (path.endsWith('/terminate')) return { status: 204 };
+    if (path.includes('/sandboxes/')) return { status: 200, body: { data: { mode: 'persistent', status: 'ready', agent_id: agent.id, environment_id: randomUUID() } } };
+    return { status: 200, body: { data: { ...conv, channel_id: conv.name, status: 'terminated', sandbox: { mode: 'persistent' } } } };
+  }));
+  conv = { kind: 'conversation', id: randomUUID(), name: `suite-${f.manifest.run_id}-conversation-2`, agent_id: agent.id, environment_id: environment.id, sandbox_id: randomUUID(), sandbox_mode: 'persistent', state: 'created' };
+  f.manifest.resources.push(conv); f.save();
+  assert.equal((await f.cleanup(AbortSignal.timeout(1000))).length, 3);
+  assert.deepEqual(deletes, []);
+});
+
+test('legacy ephemeral manifests cannot opt themselves into resetting an existing home', async t => {
+  const { f, agent, environment } = fixtures(t, async () => { throw new Error('Must refuse before public mutation'); });
+  const conv = { agent_id: agent.id, environment_id: environment.id, name: 'run-owned' };
+  await assert.rejects(f.terminateConversation(conv, { ...conv, channel_id: conv.name, sandbox: { mode: 'persistent' } }, AbortSignal.timeout(1000)), /unrecorded mode/);
+});

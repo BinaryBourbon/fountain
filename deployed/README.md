@@ -8,7 +8,7 @@ adds resource CRUD, validation errors, key revocation, tenant isolation, and
 an independent check of the instance's advertised response schemas.
 
 The `execution` profile verifies two real tool-using turns on a fresh
-ephemeral sandbox. `streaming` adds incremental output, reconnect and replay
+ephemeral or persistent sandbox. `streaming` adds incremental output, reconnect and replay
 conformance to those same two turns. Integration, recovery and browser
 profiles remain tracked in #1606. A passing probe does not prove
 that conversations work, and selecting an unimplemented profile fails setup.
@@ -85,6 +85,15 @@ activity. It checks the second tenant cannot read the conversation, events,
 stream or file, or interrupt/terminate the conversation. It then verifies
 terminal conversation/sandbox state before cleanup deletes the transcript and
 parent fixtures. Usage and IDs remain in the report after deletion.
+
+Set `execution.sandbox_mode` to `persistent` to check a dedicated home.
+The default remains `ephemeral`. A persistent run verifies that conversation
+termination retains the home and exact artifact bytes. Cleanup then resets
+the home through `DELETE /api/sandboxes/:id` and verifies its terminal state
+before deleting the conversation, environment and agent. The manifest records
+the mode before creation. An older manifest without a mode permits only
+ephemeral cleanup. All homes belong to an agent and environment created by
+that run; an existing sandbox cannot be attached to a suite conversation.
 
 The fixture manifest records each prompt attempt **before** sending it. A
 lost reply still consumes the two-attempt budget; prompts are never retried
@@ -222,6 +231,79 @@ Add profiles as ordinary modules using `ctx.check`, `ctx.client`, and
 request. Do not inject database rows, import server factories, or substitute
 an in-process Fountain for a deployed verdict. Existing SDK conformance
 remains separate and runnable with its existing commands.
+
+## Provider and runtime matrix
+
+`deployed/matrix.mjs` applies the same execution scenario to an explicit,
+versioned set of combinations. Copy `deployed/matrix.example.json` and adapt
+it to your target before enabling it. The example expects Codex on a dedicated
+runner in both sandbox modes. Its other catalog entries are documented gaps,
+not evidence that those combinations work.
+
+```bash
+node deployed/matrix.mjs \
+  --config /tmp/fountain-target.json \
+  --matrix /tmp/fountain-matrix.json \
+  --subset canary \
+  --out /tmp/fountain-matrix-001
+```
+
+Each cell pins its runtime, canonical model, sandbox provider and mode.
+A supported cell declares execution, artifact, follow-up, tenant isolation
+and lifecycle capabilities. Add `streaming` to select the existing replay
+scenario for that cell. A gap has a concrete reason and a Fountain issue
+link. Every runtime/provider pair named by the matrix must declare both
+modes, using gap cells where needed. `catalog_gaps` accounts for advertised
+runtimes or providers outside those axes. Render remains linked to #1439;
+its verification ladder must finish before the runner accepts a Render cell.
+
+`canary` selects at most two supported cells. `scheduled` contains that subset
+and `full` contains every supported cell. The broader subsets permit at most
+16 cells. Each cell authorizes two prompts, creates three resources, and runs
+alone. `limits.max_turns` authorizes the total prompt ceiling, up to 32;
+`limits.run_ms` bounds the matrix to at most 50 minutes. A deadline or signal
+stops new cells while the current cell retains its separate cleanup deadline.
+Prompts are not retried. These budgets bound attempts and time, not a currency
+amount; choose models and provider quotas for the intended spend.
+
+Before creating any sandbox, the suite validates every selected configuration
+and both key variables. A public probe then checks every required capability
+from all supported cells, including cells outside the selected subset. A
+required provider disappearing fails the run. An advertised capability with
+no matrix axis or documented catalog gap also fails. Discovery never removes
+cells from the declared plan.
+
+Each cell has its own `result.json`, JUnit file, HTTP/SSE traces and durable
+cleanup manifest. The root result records the matrix SHA-256, suite revision,
+per-cell status, prompt attempts, usage, lifecycle and deployment evidence.
+An assertion failure does not hide later cells. A cleanup failure stops new
+cells and records them as not run; the overall result remains unsuccessful.
+Resume cleanup with the ordinary cleanup command and that cell's manifest.
+Use the same target and credentials. Temporary generated configuration files
+are removed after the matrix finishes.
+
+Public conversation responses currently expose the agent configuration
+version and runner information, but no installed runtime binary version or
+immutable sandbox image reference. Reports retain the available information
+and explicitly record those missing fields. A configured deployment observer
+still verifies the Fountain release image for every cell. It does not establish
+the sandbox image or runtime package version. Full runtime/image provenance
+remains a limitation of #1613 until an authoritative surface exposes it.
+
+For CI, set environment variable `SUITE_MATRIX_JSON` to the reviewed matrix
+and select `matrix-canary`, `matrix-scheduled` or `matrix-full` in the existing
+workflow. `matrix-canary` with rollout mode verifies the declared minimal
+subset after an image rollout. The existing basic/execution canary remains
+available. A separate weekly schedule at 04:43 UTC Saturday uses
+`matrix-scheduled`; it runs only when repository variable
+`DEPLOYED_MATRIX_ENABLED=true`. It shares target concurrency with all other
+deployed runs. Configure its distinct `SUITE_MATRIX_MONITOR_URL` secret before
+enabling the weekly schedule. A missing weekly monitor does not fall back to
+the frequent canary monitor. The workflow retains all per-cell artifacts.
+
+The matrix implementation and local lifecycle tests do not establish hosted
+provider support. Retain each target's first released-deployment matrix result
+before changing a configured gap into a supported cell.
 
 ## Deterministic ACP fixture
 
