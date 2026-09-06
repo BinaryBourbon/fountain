@@ -1330,7 +1330,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp attempt_session_attach(state, running_turn, session, matched_by) do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    acp? = Managoat.Runtimes.ACP.enabled?(conv.runtime)
+    acp? = Fountain.RuntimeDispatch.acp_enabled?(conv.runtime)
 
     case Managoat.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
       {:ok, idle_command} when acp? and is_nil(running_turn.acp_prompt_id) ->
@@ -2352,18 +2352,18 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp run_turn(state, conv, turn, prompt, agent, images) do
+    state = %{state | inference_model: agent && agent.model}
     TurnMachine.store_images(turn, images)
     TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)
 
     # Keyed on the conversation's runtime, not the agent: a conversation
     # outlives its agent (deletion nilifies agent_id), and for a supported
     # runtime the legacy spawn path no longer exists to fall back to.
-    acp? = Managoat.Runtimes.ACP.enabled?(conv.runtime)
+    acp? = Fountain.RuntimeDispatch.acp_enabled?(conv.runtime)
 
-    # The connection outlives the turn (#817). If a peer from an earlier turn
-    # is still idle on this machine, this turn rides it — no spawn, no
-    # handshake, no `session/resume`, no model pin — so a background task it
-    # left running keeps running and codex's session grant survives.
+    # An idle peer carries the next turn without spawn, handshake or resume
+    # (#817). It applies the model before prompting; background tasks and
+    # Codex session grants survive.
     if acp? and Connection.alive?(Connection.from_state(state)) do
       resume_acp_connection(state, conv, turn, prompt, images)
     else
@@ -2457,7 +2457,7 @@ defmodule Fountain.Conversations.ConversationServer do
         ]
         |> then(&if cwd, do: Keyword.put(&1, :dir, cwd), else: &1)
 
-      case Managoat.Sandbox.spawn(state.handle, cmd, args, spawn_opts) do
+      case Connection.spawn_command(state, conv.runtime, cmd, args, spawn_opts) do
         {:ok, command} ->
           # write_stdin/2 is total by contract — a runtime that exits before
           # reading its prompt yields {:error, :command_exited} rather than

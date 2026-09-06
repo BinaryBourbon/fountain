@@ -49,6 +49,7 @@ defmodule FountainWeb.AgentVersionController do
       version: [in: :path, type: :integer, required: true, description: "1-based."]
     ],
     responses: [
+      unprocessable_entity: {"Invalid request parameters", "application/json", Schemas.Error},
       ok: {"Version", "application/json", Schemas.AgentVersionResponse},
       not_found: {"Agent or version not found", "application/json", Schemas.Error}
     ]

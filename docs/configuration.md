@@ -70,6 +70,17 @@ message.
 | `CHECKPOINT_CREATION_ENABLED` | `false` | — | Set to `true`, and Fountain takes a checkpoint of each persistent home when it parks, on a provider that has checkpoints (Sprites). The checkpoint belongs to that one machine. It can roll the machine back, and it cannot rebuild a machine that the provider lost. Each park adds one checkpoint, and Fountain does not delete old ones. The same flag also makes Fountain checkpoint each environment after it provisions a sandbox, which Sprites cannot restore into a new sandbox. |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | The durable log volume for one conversation. Once a conversation has persisted this much sandbox output, Fountain writes one truncation marker and discards the rest. Retention bounds age, and this bounds rate. The same `0` rule and the same boot refusal apply. |
 
+## Deployed ACP fixture
+
+Use these only on an isolated test instance. The fixed fixture runtime exercises
+the real sandbox/ACP path without model inference. It does not enable arbitrary
+custom harnesses. See [Test the deployed ACP path](integrations/acp.md#test-the-deployed-acp-path).
+
+| Variable | Default | Required | Meaning |
+|---|---|---|---|
+| `DEPLOYED_ACP_FIXTURE_ENABLED` | `false` | — | Set exactly `true` to offer the fixed `fountain-fixture` runtime on a test deployment. The account UUID below is also required. |
+| `DEPLOYED_ACP_FIXTURE_USER_ID` | — | With the fixture enabled | UUID of the dedicated verified test account allowed to create and launch fixture agents. Other accounts are refused. |
+
 ## Webhooks
 
 | Variable | Default | Required | Effect |

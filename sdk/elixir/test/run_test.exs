@@ -128,13 +128,15 @@ defmodule Fountain.RunTest do
   test "run server and worker are cleaned up when their owner exits" do
     parent = self()
 
-    owner =
-      spawn(fn ->
+    # spawn_monitor, not spawn + Process.monitor: the fun below finishes in
+    # microseconds, so a monitor placed after the spawn regularly attaches to a
+    # process that has already exited and fires :noproc instead of :normal.
+    {owner, monitor} =
+      spawn_monitor(fn ->
         run = Run.new(%{}, fn -> Process.sleep(:infinity) end)
         send(parent, {:run_server, run.server})
       end)
 
-    monitor = Process.monitor(owner)
     assert_receive {:run_server, server}
     assert_receive {:DOWN, ^monitor, :process, ^owner, :normal}
     server_monitor = Process.monitor(server)

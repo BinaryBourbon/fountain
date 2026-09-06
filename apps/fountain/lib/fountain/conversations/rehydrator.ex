@@ -33,7 +33,6 @@ defmodule Fountain.Conversations.Rehydrator do
   require Logger
 
   alias Fountain.{Agents, Conversations}
-  alias Managoat.Runtimes
   alias Fountain.Conversations.ConversationServer
 
   def run(opts \\ []) do
@@ -129,7 +128,7 @@ defmodule Fountain.Conversations.Rehydrator do
   defp spawn_server(conv) do
     with %Agents.Agent{} = _agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:skip, :no_agent},
-         {:ok, runtime_module} <- Runtimes.for_runtime(conv.runtime) do
+         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
       Fountain.ConversationSupervisor
       |> Horde.DynamicSupervisor.start_child(
         {ConversationServer,

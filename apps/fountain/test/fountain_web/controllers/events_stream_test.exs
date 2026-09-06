@@ -6,6 +6,7 @@ defmodule FountainWeb.EventsStreamTest do
   """
 
   use FountainWeb.ConnCase, async: false
+  use Mimic
 
   import Phoenix.ConnTest, only: [build_conn: 0, get: 2, json_response: 2]
 
@@ -75,11 +76,36 @@ defmodule FountainWeb.EventsStreamTest do
     end)
   end
 
+  defp await_stream_start(user_id) do
+    parent = self()
+
+    stub(Fountain.Conversations, :list_conversations, fn id ->
+      Mimic.call_original(Fountain.Conversations, :list_conversations, [id])
+    end)
+
+    expect(Fountain.Conversations, :list_conversations, fn ^user_id ->
+      conversations = Mimic.call_original(Fountain.Conversations, :list_conversations, [user_id])
+      send(parent, {:stream_discovery, self()})
+
+      receive do
+        :continue_discovery -> conversations
+      end
+    end)
+  end
+
+  defp release_stream(task) do
+    allow(Fountain.Conversations, self(), task.pid)
+    assert_receive {:stream_discovery, pid}, 2_000
+    send(pid, :continue_discovery)
+    pid
+  end
+
   describe "GET /api/events/stream" do
-    test "events from every live conversation, labelled; finished and foreign ones excluded", %{
-      user: user,
-      raw_key: key
-    } do
+    test "events from owned conversations, including durable terminal history; foreign ones excluded",
+         %{
+           user: user,
+           raw_key: key
+         } do
       a = insert_conversation(user_id: user.id, status: "idle")
       b = insert_conversation(user_id: user.id, status: "running")
       dead = insert_conversation(user_id: user.id, status: "terminated")
@@ -88,9 +114,9 @@ defmodule FountainWeb.EventsStreamTest do
       task = stream_async(key, "/api/events/stream")
       Process.sleep(300)
 
+      publish(dead, %{kind: "output", stream: "acp", data: "from-dead"})
       publish(a, %{kind: "output", stream: "acp", data: "from-a"})
       publish(b, %{kind: "output", stream: "acp", data: "from-b"})
-      publish(dead, %{kind: "output", stream: "acp", data: "from-dead"})
       publish(foreign, %{kind: "output", stream: "acp", data: "from-foreign"})
 
       conn = Task.await(task, 5_000)
@@ -98,7 +124,7 @@ defmodule FountainWeb.EventsStreamTest do
       assert String.starts_with?(conn.resp_body, ": connected\n\n")
       assert conn.resp_body =~ "from-a"
       assert conn.resp_body =~ "from-b"
-      refute conn.resp_body =~ "from-dead"
+      assert conn.resp_body =~ "from-dead"
       refute conn.resp_body =~ "from-foreign"
 
       [payload] =
@@ -149,6 +175,103 @@ defmodule FountainWeb.EventsStreamTest do
       conn = Task.await(task, 6_000)
       assert length(Regex.scan(~r/event: conversations\n/, conn.resp_body)) == 1
       assert conn.resp_body =~ "from-new"
+    end
+
+    @tag :discovery_regression
+    test "a fast failure before discovery is replayed before a newer followed event", %{
+      user: user,
+      raw_key: key
+    } do
+      active = insert_conversation(user_id: user.id, status: "idle")
+      old = insert_log_event(active, %{kind: "output", stream: "stdout", data: "old-history"})
+      await_stream_start(user.id)
+      task = stream_async(key, "/api/events/stream?blocks=true&streams=stage,acp")
+      pid = release_stream(task)
+
+      fast = insert_conversation(user_id: user.id, status: "failed")
+      started = insert_log_event(fast, %{kind: "stage", stage: "provision", state: "started"})
+      hidden = insert_log_event(fast, %{kind: "output", stream: "stderr", data: "filtered-out"})
+
+      failed =
+        insert_log_event(fast, %{
+          kind: "stage",
+          stage: "provision",
+          state: "failed",
+          data: "fast-failure"
+        })
+
+      newer =
+        insert_log_event(active, %{kind: "output", stream: "acp", data: acp_text("newer-output")})
+
+      foreign = insert_conversation(user_id: insert_verified_user().id)
+      insert_log_event(foreign, %{kind: "output", stream: "acp", data: "foreign-output"})
+
+      # Deliver a higher-id notification before discovery. A global cursor
+      # advanced directly from that notification loses the fast failure.
+      send(pid, {:log_event, newer})
+      send(pid, :refollow)
+      send(pid, {:log_event, failed})
+      send(pid, {:log_event, newer})
+      conn = Task.await(task, 5_000)
+
+      ids =
+        Regex.scan(~r/^id: (\d+)$/m, conn.resp_body)
+        |> Enum.map(fn [_, id] -> String.to_integer(id) end)
+
+      assert ids == [started.id, failed.id, newer.id]
+      refute old.id in ids
+      refute hidden.id in ids
+      assert conn.resp_body =~ "fast-failure"
+      assert conn.resp_body =~ ~s("body":"newer-output")
+      refute conn.resp_body =~ "foreign-output"
+    end
+
+    @tag :discovery_regression
+    test "discovery replays a new finished conversation even with no live notifications", %{
+      user: user,
+      raw_key: key
+    } do
+      await_stream_start(user.id)
+      task = stream_async(key, "/api/events/stream")
+      pid = release_stream(task)
+      fast = insert_conversation(user_id: user.id, status: "failed")
+
+      event =
+        insert_log_event(fast, %{
+          kind: "stage",
+          stage: "provision",
+          state: "failed",
+          data: "missed-at-subscribe"
+        })
+
+      send(pid, :refollow)
+      conn = Task.await(task, 5_000)
+      assert conn.resp_body =~ "id: #{event.id}"
+      assert conn.resp_body =~ "missed-at-subscribe"
+    end
+
+    @tag :discovery_regression
+    test "reconnect replays finished conversations in order across more than one page", %{
+      user: user,
+      raw_key: key
+    } do
+      finished = insert_conversation(user_id: user.id, status: "terminated")
+      marker = insert_log_event(finished, %{kind: "output", stream: "stdout", data: "seen"})
+
+      events =
+        for n <- 1..501,
+            do:
+              insert_log_event(finished, %{kind: "output", stream: "stdout", data: "replay-#{n}"})
+
+      conn =
+        stream_async(key, "/api/events/stream", [{"last-event-id", to_string(marker.id)}])
+        |> Task.await(5_000)
+
+      ids =
+        Regex.scan(~r/^id: (\d+)$/m, conn.resp_body)
+        |> Enum.map(fn [_, id] -> String.to_integer(id) end)
+
+      assert ids == Enum.map(events, & &1.id)
     end
 
     test "?blocks=true adds the server-parsed blocks per event", %{user: user, raw_key: key} do

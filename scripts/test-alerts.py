@@ -10,10 +10,79 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def conversation_cases(rules):
+    cases = []
+
+    def series(metric, labels, values):
+        return {"series": metric + '{namespace="fountain",' + labels + '}', "values": values}
+
+    def case(name, alert, inputs, labels=None):
+        cases.append({
+            "name": name, "interval": "1m", "input_series": inputs,
+            "promql_expr_test": [{
+                "expr": "(" + rules[alert]["expr"].strip() + ") > bool 0",
+                "eval_time": "60m",
+                "exp_samples": [] if labels is None else [{"labels": labels, "value": 1}],
+            }],
+        })
+
+    names = ("FountainStageFailures", "FountainTurnFailureRate",
+             "FountainReattachFailures", "FountainTurnFirstOutputSlow")
+    for alert in names:
+        case(alert + ": no series", alert, [])
+
+    for stage in ("clone", "packages", "network_policy", "provision"):
+        case("failed stage " + stage, "FountainStageFailures", [
+            series("fountain_stage_count", f'stage="{stage}",status="failed"', "0+1x120")
+        ], None if stage == "provision" else f'{{stage="{stage}"}}')
+    case("healthy stages", "FountainStageFailures", [
+        series("fountain_stage_count", 'stage="clone",status="done"', "0+1x120")])
+    for fails in (False, True):
+        case("reattach fails=" + str(fails), "FountainReattachFailures", [
+            series("fountain_stage_count", 'stage="reattach",status="failed"',
+                   "0+0x30 1+0x89" if fails else "0+0x120")], "{}" if fails else None)
+
+    count = "fountain_turn_completed_duration_ms_count"
+    for name, failed, done, fires in (
+        ("healthy, no failure series", None, "0+1x120", False),
+        ("idle", "0+0x120", "0+0x120", False),
+        ("too little traffic", "0+0.1x120", "0+0x120", False),
+        ("exactly 25 percent", "0+1x120", "0+3x120", False),
+        ("half fail", "0+1x120", "0+1x120", True),
+        ("all fail, no success series", "0+1x120", None, True),
+        ("counter reset", "0+1x39 0+1x80", "0+1x39 0+1x80", True),
+    ):
+        inputs = [series(count, 'provider="sprites",status="' + status + '"', values)
+                  for status, values in (("failed", failed), ("completed", done)) if values is not None]
+        # A healthy, much busier provider must not dilute the failing one.
+        inputs.append(series(count, 'provider="e2b",status="completed"', "0+100x120"))
+        case("turns: " + name, "FountainTurnFailureRate", inputs,
+             '{provider="sprites"}' if fires else None)
+
+    for name, slow, traffic in (("slow", True, 1), ("fast", False, 1), ("low traffic", True, 0.1)):
+        inputs = [series("fountain_turn_first_output_elapsed_ms_bucket",
+                         f'provider="sprites",le="{le}"', f"0+{step}x120")
+                  for le, step in (("30000", 0 if slow else traffic), ("60000", traffic), ("+Inf", traffic))]
+        inputs.append(series("fountain_turn_first_output_elapsed_ms_count", 'provider="sprites"', f"0+{traffic}x120"))
+        case("first output: " + name, "FountainTurnFirstOutputSlow", inputs,
+             '{provider="sprites"}' if slow and traffic == 1 else None)
+        if name == "slow":
+            rule = rules["FountainTurnFirstOutputSlow"]
+            cases[-1]["alert_rule_test"] = [
+                {"eval_time": "14m", "alertname": "FountainTurnFirstOutputSlow", "exp_alerts": []},
+                {"eval_time": "60m", "alertname": "FountainTurnFirstOutputSlow", "exp_alerts": [{
+                    "exp_labels": {"provider": "sprites", "severity": "warning"},
+                    "exp_annotations": {key: value.replace("{{ $labels.provider }}", "sprites")
+                                        for key, value in rule["annotations"].items()},
+                }]},
+            ]
+    return cases
+
+
 def main():
     spec = yaml.safe_load((ROOT / "deploy/k8s/prometheusrule.yaml").read_text())["spec"]
     rules = {r["alert"]: r for g in spec["groups"] for r in g["rules"]}
-    cases = []
+    cases = conversation_cases(rules)
     for replicas in (1, 2, 3):
         for alert, metric, statuses in (
             ("FountainSandboxBudgetExceeded", "fountain_sandboxes_count", ("pending", "ready")),
