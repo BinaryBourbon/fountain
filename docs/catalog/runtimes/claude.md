@@ -39,7 +39,7 @@ metadata:
   name: researcher
 spec:
   runtime: claude
-  model: anthropic/claude-sonnet-4-6
+  model: anthropic/claude-sonnet-5
 ```
 
 The model must carry the `anthropic/` prefix. Fountain rejects any other

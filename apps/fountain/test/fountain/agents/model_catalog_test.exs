@@ -50,6 +50,44 @@ defmodule Fountain.Agents.ModelCatalogTest do
     end
   end
 
+  # The ids the pinned ACP adapters refuse at `session/set_model`, with the
+  # date each was observed. A refusal happens before a prompt is written, so
+  # since #1640 it fails the turn outright — suggesting one of these is an
+  # outage, not a stale hint. Every entry here was served happily by its
+  # provider at the time it was refused, which is exactly why the provider
+  # check alone did not catch it: see the two-gates note in `ModelCatalog`.
+  #
+  # Removing an entry is legitimate **after** an adapter pin moves and the
+  # refusal rate for that id goes to zero on real turns. It is not legitimate
+  # because the model works in a `curl` to the provider.
+  @refused_by_pinned_adapters %{
+    # claude-agent-acp 0.66.0 — "Invalid value for config option model".
+    # 289 refusals for claude-sonnet-4-6 alone, 2026-08-16..2026-09-06.
+    "anthropic/claude-sonnet-4-6" => "2026-09-06",
+    "anthropic/claude-opus-4-7" => "2026-08-27",
+    "anthropic/claude-opus-4-8" => "2026-08-23",
+    # codex-acp 1.10.0 — "Invalid params". Refused after the #1640 bump that
+    # added gpt-6-astra; it was accepted by 1.9.x.
+    "openai/gpt-5.3-codex" => "2026-09-06",
+    # Google retired it for new keys; opencode's adapter refused it too.
+    "google/gemini-2.5-pro" => "2026-08-20"
+  }
+
+  test "no suggestion is an id the pinned adapters are known to refuse" do
+    suggested =
+      Agent.runtimes() |> Enum.flat_map(&ModelCatalog.suggestions/1) |> MapSet.new()
+
+    for {model, observed} <- @refused_by_pinned_adapters do
+      refute MapSet.member?(suggested, model),
+             """
+             #{model} is suggested again, but the pinned ACP adapter refused it \
+             on #{observed}. A refusal fails the turn before any prompt is sent \
+             (#1640), so this suggestion is an outage for every agent that takes \
+             it. Confirm the adapter accepts it on a real turn before relisting.
+             """
+    end
+  end
+
   test "known?/1 recognises catalog entries and nothing else" do
     assert ModelCatalog.known?("anthropic/claude-opus-5")
     # Right provider, unlisted id — accepted by the changeset, just not listed.
