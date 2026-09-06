@@ -1,7 +1,8 @@
 # Rebuilds scripts/test-timings.tsv, the cost table scripts/partition-files.exs
-# balances on. Reads `mix test --slowest-modules` output on stdin:
+# balances on. Reads module timing reports on stdin. Download the partition
+# artifacts from one successful CI run (scripts/ci/README.md), then run:
 #
-#     (cd apps/fountain && mix test --max-cases 8 --slowest-modules 10000) \
+#     cat /tmp/fountain-ci-timings/coverdata-*/*.timings.log \
 #       | elixir scripts/regen-test-timings.exs
 #
 # Run it when the partitions visibly drift apart — the partition jobs print
@@ -61,7 +62,7 @@ body =
 
 File.write!("scripts/test-timings.tsv", """
 # Measured cost per test file, milliseconds. Regenerate with:
-#   (cd apps/fountain && mix test --max-cases 8 --slowest-modules 10000) | elixir scripts/regen-test-timings.exs
+#   cat /tmp/fountain-ci-timings/coverdata-*/*.timings.log | elixir scripts/regen-test-timings.exs
 # Consumed by scripts/partition-files.exs. A file missing from here is costed
 # at the median rather than zero, so adding tests degrades balance gently
 # instead of silently loading one partition.

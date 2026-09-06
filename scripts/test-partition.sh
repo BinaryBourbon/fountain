@@ -77,7 +77,9 @@ fi
 
 set +e
 # shellcheck disable=SC2086 # word splitting is how the file list is passed
-mix test --max-cases 8 --slowest-modules 10000 --export-coverage "$partition" --cover $files 2>&1 | tee "$log"
+elixir -r ../../scripts/ci/timing-formatter.exs -S mix test \
+  --formatter ExUnit.CLIFormatter --formatter Fountain.CI.TimingFormatter \
+  --max-cases 8 --export-coverage "$partition" --cover $files 2>&1 | tee "$log"
 status=${PIPESTATUS[0]}
 set -e
 mkdir -p cover

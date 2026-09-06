@@ -32,7 +32,9 @@ preview again after applying to verify the stored policy.
 ## Refresh partition timings
 
 Each partition records all module timings with eight concurrent cases, matching
-the allocator's cost model. Download the six `coverdata-*` artifacts from one
+the allocator's cost model. A passive formatter observes test events; do not
+add `--slowest-modules` to routine CI, because it forces serial trace mode and
+infinite test timeouts. Download the six `coverdata-*` artifacts from one
 successful full PR run into a new directory, then regenerate from their logs:
 
 ```sh
@@ -67,4 +69,5 @@ blocking checks in the Elixir and Go suites.
 python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
 actionlint -shellcheck= .github/workflows/ci.yml
 shellcheck scripts/ci/*.sh
+elixir scripts/ci/timing-formatter-test.exs
 ```

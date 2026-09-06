@@ -18,9 +18,8 @@
 # this replaces, where the worst partition was 48.4s of sync against 10.4s of
 # async.
 #
-# Regenerate the manifest with:
-#     (cd apps/fountain && mix test --max-cases 8 --slowest-modules 10000)
-# and feed the output through scripts/regen-test-timings.exs.
+# Regenerate the manifest from one CI run's timing artifacts, as described in
+# scripts/ci/README.md. The passive formatter preserves concurrent execution.
 #
 # Usage: elixir scripts/partition-files.exs <partition> <total-partitions>
 

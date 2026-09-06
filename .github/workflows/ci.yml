@@ -237,6 +237,10 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
+      - name: Timing collection preserves ExUnit execution
+        if: ${{ matrix.partition == 1 }}
+        run: elixir scripts/ci/timing-formatter-test.exs
+
       # Cache keys carry the job name. `test` and `checks` build different
       # trees — this one only ever compiles :test, while `checks` additionally
       # builds :dev for dialyzer and :prod for the release — and a shared key
