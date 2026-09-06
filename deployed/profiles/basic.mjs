@@ -35,9 +35,9 @@ export async function basic(ctx) {
       need(read.body.data.id === value.id && read.body.data.name === value.name, 'Created resource did not round-trip');
       const update = await client.request('PUT', path, { expected: 200, body: { metadata: marker } });
       need(update.body.data.metadata?.suite_revision === marker.suite_revision, 'Resource metadata update was lost');
-      const listed = await client.request('GET', collection, { expected: 200 });
+      const listed = await client.request('GET', collection, { expected: 200, recordBody: false });
       need(listed.body.data.some(item => item.id === value.id), 'Own list omitted created resource');
-      const otherList = await client.request('GET', collection, { key: other, expected: 200 });
+      const otherList = await client.request('GET', collection, { key: other, expected: 200, recordBody: false });
       need(!otherList.body.data.some(item => item.id === value.id), 'Other tenant list disclosed resource');
       for (const method of ['GET', 'PUT', 'DELETE']) {
         const denied = await client.request(method, path, { key: other, expected: 404,
@@ -62,7 +62,7 @@ export async function basic(ctx) {
     need(typeof key.key === 'string' && key.key.length > 0, 'New key is missing its one-time plaintext');
     const identity = await client.request('GET', '/api/auth/me', { key: key.key, expected: 200 });
     need(identity.body.id === ctx.report.owner_id, 'Minted key authenticated as another account');
-    const listed = await client.request('GET', '/api/auth/api-keys', { expected: 200 });
+    const listed = await client.request('GET', '/api/auth/api-keys', { expected: 200, recordBody: false });
     need(listed.body.data.some(item => item.id === key.id), 'Minted key is absent from key list');
     need(!JSON.stringify(listed.body).includes(key.key), 'Key listing disclosed plaintext key material');
     await client.request('DELETE', `/api/auth/api-keys/${key.id}`, { key: other, expected: 404 });

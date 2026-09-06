@@ -64,7 +64,7 @@ export class Fixtures {
         const collection = collections[r.kind];
         let value;
         if (!r.id || r.kind === 'api_key') {
-          const response = await this.client.request('GET', collection, { expected: 200, validate: false, signal });
+          const response = await this.client.request('GET', collection, { expected: 200, validate: false, recordBody: false, signal });
           if (!Array.isArray(response.body?.data)) throw new Error('Cannot read cleanup ownership evidence');
           const matches = response.body.data.filter(item => r.id ? item.id === r.id : item.name === r.name);
           if (matches.length > 1) throw new Error('Ambiguous cleanup intent');

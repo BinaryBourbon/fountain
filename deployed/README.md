@@ -79,7 +79,9 @@ for the exercised API surface, permitting compatible added properties. It
 does not fetch the advertised schema to redefine the expected responses.
 Schema failures stay failures; there is no blanket bypass for the broader
 schema gaps tracked in #1432 and #1444. The OpenAPI document is summarized by
-hash/version rather than copied into response traces.
+hash/version rather than copied into response traces. Collection responses
+are checked in memory but omitted from traces so existing account resources
+and the second tenant's resources do not become suite artifacts.
 
 Every initialized run writes `result.json` and `junit.xml`, with check durations
 and failures. `http.jsonl` contains bounded JSON response evidence and request
