@@ -284,7 +284,7 @@ fountain acp --agent researcher --log-level debug
 | Message | Meaning |
 |---|---|
 | `no Fountain agent configured` | The entry has no `--agent`. |
-| `agent "x" runs the … runtime, which does not speak ACP` | All four runtimes speak ACP. This names a conversation whose runtime column holds a name that no adapter covers. |
+| `agent "x" runs the … runtime, which does not speak ACP` | Every runtime Fountain ships speaks ACP. This names a conversation whose runtime column holds a name that no adapter covers. |
 | `credentials for … were rejected` | Run `fountain auth login` on the host. The message names the instance it tried. |
 | `could not resolve agent "x" on …` | The wrong name, or the right name on a different instance. |
 

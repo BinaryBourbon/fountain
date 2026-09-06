@@ -869,11 +869,46 @@ defmodule Fountain.Conversations.TurnMachine do
   cannot both start. Refused, not queued: nothing is written, the
   conversation stays idle and the caller sends again when the other turn
   ends.
+
+  `:no_command` is the other refusal, and it belongs to the acp runtime alone
+  (#1634). The argv there is the agent's own `runtime_command`, and a
+  conversation outlives its agent, so a live server can be asked for a turn
+  it has nothing to spawn for. Refused here, before a turn row exists, for the
+  same reason capacity is: there is no run to record, and the stage event says
+  what happened.
   """
-  @spec open(String.t(), String.t(), String.t()) ::
-          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity
-  def open(conversation_id, sandbox_id, prompt) do
+  @spec open(String.t(), String.t(), String.t(), map() | nil) ::
+          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity | :no_command
+  def open(conversation_id, sandbox_id, prompt, agent \\ nil) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
+
+    if runnable?(conv, agent),
+      do: open_turn(conv, sandbox_id, prompt),
+      else: refuse_no_command(conv)
+  end
+
+  # `RuntimeDispatch.command/2` is total for every other runtime, so the only
+  # question is whether the acp runtime's agent still carries one.
+  defp runnable?(conv, agent) do
+    not Fountain.RuntimeDispatch.command_required?(conv.runtime) or
+      match?({:ok, _}, Fountain.CommandRuntime.argv(agent))
+  end
+
+  defp refuse_no_command(conv) do
+    publish_stage(conv.id, "turn", "failed", %{
+      reason: "no_runtime_command",
+      runtime: conv.runtime,
+      message:
+        "This conversation runs the acp runtime, and the agent that carried its " <>
+          "command is gone. Create an agent with a runtime_command and start a " <>
+          "conversation on it."
+    })
+
+    :no_command
+  end
+
+  defp open_turn(conv, sandbox_id, prompt) do
+    conversation_id = conv.id
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
 
     attrs = %{
@@ -1009,6 +1044,9 @@ defmodule Fountain.Conversations.TurnMachine do
   a PTY so `isatty(0)` is true), `dir` (a workspace with a local .git) and
   `prompt_suffix` (image references for a runtime that cannot take images
   as flags).
+
+  On the acp runtime the argv is the agent's own `runtime_command` (#1634),
+  and the match below is total because `open/4` refuses a turn that has none.
   """
   @spec command(
           boolean(),
@@ -1021,7 +1059,7 @@ defmodule Fountain.Conversations.TurnMachine do
         ) :: {String.t(), [String.t()], keyword()}
   def command(acp?, conv, agent, prompt, mode, runtime_session_id, opts) do
     if acp? do
-      {c, a} = Fountain.RuntimeDispatch.command(conv.runtime)
+      {c, a} = Fountain.RuntimeDispatch.command(conv.runtime, agent)
       # The ACP `cwd` is validated in band by the agent CLI against the real
       # filesystem, so it must be the path a process inside the sandbox sees
       # — identity on hosted providers, the mapped directory on a runner

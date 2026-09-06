@@ -180,6 +180,77 @@ defmodule FountainWeb.AgentsLive.IndexTest do
     end
   end
 
+  describe "the acp runtime in the console (#1634)" do
+    test "the command field appears when the runtime is acp, and saves", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+
+      {:ok, view, html} = live(conn, ~p"/agents/new")
+      refute html =~ "agent[runtime_command]"
+
+      html =
+        view
+        |> element("form[phx-change=validate]")
+        |> render_change(%{"agent" => %{"name" => "converger", "runtime" => "acp"}})
+
+      assert html =~ "agent[runtime_command]"
+      assert html =~ "It needs no model and no inference key"
+
+      view
+      |> form("form", %{
+        "agent" => %{
+          "name" => "converger",
+          "runtime" => "acp",
+          "runtime_command" => "chant acp --env prod"
+        }
+      })
+      |> render_submit()
+
+      agent = Fountain.Agents.get_agent_by_name("converger", user.id)
+      assert agent.runtime == "acp"
+      assert agent.runtime_command == "chant acp --env prod"
+      assert is_nil(agent.model)
+    end
+
+    test "switching an acp agent onto a model runtime drops the command", %{conn: conn} do
+      user = with_credential(insert_verified_user())
+
+      agent =
+        insert_agent(user_id: user.id, runtime: "acp", runtime_command: "chant acp")
+
+      conn = login_user(conn, user)
+
+      {:ok, view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+      # The model field is inert on this runtime, so the form disables it.
+      assert html =~ ~s(name="agent[model]")
+      assert html =~ "disabled"
+
+      # Picking a model runtime re-renders the form: the model comes back and
+      # the command goes away, which is what the browser does on change.
+      html =
+        view
+        |> element("form[phx-change=validate]")
+        |> render_change(%{"agent" => %{"name" => agent.name, "runtime" => "claude"}})
+
+      refute html =~ "agent[runtime_command]"
+
+      view
+      |> form("form", %{
+        "agent" => %{
+          "name" => agent.name,
+          "runtime" => "claude",
+          "model" => "anthropic/claude-sonnet-5"
+        }
+      })
+      |> render_submit()
+
+      reloaded = Fountain.Agents.get_agent(agent.id, user.id)
+      assert reloaded.runtime == "claude"
+      assert reloaded.model == "anthropic/claude-sonnet-5"
+      assert is_nil(reloaded.runtime_command)
+    end
+  end
+
   describe "edit" do
     test "renders edit form for existing agent", %{conn: conn} do
       user = insert_verified_user()

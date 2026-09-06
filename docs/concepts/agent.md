@@ -10,11 +10,11 @@ An Agent is a named configuration for a coding agent that you can run again
 and again. It is config, and not a process. Nothing runs until a
 [Conversation](conversation.md) runs it.
 
-An Agent decides eight things.
+An Agent decides nine things.
 
 - **`model`**, as `provider/model-id`. An example is
   `anthropic/claude-sonnet-5`.
-- **`runtime`**, one of `claude`, `codex`, `gemini` or `opencode`.
+- **`runtime`**, one of `claude`, `codex`, `gemini`, `opencode` or `acp`.
 - **`environment`**, an optional [Environment](environment.md) to start from.
 - **`system`** and **`description`**, the system prompt and a summary that a
   person reads.
@@ -24,6 +24,8 @@ An Agent decides eight things.
 - **`metadata`**, a free-form map for your own records.
 - **`sandbox_mode`**, `ephemeral` or `persistent`. Read
   [About sandboxes](sandboxes.md).
+- **`runtime_command`**, the command that the `acp` runtime launches. It is
+  null on each other runtime.
 
 ## Why it exists
 
@@ -40,7 +42,8 @@ This asymmetry surprises people, and it is deliberate.
 
 The provider must match the runtime. Use `anthropic` for `claude`, `openai`
 for `codex`, and `google` for `gemini`. `opencode` takes any of the three, and
-the prefix picks which API key to export.
+the prefix picks which API key to export. `acp` takes none, because it runs a
+program rather than a model.
 
 Fountain rejects a provider outside that set at write time. It holds no
 credential for such a provider. A sandbox from that config would start with no
@@ -67,6 +70,9 @@ reattach.
 | `codex` | `~/.codex/AGENTS.md` |
 | `opencode` | `~/.config/opencode/AGENTS.md` |
 | `gemini` | `~/.gemini/GEMINI.md` |
+
+The `acp` runtime has no such file, and Fountain writes none. The command owns
+its own configuration.
 
 Fountain rewrites the file on reattach. An edit to an Agent's system prompt
 therefore reaches a sandbox that already exists, the next time that sandbox
@@ -159,6 +165,6 @@ launch.
 - [Agents as teammates](teammates.md), which is one Conversation for each
   Agent.
 - [About environments](environment.md), which an Agent names.
-- [Runtimes](../catalog/runtimes/index.md), with all four compared.
+- [Runtimes](../catalog/runtimes/index.md), compared.
 - [Skills](../catalog/skills/index.md), and the two that each sandbox gets.
 - [Glossary](../reference/glossary.md), for the three senses of "agent".

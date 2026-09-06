@@ -177,8 +177,9 @@ Here are the fields that need a word.
 
 | Field | What it decides |
 |---|---|
-| `runtime` | `claude`, `codex`, `gemini` or `opencode`. The provider in `model` must match it. |
-| `model` | The canonical `provider/model_id`. Fountain checks it against no list, so a model that ships today works today. |
+| `runtime` | `claude`, `codex`, `gemini`, `opencode` or `acp`. The provider in `model` must match it, and `acp` needs no model at all. |
+| `runtime_command` | The command that the `acp` runtime launches. It is a shell line, and Fountain resolves it inside the sandbox. The field is required for `acp`, and a 422 on each other runtime. |
+| `model` | The canonical `provider/model_id`. Fountain checks it against no list, so a model that ships today works today. Leave it out on `acp`. |
 | `system` | The agent's system prompt. |
 | `skills` | Either `{ source, ref? }`, which installs from GitHub, or `{ name, content }`, which Fountain writes into the sandbox word for word. Each entry takes exactly one shape. |
 | `sandbox_provider` | `sprites`, `e2b`, `daytona` or `runner`. A `null` takes the instance default. |

@@ -131,6 +131,10 @@ defmodule Fountain.Agents.ModelCatalog do
   @spec suggestions(String.t() | nil) :: [String.t()]
   def suggestions("fountain-fixture"), do: ["fixture/deterministic-v1"]
 
+  # The acp runtime resolves no inference credential and reads no model, so
+  # suggesting one would be advice to fill in a field that does nothing.
+  def suggestions("acp"), do: []
+
   def suggestions(runtime) do
     case Model.provider_for_runtime(runtime) do
       nil -> Enum.flat_map(Model.providers(), &suggestions_for_provider/1)

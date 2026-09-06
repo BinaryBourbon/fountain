@@ -755,10 +755,23 @@ defmodule FountainWeb.Schemas do
               "providers are rejected: Fountain has no credentials to export for " <>
               "them. The model id is not checked against a list, so a newly " <>
               "released model works without a Fountain release. The isolated fountain-fixture " <>
-              "runtime is the exception: it accepts only fixture/deterministic-v1.",
+              "runtime is the exception: it accepts only fixture/deterministic-v1. Null " <>
+              "on the acp runtime, which resolves no inference credential and reads no " <>
+              "model.",
+          nullable: true,
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
+        runtime_command: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The command the acp runtime launches inside the sandbox, as a shell line " <>
+              "resolved there (for example `chant acp`). Required when runtime is " <>
+              "acp, and rejected on every other runtime, which resolves its own " <>
+              "executable. A free string by design: it runs under the same isolation " <>
+              "as an environment's setup script."
+        },
         acp: %Schema{
           type: :boolean,
           readOnly: true,
@@ -878,6 +891,8 @@ defmodule FountainWeb.Schemas do
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
+      # `model` stays required: the response always carries the key, and the
+      # acp runtime's value for it is null rather than absent.
       required: [:id, :name, :model, :runtime]
     })
   end
@@ -929,6 +944,16 @@ defmodule FountainWeb.Schemas do
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
+        runtime_command: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The command the acp runtime launches inside the sandbox, as a shell line " <>
+              "resolved there (for example `chant acp`). Required when runtime is " <>
+              "acp, and rejected on every other runtime, which resolves its own " <>
+              "executable. A free string by design: it runs under the same isolation " <>
+              "as an environment's setup script."
+        },
         sandbox_provider: %Schema{
           type: :string,
           enum: ~w(sprites e2b daytona runner),
@@ -1027,7 +1052,10 @@ defmodule FountainWeb.Schemas do
               "non-empty list is an allowlist. The agent's own environment always passes."
         }
       },
-      required: [:name, :model, :runtime]
+      # `model` is required for every runtime but acp, which needs none. A
+      # conditional requirement is not expressible here, so the changeset is
+      # where it is enforced and a missing model is a 422 rather than a 400.
+      required: [:name, :runtime]
     })
   end
 
@@ -1047,6 +1075,16 @@ defmodule FountainWeb.Schemas do
         system: %Schema{type: :string},
         model: %Schema{type: :string, pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"},
         runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
+        runtime_command: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The command the acp runtime launches inside the sandbox, as a shell line " <>
+              "resolved there (for example `chant acp`). Required when runtime is " <>
+              "acp, and rejected on every other runtime, which resolves its own " <>
+              "executable. A free string by design: it runs under the same isolation " <>
+              "as an environment's setup script."
+        },
         sandbox_provider: %Schema{
           type: :string,
           enum: ~w(sprites e2b daytona runner),

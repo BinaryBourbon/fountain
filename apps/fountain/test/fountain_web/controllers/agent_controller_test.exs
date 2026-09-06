@@ -108,6 +108,71 @@ defmodule FountainWeb.AgentControllerTest do
       assert json_response(conn, 401)
     end
 
+    test "creates an acp agent from a command, with no model (#1634)", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      payload = %{name: "converger", runtime: "acp", runtime_command: "chant acp --env prod"}
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+
+      body = json_response(conn, 201)
+      assert body["data"]["runtime"] == "acp"
+      assert body["data"]["runtime_command"] == "chant acp --env prod"
+      assert is_nil(body["data"]["model"])
+      assert body["data"]["acp"] == true
+    end
+
+    test "returns 422 naming runtime_command when an acp agent has none", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", %{name: "converger", runtime: "acp"})
+
+      body = json_response(conn, 422)
+      assert body["errors"]["runtime_command"] == ["can't be blank"]
+    end
+
+    test "returns 422 naming runtime_command when another runtime carries one", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      payload = %{
+        name: "confused",
+        model: "anthropic/claude-sonnet-4-6",
+        runtime: "claude",
+        runtime_command: "chant acp"
+      }
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+
+      body = json_response(conn, 422)
+      assert [message] = body["errors"]["runtime_command"]
+      assert message =~ "only the acp runtime"
+    end
+
+    test "returns 422 naming model when a model-driven runtime has none", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", %{name: "modelless", runtime: "claude"})
+
+      body = json_response(conn, 422)
+      assert body["errors"]["model"] == ["can't be blank"]
+    end
+
     test "returns 422 when a skill entry has neither content nor source", %{
       conn: conn,
       raw_key: raw_key

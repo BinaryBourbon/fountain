@@ -61,8 +61,9 @@ defmodule FountainWeb.AgentsLive.Form do
       "name" => a.name || "",
       "description" => a.description || "",
       "system" => a.system || "",
-      "model" => a.model || "anthropic/claude-sonnet-4-6",
+      "model" => a.model || default_model(a.runtime),
       "runtime" => a.runtime || "claude",
+      "runtime_command" => a.runtime_command || "",
       "sandbox_provider" => a.sandbox_provider || "",
       "sandbox_mode" => a.sandbox_mode || "ephemeral",
       "environment_id" => a.environment_id || "",
@@ -99,6 +100,24 @@ defmodule FountainWeb.AgentsLive.Form do
   end
 
   defp asks_permission?(runtime), do: ACP.asks_permission?(runtime || "claude")
+
+  # A new agent lands on claude, so it gets claude's model prefilled. An acp
+  # agent gets none: the field is optional there and nothing reads it, so a
+  # prefilled value would be a suggestion to configure something inert.
+  defp default_model("acp"), do: ""
+  defp default_model(_runtime), do: "anthropic/claude-sonnet-4-6"
+
+  defp model_required?(runtime), do: Fountain.RuntimeDispatch.model_required?(runtime || "claude")
+  defp command_runtime?(runtime), do: Fountain.RuntimeDispatch.command_required?(runtime)
+
+  # The command belongs to the acp runtime alone, and the changeset refuses it
+  # on any other. Sending nil rather than whatever the form last held is what
+  # lets someone switch an agent off acp without hitting that refusal.
+  defp runtime_command_param(params) do
+    if Fountain.RuntimeDispatch.command_required?(params["runtime"]),
+      do: params["runtime_command"],
+      else: nil
+  end
 
   defp permission_override_count(form) do
     form
@@ -390,8 +409,14 @@ defmodule FountainWeb.AgentsLive.Form do
         |> Map.put("mcp_servers", mcp_map)
         |> Map.put("permission_policy", form_to_permission_policy(params))
         |> Map.put("user_id", socket.assigns.user_id)
+        |> Map.put("runtime_command", runtime_command_param(params))
         |> nil_if_blank("environment_id")
         |> nil_if_blank("sandbox_provider")
+        |> nil_if_blank("runtime_command")
+        # Blank means "no model", which is a legal state on the acp runtime
+        # and a "can't be blank" on every other one. Left as "" it would be a
+        # format error instead, which points at the wrong thing.
+        |> nil_if_blank("model")
 
       case save(socket, attrs) do
         {:ok, socket} -> {:noreply, socket}
@@ -710,11 +735,7 @@ defmodule FountainWeb.AgentsLive.Form do
               name="agent[runtime]"
               class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
             >
-              <option
-                :for={r <- ~w(claude codex gemini opencode)}
-                value={r}
-                selected={@form["runtime"] == r}
-              >
+              <option :for={r <- Agent.runtimes()} value={r} selected={@form["runtime"] == r}>
                 {r}
               </option>
             </select>
@@ -726,13 +747,30 @@ defmodule FountainWeb.AgentsLive.Form do
             value={@form["model"]}
             placeholder={model_placeholder(@form["runtime"])}
             list="model-options"
-            required
+            disabled={not model_required?(@form["runtime"])}
+            required={model_required?(@form["runtime"])}
           />
           <datalist id="model-options">
             <option :for={m <- ModelCatalog.suggestions(@form["runtime"])} value={m}></option>
           </datalist>
         </div>
         <.error_msg field="model" errors={@errors} />
+        <div :if={command_runtime?(@form["runtime"])} class="space-y-1">
+          <.input
+            id="runtime_command"
+            name="agent[runtime_command]"
+            label="Command"
+            value={@form["runtime_command"]}
+            placeholder="chant acp"
+            required
+          />
+          <.error_msg field="runtime_command" errors={@errors} />
+          <p class="text-zinc-500 text-xs">
+            The acp runtime runs this shell line inside the sandbox and speaks the Agent
+            Client Protocol to it. It needs no model and no inference key. Install the
+            program through the environment's packages or its setup script.
+          </p>
+        </div>
         <p
           :if={not Map.has_key?(@errors, "model") and unknown_model?(@form["model"])}
           class="text-zinc-500 text-xs"

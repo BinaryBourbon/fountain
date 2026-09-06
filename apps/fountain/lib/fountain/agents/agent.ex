@@ -4,12 +4,17 @@ defmodule Fountain.Agents.Agent do
 
   alias Fountain.Accounts.User
   alias Fountain.Environments.Environment
+  alias Fountain.RuntimeDispatch
   alias Managoat.Runtimes.Model
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @runtimes ~w(claude codex gemini opencode)
+  # `acp` is the odd one (#1634): not a coding-agent CLI but a command the
+  # agent names, launched inside the sandbox and spoken to over the same
+  # protocol. It takes a `runtime_command` and needs no model, and the other
+  # four are the reverse of both. See `Fountain.RuntimeDispatch`.
+  @runtimes ~w(claude codex gemini opencode acp)
 
   @typedoc "A persisted agent."
   @type t :: %__MODULE__{}
@@ -20,6 +25,10 @@ defmodule Fountain.Agents.Agent do
     field :system, :string, default: ""
     field :model, :string
     field :runtime, :string
+    # The command the `acp` runtime launches, as a shell line resolved inside
+    # the sandbox (#1634). Required for that runtime and refused for every
+    # other one, which resolves its own executable from a pinned table.
+    field :runtime_command, :string
     # Optional sandbox-backend override; nil inherits the instance default
     # (SANDBOX_PROVIDER) at conversation start.
     field :sandbox_provider, :string
@@ -78,6 +87,7 @@ defmodule Fountain.Agents.Agent do
       :system,
       :model,
       :runtime,
+      :runtime_command,
       :sandbox_provider,
       :sandbox_mode,
       :skills,
@@ -93,10 +103,12 @@ defmodule Fountain.Agents.Agent do
   def changeset(agent, attrs) do
     agent
     |> cast(attrs, cast_fields())
-    |> validate_required([:name, :model, :runtime])
+    |> validate_required([:name, :runtime])
     |> validate_inclusion(:runtime, runtimes())
     |> validate_fixture_account()
     |> validate_inclusion(:sandbox_mode, @sandbox_modes)
+    |> validate_model_presence()
+    |> validate_runtime_command()
     |> validate_format(:model, ~r{^[a-z0-9_-]+/[a-z0-9._-]+$},
       message: "must be in canonical provider/model_id form"
     )
@@ -124,6 +136,45 @@ defmodule Fountain.Agents.Agent do
       end)
     else
       changeset
+    end
+  end
+
+  # `model` is required for every runtime but `acp`, where it is optional and
+  # inert: that runtime resolves no inference credential, so a model would be
+  # a field nothing reads. It is still accepted, and still has to parse and
+  # name a known provider if it is given, because a value that is stored and
+  # ignored is worse than one that is refused.
+  defp validate_model_presence(changeset) do
+    if RuntimeDispatch.model_required?(get_field(changeset, :runtime)) do
+      validate_required(changeset, [:model])
+    else
+      changeset
+    end
+  end
+
+  # The command is the whole configuration of the `acp` runtime and means
+  # nothing to any other, so it is required for one and refused for the rest.
+  # Refused rather than ignored: a `runtime_command` sitting on a claude agent
+  # reads as something that runs, and nothing would ever run it.
+  defp validate_runtime_command(changeset) do
+    runtime = get_field(changeset, :runtime)
+    command = get_field(changeset, :runtime_command)
+
+    cond do
+      RuntimeDispatch.command_required?(runtime) ->
+        # `validate_required/2` trims, so a blank line is a missing command
+        # rather than one that spawns an empty shell.
+        validate_required(changeset, [:runtime_command])
+
+      is_nil(command) or String.trim(command) == "" ->
+        changeset
+
+      true ->
+        add_error(
+          changeset,
+          :runtime_command,
+          "only the acp runtime launches a command; #{runtime || "this runtime"} resolves its own"
+        )
     end
   end
 

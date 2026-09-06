@@ -45,6 +45,24 @@ upgrade, is in
   and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
   filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
   and the console's conversation lists render them as chips.
+- **An `acp` runtime launches a named command, so a deterministic program can
+  run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
+  `runtime_command` field carries the command it runs. The field is required
+  for that runtime and a 422 naming the field on every other one, which
+  resolves its own executable from a pinned table. `model` is optional there:
+  no inference credential is resolved, no model is pinned on the session, and
+  a turn succeeds on an account that holds no API key. Fountain installs no
+  adapter for it, and the command owns its own configuration; skills still
+  mount, and their path arrives as `FOUNTAIN_SKILLS_DIR`. Everything the
+  protocol carries is unchanged, including tool-call blocks on the transcript
+  and the SSE feed, `session/cancel` on interrupt, and the agent's permission
+  policy. With `CREDITS_ENABLED` the turn is priced by sandbox time alone and
+  `turn.usage` is null.
+
+  `runtime_command` is a **free string** rather than an entry in a catalog of
+  blessed commands. It is resolved inside the sandbox, under the same
+  isolation an environment's `setup_script` already runs under, so a catalog
+  would restrict a self-hoster and protect nobody.
 
 ### Fixed
 

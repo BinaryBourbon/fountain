@@ -2319,9 +2319,9 @@ defmodule Fountain.Conversations.ConversationServer do
   defp kick_turn(state, prompt, agent, images) do
     state = touch_activity(state)
 
-    case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt) do
+    case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt, agent) do
       {:ok, conv, turn} -> run_turn(state, conv, turn, prompt, agent, images)
-      :at_capacity -> state
+      refused when refused in [:at_capacity, :no_command] -> state
     end
   end
 
@@ -2470,7 +2470,7 @@ defmodule Fountain.Conversations.ConversationServer do
                       ),
                     model:
                       agent &&
-                        Managoat.Runtimes.Model.acp_model(
+                        Fountain.RuntimeDispatch.acp_model(
                           conv.runtime || agent.runtime,
                           agent.model
                         ),
