@@ -10,7 +10,7 @@ const matrixSubset = profile => ({ 'matrix-canary': 'canary', 'matrix-scheduled'
 export function ciConfig(env) {
   if (!['staging', 'production'].includes(env.SUITE_TARGET)) throw new Error('Target is not approved');
   if (env.SUITE_ENABLED !== 'true') throw new Error('Target environment is not enabled');
-  if (!['probe', 'basic', 'execution', 'streaming', 'canary', 'secrets'].includes(env.SUITE_PROFILE) && !matrixSubset(env.SUITE_PROFILE)) throw new Error('Profile is not approved');
+  if (!['probe', 'basic', 'execution', 'streaming', 'canary', 'secrets', 'mcp'].includes(env.SUITE_PROFILE) && !matrixSubset(env.SUITE_PROFILE)) throw new Error('Profile is not approved');
   const config = JSON.parse(env.SUITE_TARGET_JSON || '{}');
   const url = new URL(config.base_url);
   if (url.protocol !== 'https:') throw new Error('CI targets require HTTPS ingress');
