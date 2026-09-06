@@ -508,6 +508,53 @@ use ExUnitProperties                 # StreamData property tests (installed)
 
 Mimic is available. Prefer integration tests through real changesets over heavy mocking.
 
+### Flaky tests
+
+A test that fails and then passes with no code change deserves investigation.
+Keep the failed run's evidence and compare the commits, workflow conditions,
+runner environment and external dependencies before calling it a flake.
+**File confirmed flakes.** Record an unexplained failure with what you know
+rather than dismissing it because a rerun passed.
+
+```bash
+gh issue create --label flake --label area:testing --title "Flake: <what raced>"
+```
+
+`flake` is the label every one of them carries; `area:testing` and the area
+the test covers go alongside it. Search before filing —
+`gh issue list --label flake --state all` — because the same flake gets found
+repeatedly and a second issue splits the evidence.
+
+File rather than fix in place when you are mid-task on something else, so a
+campaign's diffs stay about the campaign (#1539). Fix it in place when it was
+your own change that flaked.
+
+What the issue needs, because a flake nobody can reproduce is a flake nobody
+can close:
+
+- the failing assertion with its `left:`/`right:`, and the file and line;
+- **how often, out of what** — "one full-suite run in eight", "four
+  first-attempt CI failures this week" — with the run URLs;
+- the mechanism if you have it: what the test asserts on versus what it waits
+  on. That difference is the whole bug in most of them.
+
+Two places to investigate are failed first attempts followed by successful
+reruns, and failed `push` runs on `main`. This query finds rerun candidates;
+a successful later attempt alone does not establish why the first failed:
+
+```bash
+gh run list --workflow ci.yml --limit 200 \
+  --json databaseId,attempt,conclusion,headBranch --jq '.[] | select(.attempt > 1)'
+gh api /repos/BinaryBourbon/fountain/actions/runs/<id>/attempts/1/jobs
+```
+
+A green PR does not prove that a failed post-merge run is a flake. The merged
+tree can include other changes, push-only jobs can test different behavior,
+and the runner or external services can differ. Compare those conditions
+before classifying the failure. Before filing from either source, date the
+failure against `git log` on the file a fix would touch: of four found this
+way on 2026-09-04, two had already been fixed after the failed run.
+
 ## Things NOT to do
 
 - **Don't reach for `_unsafe_*` without established ownership.** These skip tenant scoping; the legitimate caller shapes (including the scoped-parent-fetch-then-`_unsafe_`-child pattern) are in the tenant isolation section above.
@@ -524,6 +571,10 @@ Mimic is available. Prefer integration tests through real changesets over heavy 
   having its connection pulled away. `Task.async` is right where the caller
   keeps the ref and handles the reply (`Analytics.Sink`).
 - **Don't push directly to `main`.** All changes go through PRs; the CI gate must pass.
+- **Don't re-run a red test until it goes green and move on.** Keep the failed
+  run's evidence and investigate what changed between attempts. File confirmed
+  flakes with the `flake` label, and record unexplained failures with what you
+  know — see *Flaky tests* above.
 - **Don't add `async: false` to tests unless the test genuinely requires it** (e.g. global ETS state). The SQL Sandbox handles DB isolation.
 
 ## Adding a new context
