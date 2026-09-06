@@ -1,10 +1,11 @@
 import { writeFileSync, renameSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { cleanupSchedule, validateScheduleManifest } from './scheduled-fixtures.mjs';
 
-const collections = { agent: '/api/agents', environment: '/api/environments', vault: '/api/vaults', binding: '/api/secret-bindings', api_key: '/api/auth/api-keys', conversation: '/api/conversations' };
+const collections = { agent: '/api/agents', environment: '/api/environments', vault: '/api/vaults', binding: '/api/secret-bindings', api_key: '/api/auth/api-keys', conversation: '/api/conversations', webhook: '/api/webhooks' };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const marker = (kind, value) => kind === 'binding' ? value.key : kind === 'conversation' ? value.channel_id : value.name;
+const marker = (kind, value) => kind === 'webhook' ? value.description : kind === 'binding' ? value.key : kind === 'conversation' ? value.channel_id : value.name;
 const prefix = (kind, runId) => kind === 'binding' ? `SUITE_${runId.replaceAll('-', '').toUpperCase()}_BINDING_` : `suite-${runId}-`;
 
 export function atomicJson(path, value) {
@@ -33,6 +34,7 @@ export class Fixtures {
         throw new Error('Invalid cleanup resource; refusing the manifest');
       }
       if (r.kind === 'binding' && (typeof r.host !== 'string' || !r.host.length)) throw new Error('Binding manifest lacks host ownership evidence');
+      if (r.kind === 'webhook' && (typeof r.url !== 'string' || !r.url.startsWith('https://'))) throw new Error('Webhook manifest lacks target ownership evidence');
       if (r.kind === 'conversation') {
         if (r.sandbox_mode !== undefined && !['ephemeral', 'persistent'].includes(r.sandbox_mode)) throw new Error('Invalid recorded sandbox mode');
         if (![r.agent_id, r.environment_id].every(id => uuid.test(id)) ||
@@ -44,13 +46,23 @@ export class Fixtures {
         if (r.vault_id !== undefined && (!uuid.test(r.vault_id) || !existing.resources.some(item => item.kind === 'vault' && item.id === r.vault_id))) throw new Error('Conversation must reference a recorded vault');
       }
     }
+    validateScheduleManifest(existing);
     return new Fixtures(path, client, { existing });
   }
   save() { atomicJson(this.path, this.manifest); }
+  remainingCount() {
+    const s = this.manifest.schedule;
+    return this.manifest.resources.filter(r => r.state !== 'cleaned').length +
+      (s ? Number(s.state !== 'cleaned') + s.conversations.filter(c => c.state !== 'cleaned').length : 0);
+  }
   async create(kind, attrs = {}) {
     if (!collections[kind]) throw new Error('Unsupported fixture kind');
-    if (this.manifest.resources.length >= this.maxResources) throw new Error('Fixture resource budget exhausted');
+    if (this.manifest.resources.length + (this.manifest.schedule ? 2 : 0) >= this.maxResources) throw new Error('Fixture resource budget exhausted');
     const resource = { kind, name: `suite-${this.manifest.run_id}-${kind}-${this.manifest.resources.length}`, state: 'pending' };
+    if (kind === 'webhook') {
+      if (typeof attrs.url !== 'string' || !attrs.url.startsWith('https://')) throw new Error('Webhook requires an explicit HTTPS target');
+      resource.url = attrs.url;
+    }
     if (kind === 'binding') {
       resource.name = `${prefix(kind, this.manifest.run_id)}${this.manifest.resources.length}`;
       if (typeof attrs.host !== 'string' || !attrs.host.length) throw new Error('Binding requires an explicit host');
@@ -73,7 +85,7 @@ export class Fixtures {
     this.manifest.resources.push(resource);
     this.save(); // Intent survives a response lost after the server commits.
     const result = await this.client.request('POST', collections[kind], {
-      body: kind === 'conversation' ? { ...attrs, title: resource.name, channel_id: resource.name, sandbox_mode: resource.sandbox_mode } : kind === 'binding' ? { ...attrs, key: resource.name } : { ...attrs, name: resource.name }, validate: false,
+      body: kind === 'conversation' ? { ...attrs, title: resource.name, channel_id: resource.name, sandbox_mode: resource.sandbox_mode } : kind === 'binding' ? { ...attrs, key: resource.name } : kind === 'webhook' ? { ...attrs, description: resource.name } : { ...attrs, name: resource.name }, validate: false,
     });
     if (result.status >= 400 && result.status < 500) {
       resource.state = 'cleaned'; this.save();
@@ -86,8 +98,8 @@ export class Fixtures {
     resource.state = 'created';
     this.save(); // Record ID before schema assertions can fail.
     this.client.contract?.check('POST', collections[kind], result.status, result.body);
-    if (marker(kind, value) !== resource.name || (kind === 'binding' && value.host !== resource.host)) throw new Error(`Create ${kind}: returned ownership marker differs; cleanup will require ownership evidence`);
-    return value;
+    if (marker(kind, value) !== resource.name || (kind === 'binding' && value.host !== resource.host) || (kind === 'webhook' && value.url !== resource.url)) throw new Error(`Create ${kind}: returned ownership marker differs; cleanup will require ownership evidence`);
+    return kind === 'webhook' ? { ...value, secret: result.body.secret } : value;
   }
   reserveTurn(id, maxTurns) {
     const r = this.manifest.resources.find(r => r.kind === 'conversation' && r.id === id && r.state === 'created');
@@ -142,10 +154,15 @@ export class Fixtures {
     if (sandbox.status === 200 && (sandbox.body.data?.agent_id !== r.agent_id || !['terminated', 'failed'].includes(sandbox.body.data?.status))) throw new Error('Run-owned sandbox is still live or has changed owner');
   }
   async cleanup(signal) {
-    const failures = [];
-    for (const r of [...this.manifest.resources].reverse()) {
+    const failures = await cleanupSchedule(this, signal);
+    // Stop outbound sources before conversation teardown can emit more events.
+    const resources = [...this.manifest.resources].reverse();
+    resources.sort((a, b) => Number(b.kind === 'webhook') - Number(a.kind === 'webhook'));
+    for (const r of resources) {
       if (r.state === 'cleaned') continue;
       try {
+        const source = this.manifest.schedule;
+        if (source && source.state !== 'cleaned' && [source.agent_id, source.environment_id].includes(r.id)) throw new Error('Retaining parent fixture until schedule cleanup succeeds');
         if (r.kind !== 'conversation' && this.manifest.resources.some(child => child.kind === 'conversation' && child.state !== 'cleaned' && (r.kind === 'binding' || [child.agent_id, child.environment_id, child.vault_id].includes(r.id)))) throw new Error('Retaining parent fixture until conversation cleanup succeeds');
         signal?.throwIfAborted();
         const collection = collections[r.kind];
@@ -164,10 +181,16 @@ export class Fixtures {
           if (response.status === 200 && !value) throw new Error('Missing cleanup ownership evidence');
         }
         if (value) {
-          if (marker(r.kind, value) !== r.name || !uuid.test(value.id) || (r.kind === 'binding' && value.host !== r.host)) throw new Error('Cleanup ownership evidence does not match');
+          if (marker(r.kind, value) !== r.name || !uuid.test(value.id) || (r.kind === 'binding' && value.host !== r.host) || (r.kind === 'webhook' && value.url !== r.url)) throw new Error('Cleanup ownership evidence does not match');
           r.id = value.id; this.save();
+          if (r.kind === 'webhook') {
+            // Even a failed/lost disable reply must not prevent deletion. The
+            // subsequent DELETE and read-back establish that delivery stopped.
+            await this.client.request('PATCH', `${collection}/${r.id}`, { body: { status: 'disabled' }, expected: [200, 404], validate: false, signal }).catch(() => {});
+          }
           if (r.kind === 'conversation') await this.terminateConversation(r, value, signal);
           await this.client.request('DELETE', `${collection}/${r.id}`, { expected: [204, 404], validate: false, signal });
+          if (r.kind === 'webhook') await this.client.request('GET', `${collection}/${r.id}`, { expected: 404, validate: false, signal });
         }
         if (r.kind === 'conversation' && !value && r.sandbox_id) {
           await this.cleanSandbox(r, signal);

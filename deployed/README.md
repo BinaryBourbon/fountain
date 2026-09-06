@@ -489,6 +489,156 @@ The workflow accepts `profile: mcp` for manual public or rollout checks. Store
 part of scheduled canaries. A local receiver or SDK diagnostic does not count
 as a deployed Fountain runtime/provider verdict.
 
+## Webhook delivery and retry
+
+The independent `webhooks` profile covers the outbound-delivery half of #1616.
+It provisions a run-owned conversation without a prompt, registers an endpoint
+through `POST /api/webhooks`, then terminates the conversation. This produces
+the documented `conversation.terminate.done` event with zero inference turns.
+The signing secret is accepted only from the endpoint's creation response and
+is checked for disclosure in subsequent public responses before redaction.
+
+The controlled receiver verifies the HMAC over the timestamp and exact raw
+body bytes, with a five-minute replay window. It also verifies the event
+headers, attempt counter and metadata-only payload. It returns one 503 for the
+first valid event and 200 for later valid deliveries. The suite requires an
+automatic later attempt; it never invokes the test-send or redeliver APIs.
+Each receiver receipt must match a public delivery record, and the payload
+must match the conversation event's ID, timestamp, stage, state and duration.
+Conversation status remains advisory, as the
+[webhook contract](../docs/reference/webhooks.md#the-payload) specifies.
+
+Delivery is at least once and unordered. Multiple successful deliveries,
+repeated attempts and out-of-order public rows are retained for analysis.
+They do not fail merely because there are more than two records. The profile
+observes for a configured window after successful retry, then reports that
+window and all observed delivery IDs. This does not assert that duplicates
+can never arrive later. The receiver response precedes Fountain's delivery
+record write; the suite waits for these two evidence sources to agree.
+
+Run `deployed/receivers/webhooks.mjs` from the suite checkout on one controlled
+HTTPS origin. Route the origin to one process and disable request/header
+logging. Set `FOUNTAIN_WEBHOOK_ADMIN_KEY` to at least 32 random characters.
+Provide `TLS_CERT_FILE` and `TLS_KEY_FILE`, or explicitly set
+`RECEIVER_TLS_AT_INGRESS=true` behind HTTPS ingress. The default port is 8080.
+The origin must resolve publicly and be reachable from Fountain's outbound
+workers and from the suite. Fountain's SSRF protections remain in force.
+
+The receiver keeps signing secrets in memory to verify HMACs. It never returns
+or logs them. Runs expire after 15 minutes; capacity is 32 runs, 64 deliveries
+per run and 16 KiB per request. Invalid signatures and unexpected payload
+fields are rejected and recorded as booleans without their raw values. Only
+verified metadata payloads and generated receipts appear in observations.
+Browser origins are rejected. Deleting the receiver run removes its secret.
+
+Copy `deployed/webhooks.example.json` and set the real origins and dedicated
+account credentials. Pin the runtime, model and provider for provisioning.
+The second account must be distinct and verified. Exactly zero prompts and
+at least four resources must be authorized. A run is bounded to ten minutes;
+the default delivery deadline is three minutes and duplicate observation is
+30 seconds. The endpoint API, signed dispatch and automatic retry are all
+required verdicts. A missing worker queue or disabled dispatch fails the
+selected profile.
+
+```bash
+node deployed/cli.mjs run \
+  --config /tmp/fountain-webhooks.json \
+  --out /tmp/fountain-webhooks-001
+```
+
+Cleanup first attempts to disable and delete the endpoint, then verifies 404.
+A failed disable reply does not prevent deletion. Endpoint cleanup precedes
+conversation cleanup so teardown does not queue more outbound events. Lost
+creation replies retain the endpoint description and exact target URL for
+ownership checks. The receiver has a separate `webhook-receiver.json` intent
+manifest. The ordinary cleanup command handles both manifests with the
+original target configuration. Cleanup failures remain explicit; expiry of a
+receiver run does not prove that a Fountain endpoint was deleted.
+
+The report distinguishes provisioning, registration, conversation-event and
+background-delivery failures. A separate cleanup snapshot retains the final
+receiver observations and public delivery records when those reads succeed.
+The analyzed window and snapshot are labeled separately.
+
+Manual CI selection is `profile: webhooks`, with
+`FOUNTAIN_WEBHOOK_ADMIN_KEY` in the selected protected environment. It is not
+part of scheduled canaries. The `schedules` profile below selects scheduled execution independently.
+`one_off` on the current schedule API selects a fresh conversation per firing,
+not a cron that deletes itself after one firing.
+
+## Scheduled execution
+
+The independent `schedules` profile covers the scheduled-execution half of
+#1616. It creates a fresh agent and environment, then a disabled schedule
+through the public teammate schedule API. The agent does not need an existing
+team conversation: `one_off: true` opens a new conversation for its firing.
+The current API uses cron; it has no once-only timer field.
+
+The suite chooses one date-specific UTC cron about two to three minutes in
+the future. It verifies `next_run_at`, records one prompt authorization in the
+cleanup manifest, then enables the schedule. A lost enable reply consumes the
+same authorization; the suite never enables it again automatically. It does
+not call the schedule's `run` action or submit a conversation prompt.
+
+When the generated conversation appears, the suite disables the schedule
+before waiting for the turn. It requires a matching public
+`last_conversation_id`, a successful `last_run_at` within the configured window,
+and a `next_run_at` advanced beyond this date. The completed turn must contain
+the scheduled prompt and a paired tool result with the nonce. The nonce file
+must also be readable through the public sandbox file API. Model text alone
+cannot satisfy these checks.
+
+The conversation has no environment override. Its sandbox must inherit the
+run-owned agent's environment, with an ephemeral mode and no vault. These are
+separate public fields and are checked separately. Every generated conversation
+is recorded for cleanup, including duplicates detected during a failed run.
+The existing ownership-marker rules for ordinary conversation fixtures remain
+in force; schedule-created conversations have a separate, parent-checked record.
+
+After completion, the suite observes the disabled schedule and its agent's
+conversations for at least 120 seconds, spanning two scheduler minutes. It
+requires the same single conversation and completed turn throughout that
+window. Results record the window and each observation. This proves the
+bounded observation with the schedule disabled; it does not claim unbounded
+exactly-once delivery or automatic deletion by Fountain. The date-specific cron
+would recur annually if it were left enabled.
+
+Copy `deployed/schedules.example.json`, set the target and dedicated account
+credentials, and pin the runtime, model and sandbox provider. The primary
+account needs working inference credentials; a runner target needs its runner
+online. The second account must be distinct and verified. The profile requires
+one authorized prompt, an ephemeral sandbox and a four-resource budget. Its
+run deadline is at most fifteen minutes. The default dispatch window is three
+minutes after the due time; duplicate observation is two minutes. Cleanup must
+have at least thirty seconds and defaults to ninety seconds.
+
+```bash
+node deployed/cli.mjs run \
+  --config /tmp/fountain-schedules.json \
+  --out /tmp/fountain-schedules-001
+```
+
+Cleanup disables and deletes the schedule before terminating its generated
+conversations. A failed disable reply does not prevent deletion. It discovers
+conversations through the run-owned agent, checks their identity and sandbox
+ownership, terminates them, and verifies their deletion. A short final scan
+catches rows inserted by a worker that had already read the schedule. A public
+sandbox listing must contain no remaining live sandbox for the agent. An
+orphan sandbox or a source that cannot be deleted fails cleanup and retains
+the parent fixtures for investigation.
+
+All schedule and generated-conversation identities live in `cleanup.json`.
+The ordinary cleanup command can recover them after interruption or a lost
+response. It checks the same target, owner, parent markers and schedule marker
+before taking action. It never creates or enables a schedule during cleanup.
+Its bounded scan does not assert that it can stop an unreachable server or
+recover from a hard-killed client without a later cleanup invocation.
+
+Manual CI selection is `profile: schedules`. It uses the protected target's
+existing primary and secondary suite keys and a fifteen-minute run ceiling.
+It is separate from `webhooks` and is not part of scheduled canaries. A
+missing scheduler or failed background firing fails the selected profile;
+local fixture diagnostics do not count as a deployed hosted-runtime verdict.
 ## Deterministic ACP fixture
 
 The `deterministic` profile runs the pinned `fountain-fixture` runtime in a

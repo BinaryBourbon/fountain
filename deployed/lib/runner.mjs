@@ -11,13 +11,17 @@ import { probe } from '../profiles/probe.mjs';
 import { basic } from '../profiles/basic.mjs';
 import { execution } from '../profiles/execution.mjs';
 import { deterministic } from '../profiles/deterministic.mjs';
+import { schedules } from '../profiles/schedules.mjs';
+import { webhooks } from '../profiles/webhooks.mjs';
+import { ControlledReceiverSession, controlledOrigin } from './controlled-receiver.mjs';
+import { WEBHOOK_VERSION } from '../receivers/webhooks.mjs';
 import { mcp } from '../profiles/mcp.mjs';
 import { mcpOrigin, McpReceiverSession } from './mcp-receiver.mjs';
 import { secrets } from '../profiles/secrets.mjs';
 import { receiverOrigins, ReceiverSession } from './receiver.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe, basic, execution, streaming: execution, secrets, mcp, deterministic };
+export const profiles = { probe, basic, execution, streaming: execution, secrets, mcp, webhooks, schedules, deterministic };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -29,7 +33,7 @@ function positive(value, fallback, max) {
 
 export function configFrom(path, env = process.env) {
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'mcp', 'fixture'];
+  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'mcp', 'webhooks', 'schedules', 'fixture'];
   requireThat(Object.keys(config).every(key => allowed.includes(key)), 'Unknown configuration field');
   const url = new URL(config.base_url);
   requireThat(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash,
@@ -44,12 +48,12 @@ export function configFrom(path, env = process.env) {
     config.profiles.every(name => Object.hasOwn(profiles, name)), 'Unknown, empty, or duplicate profile selection');
   requireThat(Object.keys(config.credentials).every(k => ['primary', 'secondary'].includes(k)), 'Unknown credential role');
   requireThat(!(config.profiles.includes('execution') && config.profiles.includes('streaming')), 'Select streaming or execution; streaming already includes execution');
-  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'secrets', 'mcp', 'deterministic'].includes(name))) {
+  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'secrets', 'mcp', 'webhooks', 'schedules', 'deterministic'].includes(name))) {
     requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Selected profile requires credentials.secondary environment variable');
     config.secondaryKey = env[config.credentials.secondary];
     requireThat(typeof config.secondaryKey === 'string' && config.secondaryKey.trim().length > 0, `Missing test credential: ${config.credentials.secondary}`);
   }
-  if (config.profiles.some(name => ['execution', 'streaming', 'secrets', 'mcp'].includes(name))) {
+  if (config.profiles.some(name => ['execution', 'streaming', 'secrets', 'mcp', 'webhooks', 'schedules'].includes(name))) {
     const settings = config.execution;
     requireThat(settings && Object.keys(settings).every(k => ['runtime', 'model', 'sandbox_provider', 'sandbox_mode', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit execution configuration');
     requireThat(['claude', 'codex', 'gemini', 'opencode'].includes(settings.runtime) &&
@@ -59,7 +63,7 @@ export function configFrom(path, env = process.env) {
     settings.sandbox_mode ??= 'ephemeral';
     requireThat(['ephemeral', 'persistent'].includes(settings.sandbox_mode), 'Unknown execution sandbox mode');
     settings.turn_ms = positive(settings.turn_ms, 90000, 300000);
-    const turns = config.profiles.includes('secrets') ? 1 : 2;
+    const turns = config.profiles.includes('webhooks') ? 0 : config.profiles.some(name => ['secrets', 'schedules'].includes(name)) ? 1 : 2;
     requireThat(settings.max_turns === turns, `Execution must explicitly authorize max_turns: ${turns}`);
   }
   if (config.profiles.includes('secrets')) {
@@ -79,6 +83,22 @@ export function configFrom(path, env = process.env) {
     requireThat(config.mcp.auth_mode === 'static_bearer', 'MCP conversation authentication is a gap tracked by #1405; select static_bearer explicitly');
     requireThat(typeof config.mcp.admin_credential === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.mcp.admin_credential), 'MCP admin_credential must name an environment variable');
     requireThat(typeof env[config.mcp.admin_credential] === 'string' && env[config.mcp.admin_credential].length >= 32, 'Missing MCP receiver admin credential');
+  }
+  if (config.profiles.includes('webhooks')) {
+    requireThat(config.profiles.length === 1 && config.execution.sandbox_mode === 'ephemeral', 'Run webhooks independently in an ephemeral sandbox');
+    requireThat(config.webhooks && Object.keys(config.webhooks).every(k => ['receiver_url', 'admin_credential', 'delivery_ms', 'observe_ms'].includes(k)), 'Expected explicit webhook receiver configuration');
+    controlledOrigin(config.webhooks);
+    requireThat(typeof config.webhooks.admin_credential === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.webhooks.admin_credential), 'Webhook admin_credential must name an environment variable');
+    requireThat(typeof env[config.webhooks.admin_credential] === 'string' && env[config.webhooks.admin_credential].length >= 32, 'Missing webhook receiver admin credential');
+    config.webhooks.delivery_ms = positive(config.webhooks.delivery_ms, 180000, 300000);
+    config.webhooks.observe_ms = positive(config.webhooks.observe_ms, 30000, 60000);
+  }
+  if (config.profiles.includes('schedules')) {
+    requireThat(config.profiles.length === 1 && config.execution.sandbox_mode === 'ephemeral', 'Run schedules independently in an ephemeral sandbox');
+    requireThat(config.schedules && Object.keys(config.schedules).every(k => ['start_ms', 'observe_ms'].includes(k)), 'Expected explicit schedule windows');
+    config.schedules.start_ms = positive(config.schedules.start_ms, 180000, 300000);
+    config.schedules.observe_ms = positive(config.schedules.observe_ms, 120000, 180000);
+    requireThat(config.schedules.start_ms >= 60000 && config.schedules.observe_ms >= 120000, 'Schedule windows must cover at least one dispatch minute and two observation minutes');
   }
   if (config.profiles.includes('deterministic')) {
     requireThat(config.profiles.length === 1 && !config.execution, 'Run deterministic fixture separately from real-model profiles');
@@ -102,6 +122,12 @@ export function configFrom(path, env = process.env) {
   }
   if (config.profiles.includes('mcp')) {
     requireThat(config.limits.run_ms <= 600000 && config.limits.resources >= 3, 'MCP requires a bounded ten-minute run and three-resource budget');
+  }
+  if (config.profiles.includes('webhooks')) {
+    requireThat(config.limits.run_ms <= 600000 && config.limits.resources >= 4, 'Webhooks require a ten-minute run bound and four resources');
+  }
+  if (config.profiles.includes('schedules')) {
+    requireThat(config.limits.run_ms <= 900000 && config.limits.resources >= 4 && config.limits.cleanup_ms >= 30000, 'Schedules require a fifteen-minute run bound, four resources and thirty seconds for cleanup');
   }
   for (const field of ['required_capabilities', 'optional_capabilities']) {
     config[field] ??= {};
@@ -162,6 +188,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     redactor.add(config.secondaryKey);
     if (config.secrets) redactor.add(env[config.secrets.admin_credential]);
     if (config.mcp) redactor.add(env[config.mcp.admin_credential]);
+    if (config.webhooks) redactor.add(env[config.webhooks.admin_credential]);
     report.target = config.base_url;
     report.profiles = config.profiles;
     report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
@@ -194,7 +221,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         const available = { runtimes: body.data?.runtimes, sandbox_providers: body.data?.sandbox_providers?.enabled };
         requireThat(Object.values(available).every(Array.isArray), 'Catalog capability arrays missing');
         report.capabilities = available;
-        if (config.profiles.some(name => ['execution', 'streaming', 'secrets', 'mcp'].includes(name))) {
+        if (config.profiles.some(name => ['execution', 'streaming', 'secrets', 'mcp', 'webhooks', 'schedules'].includes(name))) {
           requireThat(available.runtimes.includes(config.execution.runtime), 'Execution runtime is unavailable');
           requireThat(available.sandbox_providers.includes(config.execution.sandbox_provider), 'Execution sandbox provider is unavailable');
         }
@@ -220,6 +247,14 @@ export async function run({ configPath, out, manifestPath, signal, env = process
       }
     } else {
       report.status = 'running'; report.cleanup_run_id = fixtures.manifest.run_id;
+      const webhookPath = resolve(dirname(manifestPath), 'webhook-receiver.json');
+      if (existsSync(webhookPath)) afterCleanup.push({ name: 'webhooks/receiver-cleanup', run: async () => {
+        requireThat(config.webhooks, 'Webhook cleanup requires the original target configuration');
+        const receiver = new ControlledReceiverSession({ settings: config.webhooks, adminKey: env[config.webhooks.admin_credential], path: webhookPath,
+          runId: fixtures.manifest.run_id, redactor, version: WEBHOOK_VERSION });
+        receiver.loadCleanup();
+        await receiver.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
+      } });
       const mcpPath = resolve(dirname(manifestPath), 'mcp-receiver.json');
       if (existsSync(mcpPath)) afterCleanup.push({ name: 'mcp/receiver-cleanup', run: async () => {
         requireThat(config.mcp, 'MCP cleanup requires the original target configuration');
@@ -245,7 +280,8 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     for (const prepare of beforeCleanup) await prepare();
     if (fixtures) {
       const failures = await fixtures.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
-      report.cleanup = { failures, remaining: fixtures.manifest.resources.filter(r => r.state !== 'cleaned').length };
+      report.cleanup = { failures, remaining: fixtures.remainingCount() };
+      if (fixtures.manifest.schedule) report.cleanup.schedule = { state: fixtures.manifest.schedule.state, deleted: fixtures.manifest.schedule.deleted, conversations: fixtures.manifest.schedule.conversations, remaining_sandbox_ids: fixtures.manifest.schedule.remaining_sandbox_ids ?? [] };
       report.prompt_attempts = fixtures.manifest.inference_attempts ?? 0;
       report.inference_attempts = config.profiles.includes('deterministic') ? 0 : report.prompt_attempts;
       if (failures.length) {
