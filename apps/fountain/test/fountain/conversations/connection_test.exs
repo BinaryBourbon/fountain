@@ -26,6 +26,44 @@ defmodule Fountain.Conversations.ConnectionTest do
   defp handle, do: %Handle{provider: :sprites, name: "s"}
   defp command, do: %Command{provider: :sprites, ref: make_ref()}
 
+  test "fresh Codex connections on Sprites clear capabilities and preserve spawn options" do
+    handle = handle()
+    command = command()
+    env = [{"FOUNTAIN_CONVERSATION_ID", "test-conversation"}]
+    opts = [env: env, dir: "/track", stdin: true]
+    state = %{handle: handle, sprite_env: env, broker: nil}
+
+    expect(Fountain.Conversations.Provisioning, :prepare_acp_adapter, fn ^handle, "codex", ^env ->
+      :ok
+    end)
+
+    expect(Managoat.Sandbox, :spawn, fn ^handle,
+                                        "/usr/bin/setpriv",
+                                        [
+                                          "--inh-caps=-all",
+                                          "--ambient-caps=-all",
+                                          "--",
+                                          "env",
+                                          "FOUNTAIN_CONVERSATION_ID=test-conversation",
+                                          "codex-acp"
+                                        ],
+                                        ^opts ->
+      {:ok, command}
+    end)
+
+    assert {:ok, ^command} =
+             Connection.spawn_command(
+               state,
+               "codex",
+               "env",
+               [
+                 "FOUNTAIN_CONVERSATION_ID=test-conversation",
+                 "codex-acp"
+               ],
+               opts
+             )
+  end
+
   # A stand-in peer: answers `Peer.prompt/3`'s call with `reply` and stays
   # alive, the way an idle adapter does between turns.
   defp fake_peer(reply) do

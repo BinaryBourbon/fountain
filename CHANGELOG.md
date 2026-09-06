@@ -30,6 +30,10 @@ upgrade, is in
 
 ### Fixed
 
+- Codex launches on Sprites with inherited and ambient capabilities cleared,
+  allowing its bubblewrap sandbox to start without falling back to approval
+  escalation on every command (#1672). Existing adapter processes need a restart.
+
 - Reattach and idle-process cleanup recover conversation identity from a Sprites
   process's environment after its command changes. Unidentified processes are
   never selected by list order on a shared sandbox. ACP updates from another
