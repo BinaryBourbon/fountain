@@ -40,6 +40,54 @@ defmodule Fountain.Conversations.CallbackKeyTest do
   end
 
   describe "rotate/2" do
+    test "none never mints a key on first provision or repeated wake" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, sandbox_api_access: "none")
+
+      for _ <- 1..3 do
+        assert {:ok, nil, nil, current} = CallbackKey.rotate(conv, nil)
+        assert current.sandbox_api_access == "none"
+        assert current.callback_api_key_id == nil
+        assert Accounts.list_api_keys(user.id) == []
+        assert CallbackKey.env(nil) == []
+      end
+    end
+
+    test "none revokes stale pointers without revoking another conversation" do
+      user = insert_verified_user()
+      {:ok, {stale, stale_raw}} = Accounts.create_api_key(user.id, "stale")
+      {:ok, {local, _}} = Accounts.create_api_key(user.id, "local")
+      {:ok, {other, other_raw}} = Accounts.create_api_key(user.id, "other")
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          sandbox_api_access: "none",
+          callback_api_key_id: stale.id
+        )
+
+      assert {:ok, nil, nil, conv} = CallbackKey.rotate(conv, local.id)
+      assert conv.callback_api_key_id == nil
+      assert Repo.get!(Accounts.ApiKey, stale.id).revoked_at
+      assert Repo.get!(Accounts.ApiKey, local.id).revoked_at
+      refute Repo.get!(Accounts.ApiKey, other.id).revoked_at
+      refute match?({:ok, _, _}, Accounts.authenticate_api_key(stale_raw))
+      assert {:ok, _, _} = Accounts.authenticate_api_key(other_raw)
+    end
+
+    test "the launch setting cannot be changed after persistence" do
+      user = insert_verified_user()
+
+      for {before, after_value} <- [{"none", "owner"}, {"owner", "none"}] do
+        conv = insert_conversation(user_id: user.id, sandbox_api_access: before)
+
+        assert {:error, cs} =
+                 Conversations.update_conversation(conv, %{sandbox_api_access: after_value})
+
+        assert {"cannot change after launch", _} = cs.errors[:sandbox_api_access]
+      end
+    end
+
     test "mints a sprite-scoped key named for the conversation and points the row at it" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)

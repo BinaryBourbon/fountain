@@ -9064,6 +9064,17 @@
               "required": true,
               "type": "array"
             },
+            "sandbox_api_access": {
+              "items": {
+                "enum": [
+                  "none",
+                  "owner"
+                ],
+                "type": "string"
+              },
+              "required": false,
+              "type": "array"
+            },
             "sandbox_providers": {
               "properties": {
                 "default": {
@@ -9883,6 +9894,14 @@
           ],
           "required": false
         },
+        "sandbox_api_access": {
+          "enum": [
+            "none",
+            "owner"
+          ],
+          "required": false,
+          "type": "string"
+        },
         "sandbox_id": {
           "format": "uuid",
           "nullable": true,
@@ -9985,6 +10004,14 @@
           "type": "object"
         },
         "prompt": {
+          "required": false,
+          "type": "string"
+        },
+        "sandbox_api_access": {
+          "enum": [
+            "none",
+            "owner"
+          ],
           "required": false,
           "type": "string"
         },
