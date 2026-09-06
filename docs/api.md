@@ -1,4 +1,4 @@
-# API guide
+# API reference
 
 Use the [generated API reference](/api/docs) for endpoints, parameters,
 request bodies, response schemas, and error statuses. Fountain builds that
