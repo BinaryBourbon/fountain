@@ -51,7 +51,7 @@ metadata:
   name: converger
 spec:
   runtime: acp
-  runtime_command: chant acp --env prod
+  runtime_command: exec chant acp --env prod
   environment: chant-toolchain
 ```
 
@@ -59,7 +59,14 @@ Five things follow from that.
 
 - **The command is a shell line.** Fountain runs it inside the sandbox with
   the login shell, so the sandbox's own `PATH` resolves it and
-  `cd /srv/app && ./bin/agent acp` is a legal value.
+  `cd /srv/app && exec ./bin/agent acp` is a legal value. Write `exec` before
+  the program. Without it the shell stays as the parent, and an interrupt
+  stops the shell and can leave the program running on a persistent sandbox.
+- **Nothing may print on stdout before the program starts.** The login shell
+  reads your profiles first. A profile that writes a banner puts those bytes
+  in front of the first protocol message, and the turn fails on a line the
+  client cannot read. Send that output to stderr, or guard it on an
+  interactive shell.
 - **You install the program.** Name it in the environment's packages, or in
   the environment's setup script. Fountain installs no adapter for this
   runtime.
@@ -74,6 +81,13 @@ Five things follow from that.
 The field is a free string rather than an entry in a catalog. It runs inside
 the sandbox, under the same isolation as an environment's setup script, so a
 catalog would restrict a self-hoster and protect nobody.
+
+**Know what that isolation is on a runner.** On a hosted sandbox provider it
+is a machine of its own. On `sandbox_provider: runner` with the default
+backend it is a directory, and the command runs as the daemon's user with the
+host's `PATH` and network. Read
+[trusted mode](../../integrations/runners.md#read-this-first-trusted-mode)
+before you name a command there.
 
 With credits on, a turn on this runtime is priced by sandbox time. There is no
 token count to record, so `usage` on the turn is null.

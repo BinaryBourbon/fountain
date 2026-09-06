@@ -2668,7 +2668,7 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            model?: string;
+            model?: string | null;
             name: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
             permission_policy?: {
@@ -2720,7 +2720,7 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            model?: string;
+            model?: string | null;
             name?: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
             permission_policy?: {

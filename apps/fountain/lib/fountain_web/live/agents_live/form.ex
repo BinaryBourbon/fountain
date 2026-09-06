@@ -21,10 +21,7 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:user_id, user_id)
      |> assign(
        :missing_credential,
-       InferenceCredentials.missing_for_model(
-         user_id,
-         agent.model || "anthropic/claude-sonnet-4-6"
-       )
+       InferenceCredentials.missing_for_model(user_id, credential_model(agent))
      )
      |> assign(:credential_message, nil)
      |> assign(:envs, envs)
@@ -106,6 +103,18 @@ defmodule FountainWeb.AgentsLive.Form do
   # prefilled value would be a suggestion to configure something inert.
   defp default_model("acp"), do: ""
   defp default_model(_runtime), do: "anthropic/claude-sonnet-4-6"
+
+  # Which model the credential card asks about (#841). A new agent has none
+  # yet and lands on claude, so it is asked about claude's default. An acp
+  # agent has none and needs none, and asking its owner for an Anthropic key
+  # would claim its conversations cannot start until they set one (#1634).
+  defp credential_model(agent) do
+    cond do
+      is_binary(agent.model) -> agent.model
+      model_required?(agent.runtime) -> default_model(agent.runtime)
+      true -> nil
+    end
+  end
 
   defp model_required?(runtime), do: Fountain.RuntimeDispatch.model_required?(runtime || "claude")
   defp command_runtime?(runtime), do: Fountain.RuntimeDispatch.command_required?(runtime)
@@ -232,7 +241,13 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:mcp_servers, mcp_servers)
      |> assign(
        :missing_credential,
-       InferenceCredentials.missing_for_model(socket.assigns.user_id, params["model"])
+       # Keyed on the runtime, not only on the model box: picking acp must
+       # clear the card in the same render, and the box may still hold the
+       # value it had a moment ago (#1634).
+       if(model_required?(params["runtime"]),
+         do: InferenceCredentials.missing_for_model(socket.assigns.user_id, params["model"]),
+         else: nil
+       )
      )}
   end
 

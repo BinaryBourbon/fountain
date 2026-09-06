@@ -139,7 +139,9 @@ defmodule Fountain.ExportsTest do
       doc = export.payload |> :zlib.gunzip() |> Jason.decode!()
 
       assert doc["account"]["email"] == user.email
-      assert [%{"name" => "export-agent"}] = doc["agents"]
+      assert [%{"name" => "export-agent"} = agent_doc] = doc["agents"]
+      # Every config field an agent carries, so an export is a restorable copy.
+      assert Map.has_key?(agent_doc, "runtime_command")
 
       assert [env_doc] = doc["environments"]
       assert env_doc["name"] == "export-env"

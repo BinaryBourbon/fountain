@@ -137,7 +137,7 @@ defmodule Fountain.Conversations.ConversationServerAcpRuntimeTest do
       assert :ok = RuntimeDispatch.install(nil, "acp", [])
       assert is_nil(RuntimeDispatch.acp_model("acp", nil))
       # Even when a model was set anyway: it is inert, so it is never pinned
-      # and `model.failed` cannot happen.
+      # and the pin path that reports `model`/`failed` is unreachable.
       assert is_nil(RuntimeDispatch.acp_model("acp", "anthropic/claude-sonnet-4-6"))
     end
 

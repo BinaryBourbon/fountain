@@ -344,6 +344,7 @@ defmodule Fountain.Exports do
         "system" => agent.system,
         "model" => agent.model,
         "runtime" => agent.runtime,
+        "runtime_command" => agent.runtime_command,
         "skills" => agent.skills,
         "mcp_servers" => agent.mcp_servers,
         "metadata" => agent.metadata,

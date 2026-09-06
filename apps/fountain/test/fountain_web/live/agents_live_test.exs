@@ -195,6 +195,10 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
       assert html =~ "agent[runtime_command]"
       assert html =~ "It needs no model and no inference key"
+      # The model field is inert here, so it is disabled and nobody is asked
+      # for a key to run it.
+      assert has_element?(view, "input#model[disabled]")
+      refute html =~ "credential on this account yet"
 
       view
       |> form("form", %{
@@ -222,8 +226,11 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
       {:ok, view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
       # The model field is inert on this runtime, so the form disables it.
-      assert html =~ ~s(name="agent[model]")
-      assert html =~ "disabled"
+      assert has_element?(view, "input#model[disabled]")
+
+      # And on first paint its owner is not asked for an Anthropic key to run
+      # an agent that needs none (#1634).
+      refute html =~ "credential on this account yet"
 
       # Picking a model runtime re-renders the form: the model comes back and
       # the command goes away, which is what the browser does on change.

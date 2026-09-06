@@ -70,6 +70,47 @@ defmodule FountainWeb.AgentControllerTest do
       end
     end
 
+    # A non-nullable model in the request schema made this a 400 from
+    # CastAndValidate, before the changeset ever saw it, so a converted agent
+    # kept a provider/model it no longer uses forever (#1634).
+    test "converts an agent to acp and clears the model it no longer uses", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id, runtime: "claude")
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_json("/api/agents/#{agent.id}", %{
+          runtime: "acp",
+          model: nil,
+          runtime_command: "chant acp"
+        })
+
+      body = json_response(conn, 200)
+      assert body["data"]["runtime"] == "acp"
+      assert body["data"]["runtime_command"] == "chant acp"
+      assert is_nil(body["data"]["model"])
+      assert is_nil(Fountain.Agents.get_agent(agent.id, user.id).model)
+    end
+
+    test "a null model on a model-driven runtime is a 422 naming the field", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id, runtime: "claude")
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_json("/api/agents/#{agent.id}", %{model: nil})
+
+      assert json_response(conn, 422)["errors"]["model"] == ["can't be blank"]
+    end
+
     test "returns 404 when the agent belongs to a different user", %{conn: conn, raw_key: raw_key} do
       other_user = insert_verified_user()
       other_agent = insert_agent(user_id: other_user.id)

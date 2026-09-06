@@ -8034,6 +8034,7 @@
           "type": "object"
         },
         "model": {
+          "nullable": true,
           "required": false,
           "type": "string"
         },
@@ -8172,6 +8173,7 @@
           "type": "object"
         },
         "model": {
+          "nullable": true,
           "required": false,
           "type": "string"
         },

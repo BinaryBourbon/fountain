@@ -715,6 +715,35 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conn.status == 204
     end
 
+    # The acp runtime carries no special case at this door, and that is the
+    # claim (#1634). The other half of the path, `:interrupt` becoming a
+    # `session/cancel` on the command and an `interrupted` turn, is pinned in
+    # conversation_server_acp_runtime_test.exs against a live server.
+    test "an acp conversation interrupts through the same door", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id, runtime: "acp", runtime_command: "chant acp")
+      conv = insert_conversation(user_id: user.id, agent: agent)
+      assert conv.runtime == "acp"
+
+      test = self()
+
+      stub(ConversationServer, :interrupt, fn id, _opts ->
+        send(test, {:interrupted, id}) && :ok
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post("/api/conversations/#{conv.id}/interrupt")
+
+      assert conn.status == 204
+      assert_receive {:interrupted, id}
+      assert id == conv.id
+    end
+
     # Ownership is established before the server is asked, so "not running" is
     # a state conflict on a conversation the caller can see, not a missing one
     # (#1179 — the owner of a stuck conversation got a 404 saying it was the

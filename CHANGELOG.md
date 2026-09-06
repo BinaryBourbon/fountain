@@ -62,7 +62,18 @@ upgrade, is in
   `runtime_command` is a **free string** rather than an entry in a catalog of
   blessed commands. It is resolved inside the sandbox, under the same
   isolation an environment's `setup_script` already runs under, so a catalog
-  would restrict a self-hoster and protect nobody.
+  would restrict a self-hoster and protect nobody. On a self-hosted runner
+  with the default backend that isolation is a directory and the daemon's own
+  user, which is what trusted mode already means for a setup script; the
+  runtime docs say so beside the field.
+
+  **Client note.** `Agent.model` is now nullable, in the response and in the
+  create and update bodies, so an agent converted to `acp` can clear the
+  model it no longer uses with `{"model": null}`. In the TypeScript SDK
+  `Agent["model"]` is `string | null`, and `AgentRequest["model"]` and
+  `AgentUpdate["model"]` are `string | null` and optional. A client that
+  assumed a string needs a null check. Nothing else on the wire changed
+  shape.
 
 ### Fixed
 

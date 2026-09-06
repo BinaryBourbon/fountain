@@ -941,6 +941,11 @@ defmodule FountainWeb.Schemas do
         system: %Schema{type: :string},
         model: %Schema{
           type: :string,
+          # Nullable so an agent converted to the acp runtime can clear the
+          # model it no longer uses. CastAndValidate runs before the
+          # changeset, so a non-nullable string here would reject the null
+          # with a 400 and leave the stale value on the row forever.
+          nullable: true,
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
@@ -1073,7 +1078,9 @@ defmodule FountainWeb.Schemas do
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         description: %Schema{type: :string},
         system: %Schema{type: :string},
-        model: %Schema{type: :string, pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"},
+        # Nullable for the same reason AgentRequest's is: converting an agent
+        # to the acp runtime has to be able to clear the model.
+        model: %Schema{type: :string, nullable: true, pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"},
         runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.known_runtimes()},
         runtime_command: %Schema{
           type: :string,

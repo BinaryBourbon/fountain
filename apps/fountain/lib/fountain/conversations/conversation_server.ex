@@ -847,7 +847,8 @@ defmodule Fountain.Conversations.ConversationServer do
       {:ok, handle} ->
         skills = (agent && agent.skills) || []
         # conv.runtime is validated-required and outlives the agent; the agent
-        # fallback only covers rows predating the runtime column.
+        # fallback only covers rows predating the runtime column. The mount is
+        # best effort and logs whatever it could not do (#1634).
         runtime = conv.runtime || (agent && agent.runtime) || "claude"
         Fountain.SandboxSkills.mount(handle, runtime, skills)
 
