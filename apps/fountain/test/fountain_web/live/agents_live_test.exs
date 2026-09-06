@@ -380,7 +380,7 @@ defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
   describe "MCP servers that are not a command (#1178)" do
     test "a connection can be attached as an MCP server and survives a later save", %{conn: conn} do
       user = with_credential(insert_verified_user())
-      enable_broker_for([user.id])
+      enable_connections_for([user.id])
       connection = insert_connection(user, account_email: "me@example.com")
       agent = insert_agent(user_id: user.id)
       conn = login_user(conn, user)

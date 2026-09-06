@@ -14,7 +14,7 @@ defmodule FountainWeb.GmailMcpController do
   """
   use FountainWeb, :controller
 
-  alias Fountain.{Agents, Audit, Broker, Connections, Conversations}
+  alias Fountain.{Agents, Audit, Connections, Conversations}
   alias Fountain.Connections.Mcp
   alias Fountain.Connections.McpServers
 
@@ -35,7 +35,8 @@ defmodule FountainWeb.GmailMcpController do
 
   defp build_ctx(conv_id, connection_id, user) do
     with true <-
-           Broker.enabled_for?(user.id) || {:error, 403, "connections are not available here"},
+           Fountain.Connections.enabled_for?(user.id) ||
+             {:error, 403, "connections are not available here"},
          %Conversations.Conversation{} = conv <- get_conv(conv_id, user),
          :ok <- agent_names?(conv, connection_id),
          %Connections.Connection{} = connection <-

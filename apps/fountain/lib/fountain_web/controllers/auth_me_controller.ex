@@ -43,7 +43,8 @@ defmodule FountainWeb.AuthMeController do
       # Read-only: whether this account is on the broker ratchet (ADR 0019),
       # so a client can label the mode instead of probing
       # /api/secret-bindings for a 200 vs 404 (#1154).
-      brokered: Fountain.Broker.enabled_for?(user.id)
+      brokered: Fountain.Broker.enabled_for?(user.id),
+      connections_enabled: Fountain.Connections.enabled_for?(user.id)
     })
   end
 end

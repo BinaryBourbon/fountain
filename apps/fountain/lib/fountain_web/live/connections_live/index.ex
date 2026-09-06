@@ -9,13 +9,13 @@ defmodule FountainWeb.ConnectionsLive.Index do
   trip itself is `FountainWeb.ConnectionsController`; this page only links
   to it and shows what came back.
 
-  Only for accounts the egress broker is on for: the nav link is hidden
+  Only for accounts with the broker and Connections flag on: the nav link is hidden
   otherwise, and a direct visit is sent to `/account`.
   """
 
   use FountainWeb, :live_view
 
-  alias Fountain.{Broker, Connections}
+  alias Fountain.Connections
   alias Fountain.Connections.{Platform, Provider}
   alias FountainWeb.{Audited, ConnectionProviderJSON}
 
@@ -89,7 +89,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
 
-    if Broker.enabled_for?(user.id) do
+    if Fountain.Connections.enabled_for?(user.id) do
       {:ok,
        socket
        |> assign(:page_title, "Connections")

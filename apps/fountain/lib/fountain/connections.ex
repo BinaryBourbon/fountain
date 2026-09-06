@@ -51,6 +51,13 @@ defmodule Fountain.Connections do
   alias Fountain.Connections.{Connection, OAuth, Platform, Provider}
   alias Managoat.McpAuth
 
+  @doc "Whether this account may use Connections and manage credential bindings."
+  @spec enabled_for?(String.t()) :: boolean()
+  def enabled_for?(user_id) do
+    Fountain.Broker.enabled_for?(user_id) and
+      Fountain.FeatureFlags.enabled?(:connections, user_id)
+  end
+
   # How close to expiry a token is considered stale. A turn may run for a
   # while on the token it started with, so refresh well ahead.
   @refresh_margin_seconds 300

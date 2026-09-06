@@ -9,7 +9,7 @@ defmodule FountainWeb.ConnectionsControllerTest do
 
   setup %{conn: conn} do
     user = insert_verified_user()
-    enable_broker_for([user.id])
+    enable_connections_for([user.id])
     {:ok, conn: login_user(conn, user), user: user}
   end
 
