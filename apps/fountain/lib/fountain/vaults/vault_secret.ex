@@ -33,6 +33,13 @@ defmodule Fountain.Vaults.VaultSecret do
     |> unique_constraint([:vault_id, :key])
   end
 
+  @doc "Change advisory expiry without reading or replacing the encrypted value."
+  def metadata_changeset(secret, attrs) do
+    secret
+    |> cast(attrs, [:expires_at])
+    |> reset_expiry_notice()
+  end
+
   # A rotated or extended expiry is a new expiry: the advance-notice email
   # must fire again for it, so the sweeper's already-notified stamp is cleared
   # whenever expires_at moves (including to nil).

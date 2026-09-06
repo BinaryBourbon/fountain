@@ -86,6 +86,42 @@ defmodule FountainWeb.ConversationControllerTest do
                |> json_response(400)
     end
 
+    test "sandbox filter combines with status and never crosses tenant scope", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      sandbox = insert_sandbox(user_id: user.id)
+      other = insert_sandbox(user_id: user.id)
+      live = insert_conversation(user_id: user.id, sandbox_id: sandbox.id, status: "idle")
+      done = insert_conversation(user_id: user.id, sandbox_id: sandbox.id, status: "terminated")
+      insert_conversation(user_id: user.id, sandbox_id: other.id)
+      insert_conversation(user_id: user.id)
+      foreign_user = insert_verified_user()
+      foreign_sandbox = insert_sandbox(user_id: foreign_user.id)
+      insert_conversation(user_id: foreign_user.id, sandbox_id: foreign_sandbox.id)
+
+      ids = fn query ->
+        conn
+        |> authed_with_key(key)
+        |> get("/api/conversations", query)
+        |> json_response(200)
+        |> Map.fetch!("data")
+        |> Enum.map(& &1["id"])
+        |> Enum.sort()
+      end
+
+      assert ids.(sandbox_id: sandbox.id) == Enum.sort([live.id, done.id])
+      assert ids.(sandbox_id: sandbox.id, status: "terminated") == [done.id]
+      assert ids.(sandbox_id: foreign_sandbox.id) == []
+      assert ids.(sandbox_id: Ecto.UUID.generate()) == []
+
+      assert conn
+             |> authed_with_key(key)
+             |> get("/api/conversations", sandbox_id: "invalid")
+             |> json_response(422)
+    end
+
     test "returns 401 without authentication", %{conn: conn} do
       conn = get(conn, "/api/conversations")
       assert json_response(conn, 401)

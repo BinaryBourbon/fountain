@@ -1869,6 +1869,11 @@
           "required": false,
           "type": "boolean"
         },
+        "sandbox_id": {
+          "format": "uuid",
+          "required": false,
+          "type": "string"
+        },
         "status": {
           "required": false,
           "type": "string"
@@ -1898,6 +1903,11 @@
         "406": {
           "application/json": {
             "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "ChangesetError"
           }
         },
         "429": {
@@ -4170,6 +4180,58 @@
         }
       }
     },
+    "PATCH /api/vaults/{vault_id}/secrets/{id}": {
+      "operation_id": "FountainWeb.VaultSecretController.update",
+      "path_params": [
+        "id",
+        "vault_id"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "VaultSecretMetadataRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "VaultSecretResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "PATCH /api/webhooks/{id}": {
       "operation_id": "FountainWeb.WebhookEndpointController.update",
       "path_params": [
@@ -5073,7 +5135,7 @@
         },
         "422": {
           "application/json": {
-            "ref": "ChangesetError"
+            "ref": "UnprocessableEntityError"
           }
         }
       }
@@ -5624,7 +5686,7 @@
         },
         "422": {
           "application/json": {
-            "ref": "ChangesetError"
+            "ref": "UnprocessableEntityError"
           }
         },
         "429": {
@@ -12728,6 +12790,29 @@
       },
       "type": "object"
     },
+    "UnprocessableEntityError": {
+      "properties": {
+        "error": {
+          "required": true,
+          "type": "string"
+        },
+        "errors": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "required": false,
+          "type": "object"
+        },
+        "message": {
+          "required": false,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "UsageTotal": {
       "properties": {
         "input": {
@@ -12860,6 +12945,18 @@
           },
           "required": true,
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "VaultSecretMetadataRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "nullable": true,
+          "required": false,
+          "type": "string"
         }
       },
       "type": "object"

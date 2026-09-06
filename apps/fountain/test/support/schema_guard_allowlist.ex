@@ -36,12 +36,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
 
   ## The families
 
-  `:mixed_422_shapes` — the operation declares `ChangesetError` for 422, which
-  requires `errors`, and can also refuse with a coded
-  `%{error: ..., message: ...}` that has none. Since #1431 both bodies carry
-  `error`, so the question left is what such an operation should declare;
-  #1444 has the three answers and why it is an API decision rather than a fix.
-
   `:test_fixture_vocabulary` — not a defect in the API. The fixture inserts a
   value on purpose that the domain no longer accepts (a conversation whose
   runtime is `retired-runtime`, exercising the retired-runtime path), so the
@@ -49,17 +43,12 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   """
 
   @reasons %{
-    mixed_422_shapes: "declares ChangesetError for 422 but can also refuse with a code (#1444)",
     test_fixture_vocabulary: "the fixture inserts an out-of-vocabulary value on purpose"
   }
 
   # The list may shrink, never grow, without a deliberate edit here and in the
   # guardrail's own ceiling.
   @entries %{
-    # ── mixed_422_shapes (2) ─────────────────────────────
-    {"POST /api/auth/register", 422} => :mixed_422_shapes,
-    {"POST /api/conversations", 422} => :mixed_422_shapes,
-
     # ── test_fixture_vocabulary (1) ─────────────────────────────
     {"GET /api/conversations/{id}", 200} => :test_fixture_vocabulary
   }

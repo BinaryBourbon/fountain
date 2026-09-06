@@ -1395,6 +1395,25 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule VaultSecretMetadataRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "VaultSecretMetadataRequest",
+      type: :object,
+      additionalProperties: false,
+      properties: %{
+        expires_at: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description: "Advisory expiry. Null clears it; omission keeps the current value."
+        }
+      }
+    })
+  end
+
   defmodule Block do
     @moduledoc false
     require OpenApiSpex
@@ -3144,11 +3163,33 @@ defmodule FountainWeb.Schemas do
         # Always `validation_failed` on this body, and always present since
         # #1431 — a 422 is not always a validation failure (the fallback
         # controller renders coded refusals with the same status), so a client
-        # that branches on the code needs one here too. Optional rather than
-        # required because widening that is the open question in #1444.
+        # that branches on the code needs one here too. Keep this schema
+        # compatible; mixed refusals use UnprocessableEntityError.
         error: %Schema{type: :string, description: "`validation_failed`."}
       },
       required: [:errors]
+    })
+  end
+
+  defmodule UnprocessableEntityError do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "UnprocessableEntityError",
+      description:
+        "A rejected request. Field validation failures include errors; " <>
+          "other refusals carry an error and may include a message.",
+      type: :object,
+      properties: %{
+        error: %Schema{type: :string},
+        message: %Schema{type: :string},
+        errors: %Schema{
+          type: :object,
+          additionalProperties: %Schema{type: :array, items: %Schema{type: :string}}
+        }
+      },
+      required: [:error]
     })
   end
 

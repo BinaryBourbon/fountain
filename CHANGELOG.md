@@ -18,12 +18,20 @@ upgrade, is in
 
 ### Added
 
+- Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
+- Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
+
 - `sandbox_api_access: "none"` on conversation creation omits the Fountain
   sandbox callback credential before provisioning and on every wake. It requires
   a fresh ephemeral sandbox, is immutable, and refuses machine sharing and
   channel resumes with a different setting. The catalog advertises support;
   existing launches retain `owner` behavior. Applications processing mutually
   untrusted work can keep all Fountain API authority on their service host.
+
+### Fixed
+
+- The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
+- Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
 
 ### Changed
 

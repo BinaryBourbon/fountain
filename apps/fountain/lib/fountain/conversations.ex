@@ -692,7 +692,7 @@ defmodule Fountain.Conversations do
   "fountain:team"` (the *bound* channel — a conversation unbound by
   `Fountain.Team.remove_teammate/3` no longer matches; a teammate's full
   history is `Team.list_teammate_conversations/2`), and `status: [..]` (a
-  list of conversation statuses). Unpaged, like the list always was, except
+  list of conversation statuses), and `sandbox_id: id`. Unpaged, like the list always was, except
   for `limit: n` — which the console's dashboard uses to ask for the five it
   shows instead of every row a busy account has.
 
@@ -722,6 +722,9 @@ defmodule Fountain.Conversations do
       Enum.reduce(opts, query, fn
         {:agent_id, id}, q when is_binary(id) and id != "" ->
           where(q, [conv: c], c.agent_id == ^id)
+
+        {:sandbox_id, id}, q when is_binary(id) and id != "" ->
+          where(q, [conv: c], c.sandbox_id == ^id)
 
         {:channel_id, id}, q when is_binary(id) and id != "" ->
           where(q, [conv: c], c.channel_id == ^id)
@@ -1613,6 +1616,34 @@ defmodule Fountain.Conversations do
     |> apply_streams_filter(Keyword.get(opts, :streams))
     |> apply_limit(Keyword.get(opts, :limit))
     |> Repo.all()
+  end
+
+  @doc "The newest durable event cursor across this user's conversations, or zero."
+  def latest_user_log_event_id(user_id) when is_binary(user_id) do
+    user_log_events_query(user_id)
+    |> select([e], max(e.id))
+    |> Repo.one()
+    |> Kernel.||(0)
+  end
+
+  @doc """
+  Durable events after a user's cursor, including conversations that have finished.
+  Returns at most 500 rows in id order, with each conversation's runtime for blocks.
+  """
+  def list_user_log_events(user_id, after_id) when is_binary(user_id) do
+    user_log_events_query(user_id)
+    |> where([e], e.id > ^after_id)
+    |> order_by([e], asc: e.id)
+    |> limit(500)
+    |> select([e, c], {e, c.runtime})
+    |> Repo.all()
+  end
+
+  defp user_log_events_query(user_id) do
+    from e in LogEvent,
+      join: c in Conversation,
+      on: c.id == e.conversation_id,
+      where: c.user_id == ^user_id
   end
 
   defp apply_limit(query, nil), do: query

@@ -513,6 +513,7 @@ defmodule FountainWeb.Router do
     end
 
     resources "/vaults", VaultController, except: [:new, :edit] do
+      patch "/secrets/:id", VaultSecretController, :update
       resources "/secrets", VaultSecretController, only: [:index, :create, :delete]
     end
 
