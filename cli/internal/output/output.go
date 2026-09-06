@@ -71,7 +71,7 @@ func padRight(s string, n int) string {
 
 // Truncate returns s truncated to n runes with an ellipsis if needed.
 func Truncate(s string, n int) string {
-	if len(s) <= n {
+	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
 	runes := []rune(s)
