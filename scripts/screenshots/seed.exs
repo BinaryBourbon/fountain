@@ -52,7 +52,7 @@ agent =
     name: "Builder",
     description: "Ships focused changes with tests",
     runtime: "claude",
-    model: "anthropic/claude-sonnet-4-6",
+    model: "anthropic/claude-sonnet-5",
     environment_id: env.id
   )
 
@@ -62,7 +62,7 @@ reviewer =
     name: "Reviewer",
     description: "Checks edge cases and explains tradeoffs",
     runtime: "codex",
-    model: "openai/gpt-5.3-codex",
+    model: "openai/gpt-6-astra",
     environment_id: env.id
   )
 

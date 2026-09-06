@@ -39,7 +39,7 @@ metadata:
   name: portable
 spec:
   runtime: opencode
-  model: anthropic/claude-sonnet-4-6   # or openai/... or google/...
+  model: anthropic/claude-sonnet-5   # or openai/... or google/...
 ```
 
 Add a key for whichever provider you name, at
