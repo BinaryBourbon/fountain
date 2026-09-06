@@ -147,13 +147,27 @@ defmodule Fountain.Conversations.TurnMachineTest do
   end
 
   describe "handle/3 with a refused model" do
-    test "model_rejected is a stage event and the turn continues", %{machine: m, conv: conv} do
-      assert {^m, []} = TurnMachine.handle(m, {:model_rejected, "gpt-9", "no such model"})
+    test "model_rejected fails the turn and persists selection evidence", %{
+      machine: m,
+      conv: conv
+    } do
+      assert {updated, [{:finish, "failed", _, _}, {:drop_connection, "failed"}]} =
+               TurnMachine.handle(m, {:model_rejected, "gpt-9", "no such model"})
 
-      assert [
-               {"failed",
-                %{"requested" => "gpt-9", "using" => "the runtime's default for this turn"}}
-             ] =
+      assert updated.row.model_selection[:requested_model] == "gpt-9"
+
+      assert [{"failed", %{"requested_model" => "gpt-9", "effective_model" => nil}}] =
+               stages(conv.id, "model")
+
+      assert Fountain.Repo.get!(Conversations.Turn, m.row.id).model_selection["status"] ==
+               "failed"
+    end
+
+    test "selected model evidence comes from the peer", %{machine: m, conv: conv} do
+      assert {updated, []} = TurnMachine.handle(m, {:model_selected, "astra", "astra", "runtime"})
+      assert updated.row.model_selection[:effective_model] == "astra"
+
+      assert [{"done", %{"effective_model" => "astra", "source" => "runtime"}}] =
                stages(conv.id, "model")
     end
 

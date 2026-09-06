@@ -812,10 +812,10 @@ defmodule Fountain.Conversations.Provisioning do
     end
   end
 
-  # The adapter is an npm install, so it has to happen here rather than at
-  # spawn: by the time a turn runs, the network policy has been applied and the
-  # install would fail in a way that reads as a protocol bug. Keyed on the
-  # conversation's runtime, matching the spawn decision in kick_turn/4.
+  # Install during provisioning and check the pin before opening a fresh
+  # connection on a persistent sandbox. Use the runtime's env (including its
+  # broker proxy) for registry access; never relax the sandbox network policy.
+  # Keyed on the conversation's runtime, matching the spawn decision.
   def prepare_acp_adapter(handle, runtime, sprite_env) do
     if Managoat.Runtimes.ACP.enabled?(runtime) do
       Managoat.Runtimes.ACP.install(handle, runtime, sprite_env)

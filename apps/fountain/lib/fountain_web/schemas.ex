@@ -664,6 +664,18 @@ defmodule FountainWeb.Schemas do
           type: :integer,
           description: "Number of images attached to this turn."
         },
+        model_selection: %Schema{
+          type: :object,
+          nullable: true,
+          description: "ACP model selection evidence; null for turns without a selection report.",
+          properties: %{
+            requested_model: %Schema{type: :string, nullable: true},
+            effective_model: %Schema{type: :string, nullable: true},
+            status: %Schema{type: :string, enum: ~w(selected failed)},
+            source: %Schema{type: :string, enum: ~w(runtime selection_ack), nullable: true},
+            error: %Schema{type: :string}
+          }
+        },
         usage: %Schema{
           oneOf: [TurnUsage],
           nullable: true,
