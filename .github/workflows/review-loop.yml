@@ -1,0 +1,40 @@
+# Enable REVIEW_LOOP_ENABLED only after production preflight and callback checks.
+# REVIEW_LOOP_URL is the deployed service's HTTPS origin.
+name: Request Review Loop
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  dispatch:
+    if: ${{ vars.REVIEW_LOOP_ENABLED == 'true' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Request review
+        env:
+          REVIEW_LOOP_URL: ${{ vars.REVIEW_LOOP_URL }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const service = new URL(process.env.REVIEW_LOOP_URL);
+          if (service.protocol !== 'https:' || service.username || service.password || service.search || service.hash || service.pathname !== '/') throw new Error('REVIEW_LOOP_URL must be an HTTPS origin');
+          const issuer = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          if (issuer.protocol !== 'https:') throw new Error('Invalid GitHub OIDC endpoint');
+          issuer.searchParams.set('audience', service.origin);
+          const issued = await fetch(issuer, {headers: {authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`}, signal: AbortSignal.timeout(15000), redirect: 'error'});
+          if (!issued.ok) throw new Error(`GitHub OIDC failed (${issued.status})`);
+          const {value} = await issued.json();
+          if (typeof value !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(value) || value.length > 20000) throw new Error('Invalid OIDC credential');
+          const response = await fetch(`${service.origin}/api/dispatch`, {method: 'POST', headers: {authorization: `Bearer ${value}`, 'content-type': 'application/json'}, body: '{}', signal: AbortSignal.timeout(30000), redirect: 'error'});
+          if (response.status !== 202) throw new Error(`Review Loop did not accept this run (${response.status})`);
+          const result = await response.json();
+          if (result.accepted !== true || typeof result.id !== 'string' || !/^[a-f0-9-]{36}$/.test(result.id) || result.url !== `${service.origin}/runs/${result.id}`) throw new Error('Invalid acknowledgment');
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Review Loop [accepted this run](${result.url}). Dispatch success does not approve the PR. Follow the separate **Review Loop** check.\n`);
+          NODE
