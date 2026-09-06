@@ -144,7 +144,8 @@ defmodule Fountain.Conversations.Connection do
   @spec spawn_command(map(), String.t(), String.t(), list(), keyword()) ::
           {:ok, Managoat.Sandbox.Command.t()} | {:error, term()}
   def spawn_command(state, runtime, cmd, args, opts) do
-    with :ok <- Provisioning.prepare_acp_adapter(state.handle, runtime, state.sprite_env) do
+    with {:ok, opts} <- Fountain.Conversations.CodexTransport.spawn_opts(state, runtime, opts),
+         :ok <- Provisioning.prepare_acp_adapter(state.handle, runtime, state.sprite_env) do
       Managoat.Sandbox.spawn(state.handle, cmd, args, opts)
     end
   end
