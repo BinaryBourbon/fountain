@@ -6,86 +6,26 @@ on:
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # PRs only (#414): cancelling superseded MAIN runs meant a rapid merge
-  # sequence could strand a code commit un-built — commit A's CI cancelled
-  # by docs-only commit B, whose own HEAD^..HEAD build filter then reported
-  # "nothing image-affecting", so A never produced an image and every check
-  # stayed green. Main runs queue instead of cancelling.
+  # PR updates supersede one another. Main commits validate independently:
+  # a shared main group both delayed feedback and cancelled older pending runs.
+  # build.yml's built-ancestor diff includes changes from any unbuilt ancestor.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
-# Two kinds of Elixir job, not one. The test suite used to be ~4m30s of the
-# ~6m50s a PR took, and every other gate — format, credo, sobelow, dialyzer, the
-# Go CLI checks, the release boot probe — was queued behind or ahead of it in
-# the same job while sharing nothing with it but the checkout. #619 split them
-# so the suite runs alone on the critical path with the rest beside it.
+# Independent jobs keep feedback near the slowest test partition plus coverage.
+# Six partitions share a :test cache; static analysis, bundled release and core
+# release use their own build caches. Postgres starts alongside toolchain setup.
+# The partition manifest reserves time on partition 1 for the sibling apps.
 #
-# That "everything else" job (`checks`) then grew until it was itself the
-# critical path: 426s against 171s for the slowest test partition. Two thirds
-# of that turned out not to be analysis at all — `npm ci` runs a vulnerability
-# audit by default, and the advisories endpoint stalls from a runner rather
-# than failing fast, which cost 88s to 302s per run for a result `npm ci`
-# cannot fail on. `--no-audit` took the job to 201s.
+# CI required verifies the selected plan, including intentional skips. A green
+# PR publishes the actual checkout tree; main may reuse that proof, otherwise
+# it runs the complete suite. Wording advice is nonblocking; docs compilation,
+# links, snippets, anchors and CLI reference parity remain blocking.
 #
-# What was left was still the longest job, and still one sequential queue of
-# five unrelated toolchains. It is now four jobs that share nothing:
-#
-#   elixir-static         format, compile, credo, hex audit, sobelow, dialyzer
-#   release-and-contract  the prod release boot probe, and the OpenAPI document
-#                         plus the contract projected from it
-#   sdk-clients           the four SDKs, both Go modules, the Hermes plugin
-#   docs-prose            the three prose gates, when a diff touches docs
-#
-# Dialyzer is the pole in the first and the whole job is bounded by it, which
-# is the shape to remember before adding anything to `elixir-static`.
-#
-# The split is also why the three Elixir jobs get three cache keys rather than
-# sharing `-checks-`: see the note on `test`'s deps cache. `checks` used to
-# build :test, :dev AND :prod into one cached _build; each job now caches one
-# coherent tree, and `sdk-clients` needs no umbrella build at all.
-#
-# #620 then split the suite itself across three machines. ExUnit reported why:
-#
-#   Finished in 252.3 seconds (140.7s async, 111.6s sync)
-#
-# The async phase scales with cores; the sync phase does not — ExUnit runs
-# `async: false` modules one at a time on one core once the async phase drains,
-# and 55 of 198 modules are `async: false` for real reasons (Application.put_env
-# in the config tests, set_mimic_global in 13 files, the ETS rate-limit table).
-# No runner size crosses that floor; only separate OS processes do, because
-# separate partitions are separate BEAMs. Splitting N ways drops the serial
-# tail to roughly 1/N of it, and each partition gets its own Postgres rather
-# than the whole suite sharing one 20-connection pool.
-#
-# #894 took it from three to six, because this matrix is the critical path for
-# every commit: the slowest partition plus the serial coverage gate IS the
-# wall-clock of CI. At three, the slowest partition was ~5m of a ~5m54s run.
-# The limit is that ~60s of each job is fixed cost that does not divide
-# (Postgres container init dominates), so the marginal win shrinks: six roughly
-# halves the test work for two more jobs' worth of that cost, and eight would
-# buy only ~30s beyond six. Shrink the 60s before adding a seventh.
-#
-# The cost is that each partition instruments every module while exercising a
-# fraction of the tests, so no partition's coverage means anything on its own.
-# Hence the `coverage` job: partitions export, it merges, and the 85% threshold
-# is enforced once against the union (see mix.exs / coverage.exs).
-#
-# On main, most of that is a re-run. PRs are squash-merged after a rebase, so
-# the commit that lands on main usually has the *same tree* as the PR head —
-# the exact tree the PR's CI run already passed (a rebased head contains
-# main's tip, so the merge ref GitHub tested was the head itself). 10 of 12
-# recent main commits were like that, and each spent ~10 minutes re-proving
-# it before build.yml was allowed to start. The `already-tested` job checks
-# for that case and, when it holds, lets every other job skip; the run still
-# concludes `success`, which is all build.yml's workflow_run gate asks. Any
-# doubt — no associated PR, a differing tree, no successful PR run, an API
-# hiccup — falls through to the full run, never to a skip.
-# The one place the Postgres pin lives. The jobs that need a database start it
-# themselves (see "Start Postgres in the background"), so it is no longer
-# expressible as a `services:` image.
+# The one Postgres pin. Jobs start it in the background before they need it.
 env:
   PG_IMAGE: postgres:16@sha256:287eced1f33b59ed265ed13a60d3680dd7646d70c4dc0e785f59a470ebc03eeb
 
@@ -109,50 +49,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
-      - name: Compare this tree with the tested PR head
+      - name: Compare this tree with a successful PR checkout
         id: probe
         env:
           GH_TOKEN: ${{ github.token }}
-        # Never fails: every branch of this script ends in a decision, and the
-        # decision on any error is "run the full CI".
-        run: |
-          set -u
-          skip=false
-          tree="$(git rev-parse 'HEAD^{tree}')"
-          echo "main tree: ${tree}"
-
-          heads="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-                     --jq '.[] | select(.merged_at != null) | .head.sha' 2>/dev/null || true)"
-          if [ -z "${heads}" ]; then
-            echo "no merged PR is associated with ${GITHUB_SHA:0:7} — running the full CI"
-          fi
-
-          for head in ${heads}; do
-            if ! git fetch --quiet --depth=1 origin "${head}" 2>/dev/null; then
-              echo "PR head ${head:0:7} could not be fetched"
-              continue
-            fi
-            head_tree="$(git rev-parse "${head}^{tree}")"
-            if [ "${head_tree}" != "${tree}" ]; then
-              echo "PR head ${head:0:7} has tree ${head_tree:0:7} — differs; the merge produced a tree no PR run tested"
-              continue
-            fi
-            # A completed, successful CI run on that head, triggered by the PR.
-            # `status=success` excludes the cancelled runs that PR
-            # cancel-in-progress leaves behind.
-            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&event=pull_request&status=success&per_page=50" \
-                        --jq '[.workflow_runs[] | select(.name == "CI")] | first | .id // empty' 2>/dev/null || true)"
-            if [ -z "${run_id}" ]; then
-              echo "PR head ${head:0:7} has the same tree but no successful pull_request CI run"
-              continue
-            fi
-            echo "PR head ${head:0:7} has the same tree and CI run ${run_id} passed on it — skipping the re-run"
-            echo "tested by https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}" >> "$GITHUB_STEP_SUMMARY"
-            skip=true
-            break
-          done
-
-          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/already-tested.sh
 
   changes:
     name: Decide whether this is a docs-only change
@@ -173,11 +74,16 @@ jobs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
       docs_touched: ${{ steps.filter.outputs.docs_touched }}
       cli_docs: ${{ steps.filter.outputs.cli_docs }}
+      tree: ${{ steps.tree.outputs.tree }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
           fetch-depth: 0
+
+      - name: Record the checkout tree
+        id: tree
+        run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
 
       - name: Classify the diff
         id: filter
@@ -197,9 +103,11 @@ jobs:
         run: |
           set -u
           decide() {
-            echo "docs_only=$1" >> "$GITHUB_OUTPUT"
-            echo "cli_docs=$2" >> "$GITHUB_OUTPUT"
-            echo "docs_touched=$3" >> "$GITHUB_OUTPUT"
+            {
+              echo "docs_only=$1"
+              echo "cli_docs=$2"
+              echo "docs_touched=$3"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           }
 
@@ -242,7 +150,7 @@ jobs:
           # without a special case — it used to be mkdocs.yml at the repo root,
           # which needed naming twice (#1008).
           docs_touched=false
-          if printf '%s\n' "${changed}" | grep -qE '^docs/'; then
+          if printf '%s\n' "${changed}" | grep -qE '^docs/|^apps/[^/]+/docs/|^scripts/(docs-style|destink/|ci/prose-advice\.sh$)|^\.vale|^\.github/workflows/ci\.yml$'; then
             docs_touched=true
           fi
 
@@ -279,13 +187,8 @@ jobs:
         # `--partitions` argument below is `strategy.job-total`, so adding an
         # entry here is the whole change.
         #
-        # Six, not three, because this matrix is the critical path for every
-        # commit: the slowest partition plus the serial coverage gate IS the
-        # wall-clock of CI, and at three the slowest was ~5m. Each job carries
-        # ~60s of fixed cost (Postgres container init dominates) that does not
-        # divide, so the win shrinks as the count grows — six roughly halves
-        # the test work while paying that cost twice more, and eight would buy
-        # only ~30s beyond it. Attack the 60s before adding a seventh.
+        # Balance measured work before increasing the runner count. Partition
+        # 1 also runs the siblings, which the allocator reserves time for.
         partition: [1, 2, 3, 4, 5, 6]
 
     outputs:
@@ -333,6 +236,10 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Timing collection preserves ExUnit execution
+        if: ${{ matrix.partition == 1 }}
+        run: elixir scripts/ci/timing-formatter-test.exs
 
       # Cache keys carry the job name. `test` and `checks` build different
       # trees — this one only ever compiles :test, while `checks` additionally
@@ -421,9 +328,8 @@ jobs:
       # modules, and apps/fountain cannot even load them because it depends on
       # neither. One partition runs them all and copies the exports into the
       # merge directory as lib-*, so the coverage gate below stands on the
-      # union. Partition 1 rather than a job of its own because a job carries
-      # ~60s of fixed cost; give a sibling its own matrix entry when its suite
-      # stops being seconds.
+      # union. The allocator reserves their measured duration on partition 1
+      # instead of treating that partition as an equally empty bucket.
       - name: Run the sibling apps' tests with coverage
         if: ${{ matrix.partition == 1 }}
         run: scripts/test-libraries.sh
@@ -442,6 +348,7 @@ jobs:
           path: |
             apps/fountain/cover/${{ matrix.partition }}.coverdata
             apps/fountain/cover/${{ matrix.partition }}.tests
+            apps/fountain/cover/${{ matrix.partition }}.timings.log
             apps/fountain/cover/lib-*.coverdata
             apps/fountain/cover/lib-*.tests
           # An export that silently fails to upload would leave the merge job
@@ -455,9 +362,8 @@ jobs:
   # had no way to merge across machines at all. Elixir's built-in cover does,
   # via the exports `mix test --partitions` writes.
   #
-  # Deliberately light. `mix test.coverage` runs no tests and needs no
-  # database — it imports .coverdata and reports — so this job is a checkout,
-  # two cache restores and a few seconds of merging.
+  # Deliberately light: checkout, Elixir setup, artifact download and a merge.
+  # The plain Elixir script needs no database, dependencies or compiled app.
   coverage:
     name: Coverage gate
     runs-on: ubuntu-24.04
@@ -483,12 +389,6 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
-      # Both caches share the `test` job's keys: same tree, and by now the
-      # partitions have already saved them, so this restores rather than
-      # competes. The build cache is load-bearing, not a nicety — the task
-      # itself compiles nothing, but Mix runs loadpaths underneath it and will
-      # build the whole dependency tree into an empty _build first. Measured on
-      # a 10-core machine: 3.7s warm, 38.5s cold.
       - name: Download coverage exports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -1140,7 +1040,7 @@ jobs:
     # the two: MkDocs never checked anchors (#1008).
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
          && needs.changes.outputs.docs_only != 'true'
-         && needs.changes.outputs.docs_touched == 'true' }}
+         && (github.event_name == 'push' || needs.changes.outputs.docs_touched == 'true') }}
 
     permissions:
       contents: read
@@ -1161,7 +1061,7 @@ jobs:
       # That is what `mkdocs build --strict` used to carry, and the test is the
       # stronger of the two: MkDocs never checked anchors (#1008).
       - name: Docs style
-        run: python3 scripts/docs-style.py
+        run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
 
       # A pinned release binary, not `go install`. In the job this was split
       # out of, the reason was that Go came from cli/go.mod with
@@ -1187,8 +1087,10 @@ jobs:
         # decide what is walked, and `.vale-ste.yml`'s `apps/*/docs` include
         # patterns decide what is linted among it. Naming the directory alone
         # lints none of it, which is measured in that file's comment. The
-        # subshell is empty and harmless when no extension has docs.
-        run: vale lint docs $(ls -d apps/*/docs 2>/dev/null || true)
+        # glob is empty and harmless when no extension has docs.
+        run: |
+          shopt -s nullglob
+          bash scripts/ci/prose-advice.sh ste vale lint docs apps/*/docs
 
       # AI-writing tells, the third prose gate beside the style sheet and STE.
       # The engine is the published `sentences` package (lex00/sentences, MIT);
@@ -1211,10 +1113,19 @@ jobs:
 
       # `--no-audit --no-fund`: see the sdk-clients job. The audit request
       # stalls for minutes from a runner and can only ever print.
+      - name: Install the prose checker
+        run: npm ci --prefix scripts/destink --no-audit --no-fund
+
       - name: Docs de-stink
-        run: |
-          npm ci --prefix scripts/destink --no-audit --no-fund
-          node scripts/destink/destink.mjs
+        run: bash scripts/ci/prose-advice.sh destink node scripts/destink/destink.mjs
+
+      - name: Upload wording advice
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prose-advice
+          path: ${{ runner.temp }}/prose-advice
+          retention-days: 7
 
   swift-sdk:
     name: Swift SDK (${{ matrix.os }})
@@ -1327,9 +1238,19 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: deps
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-core-${{ hashFiles('mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-
+            ${{ runner.os }}-mix-core-
+
+      - name: Restore core build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: |
+            _build/prod/lib
+            _build/prod/.mix
+          key: ${{ runner.os }}-build-core-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('mix.lock', 'mix.exs', 'apps/*/mix.exs') }}
+          restore-keys: |
+            ${{ runner.os }}-build-core-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
 
       - name: Wait for Postgres
         run: |
@@ -1742,11 +1663,11 @@ jobs:
       - name: Docs tests
         run: mix test apps/fountain/test/fountain/docs_test.exs apps/fountain/test/fountain_web/controllers/docs_controller_test.exs
 
-      # The style sheet in standards/voice-and-style.md, enforced. It
+      # The style sheet in standards/voice-and-style.md, as wording advice. It
       # skips the backlog in scripts/docs-style-allow.txt, so a file NOT on
       # that list is checked and every new page is covered by default.
       - name: Docs style
-        run: python3 scripts/docs-style.py
+        run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
 
       # ASD-STE100 Simplified Technical English, the standard in
       # standards/simplified-technical-english.md. Config in
@@ -1773,8 +1694,10 @@ jobs:
         # decide what is walked, and `.vale-ste.yml`'s `apps/*/docs` include
         # patterns decide what is linted among it. Naming the directory alone
         # lints none of it, which is measured in that file's comment. The
-        # subshell is empty and harmless when no extension has docs.
-        run: vale lint docs $(ls -d apps/*/docs 2>/dev/null || true)
+        # glob is empty and harmless when no extension has docs.
+        run: |
+          shopt -s nullglob
+          bash scripts/ci/prose-advice.sh ste vale lint docs apps/*/docs
 
       # AI-writing tells, the third prose gate beside the style sheet and STE.
       # The engine is the published `sentences` package (lex00/sentences, MIT);
@@ -1789,10 +1712,19 @@ jobs:
 
       # `--no-audit --no-fund`: see the SDK install step in `checks`. The audit
       # request stalls for minutes from a runner and can only ever print.
+      - name: Install the prose checker
+        run: npm ci --prefix scripts/destink --no-audit --no-fund
+
       - name: Docs de-stink
-        run: |
-          npm ci --prefix scripts/destink --no-audit --no-fund
-          node scripts/destink/destink.mjs
+        run: bash scripts/ci/prose-advice.sh destink node scripts/destink/destink.mjs
+
+      - name: Upload wording advice
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prose-advice
+          path: ${{ runner.temp }}/prose-advice
+          retention-days: 7
 
       - name: Set up Go
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}
@@ -1813,3 +1745,53 @@ jobs:
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}
         working-directory: cli
         run: go test -count=1 ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented|TestGeneratedCLIReferenceIsCurrent'
+
+  workflow-checks:
+    name: CI policy tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+      - name: Test CI decisions
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+
+  gate:
+    name: CI required
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: ${{ always() }}
+    needs:
+      - already-tested
+      - changes
+      - workflow-checks
+      - test
+      - coverage
+      - elixir-static
+      - release-and-contract
+      - sdk-clients
+      - swift-sdk
+      - core-distribution
+      - compose-fresh-clone
+      - compose-pinned-image-boot
+      - docs
+      - docs-prose
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+      - name: Every required job passed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/gate.py
+      # Only a successful aggregate verdict can publish evidence for main's
+      # shortcut. Old runs without this artifact conservatively rerun CI.
+      - name: Record the tested PR tree
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tested-tree
+          path: tested-tree.txt
+          if-no-files-found: error
+          retention-days: 30
