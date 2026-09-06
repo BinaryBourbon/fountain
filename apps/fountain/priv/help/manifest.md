@@ -8,18 +8,59 @@ A `fountain.yml` is a multi-document YAML file. Each doc is one resource with th
 
 ```yaml
 apiVersion: fountain/v1
-kind: Environment | Vault | Agent
+kind: Environment | Vault | Agent | Teammate | Schedule | Webhook
 metadata:
   name: <unique-on-operator-side>
 spec:
   # ... fields matching the API schema for the kind ...
 ```
 
-The `metadata.name` is the upsert key. If a resource with that name exists, it's updated; if not, it's created.
+The `metadata.name` is the upsert key for five of the six kinds. If a resource with that name exists, it's updated; if not, it's created. A `Webhook` is keyed by its `spec.url` instead, so its `metadata.name` is a label that shows up in the apply output.
 
 ## Order is irrelevant inside the file
 
-`fountain apply` reconciles **environments first, vaults second, agents last** — so an agent doc can reference an environment by name (`spec.environment: my-env`) even if that environment is defined later in the file. The reference also resolves against environments that **already exist** server-side, so a manifest can attach an agent to an environment managed elsewhere; a name that matches neither the manifest nor an existing environment fails that agent doc. Vaults aren't referenced from agents (they're picked per-conversation), so the order between envs and vaults doesn't matter functionally; the predictable ordering just makes the apply output easier to skim.
+`fountain apply` reconciles in a fixed order: **environments, vaults, agents, teammates, schedules, webhooks** — so a doc can reference another by name even if that one is defined later in the file. An `Agent` references an `environment`; a `Teammate` references an `agent`, an `environment` and a `vault`; a `Schedule` references a `teammate`. Every reference resolves against the manifest first and then against what **already exists** server-side, so a manifest can attach an agent to an environment managed elsewhere; a name that matches neither fails that doc and no other.
+
+## The team kinds
+
+A `Teammate` puts an agent on the team, which opens its conversation and provisions its computer. Re-applying moves what the teammate is called and which environment and vault the *next* computer is built from — it never provisions a second one, and it never resurrects a computer that is gone (message the teammate for that). A `Schedule` is a cron that runs a teammate with a prompt, keyed by its name under its teammate. A `Webhook` is an endpoint Fountain POSTs conversation lifecycle events to; the apply that creates one prints its signing secret **once**, and no later apply ever prints it again.
+
+```yaml
+---
+apiVersion: fountain/v1
+kind: Teammate
+metadata:
+  name: Ada
+spec:
+  agent: researcher
+  environment: my-project
+  vault: alice
+
+---
+apiVersion: fountain/v1
+kind: Schedule
+metadata:
+  name: standup
+spec:
+  teammate: Ada
+  cron: "0 9 * * 1-5"          # five fields, UTC
+  prompt: What is on today?
+  one_off: false
+  enabled: true
+
+---
+apiVersion: fountain/v1
+kind: Webhook
+metadata:
+  name: ci
+spec:
+  url: https://ci.example.com/hooks/fountain
+  event_types: [conversation.turn.done]
+```
+
+## Nothing is pruned
+
+Apply is additive. Deleting a doc from the manifest leaves its record in place; delete it through its own command or the console.
 
 ## Example
 
@@ -71,14 +112,19 @@ fountain apply -f ./fountain-specs/     # directory: walks **/*.{yml,yaml}
 
 Directory mode walks recursively. Any YAML document carrying both `apiVersion` and `kind` is treated as a resource; anything else (a doc without front-matter, an unrelated `.yaml` config) is silently ignored. So `fountain-specs/agents/*.yml`, `fountain-specs/environments/*.yml`, plus an unrelated `.github/workflows/ci.yml` in the same tree all coexist cleanly. Files are processed in alphabetical order; if you want strict ordering for any reason, prefix names like `10-envs.yml` / `20-agents.yml` (though reconciliation order is fixed internally — envs first, then vaults, then agents — regardless).
 
-Output uses `+` for create, `~` for update, one line per resource:
+Output uses `+` for create, `~` for update, `=` for a resource that already matched, one line per resource:
 
 ```
-env    +  my-project
+env  +  my-project
 vault  +  alice
   secret  ~  alice/GITHUB_TOKEN
   secret  ~  alice/NPM_TOKEN
 agent  ~  researcher
+teammate  =  Ada
+schedule  +  standup
+webhook  +  ci
+  signing secret  ci  whsec_...
+  save it now, it is not shown again
 ```
 
 Errors per-resource go to stderr but don't stop the run; other resources still apply.
@@ -87,7 +133,7 @@ Under the hood the CLI compiles the whole manifest into one document and sends i
 
 ## Idempotency
 
-Re-applying the same file is a no-op (every resource shows `~` because existing resources are always re-written, but the spec doesn't change). Useful for CI: keep `fountain.yml` in source control, run `fountain apply -f fountain.yml` from your deploy pipeline.
+Re-applying the same file is a no-op, and says so: every resource shows `=` (`unchanged`) because nothing was written to it. Inline `spec.secrets` are the exception — they are re-encrypted on every apply, so they keep showing `~` under a resource that shows `=`. Useful for CI: keep `fountain.yml` in source control, run `fountain apply -f fountain.yml` from your deploy pipeline.
 
 ## Apply-time secret resolution (so you can commit `fountain.yml`)
 

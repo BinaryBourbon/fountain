@@ -317,7 +317,8 @@ fountain apply -f dir/ --var REGION=eu-west-1 # ${VAR} substitution, repeatable
 ```
 
 Apply is idempotent. It creates what is new, and updates what changed. It
-supports three kinds, which are `Environment`, `Vault` and `Agent`.
+supports six kinds, which are `Environment`, `Vault`, `Agent`, `Teammate`,
+`Schedule` and `Webhook`.
 
 `--var` and `${VAR}` substitution apply to a `spec.secrets` value alone. A
 `${VAR}` anywhere else in the document goes across as it stands. A
@@ -326,16 +327,82 @@ supports three kinds, which are `Environment`, `Vault` and `Agent`.
 The CLI compiles each document into one manifest, and sends that to
 `POST /api/apply` in one request.
 
-The server reconciles the environments, then the vaults, then the agents. It
-resolves an agent's `environment:` name reference, and that includes an
-environment that already exists on the server.
+The server reconciles the six kinds in the order above. A document can name
+another document whatever its position in the file. An `Agent` names an
+`environment`. A `Teammate` names an `agent`, an `environment` and a `vault`.
+A `Schedule` names a `teammate`. Each name resolves against the manifest
+first, then against the records your account already holds.
+
+The `metadata.name` is the key for five of the kinds. A `Webhook` is keyed by
+its `spec.url`, so the document name is a label alone.
+
+```yaml
+---
+apiVersion: fountain/v1
+kind: Teammate
+metadata:
+  name: Ada
+spec:
+  agent: ada             # an Agent document, or an agent you already have
+  environment: my-project
+  vault: alice
+
+---
+apiVersion: fountain/v1
+kind: Schedule
+metadata:
+  name: standup
+spec:
+  teammate: Ada
+  cron: "0 9 * * 1-5"    # five fields, UTC
+  prompt: What is on today?
+  one_off: false
+  enabled: true
+
+---
+apiVersion: fountain/v1
+kind: Webhook
+metadata:
+  name: ci
+spec:
+  url: https://ci.example.com/hooks/fountain
+  description: CI receiver
+  event_types: [conversation.turn.done]
+```
+
+A `Teammate` document adds the agent to the team, which opens the teammate's
+conversation and starts its computer. A later apply moves the name, the
+environment and the vault the next computer is built from. It starts no
+second computer.
+
+A `Webhook` that an apply creates prints its signing secret one time. Save it
+then. An apply that updates the same endpoint prints no secret.
+
+The CLI prints `+` for a create, `~` for an update, `=` for a resource that
+already matched the manifest, and `!` for a failure.
+
+```
+env  =  my-project
+vault  =  alice
+agent  ~  ada
+teammate  +  Ada
+schedule  +  standup
+webhook  +  ci
+  signing secret  ci  whsec_...
+  save it now, it is not shown again
+```
+
+Apply is additive. A document that you delete from the manifest leaves its
+record in place. There is no prune, so delete a record through its own
+command or the console.
 
 The server rejects unknown `spec` keys per resource. The CLI prints those
 errors and exits nonzero; valid resources in the same manifest still apply.
 Correct a misspelled field before you retry.
 
 Against an older server with no `/api/apply`, the CLI falls back to one call
-for each resource.
+for each resource. That older server has no `Teammate`, `Schedule` or
+`Webhook` document, so the CLI reports those and exits nonzero.
 
 ### Secret references
 

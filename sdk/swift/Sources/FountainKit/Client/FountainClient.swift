@@ -39,7 +39,8 @@ public struct FountainClient: Sendable {
     try await api.data(.get, "/api/catalog")
   }
 
-  /// Declarative bulk apply (`Environment`/`Vault`/`Agent` manifests).
+  /// Declarative bulk apply. One manifest reconciles `Environment`, `Vault`,
+  /// `Agent`, `Teammate`, `Schedule` and `Webhook` documents, in that order.
   public func apply(resources: [JSONValue]) async throws -> [ApplyResult] {
     struct Response: Decodable {
       var results: [ApplyResult]

@@ -28,6 +28,13 @@ upgrade, is in
   existing launches retain `owner` behavior. Applications processing mutually
   untrusted work can keep all Fountain API authority on their service host.
 
+- Bulk apply reconciles `Teammate`, `Schedule` and `Webhook` documents alongside
+  `Environment`, `Vault` and `Agent`, so one manifest declares a whole estate.
+  Teammates resolve their agent, environment and vault by name; schedules name
+  their teammate; webhooks are keyed by URL and hand back their signing secret
+  on the apply that creates them. Result rows now report `unchanged` when the
+  record already matched the document. Apply stays additive and prunes nothing.
+
 ### Fixed
 
 - Codex launches on Sprites with inherited and ambient capabilities cleared,

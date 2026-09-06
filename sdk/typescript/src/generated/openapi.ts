@@ -559,7 +559,7 @@ export interface paths {
         put?: never;
         /**
          * Apply a compiled manifest (bulk upsert)
-         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled by name — environments first, then vaults, then agents — so agent specs may reference an environment by name via `spec.environment`. Application is best-effort per resource: the response is 200 even when individual resources fail, with per-resource errors in the result entries.
+         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled in a fixed order — environments, vaults, agents, teammates, schedules, webhooks — so a spec may name another document whatever the file's order: an agent's `environment`, a teammate's `agent`, `environment` and `vault`, and a schedule's `teammate`. Every kind is keyed by the document's `name`, except `Webhook`, which is keyed by `spec.url`. A `Webhook` created here returns its signing secret once, on that result row. Apply is additive: a document dropped from the manifest leaves its record in place. Application is best-effort per resource: the response is 200 even when individual resources fail, with per-resource errors in the result entries.
          */
         post: operations["FountainWeb.ApplyController.create"];
         delete?: never;
@@ -2799,13 +2799,21 @@ export interface components {
         };
         /** ApplyResult */
         ApplyResult: {
-            /** @enum {string} */
-            action: "created" | "updated" | "error";
+            /**
+             * @description `unchanged` means the record already matched the document, so nothing was written to it. Inline `spec.secrets` are re-encrypted on every apply and still report `upserted` under `secrets`.
+             * @enum {string}
+             */
+            action: "created" | "updated" | "unchanged" | "error";
             errors?: {
                 [key: string]: unknown;
             } | null;
             kind: string;
             name: string;
+            /**
+             * @description A Webhook endpoint's HMAC-SHA256 signing secret, on the apply that created it. Store it; it is not shown again, and an update never returns it. Null on every other row.
+             * @example whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU
+             */
+            secret?: string | null;
             secrets?: components["schemas"]["ApplySecretResult"][];
         };
         /**
@@ -3900,11 +3908,11 @@ export interface components {
         };
         /**
          * ManifestResource
-         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Agent specs may reference an environment by name via `environment`; the server resolves it to `environment_id`.
+         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Specs reference other documents by name, and the server resolves each to an id: an Agent's `environment`, a Teammate's `agent`, `environment` and `vault`, and a Schedule's `teammate`. Teammate specs take `agent`, `environment` and `vault`; Schedule specs take `teammate` plus the TeamScheduleCreateRequest fields `cron`, `prompt`, `one_off` and `enabled`; Webhook specs take the WebhookEndpointCreateRequest fields `url`, `description` and `event_types`, and are keyed by `url` rather than by `name`.
          */
         ManifestResource: {
             /** @enum {string} */
-            kind: "Environment" | "Vault" | "Agent";
+            kind: "Environment" | "Vault" | "Agent" | "Teammate" | "Schedule" | "Webhook";
             name: string;
             spec?: {
                 [key: string]: unknown;

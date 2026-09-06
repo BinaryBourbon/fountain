@@ -448,6 +448,88 @@ defmodule Fountain.Team do
     end
   end
 
+  # What a teammate is, in one map: the public attribute name, and the
+  # conversation column it lands on.
+  @bindings [{"name", :title}, {"environment_id", :environment_id}, {"vault_id", :vault_id}]
+
+  @doc """
+  Reconcile the teammate for `agent_id` against `attrs` (#1636).
+
+  `attrs` is string-keyed and takes the same three keys `add_teammate/4`
+  does: `"name"`, `"environment_id"` and `"vault_id"`. A key that is absent
+  leaves that binding alone; a blank value clears it, which for the two ids
+  means the agent's own environment and no vault. Both ids go through the
+  agent's allowlists, as an add does, so a teammate cannot be bound to an
+  environment or vault its agent refuses.
+
+  The three live on the teammate's current conversation, where they already
+  are, so `open_fresh_conversation/3` and `start_fresh/6` build the next
+  computer from them. The machine already running is not rebuilt, and nothing
+  is provisioned here.
+
+  Returns `{:ok, conv}` with the teammate's conversation, unchanged when
+  `attrs` matched it already. `{:error, :not_found}` when the agent is not on
+  the team, `{:error, :environment_not_allowed}` / `{:error,
+  :vault_not_allowed}` when an id is not the caller's own or not on the
+  agent's allowlist. Audited as `team.updated` with the changed field names,
+  and nothing is recorded when nothing changed.
+  """
+  def update_teammate(user_id, agent_id, attrs, opts \\ [])
+      when is_binary(user_id) and is_binary(agent_id) and is_map(attrs) do
+    case get_teammate(user_id, agent_id) do
+      nil ->
+        {:error, :not_found}
+
+      %{agent: agent, conversation: conv} ->
+        changes = binding_changes(attrs, conv)
+
+        with :ok <- bindings_allowed(user_id, agent, changes) do
+          # Ownership: `conv` and `agent` came from the scoped get_teammate.
+          write_bindings(user_id, conv, changes, opts)
+        end
+    end
+  end
+
+  # Only what actually moves: a value the conversation already holds is not a
+  # change, which is what lets a re-apply say it wrote nothing.
+  defp binding_changes(attrs, %Conversation{} = conv) do
+    @bindings
+    |> Enum.filter(fn {key, _field} -> Map.has_key?(attrs, key) end)
+    |> Enum.map(fn {key, field} -> {field, blank_to_nil(attrs[key])} end)
+    |> Enum.reject(fn {field, value} -> Map.get(conv, field) == value end)
+    |> Map.new()
+  end
+
+  defp bindings_allowed(user_id, %Agents.Agent{} = agent, changes) do
+    options = addable_options(user_id, agent)
+
+    with :ok <- binding_allowed(changes, :environment_id, options.environments, :environment) do
+      binding_allowed(changes, :vault_id, options.vaults, :vault)
+    end
+  end
+
+  defp binding_allowed(changes, field, allowed, what) do
+    case Map.get(changes, field) do
+      nil -> :ok
+      id -> if Enum.any?(allowed, &(&1.id == id)), do: :ok, else: {:error, :"#{what}_not_allowed"}
+    end
+  end
+
+  defp write_bindings(_user_id, conv, changes, _opts) when map_size(changes) == 0, do: {:ok, conv}
+
+  defp write_bindings(user_id, conv, changes, opts) do
+    case Conversations.update_conversation(conv, changes) do
+      {:ok, updated} ->
+        fields = for {key, field} <- @bindings, Map.has_key?(changes, field), do: key
+        record(user_id, "team.updated", updated, opts, %{"fields" => fields})
+        broadcast_changed(user_id)
+        {:ok, updated}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
   @doc """
   Open a fresh conversation for the teammate on its current computer.
 

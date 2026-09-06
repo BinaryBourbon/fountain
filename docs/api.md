@@ -155,8 +155,31 @@ which connection choices the UI can offer.
 
 Use `fountain apply` when a checked-in manifest should define several related
 resources. The CLI compiles the manifest and submits the resource graph.
-Inspect every resource result: one failed resource does not mean that all
+Inspect every resource result. One failed resource does not mean that all
 other writes failed.
+
+A manifest holds six kinds. Fountain reconciles them in a fixed order, which
+is `Environment`, `Vault`, `Agent`, `Teammate`, `Schedule` and `Webhook`. A
+document can name another document whatever its position in the file. An
+`Agent` names an `environment`. A `Teammate` names an `agent`, an
+`environment` and a `vault`. A `Schedule` names a `teammate`. Each name
+resolves against the manifest first, then against the records the account
+already holds. A name that matches neither fails that document alone.
+
+The document name is the key for five of the kinds. `Webhook` is the
+exception, and is keyed by `spec.url`.
+
+Each result row reports `created`, `updated`, `unchanged` or `error`. A
+second apply of an unchanged manifest reports `unchanged` for every row.
+Inline `spec.secrets` are encrypted again on each apply, so they keep
+reporting `upserted` under a row that reports `unchanged`.
+
+A `Webhook` that an apply creates carries its signing secret in that result
+row. Fountain shows the secret one time. An update of the same endpoint
+carries no secret.
+
+Apply is additive. A document that you delete from the manifest leaves its
+record in place. There is no prune.
 
 See [CLI](cli.md) for the workflow and the Apply operation in the
 [generated reference](/api/docs) for its wire format. Unknown configuration

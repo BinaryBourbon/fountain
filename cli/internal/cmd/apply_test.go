@@ -17,27 +17,36 @@ func doc(kind, name string, spec map[string]any) *manifest.Doc {
 }
 
 func TestBuildApplyPayloadOrdersAndStrips(t *testing.T) {
-	envs := []*manifest.Doc{doc("Environment", "proj", map[string]any{
-		"setup_script": "echo hi",
-		"secrets":      map[string]any{"TOKEN": "t0"},
-		"user_id":      "someone-else",
-		"created_by":   "mallory",
-		"id":           "forced-id",
-	})}
-	vaults := []*manifest.Doc{doc("Vault", "alice", nil)}
-	agents := []*manifest.Doc{doc("Agent", "researcher", map[string]any{
-		"runtime":     "claude",
-		"environment": "proj",
-	})}
-
-	// Payload order is envs, vaults, agents regardless of manifest order.
-	got := buildApplyPayload(envs, vaults, agents)
-
-	if len(got) != 3 {
-		t.Fatalf("want 3 resources, got %d", len(got))
+	grouped := map[string][]*manifest.Doc{
+		"Environment": {doc("Environment", "proj", map[string]any{
+			"setup_script": "echo hi",
+			"secrets":      map[string]any{"TOKEN": "t0"},
+			"user_id":      "someone-else",
+			"created_by":   "mallory",
+			"id":           "forced-id",
+		})},
+		"Vault": {doc("Vault", "alice", nil)},
+		"Agent": {doc("Agent", "researcher", map[string]any{
+			"runtime":     "claude",
+			"environment": "proj",
+		})},
+		"Teammate": {doc("Teammate", "Ada", map[string]any{"agent": "researcher"})},
+		"Schedule": {doc("Schedule", "standup", map[string]any{"teammate": "Ada", "cron": "@daily"})},
+		"Webhook":  {doc("Webhook", "ci", map[string]any{"url": "https://example.com/h"})},
 	}
-	if got[0].Kind != "Environment" || got[1].Kind != "Vault" || got[2].Kind != "Agent" {
-		t.Fatalf("wrong kind order: %v, %v, %v", got[0].Kind, got[1].Kind, got[2].Kind)
+
+	// Payload order is the six kinds in reconciliation order, whatever order
+	// the manifest listed them in.
+	got := buildApplyPayload(grouped)
+
+	if len(got) != 6 {
+		t.Fatalf("want 6 resources, got %d", len(got))
+	}
+	wantKinds := []string{"Environment", "Vault", "Agent", "Teammate", "Schedule", "Webhook"}
+	for i, want := range wantKinds {
+		if got[i].Kind != want {
+			t.Fatalf("resource %d: want kind %q, got %q", i, want, got[i].Kind)
+		}
 	}
 
 	env := got[0]
@@ -66,6 +75,29 @@ func TestBuildApplyPayloadOrdersAndStrips(t *testing.T) {
 	}
 }
 
+func TestGroupDocsBucketsEveryKind(t *testing.T) {
+	docs := []*manifest.Doc{
+		doc("Webhook", "ci", nil),
+		doc("Agent", "a", nil),
+		doc("Cluster", "nope", nil),
+		doc("Teammate", "Ada", nil),
+		doc("Schedule", "standup", nil),
+		doc("Environment", "e", nil),
+		doc("Vault", "v", nil),
+	}
+
+	grouped, unknown := groupDocs(docs)
+
+	for _, kind := range []string{"Environment", "Vault", "Agent", "Teammate", "Schedule", "Webhook"} {
+		if len(grouped[kind]) != 1 {
+			t.Errorf("%s: want 1 doc, got %d", kind, len(grouped[kind]))
+		}
+	}
+	if len(unknown) != 1 || unknown[0].Kind != "Cluster" {
+		t.Errorf("an unsupported kind must come back as unknown, got %v", unknown)
+	}
+}
+
 func TestRenderApplyResultsFailureDetection(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -75,6 +107,8 @@ func TestRenderApplyResultsFailureDetection(t *testing.T) {
 		{"all ok", []applyResult{
 			{Kind: "Environment", Name: "e", Action: "created"},
 			{Kind: "Agent", Name: "a", Action: "updated"},
+			{Kind: "Teammate", Name: "Ada", Action: "unchanged"},
+			{Kind: "Webhook", Name: "ci", Action: "created", Secret: "whsec_x"},
 		}, false},
 		{"resource error", []applyResult{
 			{Kind: "Agent", Name: "a", Action: "error", Errors: map[string]any{"model": []any{"can't be blank"}}},

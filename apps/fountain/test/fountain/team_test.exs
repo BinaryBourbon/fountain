@@ -192,6 +192,107 @@ defmodule Fountain.TeamTest do
     end
   end
 
+  describe "update_teammate/4" do
+    test "moves the name, the environment and the vault, and records the fields" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, name: "Ada")
+      env = insert_env(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+      conv = insert_teammate_conv(user, agent)
+
+      assert {:ok, updated} =
+               Team.update_teammate(
+                 user.id,
+                 agent.id,
+                 %{
+                   "name" => "  Ada (staging)  ",
+                   "environment_id" => env.id,
+                   "vault_id" => vault.id
+                 },
+                 actor: "api"
+               )
+
+      assert updated.id == conv.id
+      assert updated.title == "Ada (staging)"
+      assert updated.environment_id == env.id
+      assert updated.vault_id == vault.id
+
+      assert [%{name: "Ada (staging)"}] = Team.list_teammates(user.id)
+
+      assert event =
+               Enum.find(Audit.list_recent_for_user(user.id, 20), &(&1.action == "team.updated"))
+
+      assert event.actor == "api"
+      assert Enum.sort(event.metadata["fields"]) == ["environment_id", "name", "vault_id"]
+    end
+
+    test "a blank value clears the binding; an absent key leaves it alone" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      env = insert_env(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+      insert_teammate_conv(user, agent, environment_id: env.id, vault_id: vault.id, title: "Ada")
+
+      assert {:ok, updated} =
+               Team.update_teammate(user.id, agent.id, %{"environment_id" => ""})
+
+      assert updated.environment_id == nil
+      assert updated.vault_id == vault.id
+      assert updated.title == "Ada"
+    end
+
+    test "records nothing when nothing moves" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      insert_teammate_conv(user, agent, title: "Ada")
+      before = length(Audit.list_recent_for_user(user.id, 50))
+
+      assert {:ok, _} = Team.update_teammate(user.id, agent.id, %{"name" => "Ada"})
+      assert length(Audit.list_recent_for_user(user.id, 50)) == before
+    end
+
+    test "the agent's allowlists gate the environment and the vault" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+
+      agent =
+        insert_agent(user_id: user.id, allowed_environment_ids: [], allowed_vault_ids: [])
+
+      insert_teammate_conv(user, agent)
+
+      assert {:error, :environment_not_allowed} =
+               Team.update_teammate(user.id, agent.id, %{"environment_id" => env.id})
+
+      assert {:error, :vault_not_allowed} =
+               Team.update_teammate(user.id, agent.id, %{"vault_id" => vault.id})
+    end
+
+    test "another tenant's environment or vault is refused" do
+      user = insert_verified_user()
+      other = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      insert_teammate_conv(user, agent)
+
+      assert {:error, :environment_not_allowed} =
+               Team.update_teammate(user.id, agent.id, %{
+                 "environment_id" => insert_env(user_id: other.id).id
+               })
+
+      assert {:error, :vault_not_allowed} =
+               Team.update_teammate(user.id, agent.id, %{
+                 "vault_id" => insert_vault(user_id: other.id).id
+               })
+    end
+
+    test "an agent that is not on the team is not found" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      assert {:error, :not_found} = Team.update_teammate(user.id, agent.id, %{"name" => "x"})
+    end
+  end
+
   describe "addable_options/2" do
     test "the user's environments and vaults, narrowed by the agent's allowlists" do
       user = insert_verified_user()
