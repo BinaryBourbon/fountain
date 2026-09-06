@@ -28,7 +28,7 @@ export class Client {
   constructor({ baseUrl, key, redactor, trace, signal, timeoutMs = 10000, contract }) {
     Object.assign(this, { baseUrl, key, redactor, trace, signal, timeoutMs, contract });
   }
-  async request(method, path, { body, key = this.key, expected, validate = true, signal = this.signal } = {}) {
+  async request(method, path, { body, key = this.key, expected, validate = true, recordBody = true, signal = this.signal } = {}) {
     if (!path.startsWith('/') || path.startsWith('//') || path.includes('..')) throw new Error('Expected a relative API path');
     const started = performance.now();
     const headers = { accept: 'application/json' };
@@ -65,9 +65,9 @@ export class Client {
         if (!/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) throw new Error('Response is not application/json');
       }
       // Collect secrets throughout the body before redacting sibling fields.
-      this.redactor.value(json);
+      if (recordBody) this.redactor.value(json);
       this.trace({ method, path, status: response.status, duration_ms: performance.now() - started,
-        request_id: response.headers.get('x-request-id'), body: this.redactor.value(json) });
+        request_id: response.headers.get('x-request-id'), body: recordBody ? this.redactor.value(json) : undefined, response_bytes: size });
       if (expected !== undefined && ![expected].flat().includes(response.status)) {
         throw new Error(`${method} ${path}: expected ${[expected].flat().join('/')} but received ${response.status}`);
       }

@@ -78,6 +78,29 @@ test('missing credential and unknown profile are setup failures before network t
   assert.equal(f.requests.length, 0);
 });
 
+test('basic requires two explicit credentials and refuses two keys for one tenant before mutation', async t => {
+  const f = await fixture(t);
+  assert.equal((await f.execute({ profiles: ['basic'] })).code, 2);
+  assert.equal(f.requests.length, 0);
+  const same = await f.execute({ profiles: ['basic'], credentials: { primary: 'SUITE_TEST_KEY', secondary: 'SUITE_OTHER_KEY' } },
+    { env: { SUITE_TEST_KEY: 'first-key', SUITE_OTHER_KEY: 'second-key' } });
+  assert.equal(same.code, 1);
+  assert.match(same.report.checks.find(c => c.name === 'basic/second-tenant').error, /distinct/);
+  assert.ok(f.requests.every(([method]) => method === 'GET'));
+});
+
+test('schema documents are summarized without treating property schemas as secret values', async t => {
+  const f = await fixture(t, (req, res) => {
+    if (req.url !== '/api/openapi.json') return false;
+    send(res, 200, { components: { schemas: { Password: { properties: { password: { type: 'string' } } } } } });
+    return true;
+  });
+  await f.client.request('GET', '/api/openapi.json', { recordBody: false });
+  assert.equal(f.trace[0].body, undefined);
+  assert.ok(f.trace[0].response_bytes > 0);
+  assert.equal(f.client.redactor.text('expected string'), 'expected string');
+});
+
 test('required capability disappearance fails; optional omissions carry a reason', async t => {
   const f = await fixture(t);
   const missing = await f.execute({ required_capabilities: { sandbox_providers: ['sprites'] } });

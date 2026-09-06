@@ -6,9 +6,10 @@ import { Contract } from './contract.mjs';
 import { Client, Redactor } from './http.mjs';
 import { atomicJson, Fixtures } from './fixtures.mjs';
 import { probe } from '../profiles/probe.mjs';
+import { basic } from '../profiles/basic.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe };
+export const profiles = { probe, basic };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -33,6 +34,12 @@ export function configFrom(path, env = process.env) {
   config.profiles ??= ['probe'];
   requireThat(Array.isArray(config.profiles) && config.profiles.length > 0 && new Set(config.profiles).size === config.profiles.length &&
     config.profiles.every(name => Object.hasOwn(profiles, name)), 'Unknown, empty, or duplicate profile selection');
+  requireThat(Object.keys(config.credentials).every(k => ['primary', 'secondary'].includes(k)), 'Unknown credential role');
+  if (config.profiles.includes('basic')) {
+    requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Basic profile requires credentials.secondary environment variable');
+    config.secondaryKey = env[config.credentials.secondary];
+    requireThat(typeof config.secondaryKey === 'string' && config.secondaryKey.trim().length > 0, `Missing test credential: ${config.credentials.secondary}`);
+  }
   config.contract = config.contract ? resolve(dirname(path), config.contract) : contractPath;
   const limits = config.limits ?? {};
   requireThat(Object.keys(limits).every(k => ['request_ms', 'run_ms', 'cleanup_ms', 'resources'].includes(k)), 'Unknown limit');
@@ -86,6 +93,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
   try {
     config = configFrom(configPath, env);
     redactor.add(config.key);
+    redactor.add(config.secondaryKey);
     report.target = config.base_url;
     report.profiles = config.profiles;
     report.limits = { ...config.limits, concurrency: 1, inference_turns: 0 };
