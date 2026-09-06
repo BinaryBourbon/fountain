@@ -44,7 +44,7 @@ defmodule Fountain.Agents.ModelCatalog do
   # names the replacement. See `Managoat.ACP.Peer`'s
   # `model_unavailable?/1` and its handler in `ConversationServer`.
   #
-  # Every id below was checked with a real inference call on 2026-08-22, per
+  # The original entries below were checked with a real inference call on 2026-08-22, per
   # provider, on this instance's own keys. That is the only check worth making
   # — see the listing-endpoint note above.
   @catalog %{
@@ -52,7 +52,10 @@ defmodule Fountain.Agents.ModelCatalog do
     # listed, and it is the third most configured model on this instance (9
     # agents, 290 completed turns) — a working model that the picker did not
     # offer, so every one of those agents was typed in from somewhere else.
+    # Fable 5.1 added from Anthropic's published model ID on 2026-09-06:
+    # https://www.anthropic.com/claude/fable (no local inference check).
     "anthropic" => ~w(
+      claude-fable-5-1
       claude-opus-5
       claude-sonnet-5
       claude-opus-4-8
