@@ -1106,7 +1106,8 @@ defmodule Fountain.Conversations.ConversationServer do
              fn -> Managoat.Sandbox.get(handle) end,
              label: "sprite lookup on wake"
            ),
-         {:ok, state} <- broker_prepare(state) do
+         {:ok, state} <- broker_prepare(state),
+         :ok <- Egress.reattach_policy(handle, env, state.conversation_id, state.user_id) do
       Output.publish_stage(state.conversation_id, "reattach", "started", %{
         sprite_name: sandbox.sprite_name,
         node: to_string(node())
@@ -1477,9 +1478,7 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-  # Mint (or re-mint) the conversation's proxy session (`Egress.prepare/4`)
-  # and hold it. A no-op that returns the state untouched when the
-  # conversation is not brokered.
+  # Keep the minted proxy session in server state; unbrokered state is unchanged.
   defp broker_prepare(state) do
     if Egress.brokered?(state.user_id) do
       case Egress.prepare(state.conversation_id, state.brokered, state.broker_bindings,
