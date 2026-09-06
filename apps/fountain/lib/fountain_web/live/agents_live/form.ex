@@ -176,9 +176,9 @@ defmodule FountainWeb.AgentsLive.Form do
   end
 
   # The active connections the form can offer, only where connections exist
-  # (accounts the broker is on for). Elsewhere the select is not rendered.
+  # (accounts with the Connections flag and broker on). Elsewhere the select is not rendered.
   defp connections_for(user_id) do
-    if Fountain.Broker.enabled_for?(user_id),
+    if Fountain.Connections.enabled_for?(user_id),
       do: Fountain.Connections.active_connections(user_id),
       else: []
   end

@@ -10,7 +10,7 @@ defmodule FountainWeb.ConnectionControllerTest do
   setup %{conn: conn} do
     user = insert_verified_user()
     {:ok, {_key, raw}} = Fountain.Accounts.create_api_key(user.id, "t")
-    enable_broker_for([user.id])
+    enable_connections_for([user.id])
 
     conn =
       conn
@@ -36,7 +36,7 @@ defmodule FountainWeb.ConnectionControllerTest do
   } do
     c = insert_connection(user, account_email: "me@example.com", access_token: "never-shown-at")
     other = insert_verified_user()
-    enable_broker_for([user.id, other.id])
+    enable_connections_for([user.id, other.id])
     insert_connection(other, account_email: "them@example.com")
 
     body = conn |> get("/api/connections") |> json_response(200)

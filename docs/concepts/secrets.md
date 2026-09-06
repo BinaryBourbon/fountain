@@ -154,7 +154,12 @@ redaction that a new caller will one day forget.
 
 ## Bindings, when the broker is on
 
-!!! note "Needs the credential broker"
+!!! note "Connections"
+
+    Connections and credential binding management also need the `connections`
+    feature flag. On your own instance, add `connections` to `FEATURE_FLAGS_ON`
+    after configuring the broker and provider apps. Hosted accounts are enrolled
+    separately; see [feature status](../reference/feature-status.md).
     On the hosted platform the broker is on for every account. Without it, a
     secret enters the sandbox in the clear, and the bindings page and routes
     are absent. On your own instance, read

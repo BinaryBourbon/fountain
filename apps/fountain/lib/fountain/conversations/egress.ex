@@ -285,6 +285,24 @@ defmodule Fountain.Conversations.Egress do
   def apply_policy(handle, _env, conv_id, true),
     do: Provisioning.apply_broker_floor(handle, conv_id)
 
+  @doc """
+  Reapply policy before an existing machine receives credentials or resumes.
+
+  A machine may predate its tenant's broker enrollment. Policy failures are
+  retryable and never establish that its disk is gone. Removing brokering
+  restores a limited environment; unrestricted remains a no-op because the
+  sandbox abstraction has no policy-reset operation.
+  """
+  @spec reattach_policy(Managoat.Sandbox.Handle.t(), map() | nil, String.t(), String.t()) ::
+          :ok | {:error, term()}
+  def reattach_policy(handle, env, conv_id, user_id) do
+    brokered? = brokered?(user_id)
+
+    with :ok <- Provisioning.check_broker_support(brokered?, handle.provider, env, conv_id) do
+      apply_policy(handle, env, conv_id, brokered?)
+    end
+  end
+
   defp publish_stage(conv_id, stage, status, meta) do
     Fountain.Conversations.publish_stage(conv_id, stage, status, meta)
   end

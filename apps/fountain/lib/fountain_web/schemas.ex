@@ -3231,9 +3231,14 @@ defmodule FountainWeb.Schemas do
           description:
             "Whether this account's conversations run behind the egress credential " <>
               "broker (ADR 0019): secrets with bindings stay at the broker, a limited " <>
-              "environment is enforced there, and /api/secret-bindings and " <>
-              "/api/conversations/:id/egress have content. Read-only; an operator " <>
+              "environment is enforced there, and /api/conversations/:id/egress " <>
+              "has content. Connections availability is separate. Read-only; an operator " <>
               "sets it."
+        },
+        connections_enabled: %Schema{
+          type: :boolean,
+          description:
+            "Whether Connections and credential binding management are enabled for this account."
         },
         expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },

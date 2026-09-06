@@ -13,14 +13,14 @@ defmodule FountainWeb.ConnectionProviderController do
       POST   /api/connection-providers/:id/discover  — run MCP discovery again
 
   Every route answers 404 `connections_not_enabled` for an account the
-  broker is not on for, like connections themselves. The client secret is
+  broker or Connections flag is not on for, like connections themselves. The client secret is
   write-only.
   """
 
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.{Broker, Connections}
+  alias Fountain.Connections
   alias Fountain.Connections.Provider
   alias FountainWeb.Audited
   alias FountainWeb.Schemas
@@ -221,7 +221,7 @@ defmodule FountainWeb.ConnectionProviderController do
   end
 
   defp require_connections(conn, _opts) do
-    if Broker.enabled_for?(conn.assigns.current_user.id) do
+    if Fountain.Connections.enabled_for?(conn.assigns.current_user.id) do
       conn
     else
       conn

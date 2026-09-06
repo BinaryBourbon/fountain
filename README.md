@@ -4,6 +4,11 @@ Use Claude Code, Codex and Gemini CLI from a chat app, with a real computer
 behind each conversation. Watch the agent work, steer it, and come back to
 the same files.
 
+<a href="https://fountain-conversations.demo.managoat.com/"><img src="apps/fountain/priv/static/images/apps/conversations.jpg" alt="Conversations showing a cart task, tool calls, an expanded code diff, and tests in progress" width="620"></a>
+<a href="https://fountain-workbench.demo.managoat.com/"><img src="apps/fountain/priv/static/images/apps/workbench-mobile.jpg" alt="Workbench on a phone, with a cart work item assigned to Builder" width="180"></a>
+
+*Real app screens with a seeded local example.*
+
 [Open Conversations](https://fountain-conversations.demo.managoat.com/) ·
 [Build with the API](docs/quickstart.md) · [Self-host](docs/self-hosting.md)
 
@@ -13,9 +18,17 @@ Choose a chat, a team of agents, or a workbench for a shared project.
 
 | App | What it is | |
 |---|---|---|
-| [**Conversations**](https://github.com/managoat/fountain-conversations) | ChatGPT, except the model has a real computer and you can watch it use one: start a run, follow it turn by turn, steer it, read the raw log. | [Open it](https://fountain-conversations.demo.managoat.com/) |
-| [**Team**](https://github.com/managoat/fountain-team) | A group chat whose contacts are agents you made, one click each: roster on the left, thread on the right, routines on a schedule. | [Open it](https://fountain-team.demo.managoat.com/) |
-| [**Workbench**](https://github.com/managoat/fountain-workbench) | Multiplayer engineering: projects over an environment and a vault, work items in them, and teammates you put on a work item by typing. | [Open it](https://fountain-workbench.demo.managoat.com) |
+| [**Conversations**](https://github.com/managoat/demos/tree/main/apps/fountain-conversations) | ChatGPT, except the model has a real computer and you can watch it use one: start a run, follow it turn by turn, steer it, read the raw log. | [Open it](https://fountain-conversations.demo.managoat.com/) |
+| [**Team**](https://github.com/managoat/demos/tree/main/apps/fountain-team) | A group chat whose contacts are agents you made, one click each: roster on the left, thread on the right, routines on a schedule. | [Open it](https://fountain-team.demo.managoat.com/) |
+| [**Workbench**](https://github.com/managoat/demos/tree/main/apps/fountain-workbench) | Multiplayer engineering: projects over an environment and a vault, work items in them, and teammates you put on a work item by typing. | [Open it](https://fountain-workbench.demo.managoat.com) |
+
+### Team
+
+<img src="apps/fountain/priv/static/images/apps/team.jpg" alt="Team with Builder, Reviewer, and Researcher in the roster and Builder’s thread open" width="800">
+
+### Workbench
+
+<img src="apps/fountain/priv/static/images/apps/workbench.jpg" alt="Workbench with the storefront project, acceptance criteria, and Builder assigned to the cart work item" width="800">
 
 ## What runs underneath
 

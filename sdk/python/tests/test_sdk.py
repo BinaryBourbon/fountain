@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -45,6 +46,9 @@ class State:
         self.stream_failures = 0
         self.stream_failure_status = 502
         self.hang_stream = False
+        self.hang_stream_prefix = False
+        self.stream_opened = threading.Event()
+        self.release_stream = threading.Event()
 
     def event(self, **values):
         item = {"id": self.next_event, **values}
@@ -179,7 +183,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.end_headers()
-                time.sleep(0.3)
+                if self.state.hang_stream_prefix:
+                    self.wfile.write(_frame(self.state.events[0]))
+                    self.wfile.flush()
+                self.state.stream_opened.set()
+                self.state.release_stream.wait(15)
                 return
             after = int(self.headers.get("Last-Event-ID", "0"))
             rows = [event for event in self.state.events if event["id"] > after]
@@ -229,6 +237,7 @@ class FakeFountain:
         return self
 
     def __exit__(self, *args):
+        self.state.release_stream.set()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
@@ -472,6 +481,34 @@ class ClientTests(unittest.TestCase):
             run.result()
             self.assertEqual(calls, [run])
             self.assertEqual(run._on_finish, [])
+
+    def test_cancel_interrupts_a_silent_stream_without_a_run_deadline(self):
+        with FakeFountain() as fake:
+            fake.state.hang_stream = True
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            run = client.run("wait", agent="reposage")
+            self.assertTrue(fake.state.stream_opened.wait(2))
+            requests_before = len(fake.state.requests)
+            run.cancel()
+            result = run.result(timeout=7)
+            self.assertEqual(result.conversation_id, "c-1")
+            self.assertFalse(fake.state.release_stream.is_set())
+            self.assertEqual(len(fake.state.requests), requests_before)
+
+    def test_an_idle_read_timeout_reconnects_and_can_complete(self):
+        with FakeFountain() as fake, patch("fountain.sse.STREAM_READ_TIMEOUT", 0.1):
+            fake.state.hang_stream = True
+            fake.state.hang_stream_prefix = True
+            client = Fountain(base_url=fake.base_url, api_key="fk_test")
+            run = client.run("wait", agent="reposage")
+            self.assertTrue(fake.state.stream_opened.wait(2))
+            # Leave this connection silent. Only a reconnect can read the turn.
+            fake.state.hang_stream = False
+            result = run.result(timeout=3)
+            self.assertEqual(result.text, "Found it.")
+            self.assertEqual(fake.state.stream_count, 2)
+            streams = [r for r in fake.state.requests if r[1].endswith("/stream")]
+            self.assertEqual(streams[1][4]["Last-Event-Id"], "1")
 
     def test_run_timeout_leaves_the_agent_running(self):
         with FakeFountain() as fake:
