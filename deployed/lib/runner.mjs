@@ -11,6 +11,8 @@ import { probe } from '../profiles/probe.mjs';
 import { basic } from '../profiles/basic.mjs';
 import { execution } from '../profiles/execution.mjs';
 import { deterministic } from '../profiles/deterministic.mjs';
+import { browser } from '../profiles/browser.mjs';
+import { validateBrowser } from './browser-config.mjs';
 import { recovery } from '../profiles/recovery.mjs';
 import { validateRecovery, restoreRecoveryControls } from './recovery.mjs';
 import { schedules } from '../profiles/schedules.mjs';
@@ -23,7 +25,7 @@ import { secrets } from '../profiles/secrets.mjs';
 import { receiverOrigins, ReceiverSession } from './receiver.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe, basic, execution, streaming: execution, secrets, mcp, webhooks, schedules, deterministic, recovery };
+export const profiles = { probe, basic, execution, streaming: execution, secrets, mcp, webhooks, schedules, deterministic, recovery, browser };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -35,7 +37,7 @@ function positive(value, fallback, max) {
 
 export function configFrom(path, env = process.env) {
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'mcp', 'webhooks', 'schedules', 'fixture', 'recovery'];
+  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'mcp', 'webhooks', 'schedules', 'fixture', 'recovery', 'browser'];
   requireThat(Object.keys(config).every(key => allowed.includes(key)), 'Unknown configuration field');
   const url = new URL(config.base_url);
   requireThat(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash,
@@ -119,6 +121,7 @@ export function configFrom(path, env = process.env) {
     request_ms: positive(limits.request_ms, 10000, 120000), run_ms: positive(limits.run_ms, 120000, 3600000),
     cleanup_ms: positive(limits.cleanup_ms, 30000, 300000), resources: positive(limits.resources, 20, 100),
   };
+  if (config.profiles.includes('browser')) validateBrowser(config, env);
   if (config.profiles.includes('secrets')) {
     requireThat(config.limits.run_ms <= 600000, 'Secrets run must fit within receiver retention');
     requireThat(config.limits.resources >= 5, 'Secrets profile requires a five-resource budget');
@@ -197,9 +200,13 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     if (config.mcp) redactor.add(env[config.mcp.admin_credential]);
     if (config.webhooks) redactor.add(env[config.webhooks.admin_credential]);
     if (config.recovery) redactor.add(env[config.recovery.relay.admin_credential]);
+    if (config.browser) {
+      redactor.add(env[config.browser.email]); redactor.add(env[config.browser.password]);
+      if (config.browser.credential_setup) redactor.add(env[config.browser.credential_setup.value]?.trim());
+    }
     report.target = config.base_url;
     report.profiles = config.profiles;
-    report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
+    report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? config.browser?.conversations?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
     const contract = new Contract(config.contract);
     report.contract_sha256 = contract.sha256;
     const timeout = AbortSignal.timeout(config.limits.run_ms);
@@ -296,6 +303,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     if (fixtures) {
       const failures = await fixtures.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
       report.cleanup = { failures, remaining: fixtures.remainingCount() };
+      if (fixtures.manifest.browser_credential) report.cleanup.provider_setup = { ...fixtures.manifest.browser_credential };
       if (fixtures.manifest.schedule) report.cleanup.schedule = { state: fixtures.manifest.schedule.state, deleted: fixtures.manifest.schedule.deleted, conversations: fixtures.manifest.schedule.conversations, remaining_sandbox_ids: fixtures.manifest.schedule.remaining_sandbox_ids ?? [] };
       report.prompt_attempts = fixtures.manifest.inference_attempts ?? 0;
       report.inference_attempts = config.profiles.some(name => ['deterministic', 'recovery'].includes(name)) ? 0 : report.prompt_attempts;

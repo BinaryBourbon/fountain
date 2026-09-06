@@ -232,6 +232,14 @@ request. Do not inject database rows, import server factories, or substitute
 an in-process Fountain for a deployed verdict. Existing SDK conformance
 remains separate and runnable with its existing commands.
 
+## Console browser profile
+
+The independent [console browser profile](browser/README.md) covers sign-in,
+agent editing, API key lifecycle and credential-form validation. Its optional
+pinned Conversations journey submits two artifact prompts through the app.
+Remaining live verification, credential setup and first-account bootstrap work
+is tracked in #1618.
+
 ## Provider and runtime matrix
 
 `deployed/matrix.mjs` applies the same execution scenario to an explicit,
