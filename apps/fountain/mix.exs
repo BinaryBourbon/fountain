@@ -54,11 +54,7 @@ defmodule Fountain.MixProject do
       # reaches Fountain only when someone bumps the pin here, on purpose.
       # A future library starts as {:managoat_<name>, in_umbrella: true}
       # again; umbrella_layout_test.exs checks it is listed here.
-      # #1658: pin the tested fix until its 0.2.1 Hex release is published.
-      {:managoat_acp,
-       github: "managoat/managoat_acp",
-       ref: "6b5cab047e3e5e62eba3dac1bde417e64d2e7e8d",
-       override: true},
+      {:managoat_acp, "~> 0.2.1"},
       {:managoat_broker, "~> 0.11.0"},
       {:managoat_docs, "~> 0.1.0"},
       {:managoat_mcp_auth, "~> 0.1.0"},
