@@ -27,6 +27,7 @@ defmodule FountainWeb.AuthMeControllerTest do
                "id" => id,
                "email" => email,
                "role" => role,
+               "expires_at" => nil,
                "comped" => comped
              } = json_response(conn, 200)
 
@@ -34,6 +35,24 @@ defmodule FountainWeb.AuthMeControllerTest do
       assert email == user.email
       assert role == user.role
       assert comped == false
+    end
+
+    test "reports the presented key's expiry, not another key on the account", %{conn: conn} do
+      user = insert_verified_user()
+      expires_at = DateTime.utc_now() |> DateTime.add(3600) |> DateTime.truncate(:second)
+      {_permanent, permanent_key} = insert_api_key(user)
+      {expiring, raw_key} = insert_api_key(user, nil, expires_at: expires_at)
+
+      body = conn |> authed_with_key(raw_key) |> get("/api/auth/me") |> json_response(200)
+      assert body["expires_at"] == DateTime.to_iso8601(expiring.expires_at)
+
+      permanent =
+        build_conn()
+        |> authed_with_key(permanent_key)
+        |> get("/api/auth/me")
+        |> json_response(200)
+
+      assert Map.fetch!(permanent, "expires_at") == nil
     end
 
     test "carries brokered, false off the broker ratchet and true on it", %{conn: conn} do

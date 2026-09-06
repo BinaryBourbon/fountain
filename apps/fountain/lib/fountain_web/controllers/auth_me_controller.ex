@@ -30,6 +30,7 @@ defmodule FountainWeb.AuthMeController do
     json(conn, %{
       id: user.id,
       email: user.email,
+      expires_at: conn.assigns.current_api_key.expires_at,
       role: user.role,
       email_verified: not is_nil(user.email_verified_at),
       # Read side of #525: a client that just bootstrapped an account can see

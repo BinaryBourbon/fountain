@@ -461,6 +461,12 @@ a `200`, with one result for each resource. Each result carries an `action` of
 `errors`. Each result also carries the outcome for each secret key. Fountain
 never echoes a secret value back.
 
+An unknown `spec` key gives that resource an `error` result, before Fountain
+writes its attributes or secrets. Use `networking_type` and
+`networking_config` for environment network restrictions; `network_policy`
+is not a supported field. Ownership keys (`id`, `user_id`, `created_by`)
+remain ignored: a manifest cannot change the account that owns a resource.
+
 ## Conversations
 
 A conversation takes many turns. Create one with a first prompt, then prompt
