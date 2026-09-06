@@ -1330,7 +1330,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp attempt_session_attach(state, running_turn, session, matched_by) do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    acp? = Managoat.Runtimes.ACP.enabled?(conv.runtime)
+    acp? = Fountain.RuntimeDispatch.acp_enabled?(conv.runtime)
 
     case Managoat.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
       {:ok, idle_command} when acp? and is_nil(running_turn.acp_prompt_id) ->
@@ -2358,7 +2358,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # Keyed on the conversation's runtime, not the agent: a conversation
     # outlives its agent (deletion nilifies agent_id), and for a supported
     # runtime the legacy spawn path no longer exists to fall back to.
-    acp? = Managoat.Runtimes.ACP.enabled?(conv.runtime)
+    acp? = Fountain.RuntimeDispatch.acp_enabled?(conv.runtime)
 
     # The connection outlives the turn (#817). If a peer from an earlier turn
     # is still idle on this machine, this turn rides it — no spawn, no

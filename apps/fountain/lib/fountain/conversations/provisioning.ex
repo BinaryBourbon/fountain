@@ -817,8 +817,8 @@ defmodule Fountain.Conversations.Provisioning do
   # install would fail in a way that reads as a protocol bug. Keyed on the
   # conversation's runtime, matching the spawn decision in kick_turn/4.
   def prepare_acp_adapter(handle, runtime, sprite_env) do
-    if Managoat.Runtimes.ACP.enabled?(runtime) do
-      Managoat.Runtimes.ACP.install(handle, runtime, sprite_env)
+    if Fountain.RuntimeDispatch.acp_enabled?(runtime) do
+      Fountain.RuntimeDispatch.install(handle, runtime, sprite_env)
     else
       :ok
     end

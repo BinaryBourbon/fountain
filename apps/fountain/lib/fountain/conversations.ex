@@ -1886,7 +1886,7 @@ defmodule Fountain.Conversations do
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
-         {:ok, runtime_module} <- Managoat.Runtimes.for_runtime(agent.runtime),
+         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
@@ -2397,7 +2397,7 @@ defmodule Fountain.Conversations do
        )
        when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
-         {:ok, _runtime_module} <- Managoat.Runtimes.for_runtime(agent.runtime),
+         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
@@ -2506,7 +2506,7 @@ defmodule Fountain.Conversations do
   # `ConversationServer` as any prompt is.
   defp check_attach_capacity(%Sandbox{} = sandbox, %Agents.Agent{runtime: runtime}, prompt)
        when is_binary(prompt) and prompt != "" do
-    capacity = Managoat.Runtimes.ACP.concurrency(runtime)
+    capacity = Fountain.RuntimeDispatch.concurrency(runtime)
 
     if _unsafe_sandbox_at_capacity?(sandbox.id, nil, capacity),
       do: {:error, :sandbox_at_capacity},
@@ -2806,7 +2806,7 @@ defmodule Fountain.Conversations do
   # rather than accepted-and-ignored — see `ACP.asks_permission?/1`, measured.
   defp check_runtime_asks(policy, agent) do
     if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
-         Managoat.Runtimes.ACP.asks_permission?(agent.runtime) do
+         Fountain.RuntimeDispatch.asks_permission?(agent.runtime) do
       :ok
     else
       {:error, {:permission_policy_unenforceable, agent.runtime}}
@@ -2859,7 +2859,7 @@ defmodule Fountain.Conversations do
          :ok <- assert_resumable(conv),
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
-         {:ok, runtime_module} <- Managoat.Runtimes.for_runtime(conv.runtime) do
+         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
       case maybe_reuse_sandbox(conv) do
         {:reuse, sandbox_id} ->
           # Reuse provisions nothing, so the fresh-path gates below never ran
