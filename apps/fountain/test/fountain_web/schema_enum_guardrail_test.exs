@@ -147,6 +147,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # Enums with no domain list behind them. Each entry needs a reason: the
   # point of the list is that adding to it is a deliberate act.
   @api_local %{
+    {FountainWeb.Schemas.Turn, "model_selection.status"} =>
+      "ACP selection outcomes built per report in TurnMachine",
+    {FountainWeb.Schemas.Turn, "model_selection.source"} =>
+      "ACP peer evidence: a runtime model field or a setter acknowledgement",
     # `client_source` is nullable on the wire (no client yet), so the enum
     # carries a nil the domain list does not.
     {FountainWeb.Schemas.ConnectionProvider, "client_source"} =>

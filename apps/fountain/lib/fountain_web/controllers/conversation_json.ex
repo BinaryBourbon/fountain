@@ -186,6 +186,7 @@ defmodule FountainWeb.ConversationJSON do
       image_count: length(t.images || []),
       # The end-of-turn figure as the runtime reported it (#827); null when
       # it reported none or the turn predates the column.
+      model_selection: t.model_selection,
       usage: t.usage && usage_data(t.usage)
     }
   end

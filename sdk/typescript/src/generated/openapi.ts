@@ -4701,6 +4701,16 @@ export interface components {
             image_count?: number;
             /** Format: date-time */
             inserted_at?: string;
+            /** @description ACP model selection evidence; null for turns without a selection report. */
+            model_selection?: {
+                effective_model?: string | null;
+                error?: string;
+                requested_model?: string | null;
+                /** @enum {string|null} */
+                source?: "runtime" | "selection_ack" | null;
+                /** @enum {string} */
+                status?: "selected" | "failed";
+            } | null;
             /**
              * @description Who opened the turn: `user` for a prompt somebody sent, `autonomous` for a turn the server opened for a background cycle the agent ran after its prompt was answered (#817).
              * @enum {string}

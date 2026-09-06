@@ -174,6 +174,10 @@ upgrade, is in
 
 ### Fixed
 
+- Stop ACP turns before inference when an explicit model is rejected or cannot
+  be selected. Apply saved model changes to reused sessions and expose per-turn
+  model selection evidence in the API and stream.
+
 - The CLI displays published code changes with their URL, and renders unknown system notices as a dim line.
 - `/api/auth/me` now returns the presented API key's `expires_at`, or null for a key without an expiry, as its schema declares.
 
