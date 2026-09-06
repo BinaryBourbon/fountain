@@ -203,7 +203,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     if (config.browser) { redactor.add(env[config.browser.email]); redactor.add(env[config.browser.password]); }
     report.target = config.base_url;
     report.profiles = config.profiles;
-    report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
+    report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? config.browser?.conversations?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
     const contract = new Contract(config.contract);
     report.contract_sha256 = contract.sha256;
     const timeout = AbortSignal.timeout(config.limits.run_ms);

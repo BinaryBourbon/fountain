@@ -47,11 +47,12 @@ export function turnMetadata(event) {
   try { return JSON.parse(event.data); } catch { throw new Error('Turn stage metadata is not JSON'); }
 }
 
-export async function performTurn(ctx, conversation, prompt, number, after, { verifyStreaming = false } = {}) {
+export async function performTurn(ctx, conversation, prompt, number, after, { verifyStreaming = false, submit } = {}) {
   const startedMs = performance.now();
   const signal = phaseSignal(ctx.signal, ctx.config.execution.turn_ms);
   ctx.fixtures.reserveTurn(conversation.id, ctx.config.execution.max_turns);
-  const queued = await ctx.client.request('POST', `/api/conversations/${conversation.id}/prompts`, { body: { prompt }, expected: 200, signal });
+  const queued = submit ? await submit({ prompt, signal }) :
+    await ctx.client.request('POST', `/api/conversations/${conversation.id}/prompts`, { body: { prompt }, expected: 200, signal });
   ensure(queued.body.status === 'queued', 'Prompt was not acknowledged as queued');
   let startedId;
   const isDone = event => {

@@ -4,7 +4,7 @@ import { ensure } from '../lib/execution.mjs';
 // Called with a fresh browser context by the browser driver. All writes go
 // through visible console forms. Public API reads independently establish
 // identity, persistence and revocation; they never create the UI fixtures.
-export async function browserConsole(ctx, page, evidence) {
+export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
   const { config, fixtures, client, env, report, redactor } = ctx;
   const settings = config.browser;
   const email = env[settings.email];
@@ -29,6 +29,7 @@ export async function browserConsole(ctx, page, evidence) {
     await page.goto(`${config.base_url}/agents/new`);
     await page.getByLabel('Name', { exact: true }).fill(intent.name);
     await page.getByLabel('Description', { exact: true }).fill('Dedicated deployed browser fixture');
+    await page.getByLabel('System prompt', { exact: true }).fill('Perform only the requested small file task. Use a shell tool. Do not access the network or start background work.');
     await page.locator('select[name="agent[runtime]"]').selectOption(settings.agent.runtime);
     await page.getByLabel('Model', { exact: true }).fill(settings.agent.model);
     const provider = page.locator('select[name="agent[sandbox_provider]"]');
@@ -69,6 +70,7 @@ export async function browserConsole(ctx, page, evidence) {
     const me = await client.request('GET', '/api/auth/me', { key, expected: 200, recordBody: false });
     ensure(me.body.id === report.owner_id, 'UI key authenticated as another account');
     await page.getByRole('button', { name: "I've copied it, dismiss", exact: true }).click();
+    if (settings.conversations) await handoff(agent, key);
     const row = page.getByRole('row').filter({ hasText: intent.name });
     page.once('dialog', dialog => dialog.accept());
     await row.getByRole('button', { name: 'Revoke', exact: true }).click();

@@ -1,8 +1,10 @@
 import { ensure } from './execution.mjs';
+import { validateAppLock, appUrl } from './browser-app-lock.mjs';
 
 const variable = /^[A-Z][A-Z0-9_]*$/;
 export function validateBrowser(config, env) {
   const b = config.browser;
+  ensure(new URL(config.base_url).pathname === '/', 'Browser console target must be the instance origin without a path prefix');
   ensure(config.profiles.length === 1 && !config.execution && !config.fixture, 'Run the browser console profile independently');
   ensure(b && Object.keys(b).every(k => ['email', 'password', 'agent', 'credential_provider', 'step_ms', 'conversations'].includes(k)), 'Expected explicit browser configuration');
   for (const name of ['email', 'password']) {
@@ -17,6 +19,20 @@ export function validateBrowser(config, env) {
   ensure(['anthropic_api_key', 'claude_code_oauth_token', 'openai_api_key', 'gemini_api_key'].includes(b.credential_provider), 'Select a credential setup provider');
   b.step_ms ??= 30000;
   ensure(Number.isSafeInteger(b.step_ms) && b.step_ms >= 1000 && b.step_ms <= 60000, 'Browser step_ms must be 1000-60000');
-  ensure(b.conversations === null, 'This console profile requires conversations:null; app handoff coverage is not implemented yet');
+  ensure(b.conversations === null || (b.conversations && typeof b.conversations === 'object'), 'Declare conversations:null or an explicit pinned app journey');
+  if (b.conversations) {
+    const app = b.conversations;
+    ensure(Object.keys(app).every(k => ['lock', 'auth', 'oauth', 'max_turns', 'provision_ms', 'turn_ms'].includes(k)), 'Unknown Conversations app setting');
+    validateAppLock(app.lock);
+    ensure(appUrl(app.lock.url).origin !== new URL(config.base_url).origin, 'Conversations app must use a separate origin to verify CORS');
+    ensure(app.auth === 'ui_created_api_key' && app.oauth === 'deny', 'This adapter supports UI-created API key sign-in and OAuth denial; successful OAuth grants are not verified');
+    ensure(app.max_turns === 2, 'Browser artifact journey requires an explicit two-prompt budget');
+    for (const key of ['provision_ms', 'turn_ms']) {
+      app[key] ??= key === 'provision_ms' ? 120000 : 90000;
+      ensure(Number.isSafeInteger(app[key]) && app[key] >= 1000 && app[key] <= 300000, `Browser ${key} must be 1000-300000`);
+    }
+    ensure(config.limits.resources >= 4 && config.limits.run_ms >= app.provision_ms + 2 * app.turn_ms + 6 * b.step_ms,
+      'App journey needs four resources and time for provision, two turns and sign-in');
+  }
   ensure(config.limits.run_ms <= 600000 && config.limits.resources >= 2, 'Browser console requires a ten-minute bound and two-resource budget');
 }

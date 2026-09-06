@@ -42,7 +42,7 @@ test('UI fixture intent survives a lost create reply and refuses ambiguous owner
   assert.throws(() => reserveBrowserFixture(fixtures, 'conversation'), /Unsupported/);
 });
 
-test('browser profile is explicit, bounded, credential-referenced and rejects unimplemented app coverage', () => {
+test('browser profile is explicit, bounded, credential-referenced and rejects an unpinned app', () => {
   const dir = mkdtempSync(join(tmpdir(), 'browser-config-'));
   const example = JSON.parse(readFileSync(new URL('../browser.example.json', import.meta.url), 'utf8'));
   const env = { FOUNTAIN_SUITE_KEY: 'test-key', FOUNTAIN_BROWSER_EMAIL: 'dedicated@example.test', FOUNTAIN_BROWSER_PASSWORD: 'private-password' };
@@ -56,7 +56,7 @@ test('browser profile is explicit, bounded, credential-referenced and rejects un
     assert.throws(() => parse({ profiles: ['browser', 'probe'] }), /independently/);
     assert.throws(() => parse({}, { ...env, DEBUG: 'pw:api' }), /trace environment/);
     assert.throws(() => parse({}, { ...env, FOUNTAIN_BROWSER_PASSWORD: '' }), /populated/);
-    assert.throws(() => parse({ browser: { ...example.browser, conversations: { url: 'https://app.example.test' } } }), /not implemented/);
+    assert.throws(() => parse({ browser: { ...example.browser, conversations: { url: 'https://app.example.test' } } }), /Unknown Conversations/);
     assert.throws(() => parse({ browser: { ...example.browser, step_ms: 60001 } }), /step_ms/);
     assert.throws(() => parse({ limits: { run_ms: 600001, resources: 2 } }), /ten-minute/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
