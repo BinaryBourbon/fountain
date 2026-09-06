@@ -38,23 +38,9 @@ defmodule FountainWeb.MarketingController do
     end
   end
 
-  # The one page on the site that set no `:page_title`, so `<title>` and both
-  # card titles were the bare brand name — the only word a reader who has
-  # never heard it learns nothing from. Every other page here carries
-  # "<what it is> · <brand>" and the homepage now does too.
-  #
-  # It is the slot a category label is for. The h1 makes a claim ("A
-  # conversational API to a computer"), which is the right job for a headline
-  # and the wrong one for a tab, a bookmark and a search result, where a
-  # reader is deciding whether this is even the kind of thing they want.
-  # standards/voice-and-style.md is explicit that the audience has no prior
-  # model for the category, and they arrive searching for how to run a coding
-  # agent on a server, not for a phrase from the hero.
-  #
-  # Only on the marketing site. An instance keeps the bare brand: it is a
-  # front door, not the project, and a title selling a category would be this
-  # module's whole objection (#517) in the `<head>`.
-  @site_title "Serverless sandboxes for coding agents"
+  # Search results name the runtimes and the API. The visible homepage leads
+  # with the apps; an ordinary self-hosted instance keeps its own front door.
+  @site_title "Claude Code, Codex and Gemini CLI behind one API"
 
   def home(conn, _params) do
     if Fountain.Marketing.site?() do

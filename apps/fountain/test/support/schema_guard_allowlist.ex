@@ -53,17 +53,12 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   value on purpose that the domain no longer accepts (a conversation whose
   runtime is `retired-runtime`, exercising the retired-runtime path), so the
   rendered enum is out of vocabulary because the test asked for that.
-
-  `:openai_error_shape` — the OpenAI-compatible gateway renders `error` as a
-  string on a 409 while `OpenAIError.error` declares an object. Narrow, and its
-  clients are OpenAI SDKs rather than ours (#1433).
   """
 
   @reasons %{
     plug_status: "a status a pipeline plug returns that the operation does not declare (#1432)",
     mixed_422_shapes: "declares ChangesetError for 422 but can also refuse with a code (#1444)",
-    test_fixture_vocabulary: "the fixture inserts an out-of-vocabulary value on purpose",
-    openai_error_shape: "the OpenAI gateway renders `error` as a string, not an object (#1433)"
+    test_fixture_vocabulary: "the fixture inserts an out-of-vocabulary value on purpose"
   }
 
   # The list may shrink, never grow, without a deliberate edit here and in the
@@ -143,10 +138,7 @@ defmodule FountainWeb.SchemaGuardAllowlist do
     {"POST /api/conversations", 422} => :mixed_422_shapes,
 
     # ── test_fixture_vocabulary (1) ─────────────────────────────
-    {"GET /api/conversations/{id}", 200} => :test_fixture_vocabulary,
-
-    # ── openai_error_shape (1) ─────────────────────────────
-    {"POST /v1/chat/completions", 409} => :openai_error_shape
+    {"GET /api/conversations/{id}", 200} => :test_fixture_vocabulary
   }
 
   @doc "Is this `{operation, status}` a known, recorded disagreement?"

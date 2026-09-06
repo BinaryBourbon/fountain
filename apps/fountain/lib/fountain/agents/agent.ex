@@ -63,9 +63,9 @@ defmodule Fountain.Agents.Agent do
   @doc "The sandbox modes a launch may choose (ADR 0023)."
   def sandbox_modes, do: @sandbox_modes
 
-  def changeset(agent, attrs) do
-    agent
-    |> cast(attrs, [
+  @doc false
+  def cast_fields,
+    do: [
       :name,
       :description,
       :system,
@@ -81,7 +81,11 @@ defmodule Fountain.Agents.Agent do
       :permission_policy,
       :user_id,
       :environment_id
-    ])
+    ]
+
+  def changeset(agent, attrs) do
+    agent
+    |> cast(attrs, cast_fields())
     |> validate_required([:name, :model, :runtime])
     |> validate_inclusion(:runtime, @runtimes)
     |> validate_inclusion(:sandbox_mode, @sandbox_modes)

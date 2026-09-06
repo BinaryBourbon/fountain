@@ -98,9 +98,9 @@ is the only place `docs/` is published.
 
 ### If a test went red and then green
 
-Do not re-run it and move on. A test that passes on the second try with
-nothing changed is a flake, and an unfiled one costs its next finder the whole
-investigation over again. File it:
+Do not re-run it and move on. Keep the failed run's evidence and compare the
+commits, workflow conditions, runner environment and external dependencies.
+Record unexplained failures with what you know. File confirmed flakes:
 
 ```bash
 gh issue create --label flake --label area:testing --title "Flake: <what raced>"

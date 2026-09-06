@@ -687,6 +687,29 @@ defmodule FountainWeb.OpenAIController do
     )
   end
 
+  defp respond_error(conn, {:error, :no_runner_online}) do
+    openai_error(
+      conn,
+      409,
+      "this agent runs on a self-hosted runner and none of yours is connected — " <>
+        "start `fountain runner` on the machine and try again",
+      "conflict_error",
+      "no_runner_online"
+    )
+  end
+
+  defp respond_error(conn, {:error, :sandbox_at_capacity}) do
+    conn
+    |> put_resp_header("retry-after", "5")
+    |> openai_error(
+      409,
+      "another conversation is running a turn on this sandbox; " <>
+        "wait for it to finish or interrupt it, then send again",
+      "conflict_error",
+      "sandbox_at_capacity"
+    )
+  end
+
   # The thread owes tool results (#1202). Same shape as busy: the client
   # knows what to send, and it is not a prompt.
   defp respond_error(conn, {:error, {:tool_calls_pending, ids}}) do

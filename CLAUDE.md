@@ -510,10 +510,11 @@ Mimic is available. Prefer integration tests through real changesets over heavy 
 
 ### Flaky tests
 
-A test that fails and then passes with nothing changed — a CI re-run, a
-different seed, a second local run — is a finding, not weather. **File it.**
-Re-running until green is how a flake survives: the next person pays the same
-twenty minutes over again with none of what you already worked out.
+A test that fails and then passes with no code change deserves investigation.
+Keep the failed run's evidence and compare the commits, workflow conditions,
+runner environment and external dependencies before calling it a flake.
+**File confirmed flakes.** Record an unexplained failure with what you know
+rather than dismissing it because a rerun passed.
 
 ```bash
 gh issue create --label flake --label area:testing --title "Flake: <what raced>"
@@ -537,9 +538,9 @@ can close:
 - the mechanism if you have it: what the test asserts on versus what it waits
   on. That difference is the whole bug in most of them.
 
-Two places the evidence is already sitting. Every CI re-run is someone saying
-"that was not my change", so an `attempt > 1` run that ended green names a
-flake:
+Two places to investigate are failed first attempts followed by successful
+reruns, and failed `push` runs on `main`. This query finds rerun candidates;
+a successful later attempt alone does not establish why the first failed:
 
 ```bash
 gh run list --workflow ci.yml --limit 200 \
@@ -547,10 +548,12 @@ gh run list --workflow ci.yml --limit 200 \
 gh api /repos/BinaryBourbon/fountain/actions/runs/<id>/attempts/1/jobs
 ```
 
-And a failed `push` run on `main` is a flake by construction, because the PR
-that merged was green. Before filing from either, date the failure against
-`git log` on the file a fix would touch: of four found this way on 2026-09-04,
-two had already been fixed by a PR that landed after the failure.
+A green PR does not prove that a failed post-merge run is a flake. The merged
+tree can include other changes, push-only jobs can test different behavior,
+and the runner or external services can differ. Compare those conditions
+before classifying the failure. Before filing from either source, date the
+failure against `git log` on the file a fix would touch: of four found this
+way on 2026-09-04, two had already been fixed after the failed run.
 
 ## Things NOT to do
 
@@ -568,10 +571,10 @@ two had already been fixed by a PR that landed after the failure.
   having its connection pulled away. `Task.async` is right where the caller
   keeps the ref and handles the reply (`Analytics.Sink`).
 - **Don't push directly to `main`.** All changes go through PRs; the CI gate must pass.
-- **Don't re-run a red test until it goes green and move on.** A test that
-  passes on the second try with nothing changed is a flake, and an unfiled
-  flake costs its next finder the whole investigation again. File it with the
-  `flake` label — see *Flaky tests* above.
+- **Don't re-run a red test until it goes green and move on.** Keep the failed
+  run's evidence and investigate what changed between attempts. File confirmed
+  flakes with the `flake` label, and record unexplained failures with what you
+  know — see *Flaky tests* above.
 - **Don't add `async: false` to tests unless the test genuinely requires it** (e.g. global ETS state). The SQL Sandbox handles DB isolation.
 
 ## Adding a new context

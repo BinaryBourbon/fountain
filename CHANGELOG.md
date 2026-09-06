@@ -18,6 +18,8 @@ upgrade, is in
 
 ### Changed
 
+- Manifest apply rejects unknown `spec` keys before writing that resource or its secrets. Previously, Ecto silently discarded them, including misspelled network restrictions. Correct these keys before upgrading. Bulk apply keeps its HTTP 200 response with per-resource errors; other valid resources still apply. Ownership keys remain ignored.
+
 - **Credential brokerage is on for every account on the hosted platform**
   (ADR 0019 §9, home-cloud#163). It was limited access, enrolled by hand, and
   named one tenant from 2026-08-25. The docs said so on six pages; they now
@@ -167,6 +169,11 @@ upgrade, is in
   pin drops from 3,048 to 2,835, and the tracker closes.
 
 ### Fixed
+
+- `/api/auth/me` now returns the presented API key's `expires_at`, or null for a key without an expiry, as its schema declares.
+
+- Deduplicate database gauges across replicas in sandbox, conversation and Oban alerts.
+- Label turn duration and first-output metrics by sandbox provider so hosted alerts can exclude self-hosted runners.
 
 - **ACP `session/new` carried the agent's unsubstituted MCP configuration**
   (#1404). Fountain resolves `${VAR}` references once at provision and writes

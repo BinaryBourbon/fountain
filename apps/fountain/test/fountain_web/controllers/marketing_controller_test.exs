@@ -8,7 +8,7 @@ defmodule FountainWeb.MarketingControllerTest do
   describe "GET / titling" do
     test "names the category in the title and both card titles", %{conn: conn} do
       body = conn |> get(~p"/") |> html_response(200)
-      expected = "Serverless sandboxes for coding agents · #{Fountain.Brand.name()}"
+      expected = "Claude Code, Codex and Gemini CLI behind one API · #{Fountain.Brand.name()}"
 
       assert body =~ "<title>#{expected}</title>"
       assert body =~ ~s(<meta property="og:title" content="#{expected}")
@@ -22,6 +22,21 @@ defmodule FountainWeb.MarketingControllerTest do
       body = conn |> get(~p"/") |> html_response(200)
 
       refute body =~ "<title>#{Fountain.Brand.name()}</title>"
+    end
+  end
+
+  describe "GET / app-first entry" do
+    test "offers a working app before the machine and API explanations", %{conn: conn} do
+      body = conn |> get(~p"/") |> html_response(200)
+      [_, hero] = Regex.run(~r{<section[^>]*data-role="hero"[^>]*>(.*?)</section>}s, body)
+      assert hero =~ "Open Conversations"
+      assert hero =~ ~s(href="https://fountain-conversations.demo.managoat.com/")
+
+      {apps, _} = :binary.match(body, ~s(data-role="flagship"))
+      {machine, _} = :binary.match(body, ~s(data-role="machine-story"))
+      {api, _} = :binary.match(body, ~s(data-role="setup-manifest"))
+      assert apps < machine
+      assert machine < api
     end
   end
 

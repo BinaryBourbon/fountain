@@ -1,6 +1,14 @@
-# claude
+# Run Claude Code as an API
 
 > Anthropic's Claude Code CLI, headless in the sandbox.
+
+Run Claude Code on a sandbox with your repositories, packages and credentials.
+Send a prompt over HTTP, follow the transcript, and send the next prompt to
+the same conversation. Fountain manages the machine between turns.
+
+To use a chat interface, [open Conversations](https://fountain-conversations.demo.managoat.com/).
+To call it from your own code, follow the [quickstart](../../quickstart.md),
+then use the agent definition below.
 
 ## Summary
 
@@ -79,6 +87,19 @@ fix both sit in the transcript, and not only in a log nobody reads.
 conversation tries the OAuth token again. So an organization policy that
 somebody later reverts heals on its own. It does not stay pinned to the
 fallback.
+
+## Call it over HTTP
+
+After you apply the agent definition, set `FOUNTAIN_AGENT_ID` to the returned
+agent id, `FOUNTAIN_BASE_URL` to your instance URL, and `FOUNTAIN_API_KEY` to
+your Fountain account key. The account key is separate from the model credential.
+
+```sh
+--8<-- "docs/snippets/first-request.sh"
+```
+
+Use the returned conversation id to [follow events and send another prompt](../../api.md).
+A self-hosted instance uses the same request at its own base URL.
 
 ## Verify
 
