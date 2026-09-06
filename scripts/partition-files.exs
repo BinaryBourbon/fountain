@@ -19,7 +19,7 @@
 # async.
 #
 # Regenerate the manifest with:
-#     mix test --max-cases 8 --slowest-modules 400
+#     (cd apps/fountain && mix test --max-cases 8 --slowest-modules 10000)
 # and feed the output through scripts/regen-test-timings.exs.
 #
 # Usage: elixir scripts/partition-files.exs <partition> <total-partitions>
@@ -85,8 +85,15 @@ weighted =
 # whichever partition is cheapest so far. Deterministic given the same inputs,
 # which matters — every partition job runs this independently and they must all
 # agree on the same assignment.
+# Partition 1 runs scripts/test-libraries.sh after its core files. Reserve its
+# observed 26-34s (September 5, 2026 CI) before assigning core work, otherwise
+# an equally weighted partition becomes the slowest job by that entire step.
+# Refresh this alongside the file timings when the sibling suites change.
+sibling_cost_ms = if Path.wildcard("apps/*/mix.exs") |> length() > 1, do: 30_000.0, else: 0.0
+initial = Map.new(1..total, &{&1, {if(&1 == 1, do: sibling_cost_ms, else: 0.0), []}})
+
 buckets =
-  Enum.reduce(weighted, Map.new(1..total, &{&1, {0.0, []}}), fn {path, cost}, acc ->
+  Enum.reduce(weighted, initial, fn {path, cost}, acc ->
     {idx, {total_cost, paths}} = Enum.min_by(acc, fn {i, {c, _}} -> {c, i} end)
     Map.put(acc, idx, {total_cost + cost, [path | paths]})
   end)

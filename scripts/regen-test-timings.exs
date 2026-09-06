@@ -1,7 +1,7 @@
 # Rebuilds scripts/test-timings.tsv, the cost table scripts/partition-files.exs
 # balances on. Reads `mix test --slowest-modules` output on stdin:
 #
-#     mix test --max-cases 8 --slowest-modules 400 \
+#     (cd apps/fountain && mix test --max-cases 8 --slowest-modules 10000) \
 #       | elixir scripts/regen-test-timings.exs
 #
 # Run it when the partitions visibly drift apart — the partition jobs print
@@ -36,7 +36,8 @@ entries =
           path
       end
 
-    {path, ms |> String.to_float() |> round()}
+    {number, ""} = Float.parse(ms)
+    {path, round(number)}
   end)
   |> Enum.reduce(%{}, fn {path, ms}, acc -> Map.update(acc, path, ms, &(&1 + ms)) end)
 
@@ -60,7 +61,7 @@ body =
 
 File.write!("scripts/test-timings.tsv", """
 # Measured cost per test file, milliseconds. Regenerate with:
-#   mix test --max-cases 8 --slowest-modules 400 | elixir scripts/regen-test-timings.exs
+#   (cd apps/fountain && mix test --max-cases 8 --slowest-modules 10000) | elixir scripts/regen-test-timings.exs
 # Consumed by scripts/partition-files.exs. A file missing from here is costed
 # at the median rather than zero, so adding tests degrades balance gently
 # instead of silently loading one partition.

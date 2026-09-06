@@ -77,9 +77,11 @@ fi
 
 set +e
 # shellcheck disable=SC2086 # word splitting is how the file list is passed
-mix test --export-coverage "$partition" --cover $files 2>&1 | tee "$log"
+mix test --max-cases 8 --slowest-modules 10000 --export-coverage "$partition" --cover $files 2>&1 | tee "$log"
 status=${PIPESTATUS[0]}
 set -e
+mkdir -p cover
+cp "$log" "cover/$partition.timings.log"
 
 if [ "$status" -ne 0 ]; then
   exit "$status"
