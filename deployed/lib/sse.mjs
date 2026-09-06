@@ -67,6 +67,7 @@ export async function* streamEvents(client, path, { signal = client.signal, afte
       try { event = JSON.parse(frame.data); } catch { throw new Error('SSE data is not JSON'); }
       client.redactor.value(event);
       trace({ transport: 'sse', path, after, received_ms: receivedMs - started, frame: client.redactor.text(frame.raw) });
+      client.assertPublicSafe?.(event, { path, transport: 'sse' });
       if (frame.id === undefined) throw new Error(`SSE diagnostic without a durable ID (${event.stage ?? frame.event})`);
       if (!/^\d+$/.test(frame.id) || !Number.isSafeInteger(Number(frame.id))) throw new Error('SSE event has an invalid ID');
       event = { ...event, id: Number(frame.id) };

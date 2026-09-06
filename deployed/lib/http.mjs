@@ -68,6 +68,7 @@ export class Client {
       if (recordBody) this.redactor.value(json);
       this.trace({ method, path, status: response.status, duration_ms: performance.now() - started,
         request_id: response.headers.get('x-request-id'), body: recordBody ? this.redactor.value(json) : undefined, response_bytes: size });
+      this.assertPublicSafe?.(json, { path, transport: 'http' });
       if (expected !== undefined && ![expected].flat().includes(response.status)) {
         throw new Error(`${method} ${path}: expected ${[expected].flat().join('/')} but received ${response.status}`);
       }

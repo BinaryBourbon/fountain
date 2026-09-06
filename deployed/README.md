@@ -305,6 +305,115 @@ The matrix implementation and local lifecycle tests do not establish hosted
 provider support. Retain each target's first released-deployment matrix result
 before changing a configured gap into a supported cell.
 
+## Secrets and brokered egress
+
+The opt-in `secrets` profile checks #1614 with four random synthetic values.
+It creates its own environment, vault, binding, agent and ephemeral conversation
+through public APIs. Two colliding secret names exercise vault precedence.
+The bound value must reach the sandbox as a placeholder; the unbound value
+must reach it in the clear. One tool-using prompt runs a bounded Python/curl
+script against a controlled HTTPS receiver. No real service credential is
+used for the fixture requests.
+
+The receiver must independently observe the vault's bound value in the
+broker-injected `X-Fountain-Fixture` header, the vault's unbound value in the
+request body, and the placeholder in the sandbox-visible environment. It
+returns both matching synthetic values so the script can echo them into the
+conversation. The durable transcript must retain the receiver's independent
+receipt ID and both `[REDACTED]` values. Raw HTTP and SSE responses are checked
+before harness redaction; the harness cannot hide a server disclosure and
+report success. File-response inspection also checks decoded base64 content.
+An artifact scan fails and scrubs any known synthetic value left on disk.
+
+The same script attempts a second controlled hostname excluded from the
+network policy. It must receive a CONNECT 403 with curl exit 56. The public
+egress log must record both the successful credential attachment and that
+denial, and the receiver must observe no blocked-host request. Cross-tenant
+secret reads/writes/deletes and binding access are checked separately. This
+checks the documented broker contract; it does not prove the provider's
+network floor survives a wake or implement #1555.
+
+### Configure the controlled receiver
+
+Run the exact `deployed/receivers/secrets.mjs` file from the suite checkout on
+a dedicated service. Route two distinct HTTPS hostnames to that same singleton
+process. Do not spread them across independent replicas: state is in memory,
+and a restart loses active runs and causes their checks to fail. The suite
+checks both hosts' protocol version and receiver instance ID before creating
+Fountain resources. Both hosts must be publicly reachable from the suite and
+the allowed one from the sandbox through the broker.
+
+Set `FOUNTAIN_RECEIVER_ADMIN_KEY` to a generated credential of at least 32
+characters, supplied through a secret store. It controls run registration,
+receipt inspection and deletion. It never enters Fountain or the sandbox.
+For TLS in the Node process, set `TLS_CERT_FILE` and `TLS_KEY_FILE`. When a
+managed HTTPS ingress terminates TLS instead, explicitly set
+`RECEIVER_TLS_AT_INGRESS=true`. Plain HTTP is not accepted in target URLs.
+Set `PORT` if the backend should use a port other than 8080, then start it.
+
+```bash
+node deployed/receivers/secrets.mjs
+```
+
+The receiver has no request logging or disk state. It stores expected
+fingerprints and observed match booleans, timestamps and receipt IDs. It echoes
+only matching values with the suite's synthetic format. It rejects unknown
+runs, wrong nonces and mismatched credentials. A run lasts at most 15 minutes,
+accepts at most eight capture requests, and the process holds at most 32 runs.
+Request bodies are capped at 16 KiB. Expired runs disappear on the next
+request. Receiver state also gets an explicit delete on normal suite exits.
+Keep ingress access logs free of request bodies, authentication headers and
+response bodies.
+
+### Configure and run the profile
+
+Copy `deployed/secrets.example.json` and set the actual Fountain and receiver
+URLs, runtime/model and provider. Both dedicated tenants must have broker and
+Connections access. The primary tenant also needs its usual inference
+credentials. Select an ephemeral Sprites, E2B or Daytona sandbox. A runner is
+rejected because it does not enforce broker egress. The sandbox image must
+provide Python 3 and curl; runtime setup must also have its usual dependencies.
+
+`bootstrap_hosts` explicitly permits the package hosts needed for runtime
+installation, such as `registry.npmjs.org`. Review this list for the configured
+image/runtime; there is no wildcard or implicit list. The blocked receiver
+cannot be on it. The fixture's credential binding names only the allowed
+receiver, and the script targets only the two controlled URLs. Existing
+inference bindings continue to support the selected runtime.
+
+```bash
+node deployed/cli.mjs run \
+  --config /tmp/fountain-secrets.json \
+  --out /tmp/fountain-secrets-001
+```
+
+The prompt budget is explicitly one, with no automatic retry. The run limit
+cannot exceed ten minutes, within the receiver's retention window. Missing
+broker/Connections access or unreachable/mismatched receiver hosts fail setup
+before fixture creation. Provisioning/broker setup failures remain failures
+with their category recorded, and each later assertion has its own named check.
+Receiver observations are retained even when the turn fails. A healthy model
+answer without the expected receiver and public egress evidence cannot pass.
+
+Cleanup terminates the conversation before deleting its agent, binding, vault
+and environment. A failed conversation cleanup retains its parent resources
+and bindings. Leaking API responses still fail the verdict, but cleanup can
+read their ownership evidence and remove the fixture. `cleanup.json` records
+binding names/hosts and attached vault ownership; `receiver.json` records the
+remote run and expiry without its admin credential. Lost create replies retain
+cleanup intent. The ordinary cleanup command with the original target file
+also retries receiver cleanup after Fountain cleanup. An operator can inspect
+these manifests when a process is killed before its cleanup runs.
+
+The existing workflow accepts `profile: secrets` for manual public or rollout
+verification. Add the receiver settings to the approved environment's
+`SUITE_TARGET_JSON` and its admin key as environment secret
+`FOUNTAIN_RECEIVER_ADMIN_KEY`. This profile is separate from frequent and
+matrix canaries; no schedule enables it automatically. Retain a successful
+released-deployment result before considering #1614 verified. Local receiver,
+proxy-wire and API-fixture checks cover narrower boundaries and do not replace
+that result.
+
 ## Deterministic ACP fixture
 
 The `deterministic` profile runs the pinned `fountain-fixture` runtime in a

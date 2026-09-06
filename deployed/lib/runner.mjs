@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, appendFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -11,9 +11,11 @@ import { probe } from '../profiles/probe.mjs';
 import { basic } from '../profiles/basic.mjs';
 import { execution } from '../profiles/execution.mjs';
 import { deterministic } from '../profiles/deterministic.mjs';
+import { secrets } from '../profiles/secrets.mjs';
+import { receiverOrigins, ReceiverSession } from './receiver.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe, basic, execution, streaming: execution, deterministic };
+export const profiles = { probe, basic, execution, streaming: execution, secrets, deterministic };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -25,7 +27,7 @@ function positive(value, fallback, max) {
 
 export function configFrom(path, env = process.env) {
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'fixture'];
+  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'fixture'];
   requireThat(Object.keys(config).every(key => allowed.includes(key)), 'Unknown configuration field');
   const url = new URL(config.base_url);
   requireThat(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash,
@@ -40,12 +42,12 @@ export function configFrom(path, env = process.env) {
     config.profiles.every(name => Object.hasOwn(profiles, name)), 'Unknown, empty, or duplicate profile selection');
   requireThat(Object.keys(config.credentials).every(k => ['primary', 'secondary'].includes(k)), 'Unknown credential role');
   requireThat(!(config.profiles.includes('execution') && config.profiles.includes('streaming')), 'Select streaming or execution; streaming already includes execution');
-  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'deterministic'].includes(name))) {
+  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'secrets', 'deterministic'].includes(name))) {
     requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Selected profile requires credentials.secondary environment variable');
     config.secondaryKey = env[config.credentials.secondary];
     requireThat(typeof config.secondaryKey === 'string' && config.secondaryKey.trim().length > 0, `Missing test credential: ${config.credentials.secondary}`);
   }
-  if (config.profiles.some(name => ['execution', 'streaming'].includes(name))) {
+  if (config.profiles.some(name => ['execution', 'streaming', 'secrets'].includes(name))) {
     const settings = config.execution;
     requireThat(settings && Object.keys(settings).every(k => ['runtime', 'model', 'sandbox_provider', 'sandbox_mode', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit execution configuration');
     requireThat(['claude', 'codex', 'gemini', 'opencode'].includes(settings.runtime) &&
@@ -55,7 +57,18 @@ export function configFrom(path, env = process.env) {
     settings.sandbox_mode ??= 'ephemeral';
     requireThat(['ephemeral', 'persistent'].includes(settings.sandbox_mode), 'Unknown execution sandbox mode');
     settings.turn_ms = positive(settings.turn_ms, 90000, 300000);
-    requireThat(settings.max_turns === 2, 'Execution must explicitly authorize max_turns: 2');
+    const turns = config.profiles.includes('secrets') ? 1 : 2;
+    requireThat(settings.max_turns === turns, `Execution must explicitly authorize max_turns: ${turns}`);
+  }
+  if (config.profiles.includes('secrets')) {
+    requireThat(config.profiles.length === 1, 'Run the secrets profile separately');
+    requireThat(config.execution.sandbox_mode === 'ephemeral' && ['sprites', 'e2b', 'daytona'].includes(config.execution.sandbox_provider), 'Secrets requires an ephemeral broker-capable hosted provider; runners cannot enforce broker egress');
+    requireThat(config.secrets && Object.keys(config.secrets).every(k => ['allowed_url', 'blocked_url', 'admin_credential', 'bootstrap_hosts'].includes(k)), 'Expected explicit controlled receiver configuration');
+    const origins = receiverOrigins(config.secrets);
+    requireThat(Array.isArray(config.secrets.bootstrap_hosts) && config.secrets.bootstrap_hosts.length <= 10 &&
+      config.secrets.bootstrap_hosts.every(host => typeof host === 'string' && /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/.test(host) && host !== origins[1].hostname), 'Declare bounded bootstrap hostnames without the blocked receiver');
+    requireThat(typeof config.secrets.admin_credential === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.secrets.admin_credential), 'Receiver admin_credential must name an environment variable');
+    requireThat(typeof env[config.secrets.admin_credential] === 'string' && env[config.secrets.admin_credential].length >= 32, 'Missing controlled receiver admin credential');
   }
   if (config.profiles.includes('deterministic')) {
     requireThat(config.profiles.length === 1 && !config.execution, 'Run deterministic fixture separately from real-model profiles');
@@ -73,6 +86,10 @@ export function configFrom(path, env = process.env) {
     request_ms: positive(limits.request_ms, 10000, 120000), run_ms: positive(limits.run_ms, 120000, 3600000),
     cleanup_ms: positive(limits.cleanup_ms, 30000, 300000), resources: positive(limits.resources, 20, 100),
   };
+  if (config.profiles.includes('secrets')) {
+    requireThat(config.limits.run_ms <= 600000, 'Secrets run must fit within receiver retention');
+    requireThat(config.limits.resources >= 5, 'Secrets profile requires a five-resource budget');
+  }
   for (const field of ['required_capabilities', 'optional_capabilities']) {
     config[field] ??= {};
     requireThat(Object.keys(config[field]).every(k => ['runtimes', 'sandbox_providers'].includes(k)), `Unknown ${field} category`);
@@ -105,6 +122,8 @@ export async function run({ configPath, out, manifestPath, signal, env = process
   const report = { suite_version: VERSION, run_id: randomUUID(), started_at: new Date().toISOString(),
     mode: manifestPath ? 'cleanup' : 'run', status: 'setup_failed', checks: [], revision: { verified: false, reason: 'No deployment revision adapter configured' } };
   let config, fixtures, deploymentBefore;
+  const afterCleanup = [];
+  const beforeCleanup = [];
   try {
     const git = (...args) => execFileSync('git', args, {
       cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
@@ -128,6 +147,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     config = configFrom(configPath, env);
     redactor.add(config.key);
     redactor.add(config.secondaryKey);
+    if (config.secrets) redactor.add(env[config.secrets.admin_credential]);
     report.target = config.base_url;
     report.profiles = config.profiles;
     report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0, fixture_prompts: config.fixture?.max_turns ?? 0 };
@@ -160,7 +180,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         const available = { runtimes: body.data?.runtimes, sandbox_providers: body.data?.sandbox_providers?.enabled };
         requireThat(Object.values(available).every(Array.isArray), 'Catalog capability arrays missing');
         report.capabilities = available;
-        if (config.profiles.some(name => ['execution', 'streaming'].includes(name))) {
+        if (config.profiles.some(name => ['execution', 'streaming', 'secrets'].includes(name))) {
           requireThat(available.runtimes.includes(config.execution.runtime), 'Execution runtime is unavailable');
           requireThat(available.sandbox_providers.includes(config.execution.sandbox_provider), 'Execution sandbox provider is unavailable');
         }
@@ -179,17 +199,28 @@ export async function run({ configPath, out, manifestPath, signal, env = process
       });
       if (!capabilitiesOk) throw new Error('Required capabilities unavailable');
       report.status = 'running';
-      const ctx = { client, fixtures, config, report, redactor, check, require: requireThat, signal: combined };
+      const ctx = { client, fixtures, config, report, redactor, check, require: requireThat, signal: combined, out, env, beforeCleanup, afterCleanup };
       for (const name of config.profiles) {
         combined.throwIfAborted();
         await profiles[name](ctx);
       }
-    } else { report.status = 'running'; report.cleanup_run_id = fixtures.manifest.run_id; }
-    report.status = report.checks.some(c => c.status === 'failed') ? 'failed' : 'passed';
+    } else {
+      report.status = 'running'; report.cleanup_run_id = fixtures.manifest.run_id;
+      const receiverPath = resolve(dirname(manifestPath), 'receiver.json');
+      if (existsSync(receiverPath)) afterCleanup.push({ name: 'secrets/receiver-cleanup', run: async () => {
+        requireThat(config.secrets, 'Receiver cleanup requires the original secrets target configuration');
+        const receiver = new ReceiverSession({ settings: config.secrets, adminKey: env[config.secrets.admin_credential], path: receiverPath,
+          runId: fixtures.manifest.run_id, redactor });
+        receiver.loadCleanup();
+        await receiver.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
+      } });
+    }
+    if (report.status !== 'setup_failed') report.status = report.checks.some(c => c.status === 'failed') ? 'failed' : 'passed';
   } catch (error) {
     if (report.status === 'running') report.status = 'failed';
     report.checks.push({ name: report.status === 'setup_failed' ? 'setup/configuration' : 'run', status: 'failed', duration_ms: 0, error: redactor.text(error.message) });
   } finally {
+    for (const prepare of beforeCleanup) await prepare();
     if (fixtures) {
       const failures = await fixtures.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
       report.cleanup = { failures, remaining: fixtures.manifest.resources.filter(r => r.state !== 'cleaned').length };
@@ -199,6 +230,10 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         report.status = 'cleanup_failed';
         report.checks.push({ name: 'cleanup', status: 'failed', duration_ms: 0, error: 'Resources remain; see cleanup manifest and result.json' });
       }
+    }
+    for (const finalizer of afterCleanup.reverse()) {
+      const ok = await check(finalizer.name, finalizer.run);
+      if (!ok) report.status = finalizer.name.endsWith('cleanup') ? 'cleanup_failed' : report.status === 'cleanup_failed' ? 'cleanup_failed' : 'failed';
     }
     if (deploymentBefore) {
       const stable = await check('deployment/stable', async () => {
