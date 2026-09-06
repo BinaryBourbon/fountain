@@ -79,10 +79,10 @@ Some rules keep that safe.
 
 ## Requests that outlive a turn
 
-The rule above assumes an agent blocked mid-thought. Some waits are longer than
-that. Approve a production apply, confirm a DNS delegation landed, sign off the
-deletes in a plan. Those take hours or days, and nothing in the sandbox has to
-run while they do.
+The 5 minute ceiling above assumes an agent blocked mid-thought. Some waits are
+longer than that. Approve a production apply, confirm a DNS delegation landed,
+sign off the deletes in a plan. Those take hours or days, and nothing in the
+sandbox has to run while they do.
 
 An agent can say so. It sends `session/request_permission`, and then it answers
 `session/prompt` with the stop reason `waiting`. The turn ends as a completed
@@ -109,7 +109,8 @@ so Fountain cannot hand the answer back down it. Instead Fountain resolves the
 request and opens a **new turn** whose prompt carries the outcome. Opening that
 turn wakes the sandbox.
 
-The prompt is one line, and it is this JSON object:
+The prompt is one line of JSON and nothing else. It is broken up here to read
+it.
 
 ```json
 {"fountain/permission_answer":{

@@ -91,6 +91,34 @@ defmodule Fountain.Conversations.DetachedRequest do
     end
   end
 
+  @doc """
+  The `session/request_permission` a relayed `acp` line carries, as
+  `{request_id, params}`, or nil.
+
+  The peer reports a held request's tool and its options, not the params they
+  came from, and the per-request timeout rides in `_meta`. It persists the
+  line immediately before it reports the ask, and under the **minted** request
+  id, so the owner can keep the last one and match it by id rather than assume
+  it. Decoded only for a line that names the method, so an ordinary turn's
+  thousands of updates pay a substring search and nothing else.
+  """
+  @spec request_line(String.t(), binary()) :: {term(), map()} | nil
+  def request_line("acp", data) do
+    if String.contains?(data, "session/request_permission") do
+      case Managoat.ACP.Protocol.classify_line(data) do
+        {:request, id, "session/request_permission", params} -> {id, params}
+        _ -> nil
+      end
+    end
+  end
+
+  def request_line(_stream, _data), do: nil
+
+  @doc "The kept `request_line/2` pair's params, when it is this request's."
+  @spec params_for({term(), map()} | nil, term()) :: map() | nil
+  def params_for({id, params}, request_id) when id == request_id, do: params
+  def params_for(_kept, _request_id), do: nil
+
   @doc "When a request raised now, waiting `timeout_ms`, is denied."
   @spec deadline(pos_integer(), DateTime.t()) :: DateTime.t()
   def deadline(timeout_ms, now \\ DateTime.utc_now()) do

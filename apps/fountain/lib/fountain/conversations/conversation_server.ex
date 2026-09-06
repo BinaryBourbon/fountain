@@ -493,12 +493,9 @@ defmodule Fountain.Conversations.ConversationServer do
       acp_peer: nil,
       # Timer refusing an unanswered permission request (#940).
       permission_timer: nil,
-      # `{request_id, params}` of the last `session/request_permission` the
-      # peer relayed (#1635). The peer reports a held request's tool and its
-      # options, not the params they came from, and the per-request timeout
-      # rides in `_meta`; the peer persists the line immediately before it
-      # reports the ask, so the params are here by the time the ask arrives.
-      # nil until one does. See `Managoat.ACP.Peer`'s `hold_permission`.
+      # The last `session/request_permission` the peer relayed, as
+      # `DetachedRequest.request_line/2` reads it (#1635): the ask that follows
+      # carries no params, and the per-request timeout is in theirs.
       acp_request_params: nil,
       # Caller-tool calls parked on the turn (#1202): id => %{name, arguments,
       # turn_id, waiter, timer, result}. `result` is nil while parked and the
@@ -1567,15 +1564,11 @@ defmodule Fountain.Conversations.ConversationServer do
   # editor (#708) are peer clients of this door, not fallbacks for one
   # another, so a second answer to the same request is "too late" rather
   # than an error in the caller.
-  #
-  # The turn has to be the one holding this request. A turn that ended
-  # `waiting` (#1635) left the request on its row and the peer still holds the
-  # JSON-RPC id it was raised under, so without this guard an answer meant for
-  # the detached request would go down a connection whose turn is over, be
-  # reported as landed, and never open the turn that carries it back.
+  # `Pending.holds?/2` is the guard a detached request needs (#1635).
   def handle_call({:answer_permission, request_id, option_id}, _from, state) do
-    if holding?(state.current_turn, request_id) do
-      answer_held_permission(state, request_id, option_id)
+    if Pending.holds?(state.current_turn, request_id) do
+      {reply, state} = Pending.answer(state, request_id, option_id)
+      {:reply, reply, state}
     else
       {:reply, {:error, :no_pending_permission}, state}
     end
@@ -1806,12 +1799,12 @@ defmodule Fountain.Conversations.ConversationServer do
           current_turn: %{pending_permission: %{"request_id" => request_id}}
         } = state
       ) do
-    state = resolve_permission(state, request_id, "timeout", nil)
+    state = Pending.resolve(state, request_id, "timeout", nil)
     fail_transport(state, :permission_timeout_during_runner_reconnect)
   end
 
   def handle_info({:permission_timeout, request_id}, state) do
-    {:noreply, resolve_permission(state, request_id, "timeout", nil)}
+    {:noreply, Pending.resolve(state, request_id, "timeout", nil)}
   end
 
   # The caller never answered a parked tool call (#1202). The agent gets an
@@ -2072,64 +2065,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  # `Pending.resolve_held/2` is the family's own (#1369); this call site came
+  # from the shared-sandbox reattach fix and moves with it.
   defp fail_transport(state, reason),
-    do: Reattachment.fail_transport(resolve_pending_permission(state, "turn_ended"), reason)
-
-  defp holding?(%{pending_permission: %{"request_id" => id}, waiting: waiting}, request_id),
-    do: id == request_id and waiting != true
-
-  defp holding?(_turn, _request_id), do: false
-
-  defp answer_held_permission(state, request_id, option_id) do
-    {reply, turn, pending} =
-      Pending.answer_permission(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        state.acp_peer,
-        request_id,
-        option_id
-      )
-
-    {:reply, reply, %{Pending.into_state(state, pending) | current_turn: turn}}
-  end
-
-  # The permission request's end, whichever way (`Pending.resolve_permission/7`):
-  # the turn row and the timer are the server's to hold.
-  defp resolve_permission(state, request_id, outcome, option_id) do
-    {turn, pending} =
-      Pending.resolve_permission(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        state.acp_peer,
-        request_id,
-        outcome,
-        option_id
-      )
-
-    %{Pending.into_state(state, pending) | current_turn: turn}
-  end
-
-  # Resolve whatever is held, if anything, as the turn ends.
-  defp resolve_pending_permission(state, outcome) do
-    {turn, pending} =
-      Pending.resolve_pending_permission(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        state.acp_peer,
-        outcome
-      )
-
-    %{Pending.into_state(state, pending) | current_turn: turn}
-  end
-
-  # Everything still parked when the turn ends (`Pending.drop_calls/3`).
-  defp drop_caller_tools(state, outcome) do
-    pending = Pending.drop_calls(Pending.from_state(state), state.conversation_id, outcome)
-    Pending.into_state(state, pending)
-  end
+    do: Reattachment.fail_transport(Pending.resolve_held(state, "turn_ended"), reason)
 
   # The server's own clock stamp: the input `Lifecycle.check/4` reads. Nothing
   # but this process writes it.
@@ -2619,26 +2558,9 @@ defmodule Fountain.Conversations.ConversationServer do
     %{
       new_state
       | stream_tracer: tracer,
-        acp_request_params: request_params_of(stream, data) || state.acp_request_params
+        acp_request_params: DetachedRequest.request_line(stream, data) || state.acp_request_params
     }
   end
-
-  # The `session/request_permission` line the peer relays carries the
-  # per-request timeout, and the ask that follows it does not (#1635). The
-  # peer writes the line under the **minted** request id, so the pair can be
-  # matched rather than assumed. Decoded only for a line that names the
-  # method, so an ordinary turn's thousands of updates pay a substring search
-  # and nothing else.
-  defp request_params_of("acp", data) do
-    if String.contains?(data, "session/request_permission") do
-      case Managoat.ACP.Protocol.classify_line(data) do
-        {:request, id, "session/request_permission", params} -> {id, params}
-        _ -> nil
-      end
-    end
-  end
-
-  defp request_params_of(_stream, _data), do: nil
 
   # Terminal path for an ACP turn. The order matters: stdin closes first so the
   # adapter starts exiting while we do the bookkeeping, and `current_command_ref`
@@ -2655,16 +2577,15 @@ defmodule Fountain.Conversations.ConversationServer do
     # Resolve a held permission request as the turn ends (#940): a card left
     # open is a client waiting on an answer that can never come, and the
     # turn's `pending_permission` would stay set on a turn that is over.
-    #
-    # Unless the agent asked to keep it (#1635). `:detach_permission` ran
-    # first and marked the row, and from here the answer that can come is a
-    # new turn rather than this one's peer, so the card stays up on purpose.
+    # Unless the agent asked to keep it (#1635): `:detach_permission` ran
+    # first and marked the row, and the answer that can still come is a new
+    # turn rather than this peer, so the card stays up on purpose.
     state =
       if Pending.detached?(state.current_turn),
         do: state,
-        else: resolve_pending_permission(state, "turn_ended")
+        else: Pending.resolve_held(state, "turn_ended")
 
-    state = drop_caller_tools(state, "turn_ended")
+    state = Pending.drop(state, "turn_ended")
     state = cancel_autonomous_quiet(state)
 
     turn = TurnMachine.finish(TurnMachine.from_state(state), status, span_attrs, stage_meta)
@@ -2705,63 +2626,14 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp apply_effect(state, {:ask_permission, request_id, tool, options}),
-    do: ask_permission(state, request_id, tool, options)
+    do: Pending.ask(state, request_id, tool, options)
 
-  defp apply_effect(state, :detach_permission), do: detach_permission(state)
+  defp apply_effect(state, :detach_permission), do: Pending.detach(state)
 
   defp apply_effect(state, {:finish, status, span_attrs, stage_meta}),
     do: finish_acp_turn(state, status, span_attrs, stage_meta)
 
   defp apply_effect(state, {:drop_connection, why}), do: drop_connection(state, why)
-
-  # `ask`: the agent is blocked and a human has to answer (#940). The request
-  # goes on the turn row first, then the stage, then the timeout
-  # (`Pending.ask/6`); the server holds the row and the timer.
-  defp ask_permission(state, request_id, tool, options) do
-    {turn, pending} =
-      Pending.ask(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        request_id,
-        tool,
-        options,
-        detached_timeout_ms(state, request_id)
-      )
-
-    %{Pending.into_state(state, pending) | current_turn: turn}
-  end
-
-  # What this request would get if the agent ends the turn waiting on it
-  # (#1635): its own `_meta.fountain.timeout`, else the effective
-  # `ask_timeout`, else the global ceiling. Decided at ask time so the
-  # `request`/`started` event can announce it, and stored on the request.
-  defp detached_timeout_ms(state, request_id) do
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-
-    DetachedRequest.timeout_ms(
-      request_params(state, request_id),
-      TurnMachine.effective_ask_timeout_seconds(conv, TurnMachine.agent_for(conv))
-    )
-  end
-
-  defp request_params(%{acp_request_params: {id, params}}, request_id) when id == request_id,
-    do: params
-
-  defp request_params(_state, _request_id), do: nil
-
-  # The turn is ending with its request still open (`Pending.detach/2`): the
-  # row keeps it, the deadline goes on the row, and the sweep takes over.
-  defp detach_permission(state) do
-    case state.current_turn do
-      %{pending_permission: request} = turn when is_map(request) ->
-        {turn, pending} = Pending.detach(Pending.from_state(state), turn)
-        %{Pending.into_state(state, pending) | current_turn: turn}
-
-      _ ->
-        state
-    end
-  end
 
   # ── the connection (#817) ─────────────────────────────────────────────────
 
