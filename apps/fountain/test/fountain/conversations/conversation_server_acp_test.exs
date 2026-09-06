@@ -1415,14 +1415,21 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     end
 
     # The detach closes the connection, so a resume turn re-handshakes:
-    # `initialize`, then `session/resume` (the caps advertise it), then the
-    # prompt. Returns the prompt's params.
+    # `initialize`, `session/resume` (the caps advertise it), the model pin,
+    # then the prompt. Returns the prompt's params.
+    #
+    # `models` on the session response is not decoration: a runtime that
+    # exposes no model selection fails the turn, so a resume turn has to be
+    # answered the way `drive_to_prompt/2` answers `session/new`.
     defp drive_to_resume_prompt(pid, ref) do
       %{"id" => init_id, "method" => "initialize"} = next_write()
       reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
 
       %{"id" => session_id, "method" => "session/resume"} = next_write()
-      reply(pid, ref, session_id, %{})
+      reply(pid, ref, session_id, %{"models" => %{}})
+
+      %{"id" => set_id, "method" => "session/set_model"} = next_write()
+      reply(pid, ref, set_id, %{})
 
       %{"method" => "session/prompt", "params" => params} = next_write()
       settle(pid)
