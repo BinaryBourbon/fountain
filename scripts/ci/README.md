@@ -74,8 +74,8 @@ elixir scripts/ci/timing-formatter-test.exs
 
 ## Portable alert rules
 
-The CI policy job also runs `scripts/test-alerts.py` with Prometheus `promtool`
-and PyYAML. It extracts the actual PrometheusRule spec and checks syntax,
+The `Alert rules` workflow runs `scripts/test-alerts.py` with Prometheus
+`promtool` and PyYAML. It extracts the actual PrometheusRule spec and checks syntax,
 replica aggregation, failure thresholds, counter resets, absent series, low
 traffic, and first-output alert hold time. Run the same command locally
 after changing `deploy/k8s/prometheusrule.yaml`.
