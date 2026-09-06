@@ -10,11 +10,13 @@ import { atomicJson, Fixtures } from './fixtures.mjs';
 import { probe } from '../profiles/probe.mjs';
 import { basic } from '../profiles/basic.mjs';
 import { execution } from '../profiles/execution.mjs';
+import { mcp } from '../profiles/mcp.mjs';
+import { mcpOrigin, McpReceiverSession } from './mcp-receiver.mjs';
 import { secrets } from '../profiles/secrets.mjs';
 import { receiverOrigins, ReceiverSession } from './receiver.mjs';
 
 export const VERSION = '0.1.0';
-export const profiles = { probe, basic, execution, streaming: execution, secrets };
+export const profiles = { probe, basic, execution, streaming: execution, secrets, mcp };
 const contractPath = fileURLToPath(new URL('../../sdk/contract/contract.json', import.meta.url));
 
 function requireThat(condition, message) { if (!condition) throw new Error(message); }
@@ -26,7 +28,7 @@ function positive(value, fallback, max) {
 
 export function configFrom(path, env = process.env) {
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets'];
+  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment', 'secrets', 'mcp'];
   requireThat(Object.keys(config).every(key => allowed.includes(key)), 'Unknown configuration field');
   const url = new URL(config.base_url);
   requireThat(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash,
@@ -41,12 +43,12 @@ export function configFrom(path, env = process.env) {
     config.profiles.every(name => Object.hasOwn(profiles, name)), 'Unknown, empty, or duplicate profile selection');
   requireThat(Object.keys(config.credentials).every(k => ['primary', 'secondary'].includes(k)), 'Unknown credential role');
   requireThat(!(config.profiles.includes('execution') && config.profiles.includes('streaming')), 'Select streaming or execution; streaming already includes execution');
-  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'secrets'].includes(name))) {
+  if (config.profiles.some(name => ['basic', 'execution', 'streaming', 'secrets', 'mcp'].includes(name))) {
     requireThat(typeof config.credentials.secondary === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.credentials.secondary), 'Selected profile requires credentials.secondary environment variable');
     config.secondaryKey = env[config.credentials.secondary];
     requireThat(typeof config.secondaryKey === 'string' && config.secondaryKey.trim().length > 0, `Missing test credential: ${config.credentials.secondary}`);
   }
-  if (config.profiles.some(name => ['execution', 'streaming', 'secrets'].includes(name))) {
+  if (config.profiles.some(name => ['execution', 'streaming', 'secrets', 'mcp'].includes(name))) {
     const settings = config.execution;
     requireThat(settings && Object.keys(settings).every(k => ['runtime', 'model', 'sandbox_provider', 'sandbox_mode', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit execution configuration');
     requireThat(['claude', 'codex', 'gemini', 'opencode'].includes(settings.runtime) &&
@@ -69,6 +71,14 @@ export function configFrom(path, env = process.env) {
     requireThat(typeof config.secrets.admin_credential === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.secrets.admin_credential), 'Receiver admin_credential must name an environment variable');
     requireThat(typeof env[config.secrets.admin_credential] === 'string' && env[config.secrets.admin_credential].length >= 32, 'Missing controlled receiver admin credential');
   }
+  if (config.profiles.includes('mcp')) {
+    requireThat(config.profiles.length === 1 && config.execution.sandbox_mode === 'ephemeral', 'Run MCP separately in an ephemeral sandbox');
+    requireThat(config.mcp && Object.keys(config.mcp).every(k => ['receiver_url', 'admin_credential', 'auth_mode'].includes(k)), 'Expected explicit MCP receiver configuration');
+    mcpOrigin(config.mcp);
+    requireThat(config.mcp.auth_mode === 'static_bearer', 'MCP conversation authentication is a gap tracked by #1405; select static_bearer explicitly');
+    requireThat(typeof config.mcp.admin_credential === 'string' && /^[A-Z][A-Z0-9_]*$/.test(config.mcp.admin_credential), 'MCP admin_credential must name an environment variable');
+    requireThat(typeof env[config.mcp.admin_credential] === 'string' && env[config.mcp.admin_credential].length >= 32, 'Missing MCP receiver admin credential');
+  }
   config.contract = config.contract ? resolve(dirname(path), config.contract) : contractPath;
   const limits = config.limits ?? {};
   requireThat(Object.keys(limits).every(k => ['request_ms', 'run_ms', 'cleanup_ms', 'resources'].includes(k)), 'Unknown limit');
@@ -79,6 +89,9 @@ export function configFrom(path, env = process.env) {
   if (config.profiles.includes('secrets')) {
     requireThat(config.limits.run_ms <= 600000, 'Secrets run must fit within receiver retention');
     requireThat(config.limits.resources >= 5, 'Secrets profile requires a five-resource budget');
+  }
+  if (config.profiles.includes('mcp')) {
+    requireThat(config.limits.run_ms <= 600000 && config.limits.resources >= 3, 'MCP requires a bounded ten-minute run and three-resource budget');
   }
   for (const field of ['required_capabilities', 'optional_capabilities']) {
     config[field] ??= {};
@@ -138,6 +151,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     redactor.add(config.key);
     redactor.add(config.secondaryKey);
     if (config.secrets) redactor.add(env[config.secrets.admin_credential]);
+    if (config.mcp) redactor.add(env[config.mcp.admin_credential]);
     report.target = config.base_url;
     report.profiles = config.profiles;
     report.limits = { ...config.limits, concurrency: 1, inference_turns: config.execution?.max_turns ?? 0 };
@@ -170,7 +184,7 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         const available = { runtimes: body.data?.runtimes, sandbox_providers: body.data?.sandbox_providers?.enabled };
         requireThat(Object.values(available).every(Array.isArray), 'Catalog capability arrays missing');
         report.capabilities = available;
-        if (config.profiles.some(name => ['execution', 'streaming', 'secrets'].includes(name))) {
+        if (config.profiles.some(name => ['execution', 'streaming', 'secrets', 'mcp'].includes(name))) {
           requireThat(available.runtimes.includes(config.execution.runtime), 'Execution runtime is unavailable');
           requireThat(available.sandbox_providers.includes(config.execution.sandbox_provider), 'Execution sandbox provider is unavailable');
         }
@@ -192,6 +206,14 @@ export async function run({ configPath, out, manifestPath, signal, env = process
       }
     } else {
       report.status = 'running'; report.cleanup_run_id = fixtures.manifest.run_id;
+      const mcpPath = resolve(dirname(manifestPath), 'mcp-receiver.json');
+      if (existsSync(mcpPath)) afterCleanup.push({ name: 'mcp/receiver-cleanup', run: async () => {
+        requireThat(config.mcp, 'MCP cleanup requires the original target configuration');
+        const receiver = new McpReceiverSession({ settings: config.mcp, adminKey: env[config.mcp.admin_credential], path: mcpPath,
+          runId: fixtures.manifest.run_id, redactor });
+        receiver.loadCleanup();
+        await receiver.cleanup(AbortSignal.timeout(config.limits.cleanup_ms));
+      } });
       const receiverPath = resolve(dirname(manifestPath), 'receiver.json');
       if (existsSync(receiverPath)) afterCleanup.push({ name: 'secrets/receiver-cleanup', run: async () => {
         requireThat(config.secrets, 'Receiver cleanup requires the original secrets target configuration');

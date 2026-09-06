@@ -413,3 +413,78 @@ matrix canaries; no schedule enables it automatically. Retain a successful
 released-deployment result before considering #1614 verified. Local receiver,
 proxy-wire and API-fixture checks cover narrower boundaries and do not replace
 that result.
+
+## Authenticated MCP tools
+
+The opt-in `mcp` profile covers #1615 with a controlled Streamable HTTP tool
+server. It creates an environment secret and an agent through public APIs.
+The stored agent header contains a `${SUITE_MCP_...}` reference. Fountain
+resolves that reference for the runtime. The bearer value is random, synthetic,
+and valid only for this receiver run.
+
+This mode tests static bearer delivery. Its permitted identity is the fixture's
+per-run principal. It does not establish a Fountain conversation identity or
+test callback-token rotation. Conversation authentication for Claude, Codex,
+Gemini and OpenCode remains an explicit linked gap under
+[#1405](https://github.com/BinaryBourbon/fountain/issues/1405).
+Each result lists the selected runtime as required and the other runtimes as
+not run. A selected runtime that cannot authenticate or discover the tools
+fails; it is never silently skipped.
+
+Run `deployed/receivers/mcp.mjs` from the same suite checkout on one controlled
+HTTPS origin. Route it to one process, with request/header logging disabled.
+Provide `FOUNTAIN_MCP_ADMIN_KEY` with at least 32 random characters. Either set
+`TLS_CERT_FILE` and `TLS_KEY_FILE`, or explicitly set
+`RECEIVER_TLS_AT_INGRESS=true` behind HTTPS ingress. The default port is 8080.
+The admin key stays in the suite and receiver; it never enters the sandbox.
+The receiver stores only credential hashes, nonces, session IDs, receipt IDs,
+and allow/deny observations in memory. Runs expire after 15 minutes. Each run
+allows at most 96 requests, eight active sessions and eight tool attempts;
+request bodies are limited to 16 KiB. All browser origins are rejected.
+
+The receiver implements the [MCP 2025-03-26 Streamable HTTP lifecycle](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports)
+with JSON responses, initialization, session IDs, tool listing, tool calls and
+session deletion. It negotiates that protocol version with newer clients.
+It has no server-initiated stream, batch requests, OAuth, stdio or legacy SSE
+transport. It is a bounded suite fixture, not a general MCP service.
+
+Copy `deployed/mcp.example.json`, set the actual Fountain and receiver origins,
+and pin the runtime, model and sandbox provider. The dedicated primary account
+needs inference credentials. The second account must be distinct and verified.
+The receiver must be reachable from both the suite and sandbox. Runner targets
+also require their runner to be online. Authorize exactly two prompts, an
+ephemeral sandbox, at least three resources and at most a ten-minute run.
+
+```bash
+node deployed/cli.mjs run \
+  --config /tmp/fountain-mcp.json \
+  --out /tmp/fountain-mcp-001
+```
+
+The first prompt calls `suite_nonce` and `suite_denied`; the latter returns a
+controlled tool error. The second prompt calls `suite_nonce` with a fresh nonce.
+Each call must have a receiver-observed permitted principal, preceding tool
+discovery, and a generated receipt paired with its tool-use ID in both live
+SSE and durable history. The denied tool result must carry an error flag.
+Model text alone cannot pass these assertions. A wrong-credential setup probe
+must get 401, and any additional rejected runtime credentials fail the result.
+The suite never makes an accepted MCP discovery or tool request itself.
+
+Raw Fountain HTTP/SSE responses are checked for credential disclosure before
+artifact redaction. The report retains receiver observations, runtime coverage,
+turn IDs, usage and failure categories. Configuration, provisioning, receiver
+connectivity, runtime discovery, and tool/event failures remain distinguishable.
+Failures retain the independent receiver evidence when it is reachable.
+
+Cleanup terminates the conversation and its sandbox, deletes the agent and
+environment, then deletes the receiver run and verifies 404. The
+`mcp-receiver.json` manifest preserves intent before receiver creation. Use the
+ordinary cleanup command with the original target configuration after an
+interruption; it also reads this manifest and cleans the receiver. Receiver
+cleanup is attempted even if a Fountain resource remains, revoking access to
+the controlled tools.
+
+The workflow accepts `profile: mcp` for manual public or rollout checks. Store
+`FOUNTAIN_MCP_ADMIN_KEY` in the selected protected GitHub environment. MCP is not
+part of scheduled canaries. A local receiver or SDK diagnostic does not count
+as a deployed Fountain runtime/provider verdict.
