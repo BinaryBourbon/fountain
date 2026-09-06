@@ -10,6 +10,13 @@ server releases.
 
 ---
 
+## [1.22.1] — 2026-09-06
+
+### Changed
+
+- Generated types carry an agent's `runtime_command`, the shell line the new `acp` runtime launches inside the sandbox, and `acp` joins the runtime enum.
+- `Agent["model"]` is `string | null`, and `AgentRequest["model"]` and `AgentUpdate["model"]` are optional and nullable. An `acp` agent needs no model, and clearing one is how an existing agent converts to that runtime. Code that assumed a string needs a null check.
+
 ## [1.22.0] — 2026-09-06
 
 ### Added
