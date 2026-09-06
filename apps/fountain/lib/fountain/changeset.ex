@@ -50,7 +50,7 @@ defmodule Fountain.Changeset do
     if uuid?(value), do: [], else: [{field, "must be an id, but #{describe(value)} is not one"}]
   end
 
-  defp uuid?(value) when is_binary(value), do: match?({:ok, _}, Ecto.UUID.cast(value))
+  defp uuid?(value) when is_binary(value), do: match?({:ok, _}, Ecto.UUID.dump(value))
   defp uuid?(_value), do: false
 
   defp describe(value) when is_binary(value) do
