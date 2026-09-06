@@ -47,6 +47,13 @@ defmodule Fountain.AgentsTest do
   end
 
   describe "get_agent/2" do
+    test "a malformed id reads as nil rather than raising (#1679)" do
+      user = insert_verified_user()
+
+      assert Agents.get_agent("prod-steward", user.id) == nil
+      assert Agents.get_agent("warehouse worker", user.id) == nil
+    end
+
     test "returns agent scoped to user" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)

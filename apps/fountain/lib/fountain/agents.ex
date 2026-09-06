@@ -17,11 +17,20 @@ defmodule Fountain.Agents do
   @doc "WARNING: lookup by id without owner check. Admin/internal use only."
   def _unsafe_get_agent!(id), do: Repo.get!(Agent, id) |> Repo.preload(:environment)
 
-  @doc "Get agent scoped to user. Returns nil on wrong owner or missing id."
+  @doc """
+  Get agent scoped to user. A foreign, missing or malformed id reads as nil.
+
+  Malformed is part of that promise for the same reason it is on
+  `Fountain.Conversations.get_conversation/2` (#1679): `/api/agui/:agent_id`
+  hands this function a raw path segment, so an id that is not a uuid would
+  raise out of the query instead of producing the 404 that route declares.
+  """
   def get_agent(id, user_id) when is_binary(user_id) do
-    case Repo.get_by(Agent, id: id, user_id: user_id) do
-      nil -> nil
-      agent -> Repo.preload(agent, :environment)
+    with {:ok, _} <- Ecto.UUID.dump(id),
+         agent when not is_nil(agent) <- Repo.get_by(Agent, id: id, user_id: user_id) do
+      Repo.preload(agent, :environment)
+    else
+      _ -> nil
     end
   end
 
