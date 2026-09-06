@@ -3147,6 +3147,7 @@ export interface components {
                 /** @description The managers provisioning installs from an environment's `packages`. */
                 package_managers: string[];
                 runtimes: string[];
+                sandbox_api_access?: ("owner" | "none")[];
                 sandbox_providers: {
                     default: string;
                     enabled: string[];
@@ -3504,6 +3505,11 @@ export interface components {
             runtime: "claude" | "codex" | "gemini" | "opencode";
             runtime_session_id?: string | null;
             sandbox?: components["schemas"]["Sandbox"] | null;
+            /**
+             * @description Immutable sandbox callback credential policy. none never issues a callback token.
+             * @enum {string}
+             */
+            sandbox_api_access?: "owner" | "none";
             /** Format: uuid */
             sandbox_id?: string | null;
             /** @enum {string} */
@@ -3542,6 +3548,11 @@ export interface components {
             } | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
+            /**
+             * @description none omits the sandbox Fountain credential on provision and every wake. Requires a fresh ephemeral sandbox; unavailable on attach or policy-changing channel resume.
+             * @enum {string}
+             */
+            sandbox_api_access?: "owner" | "none";
             /**
              * Format: uuid
              * @description Attach the conversation to a sandbox you already have instead of provisioning one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or suspended (409 sandbox_not_attachable), and built for the same agent, environment and vault as this launch (422 sandbox_identity_mismatch; 422 sandbox_runtime_mismatch if the agent's runtime changed since). The conversation opens idle on that machine; a prompt here wakes it. Several conversations then run on one disk at once, except on opencode and gemini, where a second turn is refused with 409 sandbox_at_capacity while one runs.

@@ -22,6 +22,7 @@ defmodule Fountain.Conversations.Conversation do
   # user's decision, and that is `terminated`.
   @statuses ~w(pending running idle failed terminated)
   @sources ~w(ui api agent)
+  @sandbox_api_access_modes ~w(owner none)
 
   @type t :: %__MODULE__{}
 
@@ -32,6 +33,8 @@ defmodule Fountain.Conversations.Conversation do
     field :source, :string, default: "api"
     field :parent_conversation_id, :binary_id
     field :callback_api_key_id, :binary_id
+    # Immutable launch boundary: none never mints a sandbox callback credential.
+    field :sandbox_api_access, :string, default: "owner"
     field :title, :string
     field :last_read_at, :utc_datetime_usec
     # Client-supplied key for the external channel this conversation is bound
@@ -87,6 +90,16 @@ defmodule Fountain.Conversations.Conversation do
 
   def statuses, do: @statuses
   def sources, do: @sources
+  def sandbox_api_access_modes, do: @sandbox_api_access_modes
+
+  defp validate_sandbox_api_access_immutable(changeset) do
+    if changeset.data.__meta__.state == :loaded and
+         get_change(changeset, :sandbox_api_access) do
+      add_error(changeset, :sandbox_api_access, "cannot change after launch")
+    else
+      changeset
+    end
+  end
 
   def changeset(conv, attrs) do
     conv
@@ -97,6 +110,7 @@ defmodule Fountain.Conversations.Conversation do
       :source,
       :parent_conversation_id,
       :callback_api_key_id,
+      :sandbox_api_access,
       :title,
       :user_id,
       :sandbox_id,
@@ -113,6 +127,8 @@ defmodule Fountain.Conversations.Conversation do
     |> validate_length(:title, max: 120)
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:source, @sources)
+    |> validate_inclusion(:sandbox_api_access, @sandbox_api_access_modes)
+    |> validate_sandbox_api_access_immutable()
     |> foreign_key_constraint(:sandbox_id)
     |> foreign_key_constraint(:agent_id)
     |> foreign_key_constraint(:agent_version_id)

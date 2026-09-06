@@ -365,6 +365,16 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, :invalid_sandbox_api_access}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "invalid_sandbox_api_access",
+      message:
+        "sandbox_api_access must be owner or none; none requires a fresh ephemeral sandbox and cannot change on resume"
+    })
+  end
+
   def call(conn, {:error, :invalid_sandbox_mode}) do
     conn
     |> put_status(:unprocessable_entity)

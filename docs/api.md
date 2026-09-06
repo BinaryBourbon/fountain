@@ -187,6 +187,26 @@ event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render runtime output; clients should not
 parse each runtime's native dialect.
 
+### Workers without Fountain API access
+
+Set `sandbox_api_access` to `none` when the host must retain Fountain API
+authority. Fountain omits its sandbox callback credential before provision
+and on every wake or reattachment. The default, `owner`, retains existing
+behavior.
+
+This setting is immutable. `none` requires a fresh ephemeral sandbox. It
+cannot attach to an existing machine or share its machine with another
+conversation. A channel resume with a different explicit setting fails.
+
+Discover support in `GET /api/catalog` under `sandbox_api_access`. The host
+can still send prompts and read events and files. The worker cannot use
+Fountain MCP tools or connections that require its callback credential.
+
+This option controls the credential Fountain creates. It does not remove
+credentials supplied through environments, vaults, or custom MCP configuration.
+Use a dedicated account containing only these workers for mutually untrusted
+repositories. Keep the account's full API keys on the service host.
+
 ### Every conversation on one stream
 
 Use the account event stream for a conversation list with live updates.
