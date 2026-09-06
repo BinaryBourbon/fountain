@@ -720,3 +720,9 @@ capacity. There is no tenant runtime CRUD, general harness registry, custom
 bootstrap or permission claim for arbitrary code. Those remain #1007 work.
 The deterministic profile runs separately from real-model canaries and is not
 an option in the production CI workflow.
+
+The explicit [staging recovery profile](recovery-controls.md) uses the deterministic
+fixture to verify accepted turns, replay and persistent-home artifacts across
+rollout and runner reconnection. It includes interrupted-run restoration and a
+bounded runner connection relay. A local rollout continuity failure remains under
+investigation; #1617 has no passing deployed verdict yet.
