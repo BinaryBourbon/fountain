@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { verifyRecoveryTurns, verifyRecoveryState, recoveredAttachment } from '../profiles/recovery.mjs';
+import { verifyRecoveryTurns, verifyRecoveryState, recoveredAttachment, verifyRecoveryTranscript } from '../profiles/recovery.mjs';
 import { configFrom } from '../lib/runner.mjs';
 import { ciConfig } from '../ci.mjs';
 import { restoreRecoveryControls } from '../lib/recovery.mjs';
@@ -23,6 +23,12 @@ test('recovery verifier requires the same accepted turns, including the pending 
     const changed = structuredClone(rows); mutate(changed);
     assert.throws(() => verifyRecoveryTurns(changed, accepted, 'running'));
   }
+});
+test('recovery transcript rejects prior-turn output replayed under the current turn', () => {
+  const events = accepted.map(turn => ({ turn_id: turn.id, blocks: [{ kind: 'text', body: `fixture:started:${turn.scenario}:${turn.nonce}\n` }] }));
+  verifyRecoveryTranscript(events, accepted);
+  assert.throws(() => verifyRecoveryTranscript([...events, { ...events[0], turn_id: accepted[1].id }], accepted), /misattributed/);
+  assert.throws(() => verifyRecoveryTranscript([...events, events[0]], accepted), /duplicated/);
 });
 test('fixture accounting rejects duplicate prompts, premature effects and lost prior files', () => {
   verifyRecoveryState(state, 'session', accepted, 1);

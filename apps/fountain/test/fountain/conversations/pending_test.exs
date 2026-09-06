@@ -60,6 +60,34 @@ defmodule Fountain.Conversations.PendingTest do
   end
 
   describe "a permission request" do
+    test "restoring an old request expires it without granting a new timeout window" do
+      old = DateTime.utc_now() |> DateTime.add(-86_400, :second) |> DateTime.to_iso8601()
+
+      pending =
+        Pending.restore_permission_timer(%Pending{}, %{
+          pending_permission: %{"request_id" => "old-request", "asked_at" => old}
+        })
+
+      assert is_reference(pending.permission_timer)
+      assert_receive {:permission_timeout, "old-request"}
+    end
+
+    test "restoring a current request replaces its timer without extending its original deadline" do
+      asked = DateTime.utc_now() |> DateTime.add(-30, :second) |> DateTime.to_iso8601()
+      previous = Process.send_after(self(), :old_timer, 300_000)
+
+      pending =
+        Pending.restore_permission_timer(%Pending{permission_timer: previous}, %{
+          pending_permission: %{"request_id" => "held-request", "asked_at" => asked}
+        })
+
+      assert Process.read_timer(previous) == false
+      remaining = Process.read_timer(pending.permission_timer)
+      assert remaining > 0
+      assert remaining <= Fountain.Conversations.Lifecycle.ask_timeout_ms() - 30_000
+      Process.cancel_timer(pending.permission_timer)
+    end
+
     test "ask/6 puts it on the row, announces it and arms the timeout", %{
       conv: conv,
       turn: turn,

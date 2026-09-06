@@ -55,12 +55,18 @@ and run ID, and restores controls before trying public account authentication.
 Failure to restore a control is reported as `cleanup_failed`, even when public
 fixture deletion succeeds. Kubernetes evidence never satisfies the public checks.
 
-A local source-server diagnostic currently fails the rollout continuity check:
-graceful shutdown disconnects the runner socket while the conversation server is
-still alive, and the accepted turn becomes `failed` with `runner_disconnected`.
-The profile rejects that terminal event without waiting for an impossible
-attachment. The failure and successful fixture cleanup are retained separately;
-this profile has no passing deployed staging verdict yet.
+Local source-server validation with the corrected server and runner passes all
+four prompts, both recovery boundaries, and the persistent-home wake. Earlier
+failures exposed three defects: shutdown failed the accepted turn, the runner
+kept sending replay to the old socket, and whole-process replay could replace
+the current permission with an earlier turn's request. The fixes require both
+an updated Fountain server and an updated runner binary. The profile also checks
+that each fixture start appears exactly once under its accepted turn.
+
+The failed runs remain separate evidence. The passing local run restarts a
+source process and uses a real Go runner; it does not verify a released image,
+Kubernetes rollout, or hosted provider. A deployed staging verdict is still
+required for #1617.
 
 ## Rollout adapter
 

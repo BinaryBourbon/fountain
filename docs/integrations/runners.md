@@ -251,6 +251,19 @@ resumed still answers, as a Sprites sandbox does on its next exec.
 
 ## On the team page and the API
 
+An accepted ACP turn keeps its place during a transient runner socket drop.
+Fountain holds the turn busy for up to two minutes while the runner reconnects,
+including when the server boots before the runner returns. It attaches to the
+same process and prompt instead of submitting the prompt again. A reconnect
+does not extend a pending permission's original timeout.
+
+The runner switches both replay and live output to the new connection. Fountain
+skips earlier turns in that process journal before restoring the active turn,
+so an old permission request cannot replace the one currently waiting. If the
+runner does not return within the recovery window, the turn fails and becomes
+available for a new prompt. Interrupting the turn cancels recovery. Stopping the
+runner daemon still terminates its processes.
+
 A teammate whose sandbox lives on a runner shows where it runs. The roster
 entry's `sandbox`, and that of each conversation object, carries `provider`,
 one of `sprites|e2b|daytona|runner`. For a runner it also carries

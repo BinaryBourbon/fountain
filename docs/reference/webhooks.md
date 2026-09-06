@@ -65,6 +65,7 @@ counter uses the same pair as its tags.
 | `broker` | `started` `done` `failed` | Fountain prepares the egress credential broker for the conversation, when brokerage is on for the tenant. A `failed` before any sandbox exists names the cause: the broker did not answer, or the provider cannot enforce the network floor. |
 | `setup` | `started` `done` `failed` | The environment's setup script runs. |
 | `checkpoint_restore` | `started` `done` `failed` | Fountain restores a checkpoint into the sandbox. |
+| `connection` | `started` `done` | An accepted runner turn waits for its socket to reconnect. The outcome records recovery, interruption or failure. |
 | `reattach` | `started` `done` `failed` `interrupted` | The server reconnects to a sandbox after a restart. |
 | `turn` | `started` `done` `failed` `interrupted` | One prompt and its reply. |
 | `request` | `started` `done` | The agent asked permission for a tool. It got an answer, or the request expired. |
