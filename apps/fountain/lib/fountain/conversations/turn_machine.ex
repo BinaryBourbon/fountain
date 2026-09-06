@@ -732,7 +732,7 @@ defmodule Fountain.Conversations.TurnMachine do
   # a refusal to render rather than an `:ok` followed by a refused stage.
   @spec capacity_gate(String.t(), Conversation.t()) :: :ok | {:error, :sandbox_at_capacity}
   def capacity_gate(sandbox_id, conv) do
-    capacity = Managoat.Runtimes.ACP.concurrency(conv.runtime)
+    capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 
     if Conversations._unsafe_sandbox_at_capacity?(sandbox_id, conv.id, capacity),
       do: {:error, :sandbox_at_capacity},
@@ -761,7 +761,7 @@ defmodule Fountain.Conversations.TurnMachine do
       started_at: now()
     }
 
-    capacity = Managoat.Runtimes.ACP.concurrency(conv.runtime)
+    capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 
     case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity) do
       {:ok, turn} ->
@@ -898,7 +898,7 @@ defmodule Fountain.Conversations.TurnMachine do
         ) :: {String.t(), [String.t()], keyword()}
   def command(acp?, conv, agent, prompt, mode, runtime_session_id, opts) do
     if acp? do
-      {c, a} = Managoat.Runtimes.ACP.command(conv.runtime)
+      {c, a} = Fountain.RuntimeDispatch.command(conv.runtime)
       # The ACP `cwd` is validated in band by the agent CLI against the real
       # filesystem, so it must be the path a process inside the sandbox sees
       # — identity on hosted providers, the mapped directory on a runner
@@ -906,7 +906,7 @@ defmodule Fountain.Conversations.TurnMachine do
       acp_cwd =
         Managoat.Sandbox.host_path(
           Keyword.fetch!(opts, :handle),
-          Managoat.Runtimes.ACP.cwd(conv.runtime)
+          Fountain.RuntimeDispatch.cwd(conv.runtime)
         )
 
       {c, a, stdin?: true, dir: acp_cwd}

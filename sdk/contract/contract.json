@@ -7834,6 +7834,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -7973,6 +7974,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -8104,6 +8106,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -9936,6 +9939,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],
@@ -11423,6 +11427,7 @@
           "enum": [
             "claude",
             "codex",
+            "fountain-fixture",
             "gemini",
             "opencode"
           ],

@@ -74,9 +74,12 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.AdminRoleRequest, "role"} => {User, :roles},
     {FountainWeb.Schemas.AdminUser, "role"} => {User, :roles},
     {FountainWeb.Schemas.AuthMeResponse, "role"} => {User, :roles},
-    {FountainWeb.Schemas.Agent, "runtime"} => {Agent, :runtimes},
-    {FountainWeb.Schemas.AgentRequest, "runtime"} => {Agent, :runtimes},
-    {FountainWeb.Schemas.AgentUpdate, "runtime"} => {Agent, :runtimes},
+    # Known values include fixture rows retained after a test runtime is disabled.
+    # Catalog/admission use the separately tested enabled-runtime list, as sandbox
+    # providers distinguish known_providers/0 from enabled_providers/0.
+    {FountainWeb.Schemas.Agent, "runtime"} => {Agent, :known_runtimes},
+    {FountainWeb.Schemas.AgentRequest, "runtime"} => {Agent, :known_runtimes},
+    {FountainWeb.Schemas.AgentUpdate, "runtime"} => {Agent, :known_runtimes},
     {FountainWeb.Schemas.Agent, "sandbox_provider"} =>
       {Fountain.SandboxProviders, :known_providers},
     {FountainWeb.Schemas.Sandbox, "provider"} => {Fountain.SandboxProviders, :known_providers},
@@ -87,7 +90,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     # A conversation's runtime is copied from its agent at spawn, so it must
     # speak the same vocabulary even though the column carries no inclusion
     # validation of its own.
-    {FountainWeb.Schemas.Conversation, "runtime"} => {Agent, :runtimes},
+    {FountainWeb.Schemas.Conversation, "runtime"} => {Agent, :known_runtimes},
     {FountainWeb.Schemas.Agent, "avatar_media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.AvatarRequest, "media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.ImageInput, "media_type"} => {Images, :valid_media_types},
@@ -132,7 +135,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.SandboxDetail, "provider"} =>
       {Fountain.SandboxProviders, :known_providers},
     {FountainWeb.Schemas.SandboxConversation, "status"} => {Conversation, :statuses},
-    {FountainWeb.Schemas.SandboxConversation, "runtime"} => {Agent, :runtimes},
+    {FountainWeb.Schemas.SandboxConversation, "runtime"} => {Agent, :known_runtimes},
     {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses},
     {FountainWeb.Schemas.Turn, "origin"} => {Turn, :origins},
     {FountainWeb.Schemas.Teammate, "presence.state"} =>

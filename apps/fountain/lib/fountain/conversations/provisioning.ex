@@ -817,8 +817,8 @@ defmodule Fountain.Conversations.Provisioning do
   # broker proxy) for registry access; never relax the sandbox network policy.
   # Keyed on the conversation's runtime, matching the spawn decision.
   def prepare_acp_adapter(handle, runtime, sprite_env) do
-    if Managoat.Runtimes.ACP.enabled?(runtime) do
-      Managoat.Runtimes.ACP.install(handle, runtime, sprite_env)
+    if Fountain.RuntimeDispatch.acp_enabled?(runtime) do
+      Fountain.RuntimeDispatch.install(handle, runtime, sprite_env)
     else
       :ok
     end
