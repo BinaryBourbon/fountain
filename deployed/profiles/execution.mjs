@@ -6,7 +6,8 @@ export async function execution(ctx) {
   const { client, fixtures, config, check } = ctx;
   const settings = config.execution;
   const streaming = config.profiles.includes('streaming');
-  ctx.report.execution = { runtime: settings.runtime, model: settings.model, sandbox_provider: settings.sandbox_provider, turns: [] };
+  const sandboxMode = settings.sandbox_mode ?? 'ephemeral';
+  ctx.report.execution = { runtime: settings.runtime, model: settings.model, sandbox_provider: settings.sandbox_provider, sandbox_mode: sandboxMode, turns: [] };
   let environment, agent, conversation, provision, first, second;
   const file = `fountain-suite-${ctx.report.run_id}.txt`;
   const nonce = randomUUID();
@@ -17,10 +18,10 @@ export async function execution(ctx) {
   if (!await check('execution/fixtures', async () => {
     environment = await fixtures.create('environment');
     agent = await fixtures.create('agent', { runtime: settings.runtime, model: settings.model,
-      sandbox_provider: settings.sandbox_provider, sandbox_mode: 'ephemeral', environment_id: environment.id,
+      sandbox_provider: settings.sandbox_provider, sandbox_mode: sandboxMode, environment_id: environment.id,
       system: 'Perform only the requested small file task. Use a shell tool. Do not access the network or start background work.',
       permission_policy: { default: 'auto_allow' } });
-    conversation = await fixtures.create('conversation', { agent_id: agent.id, environment_id: environment.id });
+    conversation = await fixtures.create('conversation', { agent_id: agent.id, environment_id: environment.id, sandbox_mode: sandboxMode });
     ctx.report.execution.conversation_id = conversation.id;
     ctx.report.execution.sandbox_id = conversation.sandbox_id;
   })) return;
@@ -29,12 +30,15 @@ export async function execution(ctx) {
     provision = await watchUntil(client, conversation.id, signal, event => event.kind === 'stage' && event.stage === 'provision' && event.state === 'done');
     const { body } = await client.request('GET', `/api/conversations/${conversation.id}`, { expected: 200, signal });
     conversation = body.data;
-    ensure(conversation.sandbox?.status === 'ready' && conversation.sandbox.mode === 'ephemeral' && conversation.sandbox.provider === settings.sandbox_provider,
+    ensure(conversation.sandbox?.status === 'ready' && conversation.sandbox.mode === sandboxMode && conversation.sandbox.provider === settings.sandbox_provider,
       'Provisioned sandbox does not match requested provider/mode');
     ensure(conversation.agent_id === agent.id && conversation.environment_id === environment.id, 'Conversation fixture identity changed');
     const turns = await client.request('GET', `/api/conversations/${conversation.id}/turns`, { expected: 200, signal });
     ensure(turns.body.data.length === 0, 'Conversation invoked inference before a prompt was submitted');
     ctx.report.execution.sandbox_id = conversation.sandbox_id;
+    ctx.report.execution.versions = { runtime: { available: false, reason: 'Public conversation API does not expose the installed runtime binary version' },
+      sandbox_image: { available: false, reason: 'Public sandbox API does not expose an immutable image reference' },
+      runner: conversation.sandbox.runner ?? null, agent_version: conversation.agent_version ?? null };
   })) return;
   const readArtifact = async () => {
     const response = await client.request('GET', `/api/sandboxes/${conversation.sandbox_id}/file?path=${file}&max_bytes=1024`, { expected: 200 });
@@ -71,6 +75,10 @@ export async function execution(ctx) {
   });
   await check('execution/terminate', async () => {
     const resource = fixtures.manifest.resources.find(r => r.kind === 'conversation' && r.id === conversation.id);
-    await fixtures.terminateConversation(resource, conversation, phaseSignal(ctx.signal, settings.provision_ms));
+    await fixtures.terminateConversation(resource, conversation, phaseSignal(ctx.signal, settings.provision_ms), { preserveHome: sandboxMode === 'persistent' });
+    if (sandboxMode === 'persistent') {
+      await readArtifact();
+      ctx.report.execution.lifecycle = { conversation_terminated: true, home_survived: true, artifact_survived: true };
+    } else ctx.report.execution.lifecycle = { conversation_terminated: true, sandbox_terminated: true };
   });
 }

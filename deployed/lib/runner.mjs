@@ -46,11 +46,13 @@ export function configFrom(path, env = process.env) {
   }
   if (config.profiles.some(name => ['execution', 'streaming'].includes(name))) {
     const settings = config.execution;
-    requireThat(settings && Object.keys(settings).every(k => ['runtime', 'model', 'sandbox_provider', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit execution configuration');
+    requireThat(settings && Object.keys(settings).every(k => ['runtime', 'model', 'sandbox_provider', 'sandbox_mode', 'provision_ms', 'turn_ms', 'max_turns'].includes(k)), 'Expected explicit execution configuration');
     requireThat(['claude', 'codex', 'gemini', 'opencode'].includes(settings.runtime) &&
       typeof settings.model === 'string' && /^[a-z0-9_-]+\/[a-z0-9._-]+$/.test(settings.model) &&
       ['sprites', 'e2b', 'daytona', 'runner'].includes(settings.sandbox_provider), 'Pin an execution runtime, model, and sandbox provider');
     settings.provision_ms = positive(settings.provision_ms, 120000, 300000);
+    settings.sandbox_mode ??= 'ephemeral';
+    requireThat(['ephemeral', 'persistent'].includes(settings.sandbox_mode), 'Unknown execution sandbox mode');
     settings.turn_ms = positive(settings.turn_ms, 90000, 300000);
     requireThat(settings.max_turns === 2, 'Execution must explicitly authorize max_turns: 2');
   }

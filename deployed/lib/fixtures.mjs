@@ -31,6 +31,7 @@ export class Fixtures {
         throw new Error('Invalid cleanup resource; refusing the manifest');
       }
       if (r.kind === 'conversation') {
+        if (r.sandbox_mode !== undefined && !['ephemeral', 'persistent'].includes(r.sandbox_mode)) throw new Error('Invalid recorded sandbox mode');
         if (![r.agent_id, r.environment_id].every(id => uuid.test(id)) ||
             (r.sandbox_id !== undefined && !uuid.test(r.sandbox_id)) ||
             !existing.resources.some(item => item.kind === 'agent' && item.id === r.agent_id) ||
@@ -53,11 +54,13 @@ export class Fixtures {
         resource[`${parent}_id`] = id;
       }
       if (attrs.prompt !== undefined || attrs.sandbox_id !== undefined) throw new Error('Create conversation without inference or an existing sandbox');
+      resource.sandbox_mode = attrs.sandbox_mode ?? 'ephemeral';
+      if (!['ephemeral', 'persistent'].includes(resource.sandbox_mode)) throw new Error('Invalid sandbox mode');
     }
     this.manifest.resources.push(resource);
     this.save(); // Intent survives a response lost after the server commits.
     const result = await this.client.request('POST', collections[kind], {
-      body: kind === 'conversation' ? { ...attrs, title: resource.name, channel_id: resource.name, sandbox_mode: 'ephemeral' } : { ...attrs, name: resource.name }, validate: false,
+      body: kind === 'conversation' ? { ...attrs, title: resource.name, channel_id: resource.name, sandbox_mode: resource.sandbox_mode } : { ...attrs, name: resource.name }, validate: false,
     });
     if (result.status >= 400 && result.status < 500) {
       resource.state = 'cleaned'; this.save();
@@ -81,9 +84,9 @@ export class Fixtures {
     this.manifest.inference_attempts = attempts + 1;
     this.save(); // Lost prompt replies still consume the budget; never auto-retry.
   }
-  async terminateConversation(r, value, signal) {
+  async terminateConversation(r, value, signal, { preserveHome = false } = {}) {
     if (value.agent_id !== r.agent_id || value.environment_id !== r.environment_id || value.channel_id !== r.name) throw new Error('Conversation ownership evidence differs');
-    if (value.sandbox && value.sandbox.mode !== 'ephemeral') throw new Error('Refusing to clean a non-ephemeral sandbox');
+    if (value.sandbox && value.sandbox.mode !== (r.sandbox_mode ?? 'ephemeral')) throw new Error('Refusing to clean a sandbox with an unrecorded mode');
     if (value.sandbox_id) {
       if (r.sandbox_id && r.sandbox_id !== value.sandbox_id) throw new Error('Conversation sandbox identity changed');
       r.sandbox_id = value.sandbox_id; this.save();
@@ -97,9 +100,32 @@ export class Fixtures {
     const conv = await this.client.request('GET', `/api/conversations/${r.id}`, { expected: [200, 404], validate: false, signal });
     if (conv.status === 200 && !['terminated', 'failed'].includes(conv.body.data?.status)) throw new Error('Conversation did not terminate');
     if (r.sandbox_id) {
-      const sandbox = await this.client.request('GET', `/api/sandboxes/${r.sandbox_id}`, { expected: [200, 404], validate: false, signal });
-      if (sandbox.status === 200 && (sandbox.body.data?.agent_id !== r.agent_id || !['terminated', 'failed'].includes(sandbox.body.data?.status))) throw new Error('Run-owned sandbox is still live or has changed owner');
+      await this.cleanSandbox(r, signal, { preserveHome });
     }
+  }
+  async cleanSandbox(r, signal, { preserveHome = false } = {}) {
+    const path = `/api/sandboxes/${r.sandbox_id}`;
+    let sandbox = await this.client.request('GET', path, { expected: [200, 404], validate: false, signal });
+    if (sandbox.status === 404) {
+      if (preserveHome) throw new Error('Persistent home disappeared with its conversation');
+      return;
+    }
+    const value = sandbox.body.data;
+    if (value?.agent_id !== r.agent_id) throw new Error('Run-owned sandbox has changed owner');
+    if (r.sandbox_mode === 'persistent') {
+      if (value.mode !== 'persistent' || value.environment_id !== r.environment_id) throw new Error('Persistent sandbox ownership differs');
+      if (preserveHome) {
+        if (!['ready', 'suspended'].includes(value.status)) throw new Error('Persistent home did not survive termination');
+        return;
+      }
+      if (!['terminated', 'failed'].includes(value.status)) {
+        // The identity and environment were created by this run, before its
+        // conversation. Never reset an arbitrary home supplied by a caller.
+        await this.client.request('DELETE', path, { expected: [204, 404], validate: false, signal });
+        sandbox = await this.client.request('GET', path, { expected: [200, 404], validate: false, signal });
+      }
+    }
+    if (sandbox.status === 200 && (sandbox.body.data?.agent_id !== r.agent_id || !['terminated', 'failed'].includes(sandbox.body.data?.status))) throw new Error('Run-owned sandbox is still live or has changed owner');
   }
   async cleanup(signal) {
     const failures = [];
@@ -130,8 +156,7 @@ export class Fixtures {
           await this.client.request('DELETE', `${collection}/${r.id}`, { expected: [204, 404], validate: false, signal });
         }
         if (r.kind === 'conversation' && !value && r.sandbox_id) {
-          const sandbox = await this.client.request('GET', `/api/sandboxes/${r.sandbox_id}`, { expected: [200, 404], validate: false, signal });
-          if (sandbox.status === 200 && !['terminated', 'failed'].includes(sandbox.body.data?.status)) throw new Error('Deleted conversation still has a live sandbox');
+          await this.cleanSandbox(r, signal);
         }
         r.state = 'cleaned'; this.save();
       } catch (error) { failures.push({ kind: r.kind, id: r.id, error: error.message }); }
