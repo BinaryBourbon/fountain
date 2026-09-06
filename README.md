@@ -219,7 +219,7 @@ curl -sX POST $FOUNTAIN_URL/api/environments/$ENV_ID/secrets \
 curl -sX POST $FOUNTAIN_URL/api/agents \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"researcher","model":"anthropic/claude-sonnet-4-6","runtime":"claude","environment_id":"$ENV_ID"}'
+  -d '{"name":"researcher","model":"anthropic/claude-sonnet-5","runtime":"claude","environment_id":"$ENV_ID"}'
 ```
 
 ### Run a conversation and stream output

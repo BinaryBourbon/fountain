@@ -30,6 +30,16 @@ upgrade, is in
 
 ### Fixed
 
+- The model catalog no longer suggests ids the pinned ACP adapters refuse.
+  `claude-sonnet-4-6`, `claude-opus-4-7` and `claude-opus-4-8` are refused by
+  `claude-agent-acp` 0.66.0, and `gpt-5.3-codex` by `codex-acp` 1.10.0. All
+  four answer a real inference call, so the provider check that vets this list
+  passed them; the adapter refuses them at `session/set_model`, before a prompt
+  is written. Since the model enforcement in the previous entry a refusal fails
+  the turn, so a suggested id the adapter refuses is an outage rather than a
+  stale hint. `gpt-6-astra` is listed for openai. A test pins the refused set
+  so none of them can be relisted from a provider check alone.
+
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
 
