@@ -10,6 +10,12 @@ server releases.
 
 ---
 
+## [1.21.1] — 2026-09-06
+
+### Fixed
+
+- Generated turn types expose model selection evidence: requested and effective models, selection status, evidence source, and failure details.
+
 ## [1.21.0] — 2026-09-06
 
 ### Added

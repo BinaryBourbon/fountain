@@ -133,7 +133,9 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
 
     %{"id" => new_id, "method" => "session/new"} = next_write()
-    reply(pid, ref, new_id, %{"sessionId" => "sess_1"})
+    reply(pid, ref, new_id, %{"sessionId" => "sess_1", "models" => %{}})
+    %{"id" => set_id, "method" => "session/set_model"} = next_write()
+    reply(pid, ref, set_id, %{})
 
     %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
     settle(pid)
@@ -238,42 +240,97 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert event.data =~ "the answer"
     end
 
-    # #724: the refusal used to go to `stderr`, the one stream a protocol
-    # client filters out — so an editor (and anyone reading `?streams=acp,stage`)
-    # had no way to know the agent was answering on a different model than the
-    # one configured. A stage event reaches every surface.
-    test "a refused model becomes a stage event, and the turn continues", %{
+    test "a rejected model fails before inference and reaches API and stream state", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      %{"id" => init_id} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+      %{"id" => new_id} = next_write()
+      reply(pid, ref, new_id, %{"sessionId" => "sess_1", "models" => %{}})
+      %{"id" => set_id, "method" => "session/set_model"} = next_write()
+
+      line =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => set_id,
+          "error" => %{"code" => -32_602, "message" => "Invalid params"}
+        }) <> "\n"
+
+      send(pid, {:stdout, %{ref: ref}, line})
+      settle(pid)
+      refute_receive {:wrote, _}, 50
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+      assert turn.acp_prompt_id == nil
+      assert turn.model_selection["effective_model"] == nil
+      assert turn.model_selection["error"] =~ "No prompt was sent"
+      assert :sys.get_state(pid).acp_peer == nil
+      %{data: [wire]} = FountainWeb.ConversationJSON.turns(%{turns: [turn]})
+      assert wire.model_selection == turn.model_selection
+
+      assert Enum.any?(
+               Conversations._unsafe_list_log_events(conv.id),
+               &(&1.stage == "model" and &1.state == "failed" and &1.data =~ "Invalid params")
+             )
+    end
+
+    test "a reconnect checks the adapter pin and an update failure prevents spawning", %{
       conv: conv,
       pid: pid,
       ref: ref
     } do
       prompt_id = drive_to_prompt(pid, ref)
-
-      send(pid, {:acp, ref, {:model_rejected, "claude-sonnet-4-6", "Invalid value for model"}})
-
-      # handle_info is async; a sync call flushes the mailbox so the read below
-      # sees the event rather than racing it.
-      _ = :sys.get_state(pid)
-
-      stage =
-        conv.id
-        |> Conversations._unsafe_list_log_events()
-        |> Enum.find(&(&1.kind == "stage" and &1.stage == "model"))
-
-      assert stage, "the refusal never reached the transcript as a stage event"
-      assert stage.state == "failed"
-      assert stage.data =~ "claude-sonnet-4-6"
-      assert stage.data =~ "Invalid value for model"
-
-      # And the turn is still alive: a model we could not pin is not worth
-      # failing a turn over.
-      assert Process.alive?(pid)
-
-      # Finish it. A test that leaves a turn in flight leaves a live peer and a
-      # busy server behind, and the neighbours in this file are timing
-      # sensitive enough to have earned `settle/1`.
       reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
-      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+      assert_receive {:spawned, _, _, _}
+      GenServer.stop(:sys.get_state(pid).acp_peer)
+      settle(pid)
+
+      test = self()
+
+      Mimic.expect(Fountain.Conversations.Provisioning, :prepare_acp_adapter, fn _, "claude", _ ->
+        send(test, :adapter_checked)
+        {:error, :registry_unavailable}
+      end)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "next", []})
+      assert_receive :adapter_checked
+      refute_receive {:spawned, _, _, _}, 50
+      assert [first, second] = Conversations._unsafe_list_turns(conv.id)
+      assert first.status == "completed"
+      assert second.status == "failed"
+      assert second.acp_prompt_id == nil
+      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_1"
+    end
+
+    test "a saved model change is applied on the existing connection", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      peer = :sys.get_state(pid).acp_peer
+      agent = Fountain.Agents._unsafe_get_agent(conv.agent_id)
+      {:ok, _} = Fountain.Agents.update_agent(agent, %{model: "anthropic/claude-opus-4-6"})
+      assert :ok = GenServer.call(pid, {:send_prompt, "next", []})
+
+      assert %{
+               "method" => "session/set_model",
+               "id" => set_id,
+               "params" => %{"modelId" => "claude-opus-4-6", "sessionId" => "sess_1"}
+             } = next_write()
+
+      assert :sys.get_state(pid).acp_peer == peer
+      reply(pid, ref, set_id, %{"models" => %{"currentModelId" => "claude-opus-4-6"}})
+      %{"method" => "session/prompt", "id" => prompt_id} = next_write()
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert [first, second] = Conversations._unsafe_list_turns(conv.id)
+      assert first.status == "completed"
+      assert second.model_selection["effective_model"] == "claude-opus-4-6"
+      assert second.model_selection["source"] == "runtime"
+      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_1"
     end
 
     test "the response's usage lands on the turn and the conversation's sums (#827)", %{
@@ -341,6 +398,8 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       # The very next thing on the wire is session/prompt on the open session:
       # no initialize, no session/new, no session/resume.
+      %{"method" => "session/set_model", "id" => set_id} = next_write()
+      reply(pid, ref, set_id, %{})
       assert %{"method" => "session/prompt"} = next_write()
       assert length(Conversations._unsafe_list_turns(conv.id)) == 2
     end
@@ -670,7 +729,9 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert stage =
                conv.id
                |> Conversations._unsafe_list_log_events()
-               |> Enum.find(&(&1.kind == "stage" and &1.stage == "model"))
+               |> Enum.find(
+                 &(&1.kind == "stage" and &1.stage == "model" and &1.state == "failed")
+               )
 
       assert stage.state == "failed"
       assert stage.data =~ "gemini-2.5-pro"

@@ -69,7 +69,7 @@ counter uses the same pair as its tags.
 | `turn` | `started` `done` `failed` `interrupted` | One prompt and its reply. |
 | `request` | `started` `done` | The agent asked permission for a tool. It got an answer, or the request expired. |
 | `caller_tool` | `started` `done` | The agent called a tool that the client defined on its request. The client answered, or the call expired. |
-| `model` | `failed` | The runtime or the provider refused the model the agent asks for. |
+| `model` | `done`, `failed` | The runtime confirmed the selected model, or selection or provider access failed. |
 | `session` | `done` | The runtime reported a session id for the conversation. |
 | `sandbox` | `done` | Fountain reclaimed the sandbox. The conversation stays resumable. |
 | `terminate` | `done` | The conversation ended. |

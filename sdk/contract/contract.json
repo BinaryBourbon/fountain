@@ -12710,6 +12710,44 @@
           "required": false,
           "type": "string"
         },
+        "model_selection": {
+          "nullable": true,
+          "properties": {
+            "effective_model": {
+              "nullable": true,
+              "required": false,
+              "type": "string"
+            },
+            "error": {
+              "required": false,
+              "type": "string"
+            },
+            "requested_model": {
+              "nullable": true,
+              "required": false,
+              "type": "string"
+            },
+            "source": {
+              "enum": [
+                "runtime",
+                "selection_ack"
+              ],
+              "nullable": true,
+              "required": false,
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "failed",
+                "selected"
+              ],
+              "required": false,
+              "type": "string"
+            }
+          },
+          "required": false,
+          "type": "object"
+        },
         "origin": {
           "enum": [
             "autonomous",

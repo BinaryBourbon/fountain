@@ -58,8 +58,34 @@ A self-hosted instance uses the same request at its own base URL.
 
 ## Verify
 
-Run a conversation. A turn that reaches output proves the credential and the
-adapter.
+Check the turn's `model_selection` in `GET /api/conversations/:id/turns`.
+The same fields appear in the `model` stream stage:
+
+- `requested_model`: the ID sent to the runtime.
+- `effective_model`: the runtime's selected ID, or `null` on selection failure.
+- `source`: `runtime` for a returned model field, or `selection_ack` when the
+  runtime accepted the setter without returning a model field.
+- `status` and `error`: whether selection succeeded and the failure message.
+
+Selection evidence is separate from the agent's saved model. To verify actual
+execution, inspect Codex's session JSONL `turn_context.payload.model`. An
+assistant's answer about its model is not execution evidence.
+
+An explicit model that the runtime rejects stops the turn before inference.
+Fountain does not substitute another model. An unavailable ID in the runtime
+catalog does not, by itself, prove that your provider account lacks access.
+Check the bundled Codex version, its refreshed `model/list` response, and the
+provider response with the same credentials.
+
+Fountain checks the pinned adapter version before opening a new connection,
+including on a persistent sandbox. An existing connection keeps its process
+until it closes. If an old runtime rejects the model, the failed connection
+closes; retrying opens the updated adapter against the same session and disk.
+The sandbox must allow registry access through its configured network path.
+
+A saved agent model change takes effect on the next user turn, including on
+an existing ACP connection. The conversation, session, transcript and worktree
+remain in place. A change during a running turn applies to the next turn.
 
 ## Limits
 

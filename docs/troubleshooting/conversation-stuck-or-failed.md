@@ -52,10 +52,12 @@ Open the agent. Set the model field to the replacement. Send the prompt again.
 Each turn fails in the same way until that field changes.
 
 The models Fountain lists are advice, not a set of permitted values. Fountain
-sends any model id under a known provider to the runtime without a check. A
-model released after the last deploy therefore works on the day it ships. A
-provider can also retire a model at any time. A model that worked last month
-can fail today.
+accepts model IDs under known providers, then asks the runtime to select the
+model before inference. The installed runtime must support the model, and the
+provider account must have access. A rejected selection stops the turn. Check
+the turn's `model_selection` field and `model` stage for the requested ID and
+failure. An older runtime can need an update even when the account has access.
+A provider can also retire a model that worked last month.
 
 ## What the statuses mean
 
