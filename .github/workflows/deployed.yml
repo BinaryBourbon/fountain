@@ -11,7 +11,7 @@ on:
       profile:
         description: Required public checks (canary includes basic and execution)
         type: choice
-        options: [basic, probe, execution, streaming, canary, matrix-canary, matrix-scheduled, matrix-full, secrets, mcp, webhooks]
+        options: [basic, probe, execution, streaming, canary, matrix-canary, matrix-scheduled, matrix-full, secrets, mcp, webhooks, schedules]
         default: streaming
         required: true
       mode:

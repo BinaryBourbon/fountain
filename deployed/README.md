@@ -562,6 +562,80 @@ The analyzed window and snapshot are labeled separately.
 
 Manual CI selection is `profile: webhooks`, with
 `FOUNTAIN_WEBHOOK_ADMIN_KEY` in the selected protected environment. It is not
-part of scheduled canaries. The schedule half of #1616 remains separate work;
+part of scheduled canaries. The `schedules` profile below selects scheduled execution independently.
 `one_off` on the current schedule API selects a fresh conversation per firing,
 not a cron that deletes itself after one firing.
+
+## Scheduled execution
+
+The independent `schedules` profile covers the scheduled-execution half of
+#1616. It creates a fresh agent and environment, then a disabled schedule
+through the public teammate schedule API. The agent does not need an existing
+team conversation: `one_off: true` opens a new conversation for its firing.
+The current API uses cron; it has no once-only timer field.
+
+The suite chooses one date-specific UTC cron about two to three minutes in
+the future. It verifies `next_run_at`, records one prompt authorization in the
+cleanup manifest, then enables the schedule. A lost enable reply consumes the
+same authorization; the suite never enables it again automatically. It does
+not call the schedule's `run` action or submit a conversation prompt.
+
+When the generated conversation appears, the suite disables the schedule
+before waiting for the turn. It requires a matching public
+`last_conversation_id`, a successful `last_run_at` within the configured window,
+and a `next_run_at` advanced beyond this date. The completed turn must contain
+the scheduled prompt and a paired tool result with the nonce. The nonce file
+must also be readable through the public sandbox file API. Model text alone
+cannot satisfy these checks.
+
+The conversation has no environment override. Its sandbox must inherit the
+run-owned agent's environment, with an ephemeral mode and no vault. These are
+separate public fields and are checked separately. Every generated conversation
+is recorded for cleanup, including duplicates detected during a failed run.
+The existing ownership-marker rules for ordinary conversation fixtures remain
+in force; schedule-created conversations have a separate, parent-checked record.
+
+After completion, the suite observes the disabled schedule and its agent's
+conversations for at least 120 seconds, spanning two scheduler minutes. It
+requires the same single conversation and completed turn throughout that
+window. Results record the window and each observation. This proves the
+bounded observation with the schedule disabled; it does not claim unbounded
+exactly-once delivery or automatic deletion by Fountain. The date-specific cron
+would recur annually if it were left enabled.
+
+Copy `deployed/schedules.example.json`, set the target and dedicated account
+credentials, and pin the runtime, model and sandbox provider. The primary
+account needs working inference credentials; a runner target needs its runner
+online. The second account must be distinct and verified. The profile requires
+one authorized prompt, an ephemeral sandbox and a four-resource budget. Its
+run deadline is at most fifteen minutes. The default dispatch window is three
+minutes after the due time; duplicate observation is two minutes. Cleanup must
+have at least thirty seconds and defaults to ninety seconds.
+
+```bash
+node deployed/cli.mjs run \
+  --config /tmp/fountain-schedules.json \
+  --out /tmp/fountain-schedules-001
+```
+
+Cleanup disables and deletes the schedule before terminating its generated
+conversations. A failed disable reply does not prevent deletion. It discovers
+conversations through the run-owned agent, checks their identity and sandbox
+ownership, terminates them, and verifies their deletion. A short final scan
+catches rows inserted by a worker that had already read the schedule. A public
+sandbox listing must contain no remaining live sandbox for the agent. An
+orphan sandbox or a source that cannot be deleted fails cleanup and retains
+the parent fixtures for investigation.
+
+All schedule and generated-conversation identities live in `cleanup.json`.
+The ordinary cleanup command can recover them after interruption or a lost
+response. It checks the same target, owner, parent markers and schedule marker
+before taking action. It never creates or enables a schedule during cleanup.
+Its bounded scan does not assert that it can stop an unreachable server or
+recover from a hard-killed client without a later cleanup invocation.
+
+Manual CI selection is `profile: schedules`. It uses the protected target's
+existing primary and secondary suite keys and a fifteen-minute run ceiling.
+It is separate from `webhooks` and is not part of scheduled canaries. A
+missing scheduler or failed background firing fails the selected profile;
+local fixture diagnostics do not count as a deployed hosted-runtime verdict.

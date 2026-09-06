@@ -1,6 +1,7 @@
 import { writeFileSync, renameSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { cleanupSchedule, validateScheduleManifest } from './scheduled-fixtures.mjs';
 
 const collections = { agent: '/api/agents', environment: '/api/environments', vault: '/api/vaults', binding: '/api/secret-bindings', api_key: '/api/auth/api-keys', conversation: '/api/conversations', webhook: '/api/webhooks' };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,12 +46,18 @@ export class Fixtures {
         if (r.vault_id !== undefined && (!uuid.test(r.vault_id) || !existing.resources.some(item => item.kind === 'vault' && item.id === r.vault_id))) throw new Error('Conversation must reference a recorded vault');
       }
     }
+    validateScheduleManifest(existing);
     return new Fixtures(path, client, { existing });
   }
   save() { atomicJson(this.path, this.manifest); }
+  remainingCount() {
+    const s = this.manifest.schedule;
+    return this.manifest.resources.filter(r => r.state !== 'cleaned').length +
+      (s ? Number(s.state !== 'cleaned') + s.conversations.filter(c => c.state !== 'cleaned').length : 0);
+  }
   async create(kind, attrs = {}) {
     if (!collections[kind]) throw new Error('Unsupported fixture kind');
-    if (this.manifest.resources.length >= this.maxResources) throw new Error('Fixture resource budget exhausted');
+    if (this.manifest.resources.length + (this.manifest.schedule ? 2 : 0) >= this.maxResources) throw new Error('Fixture resource budget exhausted');
     const resource = { kind, name: `suite-${this.manifest.run_id}-${kind}-${this.manifest.resources.length}`, state: 'pending' };
     if (kind === 'webhook') {
       if (typeof attrs.url !== 'string' || !attrs.url.startsWith('https://')) throw new Error('Webhook requires an explicit HTTPS target');
@@ -147,13 +154,15 @@ export class Fixtures {
     if (sandbox.status === 200 && (sandbox.body.data?.agent_id !== r.agent_id || !['terminated', 'failed'].includes(sandbox.body.data?.status))) throw new Error('Run-owned sandbox is still live or has changed owner');
   }
   async cleanup(signal) {
-    const failures = [];
+    const failures = await cleanupSchedule(this, signal);
     // Stop outbound sources before conversation teardown can emit more events.
     const resources = [...this.manifest.resources].reverse();
     resources.sort((a, b) => Number(b.kind === 'webhook') - Number(a.kind === 'webhook'));
     for (const r of resources) {
       if (r.state === 'cleaned') continue;
       try {
+        const source = this.manifest.schedule;
+        if (source && source.state !== 'cleaned' && [source.agent_id, source.environment_id].includes(r.id)) throw new Error('Retaining parent fixture until schedule cleanup succeeds');
         if (r.kind !== 'conversation' && this.manifest.resources.some(child => child.kind === 'conversation' && child.state !== 'cleaned' && (r.kind === 'binding' || [child.agent_id, child.environment_id, child.vault_id].includes(r.id)))) throw new Error('Retaining parent fixture until conversation cleanup succeeds');
         signal?.throwIfAborted();
         const collection = collections[r.kind];
