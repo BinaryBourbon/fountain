@@ -303,6 +303,24 @@ checkout is where the first turn left it, and the agent's session still holds
 what it learned. A [suspended](reference/conversation-states.md) sandbox wakes
 for it.
 
+## Labels
+
+A conversation carries `key=value` strings. A run stamps them with what it
+found, and a list slices on them.
+
+```ts
+await fountain.resume(id).setLabels({ env: "prod", drift: "true" });
+await fountain.resume(id).setLabels({ drift: null });   // null removes a key
+
+await fountain.conversations({ labels: { env: "prod", drift: "true" } });
+```
+
+`setLabels` merges, so a key you do not name stays as it is. The filter
+combines the pairs with AND. A conversation holds at most 32 labels, a key is
+at most 64 bytes and a value is at most 256 bytes. The
+[API reference](api.md#labels) has the limits, the sandbox rule and the ACP
+extension an agent stamps its own run with.
+
 ## Sandboxes
 
 A sandbox is the machine a conversation runs on, and several conversations

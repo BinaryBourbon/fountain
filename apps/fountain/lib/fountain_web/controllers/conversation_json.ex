@@ -64,6 +64,9 @@ defmodule FountainWeb.ConversationJSON do
       source: c.source,
       parent_conversation_id: c.parent_conversation_id,
       channel_id: c.channel_id,
+      # Free-form key/value strings (#1637): what a program stamped on its own
+      # run, and what `?label=env:prod` filters the list by.
+      labels: c.labels || %{},
       turn_count: c.turn_count,
       last_active_at: c.last_active_at,
       last_read_at: c.last_read_at,

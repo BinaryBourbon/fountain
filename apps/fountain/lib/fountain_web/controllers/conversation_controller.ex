@@ -9,6 +9,7 @@ defmodule FountainWeb.ConversationController do
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, LogEvent}
   alias FountainWeb.Audited
+  alias FountainWeb.LabelFilter
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -57,6 +58,17 @@ defmodule FountainWeb.ConversationController do
         required: false,
         description:
           "Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary."
+      ],
+      label: [
+        in: :query,
+        type: :string,
+        required: false,
+        description:
+          "Only conversations carrying this `key:value` label (#1637). Repeatable, and " <>
+            "combined with AND: `?label=env:prod&label=drift:true` keeps the conversations " <>
+            "with both. The value splits on its first colon only, so `label=path:a:b` " <>
+            "matches the label `path` with the value `a:b`. 400 `invalid_label_filter` on " <>
+            "a value with no colon or an empty key."
       ]
     ],
     responses: [
@@ -70,7 +82,8 @@ defmodule FountainWeb.ConversationController do
     user = conn.assigns.current_user
     roots_only = parse_bool_param(params["roots_only"], false)
 
-    with {:ok, statuses} <- parse_statuses(params["status"]) do
+    with {:ok, statuses} <- parse_statuses(params["status"]),
+         {:ok, labels} <- LabelFilter.from(conn) do
       render(conn, :index,
         conversations:
           Conversations.list_conversations(user.id,
@@ -78,7 +91,8 @@ defmodule FountainWeb.ConversationController do
             agent_id: params["agent_id"],
             channel_id: params["channel_id"],
             sandbox_id: params["sandbox_id"],
-            status: statuses
+            status: statuses,
+            labels: labels
           )
       )
     end
@@ -120,6 +134,81 @@ defmodule FountainWeb.ConversationController do
       _conv ->
         :ok = Conversations.mark_read(id, user.id)
         send_resp(conn, :no_content, "")
+    end
+  end
+
+  operation(:labels,
+    summary: "Set a conversation's labels",
+    description:
+      "Merges `labels` into the conversation's own (#1637). A key the body does not name " <>
+        "is left alone, and a key whose value is `null` is removed, so a run can stamp one " <>
+        "outcome without reading the rest first.\n\n" <>
+        "At most 32 labels survive the merge; a key is at most 64 bytes and a value at most " <>
+        "256 bytes. A 422 names the offending key.\n\n" <>
+        "The account's own key may label any of its conversations. A sandbox callback token " <>
+        "may label **only the conversation it was minted for**; another id is refused with " <>
+        "403 `sprite_may_not_label_another_conversation`. An agent inside a turn does not " <>
+        "need this route at all: it sends the `_fountain/labels` ACP extension update " <>
+        "instead.",
+    parameters: [conversation_id: [in: :path, type: :string, required: true]],
+    request_body: {"Labels", "application/json", Schemas.ConversationLabelsRequest},
+    responses: [
+      ok: {"Conversation", "application/json", Schemas.ConversationResponse},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      forbidden:
+        {"A sandbox token labelling another conversation", "application/json", Schemas.Error},
+      unprocessable_entity:
+        {"Invalid labels", "application/json", Schemas.UnprocessableEntityError}
+    ]
+  )
+
+  def labels(conn, %{"conversation_id" => id} = params) do
+    user = conn.assigns.current_user
+
+    case params["labels"] do
+      labels when is_map(labels) ->
+        opts = [sandbox_key_id: sandbox_key_id(conn)] ++ Audited.attribution(conn)
+
+        id
+        |> Conversations.set_conversation_labels(user.id, labels, opts)
+        |> labels_response(conn, user)
+
+      _ ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "labels_required", message: "labels must be an object"})
+    end
+  end
+
+  defp labels_response({:ok, conv}, conn, user) do
+    # Re-read annotated, so this renders the same conversation object every
+    # other conversation route does rather than one with a null turn_count.
+    render(conn, :show,
+      conversation: Conversations.get_conversation_with_activity(conv.id, user.id)
+    )
+  end
+
+  # Named, and 403 rather than 404: the holder knows the conversation exists —
+  # it is one of the account's — and the refusal is about which credential is
+  # asking. The same shape as `sprite_may_not_answer` on the answer route.
+  defp labels_response({:error, :sprite_may_not_label_another_conversation}, conn, _user) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{error: "sprite_may_not_label_another_conversation"})
+  end
+
+  defp labels_response({:error, _} = error, _conn, _user), do: error
+
+  # The api key on the request when it is a sandbox's per-conversation token,
+  # and nil for the account's own key. `Conversations.set_conversation_labels/4`
+  # is what turns that into the ownership rule.
+  defp sandbox_key_id(conn) do
+    case conn.assigns[:current_api_key] do
+      %Fountain.Accounts.ApiKey{id: id, scopes: scopes} ->
+        if "sprite" in scopes, do: id
+
+      _ ->
+        nil
     end
   end
 

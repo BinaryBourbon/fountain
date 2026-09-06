@@ -36,6 +36,14 @@ upgrade, is in
   record already matched the document. Apply stays additive and prunes nothing.
   Rebinding a teammate retires the computer its old environment and vault named,
   and is refused while a turn is running on it.
+- Conversations carry free-form `labels`, a map of at most 32 key/value
+  strings. Set them on creation or with `PATCH /api/conversations/:id/labels`,
+  which merges. A running agent stamps its own conversation with the
+  `_fountain/labels` ACP extension notification, and a sandbox callback token
+  can label only the conversation it was minted for. `GET /api/conversations`
+  and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
+  filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
+  and the console's conversation lists render them as chips.
 
 ### Fixed
 

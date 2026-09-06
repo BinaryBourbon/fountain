@@ -11,7 +11,7 @@ defmodule Fountain.Conversations do
   require Logger
 
   alias Fountain.Audit
-  alias Fountain.Conversations.{Blocks, Conversation, LogEvent, Sandbox, Turn, TurnImage}
+  alias Fountain.Conversations.{Blocks, Conversation, Labels, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Repo
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
@@ -696,6 +696,10 @@ defmodule Fountain.Conversations do
   for `limit: n` — which the console's dashboard uses to ask for the five it
   shows instead of every row a busy account has.
 
+  `labels: %{"env" => "prod"}` (#1637) keeps the conversations carrying every
+  one of those pairs — jsonb containment, so a row with more labels than the
+  filter names still matches, and the GIN index on the column serves it.
+
   Populates the `last_active_at` virtual field using `kind: "output"` log
   events only — stage events (reconnects, lifecycle) are excluded so
   reconnects don't produce false unread indicators.
@@ -729,6 +733,9 @@ defmodule Fountain.Conversations do
         {:channel_id, id}, q when is_binary(id) and id != "" ->
           where(q, [conv: c], c.channel_id == ^id)
 
+        {:labels, labels}, q when is_map(labels) and map_size(labels) > 0 ->
+          where(q, [conv: c], fragment("? @> ?", c.labels, type(^labels, :map)))
+
         {:status, [_ | _] = statuses}, q ->
           where(q, [conv: c], c.status in ^statuses)
 
@@ -751,15 +758,24 @@ defmodule Fountain.Conversations do
   the surface reading a channel — the team page — wants the last transcript
   even when nothing is running.
   """
-  def list_channel_conversations(user_id, channel_id)
+  def list_channel_conversations(user_id, channel_id, opts \\ [])
       when is_binary(user_id) and is_binary(channel_id) do
     from(c in annotated_query(user_id),
       where: c.channel_id == ^channel_id,
       order_by: [desc: c.inserted_at, desc: c.id]
     )
+    |> filter_by_labels(Keyword.get(opts, :labels))
     |> Repo.all()
     |> Repo.preload([:agent, :sandbox])
   end
+
+  # The same containment filter `list_conversations/2` applies (#1637), for
+  # the channel-bound list behind the team route.
+  defp filter_by_labels(query, labels) when is_map(labels) and map_size(labels) > 0 do
+    where(query, [conv: c], fragment("? @> ?", c.labels, type(^labels, :map)))
+  end
+
+  defp filter_by_labels(query, _labels), do: query
 
   @doc """
   Scoped fetch that also populates the read-model annotations —
@@ -880,6 +896,97 @@ defmodule Fountain.Conversations do
             metadata: %{
               "tool_count" => length(tools),
               "tool_names" => Enum.map(tools, & &1["name"])
+            }
+          })
+
+        _ ->
+          :ok
+      end)
+    end
+  end
+
+  @doc """
+  Merge `labels` into `conversation_id`'s, for the owner of that conversation
+  (#1637).
+
+  Merge, not replace: a key that is not named is left alone and a key whose
+  value is `nil` is removed, so a run can stamp one outcome without reading
+  the rest first. `Conversations.Labels` owns the limits, and the changeset
+  refuses a write that breaks one with the offending key named.
+
+  **A sandbox may label its own conversation only.** Pass
+  `sandbox_key_id: key.id` when the caller authenticated with a
+  `sprite`-scoped token: the conversation must be the one that token was
+  minted for (`callback_api_key_id`), or the write is refused with
+  `:sprite_may_not_label_another_conversation`. Without that check a worker
+  holding an account-scoped callback key could relabel every other run on
+  the account, which is exactly the loop ADR 0045 describes.
+
+  Tenant-scoped: an id belonging to another account reads as `:not_found`.
+  """
+  @spec set_conversation_labels(binary(), binary(), map(), keyword()) ::
+          {:ok, Conversation.t()} | {:error, term()}
+  def set_conversation_labels(conversation_id, user_id, labels, opts \\ [])
+      when is_binary(conversation_id) and is_binary(user_id) and is_map(labels) do
+    case get_conversation(conversation_id, user_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Conversation{} = conv ->
+        if sandbox_owns?(conv, Keyword.get(opts, :sandbox_key_id)) do
+          # Ownership: `conv` came from the tenant-scoped fetch above.
+          merge_labels(conv, labels, opts)
+        else
+          {:error, :sprite_may_not_label_another_conversation}
+        end
+    end
+  end
+
+  # No sandbox key on the request is the owner's own credential, which may
+  # label any conversation it can already fetch.
+  defp sandbox_owns?(_conv, nil), do: true
+  defp sandbox_owns?(%Conversation{callback_api_key_id: id}, key_id), do: id == key_id
+
+  @doc """
+  Merge `labels` into a conversation the caller already owns.
+
+  Ownership is the caller's job: `conv` must have come from a tenant-scoped
+  fetch, or from a process that established ownership when it started (the
+  ConversationServer, on the ACP extension notification). Public callers want
+  `set_conversation_labels/4`.
+
+  A merge that changes nothing writes nothing and records nothing — a
+  deterministic run re-stamping the same outcome on every tick is the normal
+  case. Audited as `conversation.labels_set` with the keys written and the
+  keys removed, never the values (ADR 0013).
+  """
+  @spec merge_labels(Conversation.t(), map(), keyword()) ::
+          {:ok, Conversation.t()} | {:error, Ecto.Changeset.t()}
+  def merge_labels(%Conversation{} = conv, labels, opts \\ []) when is_map(labels) do
+    current = conv.labels || %{}
+    merged = Labels.merge(current, labels)
+
+    if merged == current do
+      {:ok, conv}
+    else
+      {written, removed} = Labels.changed_keys(current, labels)
+
+      conv
+      |> Conversation.changeset(%{labels: merged})
+      |> Repo.update()
+      |> tap(fn
+        {:ok, updated} ->
+          Audit.record(%{
+            user_id: updated.user_id,
+            action: "conversation.labels_set",
+            resource_type: "conversation",
+            resource_id: updated.id,
+            actor: Keyword.get(opts, :actor, "self"),
+            request_ip: Keyword.get(opts, :request_ip),
+            metadata: %{
+              "keys" => written,
+              "removed_keys" => removed,
+              "label_count" => map_size(merged)
             }
           })
 
@@ -1780,8 +1887,10 @@ defmodule Fountain.Conversations do
   independent of `inserted_at`'s one-second precision.
 
   Two concurrent first calls for one channel can both create; the next call
-  resumes whichever is newer. Nothing is audited on the resume path — nothing
-  changed.
+  resumes whichever is newer. Nothing is audited on the resume path unless
+  `attrs["labels"]` actually changes something: it is the same conversation,
+  so labels merge into the row it hands back (#1637) and that write records
+  `conversation.labels_set` like any other.
   """
   def start_or_resume_conversation(attrs, opts \\ [])
 
@@ -1801,6 +1910,7 @@ defmodule Fountain.Conversations do
                  do: {:ok, fresh, :created}
           else
             with :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+                 {:ok, conv} <- resume_labels(conv, attrs["labels"], opts),
                  do: {:ok, conv, :resumed}
           end
 
@@ -1813,6 +1923,14 @@ defmodule Fountain.Conversations do
   def start_or_resume_conversation(attrs, opts) do
     with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
   end
+
+  # A resume lands on the conversation the binding already has, so labels on
+  # the request are merged into it rather than dropped (#1637). A caller that
+  # sends none changes nothing, and the resume stays the silent path it was.
+  defp resume_labels(%Conversation{} = conv, labels, opts) when is_map(labels),
+    do: merge_labels(conv, labels, opts)
+
+  defp resume_labels(%Conversation{} = conv, _labels, _opts), do: {:ok, conv}
 
   # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
   # request may send a string. Anything else is not a request.
@@ -1905,6 +2023,7 @@ defmodule Fountain.Conversations do
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
     - `title`                 — optional display title (the team page names a teammate with it)
+    - `labels`                — optional `key => value` strings (#1637); see `Conversations.Labels`
   """
   def start_conversation(attrs, opts \\ [])
 
@@ -1974,7 +2093,8 @@ defmodule Fountain.Conversations do
              title: attrs["title"],
              sandbox_api_access: api_access,
              permission_policy: perm_policy,
-             caller_tools: attrs["caller_tools"] || []
+             caller_tools: attrs["caller_tools"] || [],
+             labels: attrs["labels"] || %{}
            }) do
       # Recorded here rather than in either branch below: both of them return
       # {:ok, conv}. The row exists and the sandbox reservation is spent even
@@ -2496,7 +2616,8 @@ defmodule Fountain.Conversations do
              permission_policy: perm_policy,
              # The bridge's tools (#1202) ride on both create paths: this
              # one is what a home sandbox's second conversation takes.
-             caller_tools: attrs["caller_tools"] || []
+             caller_tools: attrs["caller_tools"] || [],
+             labels: attrs["labels"] || %{}
            }) do
       Audit.record(%{
         user_id: user_id,

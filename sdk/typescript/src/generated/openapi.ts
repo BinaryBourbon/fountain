@@ -1229,6 +1229,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/conversations/{conversation_id}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set a conversation's labels
+         * @description Merges `labels` into the conversation's own (#1637). A key the body does not name is left alone, and a key whose value is `null` is removed, so a run can stamp one outcome without reading the rest first.
+         *
+         *     At most 32 labels survive the merge; a key is at most 64 bytes and a value at most 256 bytes. A 422 names the offending key.
+         *
+         *     The account's own key may label any of its conversations. A sandbox callback token may label **only the conversation it was minted for**; another id is refused with 403 `sprite_may_not_label_another_conversation`. An agent inside a turn does not need this route at all: it sends the `_fountain/labels` ACP extension update instead.
+         */
+        patch: operations["FountainWeb.ConversationController.labels"];
+        trace?: never;
+    };
     "/api/conversations/{conversation_id}/prompts": {
         parameters: {
             query?: never;
@@ -2009,6 +2033,8 @@ export interface paths {
         /**
          * Message a teammate
          * @description A turn on the teammate's conversation. A parked or reaped sandbox wakes; a conversation past resuming is replaced by a fresh one under the same binding, seeded with this message, so the response names the conversation the message went to. 400 `conversation_busy` while the previous turn is still running (the same shape as `POST /api/conversations/:id/prompts`), 503 while the computer is still starting.
+         *
+         *     `labels` merges onto the conversation the message lands on (#1637), before the turn is queued, so a label the limits refuse leaves the message unsent.
          */
         post: operations["FountainWeb.TeamController.message"];
         delete?: never;
@@ -3493,6 +3519,10 @@ export interface components {
             id: string;
             /** Format: date-time */
             inserted_at?: string;
+            /** @description Free-form key/value strings on the conversation. A program stamps its own run with them (`env=prod`, `drift=true`) and `GET /api/conversations?label=env:prod` filters on them. At most 32 entries; a key is at most 64 bytes and a value at most 256 bytes. Always an object, empty when nothing set one. */
+            labels?: {
+                [key: string]: string;
+            };
             /**
              * Format: date-time
              * @description Most recent runtime output, falling back to creation time. Stage events (reconnects, sandbox lifecycle) do not count.
@@ -3550,6 +3580,10 @@ export interface components {
             fresh?: boolean | null;
             /** @description Optional images to attach to the initial prompt. */
             images?: components["schemas"]["ImageInput"][] | null;
+            /** @description Key/value strings to stamp on the conversation. At most 32 entries; a key is at most 64 bytes and a value at most 256 bytes, and a 422 names the offending key under `errors.labels`. With channel_id, a resume merges these into the conversation it hands back rather than dropping them. */
+            labels?: {
+                [key: string]: string;
+            } | null;
             /** @description Per-launch permission override (#939). Keys are matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); "default" covers the rest. Prefer a kind: claude titles a tool call with the command it is about to run, so a title matches one invocation only. Merged with the agent's own policy, taking the stricter of the two. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped, and one the runtime never consults is refused with 422 permission_policy_unenforceable. */
             permission_policy?: {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
@@ -3580,6 +3614,16 @@ export interface components {
              * @description Optional vault whose secrets override the environment's baseline at sprite spawn. Must satisfy the agent's allowed_vault_ids when that allowlist is set.
              */
             vault_id?: string | null;
+        };
+        /**
+         * ConversationLabelsRequest
+         * @description Labels to merge into a conversation. A key not named is left alone; a key whose value is null is removed.
+         */
+        ConversationLabelsRequest: {
+            /** @description The pairs to merge. null removes a key. At most 32 entries survive the merge; a key is at most 64 bytes and a value at most 256 bytes. A 422 names the offending key under `errors.labels`. */
+            labels: {
+                [key: string]: string | null;
+            };
         };
         /** ConversationListResponse */
         ConversationListResponse: {
@@ -4545,6 +4589,10 @@ export interface components {
         /** TeamMessageRequest */
         TeamMessageRequest: {
             images?: components["schemas"]["ImageInput"][] | null;
+            /** @description Labels to merge into the conversation this message lands on, whether that is the teammate's current one or the fresh one a retired thread is replaced by. Same limits as everywhere else; null removes a key. */
+            labels?: {
+                [key: string]: string | null;
+            } | null;
             prompt: string;
         };
         /** TeamMessageResponse */
@@ -10060,6 +10108,8 @@ export interface operations {
                 channel_id?: string;
                 /** @description Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary. */
                 status?: string;
+                /** @description Only conversations carrying this `key:value` label (#1637). Repeatable, and combined with AND: `?label=env:prod&label=drift:true` keeps the conversations with both. The value splits on its first colon only, so `label=path:a:b` matches the label `path` with the value `a:b`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
+                label?: string;
             };
             header?: never;
             path?: never;
@@ -10499,6 +10549,87 @@ export interface operations {
             };
             /** @description Sandbox or fleet unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConversationController.labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Labels */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConversationLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A sandbox token labelling another conversation */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No acceptable representation */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Invalid labels */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnprocessableEntityError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14212,7 +14343,10 @@ export interface operations {
     };
     "FountainWeb.TeamController.conversations": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only conversations carrying this `key:value` label (#1637). Repeatable and AND-combined, exactly as on `GET /api/conversations`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
+                label?: string;
+            };
             header?: never;
             path: {
                 agent_id: string;
@@ -14228,6 +14362,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeammateConversationListResponse"];
+                };
+            };
+            /** @description Invalid label filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Unauthorized */
@@ -14430,6 +14573,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Invalid labels */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangesetError"];
                 };
             };
             /** @description Too Many Requests */

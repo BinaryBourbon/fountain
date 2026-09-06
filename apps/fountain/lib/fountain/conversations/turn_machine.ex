@@ -44,7 +44,7 @@ defmodule Fountain.Conversations.TurnMachine do
   require OpenTelemetry.Tracer
 
   alias Fountain.{Agents, Conversations}
-  alias Fountain.Conversations.Conversation
+  alias Fountain.Conversations.{Conversation, Labels}
 
   @typedoc "What the peer reports about a turn, with the command ref already matched."
   @type payload :: tuple()
@@ -169,12 +169,28 @@ defmodule Fountain.Conversations.TurnMachine do
   # the full quiet window: `running` status, deferred idle park, billed turn
   # time. Metadata is nothing the agent did, so it opens no turn and re-arms
   # no quiet timer; with a turn in flight it still lands on the transcript.
+  #
+  # `_fountain/labels` is the third exception (#1637). ACP reserves a leading
+  # underscore for extensions, and `session/update` is the only notification
+  # the peer forwards, so that is where a deterministic run stamps its own
+  # outcome. It is a control message and not something the agent said, so it
+  # opens no turn, re-arms no quiet timer and never reaches the transcript.
   def handle(%__MODULE__{} = turn, {:lines, stream, data}, ctx) do
+    labels = if stream == "acp", do: label_update(data)
+
     cond do
       stream == "acp" and MapSet.member?(turn.replay_dedup, data) ->
         # A replayed line we already hold (ACP reattach). Each persisted line
         # suppresses at most one arrival, so a legitimate later repeat survives.
         {%{turn | replay_dedup: MapSet.delete(turn.replay_dedup, data)}, []}
+
+      is_map(labels) ->
+        # Written here rather than handed back as an effect: nothing about it
+        # is the server's — no state, no process, no timer — and this machine
+        # already writes what a report means (`Labels.stamp/2` merges,
+        # validates and logs a stamp the limits refuse).
+        Labels.stamp(turn.conversation_id, labels)
+        {turn, []}
 
       stream == "acp" and Managoat.ACP.Protocol.session_metadata?(data) ->
         if is_nil(turn.row) do
@@ -487,6 +503,41 @@ defmodule Fountain.Conversations.TurnMachine do
       end
 
     {turn, finish ++ [{:drop_connection, "failed"}]}
+  end
+
+  # The extension update a run stamps its own outcome with (#1637):
+  #
+  #     {"jsonrpc":"2.0","method":"session/update","params":{
+  #       "sessionId":"...",
+  #       "update":{"sessionUpdate":"_fountain/labels",
+  #                 "labels":{"drift":"true","env":"prod"}}}}
+  #
+  # ACP reserves a leading `_` for extensions, and `Managoat.ACP.Peer`
+  # forwards `session/update` and drops every other notification method, so
+  # this rides there rather than on a method of its own.
+  #
+  # A cheap substring test before the decode: this runs on every protocol line
+  # of every turn, and all but a handful of them are agent output.
+  @label_kind "_fountain/labels"
+
+  defp label_update(data) do
+    if String.contains?(data, @label_kind), do: decode_label_update(data)
+  end
+
+  defp decode_label_update(data) do
+    case Managoat.ACP.Protocol.classify_line(data) do
+      {:notification, "session/update", %{"update" => %{"sessionUpdate" => @label_kind} = update}} ->
+        # An `update` carrying no `labels` object is read as an empty merge,
+        # which writes nothing. Raising on it would cost the run its turn for
+        # a stamp, which is the wrong trade.
+        case Map.get(update, "labels") do
+          labels when is_map(labels) -> labels
+          _ -> %{}
+        end
+
+      _ ->
+        nil
+    end
   end
 
   # ── ending a turn ─────────────────────────────────────────────────────────

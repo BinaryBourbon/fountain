@@ -56,6 +56,12 @@ defmodule Fountain.Conversations.Conversation do
     field :permission_policy, :map
     # The caller-defined tools of the bridge (#1202, `Fountain.CallerTools`).
     field :caller_tools, {:array, :map}, default: []
+    # Free-form `key => value` strings (#1637). Set at launch, merged by the
+    # labels route and by the agent's own `_fountain/labels` ACP notification,
+    # and filtered on with jsonb containment. `Conversations.Labels` owns the
+    # limits and the merge; writes here go through `Labels.changeset/1` below,
+    # which is why every door enforces the same rule.
+    field :labels, :map, default: %{}
 
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0
@@ -120,7 +126,8 @@ defmodule Fountain.Conversations.Conversation do
       :environment_id,
       :channel_id,
       :permission_policy,
-      :caller_tools
+      :caller_tools,
+      :labels
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
     |> validate_length(:channel_id, max: 255)
@@ -129,6 +136,7 @@ defmodule Fountain.Conversations.Conversation do
     |> validate_inclusion(:source, @sources)
     |> validate_inclusion(:sandbox_api_access, @sandbox_api_access_modes)
     |> validate_sandbox_api_access_immutable()
+    |> Fountain.Conversations.Labels.changeset()
     |> foreign_key_constraint(:sandbox_id)
     |> foreign_key_constraint(:agent_id)
     |> foreign_key_constraint(:agent_version_id)

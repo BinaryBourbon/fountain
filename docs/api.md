@@ -229,6 +229,85 @@ event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render runtime output; clients should not
 parse each runtime's native dialect.
 
+### Labels
+
+A label is a `key=value` pair of strings on a conversation. A program stamps
+its own runs with the facts it knew when the turn ended. Examples are
+`env=prod`, `drift=true` and `gated=apply`. Labels are not searched. Use them
+to slice a list.
+
+Set them at creation, and read them back on every conversation object.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"YOUR_AGENT_ID","labels":{"env":"prod"}}' \
+  "$FOUNTAIN_URL/api/conversations"
+```
+
+Filter a list with a repeatable `label` parameter. Fountain combines the
+values with AND. The example keeps the conversations that carry both pairs.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  "$FOUNTAIN_URL/api/conversations?label=env:prod&label=drift:true"
+```
+
+Each value splits on its first colon. The key is the part before it, and the
+value is all of the rest. `label=path:apps/fountain:lib` therefore filters the
+key `path` for the value `apps/fountain:lib`. A value with no colon, or with
+an empty key, returns 400 `invalid_label_filter`. The same parameter works on
+`GET /api/team/{agent_id}/conversations`.
+
+`PATCH /api/conversations/{id}/labels` merges labels into a conversation. A
+key the body does not name stays as it is. A key with a `null` value is
+removed.
+
+```bash
+curl --fail-with-body -X PATCH \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"labels":{"drift":"true","env":null}}' \
+  "$FOUNTAIN_URL/api/conversations/$CONVERSATION_ID/labels"
+```
+
+A conversation holds at most 32 labels. A key is at most 64 bytes and a value
+is at most 256 bytes. A write over any of those limits returns 422 and names
+the offending key under `errors.labels`. The count applies to the merged
+result, so a merge can fail against labels that are already there.
+
+The account's own API key can label any of its conversations. A sandbox
+callback token can label only the conversation it was minted for. Another
+conversation returns 403 `sprite_may_not_label_another_conversation`.
+
+`POST /api/team/{agent_id}/messages` also takes `labels`. Fountain merges them
+into the conversation that receives the message, before it queues the turn.
+`POST /api/conversations` with a `channel_id` that resumes an existing
+conversation merges them into that conversation.
+
+`conversation.*` webhook payloads carry `labels` under `data`. See
+[Webhooks](reference/webhooks.md).
+
+### An agent that labels its own run
+
+An agent inside a turn does not need the route above. It sends an ACP
+extension notification on the session it already holds. ACP reserves a leading
+underscore for extensions.
+
+```json
+{"jsonrpc":"2.0","method":"session/update","params":{
+  "sessionId":"sess_1",
+  "update":{"sessionUpdate":"_fountain/labels",
+            "labels":{"drift":"true","env":"prod"}}}}
+```
+
+Fountain merges the map with the same rules as the route. A `null` value
+removes a key. The notification never reaches the transcript, and it opens no
+turn of its own. A stamp that breaks a limit is logged and dropped, and the
+turn continues.
+
 ### Workers without Fountain API access
 
 Set `sandbox_api_access` to `none` when the host must retain Fountain API
