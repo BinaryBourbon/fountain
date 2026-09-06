@@ -124,6 +124,7 @@ public final class Run: @unchecked Sendable {
       await progress.update(cursor: event["id"]?.intValue ?? 0, text: follower.text)
       if follower.finished { break }
       if mayEndConversation(event) {
+        try Task.checkCancellation()
         let fresh = try? await http.data("GET", "/api/conversations/\(id)")
         let status = fresh?["status"]?.stringValue ?? conversation["status"]?.stringValue
         if status == "failed" || status == "terminated" {
@@ -132,6 +133,9 @@ public final class Run: @unchecked Sendable {
         }
       }
     }
+    // Cancellation can end stream iteration normally. Do not start another
+    // request after the deadline has won the race.
+    try Task.checkCancellation()
     let fresh = try? await http.data("GET", "/api/conversations/\(id)")
     let status = fresh?["status"]?.stringValue ?? conversation["status"]?.stringValue
     let state = follower.state ?? (failureReason == nil ? .timeout : .failed)

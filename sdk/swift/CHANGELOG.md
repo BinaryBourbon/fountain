@@ -20,6 +20,8 @@ Notable changes to the Fountain Swift SDK follow
 
 ### Fixed
 
+- A timed-out or cancelled `Fountain.Run` stops before the final conversation status request. The shared timeout scenario now passes for both Swift products.
+
 - `swift test` no longer traps at teardown on Linux with
   "Trying to access a behaviour for a task that in not in the registry"
   (#1410). Cancelling a `URLSessionTask` is unsafe in FoundationNetworking
