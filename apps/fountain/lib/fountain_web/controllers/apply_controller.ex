@@ -43,8 +43,20 @@ defmodule FountainWeb.ApplyController do
   def create(conn, %{"resources" => resources}) do
     user = conn.assigns.current_user
 
-    with {:ok, results} <- Manifest.apply_manifest(user.id, resources, Audited.attribution(conn)) do
-      render(conn, :create, results: results)
+    # Check the whole manifest before any resource writes, as on /api/webhooks.
+    conn =
+      if Enum.any?(resources, &match?(%{"kind" => "Webhook"}, &1)) do
+        FountainWeb.Plugs.RequireFullScope.call(conn, [])
+      else
+        conn
+      end
+
+    if conn.halted do
+      conn
+    else
+      with {:ok, results} <- Manifest.apply_manifest(user.id, resources, Audited.attribution(conn)) do
+        render(conn, :create, results: results)
+      end
     end
   end
 end
