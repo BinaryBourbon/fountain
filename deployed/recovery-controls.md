@@ -1,9 +1,66 @@
 # Staging recovery controls
 
-These controls support tracker #1617. The public recovery profile is still being
-implemented; neither control is registered in the default suite or a canary.
-Control-plane evidence alone does not prove transcript, turn, or artifact
-recovery. Those assertions must use Fountain's public API.
+These controls support the explicit `recovery` profile for tracker #1617.
+Neither control runs in the default suite or a canary. Control-plane evidence
+is separate from the profile's public transcript, turn and artifact assertions.
+
+## Public profile
+
+Copy `recovery.example.json`, replace all example targets and identities, and
+provide the two dedicated suite account keys and separate relay admin key through
+the configured environment variables. The target must enable the deterministic
+ACP fixture for the primary account and have exactly one online runner for that
+account. Use the runner's process backend. The public API does not expose backend
+type, so the report records this as operator configuration, not verified identity.
+Hosted providers, Firecracker and daemon termination remain explicit gaps.
+
+```sh
+node deployed/cli.mjs run --config recovery.json --out /tmp/recovery-run-001
+```
+
+The four authorized fixture prompts perform a baseline nonce write, hold a turn
+at a permission request during the rollout, hold another during runner socket
+disconnection, then read the original nonce after the home parks and wakes.
+There is no model inference. The script verifies its installed source SHA through
+the public file API before running. It checks accepted turn IDs and prompts,
+the persisted runtime session, original history prefix, full and cursor replay,
+exclusive nonce writes, and the fixture's persisted prompt and artifact counts.
+The run records the cursor, turn, permission and nonce before injecting each fault.
+
+The rollout window must fit inside the publicly advertised permission timeout
+with 30 seconds to answer and settle. The example allows four minutes for rollout
+and uses the default five-minute permission timeout. The relay cut lasts ten
+seconds; the profile must independently observe the same public runner ID become
+offline and then online. It does not retry a prompt, permission answer or fault
+injection after a lost response.
+
+Configure the isolated staging target with a short idle policy, such as
+`SANDBOX_IDLE_TIMEOUT_MINUTES=1`, before running. The profile only observes this
+policy: it waits for public `sandbox.status=suspended` and fails if the configured
+`idle_wait_ms` expires. It then submits its final read, requiring the same home,
+session and baseline file, and exactly one live home for its owned agent.
+It does not manufacture suspension through the runner control protocol.
+
+Cleanup releases any relay lease and restores the baseline deployment before
+terminating and deleting public fixtures. It uses fresh cleanup deadlines even
+if the main run was cancelled. To resume all cleanup after interruption:
+
+```sh
+node deployed/cli.mjs cleanup --config recovery.json --manifest /tmp/recovery-run-001/cleanup.json --out /tmp/recovery-cleanup-001
+```
+
+Keep `cleanup.json`, `recovery.json` and `runner-relay.json` together in the original
+run directory. Cleanup verifies the recovery journal against the selected target
+and run ID, and restores controls before trying public account authentication.
+Failure to restore a control is reported as `cleanup_failed`, even when public
+fixture deletion succeeds. Kubernetes evidence never satisfies the public checks.
+
+A local source-server diagnostic currently fails the rollout continuity check:
+graceful shutdown disconnects the runner socket while the conversation server is
+still alive, and the accepted turn becomes `failed` with `runner_disconnected`.
+The profile rejects that terminal event without waiting for an impossible
+attachment. The failure and successful fixture cleanup are retained separately;
+this profile has no passing deployed staging verdict yet.
 
 ## Rollout adapter
 
