@@ -111,7 +111,7 @@ defmodule Fountain.Conversations.ConversationServer do
   (`session/resume` under ACP). Note that it only carries the conversation
   while the *sandbox* survives: a runtime session lives in the sandbox
   filesystem, so a wake that provisions a fresh sprite cannot resume it. The
-  server clears the id when it provisions fresh (#778, `forget_runtime_session`)
+  server clears the id when it provisions fresh (#778, `TurnMachine.forget_runtime_session/4`)
   and the next turn starts a new session on the new disk; `log_events` still
   render the whole transcript.
   """
@@ -905,7 +905,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # doesn't block the user's first turn.
           maybe_create_checkpoint_async(handle, env)
 
-          state = forget_runtime_session(state, conv)
+          state = TurnMachine.forget_runtime_session(state, conv)
 
           # Dated from the sandbox row, not from now, so the absolute lifetime
           # ceiling survives a restart and a reattach rather than resetting.
@@ -2276,17 +2276,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # ── turns ─────────────────────────────────────────────────────────────────
 
-  # A runtime session cannot follow the conversation onto a fresh sandbox
-  # (`TurnMachine.reset_runtime_session/2`, #778). Done inside the server
-  # rather than by the wake caller: the caller's row update races this
-  # server's own read of the row in handle_continue.
-  defp forget_runtime_session(%{runtime_session_id: nil} = state, _conv), do: state
-
-  defp forget_runtime_session(state, conv) do
-    TurnMachine.reset_runtime_session(conv, state.conversation_id)
-    %{state | runtime_session_id: nil}
-  end
-
   @doc """
   The options a sprite's callback key is minted with: `CallbackKey.api_key_opts/0`.
 
@@ -2662,6 +2651,14 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: id})
     %{state | runtime_session_id: id}
+  end
+
+  # The row must stop naming a session that is not on the disk, or every later
+  # turn resumes the same absent one. Re-read for the reason the clause above
+  # re-reads it: what is written goes onto the row as it is now.
+  defp apply_effect(state, {:forget_runtime_session, reason, detail}) do
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    TurnMachine.forget_runtime_session(state, conv, reason, detail)
   end
 
   defp apply_effect(state, {:ask_permission, request_id, tool, options}),

@@ -24,6 +24,9 @@ defmodule Fountain.Conversations.TurnMachine do
       cycle a peer narrates out of turn (#817, the connection family);
     * `{:session_id, id}` — persist the runtime's session id on the row and
       in state;
+    * `{:forget_runtime_session, reason, detail}` — clear it again, when the
+      runtime says the session it names is not there (#778's remedy, reached
+      by the failure rather than by a wake);
     * `{:ask_permission, request_id, tool, options}` — the held request:
       its row, its stage, its timeout (the pending family, #1375);
     * `{:finish, status, span_attrs, stage_meta}` — end the turn: the
@@ -67,6 +70,7 @@ defmodule Fountain.Conversations.TurnMachine do
           | :open_autonomous_turn
           | :arm_autonomous_quiet
           | {:session_id, String.t()}
+          | {:forget_runtime_session, String.t(), String.t()}
           | {:ask_permission, term(), String.t(), list()}
           | {:finish, String.t(), map(), map()}
           | {:drop_connection, String.t()}
@@ -407,9 +411,72 @@ defmodule Fountain.Conversations.TurnMachine do
      ]}
   end
 
+  # The runtime session this conversation names is not on the disk, so
+  # `session/resume` (or `session/load`) can never succeed and every later
+  # prompt fails exactly like this one — the shape #778 fixed for a sandbox
+  # that was replaced, reached here by the error instead of by a wake.
+  #
+  # The trigger that prompted this: a first turn whose ACP `initialize` fails
+  # transiently. `session_plan/2` has already generated and persisted an id by
+  # then — a persisted id is how the next turn knows a turn has happened — but
+  # no session was ever opened under it, so `mode` is `:continue` forever
+  # against a rollout that was never written:
+  #
+  #     {:acp_error, :resume_session,
+  #      %{"code" => -32603, "data" => %{"details" => "no rollout found for
+  #        thread id be412434-…"}}}
+  #
+  # Observed on codex, and confirmed to still fail identically twenty-two
+  # minutes and two prompts later. The conversation stays `idle` between them,
+  # so nothing upstream reads as broken: the turns fail, the client is told a
+  # turn ended, and the track looks merely quiet.
+  #
+  # Clearing the id makes the next turn `:run` → `session/new`: the same
+  # conversation, transcript and title, a new runtime session. The agent's
+  # in-context memory is lost — but it was already unreachable, which is the
+  # same trade #778 made and for the same reason.
+  #
+  # Read out of the error's sentence rather than off a field, as the two
+  # clauses above are and for the same reason: no runtime marks this kind.
+  # Both halves are required — the call has to be a resumption *and* the
+  # runtime has to have said the session is missing — so that a peer that
+  # died mid-handshake is never read as a session that is gone, and a
+  # still-good session is never thrown away over a transient failure.
+  def handle(%__MODULE__{} = turn, {:failed, {:acp_error, tag, error}}, _ctx)
+      when tag in [:resume_session, :load_session] do
+    if session_gone?(error) do
+      detail = acp_detail(error)
+
+      Logger.warning(
+        "conv #{turn.conversation_id}: runtime session is gone (#{tag}): #{detail}; " <>
+          "clearing it so the next turn starts a new one"
+      )
+
+      message = session_gone_message(detail)
+
+      finish =
+        if turn.row do
+          [
+            {:finish, "failed", %{"error" => message, "acp.session_gone" => true},
+             %{reason: message}}
+          ]
+        else
+          []
+        end
+
+      {turn,
+       [{:forget_runtime_session, "session_gone", detail}] ++
+         finish ++ [{:drop_connection, "failed"}]}
+    else
+      handle_failed(turn, {:acp_error, tag, error})
+    end
+  end
+
   # A failed peer is not reusable: end the turn it was driving (if any) and
   # drop the connection, so the next prompt spawns a fresh adapter.
-  def handle(%__MODULE__{} = turn, {:failed, reason}, _ctx) do
+  def handle(%__MODULE__{} = turn, {:failed, reason}, _ctx), do: handle_failed(turn, reason)
+
+  defp handle_failed(%__MODULE__{} = turn, reason) do
     Logger.error("conv #{turn.conversation_id}: acp peer failed: #{inspect(reason)}")
 
     finish =
@@ -1091,6 +1158,8 @@ defmodule Fountain.Conversations.TurnMachine do
     end
   end
 
+  @fresh_sandbox_detail "the previous runtime session lived on a sandbox that no longer exists"
+
   # A runtime session lives in the sandbox filesystem, so it cannot follow the
   # conversation onto a freshly provisioned one. Until #778 a wake that took
   # the `:create_new` arm kept the old id, the next turn ran in `:continue`
@@ -1102,19 +1171,106 @@ defmodule Fountain.Conversations.TurnMachine do
   # lost either way; the difference is a working turn instead of a failing
   # one, and a stage event that says so.
   #
-  # Done inside the server rather than by the wake caller: the caller's row
-  # update races this server's own read of the row in handle_continue.
+  # Applied from the server's own callback rather than by the wake caller:
+  # the caller's row update races the server's own read of the row in
+  # handle_continue.
   @spec reset_runtime_session(Conversation.t(), String.t()) :: :ok
-  def reset_runtime_session(conv, conversation_id) do
+  def reset_runtime_session(conv, conversation_id),
+    do: reset_runtime_session(conv, conversation_id, "fresh_sandbox", @fresh_sandbox_detail)
+
+  @doc """
+  The same clearing, for a caller that knows a different reason for it. The
+  wake path above is one way to learn the session is gone; the runtime saying
+  so when asked to resume it (`session_gone?/1`) is the other, and both leave
+  the row in the state that makes the next turn `session/new`. The stage
+  event carries which one it was, so a conversation that resets can be told
+  from one that reset for the other reason without reading the turn that
+  failed.
+  """
+  @spec reset_runtime_session(Conversation.t(), String.t(), String.t(), String.t()) :: :ok
+  def reset_runtime_session(conv, conversation_id, reason, detail) do
     {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: nil})
 
     publish_stage(conversation_id, "session", "done", %{
       event: "reset",
-      reason: "fresh_sandbox",
-      detail: "the previous runtime session lived on a sandbox that no longer exists"
+      reason: reason,
+      detail: detail
     })
 
     :ok
+  end
+
+  @doc """
+  The conversation's server state with the runtime session forgotten, and the
+  row and the stage event to match. Here rather than in `ConversationServer`
+  because #1369 only lets that module shrink, and because the two callers
+  are the two ways to learn the same fact: a wake that provisioned a fresh
+  sandbox (#778), and a resume the runtime refused because the session is not
+  there (`session_gone?/1`).
+
+  Guarded on the id this server holds. Nothing to forget is not an event, and
+  publishing a reset for one would tell a client a session was discarded on
+  every wake of a conversation that never had one.
+  """
+  @spec forget_runtime_session(map(), Conversation.t()) :: map()
+  def forget_runtime_session(state, conv),
+    do: forget_runtime_session(state, conv, "fresh_sandbox", @fresh_sandbox_detail)
+
+  @doc "The same, for a caller that knows a different reason for it."
+  @spec forget_runtime_session(map(), Conversation.t(), String.t(), String.t()) :: map()
+  def forget_runtime_session(%{runtime_session_id: nil} = state, _conv, _reason, _detail),
+    do: state
+
+  def forget_runtime_session(state, conv, reason, detail) do
+    reset_runtime_session(conv, state.conversation_id, reason, detail)
+    %{state | runtime_session_id: nil}
+  end
+
+  # The runtime's way of saying the session it was handed does not exist.
+  # There is no field for it: codex answers `session/resume` with a generic
+  # -32603 and puts the fact in `data.details` ("no rollout found for thread
+  # id …"), and the -32002 in the second clause is the JSON-RPC "Resource not
+  # found" the #778 comment recorded from a disk that had never seen the
+  # session. Both are read off the whole error, so a runtime that nests its
+  # message somewhere new is still matched.
+  @session_gone_phrases [
+    "no rollout found",
+    "no conversation found",
+    "no session found",
+    "session not found",
+    "resource not found",
+    "no such session",
+    "unknown session"
+  ]
+
+  defp session_gone?(%{"code" => -32_002}), do: true
+
+  defp session_gone?(error) do
+    text = error |> inspect() |> String.downcase()
+    Enum.any?(@session_gone_phrases, &String.contains?(text, &1))
+  end
+
+  # The runtime's own sentence, which is the half that names the session and
+  # the half a reader can match against their own logs. `data.details` first
+  # because a runtime that fills it has put the specific thing there and left
+  # `message` generic — "Internal error" is not worth reporting.
+  defp acp_detail(%{"data" => %{"details" => details}}) when is_binary(details), do: details
+  defp acp_detail(%{"message" => message}) when is_binary(message), do: message
+  defp acp_detail(other), do: inspect(other)
+
+  @doc """
+  What a tenant is told when the runtime session underneath a conversation is
+  gone. Said rather than inspected, and said in full: the next prompt works,
+  which is the one thing the failure itself gives no way to guess, and the
+  agent's memory of the conversation does not, which is the one thing they
+  would otherwise discover by watching it answer as though the turns before
+  it had not happened.
+  """
+  @spec session_gone_message(String.t()) :: String.t()
+  def session_gone_message(detail) do
+    "The runtime session for this conversation is no longer on its sandbox: #{String.trim(detail)} " <>
+      "Send your prompt again — the next turn starts a fresh session on this same conversation. " <>
+      "Its history is kept, but the agent will not remember the turns before this one."
   end
 
   # The provider's own sentence is the useful half, and it usually names the
