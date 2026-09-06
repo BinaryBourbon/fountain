@@ -10,6 +10,12 @@ server releases.
 
 ---
 
+## [1.20.2] — 2026-09-06
+
+### Fixed
+
+- Generated operation types include shared authentication, rate-limit and content-negotiation errors, plus documented controller refusals. Runtime request behavior is unchanged.
+
 ## [1.20.1] — 2026-09-05
 
 ### Added

@@ -189,6 +189,66 @@ spec:
               concurrency cap. Triage:
               https://managoat.com/docs/troubleshooting/sandbox-errors
 
+        - alert: FountainStageFailures
+          # Keep provisioning's existing sensitivity; cover later setup stages.
+          expr: |
+            sum by (stage) (increase(fountain_stage_count{namespace="fountain", stage!="provision", status="failed"}[30m])) > 2
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain conversation stages are failing"
+            description: "Stage {{ $labels.stage }} failed more than twice in 30 minutes. Inspect conversation stages and provider health."
+
+        - alert: FountainTurnFailureRate
+          # Histogram counts are events, so sum across replicas. Require ten
+          # terminal turns per provider to avoid paging on one failed attempt.
+          # Zero-fill missing failure series with the SAME provider labels.
+          # Round the ratio to avoid floating-point noise paging at exactly 25%.
+          expr: |
+            (
+              round((
+                sum by (provider) (increase(fountain_turn_completed_duration_ms_count{namespace="fountain", status="failed"}[30m]))
+                or
+                0 * sum by (provider) (increase(fountain_turn_completed_duration_ms_count{namespace="fountain"}[30m]))
+              )
+              / sum by (provider) (increase(fountain_turn_completed_duration_ms_count{namespace="fountain"}[30m])), 0.000001)
+              > 0.25
+            )
+            and on (provider)
+            sum by (provider) (increase(fountain_turn_completed_duration_ms_count{namespace="fountain"}[30m])) >= 10
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain turn failures exceed 25% for a provider"
+            description: "More than a quarter of at least ten terminal turns failed on {{ $labels.provider }} in 30 minutes. Inspect failed conversations and provider status."
+
+        - alert: FountainReattachFailures
+          # Reattach's duration histogram has no outcome label. The stage
+          # counter records failures even when the operation rescues them.
+          expr: |
+            sum(increase(fountain_stage_count{namespace="fountain", stage="reattach", status="failed"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain could not reattach a conversation"
+            description: "A reattach failed in the last hour. Inspect the conversation and sandbox before any manual cleanup."
+
+        - alert: FountainTurnFirstOutputSlow
+          # First-output samples exist only when output arrives: this detects
+          # slow observed output, not a turn that never emits any bytes.
+          expr: |
+            histogram_quantile(0.95,
+              sum by (provider, le) (rate(fountain_turn_first_output_elapsed_ms_bucket{namespace="fountain"}[30m]))
+            ) > 30000
+            and on (provider)
+            sum by (provider) (increase(fountain_turn_first_output_elapsed_ms_count{namespace="fountain"}[30m])) >= 10
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain first output is slow for a provider"
+            description: "Observed first-output p95 exceeds 30 seconds on {{ $labels.provider }} for 15 minutes, with at least ten samples per 30-minute window. Inspect runtime startup and provider latency."
+
         - alert: FountainProvisionDeadlineExceeded
           # The provision watchdog (#329) declared a provision wedged and
           # force-failed it. The accompanying sprite destroy is best-effort

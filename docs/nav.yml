@@ -122,7 +122,7 @@ nav:
   - Reference:
       - CLI: cli.md
       - All CLI commands: cli/commands.md
-      - API: api.md
+      - API guide and generated reference: api.md
       - Webhooks: reference/webhooks.md
       - TypeScript SDK: sdk.md
       - Elixir SDK: elixir-sdk.md

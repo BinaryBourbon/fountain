@@ -30,18 +30,11 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   like a fix landing.
 
   So an extension declares the statuses on its own operations instead — there
-  were 8 of them across both extensions, against the 66 core operations #1432
-  still owes. `FountainWeb.ExtensionSchemaGuardCase` enforces it from each
+  were 8 of them across both extensions. Core pipeline responses are
+  composed from router membership; controller-specific refusals stay explicit. `FountainWeb.ExtensionSchemaGuardCase` enforces it from each
   extension's suite, which is the only run that can.
 
   ## The families
-
-  `:plug_status` — the operation does not declare a status something in the
-  pipeline can return on any route. `Plugs.TenantAPIAuth` answers 401,
-  `require_admin` 403, `Plugs.RateLimit` 429, an unready sandbox 503,
-  `plug :accepts` 406. The document describes controllers; these come from
-  plugs, which is why 68 of them appear at once. Declaring each per operation
-  is a large, mechanical documentation change (#1432).
 
   `:mixed_422_shapes` — the operation declares `ChangesetError` for 422, which
   requires `errors`, and can also refuse with a coded
@@ -56,7 +49,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   """
 
   @reasons %{
-    plug_status: "a status a pipeline plug returns that the operation does not declare (#1432)",
     mixed_422_shapes: "declares ChangesetError for 422 but can also refuse with a code (#1444)",
     test_fixture_vocabulary: "the fixture inserts an out-of-vocabulary value on purpose"
   }
@@ -64,75 +56,6 @@ defmodule FountainWeb.SchemaGuardAllowlist do
   # The list may shrink, never grow, without a deliberate edit here and in the
   # guardrail's own ceiling.
   @entries %{
-    # ── plug_status (66) ─────────────────────────────
-    {"DELETE /api/account", 401} => :plug_status,
-    {"DELETE /api/agents/{id}", 401} => :plug_status,
-    {"DELETE /api/conversations/{id}", 401} => :plug_status,
-    {"DELETE /api/environments/{id}", 401} => :plug_status,
-    {"DELETE /api/vaults/{id}", 401} => :plug_status,
-    {"GET /api/account/billing", 401} => :plug_status,
-    {"GET /api/account/inference-credentials", 401} => :plug_status,
-    {"GET /api/admin/users", 401} => :plug_status,
-    {"GET /api/admin/users", 422} => :plug_status,
-    {"GET /api/agents", 401} => :plug_status,
-    {"GET /api/agents", 429} => :plug_status,
-    {"GET /api/agents/{id}", 401} => :plug_status,
-    {"GET /api/agents/{id}/avatar", 401} => :plug_status,
-    {"GET /api/agents/{id}/versions", 401} => :plug_status,
-    {"GET /api/agents/{id}/versions/{version}", 422} => :plug_status,
-    {"GET /api/audit", 401} => :plug_status,
-    {"GET /api/catalog", 401} => :plug_status,
-    {"GET /api/connection-providers", 403} => :plug_status,
-    {"GET /api/connections", 403} => :plug_status,
-    {"GET /api/conversations", 401} => :plug_status,
-    {"GET /api/conversations", 406} => :plug_status,
-    {"GET /api/conversations/{conversation_id}/events", 401} => :plug_status,
-    {"GET /api/conversations/{conversation_id}/events", 422} => :plug_status,
-    {"GET /api/conversations/{conversation_id}/stream", 401} => :plug_status,
-    {"GET /api/conversations/{conversation_id}/tree", 401} => :plug_status,
-    {"GET /api/conversations/{conversation_id}/turns/{turn_id}/images/{position}", 401} =>
-      :plug_status,
-    {"GET /api/conversations/{id}", 401} => :plug_status,
-    {"GET /api/environments", 401} => :plug_status,
-    {"GET /api/environments/{environment_id}/secrets", 401} => :plug_status,
-    {"GET /api/environments/{id}", 401} => :plug_status,
-    {"GET /api/sandboxes/{sandbox_id}/file", 403} => :plug_status,
-    {"GET /api/sandboxes/{sandbox_id}/files", 403} => :plug_status,
-    {"GET /api/search", 401} => :plug_status,
-    {"GET /api/team", 401} => :plug_status,
-    {"GET /api/team/schedules", 401} => :plug_status,
-    {"GET /api/vaults", 401} => :plug_status,
-    {"GET /api/vaults/{id}", 401} => :plug_status,
-    {"GET /api/webhooks", 403} => :plug_status,
-    {"GET /v1/models", 404} => :plug_status,
-    {"POST /api/account/onboarding/complete", 401} => :plug_status,
-    {"POST /api/agents", 401} => :plug_status,
-    {"POST /api/agui/{agent_id}", 401} => :plug_status,
-    {"POST /api/agui/{agent_id}", 409} => :plug_status,
-    {"POST /api/apply", 401} => :plug_status,
-    {"POST /api/auth/token", 429} => :plug_status,
-    {"POST /api/avatars/generate", 400} => :plug_status,
-    {"POST /api/conversations", 400} => :plug_status,
-    {"POST /api/conversations", 409} => :plug_status,
-    {"POST /api/conversations", 429} => :plug_status,
-    {"POST /api/conversations", 503} => :plug_status,
-    {"POST /api/conversations/{conversation_id}/interrupt", 503} => :plug_status,
-    {"POST /api/conversations/{conversation_id}/prompts", 402} => :plug_status,
-    {"POST /api/conversations/{conversation_id}/prompts", 410} => :plug_status,
-    {"POST /api/conversations/{conversation_id}/prompts", 422} => :plug_status,
-    {"POST /api/conversations/{conversation_id}/prompts", 429} => :plug_status,
-    {"POST /api/conversations/{conversation_id}/prompts", 503} => :plug_status,
-    {"POST /api/conversations/{conversation_id}/terminate", 503} => :plug_status,
-    {"POST /api/environments", 401} => :plug_status,
-    {"POST /api/team/{agent_id}/contact", 424} => :plug_status,
-    {"POST /api/vaults", 401} => :plug_status,
-    {"POST /api/webhooks", 403} => :plug_status,
-    {"POST /v1/chat/completions", 401} => :plug_status,
-    {"POST /v1/chat/completions", 500} => :plug_status,
-    {"PUT /api/agents/{id}", 401} => :plug_status,
-    {"PUT /api/environments/{id}", 401} => :plug_status,
-    {"PUT /api/vaults/{id}", 401} => :plug_status,
-
     # ── mixed_422_shapes (2) ─────────────────────────────
     {"POST /api/auth/register", 422} => :mixed_422_shapes,
     {"POST /api/conversations", 422} => :mixed_422_shapes,
