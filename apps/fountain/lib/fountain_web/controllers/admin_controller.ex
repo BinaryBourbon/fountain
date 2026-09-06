@@ -76,6 +76,7 @@ defmodule FountainWeb.AdminController do
       ]
     ],
     responses: [
+      unprocessable_entity: {"Invalid request parameters", "application/json", Schemas.Error},
       ok: {"Accounts", "application/json", Schemas.AdminUserListResponse},
       forbidden: {"Admin required", "application/json", Schemas.Error}
     ]

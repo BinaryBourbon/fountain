@@ -66,6 +66,41 @@ defmodule FountainWeb.VaultSecretController do
     end
   end
 
+  operation(:update,
+    summary: "Update a vault secret's expiry",
+    description:
+      "Changes expiry without replacing the value. Null clears expiry; omission keeps it. " <>
+        "Expiry is advisory and does not revoke the credential.",
+    parameters: [
+      vault_id: [in: :path, type: :string, required: true],
+      id: [in: :path, type: :string, required: true, description: "Secret key."]
+    ],
+    request_body: {"Secret metadata", "application/json", Schemas.VaultSecretMetadataRequest},
+    responses: [
+      ok: {"Vault Secret", "application/json", Schemas.VaultSecretResponse},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError}
+    ]
+  )
+
+  def update(conn, %{"vault_id" => vault_id, "id" => key} = params) do
+    user = conn.assigns.current_user
+
+    with %_{} = vault <- Vaults.get_vault(vault_id, user.id),
+         {:ok, secret} <-
+           Vaults.update_secret_metadata(
+             vault,
+             key,
+             Map.take(params, ["expires_at"]),
+             Audited.attribution(conn)
+           ) do
+      render(conn, :show, secret: secret)
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
   operation(:delete,
     summary: "Delete a vault secret by key",
     parameters: [

@@ -227,6 +227,8 @@ defmodule FountainWeb.TeamController do
       {"The number whose texts become prompts", "application/json", Schemas.TeamContactRequest,
        required: true},
     responses: [
+      failed_dependency:
+        {"Contact provider unavailable", "application/json", FountainWeb.Schemas.Error},
       created: {"Teammate, now with a contact", "application/json", Schemas.TeammateResponse},
       not_found: {"Not on the team, or the feature is off", "application/json", Schemas.Error},
       conflict: {"Already has a contact", "application/json", Schemas.Error},

@@ -304,3 +304,85 @@ the frequent canary monitor. The workflow retains all per-cell artifacts.
 The matrix implementation and local lifecycle tests do not establish hosted
 provider support. Retain each target's first released-deployment matrix result
 before changing a configured gap into a supported cell.
+
+## Deterministic ACP fixture
+
+The `deterministic` profile runs the pinned `fountain-fixture` runtime in a
+real sandbox. Enable it only on an isolated test instance. On the server,
+set both `DEPLOYED_ACP_FIXTURE_ENABLED=true` and
+`DEPLOYED_ACP_FIXTURE_USER_ID` to the dedicated, verified test account's UUID.
+The runtime is absent by default. Another account cannot create a fixture
+agent or start one, and disabling it prevents launch and rehydration. The
+normal account suspension, billing, sandbox placement and quota checks still
+apply. Do not enable this runtime on the public production instance.
+
+The fixture is a fixed Node program bundled in
+`apps/fountain/priv/deployed/acp-fixture.mjs`. Provisioning writes its exact
+bytes to the sandbox; the suite independently reads those bytes through the
+public file API and checks their SHA-256 against its pinned checkout. It uses
+Node from the sandbox image or runner's PATH and requires Node 18 or newer.
+There is no npm install and no arbitrary script URL, command or code supplied
+by a tenant. Use the normal real-model profile as separate required evidence.
+
+```json
+{
+  "base_url": "https://your-test-instance.example",
+  "credentials": {
+    "primary": "FOUNTAIN_SUITE_KEY",
+    "secondary": "FOUNTAIN_SUITE_OTHER_KEY"
+  },
+  "profiles": ["deterministic"],
+  "required_capabilities": {
+    "runtimes": ["fountain-fixture"],
+    "sandbox_providers": ["runner"]
+  },
+  "fixture": {
+    "sandbox_provider": "runner",
+    "provision_ms": 120000,
+    "turn_ms": 30000,
+    "max_turns": 7
+  },
+  "limits": {
+    "request_ms": 10000,
+    "run_ms": 300000,
+    "cleanup_ms": 60000,
+    "resources": 3
+  }
+}
+```
+
+Run this configuration with the normal `deployed/cli.mjs run` command.
+For a runner target, start a real `fountain runner` under the primary test
+account, with a separate temporary sandbox root. Its process backend runs
+as the runner's user; use a dedicated test machine. Hosted sandbox providers
+use the same profile, but require their own provider credentials and validation.
+Missing runtime or provider capability fails setup before fixture creation.
+
+Seven sequential prompts check delayed output while a turn is still running,
+a real nonce file and follow-up, strict stream/history replay agreement,
+permission approval and denial through the public request API, cancellation,
+an explicit ACP error, and a successful resume after that error. The permission
+checks reject an unknown option and a second tenant's answer. File reads prove
+that denied or cancelled work did not write an artifact. Session identity and
+the fixture's persisted turn/write counts prove that the final follow-up used
+the existing session and wrote the original artifact only once. Each phase
+checks its terminal turn and rejects any extra or dangling active turn.
+Cleanup terminates the sandbox and removes all three run-owned resources.
+
+`fixture` in the report records process version, source digest, scenario,
+permission outcome and session evidence. `prompt_attempts` counts all seven
+submissions; `inference_attempts` is zero. The cleanup manifest retains its
+legacy `inference_attempts` field as the durable **prompt** reservation counter.
+Do not treat fixture success as evidence of model quality, provider inference
+credentials, built-in CLI/adapter installation, model selection in those CLIs,
+MCP configuration, system prompts or skill consumption. Fixture agents reject
+personas, tenant skills and MCP settings instead of silently ignoring them.
+The fixture has only one model, `fixture/deterministic-v1`.
+
+This is the narrow host seam for #1611 and gate 1 of #1007. Runtime dispatch
+continues to delegate the four built-ins to `Managoat.Runtimes`; the fixture
+has a separate name, fixed command, account admission rule and one-turn sandbox
+capacity. There is no tenant runtime CRUD, general harness registry, custom
+bootstrap or permission claim for arbitrary code. Those remain #1007 work.
+The deterministic profile runs separately from real-model canaries and is not
+an option in the production CI workflow.

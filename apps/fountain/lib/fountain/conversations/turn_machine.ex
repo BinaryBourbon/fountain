@@ -205,22 +205,64 @@ defmodule Fountain.Conversations.TurnMachine do
     end
   end
 
-  # The runtime refused the agent's model. Published as a stage event so it
-  # reaches every surface — the conversation view, the API, the CLI and an
-  # editor's log — rather than only the `stderr` stream, which is the one
-  # thing a protocol client filters out (#724). The turn continues on the
-  # runtime's default, which is the peer's call and the right one mid-turn;
-  # what changes here is that nobody has to guess which model answered.
-  def handle(%__MODULE__{} = turn, {:model_rejected, requested, detail}, _ctx) do
-    Logger.warning("conv #{turn.conversation_id}: runtime refused model #{requested}: #{detail}")
+  def handle(%__MODULE__{} = turn, {:model_selected, requested, effective, source}, _ctx) do
+    selection = %{
+      requested_model: requested,
+      effective_model: effective,
+      source: source,
+      status: "selected"
+    }
 
-    publish_stage(turn.conversation_id, "model", "failed", %{
-      requested: requested,
-      detail: detail,
-      using: "the runtime's default for this turn"
-    })
+    turn = record_model_selection(turn, selection)
+
+    publish_stage(
+      turn.conversation_id,
+      "model",
+      "done",
+      Map.put(selection, :turn_id, turn.row && turn.row.id)
+    )
 
     {turn, []}
+  end
+
+  # Compatibility with older peers. The new peer itself stops before writing
+  # a prompt; a host-side reaction alone cannot prevent inference.
+  def handle(%__MODULE__{} = turn, {:model_rejected, requested, detail}, ctx) do
+    handle(turn, {:failed, {:model_selection_failed, requested, detail}}, ctx)
+  end
+
+  def handle(%__MODULE__{} = turn, {:failed, {:model_selection_failed, requested, detail}}, _ctx) do
+    message =
+      "Could not select model #{requested}: #{detail}. No prompt was sent. " <>
+        "Choose a model available in this runtime, or refresh its model catalog and check account access."
+
+    selection = %{
+      requested_model: requested,
+      effective_model: nil,
+      status: "failed",
+      error: message
+    }
+
+    turn = record_model_selection(turn, selection)
+
+    publish_stage(
+      turn.conversation_id,
+      "model",
+      "failed",
+      Map.merge(selection, %{
+        turn_id: turn.row && turn.row.id,
+        requested: requested,
+        detail: detail,
+        using: "none, the turn failed"
+      })
+    )
+
+    {turn,
+     [
+       {:finish, "failed", %{"error" => message, "acp.model_selection_failed" => true},
+        %{reason: message}},
+       {:drop_connection, "failed"}
+     ]}
   end
 
   # `session/new` chose an id. Persisted immediately, exactly as the legacy path
@@ -570,6 +612,13 @@ defmodule Fountain.Conversations.TurnMachine do
 
   defp put_model(usage, _source, _model), do: usage
 
+  defp record_model_selection(%__MODULE__{row: nil} = turn, _selection), do: turn
+
+  defp record_model_selection(turn, selection) do
+    {:ok, row} = Conversations._unsafe_update_turn(turn.row, %{model_selection: selection})
+    %{turn | row: row}
+  end
+
   @spec record_usage(t(), map() | nil) :: :ok
   def record_usage(%__MODULE__{row: %{} = row}, %{} = usage) do
     case Conversations._unsafe_record_turn_usage(row, usage) do
@@ -683,7 +732,7 @@ defmodule Fountain.Conversations.TurnMachine do
   # a refusal to render rather than an `:ok` followed by a refused stage.
   @spec capacity_gate(String.t(), Conversation.t()) :: :ok | {:error, :sandbox_at_capacity}
   def capacity_gate(sandbox_id, conv) do
-    capacity = Managoat.Runtimes.ACP.concurrency(conv.runtime)
+    capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 
     if Conversations._unsafe_sandbox_at_capacity?(sandbox_id, conv.id, capacity),
       do: {:error, :sandbox_at_capacity},
@@ -712,7 +761,7 @@ defmodule Fountain.Conversations.TurnMachine do
       started_at: now()
     }
 
-    capacity = Managoat.Runtimes.ACP.concurrency(conv.runtime)
+    capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 
     case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity) do
       {:ok, turn} ->
@@ -849,7 +898,7 @@ defmodule Fountain.Conversations.TurnMachine do
         ) :: {String.t(), [String.t()], keyword()}
   def command(acp?, conv, agent, prompt, mode, runtime_session_id, opts) do
     if acp? do
-      {c, a} = Managoat.Runtimes.ACP.command(conv.runtime)
+      {c, a} = Fountain.RuntimeDispatch.command(conv.runtime)
       # The ACP `cwd` is validated in band by the agent CLI against the real
       # filesystem, so it must be the path a process inside the sandbox sees
       # — identity on hosted providers, the mapped directory on a runner
@@ -857,7 +906,7 @@ defmodule Fountain.Conversations.TurnMachine do
       acp_cwd =
         Managoat.Sandbox.host_path(
           Keyword.fetch!(opts, :handle),
-          Managoat.Runtimes.ACP.cwd(conv.runtime)
+          Fountain.RuntimeDispatch.cwd(conv.runtime)
         )
 
       {c, a, stdin?: true, dir: acp_cwd}

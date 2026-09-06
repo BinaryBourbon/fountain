@@ -311,3 +311,17 @@ test('stable external evidence is retained with suite revision and public verdic
   assert.equal(result.report.revision.image_digest, deployment.expected_digest);
   assert.match(result.report.suite_revision, /^[a-f0-9]{40}$/);
 });
+
+test('deterministic fixture requires its own budget and advertised runtime before mutation', async t => {
+  const f = await fixture(t);
+  const config = { profiles: ['deterministic'], credentials: { primary: 'SUITE_TEST_KEY', secondary: 'SUITE_OTHER_KEY' },
+    fixture: { sandbox_provider: 'runner', max_turns: 7 } };
+  const options = { env: { SUITE_TEST_KEY: 'primary', SUITE_OTHER_KEY: 'secondary' } };
+  const invalid = await f.execute({ ...config, fixture: { ...config.fixture, max_turns: 8 } }, options);
+  assert.equal(invalid.code, 2);
+  assert.equal(f.requests.length, 0);
+  const missing = await f.execute(config, options);
+  assert.equal(missing.code, 2);
+  assert.ok(missing.report.checks.some(c => /Deterministic runtime is not enabled/.test(c.error ?? '')));
+  assert.ok(f.requests.every(([method]) => method === 'GET'));
+});

@@ -80,6 +80,37 @@ defmodule FountainWeb.VaultsLive.Form do
 
   def handle_event("add_secret", _, socket), do: {:noreply, socket}
 
+  def handle_event(
+        "update_secret_expiry",
+        %{"secret" => %{"key" => key, "expires_at" => date}},
+        socket
+      ) do
+    attrs = if date == "", do: %{"expires_at" => nil}, else: maybe_put_expiry(%{}, date)
+
+    if Map.has_key?(attrs, "expires_at") do
+      case Vaults.update_secret_metadata(
+             socket.assigns.vault,
+             key,
+             attrs,
+             FountainWeb.Audited.attribution(socket)
+           ) do
+        {:ok, _} ->
+          {:noreply,
+           socket
+           |> assign(:secrets, secrets_for(socket.assigns.vault))
+           |> put_flash(:info, "Secret expiry saved")}
+
+        {:error, :not_found} ->
+          {:noreply, put_flash(socket, :error, "Secret no longer exists")}
+
+        {:error, %Ecto.Changeset{} = cs} ->
+          {:noreply, put_flash(socket, :error, secret_error(cs))}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Enter a valid expiry date")}
+    end
+  end
+
   def handle_event("delete_secret", %{"id" => id}, socket) do
     secret = Enum.find(socket.assigns.secrets, &(&1.id == id))
 
@@ -131,8 +162,8 @@ defmodule FountainWeb.VaultsLive.Form do
   # The date input submits "YYYY-MM-DD" or "". A blank (or unparseable) date
   # leaves `expires_at` out of the attrs entirely, so re-adding a key to
   # rotate its value — where nothing prefills the date field — keeps the
-  # stored expiry instead of silently clearing it. Clearing is not a console
-  # action; send an explicit `expires_at: null` over the API for that.
+  # stored expiry instead of silently clearing it. The separate expiry form
+  # treats a blank date as an explicit request to clear it.
   # The recorded instant is the end of the chosen day UTC: "expires on the
   # 12th" means it still works on the 12th.
   defp maybe_put_expiry(attrs, date_string) when is_binary(date_string) and date_string != "" do
@@ -246,6 +277,23 @@ defmodule FountainWeb.VaultsLive.Form do
                     <span class={expiry_class(status)}>{label}</span>
                 <% end %>
               </td>
+              <td class="py-2">
+                <form
+                  id={"vault-secret-expiry-#{s.id}"}
+                  phx-submit="update_secret_expiry"
+                  class="flex gap-2"
+                >
+                  <input type="hidden" name="secret[key]" value={s.key} />
+                  <input
+                    type="date"
+                    name="secret[expires_at]"
+                    aria-label={"Expiry date for #{s.key}"}
+                    value={if s.expires_at, do: DateTime.to_date(s.expires_at)}
+                    class="rounded border border-zinc-300 px-2 py-1 text-sm"
+                  />
+                  <.btn type="submit">Save expiry</.btn>
+                </form>
+              </td>
               <td class="py-2 text-right">
                 <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">
                   Delete
@@ -254,6 +302,11 @@ defmodule FountainWeb.VaultsLive.Form do
             </tr>
           </tbody>
         </table>
+
+        <p :if={@secrets != []} class="text-sm text-zinc-500">
+          Expiry dates are advisory and use the end of the selected day in UTC.
+          Clear the date and save to remove an expiry. The secret value stays the same.
+        </p>
 
         <%!-- Uncontrolled on purpose (#391): no phx-change, no value bindings,
               so the plaintext never round-trips per keystroke or sits in

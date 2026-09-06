@@ -36,6 +36,12 @@ defmodule FountainWeb.ConversationController do
         required: false,
         description: "Only this agent's conversations (#832)."
       ],
+      sandbox_id: [
+        in: :query,
+        schema: %OpenApiSpex.Schema{type: :string, format: :uuid},
+        required: false,
+        description: "Only conversations on this sandbox. Combined with the other filters."
+      ],
       channel_id: [
         in: :query,
         type: :string,
@@ -55,7 +61,8 @@ defmodule FountainWeb.ConversationController do
     ],
     responses: [
       ok: {"Conversations", "application/json", Schemas.ConversationListResponse},
-      bad_request: {"Unknown status", "application/json", Schemas.Error}
+      bad_request: {"Unknown status", "application/json", Schemas.Error},
+      unprocessable_entity: {"Invalid filter", "application/json", Schemas.ChangesetError}
     ]
   )
 
@@ -70,6 +77,7 @@ defmodule FountainWeb.ConversationController do
             roots_only: roots_only,
             agent_id: params["agent_id"],
             channel_id: params["channel_id"],
+            sandbox_id: params["sandbox_id"],
             status: statuses
           )
       )
@@ -316,6 +324,7 @@ defmodule FountainWeb.ConversationController do
       ]
     ],
     responses: [
+      unprocessable_entity: {"Invalid request parameters", "application/json", Schemas.Error},
       ok: {"Log events", "application/json", Schemas.LogEventListResponse},
       not_found: {"Not found", "application/json", Schemas.Error}
     ]
@@ -387,11 +396,15 @@ defmodule FountainWeb.ConversationController do
         "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
     responses: [
+      bad_request: {"Invalid request", "application/json", Schemas.Error},
+      conflict: {"Conflicting state", "application/json", Schemas.Error},
+      service_unavailable: {"Sandbox or fleet unavailable", "application/json", Schemas.Error},
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
       not_found: {"Agent not found", "application/json", Schemas.Error},
-      unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
+      unprocessable_entity:
+        {"Validation error", "application/json", Schemas.UnprocessableEntityError},
       payment_required:
         {"Insufficient credits", "application/json",
          %OpenApiSpex.Schema{
@@ -532,6 +545,10 @@ defmodule FountainWeb.ConversationController do
     parameters: [conversation_id: [in: :path, type: :string, required: true]],
     request_body: {"Prompt", "application/json", Schemas.PromptRequest},
     responses: [
+      payment_required: {"Insufficient credits", "application/json", Schemas.Error},
+      gone: {"Conversation is terminal", "application/json", Schemas.Error},
+      unprocessable_entity: {"Invalid request parameters", "application/json", Schemas.Error},
+      service_unavailable: {"Sandbox or fleet unavailable", "application/json", Schemas.Error},
       ok: {"Queued", "application/json", Schemas.PromptResponse},
       not_found: {"Not found", "application/json", Schemas.Error},
       bad_request: {"Busy", "application/json", Schemas.Error}
@@ -580,6 +597,7 @@ defmodule FountainWeb.ConversationController do
         "for already-dead conversations.",
     parameters: [conversation_id: [in: :path, type: :string, required: true]],
     responses: [
+      service_unavailable: {"Sandbox or fleet unavailable", "application/json", Schemas.Error},
       no_content: "Terminated",
       not_found: {"Not found", "application/json", Schemas.Error}
     ]
@@ -613,6 +631,7 @@ defmodule FountainWeb.ConversationController do
         "not be woken.",
     parameters: [conversation_id: [in: :path, type: :string, required: true]],
     responses: [
+      service_unavailable: {"Sandbox or fleet unavailable", "application/json", Schemas.Error},
       no_content: "Interrupted",
       not_found: {"Not found", "application/json", Schemas.Error},
       conflict: {"Nothing to interrupt", "application/json", Schemas.Error}
