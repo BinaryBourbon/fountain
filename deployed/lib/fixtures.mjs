@@ -2,8 +2,10 @@ import { writeFileSync, renameSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const collections = { agent: '/api/agents', environment: '/api/environments', vault: '/api/vaults', api_key: '/api/auth/api-keys', conversation: '/api/conversations' };
+const collections = { agent: '/api/agents', environment: '/api/environments', vault: '/api/vaults', binding: '/api/secret-bindings', api_key: '/api/auth/api-keys', conversation: '/api/conversations' };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const marker = (kind, value) => kind === 'binding' ? value.key : kind === 'conversation' ? value.channel_id : value.name;
+const prefix = (kind, runId) => kind === 'binding' ? `SUITE_${runId.replaceAll('-', '').toUpperCase()}_BINDING_` : `suite-${runId}-`;
 
 export function atomicJson(path, value) {
   const temp = `${path}.${randomUUID()}.tmp`;
@@ -26,10 +28,11 @@ export class Fixtures {
       throw new Error('Cleanup manifest version, target, owner, run ID, or resource count does not match');
     }
     for (const r of existing.resources) {
-      if (!collections[r.kind] || typeof r.name !== 'string' || !r.name.startsWith(`suite-${existing.run_id}-`) ||
+      if (!collections[r.kind] || typeof r.name !== 'string' || !r.name.startsWith(prefix(r.kind, existing.run_id)) ||
           (r.id !== undefined && !uuid.test(r.id)) || !['pending', 'created', 'cleaned'].includes(r.state)) {
         throw new Error('Invalid cleanup resource; refusing the manifest');
       }
+      if (r.kind === 'binding' && (typeof r.host !== 'string' || !r.host.length)) throw new Error('Binding manifest lacks host ownership evidence');
       if (r.kind === 'conversation') {
         if (r.sandbox_mode !== undefined && !['ephemeral', 'persistent'].includes(r.sandbox_mode)) throw new Error('Invalid recorded sandbox mode');
         if (![r.agent_id, r.environment_id].every(id => uuid.test(id)) ||
@@ -38,6 +41,7 @@ export class Fixtures {
             !existing.resources.some(item => item.kind === 'environment' && item.id === r.environment_id)) {
           throw new Error('Conversation manifest must reference recorded agent/environment fixtures');
         }
+        if (r.vault_id !== undefined && (!uuid.test(r.vault_id) || !existing.resources.some(item => item.kind === 'vault' && item.id === r.vault_id))) throw new Error('Conversation must reference a recorded vault');
       }
     }
     return new Fixtures(path, client, { existing });
@@ -47,11 +51,20 @@ export class Fixtures {
     if (!collections[kind]) throw new Error('Unsupported fixture kind');
     if (this.manifest.resources.length >= this.maxResources) throw new Error('Fixture resource budget exhausted');
     const resource = { kind, name: `suite-${this.manifest.run_id}-${kind}-${this.manifest.resources.length}`, state: 'pending' };
+    if (kind === 'binding') {
+      resource.name = `${prefix(kind, this.manifest.run_id)}${this.manifest.resources.length}`;
+      if (typeof attrs.host !== 'string' || !attrs.host.length) throw new Error('Binding requires an explicit host');
+      resource.host = attrs.host;
+    }
     if (kind === 'conversation') {
       for (const parent of ['agent', 'environment']) {
         const id = attrs[`${parent}_id`];
         if (!this.manifest.resources.some(r => r.kind === parent && r.id === id && r.state === 'created')) throw new Error('Conversation must use run-owned agent and environment');
         resource[`${parent}_id`] = id;
+      }
+      if (attrs.vault_id !== undefined) {
+        if (!this.manifest.resources.some(r => r.kind === 'vault' && r.id === attrs.vault_id && r.state === 'created')) throw new Error('Conversation must use a run-owned vault');
+        resource.vault_id = attrs.vault_id;
       }
       if (attrs.prompt !== undefined || attrs.sandbox_id !== undefined) throw new Error('Create conversation without inference or an existing sandbox');
       resource.sandbox_mode = attrs.sandbox_mode ?? 'ephemeral';
@@ -60,20 +73,20 @@ export class Fixtures {
     this.manifest.resources.push(resource);
     this.save(); // Intent survives a response lost after the server commits.
     const result = await this.client.request('POST', collections[kind], {
-      body: kind === 'conversation' ? { ...attrs, title: resource.name, channel_id: resource.name, sandbox_mode: resource.sandbox_mode } : { ...attrs, name: resource.name }, validate: false,
+      body: kind === 'conversation' ? { ...attrs, title: resource.name, channel_id: resource.name, sandbox_mode: resource.sandbox_mode } : kind === 'binding' ? { ...attrs, key: resource.name } : { ...attrs, name: resource.name }, validate: false,
     });
     if (result.status >= 400 && result.status < 500) {
       resource.state = 'cleaned'; this.save();
       throw new Error(`Create ${kind}: received ${result.status}`);
     }
-    const value = kind === 'api_key' ? result.body : result.body?.data;
+    const value = ['api_key', 'binding'].includes(kind) ? result.body : result.body?.data;
     if (result.status !== 201 || !uuid.test(value?.id)) throw new Error(`Create ${kind}: no successful resource identity; cleanup intent retained`);
     resource.id = value.id;
     if (kind === 'conversation' && value.sandbox_id) resource.sandbox_id = value.sandbox_id;
     resource.state = 'created';
     this.save(); // Record ID before schema assertions can fail.
     this.client.contract?.check('POST', collections[kind], result.status, result.body);
-    if ((kind === 'conversation' ? value.channel_id : value.name) !== resource.name) throw new Error(`Create ${kind}: returned ownership marker differs; cleanup will require ownership evidence`);
+    if (marker(kind, value) !== resource.name || (kind === 'binding' && value.host !== resource.host)) throw new Error(`Create ${kind}: returned ownership marker differs; cleanup will require ownership evidence`);
     return value;
   }
   reserveTurn(id, maxTurns) {
@@ -86,6 +99,7 @@ export class Fixtures {
   }
   async terminateConversation(r, value, signal, { preserveHome = false } = {}) {
     if (value.agent_id !== r.agent_id || value.environment_id !== r.environment_id || value.channel_id !== r.name) throw new Error('Conversation ownership evidence differs');
+    if (r.vault_id !== undefined && value.vault_id !== r.vault_id) throw new Error('Conversation vault ownership differs');
     if (value.sandbox && value.sandbox.mode !== (r.sandbox_mode ?? 'ephemeral')) throw new Error('Refusing to clean a sandbox with an unrecorded mode');
     if (value.sandbox_id) {
       if (r.sandbox_id && r.sandbox_id !== value.sandbox_id) throw new Error('Conversation sandbox identity changed');
@@ -132,15 +146,15 @@ export class Fixtures {
     for (const r of [...this.manifest.resources].reverse()) {
       if (r.state === 'cleaned') continue;
       try {
-        if (r.kind !== 'conversation' && this.manifest.resources.some(child => child.kind === 'conversation' && child.state !== 'cleaned' && [child.agent_id, child.environment_id].includes(r.id))) throw new Error('Retaining parent fixture until conversation cleanup succeeds');
+        if (r.kind !== 'conversation' && this.manifest.resources.some(child => child.kind === 'conversation' && child.state !== 'cleaned' && (r.kind === 'binding' || [child.agent_id, child.environment_id, child.vault_id].includes(r.id)))) throw new Error('Retaining parent fixture until conversation cleanup succeeds');
         signal?.throwIfAborted();
         const collection = collections[r.kind];
         let value;
-        if (!r.id || r.kind === 'api_key') {
+        if (!r.id || ['api_key', 'binding'].includes(r.kind)) {
           const listPath = r.kind === 'conversation' ? `${collection}?agent_id=${r.agent_id}` : collection;
           const response = await this.client.request('GET', listPath, { expected: 200, validate: false, recordBody: false, signal });
           if (!Array.isArray(response.body?.data)) throw new Error('Cannot read cleanup ownership evidence');
-          const matches = response.body.data.filter(item => r.id ? item.id === r.id : (r.kind === 'conversation' ? item.channel_id : item.name) === r.name);
+          const matches = response.body.data.filter(item => r.id ? item.id === r.id : marker(r.kind, item) === r.name);
           if (matches.length > 1) throw new Error('Ambiguous cleanup intent');
           value = matches[0];
           if (!value && !r.id) throw new Error('Unresolved create intent; retry cleanup after the server settles');
@@ -150,7 +164,7 @@ export class Fixtures {
           if (response.status === 200 && !value) throw new Error('Missing cleanup ownership evidence');
         }
         if (value) {
-          if ((r.kind === 'conversation' ? value.channel_id : value.name) !== r.name || !uuid.test(value.id)) throw new Error('Cleanup ownership evidence does not match');
+          if (marker(r.kind, value) !== r.name || !uuid.test(value.id) || (r.kind === 'binding' && value.host !== r.host)) throw new Error('Cleanup ownership evidence does not match');
           r.id = value.id; this.save();
           if (r.kind === 'conversation') await this.terminateConversation(r, value, signal);
           await this.client.request('DELETE', `${collection}/${r.id}`, { expected: [204, 404], validate: false, signal });
