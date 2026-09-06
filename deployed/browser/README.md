@@ -112,11 +112,76 @@ it with 401.
 
 This path verifies OAuth denial and API-key authentication. It does not verify
 a successful OAuth grant. A complete authenticated live handoff verdict,
-live provider credential save/clear, successful OAuth authorization, and the
-isolated fresh-Compose registration case remain unfinished under #1618.
+live provider credential save/clear and successful OAuth authorization remain
+unverified. The isolated bootstrap case is described below.
 
 The app source is maintained separately in
 `jhgaylor/fountain-conversations`; report app rendering, routing and client
 authentication defects there with the exact source and served asset hashes.
 Report server cookies, OAuth registration, CORS and console failures in Fountain.
 Broad app UI permutations belong in that app's own suite.
+
+## Fresh Compose bootstrap
+
+First-account registration runs separately from the existing-instance profile.
+It requires no preexisting account or API key. Copy this configuration, replace
+the image placeholders with registry digests and select a local Docker context.
+Pull both exact image references before starting the case.
+
+```json
+{
+  "app_image": "ghcr.io/binarybourbon/fountain@sha256:REPLACE_WITH_DIGEST",
+  "postgres_image": "postgres@sha256:REPLACE_WITH_DIGEST",
+  "context": "orbstack",
+  "port": 14826
+}
+```
+
+Use the same pinned browser dependency installed above.
+
+```sh
+node deployed/browser/bootstrap.mjs run \
+  --config /absolute/path/to/bootstrap-target.json \
+  --out /tmp/fountain-bootstrap-run
+```
+
+The output directory must be new. The case resolves this repository's Compose
+file without the operator's environment or service credentials. It records that
+source file's hash and each image's identity, including the app source revision.
+It runs the stock app and Postgres services with generated local encryption
+secrets, no email delivery, registration enabled and first-admin bootstrap on.
+These settings apply only to its new project. External app links are disabled.
+
+Each project gets a unique network and database volume. The app publishes only
+the selected loopback port; Postgres publishes no port. Before browser work,
+the adapter checks actual image identities and port bindings, host health and
+readiness responses, and an empty user/key database. A local Unix-socket Docker
+endpoint is required. The ordinary bridge network permits the host connection;
+this case does not claim an outbound network sandbox.
+
+The browser creates one synthetic account, signs in, opens Admin, signs out,
+and requires a subsequent Admin navigation to redirect to login. A fixed
+read-only database query independently requires exactly one verified admin and
+zero API keys. Evidence uses named browser steps and a static Admin-heading
+crop. No inference calls or API-key creation are part of this case.
+
+Cleanup checks the Docker endpoint, Compose configuration hash and both project
+and run labels before removing the containers, network and database volume.
+It verifies that no resources remain, then removes generated secret files.
+If interrupted, preserve the private output directory and run the following.
+
+```sh
+node deployed/browser/bootstrap.mjs cleanup --out /tmp/fountain-bootstrap-run
+```
+
+For an interactive browser check, use `prepare` in place of `run`. This leaves
+the verified fresh fixture running and prints its local URL. Run cleanup after
+the browser check. Never expose that fixture beyond loopback or reuse its
+account as an existing-instance test account.
+
+Local Chrome exercised registration, sign-in, first-admin access and sign-out
+against the Compose-pinned v0.16.0 image. Database counts confirmed one verified
+admin and zero keys; cleanup removed all four Docker resources. An initial
+Admin-heading lookup timed out in the browser transport. Subsequent DOM
+inspection verified the page, and the original timeout remains in the evidence.
+The standalone Playwright bootstrap driver still needs its own live verdict.
