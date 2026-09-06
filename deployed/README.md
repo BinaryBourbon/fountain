@@ -650,13 +650,15 @@ local fixture diagnostics do not count as a deployed hosted-runtime verdict.
 ## Deterministic ACP fixture
 
 The `deterministic` profile runs the pinned `fountain-fixture` runtime in a
-real sandbox. Enable it only on an isolated test instance. On the server,
+real sandbox. Use an isolated test instance by default. An explicitly selected
+production target must follow [production recovery controls](recovery-controls.md#production-opt-in)
+and restrict the fixture to a dedicated test account. On the server,
 set both `DEPLOYED_ACP_FIXTURE_ENABLED=true` and
 `DEPLOYED_ACP_FIXTURE_USER_ID` to the dedicated, verified test account's UUID.
 The runtime is absent by default. Another account cannot create a fixture
 agent or start one, and disabling it prevents launch and rehydration. The
 normal account suspension, billing, sandbox placement and quota checks still
-apply. Do not enable this runtime on the public production instance.
+apply. Keep the fixture disabled for ordinary production accounts.
 
 The fixture is a fixed Node program bundled in
 `apps/fountain/priv/deployed/acp-fixture.mjs`. Provisioning writes its exact

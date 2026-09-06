@@ -1,4 +1,4 @@
-# Staging recovery controls
+# Recovery controls
 
 These controls support the explicit `recovery` profile for tracker #1617.
 Neither control runs in the default suite or a canary. Control-plane evidence
@@ -6,7 +6,8 @@ is separate from the profile's public transcript, turn and artifact assertions.
 
 ## Public profile
 
-Copy `recovery.example.json`, replace all example targets and identities, and
+Copy `recovery.example.json` for staging or `recovery-production.example.json`
+for production. Replace all example targets and identities, and
 provide the two dedicated suite account keys and separate relay admin key through
 the configured environment variables. The target must enable the deterministic
 ACP fixture for the primary account and have exactly one online runner for that
@@ -34,8 +35,9 @@ seconds; the profile must independently observe the same public runner ID become
 offline and then online. It does not retry a prompt, permission answer or fault
 injection after a lost response.
 
-Configure the isolated staging target with a short idle policy, such as
-`SANDBOX_IDLE_TIMEOUT_MINUTES=1`, before running. The profile only observes this
+An isolated staging target can use a short idle policy, such as
+`SANDBOX_IDLE_TIMEOUT_MINUTES=1`. Retain production's existing idle policy and
+use the production budget described below. The profile only observes this
 policy: it waits for public `sandbox.status=suspended` and fails if the configured
 `idle_wait_ms` expires. It then submits its final read, requiring the same home,
 session and baseline file, and exactly one live home for its owned agent.
@@ -65,10 +67,50 @@ that each fixture start appears exactly once under its accepted turn.
 
 The failed runs remain separate evidence. The passing local run restarts a
 source process and uses a real Go runner; it does not verify a released image,
-Kubernetes rollout, or hosted provider. A deployed staging verdict is still
-required for #1617.
+Kubernetes rollout, or hosted provider. A verdict on the explicitly selected
+deployment is still required for #1617.
 
 ## Rollout adapter
+
+### Production opt-in
+
+When no staging environment exists, use `recovery-production.example.json` and
+set `environment: "production"` plus `allow_production_restart: true`. The
+namespace label must say `production`; do not relabel production as staging.
+The existing deployment enablement label, exact URL bindings and immutable
+image/UID checks still apply. The adapter never installs those markers itself.
+
+Production mode accepts only a restart of the pinned serving image. The baseline
+and target image references and digests must be identical. A release upgrade or
+downgrade belongs to the normal deployment process, separate from this test.
+Before preparation and again before the fault, the Deployment must have at least
+two fully available, updated replicas, an observed current generation, and a
+RollingUpdate strategy allowing zero unavailable replicas and exactly one surge
+replica. Percentage values use Kubernetes rounding. The adapter changes neither
+the replica count nor the rollout strategy. These checks do not promise that
+existing sessions cannot be interrupted by a restart.
+
+Availability admission does not block restoration of an unhealthy rollout.
+Cleanup still checks ownership and concurrent changes, removes only this run's
+annotation, and requires healthy serving endpoints afterward. Removing the
+annotation can itself replace pods, so budget and schedule the restoration too.
+
+Deploy the tested Fountain reconnect fixes and an updated dedicated runner
+before running production recovery. Enable the deterministic fixture only for
+its dedicated test account. Both image references in the Deployment and test
+configuration must already use the recorded immutable digest. No production
+restart verdict is claimed by the adapter's local tests.
+
+Keep the production idle policy. The production example allows 70 minutes for
+the default 60-minute idle park and has an explicit two-hour overall bound.
+It still permits only four fixture prompts and no inference, and requires time
+for the idle wait, four bounded turns, provisioning and control overhead.
+Staging retains its ten-minute idle-wait cap and thirty-minute run cap; ordinary
+profiles retain their existing limits. Use an appropriate explicit budget if
+the deployed policy differs. The profile never changes global idle settings or
+skips the public suspend/wake assertion.
+
+### Configuration
 
 `adapters/recovery-kubernetes.mjs` exports `RecoveryDeployment`. Its caller first
 prepares a durable journal, then calls `roll` during a deterministic turn, and
@@ -101,7 +143,8 @@ image identity reported by each serving container; verify these against the
 cluster's container runtime before preparing the target. The baseline and target
 may be the same image when testing a restart.
 
-The namespace must have label `fountain.dev/environment=staging`. The Deployment
+The namespace must have label `fountain.dev/environment` matching the configured
+environment (`staging` or `production`). The Deployment
 must have label `fountain.dev/recovery-tests=enabled`. Both Deployment and Service
 must have annotation `fountain.dev/deployed-suite-base-url` equal to `base_url`.
 The adapter reads and validates these settings; it never creates them. The
@@ -153,7 +196,7 @@ headers, websocket contents or runner filesystem paths are logged or retained.
 
 Configure:
 
-- `FOUNTAIN_RELAY_UPSTREAM`: staging Fountain HTTPS origin.
+- `FOUNTAIN_RELAY_UPSTREAM`: the selected Fountain HTTPS origin.
 - `FOUNTAIN_RELAY_RUNNER_NAME`: dedicated runner name, at most 64 characters.
 - `FOUNTAIN_RELAY_RUNNER_KEY_SHA256`: lowercase SHA-256 of its exact API key.
 - `FOUNTAIN_RELAY_ADMIN_KEY`: separate credential of at least 32 characters.

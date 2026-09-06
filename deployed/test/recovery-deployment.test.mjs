@@ -13,13 +13,13 @@ const config = { adapter: 'kubernetes', environment: 'staging', base_url: 'https
   context: 'staging', namespace: 'fountain', deployment: 'fountain', service: 'fountain', container: 'fountain',
   deployment_uid: uid, before_image: `registry.test/fountain@${beforeDigest}`,
   target_image: `registry.test/fountain@${targetDigest}`, before_digest: beforeDigest, target_digest: targetDigest, timeout_ms: 3000 };
-const binding = { 'fountain.dev/deployed-suite-base-url': config.base_url };
 
 async function fixture(t, overrides = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'fountain-recovery-control-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, 'recovery.json');
   const selected = { ...config, ...overrides };
+  const binding = { 'fountain.dev/deployed-suite-base-url': selected.base_url };
   const state = {
     namespace: { metadata: { uid: 'namespace-1', labels: { 'fountain.dev/environment': 'staging' } } },
     service: { metadata: { uid: 'service-1', annotations: binding } },
@@ -56,6 +56,62 @@ async function fixture(t, overrides = {}) {
   };
   return { control: new RecoveryDeployment(selected, path, io), io, state, path, patches, config: selected };
 }
+
+async function productionFixture(t) {
+  const f = await fixture(t, { environment: 'production', allow_production_restart: true,
+    base_url: 'https://production.example.test', target_image: config.before_image, target_digest: beforeDigest });
+  f.state.namespace.metadata.labels['fountain.dev/environment'] = 'production';
+  Object.assign(f.state.deployment.spec, { replicas: 2, strategy: { type: 'RollingUpdate', rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } } });
+  f.state.deployment.status = { observedGeneration: 1, replicas: 2, updatedReplicas: 2, readyReplicas: 2, availableReplicas: 2, unavailableReplicas: 0 };
+  return f;
+}
+
+test('explicit production restart preserves its image and can restore after availability drops', async t => {
+  const f = await productionFixture(t);
+  await f.control.prepare(runId); await f.control.roll();
+  assert.equal(f.state.deployment.spec.template.spec.containers[1].image, config.before_image);
+  f.state.deployment.status.readyReplicas = 0;
+  f.state.deployment.status.availableReplicas = 0;
+  const resumed = await RecoveryDeployment.resume(f.path, f.io);
+  await resumed.restore();
+  assert.equal(f.patches.length, 2);
+  assert.equal(f.state.deployment.spec.template.metadata.annotations, undefined);
+  assert.equal(f.state.deployment.spec.replicas, 2);
+  assert.deepEqual(f.state.deployment.spec.strategy, { type: 'RollingUpdate', rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } });
+});
+
+test('production acknowledgement never authorizes an image upgrade or downgrade', () => {
+  assert.throws(() => validateRecoveryDeployment({ ...config, environment: 'production', allow_production_restart: true }), /pinned serving image/);
+  assert.throws(() => validateRecoveryDeployment({ ...config, allow_production_restart: true }), /only to a production/);
+});
+
+for (const [name, mutate] of Object.entries({
+  'single replica': s => s.spec.replicas = 1,
+  'Recreate strategy': s => s.spec.strategy.type = 'Recreate',
+  'unavailable replicas allowed': s => s.spec.strategy.rollingUpdate.maxUnavailable = 1,
+  'multiple surge replicas': s => s.spec.strategy.rollingUpdate.maxSurge = 2,
+  'invalid percentage': s => s.spec.strategy.rollingUpdate.maxSurge = '101%',
+  'unobserved generation': s => s.status.observedGeneration = 0,
+  'incomplete rollout': s => s.status.updatedReplicas = 1,
+  'extra replica still present': s => s.status.replicas = 3,
+  'unready replica': s => s.status.readyReplicas = 1,
+  'unavailable replica': s => s.status.availableReplicas = 1,
+})) test(`production refuses ${name} before preparing any mutation`, async t => {
+  const f = await productionFixture(t); mutate(f.state.deployment);
+  await assert.rejects(f.control.prepare(runId));
+  assert.equal(f.patches.length, 0);
+  await assert.rejects(readFile(f.path), { code: 'ENOENT' });
+});
+
+test('production rechecks availability before the fault and interprets Kubernetes percentage rounding', async t => {
+  const f = await productionFixture(t);
+  f.state.deployment.spec.strategy.rollingUpdate = { maxUnavailable: '25%', maxSurge: '25%' };
+  await f.control.prepare(runId);
+  f.state.deployment.status.readyReplicas = 1;
+  await assert.rejects(f.control.roll(), /fully available/);
+  assert.equal(f.patches.length, 0);
+  assert.equal(JSON.parse(await readFile(f.path)).phase, 'prepared');
+});
 
 test('rollout and restoration preserve unrelated fields and save private durable evidence', async t => {
   const f = await fixture(t);
@@ -198,7 +254,7 @@ test('restoration preserves annotations added while the recovery rollout is acti
   assert.deepEqual(f.state.deployment.spec.template.metadata.annotations, { added: 'keep' });
 });
 
-test('strict configuration rejects production, mutable images, shell arguments, and unbounded waits', () => {
+test('strict configuration rejects unacknowledged production, mutable images, shell arguments, and unbounded waits', () => {
   for (const change of [{ environment: 'production' }, { before_image: 'repo:latest' }, { base_url: 'http://localhost' },
     { context: '--server=evil' }, { timeout_ms: 300001 }, { deployment_uid: 'name' }, { command: 'sh' }]) {
     assert.throws(() => validateRecoveryDeployment({ ...config, ...change }));
