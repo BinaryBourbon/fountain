@@ -37,6 +37,15 @@ export function recoveredAttachment(events, turnId) {
   }
   return events.find(e => e.stage === 'reattach' && e.state === 'done' && JSON.parse(e.data).outcome === 'session_attached');
 }
+export function verifyRecoveryTranscript(events, accepted) {
+  const starts = events.flatMap(event => (event.blocks ?? []).filter(b => b.kind === 'text' && b.body?.includes('fixture:started:'))
+    .map(block => ({ turn_id: event.turn_id, body: block.body })));
+  for (const turn of accepted) {
+    const own = starts.filter(item => item.turn_id === turn.id);
+    ensure(own.length === 1 && own[0].body === `fixture:started:${turn.scenario}:${turn.nonce}\n`,
+      'Recovery duplicated or misattributed a fixture turn in the transcript');
+  }
+}
 
 export async function recovery(ctx, dependencies = {}) {
   const { config, client, fixtures, check } = ctx, settings = config.recovery;
@@ -80,6 +89,7 @@ export async function recovery(ctx, dependencies = {}) {
     await identity(signal);
     const state = JSON.parse((await file(`.fountain-acp-fixture/${sessionId}.json`, signal)).toString());
     verifyRecoveryState(state, sessionId, accepted, completed);
+    verifyRecoveryTranscript((await history(client, conversation.id, signal)).events, accepted);
     for (const item of accepted.slice(0, completed).filter(a => a.scenario !== 'read')) {
       ensure((await file(`.fountain-acp-fixture/${sessionId}-${item.nonce}.txt`, signal)).toString() === `${item.nonce}\n`, 'Recovery lost or changed artifact bytes');
     }

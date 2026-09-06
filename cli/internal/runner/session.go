@@ -167,9 +167,12 @@ func (s *Session) finish(code int) {
 // attach replays the journal from byte zero, tagged for the requester, and
 // switches live emission on — under one lock, so no frame is missed or
 // delivered twice around the switch.
-func (s *Session) attach(reqID int) {
+func (s *Session) attach(reqID int, emit Emitter) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// A session outlives its websocket. Replay and future output must use
+	// the connection that requested this attachment, not the spawn's socket.
+	s.emit = emit
 	for _, f := range s.journal {
 		replay := make(Frame, len(f)+1)
 		for k, v := range f {

@@ -31,6 +31,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Output,
     Pending,
     Provisioning,
+    Reattachment,
     SpriteEnv,
     TurnMachine
   }
@@ -466,6 +467,10 @@ defmodule Fountain.Conversations.ConversationServer do
       current_command: nil,
       current_command_ref: nil,
       current_turn: nil,
+      # A runner's processes survive its websocket. Keep an accepted ACP
+      # turn busy while its transport reconnects, with one bounded deadline.
+      runner_reconnect: nil,
+      runner_replay: nil,
       runtime_session_id: nil,
       # OTel span context for the in-flight turn (started in kick_turn,
       # ended in the :exit / :interrupt handlers).
@@ -1184,7 +1189,13 @@ defmodule Fountain.Conversations.ConversationServer do
           sandbox_started_at: Lifecycle.clock_start(sandbox)
       }
 
-      new_state = reattach_running_turn(new_state)
+      new_state = reattach_running_turn(%{new_state | current_turn: nil})
+
+      new_state =
+        Reattachment.finish_runner_reconnect(
+          new_state,
+          if(new_state.current_turn, do: "reattached", else: "turn_ended")
+        )
 
       {:noreply, new_state}
     else
@@ -1231,13 +1242,23 @@ defmodule Fountain.Conversations.ConversationServer do
             "transient; sandbox row left untouched"
         )
 
-        Output.publish_stage(state.conversation_id, "reattach", "failed", %{
-          reason: inspect(reason),
-          retryable: true,
-          node: to_string(node())
-        })
+        running_turn = find_running_turn(state.conversation_id)
 
-        {:stop, :normal, state}
+        if sandbox.provider == "runner" and
+             reason in [
+               {:unavailable, :runner_offline},
+               {:unavailable, :runner_disconnected}
+             ] and not is_nil(running_turn) and not is_nil(running_turn.acp_prompt_id) do
+          Reattachment.wait_for_runner(%{state | current_turn: running_turn}, &fail_transport/2)
+        else
+          Output.publish_stage(state.conversation_id, "reattach", "failed", %{
+            reason: inspect(reason),
+            retryable: true,
+            node: to_string(node())
+          })
+
+          {:stop, :normal, state}
+        end
     end
   end
 
@@ -1384,67 +1405,13 @@ defmodule Fountain.Conversations.ConversationServer do
             replay_skip: replay_skip
         }
 
-        if acp?, do: reattach_acp_peer(state, running_turn, conv), else: state
+        if acp?, do: Reattachment.acp_peer(state, running_turn, conv), else: state
 
       {:error, reason} ->
         Logger.warning("attach_session failed: #{inspect(reason)}")
         mark_orphan(state, running_turn, "attach_failed")
         state
     end
-  end
-
-  @replay_dedup_ttl_ms 10_000
-
-  # An ACP turn is only alive while something answers the agent: a
-  # `session/request_permission` left unanswered blocks it forever, and the
-  # `session/prompt` response is the only thing that ends it — the adapter
-  # keeps running until stdin closes. Before this, a reattached ACP turn had
-  # its stdout logged raw and no peer, so every turn in flight across a deploy
-  # hung until the user prompted again (which interrupts it) or the sandbox
-  # hit its lifetime ceiling.
-  #
-  # No tracer: the turn span belongs to a previous BEAM lifetime.
-  defp reattach_acp_peer(state, running_turn, conv) do
-    {:ok, peer} =
-      Managoat.ACP.Peer.start(
-        owner: self(),
-        # The transport seam (Managoat.ACP.Transport): the peer writes through
-        # this function and never sees the sandbox. `write_stdin/2` is total —
-        # a runtime that has already exited answers {:error, :command_exited},
-        # which the peer reports as {:failed, {:acp_write_failed, _}}.
-        writer: fn iodata -> Managoat.Sandbox.write_stdin(state.current_command, iodata) end,
-        ref: state.current_command_ref,
-        prompt: running_turn.prompt,
-        mode: :continue,
-        session_id: conv.runtime_session_id,
-        attach: running_turn.acp_prompt_id,
-        # A reattached peer answers `session/request_permission` exactly like a
-        # fresh one — the adapter in the sprite is mid-turn and still asking.
-        # Resolving from the agent here (rather than reading a policy frozen on
-        # the conversation row) is what makes a tightening apply across a
-        # deploy.
-        permission_policy:
-          TurnMachine.effective_permission_policy(conv, TurnMachine.agent_for(conv)),
-        # Hand back the request the previous peer was holding, if any (#940).
-        # The agent minted the JSON-RPC id and is still blocked on it, so the
-        # id outlives our process — but only if we wrote it down. This is the
-        # same trap `acp_prompt_id` exists for, and the reason the turn row
-        # carries `pending_permission` at all.
-        pending_permission: running_turn.pending_permission
-      )
-
-    dedup =
-      Conversations._unsafe_recent_output_lines(state.conversation_id, running_turn.id, "acp")
-
-    Process.send_after(self(), :clear_replay_dedup, @replay_dedup_ttl_ms)
-
-    %{
-      state
-      | acp_peer: peer,
-        acp_peer_mon: Process.monitor(peer),
-        stream_tracer: nil,
-        replay_dedup: dedup
-    }
   end
 
   defp mark_orphan(_state, running_turn, why),
@@ -1783,8 +1750,14 @@ defmodule Fountain.Conversations.ConversationServer do
         %{current_command_ref: ref, acp_peer: peer} = state
       )
       when is_pid(peer) do
-    Managoat.ACP.Peer.stdout(peer, data)
-    {:noreply, maybe_emit_first_output(state)}
+    case Fountain.Conversations.RunnerReplay.feed(state.runner_replay, data) do
+      {:ok, replay, output} ->
+        if output != "", do: Managoat.ACP.Peer.stdout(peer, output)
+        {:noreply, maybe_emit_first_output(%{state | runner_replay: replay})}
+
+      {:error, reason} ->
+        fail_transport(state, reason)
+    end
   end
 
   def handle_info({:stdout, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
@@ -1820,6 +1793,17 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # Nobody answered in time. Deny — the only safe default — and say so on the
   # stream so a card stops waiting.
+  def handle_info(
+        {:permission_timeout, request_id},
+        %{
+          runner_reconnect: %{},
+          current_turn: %{pending_permission: %{"request_id" => request_id}}
+        } = state
+      ) do
+    state = resolve_permission(state, request_id, "timeout", nil)
+    fail_transport(state, :permission_timeout_during_runner_reconnect)
+  end
+
   def handle_info({:permission_timeout, request_id}, state) do
     {:noreply, resolve_permission(state, request_id, "timeout", nil)}
   end
@@ -1994,47 +1978,22 @@ defmodule Fountain.Conversations.ConversationServer do
     {:noreply, connection_lost(state, "transport_error", %{reason: inspect(reason)})}
   end
 
+  def handle_info(
+        {:error, %{ref: ref}, :runner_disconnected},
+        %{
+          current_command_ref: ref,
+          current_turn: %{acp_prompt_id: prompt_id},
+          handle: %{provider: :runner}
+        } = state
+      )
+      when not is_nil(ref) and not is_nil(prompt_id) do
+    state = Reattachment.disconnect_runner(state)
+    Reattachment.wait_for_runner(state, &fail_transport/2)
+  end
+
   def handle_info({:error, %{ref: ref}, reason}, %{current_command_ref: ref} = state)
       when not is_nil(ref) do
-    Logger.error("sprite command error mid-turn: #{inspect(reason)} — failing the turn")
-
-    {:ok, turn} =
-      Conversations._unsafe_update_turn(state.current_turn, %{
-        status: "failed",
-        ended_at: now()
-      })
-
-    Output.publish_stage(state.conversation_id, "turn", "failed", %{
-      turn_id: turn.id,
-      turn_number: turn.turn_number,
-      reason: "sprite connection lost: #{inspect(reason)}"
-    })
-
-    TurnMachine.finalize_tracer(state.stream_tracer)
-
-    # An ACP turn can also end here — the adapter exits, is interrupted, or its
-    # socket drops before it ever answers `session/prompt`. The peer has nothing
-    # left to drive and must not outlive the turn.
-    stop_acp_peer(state)
-    TurnMachine.end_span(state.current_turn_span, :error, %{"error" => inspect(reason)})
-
-    emit_turn_completed(state, turn.status)
-
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
-
-    {:noreply,
-     %{
-       touch_activity(state)
-       | current_command: nil,
-         current_command_ref: nil,
-         current_turn: nil,
-         current_turn_span: nil,
-         turn_metrics: nil,
-         stream_tracer: nil,
-         acp_peer: nil,
-         acp_peer_mon: nil
-     }}
+    fail_transport(state, reason)
   end
 
   # A stale ref — an error from a command already superseded or finished.
@@ -2042,6 +2001,30 @@ defmodule Fountain.Conversations.ConversationServer do
     Logger.error("sprite command error: #{inspect(reason)}")
     {:noreply, state}
   end
+
+  def handle_info(
+        {:runner_reconnect, token},
+        %{runner_reconnect: %{token: token}, current_turn: turn} = state
+      )
+      when not is_nil(turn) do
+    if Reattachment.runner_reconnect_expired?(state) do
+      fail_transport(state, :runner_reconnect_timeout)
+    else
+      # Reuse the ordinary reattach path, including scoped credentials,
+      # command tags, persisted prompt ID and pending permission restoration.
+      handle_continue(:provision, state)
+    end
+  end
+
+  def handle_info({:runner_reconnect, _token}, state), do: {:noreply, state}
+
+  def handle_info(
+        {:runner_replay_timeout, ref},
+        %{current_command_ref: ref, runner_replay: %{}} = state
+      ),
+      do: fail_transport(state, :runner_replay_boundary_missing)
+
+  def handle_info({:runner_replay_timeout, _ref}, state), do: {:noreply, state}
 
   # The ACP reattach window is over; anything still in the set is a persisted
   # line the replay did not repeat, and must not suppress a genuine repeat.
@@ -2083,8 +2066,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  # The permission request's end, whichever way (`Pending.resolve_permission/7`):
-  # the turn row and the timer are the server's to hold.
+  defp fail_transport(state, reason),
+    do: Reattachment.fail_transport(resolve_pending_permission(state, "turn_ended"), reason)
+
+  # The permission request's end: the turn row and timer are the server's to hold.
   defp resolve_permission(state, request_id, outcome, option_id) do
     {turn, pending} =
       Pending.resolve_permission(
@@ -2316,6 +2301,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # an agent that stops its tool calls and one that is shot mid-write. This is
   # the other reason stdin stays open on the ACP path.
   defp interrupt_turn(state) do
+    state = Reattachment.finish_runner_reconnect(state, "interrupted")
     if state.acp_peer, do: Managoat.ACP.Peer.cancel(state.acp_peer)
     # EOF before the handle goes: a detachable session survives its client
     # disconnecting, so closing the WebSocket alone would leave the adapter —
@@ -2338,7 +2324,9 @@ defmodule Fountain.Conversations.ConversationServer do
       | current_command: nil,
         current_command_ref: nil,
         acp_peer: nil,
-        acp_peer_mon: nil
+        acp_peer_mon: nil,
+        runner_reconnect: nil,
+        runner_replay: nil
     }
   end
 

@@ -209,6 +209,37 @@ func TestExec(t *testing.T) {
 	}
 }
 
+func TestReattachMovesReplayAndLiveOutputToNewConnection(t *testing.T) {
+	d := newDaemon(t)
+	first, second := newRecorder(), newRecorder()
+	do(t, d, Request{Op: "create", Name: "sb"}, first)
+	result, after, err := d.Handle(Request{ID: 7, Op: "spawn", Name: "sb", Cmd: "sh",
+		Args: []string{"-c", "echo ready; while read l; do echo echo:$l; done"}, Stdin: true}, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid := result["session_id"].(string)
+	after()
+	first.waitFor(t, func(fs []Frame) bool {
+		return strings.Contains(stdoutOf(fs, sid, true)+stdoutOf(fs, sid, false), "ready")
+	})
+	_, reattach, err := d.Handle(Request{ID: 9, Op: "attach", SessionID: sid}, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reattach()
+	second.waitFor(t, func(fs []Frame) bool { return strings.Contains(stdoutOf(fs, sid, true), "ready") })
+	do(t, d, Request{Op: "stdin", SessionID: sid, Data: base64.StdEncoding.EncodeToString([]byte("reconnected\n"))}, second)
+	second.waitFor(t, func(fs []Frame) bool { return strings.Contains(stdoutOf(fs, sid, false), "echo:reconnected") })
+	do(t, d, Request{Op: "stdin_close", SessionID: sid}, second)
+	second.waitFor(t, func(fs []Frame) bool { return hasExit(fs, sid) })
+	first.mu.Lock()
+	defer first.mu.Unlock()
+	if strings.Contains(stdoutOf(first.frames, sid, false), "reconnected") || hasExit(first.frames, sid) {
+		t.Fatal("live output or exit was sent to the old connection")
+	}
+}
+
 func TestSpawnStreamsAfterReplyAndReplaysOnAttach(t *testing.T) {
 	d := newDaemon(t)
 	rec := newRecorder()
