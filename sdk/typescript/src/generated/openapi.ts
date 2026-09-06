@@ -1307,6 +1307,8 @@ export interface paths {
          * @description Answers a `session/request_permission` the agent is blocked on (#940). The request and its options arrive as a `permission_request` block on the conversation's event stream; `option_id` must be one of the `optionId` values that block carried. Never send an option the agent did not offer.
          *
          *     First answer wins: another attached client, the timeout, or the turn ending may already have resolved it, and all of those return 409. The resolution appears on the stream as a `request` stage event with state `done`.
+         *
+         *     A request that outlived its turn (#1635) is answered here too. The agent ended that turn with stop reason `waiting`, so the conversation is idle and the sandbox may be suspended; GET /api/conversations/{id} lists such requests as `pending_requests`. Answering one resolves it and opens a new turn carrying the request id and the option, which wakes the sandbox.
          */
         post: operations["FountainWeb.ConversationController.answer_request"];
         delete?: never;
@@ -2616,9 +2618,12 @@ export interface components {
             model: string | null;
             name: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
-            permission_policy?: {
+            permission_policy?: ({
+                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is not a verdict. Absent leaves the global ask timeout. A request may override it with `_meta.fountain.timeout` on its own session/request_permission. A launch may only shorten it. */
+                ask_timeout?: number;
+            } & {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
-            } | null;
+            }) | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
@@ -2671,9 +2676,12 @@ export interface components {
             model?: string | null;
             name: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
-            permission_policy?: {
+            permission_policy?: ({
+                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is not a verdict. Absent leaves the global ask timeout. A request may override it with `_meta.fountain.timeout` on its own session/request_permission. A launch may only shorten it. */
+                ask_timeout?: number;
+            } & {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
-            } | null;
+            }) | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
@@ -2723,9 +2731,12 @@ export interface components {
             model?: string | null;
             name?: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
-            permission_policy?: {
+            permission_policy?: ({
+                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is not a verdict. Absent leaves the global ask timeout. A request may override it with `_meta.fountain.timeout` on its own session/request_permission. A launch may only shorten it. */
+                ask_timeout?: number;
+            } & {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
-            } | null;
+            }) | null;
             /** @enum {string} */
             runtime?: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
@@ -3541,10 +3552,15 @@ export interface components {
             last_read_at?: string | null;
             /** Format: uuid */
             parent_conversation_id?: string | null;
+            /** @description Permission requests that outlived a turn and are still waiting for an answer (#1635). Served on GET /api/conversations/{id} only; absent from the list and from the create response. */
+            pending_requests?: components["schemas"]["PendingPermissionRequest"][];
             /** @description The per-launch permission override this conversation was started with, or null if it had none. The policy actually in force is this merged with the agent's, taking the stricter of the two per tool. */
-            permission_policy?: {
+            permission_policy?: ({
+                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is not a verdict. Absent leaves the global ask timeout. A request may override it with `_meta.fountain.timeout` on its own session/request_permission. A launch may only shorten it. */
+                ask_timeout?: number;
+            } & {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
-            } | null;
+            }) | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             runtime_session_id?: string | null;
@@ -3591,9 +3607,12 @@ export interface components {
                 [key: string]: string;
             } | null;
             /** @description Per-launch permission override (#939). Keys are matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); "default" covers the rest. Prefer a kind: claude titles a tool call with the command it is about to run, so a title matches one invocation only. Merged with the agent's own policy, taking the stricter of the two. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped, and one the runtime never consults is refused with 422 permission_policy_unenforceable. */
-            permission_policy?: {
+            permission_policy?: ({
+                /** @description Seconds a permission request that outlived its turn waits before it is denied (#1635). Names no tool, so it is the one key whose value is not a verdict. Absent leaves the global ask timeout. A request may override it with `_meta.fountain.timeout` on its own session/request_permission. A launch may only shorten it. */
+                ask_timeout?: number;
+            } & {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
-            } | null;
+            }) | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
             /**
@@ -4050,6 +4069,28 @@ export interface components {
             password: string;
             /** @description From the reset email. */
             token: string;
+        };
+        /**
+         * PendingPermissionRequest
+         * @description A permission request that outlived its turn (#1635). The agent ended the turn with stop reason `waiting` while this request was open, so the conversation is idle, the sandbox may be suspended, and the request is still waiting for an answer. Answer it at POST /api/conversations/{id}/requests/{request_id}, which resolves it and opens a new turn carrying the outcome to the agent.
+         */
+        PendingPermissionRequest: {
+            /** Format: date-time */
+            asked_at?: string | null;
+            /**
+             * Format: date-time
+             * @description When the request is denied for want of an answer. Set from the request's own `_meta.fountain.timeout`, else the policy's `ask_timeout`, else the global ask timeout.
+             */
+            deadline?: string | null;
+            /** @description The options the agent offered, verbatim. `option_id` must be one of these `optionId` values; an id from another runtime is refused. */
+            options: {
+                [key: string]: unknown;
+            }[];
+            request_id: string;
+            /** @description The tool the agent asked about, as the transcript labels it. */
+            tool?: string | null;
+            /** Format: uuid */
+            turn_id?: string;
         };
         /** PermissionAnswerRequest */
         PermissionAnswerRequest: {
@@ -4801,6 +4842,8 @@ export interface components {
             turn_number: number;
             /** @description The end-of-turn token figure; null while the turn runs, when the runtime reported none, or on turns that predate the field. */
             usage?: components["schemas"]["TurnUsage"] | null;
+            /** @description The turn ended with a permission request still open (#1635): the agent answered with stop reason `waiting`, the turn is `completed` and the request is on the conversation as a `pending_requests` entry. */
+            waiting?: boolean;
         };
         /** TurnListResponse */
         TurnListResponse: {

@@ -105,6 +105,11 @@ defmodule Fountain.Conversations.Lifecycle do
   to cost a turn rather than the agent's memory; `lifecycle_test.exs` pins
   the bound.
 
+  This is the bound for a request **held inside a turn**. A request that
+  outlived its turn (#1635) holds nothing open, so the reasoning above does
+  not reach it and its deadline may be days out; see
+  `Fountain.Conversations.DetachedRequest`.
+
   Lived on `Fountain.Runtimes.ACP` until that module left for
   `Managoat.Runtimes` (#1368); it is the one thing there that read Fountain's
   configuration, and it belongs with the bound it has to stay under.

@@ -66,13 +66,84 @@ Some rules keep that safe.
 
 - **The first answer wins.** The other clients see a request that no longer
   waits. No client is a fallback for another.
-- **Nobody is also an answer.** After 5 minutes, Fountain refuses the tool. The
-  timeout sits below the idle bound, so a request that waits costs a turn and
-  not the sandbox.
+- **Nobody is also an answer.** Two timeouts do this, and which one applies
+  depends on whether the request is still inside a turn. A request held inside
+  a turn is refused after 5 minutes. That ceiling sits below the idle bound, so
+  a request that waits costs a turn and not the sandbox. A request that
+  outlived its turn is refused at its own deadline, which may be days away.
+  See [Requests that outlive a turn](#requests-that-outlive-a-turn).
 - **An option must come from the runtime.** Fountain refuses an option id that
   the runtime did not offer.
 - **The agent cannot answer itself.** The sandbox holds an API token, and
   Fountain refuses that loop by name.
+
+## Requests that outlive a turn
+
+The rule above assumes an agent blocked mid-thought. Some waits are longer than
+that. Approve a production apply, confirm a DNS delegation landed, sign off the
+deletes in a plan. Those take hours or days, and nothing in the sandbox has to
+run while they do.
+
+An agent can say so. It sends `session/request_permission`, and then it answers
+`session/prompt` with the stop reason `waiting`. The turn ends as a completed
+turn with `waiting: true` on it. The request stays open. The conversation goes
+idle, and the sandbox suspends on the idle bound like any other idle sandbox.
+
+The card stays up. `GET /api/conversations/{id}` lists every such request under
+`pending_requests`, with the tool, the options the agent offered, and the
+deadline. The `turn` stage event that ended the turn carries `waiting: true`
+and the request id, so a client watching the stream learns it there too.
+
+A `waiting` stop reason with no open request means nothing. That turn ends the
+way any completed turn does.
+
+### Answering one
+
+Answer it at `POST /api/conversations/{id}/requests/{request_id}`, the same
+door an in-turn request uses. The rules above still hold. The first answer
+wins, the option must come from the runtime, and the agent cannot answer
+itself.
+
+What happens next is different. The connection that raised the request is gone,
+so Fountain cannot hand the answer back down it. Instead Fountain resolves the
+request and opens a **new turn** whose prompt carries the outcome. Opening that
+turn wakes the sandbox.
+
+The prompt is one line, and it is this JSON object:
+
+```json
+{"fountain/permission_answer":{
+  "request_id": "7.1f0c9a",
+  "tool": "Bash",
+  "outcome": "answered",
+  "option_id": "allow",
+  "answered_at": "2026-09-07T09:14:02.113Z"
+}}
+```
+
+`outcome` is `answered` or `timeout`. `option_id` is the option somebody
+picked, or the rejection the expiry chose from the agent's own list. It is null
+where the agent offered no rejection at all. The agent decides what to do with
+it.
+
+### The deadline
+
+A detached request is refused when its deadline passes, and the refusal opens
+the same resume turn with `outcome: "timeout"`. Fountain reads the deadline
+from the first of these that is set.
+
+1. `_meta.fountain.timeout` on the `session/request_permission` itself, in
+  seconds. The agent sets this per request.
+2. `ask_timeout` in the permission policy, in seconds. This is the one policy
+  key that names no tool. A launch may shorten it and may not lengthen it.
+3. The 5 minute ceiling, which is what an in-turn request gets.
+
+Only a detached request reads the first two. A request inside a turn always
+gets the 5 minute ceiling, because the turn holding it keeps the sandbox from
+parking.
+
+The deadline is stored on the turn, not in a timer, so it survives the sandbox
+suspending and the server restarting. A sweep every minute is what fires it.
 
 ## What each runtime can do
 

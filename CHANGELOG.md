@@ -74,6 +74,13 @@ upgrade, is in
   `AgentUpdate["model"]` are `string | null` and optional. A client that
   assumed a string needs a null check. Nothing else on the wire changed
   shape.
+- Permission requests can outlive the turn that raised them. An agent that ends
+  a turn with stop reason `waiting` keeps its request open, the conversation
+  goes idle and the sandbox suspends as usual. `GET /api/conversations/{id}`
+  lists such requests as `pending_requests`, and answering one opens a new turn
+  carrying the request id and the chosen option, which wakes the sandbox. The
+  wait is bounded by `_meta.fountain.timeout` on the request, else an
+  `ask_timeout` in the permission policy, else the existing 5 minute ceiling.
 
 ### Fixed
 

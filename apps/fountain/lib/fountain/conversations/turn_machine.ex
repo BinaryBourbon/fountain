@@ -29,6 +29,9 @@ defmodule Fountain.Conversations.TurnMachine do
       by the failure rather than by a wake);
     * `{:ask_permission, request_id, tool, options}` — the held request:
       its row, its stage, its timeout (the pending family, #1375);
+    * `:detach_permission` — the turn is ending `waiting` and its request
+      outlives it (#1635); applied before `{:finish, …}`, which then leaves
+      the request alone;
     * `{:finish, status, span_attrs, stage_meta}` — end the turn: the
       server resolves what is pending, cancels the quiet timer, then calls
       `finish/4`;
@@ -45,6 +48,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
   alias Fountain.{Agents, Conversations}
   alias Fountain.Conversations.{Conversation, Labels}
+  alias Fountain.PermissionPolicy
 
   @typedoc "What the peer reports about a turn, with the command ref already matched."
   @type payload :: tuple()
@@ -72,6 +76,7 @@ defmodule Fountain.Conversations.TurnMachine do
           | {:session_id, String.t()}
           | {:forget_runtime_session, String.t(), String.t()}
           | {:ask_permission, term(), String.t(), list()}
+          | :detach_permission
           | {:finish, String.t(), map(), map()}
           | {:drop_connection, String.t()}
 
@@ -352,14 +357,25 @@ defmodule Fountain.Conversations.TurnMachine do
   # `usage` is the turn's end-of-turn token figure (#827), recorded once here
   # — the response is the only place the runtime reports it — before the turn
   # row is closed. nil records nothing.
+  #
+  # `waiting` is the fourth stop reason, and the only one that changes what
+  # the turn's end does rather than what it is called (#1635). An agent that
+  # sends `session/request_permission` and then answers the prompt with it is
+  # saying the wait is longer than a turn: the request is detached instead of
+  # denied, the turn still ends `completed`, and the sandbox parks on the
+  # usual bound with the card still up. With nothing held it means nothing,
+  # and the turn ends as any other completed turn does.
   def handle(%__MODULE__{} = turn, {:done, stop_reason, usage}, ctx) do
     status = if stop_reason in ["refusal", "cancelled"], do: "failed", else: "completed"
     record_usage(turn, with_inference(usage, ctx))
 
+    detach = if waiting?(stop_reason, turn.row), do: [:detach_permission], else: []
+
     {turn,
-     [
-       {:finish, status, %{"stop_reason" => stop_reason}, %{stop_reason: stop_reason}}
-     ]}
+     detach ++
+       [
+         {:finish, status, %{"stop_reason" => stop_reason}, %{stop_reason: stop_reason}}
+       ]}
   end
 
   # #655: the org has refused this account's Claude OAuth token. Left alone,
@@ -569,7 +585,9 @@ defmodule Fountain.Conversations.TurnMachine do
       turn.conversation_id,
       "turn",
       if(status == "completed", do: "done", else: "failed"),
-      Map.merge(%{turn_id: row.id, turn_number: row.turn_number}, stage_meta)
+      %{turn_id: row.id, turn_number: row.turn_number}
+      |> Map.merge(stage_meta)
+      |> Map.merge(waiting_meta(row))
     )
 
     end_span(
@@ -585,6 +603,19 @@ defmodule Fountain.Conversations.TurnMachine do
 
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
   end
+
+  defp waiting?("waiting", %{pending_permission: %{"request_id" => _}}), do: true
+  defp waiting?(_stop_reason, _row), do: false
+
+  # A turn that ended holding a request (#1635) says so where every client
+  # already looks. The `request`/`started` event announced the request; this
+  # is what tells a card watching the stream that the request outlived the
+  # turn and by when it has to be answered.
+  defp waiting_meta(%{waiting: true, pending_permission: %{"request_id" => id}} = row) do
+    %{waiting: true, request_id: id, deadline: row.permission_deadline}
+  end
+
+  defp waiting_meta(_row), do: %{}
 
   @doc """
   The interrupt's first half: the row `interrupted`, the stage, the tracer
@@ -1117,7 +1148,25 @@ defmodule Fountain.Conversations.TurnMachine do
   # tightening an agent tightens the conversations already running under it.
   @spec effective_permission_policy(Conversation.t(), map() | nil) :: term()
   def effective_permission_policy(conv, agent) do
-    Managoat.ACP.Permissions.effective(agent && agent.permission_policy, conv.permission_policy)
+    Managoat.ACP.Permissions.effective(
+      PermissionPolicy.verdicts(agent && agent.permission_policy),
+      PermissionPolicy.verdicts(conv.permission_policy)
+    )
+  end
+
+  @doc """
+  How long a request that outlives this conversation's turn waits, in
+  seconds, or nil for the global ceiling (#1635).
+
+  Beside `effective_permission_policy/2` because it is the other half of the
+  same two maps: the tool half goes to the peer, and this one stays here.
+  """
+  @spec effective_ask_timeout_seconds(Conversation.t(), map() | nil) :: pos_integer() | nil
+  def effective_ask_timeout_seconds(conv, agent) do
+    PermissionPolicy.effective_ask_timeout_seconds(
+      agent && agent.permission_policy,
+      conv.permission_policy
+    )
   end
 
   # Ownership is already established: this server exists for this conversation.

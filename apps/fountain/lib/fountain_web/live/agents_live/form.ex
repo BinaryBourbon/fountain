@@ -83,7 +83,11 @@ defmodule FountainWeb.AgentsLive.Form do
   # empty default plus no overrides is an empty policy rather than
   # `%{"default" => "auto_allow"}`, so an agent nobody has touched keeps the
   # empty map it has always had.
-  defp form_to_permission_policy(params) do
+  #
+  # `previous` is the policy as stored. The form knows only the tool half, so
+  # a key that names something else (`ask_timeout`, #1635) is carried across
+  # rather than dropped by a save from a screen that cannot show it.
+  defp form_to_permission_policy(params, previous) do
     kinds =
       params
       |> Map.get("permission_kinds", %{})
@@ -94,6 +98,7 @@ defmodule FountainWeb.AgentsLive.Form do
       verdict when verdict in ["ask", "auto_deny"] -> Map.put(kinds, "default", verdict)
       _ -> kinds
     end
+    |> Fountain.PermissionPolicy.keep_reserved(previous)
   end
 
   defp asks_permission?(runtime), do: ACP.asks_permission?(runtime || "claude")
@@ -422,7 +427,10 @@ defmodule FountainWeb.AgentsLive.Form do
         params
         |> Map.put("skills", skills)
         |> Map.put("mcp_servers", mcp_map)
-        |> Map.put("permission_policy", form_to_permission_policy(params))
+        |> Map.put(
+          "permission_policy",
+          form_to_permission_policy(params, socket.assigns.agent.permission_policy)
+        )
         |> Map.put("user_id", socket.assigns.user_id)
         |> Map.put("runtime_command", runtime_command_param(params))
         |> nil_if_blank("environment_id")

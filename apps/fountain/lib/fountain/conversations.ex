@@ -11,7 +11,19 @@ defmodule Fountain.Conversations do
   require Logger
 
   alias Fountain.Audit
-  alias Fountain.Conversations.{Blocks, Conversation, Labels, LogEvent, Sandbox, Turn, TurnImage}
+
+  alias Fountain.Conversations.{
+    Blocks,
+    Conversation,
+    DetachedRequest,
+    Labels,
+    LogEvent,
+    Sandbox,
+    Turn,
+    TurnImage
+  }
+
+  alias Fountain.PermissionPolicy
   alias Fountain.Repo
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
@@ -2938,6 +2950,11 @@ defmodule Fountain.Conversations do
 
   Audited as a decision about tenant-owned state, per 0013: the tool and the
   verdict, never the tool's input.
+
+  A request that outlived its turn (#1635) is answered through the same door
+  and audited the same way. What differs is what the answer does: there is no
+  peer left to take it, so the request is resolved on the turn row and a new
+  turn is opened carrying it, which wakes a suspended sandbox on the way.
   """
   @spec answer_permission_request(binary(), binary(), String.t(), String.t(), keyword()) ::
           :ok | {:error, term()}
@@ -2945,34 +2962,211 @@ defmodule Fountain.Conversations do
       when is_binary(conv_id) and is_binary(user_id) do
     actor = Keyword.get(opts, :actor, "self")
 
-    cond do
-      actor == "sprite" ->
+    case {actor, get_conversation(conv_id, user_id)} do
+      {"sprite", _conv} ->
         {:error, :sprite_may_not_answer}
 
-      is_nil(get_conversation(conv_id, user_id)) ->
+      {_actor, nil} ->
         {:error, :not_found}
 
-      true ->
-        do_answer_permission(conv_id, user_id, request_id, option_id, opts)
+      # A conversation nobody can prompt cannot carry an answer back to the
+      # agent, so the request is left where it is rather than resolved into
+      # nothing.
+      {_actor, %Conversation{status: status}} when status not in ["idle", "running"] ->
+        {:error, :not_running}
+
+      {_actor, conv} ->
+        do_answer_permission(conv, user_id, request_id, option_id, opts)
     end
   end
 
-  defp do_answer_permission(conv_id, user_id, request_id, option_id, opts) do
+  # The detached row is looked at first, and deliberately. A turn that ended
+  # `waiting` (#1635) left the request on its row while the peer that raised
+  # it may still be idle on the sandbox holding the JSON-RPC id: asking the
+  # server first would answer a connection whose turn is over and report
+  # success, and the new turn that actually carries the answer would never
+  # open.
+  defp do_answer_permission(conv, user_id, request_id, option_id, opts) do
+    # Ownership: established by the tenant-scoped `get_conversation/2` in
+    # `answer_permission_request/5` immediately above this call.
+    case _unsafe_waiting_turn(conv.id, request_id) do
+      nil -> answer_held_permission(conv.id, user_id, request_id, option_id, opts)
+      turn -> answer_detached_permission(conv, turn, user_id, option_id, opts)
+    end
+  end
+
+  defp answer_held_permission(conv_id, user_id, request_id, option_id, opts) do
     case ConversationServer.answer_permission(conv_id, request_id, option_id) do
       :ok ->
-        Audit.record(%{
-          user_id: user_id,
-          action: "conversation.permission_answered",
-          resource_type: "conversation",
-          resource_id: conv_id,
-          actor: Keyword.get(opts, :actor, "self"),
-          request_ip: Keyword.get(opts, :request_ip),
-          metadata: %{"request_id" => request_id, "option_id" => option_id}
-        })
-
-        :ok
+        record_permission_answered(conv_id, user_id, request_id, option_id, opts)
 
       {:error, _} = err ->
+        err
+    end
+  end
+
+  # A request nobody is holding open any more: resolve the row, then open the
+  # turn that tells the agent. The order is the same as the in-turn path's —
+  # resolve, record, then act — so a crash between the two cannot leave a
+  # request answered twice.
+  defp answer_detached_permission(conv, turn, user_id, option_id, opts) do
+    request = turn.pending_permission
+    request_id = request["request_id"]
+
+    cond do
+      not DetachedRequest.offered?(request, option_id) ->
+        {:error, :unknown_option}
+
+      # A turn of its own is already running, and the resume turn cannot queue
+      # behind it. Refused before the row is touched, so the request is still
+      # there to answer once the conversation is idle again.
+      conv.status == "running" ->
+        {:error, :busy}
+
+      true ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "answered", option_id),
+             :ok <-
+               record_permission_answered(
+                 turn.conversation_id,
+                 user_id,
+                 request_id,
+                 option_id,
+                 opts
+               ) do
+          resume_after_request(turn, request, "answered", option_id, opts)
+        end
+    end
+  end
+
+  defp record_permission_answered(conv_id, user_id, request_id, option_id, opts) do
+    Audit.record(%{
+      user_id: user_id,
+      action: "conversation.permission_answered",
+      resource_type: "conversation",
+      resource_id: conv_id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{"request_id" => request_id, "option_id" => option_id}
+    })
+
+    :ok
+  end
+
+  @doc """
+  The turn a detached request is waiting on, or nil (#1635).
+
+  WARNING: not scoped by owner. Call it after a tenant-scoped fetch of the
+  conversation, which is what `answer_permission_request/5` does.
+  """
+  @spec _unsafe_waiting_turn(binary(), String.t()) :: Turn.t() | nil
+  def _unsafe_waiting_turn(conv_id, request_id) do
+    Turn
+    |> where([t], t.conversation_id == ^conv_id and t.waiting == true)
+    |> where([t], fragment("?->>'request_id' = ?", t.pending_permission, ^request_id))
+    |> Repo.one()
+  end
+
+  @doc """
+  Every request this conversation is waiting on, oldest turn first (#1635).
+
+  WARNING: not scoped by owner. Call it after a tenant-scoped fetch, which is
+  what `ConversationController.show/2` does.
+  """
+  @spec _unsafe_list_pending_requests(binary()) :: [map()]
+  def _unsafe_list_pending_requests(conv_id) do
+    Turn
+    |> where([t], t.conversation_id == ^conv_id and t.waiting == true)
+    |> where([t], not is_nil(t.pending_permission))
+    |> order_by([t], asc: t.turn_number)
+    |> Repo.all()
+    |> Enum.map(&DetachedRequest.to_json(&1.pending_permission, &1))
+  end
+
+  @doc """
+  Take a detached request off its turn, once (#1635).
+
+  First answer wins, and here that is enforced by the update itself rather
+  than by a process holding the request: the `where` names the request id the
+  caller read, so a second answer, the sweep and a client racing the sweep all
+  find nothing to update and get `{:error, :no_pending_permission}`.
+
+  The `request`/`done` stage event is published by whoever won, exactly as the
+  in-turn path publishes it.
+
+  WARNING: not scoped by owner. Both callers establish ownership first — the
+  answer door by fetching the conversation for the user, the sweep by being a
+  system sweep.
+  """
+  @spec _unsafe_resolve_detached_request(Turn.t(), String.t(), String.t() | nil) ::
+          :ok | {:error, :no_pending_permission}
+  def _unsafe_resolve_detached_request(%Turn{} = turn, outcome, option_id) do
+    request_id = turn.pending_permission["request_id"]
+
+    {count, _} =
+      Turn
+      |> where([t], t.id == ^turn.id and t.waiting == true)
+      |> where([t], fragment("?->>'request_id' = ?", t.pending_permission, ^request_id))
+      |> Repo.update_all(set: [waiting: false, pending_permission: nil, permission_deadline: nil])
+
+    if count == 1 do
+      publish_stage(turn.conversation_id, "request", "done", %{
+        request_id: request_id,
+        outcome: outcome,
+        option_id: option_id,
+        detached: true
+      })
+
+      :ok
+    else
+      {:error, :no_pending_permission}
+    end
+  end
+
+  @doc """
+  Deny a detached request whose deadline has passed, and tell the agent
+  (#1635).
+
+  The denial picks from the options the agent itself offered, never an id it
+  did not send. Recorded as `conversation.permission_denied` with the sweep as
+  the actor, because no human was at the keyboard and saying otherwise would
+  be a lie about who decided.
+  """
+  @spec _unsafe_expire_detached_request(Turn.t(), keyword()) ::
+          :ok | {:error, term()}
+  def _unsafe_expire_detached_request(%Turn{} = turn, opts \\ []) do
+    request = turn.pending_permission
+    option_id = DetachedRequest.deny_option_id(request)
+    actor = Keyword.get(opts, :actor, "system:detached_request_sweeper")
+
+    with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+      record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+      resume_after_request(turn, request, "timeout", option_id, actor: actor)
+    end
+  end
+
+  # The resolution reaches the agent as a new turn, because the peer that
+  # raised the request is gone and its JSON-RPC id with it. `send_prompt/4`
+  # wakes a suspended sandbox on the way, which is the whole point of letting
+  # the request outlive the turn.
+  defp resume_after_request(turn, request, outcome, option_id, opts) do
+    case ConversationServer.send_prompt(
+           turn.conversation_id,
+           DetachedRequest.resume_prompt(request, outcome, option_id),
+           [],
+           opts
+         ) do
+      :ok ->
+        :ok
+
+      {:error, reason} = err ->
+        # The request is resolved either way; what failed is delivering the
+        # outcome. Logged with both ids because the row no longer holds them.
+        Logger.warning(
+          "conv #{turn.conversation_id}: resolved detached request " <>
+            "#{request["request_id"]} but could not open the turn that carries " <>
+            "the answer: #{inspect(reason)}"
+        )
+
         err
     end
   end
@@ -2981,17 +3175,19 @@ defmodule Fountain.Conversations do
   Record that the permission policy withheld a tool from a running agent.
 
   Called by the `ConversationServer` when its peer reports a refusal (#939).
-  The actor is `sprite`: the agent asked, the policy answered, and no human was
-  involved — attributing it to the person who happened to write the policy
-  would be a lie about who was at the keyboard.
+  The actor defaults to `sprite`: the agent asked, the policy answered, and no
+  human was involved — attributing it to the person who happened to write the
+  policy would be a lie about who was at the keyboard. A detached request that
+  ran out of time (#1635) passes the sweep instead, for the same reason.
 
   Only refusals are recorded. A turn makes dozens of tool calls and a row per
   allow would make the trail a second copy of the transcript, which 0013
   forbids for exactly this reason. The tool's *input* is never recorded, only
   its name and the verdict.
   """
-  @spec record_permission_denied(binary(), String.t() | nil, String.t()) :: :ok
-  def record_permission_denied(conversation_id, tool, verdict) when is_binary(conversation_id) do
+  @spec record_permission_denied(binary(), String.t() | nil, String.t(), keyword()) :: :ok
+  def record_permission_denied(conversation_id, tool, verdict, opts \\ [])
+      when is_binary(conversation_id) do
     case _unsafe_get_conversation(conversation_id) do
       nil ->
         :ok
@@ -3002,7 +3198,7 @@ defmodule Fountain.Conversations do
           action: "conversation.permission_denied",
           resource_type: "conversation",
           resource_id: conv.id,
-          actor: "sprite",
+          actor: Keyword.get(opts, :actor, "sprite"),
           metadata: %{"tool" => tool, "verdict" => verdict}
         })
 
@@ -3024,9 +3220,18 @@ defmodule Fountain.Conversations do
   defp resolve_permission_policy(policy, _agent) when policy == %{}, do: {:ok, nil}
 
   defp resolve_permission_policy(policy, agent) when is_map(policy) do
+    # The reserved keys are not tools, so the library never sees them and
+    # narrows them itself (#1635, `Fountain.PermissionPolicy`).
+    verdicts = PermissionPolicy.verdicts(policy)
+
     with :ok <- validate_policy_shape(policy),
-         :ok <- check_runtime_asks(policy, agent),
-         :ok <- Managoat.ACP.Permissions.check_narrows(agent.permission_policy, policy) do
+         :ok <- check_runtime_asks(verdicts, agent),
+         :ok <-
+           Managoat.ACP.Permissions.check_narrows(
+             PermissionPolicy.verdicts(agent.permission_policy),
+             verdicts
+           ),
+         :ok <- PermissionPolicy.check_narrows(agent.permission_policy, policy) do
       {:ok, policy}
     end
   end
@@ -3045,21 +3250,38 @@ defmodule Fountain.Conversations do
   end
 
   defp validate_policy_shape(policy) do
-    Enum.find_value(policy, :ok, fn {tool, verdict} ->
-      cond do
-        not is_binary(tool) or tool == "" ->
-          {:error, :permission_policy_invalid}
+    with :ok <- validate_reserved_keys(policy) do
+      policy
+      |> PermissionPolicy.verdicts()
+      |> Enum.find_value(:ok, fn {tool, verdict} ->
+        cond do
+          not is_binary(tool) or tool == "" ->
+            {:error, :permission_policy_invalid}
 
-        verdict not in Managoat.ACP.Permissions.verdicts() ->
-          {:error, :permission_policy_invalid}
+          verdict not in Managoat.ACP.Permissions.verdicts() ->
+            {:error, :permission_policy_invalid}
 
-        not Managoat.ACP.Permissions.buildable?(verdict) ->
-          {:error, {:permission_policy_unbuilt, verdict}}
+          not Managoat.ACP.Permissions.buildable?(verdict) ->
+            {:error, {:permission_policy_unbuilt, verdict}}
 
-        true ->
-          nil
-      end
-    end)
+          true ->
+            nil
+        end
+      end)
+    end
+  end
+
+  # `ask_timeout` is seconds, not a verdict (#1635).
+  defp validate_reserved_keys(policy) do
+    case Map.fetch(policy, "ask_timeout") do
+      {:ok, value} ->
+        if PermissionPolicy.valid_ask_timeout?(value),
+          do: :ok,
+          else: {:error, :permission_policy_invalid}
+
+      :error ->
+        :ok
+    end
   end
 
   @doc """

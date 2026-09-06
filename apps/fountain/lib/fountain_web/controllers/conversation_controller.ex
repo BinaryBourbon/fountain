@@ -225,8 +225,18 @@ defmodule FountainWeb.ConversationController do
     # last_active_at, as the plain fetch would, is worse than not serving
     # the fields at all.
     case Conversations.get_conversation_with_activity(id, user.id) do
-      nil -> {:error, :not_found}
-      conv -> render(conn, :show, conversation: conv)
+      nil ->
+        {:error, :not_found}
+
+      conv ->
+        # Ownership: established by the tenant-scoped fetch above. Requests
+        # that outlived a turn (#1635) are served here rather than on the
+        # list, because a conversation is idle while one waits and the card
+        # has to survive a client reload.
+        render(conn, :show,
+          conversation: conv,
+          pending_requests: Conversations._unsafe_list_pending_requests(conv.id)
+        )
     end
   end
 
@@ -533,7 +543,12 @@ defmodule FountainWeb.ConversationController do
         "that block carried. Never send an option the agent did not offer.\n\n" <>
         "First answer wins: another attached client, the timeout, or the turn ending " <>
         "may already have resolved it, and all of those return 409. The resolution " <>
-        "appears on the stream as a `request` stage event with state `done`.",
+        "appears on the stream as a `request` stage event with state `done`.\n\n" <>
+        "A request that outlived its turn (#1635) is answered here too. The agent " <>
+        "ended that turn with stop reason `waiting`, so the conversation is idle and " <>
+        "the sandbox may be suspended; GET /api/conversations/{id} lists such " <>
+        "requests as `pending_requests`. Answering one resolves it and opens a new " <>
+        "turn carrying the request id and the option, which wakes the sandbox.",
     parameters: [
       conversation_id: [in: :path, type: :string, required: true],
       request_id: [in: :path, type: :string, required: true]
@@ -591,6 +606,15 @@ defmodule FountainWeb.ConversationController do
   defp answer_response({:error, :not_found}, conn) do
     conn |> put_status(:not_found) |> json(%{error: "not_found"})
   end
+
+  # A turn is running, so the resume turn a detached answer opens cannot queue
+  # behind it (#1635). The request is untouched; try again when it is idle.
+  defp answer_response({:error, :busy}, _conn), do: {:error, "conversation_busy"}
+
+  # Everything else renders through the FallbackController, for the reason
+  # `do_prompt/5` gives: an error shape this function has not learned used to
+  # be a FunctionClauseError 500.
+  defp answer_response({:error, _} = err, _conn), do: err
 
   @doc """
   Infer the conversation's `source` and `parent_conversation_id` from
