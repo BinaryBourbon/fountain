@@ -37,15 +37,18 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
     await page.locator('select[name="agent[runtime]"]').selectOption(settings.agent.runtime);
     await page.getByLabel('Model', { exact: true }).fill(settings.agent.model);
     const provider = page.locator('select[name="agent[sandbox_provider]"]');
-    if (await provider.count()) await provider.selectOption(settings.agent.sandbox_provider);
-    else {
-      const { body } = await client.request('GET', '/api/catalog', { expected: 200 });
-      ensure(JSON.stringify(body.data.sandbox_providers.enabled) === JSON.stringify([settings.agent.sandbox_provider]), 'Hidden provider selector does not imply the pinned sole provider');
-    }
+    const { body: catalog } = await client.request('GET', '/api/catalog', { expected: 200 });
+    const enabledProviders = catalog.data.sandbox_providers.enabled;
+    ensure(enabledProviders.includes(settings.agent.sandbox_provider), 'Pinned browser provider is not enabled');
+    // Runtime/model validation can temporarily replace the form. A zero count
+    // during that patch is not evidence of a single-provider deployment.
+    if (enabledProviders.length > 1 || await provider.count()) await provider.selectOption(settings.agent.sandbox_provider);
+    else ensure(JSON.stringify(enabledProviders) === JSON.stringify([settings.agent.sandbox_provider]), 'Hidden provider selector does not imply the pinned sole provider');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.waitForURL(`${config.base_url}/agents`);
     agent = await adoptBrowserFixture(fixtures, intent, ctx.signal);
     ensure(agent.runtime === settings.agent.runtime && agent.model === settings.agent.model, 'UI agent runtime/model did not persist');
+    ensure((agent.sandbox_provider ?? catalog.data.sandbox_providers.default) === settings.agent.sandbox_provider, 'UI agent sandbox provider did not persist');
     report.browser.console.agent_id = agent.id;
   });
 
