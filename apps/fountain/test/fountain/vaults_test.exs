@@ -41,6 +41,14 @@ defmodule Fountain.VaultsTest do
   end
 
   describe "get_vault/2" do
+    test "a malformed id reads as nil rather than raising (#1679)" do
+      user = insert_verified_user()
+
+      assert Vaults.get_vault("prod-creds", user.id) == nil
+      # Sixteen characters is what a cast-based guard would have let through.
+      assert Vaults.get_vault("prod-credentials", user.id) == nil
+    end
+
     test "returns vault scoped to user" do
       user = insert_verified_user()
       vault = insert_vault(user_id: user.id)
