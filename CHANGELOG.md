@@ -18,6 +18,10 @@ upgrade, is in
 
 ### Changed
 
+- OpenAPI operations declare shared pipeline failures and controller refusals. The schema guard no longer exempts missing response statuses.
+- The API manual is a workflow guide linking to the generated reference at `/api/docs`; existing section anchors remain available.
+- Portable Prometheus rules cover stage and reattach failures, per-provider turn failure rates, and slow first output. Thresholds have executable alert fixtures.
+
 - Manifest apply rejects unknown `spec` keys before writing that resource or its secrets. Previously, Ecto silently discarded them, including misspelled network restrictions. Correct these keys before upgrading. Bulk apply keeps its HTTP 200 response with per-resource errors; other valid resources still apply. Ownership keys remain ignored.
 
 - **Credential brokerage is on for every account on the hosted platform**
