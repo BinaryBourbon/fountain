@@ -8,6 +8,7 @@ adr: "0019"
 adr_status: "Accepted"
 date: 2026-08-14
 generated: { by: human:jhgaylor, at: 2026-08-14T04:45:00-04:00 }
+verified: { by: codex, at: 2026-09-05T20:00:00-04:00 }
 stale_after: 2027-03-03
 ---
 
@@ -39,8 +40,12 @@ cannot enforce `allow: [broker]` cannot host a brokered conversation, so under
 `*` a self-hosted runner (`managoat_runner`, capabilities `[:suspend,
 :attach]`) refuses with `{:broker, :backend_lacks_network_policy}`.
 `BROKER_ALLOW_UNENFORCED` makes that advisory and is a development escape
-hatch. Reattach does not yet re-apply the floor to a sandbox provisioned
-before its tenant was brokered (#1555).
+hatch. Reattach now checks provider support and applies the current floor
+before refreshing credentials or resuming a session. A policy failure stops
+the wake for retry and does not retire the sandbox. Removing a tenant from
+brokering reapplies a `limited` environment, but an unrestricted environment
+is a no-op: it does not clear an existing floor. Reprovision that machine
+when removing brokering; the current sandbox policy API has no reset operation.
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
 each marked in place: §11 is a vault per *conversation*, not per tenant; the
@@ -56,17 +61,36 @@ after this draft — changed underneath it.
 
 **Gate 0 passed on 2026-08-24**, against a real Sprites sandbox provisioned by
 production Fountain. What it proved, what it cost and what it found is in
-*Gates* below; nothing in the product changed, so the rest of this ADR still
-describes behaviour that is not built. The spike ran entirely on configuration
+*Gates* below; nothing in the product changed, so at that date the rest of this ADR described behavior not yet built. The spike ran entirely on configuration
 already available to a tenant — an environment, a `limited` network policy and
 a setup script — which is why it needed no code and why its results are about
 the mechanism rather than about our implementation of it.
 
-Every code reference and every number below was re-checked against `main` and
-against production on 2026-08-24. The frontmatter carries no `verified` stamp
-because that field records a human reading the code, and this revision's
-checking was done by an agent; the claim belongs here, at its true strength,
-rather than in a field that says something stronger.
+**Source verification, 2026-09-05.** Checked the server, its pinned
+`managoat_broker` 0.11.0 source, and the wake/Connections changes in this
+revision. This is an agent review of code, not a new production smoke test.
+Production counts, hostnames, latency measurements and dated rollout records
+below retain their original observation dates.
+
+| Section | Verdict | What the source implements |
+|---|---|---|
+| §1 Storage and delivery | Built, narrower than the original headline | `Broker.split/2` and `Egress` broker enabled bindings, the GitHub defaults, runtime inference credentials and active connection tokens. Other encrypted secrets still enter the sandbox as values. `Crypto` remains the storage boundary. |
+| §2 Network floor | Built, with a development exception | `Provisioning.check_broker_support/4` and `Egress.apply_policy/4` cover cold provision, warm restore and reattach. `BROKER_ALLOW_UNENFORCED` explicitly permits unsupported providers without enforcement. |
+| §3 Environment policy | Built | `Broker.network_for/1` creates passthrough rules plus default deny for `limited`; unrestricted uses unmatched-host passthrough behind the same sandbox floor. |
+| §4 Placeholders | Built | `Broker.placeholder/1` and `Native` construct the placeholder and matching substitution rules together; inference uses vendor-shaped placeholders. |
+| §5 Conversation scope | Built | `Native.Sessions` stores a token hash, conversation and user ids, expiry and DEK-encrypted rules. The proxy resolves credentials through that store. |
+| §6 Failure behavior | Built, with limits stated here | No plaintext fallback on broker failure. A failed wake preserves the disk. CA installation on reattach remains best effort; a failure is logged and may fail the next turn. |
+| §7 Non-HTTP labels | Not built | No `unbrokerable` field or classification UI/API exists. Non-HTTP credentials remain a residual plaintext delivery path. |
+| §8 Vendor | Changed | `Native` is the only backend. The Agent Vault client and its configuration were removed; the original vendor comparison is historical. |
+| §9 Rollout and escape hatch | Partly built | Configuration supports tenant ids and `*`. The proposed per-secret classification escape hatch is not implemented. Connections and binding management additionally require the `connections` rollout flag; that flag does not disable brokering. |
+| §10 Bodies and rewriting | Partly built by design | The proxy sees HTTP bodies but streams them without substitution. `Injector` substitutes header values and request targets. Content-policy rewriting remains future work. |
+| §11 Topology and custody | Changed | Fountain runs the library listener in-process, stores sessions in its own database and derives the CA from the master key. There are no vendor vaults or separate broker database. |
+
+The egress trail is implemented by `Native.handle_request/4`, `RequestLog`
+and `BrokerReaper`: terminal request events carry status, total latency and
+errors, while passthrough is distinguished from credential injection by
+`scheme`. The pinned proxy also keeps an authentication challenge connection
+open for bounded retries; the original 407 regression is historical.
 
 This ADR implements and generalises **[0016](0016-governance-as-an-acp-proxy.md)
 §4** (*credential brokerage: the sandbox holds no long-lived secret*), and
@@ -80,6 +104,10 @@ ACP**. 0014, 0015 and 0016 are a sequence; this is not part of it, and can be
 built while that sequence is still being argued about.
 
 ## Context
+
+This section records the problem and measurements from August 2026, before
+the implementation. Its plaintext-delivery and unused-policy descriptions
+are historical; the verification table above describes current behavior.
 
 ### The sandbox holds every secret, and by default it may reach anything
 
@@ -239,12 +267,12 @@ four of its assumptions need restating rather than reinterpreting.
 ## Decision
 
 **Adopt an egress credential broker: the sandbox receives placeholders and a
-proxy address, never a long-lived credential, and the only host it may reach is
-the broker.**
+proxy address for brokerable HTTP credentials, and the only host it may reach
+is the broker. Non-HTTP and otherwise unbound secrets remain exceptions.**
 
 The capability is the decision; the vendor is an implementation choice. Agent
-Vault is the chosen first implementation, and §8 below says what happens when
-that choice needs revisiting.
+Vault was the first implementation. The September amendments record its
+replacement by `Managoat.Broker`; §8 retains the original rationale.
 
 ### 1. Placeholders replace plaintext in the sprite environment
 
@@ -272,7 +300,7 @@ rather than merely stated.
 
 ### 3. `networking_type` changes meaning, and `unrestricted` stops meaning "no policy"
 
-Today: `unrestricted` → no sandbox call at all; `limited` → allowlist from
+Before brokering: `unrestricted` → no sandbox call at all; `limited` → allowlist from
 `networking_config.allowed_hosts`.
 
 Under this ADR both are enforced at the broker, and the sandbox floor is
@@ -328,10 +356,15 @@ long-lived credential inside the sandbox, and `provisioning.ex` has an SSH path.
 This is a real residual gap, not a rounding error, and 0016 §2's corollary
 applies unchanged: **a credential that cannot be brokered must be labelled
 unbrokered in the UI and the API**, rather than quietly counted under a claim
-that covers it. The honest version of the pitch is "outbound HTTP credentials are
+that covers it. **This labeling requirement is not implemented:** neither
+secret schema has an `unbrokerable` field, and there is no classification
+control in the UI or API. The honest version of the pitch is "outbound HTTP credentials are
 brokered", and the product surface should say exactly that.
 
 ### 8. The vendor is Agent Vault, and the interface is ours
+
+Historical decision, replaced by the September 2026 amendments. The server
+now runs `Managoat.Broker`; the comparison below explains the first choice.
 
 Decided 2026-08-24. Infisical's commercial successor, **Agent Proxy**, reached
 GA in July 2026, free on every plan, with 30-odd service presets. It is the
@@ -371,20 +404,19 @@ Two knobs do the work instead, and neither is a new product surface:
 - **Deployment.** A broker is configured or it is not. Self-hosters need that
   switch regardless (see *Consequences*), and it is the honest place for it:
   an instance either brokers or it says plainly that it does not.
-- **Secret.** Each secret is brokerable or unbrokerable per §7, which we owe
-  the UI anyway, and which a third of what is stored today requires.
+- **Secret.** Delivery currently follows enabled bindings, catalog defaults,
+  inference rules and connection rules. The explicit brokerable/unbrokerable
+  classification proposed in §7 is still unbuilt.
 
 Rollout is an operator ratchet, not an option: a per-tenant enable we hold,
 flipped tenant by tenant as classification is proven. With two tenants holding
 secrets, that ratchet is short.
 
-**The escape hatch is the classification, not a setting.** A tenant who wants a
-value in the sandbox anyway, having read everything above, marks the secret
-unbrokerable — the same label §7 already requires for the values no proxy can
-broker, `BUZZ_PRIVATE_KEY` among them. It stays envelope-encrypted, it is
-injected in the clear exactly as today, and both the UI and the API say so.
-That is the whole hatch: no new field, no second provisioning path, and the
-choice is visible on the thing it was made about.
+**The proposed classification escape hatch is not implemented.** A tenant
+cannot mark a secret `unbrokerable` in the UI or API. Secrets outside the
+binding/catalog/inference/connection rules still enter the sandbox in the
+clear, but this is delivery behavior, not an explicit classification the
+product records. Do not describe it as a supported labeling control.
 
 There is a second, blunter path, and it should be described rather than
 advertised: `environments.env_vars` is an ordinary map column and is injected
@@ -396,8 +428,8 @@ there to dodge the proxy trades a brokered credential for a plaintext row in
 Postgres. `Redaction` still scrubs it from the transcript; nothing else about it
 improves.
 
-Stated as one rule: **encrypted storage means brokered delivery, unless the
-secret is labelled unbrokerable.** Environment secrets and vault secrets are
+The implemented rule is: **encrypted storage does not imply brokered
+delivery. Only credentials selected by the broker rules are brokered.** Environment secrets and vault secrets are
 the same case here; the Vault primitive's override semantics (vault wins on key
 collision) are unchanged, since brokering happens after the merge.
 
@@ -429,6 +461,11 @@ chosen in §11 does not foreclose it, and gate 0 proves the chain is possible
 rather than assuming it.
 
 ### 11. One instance, one vault per conversation
+
+The vault and management-port details below describe Agent Vault in August
+2026. Current custody is one conversation-scoped session in Fountain’s own
+database, with the native listener inside each application replica. There is
+no separate vendor store; the deployment history is in the amendments.
 
 Decided 2026-08-24 as a vault per tenant; **amended 2026-08-25, on building
 gate 1a, to a vault per conversation** (`c-<conversation id>`, created at
@@ -515,9 +552,9 @@ proxy that sees every request to `api.anthropic.com` can meter and can enforce
 model choice. This ADR does not decide to do either; it notes that adopting it
 does not forfeit them, which was 0016's worry.
 
-**Self-hosters inherit another service.** The self-host story
-([0011](0011-self-host-first-admin-bootstrap.md) and the 2026-08 audit) gets a
-new component with its own database. §9 resolves the tension by putting the
+**Self-hosters enable another listener in Fountain.** The native broker
+shares the application database and runs in-process. A separately operated
+service and database were requirements of the retired vendor deployment. §9 resolves the tension by putting the
 switch at the deployment: an instance with no broker configured keeps today's
 behaviour and says so, and one with a broker brokers everything classified
 brokerable. What is not on offer is a per-environment toggle that lets a
@@ -533,6 +570,9 @@ point of saying it — and also means an unbrokered path we failed to label is a
 found defect rather than a missing feature.
 
 ## Gates
+
+These are the original acceptance gates and dated evidence from their
+implementation. Vendor commands and initial measurements are historical.
 
 **Gate 0 — passed 2026-08-24.** Agent Vault deployed in the home cloud
 (`agent-vault` namespace, SQLite on a volume, telemetry off — it defaults on),
@@ -841,9 +881,8 @@ held it open and answered the retry on it. git leaves libcurl on `anyauth`,
 which cannot send a credential before it has seen a challenge naming the
 scheme, so every brokered clone failed with `Proxy CONNECT aborted` while
 inference and `npm install` were unaffected, because those clients send the
-credential preemptively. Fountain now pins git to `basic`. The proxy's own
-half is #1493, and it matters for the next client that negotiates rather than
-presumes.
+credential preemptively. Fountain now pins git to `basic`. The proxy's own half landed in 0.1.2 (#1493): it now holds the connection
+open for bounded authentication retries. Fountain still pins git to `basic`.
 
 The lesson worth keeping: the parity checklist (#1359) compared the two
 proxies feature by feature and found nothing here, because this is not a
