@@ -10,6 +10,18 @@ server releases.
 
 ---
 
+## [1.22.0] — 2026-09-06
+
+### Added
+
+- `conversations({labels})` filters a list by labels, sending one repeated `label` parameter per pair and combining them with AND.
+- `Conversation#setLabels()` merges labels onto a conversation. A null value removes a key.
+- Generated types carry a conversation's `labels`.
+
+### Fixed
+
+- A query value that is an array now expands into a repeated key rather than one comma-joined value.
+
 ## [1.21.2] — 2026-09-06
 
 ### Added
