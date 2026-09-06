@@ -231,7 +231,7 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
              end)
     end
 
-    test "still binds to an untagged session from before tagging existed", ctx do
+    test "orphans an untagged session rather than guessing its conversation", ctx do
       {conv, _turn} = reattach_fixture(ctx)
 
       stub_happy_sprite()
@@ -250,10 +250,10 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
       {pid, _mon, :alive} = start_server(conv)
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 
-      assert_receive {:attached, "legacy"}, 2_000
+      refute_received {:attached, "legacy"}
 
       assert Enum.any?(reattach_outcomes(conv.id), fn d ->
-               d["outcome"] == "session_attached" and d["matched_by"] == "untagged_head"
+               d["outcome"] == "turn_orphaned" and d["reason"] == "no_active_session"
              end)
     end
   end

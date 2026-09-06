@@ -1292,16 +1292,17 @@ defmodule Fountain.Conversations.ConversationServer do
           # Match on the conversation tag, never the head of the list: with
           # several conversations on one machine, the head is as likely to be
           # someone else's process as ours (`Fountain.Conversations.Identity`).
-          case Fountain.Conversations.Identity.pick_session(sessions, state.conversation_id) do
+          case Fountain.Conversations.Identity.reattach_session(
+                 state.handle,
+                 sessions,
+                 state.conversation_id
+               ) do
             :none ->
               mark_orphan(state, running_turn, "no_active_session")
               state
 
-            {:tagged, session} ->
-              attempt_session_attach(state, running_turn, session, "tag")
-
-            {:untagged, session} ->
-              attempt_session_attach(state, running_turn, session, "untagged_head")
+            {:ok, session, matched_by} ->
+              attempt_session_attach(state, running_turn, session, matched_by)
           end
 
         {:error, reason} ->
@@ -1319,17 +1320,13 @@ defmodule Fountain.Conversations.ConversationServer do
     case Managoat.Sandbox.list_sessions(state.handle) do
       {:ok, sessions} ->
         mine =
-          Enum.filter(
+          Fountain.Conversations.Identity.owned_sessions(
+            state.handle,
             sessions,
-            &(Fountain.Conversations.Identity.conversation_id(&1) == state.conversation_id)
+            state.conversation_id
           )
 
-        Enum.each(mine, fn session ->
-          case Managoat.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
-            {:ok, command} -> Managoat.Sandbox.stop_command(command)
-            _ -> :ok
-          end
-        end)
+        Enum.each(mine, &Connection.reap_session(state.handle, &1.id))
 
         outcome = if mine == [], do: "no_running_turn", else: "orphan_session_reaped"
 

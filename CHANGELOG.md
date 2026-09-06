@@ -30,6 +30,12 @@ upgrade, is in
 
 ### Fixed
 
+- Reattach and idle-process cleanup recover conversation identity from a Sprites
+  process's environment after its command changes. Unidentified processes are
+  never selected by list order on a shared sandbox. ACP updates from another
+  session are discarded and foreign permission requests are cancelled before
+  policy evaluation (#1658).
+
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
 

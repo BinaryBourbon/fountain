@@ -992,7 +992,13 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       ref = make_ref()
 
       Mimic.stub(Managoat.Sandbox.Sprites, :list_sessions, fn _h ->
-        {:ok, [%Managoat.Sandbox.Session{id: "9350"}]}
+        {:ok,
+         [
+           %Managoat.Sandbox.Session{
+             id: "9350",
+             command: "env FOUNTAIN_CONVERSATION_ID=#{conv.id} claude-agent-acp"
+           }
+         ]}
       end)
 
       Mimic.stub(Managoat.Sandbox.Sprites, :attach, fn _h, "9350", _opts ->

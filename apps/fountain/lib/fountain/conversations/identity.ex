@@ -24,22 +24,21 @@ defmodule Fountain.Conversations.Identity do
       and vault values, which are the same for every conversation on the
       machine.
 
-    * **A session names its conversation.** `tag_command/3` wraps the spawn as
-      `env FOUNTAIN_CONVERSATION_ID=<id> <cmd> <args…>`, so the tag is in the
-      command line every provider reports for a detachable session
-      (`Managoat.Sandbox.Session.command`) *and* the process gets the variable
-      from the same line. No argv is added to the adapter itself, which would
-      reject it.
+    * **A session inherits its conversation.** `tag_command/3` wraps the spawn as
+      `env FOUNTAIN_CONVERSATION_ID=<id> <cmd> <args…>`. The process gets the
+      variable, and providers retaining the original command expose the tag
+      in `Managoat.Sandbox.Session.command`. A runtime can replace that command
+      while retaining the environment. No argv is added to the adapter itself.
 
-    * **Reattach matches on the tag.** `pick_session/2` takes the session
-      tagged with this conversation, ignores one tagged with another, and —
-      only while sessions spawned before this module existed are still alive —
-      falls back to an untagged head. That fallback is what keeps the deploy
-      that ships this from orphaning every turn in flight; it is not a
-      contract, and a session that carries someone else's tag is never taken.
+    * **Reattach matches on identity.** Sprites reports the current process
+      command, so `env` and its argv tag disappear after exec. `session_owners/2`
+      recovers the inherited identity from that process's environment when
+      needed. Unidentified processes are never candidates: the transitional
+      untagged-head fallback could bind two owners to one process (#1658).
+      Fountain owns routing; the ACP peer cannot recover misrouted bytes.
   """
 
-  alias Managoat.Sandbox.Session
+  alias Managoat.Sandbox.{Handle, Session}
 
   @tag_key "FOUNTAIN_CONVERSATION_ID"
 
@@ -84,7 +83,7 @@ defmodule Fountain.Conversations.Identity do
 
   @doc """
   The conversation a session was spawned for, read from its command line, or
-  `nil` for a session spawned before tagging existed (or by something else).
+  `nil` when the tag is absent, including after the runtime replaces argv.
   """
   @spec conversation_id(Session.t()) :: String.t() | nil
   def conversation_id(%Session{command: command}) when is_binary(command) do
@@ -96,32 +95,106 @@ defmodule Fountain.Conversations.Identity do
 
   def conversation_id(%Session{}), do: nil
 
+  # Sprites exec session ids are the process ids reported by its exec list.
+  # Read only the identity, inside the sandbox: the rest of /proc/*/environ
+  # contains credentials and must never cross the transport or reach logs.
+  @process_identity_script """
+  for pid do
+    if [ -r "/proc/$pid/environ" ]; then
+      tr '\\000' '\\n' < "/proc/$pid/environ" 2>/dev/null |
+        sed -n "s/^FOUNTAIN_CONVERSATION_ID=/$pid /p"
+    fi
+  done
+  """
+
+  @doc """
+  Verified session owners, keyed by provider session id. Command tags work on
+  every provider. Sprites also exposes its exec process through `/proc/<id>`;
+  its inherited env survives a runtime changing argv. Failed reads and absent
+  or malformed identities leave the session unidentified, never a fallback.
+  """
+  @spec session_owners(Handle.t(), [Session.t()]) :: %{String.t() => String.t() | nil}
+  def session_owners(handle, sessions) do
+    tagged = Map.new(sessions, &{&1.id, conversation_id(&1)})
+    Map.merge(tagged, process_identities(handle, tagged))
+  end
+
+  @doc "Resolve a reattach candidate and the source of its identity."
+  @spec reattach_session(Handle.t(), [Session.t()], String.t()) ::
+          {:ok, Session.t(), String.t()} | :none
+  def reattach_session(handle, sessions, conv_id) do
+    case pick_session(sessions, conv_id, session_owners(handle, sessions)) do
+      {:tagged, session} ->
+        source = if conversation_id(session), do: "tag", else: "process_env"
+        {:ok, session, source}
+
+      :none ->
+        :none
+    end
+  end
+
+  @doc "All verified processes belonging to an owner, for idle-session cleanup."
+  @spec owned_sessions(Handle.t(), [Session.t()], String.t()) :: [Session.t()]
+  def owned_sessions(handle, sessions, conv_id) do
+    owners = session_owners(handle, sessions)
+    Enum.filter(sessions, &(owners[&1.id] == String.downcase(conv_id)))
+  end
+
+  defp process_identities(%Handle{provider: :sprites} = handle, tagged) do
+    ids = for {id, nil} <- tagged, is_binary(id), Regex.match?(~r/^[0-9]+$/, id), do: id
+
+    case ids do
+      [] -> %{}
+      _ -> read_process_identities(handle, ids)
+    end
+  end
+
+  defp process_identities(_handle, _tagged), do: %{}
+
+  defp read_process_identities(handle, ids) do
+    args = ["-c", @process_identity_script, "fountain-session-identity" | ids]
+
+    case Managoat.Sandbox.exec(handle, "sh", args, []) do
+      {:ok, output, 0} ->
+        output
+        |> String.split("\n", trim: true)
+        |> Enum.reduce(%{}, fn line, owners ->
+          case String.split(line, " ", parts: 2) do
+            [id, owner] when byte_size(owner) == 36 ->
+              case {id in ids, Ecto.UUID.cast(owner)} do
+                {true, {:ok, uuid}} -> Map.put(owners, id, uuid)
+                _ -> owners
+              end
+
+            _ ->
+              owners
+          end
+        end)
+
+      _ ->
+        %{}
+    end
+  end
+
   @doc """
   The session a reattaching server for `conv_id` should bind to.
+  Pass `session_owners/2` as `owners` to include recovered process identities.
 
     * `{:tagged, session}` — a session carrying this conversation's tag. The
       newest one if there are several (a peer that died mid-handshake can
       leave an older idle adapter behind; the caller already stops those).
-    * `{:untagged, session}` — no session carries our tag, but one carries no
-      tag at all. Transitional: only sessions spawned before this tagging
-      existed look like this.
     * `:none` — nothing to bind to. Sessions tagged with *another*
-      conversation are never offered.
+      conversation, or carrying no tag, are never offered.
   """
-  @spec pick_session([Session.t()], String.t()) ::
-          {:tagged, Session.t()} | {:untagged, Session.t()} | :none
-  def pick_session(sessions, conv_id) when is_list(sessions) and is_binary(conv_id) do
+  @spec pick_session([Session.t()], String.t(), map()) ::
+          {:tagged, Session.t()} | :none
+  def pick_session(sessions, conv_id, owners \\ %{})
+      when is_list(sessions) and is_binary(conv_id) do
     wanted = String.downcase(conv_id)
 
-    {ours, others} =
-      Enum.split_with(sessions, fn s -> conversation_id(s) == wanted end)
-
-    untagged = Enum.filter(others, &is_nil(conversation_id(&1)))
-
-    cond do
-      ours != [] -> {:tagged, newest(ours)}
-      untagged != [] -> {:untagged, hd(untagged)}
-      true -> :none
+    case Enum.filter(sessions, fn s -> (owners[s.id] || conversation_id(s)) == wanted end) do
+      [] -> :none
+      ours -> {:tagged, newest(ours)}
     end
   end
 

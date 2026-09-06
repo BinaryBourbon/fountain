@@ -152,6 +152,21 @@ defmodule Fountain.Conversations.Connection do
 
   # ── letting it go ─────────────────────────────────────────────────────────
 
+  @doc "Stop a verified idle adapter left behind by a previous owner."
+  @spec reap_session(Managoat.Sandbox.Handle.t(), String.t()) :: :ok
+  def reap_session(handle, session_id) do
+    case Managoat.Sandbox.attach(handle, session_id, owner: self(), stdin: true) do
+      {:ok, command} ->
+        # A detachable adapter survives its WebSocket closing. EOF is what
+        # releases its runtime writer before a new owner attempts resume.
+        Managoat.Sandbox.close_stdin(command)
+        Managoat.Sandbox.stop_command(command)
+
+      _ ->
+        :ok
+    end
+  end
+
   @doc """
   Close the ACP connection.
 
