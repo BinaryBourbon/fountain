@@ -47,6 +47,26 @@ test('breaking an SSE consumer closes its real HTTP connection', async t => {
   await Promise.race([disconnected, new Promise((_, reject) => setTimeout(() => reject(new Error('SSE connection leaked')), 1500).unref())]);
 });
 
+test('SSE reconnect sends the cursor header and wait=false drains to connection end', async t => {
+  const headers = [];
+  const server = createServer((req, res) => {
+    headers.push(req.headers['last-event-id']);
+    assert.ok(req.url.endsWith('wait=false'));
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    for (const id of req.headers['last-event-id'] ? [41] : [12, 41]) {
+      res.write(`id: ${id}\nevent: output\ndata: {"kind":"output","data":"ok"}\n\n`);
+    }
+    res.end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const client = { baseUrl: `http://127.0.0.1:${server.address().port}`, key: randomUUID(), redactor: new Redactor(), trace() {} };
+  const path = `/api/conversations/${randomUUID()}/stream?wait=false`;
+  assert.deepEqual((await collect(streamEvents(client, path, { signal: AbortSignal.timeout(1000) }))).map(f => f.event.id), [12, 41]);
+  assert.deepEqual((await collect(streamEvents(client, path, { after: 12, signal: AbortSignal.timeout(1000) }))).map(f => f.event.id), [41]);
+  assert.deepEqual(headers, [undefined, '12']);
+});
+
 function fixtures(t, request) {
   const dir = mkdtempSync(join(tmpdir(), 'fountain-execution-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

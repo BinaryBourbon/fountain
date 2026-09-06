@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { ensure, phaseSignal, performTurn, watchUntil } from '../lib/execution.mjs';
+import { verifyReplay } from '../lib/replay.mjs';
 
 export async function execution(ctx) {
   const { client, fixtures, config, check } = ctx;
   const settings = config.execution;
+  const streaming = config.profiles.includes('streaming');
   ctx.report.execution = { runtime: settings.runtime, model: settings.model, sandbox_provider: settings.sandbox_provider, turns: [] };
   let environment, agent, conversation, provision, first, second;
   const file = `fountain-suite-${ctx.report.run_id}.txt`;
@@ -43,7 +45,7 @@ export async function execution(ctx) {
   };
   if (!await check('execution/first-turn-and-artifact', async () => {
     first = await performTurn(ctx, conversation,
-      `Use a shell tool to write exactly the text ${nonce} followed by one newline into the relative file ${file}. Read the file with the tool to verify it. Do nothing else.`, 1, provision.cursor);
+      `${streaming ? 'First say you are starting, then include a two-second sleep in your shell command. ' : ''}Use a shell tool to write exactly the text ${nonce} followed by one newline into the relative file ${file}. Read the file with the tool to verify it. Do nothing else.`, 1, provision.cursor, { verifyStreaming: streaming });
     await readArtifact();
   })) return;
   if (!await check('execution/follow-up', async () => {
@@ -56,6 +58,9 @@ export async function execution(ctx) {
     ensure(text.includes(nonce), 'Follow-up response did not contain the file nonce');
     ctx.report.execution.usage_total = body.data.usage_total;
   })) return;
+  if (streaming) await check('streaming/replay-and-history', async () => {
+    await verifyReplay(ctx, conversation.id, first, second, phaseSignal(ctx.signal, settings.turn_ms));
+  });
   await check('execution/tenant-isolation', async () => {
     for (const path of [`/api/conversations/${conversation.id}`, `/api/conversations/${conversation.id}/events`,
       `/api/conversations/${conversation.id}/stream?wait=false`, `/api/sandboxes/${conversation.sandbox_id}`,

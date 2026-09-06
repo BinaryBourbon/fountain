@@ -8,8 +8,9 @@ adds resource CRUD, validation errors, key revocation, tenant isolation, and
 an independent check of the instance's advertised response schemas.
 
 The `execution` profile verifies two real tool-using turns on a fresh
-ephemeral sandbox. Streaming reconnect conformance, integration, recovery and
-browser profiles remain tracked in #1606. A passing probe does not prove
+ephemeral sandbox. `streaming` adds incremental output, reconnect and replay
+conformance to those same two turns. Integration, recovery and browser
+profiles remain tracked in #1606. A passing probe does not prove
 that conversations work, and selecting an unimplemented profile fails setup.
 
 ## Run
@@ -89,9 +90,24 @@ The fixture manifest records each prompt attempt **before** sending it. A
 lost reply still consumes the two-attempt budget; prompts are never retried
 automatically. Provisioning, each turn, the overall run, and cleanup have
 separate deadlines. A stream that ends early fails the execution check;
-automatic replay/reconnect assertions belong to #1610. SSE traces record
+use the `streaming` profile for intentional reconnect/replay assertions. SSE traces record
 redacted frames with receive times, and a closed consumer releases its HTTP
 connection. Each stream is capped at 4 MiB.
+
+To verify ingress and replay, select `"profiles": ["streaming"]` with the same
+explicit execution settings. It includes execution; selecting both is an
+error. During turn one, the suite observes output and confirms that the
+durable turn record is still running. It then closes the stream, waits for
+at least one new persisted event, and reconnects with `Last-Event-ID`.
+
+After turn two, it drains history with a three-event page size and compares
+the live/reconnected events and two `wait=false` replay streams against a
+fixed durable event prefix. IDs must increase without duplicates; they need
+not be consecutive. Matching IDs with different payloads still fail. Events
+newer than the completed-turn cursor may arrive while the checks run and do
+not change that prefix. The report records the reconnect/missed-event IDs,
+comparison counts and pagination evidence. Controlled idle-heartbeat timing
+can be added with the deterministic fixture in #1611.
 
 For `basic`, supply two **different** verified test accounts through explicit
 environment-variable names. Two keys for the same account fail before any
