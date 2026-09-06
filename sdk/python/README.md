@@ -147,6 +147,14 @@ fountain.team.schedules.create("watchtower", {
 })
 ```
 
+## Cancel a wait
+
+`run.cancel()` stops the local wait and skips the final status request. The
+agent continues its work. A silent stream can delay cancellation by up to
+five seconds. Idle reads reconnect from the last complete event.
+
+A custom HTTP transport must honor the supplied socket timeout.
+
 ## Raw API and errors
 
 Every endpoint remains available through the authenticated HTTP layer:

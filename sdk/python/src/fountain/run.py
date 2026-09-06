@@ -301,6 +301,9 @@ class Run:
         )
 
     def _current_status(self, conversation: JsonObject) -> Optional[str]:
+        if self._cancel.is_set():
+            value = conversation.get("status")
+            return value if isinstance(value, str) else None
         try:
             fresh = self._http.data("GET", "/api/conversations/%s" % conversation["id"])
             value = (
