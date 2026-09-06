@@ -720,3 +720,7 @@ capacity. There is no tenant runtime CRUD, general harness registry, custom
 bootstrap or permission claim for arbitrary code. Those remain #1007 work.
 The deterministic profile runs separately from real-model canaries and is not
 an option in the production CI workflow.
+
+The [staging recovery controls](recovery-controls.md) document the rollout
+adapter, interrupted-run restoration and dedicated runner connection relay for
+#1617. The public recovery profile remains under implementation.
