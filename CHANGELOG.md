@@ -16,6 +16,16 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
+- Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
+
+### Fixed
+
+- The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
+- Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
+
 ### Changed
 
 - OpenAPI operations declare shared pipeline failures and controller refusals. The schema guard no longer exempts missing response statuses.

@@ -10,6 +10,17 @@ server releases.
 
 ---
 
+## [1.21.0] — 2026-09-06
+
+### Added
+
+- `vaults.secrets.update(vault, key, {expires_at})` changes advisory expiry without replacing the value. Null clears expiry; omission preserves it.
+- `conversations({sandboxId})` filters by machine, alongside the existing root filter.
+
+### Fixed
+
+- Generated types describe field-validation and coded 422 refusals with a dedicated schema.
+
 ## [1.20.2] — 2026-09-06
 
 ### Fixed

@@ -29,12 +29,13 @@ defmodule FountainWeb.EventsController do
     summary: "Stream every conversation's events (SSE)",
     description:
       "One `text/event-stream` carrying the log events of every conversation the " <>
-        "caller owns that is not finished, each payload the shape of " <>
+        "caller owns, including conversations that finish before discovery, each payload the shape of " <>
         "`GET /api/conversations/:id/stream` plus `conversation_id`. A `conversations` " <>
         "event (data `{reason: changed}`) is sent, debounced, when the list changes — " <>
         "created, titled, read, deleted, finished — and the stream follows a new " <>
         "conversation on its own; the client re-lists. `Last-Event-ID` replays what was " <>
-        "missed across every followed conversation. `?streams=` filters as elsewhere; " <>
+        "missed across all owned conversations, including finished ones. Without a cursor, " <>
+        "only events recorded after connection are sent. `?streams=` filters as elsewhere; " <>
         "`?blocks=true` adds server-parsed blocks. Heartbeats every 15 s; closes after " <>
         "60 s idle so the client reconnects. The first byte is a `: connected` comment.",
     parameters: [
@@ -81,6 +82,14 @@ defmodule FountainWeb.EventsController do
     blocks? = params["blocks"] in [true, "true", "1"]
 
     Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user_id}")
+    # Take the baseline before listing/subscribing so a rapid new conversation
+    # cannot disappear in the discovery window. An explicit cursor includes
+    # finished conversations during replay as well.
+    last_event_id =
+      if last_event_id > 0,
+        do: last_event_id,
+        else: Conversations.latest_user_log_event_id(user_id)
+
     followed = follow(user_id, %{})
 
     conn =
@@ -134,33 +143,34 @@ defmodule FountainWeb.EventsController do
     end)
   end
 
-  defp replay(conn, %{last_id: 0}), do: {:ok, conn, 0}
-
+  # Drain the tenant's durable feed in bounded pages. A live notification can
+  # have a higher id than an event from a not-yet-followed conversation, so it
+  # must trigger the same drain rather than advancing the cursor past that row.
   defp replay(conn, state) do
-    # Ownership: `followed` came from the tenant-scoped list_conversations.
-    state.followed
-    |> Enum.flat_map(fn {conv_id, _runtime} ->
-      Conversations._unsafe_list_log_events(conv_id, state.last_id, streams: state.streams)
-    end)
-    |> Enum.sort_by(& &1.id)
-    |> Enum.reduce_while({:ok, conn, state.last_id}, fn ev, {:ok, acc, last_id} ->
-      case write_event(acc, ev, state) do
-        {:ok, c} -> {:cont, {:ok, c, max(ev.id, last_id)}}
-        {:error, _} -> {:halt, {:closed, acc, last_id}}
-      end
-    end)
+    events =
+      Conversations.list_user_log_events(state.user_id, state.last_id, streams: state.streams)
+
+    result =
+      Enum.reduce_while(events, {:ok, conn, state.last_id}, fn {ev, runtime},
+                                                               {:ok, acc, _last_id} ->
+        case write_event(acc, ev, runtime, state) do
+          {:ok, c} -> {:cont, {:ok, c, ev.id}}
+          {:error, _} -> {:halt, {:closed, acc, state.last_id}}
+        end
+      end)
+
+    case result do
+      {:ok, conn, last_id} when events != [] -> replay(conn, %{state | last_id: last_id})
+      result -> result
+    end
   end
 
   defp sse_loop(conn, state) do
     receive do
-      {:log_event, %LogEvent{id: ev_id} = ev} when ev_id > state.last_id ->
-        if Conversations.event_in_streams?(ev, state.streams) do
-          case write_event(conn, ev, state) do
-            {:ok, conn} -> sse_loop(conn, %{state | last_id: ev_id})
-            {:error, _} -> conn
-          end
-        else
-          sse_loop(conn, %{state | last_id: ev_id})
+      {:log_event, %LogEvent{id: ev_id}} when ev_id > state.last_id ->
+        case replay(conn, state) do
+          {:ok, conn, last_id} -> sse_loop(conn, %{state | last_id: last_id})
+          {:closed, conn, _} -> conn
         end
 
       {:log_event, _stale} ->
@@ -180,8 +190,11 @@ defmodule FountainWeb.EventsController do
         followed = follow(state.user_id, state.followed)
         chunk = "event: conversations\ndata: #{Jason.encode!(%{reason: "changed"})}\n\n"
 
-        case Plug.Conn.chunk(conn, chunk) do
-          {:ok, conn} -> sse_loop(conn, %{state | followed: followed, refollow_pending?: false})
+        with {:ok, conn, last_id} <- replay(conn, state),
+             {:ok, conn} <- Plug.Conn.chunk(conn, chunk) do
+          sse_loop(conn, %{state | followed: followed, last_id: last_id, refollow_pending?: false})
+        else
+          {:closed, conn, _} -> conn
           {:error, _} -> conn
         end
 
@@ -199,8 +212,8 @@ defmodule FountainWeb.EventsController do
     end
   end
 
-  defp write_event(conn, %LogEvent{} = ev, state) do
-    runtime = if state.blocks?, do: Map.get(state.followed, ev.conversation_id)
+  defp write_event(conn, %LogEvent{} = ev, runtime, state) do
+    runtime = if state.blocks?, do: runtime
 
     payload =
       %{
