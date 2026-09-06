@@ -51,8 +51,6 @@ defmodule FountainWeb.Plugs.RepeatedQueryParam do
     for {key, value} <- URI.query_decoder(query), key in [name, bracketed], do: value
   end
 
-  defp collect(_query, _name), do: []
-
   defp put(conn, name, values) do
     %{
       conn
