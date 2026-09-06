@@ -49,9 +49,9 @@ defmodule Fountain.Environments.Environment do
   def warm_start_fields, do: @warm_start_fields
   def networking, do: @networking
 
-  def changeset(env, attrs) do
-    env
-    |> cast(attrs, [
+  @doc false
+  def cast_fields,
+    do: [
       :name,
       :packages,
       :env_vars,
@@ -62,7 +62,11 @@ defmodule Fountain.Environments.Environment do
       :checkpoint_id,
       :metadata,
       :user_id
-    ])
+    ]
+
+  def changeset(env, attrs) do
+    env
+    |> cast(attrs, cast_fields())
     |> validate_required([:name])
     |> validate_inclusion(:networking_type, @networking)
     |> validate_length(:name, min: 1, max: 200)
