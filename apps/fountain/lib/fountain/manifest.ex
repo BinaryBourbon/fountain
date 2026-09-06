@@ -51,6 +51,8 @@ defmodule Fountain.Manifest do
   alias Fountain.{Agents, Crypto, Environments, Team, Vaults, Webhooks}
   alias Fountain.Team.Schedules
 
+  @unexpected "apply failed unexpectedly; see the server log"
+
   @kinds ~w(Environment Vault Agent Teammate Schedule Webhook)
 
   def kinds, do: @kinds
@@ -148,6 +150,12 @@ defmodule Fountain.Manifest do
   # committed the environments, vaults and agents above it, leaving the caller
   # a 500 and no rows at all. Reported as this document's error instead, and
   # logged, because a crash in a context is still a defect worth a stacktrace.
+  # The row says only that the pass failed. The exception text goes to the log
+  # above and no further: this module promises that secret values are never
+  # echoed back, and the environment and vault passes hold plaintext inside
+  # this rescue, where Elixir's own MatchError, CaseClauseError, BadMapError
+  # and ArgumentError messages embed the value they choked on. A caller who
+  # needs the detail has an operator who can read the log.
   defp guarded(kind, name, fun) do
     fun.()
   rescue
@@ -157,13 +165,12 @@ defmodule Fountain.Manifest do
           Exception.format(:error, error, __STACKTRACE__)
       )
 
-      {result(kind, str(name), :error, %{"base" => [Exception.message(error)]}, []), nil}
+      {result(kind, str(name), :error, %{"base" => [@unexpected]}, []), nil}
   catch
     thrown, reason ->
       Logger.error("apply: #{kind} #{inspect(name)} #{thrown}: #{inspect(reason)}")
 
-      {result(kind, str(name), :error, %{"base" => ["apply failed: #{inspect(reason)}"]}, []),
-       nil}
+      {result(kind, str(name), :error, %{"base" => [@unexpected]}, []), nil}
   end
 
   # Keeps the `via: apply` marker the ApplyController used to attach when it

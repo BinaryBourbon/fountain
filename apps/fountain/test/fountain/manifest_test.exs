@@ -559,7 +559,13 @@ defmodule Fountain.ManifestTest do
                %{kind: "Webhook", action: :created}
              ] = results
 
-      assert errors == %{"base" => ["the sandbox provider fell over"]}
+      # The row says the pass failed and nothing more. The raised text stays in
+      # the log: the environment and vault passes hold plaintext secrets inside
+      # the same rescue, and an Elixir exception message embeds the value it
+      # choked on.
+      assert errors == %{"base" => ["apply failed unexpectedly; see the server log"]}
+      refute inspect(errors) =~ "sandbox provider fell over"
+
       # The documents on either side of it were still applied.
       assert Environments.get_environment_by_name("proj", user.id)
       assert [_endpoint] = Webhooks.list_endpoints(user.id)
