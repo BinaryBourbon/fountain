@@ -70,6 +70,39 @@ defmodule FountainWeb.SseStreamTest do
   end
 
   describe "replay" do
+    test "history and replay retain the timestamp supplied to live broadcasts (#1624)", %{
+      raw_key: key,
+      conv: conv
+    } do
+      timestamp = ~U[2026-09-06 01:30:46.094866Z]
+
+      event =
+        Fountain.Conversations.log!(%{
+          conversation_id: conv.id,
+          kind: "output",
+          stream: "stdout",
+          data: "precision fixture",
+          inserted_at: timestamp
+        })
+
+      replay = stream(key, "/api/conversations/#{conv.id}/stream?wait=false")
+
+      payload =
+        replay.resp_body
+        |> String.split("\n")
+        |> Enum.find(&String.starts_with?(&1, "data: "))
+        |> String.replace_prefix("data: ", "")
+        |> Jason.decode!()
+
+      feed =
+        stream(key, "/api/conversations/#{conv.id}/events") |> Phoenix.ConnTest.json_response(200)
+
+      assert [%{"id" => id, "ts" => ts}] = feed["data"]
+      assert id == event.id
+      assert ts == DateTime.to_iso8601(event.inserted_at)
+      assert payload["ts"] == ts
+    end
+
     test "drains buffered events and closes with wait=false", %{raw_key: key, conv: conv} do
       insert_log_event(conv, %{kind: "output", stream: "stdout", data: "first"})
       insert_log_event(conv, %{kind: "output", stream: "stdout", data: "second"})
@@ -213,12 +246,28 @@ defmodule FountainWeb.SseStreamTest do
       # Give the loop time to subscribe before publishing.
       Process.sleep(300)
 
-      publish(conv, %{kind: "output", stream: "stdout", data: "live-event"})
+      timestamp = ~U[2026-09-06 01:30:46.987654Z]
+
+      event =
+        publish(conv, %{
+          kind: "output",
+          stream: "stdout",
+          data: "live-event",
+          inserted_at: timestamp
+        })
 
       conn = Task.await(task, 5_000)
 
       assert conn.status == 200
       assert conn.resp_body =~ "live-event"
+      assert conn.resp_body =~ ~s("ts":"#{DateTime.to_iso8601(timestamp)}")
+
+      feed =
+        stream(key, "/api/conversations/#{conv.id}/events") |> Phoenix.ConnTest.json_response(200)
+
+      assert [%{"id" => id, "ts" => ts}] = feed["data"]
+      assert id == event.id
+      assert ts == DateTime.to_iso8601(timestamp)
     end
 
     test "a filtered-out live event is not streamed", %{raw_key: key, conv: conv} do

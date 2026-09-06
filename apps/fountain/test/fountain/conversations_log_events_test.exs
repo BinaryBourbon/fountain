@@ -13,6 +13,28 @@ defmodule Fountain.ConversationsLogEventsTest do
   # ────────────────────────────────────────────────────────────────────────────
 
   describe "log!/1" do
+    test "microseconds survive a database round trip (#1624)" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      for timestamp <- [~U[2026-09-06 01:30:46.094866Z], ~U[2026-09-06 01:30:46.987654Z]] do
+        event =
+          Conversations.log!(%{
+            conversation_id: conv.id,
+            kind: "output",
+            stream: "stdout",
+            data: "precision fixture",
+            inserted_at: timestamp
+          })
+
+        # The inserted struct is what live PubSub broadcasts; history and
+        # reconnect replay reload the row. Asserting only the struct missed
+        # the timestamp(0) column behind the utc_datetime_usec schema.
+        assert event.inserted_at == timestamp
+        assert Fountain.Repo.reload!(event).inserted_at == timestamp
+      end
+    end
+
     test "inserts a LogEvent and returns the struct" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
