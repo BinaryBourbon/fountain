@@ -76,6 +76,27 @@ defmodule Fountain.ChangesetTest do
       assert String.valid?(message(changeset, :one_id))
     end
 
+    test "refuses a name that happens to be sixteen characters long" do
+      # `Ecto.UUID.cast/1` takes a raw 16-byte binary as a uuid, so a name of
+      # exactly that length passed the first cut of this validator and still
+      # raised at dump. `prod-credentials` is sixteen characters.
+      changeset = validate(%{"one_id" => "prod-credentials"})
+
+      refute changeset.valid?
+      assert message(changeset, :one_id) == ~s(must be an id, but "prod-credentials" is not one)
+    end
+
+    test "refuses raw sixteen-byte binary that is not a formatted uuid" do
+      changeset = validate(%{"many_ids" => [:crypto.strong_rand_bytes(16)]})
+
+      refute changeset.valid?
+      assert message(changeset, :many_ids) =~ "must be a list of ids"
+    end
+
+    test "accepts a uuid whichever case it is written in" do
+      assert validate(%{"one_id" => String.upcase(Ecto.UUID.generate())}).valid?
+    end
+
     test "adds nothing where the cast already refused the value" do
       changeset = validate(%{"one_id" => %{"not" => "a string"}})
 
