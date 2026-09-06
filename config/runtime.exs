@@ -290,7 +290,7 @@ config :fountain, :broker_allow_unenforced, System.get_env("BROKER_ALLOW_UNENFOR
 broker_log_retention =
   case System.get_env("BROKER_LOG_RETENTION_HOURS") do
     blank when blank in [nil, ""] ->
-      168
+      720
 
     raw ->
       case Integer.parse(raw) do

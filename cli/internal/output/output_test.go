@@ -166,3 +166,23 @@ func TestToString(t *testing.T) {
 		})
 	}
 }
+
+func TestTruncateUnicodeTitleAtRuneBudget(t *testing.T) {
+	cases := []struct {
+		name  string
+		title string
+		limit int
+		want  string
+	}{
+		{"emoji title fits exactly", "🐐 café", 6, "🐐 café"},
+		{"longer title needs ellipsis", "🐐 cafés", 6, "🐐 café…"},
+		{"zero budget still marks omitted content", "é", 0, "…"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Truncate(tc.title, tc.limit); got != tc.want {
+				t.Fatalf("Truncate(%q, %d) = %q, want %q", tc.title, tc.limit, got, tc.want)
+			}
+		})
+	}
+}
