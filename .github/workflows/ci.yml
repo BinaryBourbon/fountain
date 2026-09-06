@@ -1076,6 +1076,9 @@ jobs:
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
 
+      - name: Deployed-instance runner tests
+        run: node --test deployed/test/*.test.mjs
+
       # `--no-audit` is the whole reason this step is not the longest in CI.
       # `npm ci` runs a vulnerability audit by default, which is one POST to
       # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
