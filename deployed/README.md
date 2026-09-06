@@ -169,9 +169,12 @@ activity inside a turn and provider charges are not a fixed price. Cleanup
 terminates the conversation after failure or cancellation; an unavailable
 server/provider can prevent that, which leaves a visible cleanup failure.
 
-The result explicitly reports that deployment revision is unverified. A URL
-and a successful response do not establish image identity. Confirmed rollout
-integration and deployment revision adapters belong to #1612.
+By default, deployment identity is unverified. The optional Kubernetes adapter
+checks the intended runtime image digest across every serving pod before and
+after the public suite. Reports record the suite checkout revision separately.
+See the [operating guide](../docs/guides/operate/deploy.md#verify-the-deployed-instance)
+for CI environments, rollout hooks, scheduled canaries, fixture provisioning
+and failure ownership. Public profiles need no cluster credentials.
 
 ## Interrupted runs and cleanup
 

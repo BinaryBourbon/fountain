@@ -2,6 +2,8 @@ import { mkdirSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { observeDeployment, validateDeployment, verifyStable } from '../adapters/kubernetes.mjs';
 import { Contract } from './contract.mjs';
 import { Client, Redactor } from './http.mjs';
 import { atomicJson, Fixtures } from './fixtures.mjs';
@@ -22,7 +24,7 @@ function positive(value, fallback, max) {
 
 export function configFrom(path, env = process.env) {
   const config = JSON.parse(readFileSync(path, 'utf8'));
-  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution'];
+  const allowed = ['base_url', 'credentials', 'profiles', 'contract', 'required_capabilities', 'optional_capabilities', 'limits', 'execution', 'deployment'];
   requireThat(Object.keys(config).every(key => allowed.includes(key)), 'Unknown configuration field');
   const url = new URL(config.base_url);
   requireThat(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash,
@@ -71,6 +73,7 @@ export function configFrom(path, env = process.env) {
       }
     }
   }
+  if (config.deployment) validateDeployment(config.deployment);
   return config;
 }
 
@@ -84,12 +87,19 @@ export function writeReport(out, report, redactor) {
   return safe;
 }
 
-export async function run({ configPath, out, manifestPath, signal, env = process.env, log = console.log }) {
+export async function run({ configPath, out, manifestPath, signal, env = process.env, log = console.log, deploymentObserver = observeDeployment }) {
   mkdirSync(out, { mode: 0o700 }); // Exclusive run directory; never overwrite another run's evidence.
   const redactor = new Redactor();
   const report = { suite_version: VERSION, run_id: randomUUID(), started_at: new Date().toISOString(),
     mode: manifestPath ? 'cleanup' : 'run', status: 'setup_failed', checks: [], revision: { verified: false, reason: 'No deployment revision adapter configured' } };
-  let config, fixtures;
+  let config, fixtures, deploymentBefore;
+  try {
+    const git = (...args) => execFileSync('git', args, {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    report.suite_revision = git('rev-parse', 'HEAD');
+    report.suite_dirty = Boolean(git('status', '--porcelain', '--untracked-files=normal'));
+  } catch { report.suite_revision = null; report.suite_dirty = null; }
   const check = async (name, fn) => {
     const started = performance.now();
     try {
@@ -115,6 +125,13 @@ export async function run({ configPath, out, manifestPath, signal, env = process
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const client = new Client({ baseUrl: config.base_url, key: config.key, redactor, contract, signal: combined,
       timeoutMs: config.limits.request_ms, trace: entry => appendFileSync(resolve(out, 'http.jsonl'), JSON.stringify(redactor.value(entry)) + '\n', { mode: 0o600 }) });
+    if (config.deployment && !manifestPath) {
+      const ready = await check('setup/deployment', async () => {
+        deploymentBefore = await deploymentObserver(config.deployment, combined);
+        report.revision = { verified: false, before: deploymentBefore, reason: 'Awaiting post-run deployment check' };
+      });
+      if (!ready) throw new Error('Intended deployment is not serving');
+    }
     let ownerId;
     const identityOk = await check('setup/identity', async () => {
       const { body } = await client.request('GET', '/api/auth/me', { expected: 200 });
@@ -165,6 +182,13 @@ export async function run({ configPath, out, manifestPath, signal, env = process
         report.status = 'cleanup_failed';
         report.checks.push({ name: 'cleanup', status: 'failed', duration_ms: 0, error: 'Resources remain; see cleanup manifest and result.json' });
       }
+    }
+    if (deploymentBefore) {
+      const stable = await check('deployment/stable', async () => {
+        const after = await deploymentObserver(config.deployment, AbortSignal.timeout(20000));
+        report.revision = verifyStable(deploymentBefore, after);
+      });
+      if (!stable && report.status === 'passed') report.status = 'failed';
     }
     if (signal?.aborted) report.status = 'cancelled';
     report.ended_at = new Date().toISOString();

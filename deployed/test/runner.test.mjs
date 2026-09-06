@@ -283,3 +283,31 @@ test('contract checks requiredness, nullability, enums and unions while allowing
   assert.throws(() => c.validate('x', { oneOf: [{ type: 'string' }, { type: 'string' }] }), /oneOf/);
   assert.doesNotThrow(() => c.validate(3, { anyOf: [{ type: 'string' }, { type: 'integer' }] }));
 });
+
+const deployment = { adapter: 'kubernetes', context: 'test', namespace: 'test', deployment: 'test',
+  service: 'test', container: 'test', expected_digest: `sha256:${'a'.repeat(64)}` };
+test('deployment mismatch fails setup before public traffic or fixture mutations', async t => {
+  const f = await fixture(t);
+  const result = await f.execute({ deployment }, { deploymentObserver: async () => { throw new Error('Wrong image'); } });
+  assert.equal(result.code, 2);
+  assert.equal(result.report.revision.verified, false);
+  assert.equal(f.requests.length, 0);
+});
+test('deployment changing during a passing probe fails attribution after cleanup', async t => {
+  const f = await fixture(t);
+  let observations = 0;
+  const result = await f.execute({ deployment }, { deploymentObserver: async () => ({ generation: ++observations }) });
+  assert.equal(result.code, 1);
+  assert.equal(observations, 2);
+  assert.equal(result.report.cleanup.remaining, 0);
+  assert.equal(result.report.revision.verified, false);
+  assert.equal(result.report.checks.at(-1).name, 'deployment/stable');
+});
+test('stable external evidence is retained with suite revision and public verdict', async t => {
+  const f = await fixture(t);
+  const result = await f.execute({ deployment }, { deploymentObserver: async () => ({ image_digest: deployment.expected_digest }) });
+  assert.equal(result.code, 0);
+  assert.equal(result.report.revision.verified, true);
+  assert.equal(result.report.revision.image_digest, deployment.expected_digest);
+  assert.match(result.report.suite_revision, /^[a-f0-9]{40}$/);
+});
