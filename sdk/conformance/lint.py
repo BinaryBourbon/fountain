@@ -242,15 +242,6 @@ def check_body(
         problems.add(where, "the schema says %s, the fixture has %s" % (kind, type(body).__name__))
 
 
-# Statuses a plug can produce on any route, which the OpenAPI document
-# therefore does not enumerate per operation. `Plugs.RateLimit` sits in the
-# pipeline and answers 429 anywhere; `Billing.check_spend/1` answers 402 in the
-# context (ADR 0031); the auth plug answers 401 on every authenticated route
-# even though only 34 of 158 operations declare it. A fixture for one of these
-# is still checked, against the error envelope rather than against nothing.
-PLUG_STATUSES = {401, 402, 403, 429, 500, 502, 503}
-
-
 def response_schema(
     contract: Dict[str, Any], method: str, path: str, status: int, body: Any
 ) -> Optional[Any]:
@@ -264,9 +255,6 @@ def response_schema(
     declared = media.get("application/json")
     if declared is not None:
         return declared
-    if status in PLUG_STATUSES:
-        envelope = "ChangesetError" if isinstance(body, dict) and "errors" in body else "Error"
-        return {"ref": envelope}
     return None
 
 

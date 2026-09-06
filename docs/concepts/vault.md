@@ -128,10 +128,21 @@ Fountain sends one email before the date arrives. The default notice window
 is seven days. Set `SECRET_EXPIRY_NOTICE_DAYS` to change the window. Set it
 to `0` to turn the notice off.
 
-Set the date when you write the secret, in the console or over the API. To
-extend the date, write the secret again with its value. A blank date in the
-console keeps the stored date. Send `expires_at: null` over the API to clear
-it.
+Set the date when you write the secret, in the console or over the API.
+When you replace a value, a blank date in the add-secret form keeps the
+stored date.
+
+To change only the expiry, edit the date beside the secret
+and select **Save expiry**. A blank date removes the expiry. Console dates use
+the end of the selected day in UTC.
+
+The API accepts `PATCH /api/vaults/:vault_id/secrets/:key` with
+`{"expires_at":"2027-01-15T00:00:00Z"}`. Send `{"expires_at":null}` to clear the
+date; `{}` keeps it. This endpoint accepts only expiry metadata. Values stay
+write-only, and expiry remains advisory.
+
+With the TypeScript SDK, use
+`fountain.vaults.secrets.update("staging-creds", "TOKEN", {expires_at: null})`.
 
 ## What we chose not to do
 

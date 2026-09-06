@@ -16,7 +16,28 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
+- Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
+
+- `sandbox_api_access: "none"` on conversation creation omits the Fountain
+  sandbox callback credential before provisioning and on every wake. It requires
+  a fresh ephemeral sandbox, is immutable, and refuses machine sharing and
+  channel resumes with a different setting. The catalog advertises support;
+  existing launches retain `owner` behavior. Applications processing mutually
+  untrusted work can keep all Fountain API authority on their service host.
+
+### Fixed
+
+- The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
+- Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
+
 ### Changed
+
+- OpenAPI operations declare shared pipeline failures and controller refusals. The schema guard no longer exempts missing response statuses.
+- The API manual is a workflow guide linking to the generated reference at `/api/docs`; existing section anchors remain available.
+- Portable Prometheus rules cover stage and reattach failures, per-provider turn failure rates, and slow first output. Thresholds have executable alert fixtures.
 
 - Manifest apply rejects unknown `spec` keys before writing that resource or its secrets. Previously, Ecto silently discarded them, including misspelled network restrictions. Correct these keys before upgrading. Bulk apply keeps its HTTP 200 response with per-resource errors; other valid resources still apply. Ownership keys remain ignored.
 
@@ -169,6 +190,10 @@ upgrade, is in
   pin drops from 3,048 to 2,835, and the tracker closes.
 
 ### Fixed
+
+- Stop ACP turns before inference when an explicit model is rejected or cannot
+  be selected. Apply saved model changes to reused sessions and expose per-turn
+  model selection evidence in the API and stream.
 
 - The CLI displays published code changes with their URL, and renders unknown system notices as a dim line.
 - `/api/auth/me` now returns the presented API key's `expires_at`, or null for a key without an expiry, as its schema declares.
