@@ -75,6 +75,39 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       assert path =~ "/auth/login"
     end
 
+    # The form's default and placeholder are stronger claims than a catalog
+    # suggestion: a suggestion has to be chosen, a default is what you get by
+    # doing nothing, and a placeholder is what you get by typing the hint. All
+    # three had been outside the refused-id guard, so `claude-sonnet-4-6`
+    # stayed the default and `gpt-5.3-codex` the codex placeholder through the
+    # clean-up that removed both from the catalog (#1669). Every agent created
+    # by accepting the default then failed every turn at `session/set_model`.
+    test "neither the model default nor any placeholder names a refused id", %{conn: conn} do
+      conn = login_user(conn, insert_verified_user())
+
+      {:ok, view, html} = live(conn, ~p"/agents/new")
+
+      # The default, and the placeholder for whichever runtime is preselected.
+      for model <- Fountain.RefusedModels.ids() do
+        refute html =~ model,
+               "the new-agent form names #{model}, which the pinned ACP adapter refuses"
+      end
+
+      # Each runtime swaps the placeholder, so check them all rather than the
+      # one that happens to render first.
+      for runtime <- Fountain.Agents.Agent.runtimes() do
+        rendered =
+          view
+          |> element("form[phx-change=validate]")
+          |> render_change(%{"agent" => %{"name" => "x", "runtime" => runtime, "model" => ""}})
+
+        for model <- Fountain.RefusedModels.ids() do
+          refute rendered =~ model,
+                 "the #{runtime} placeholder names #{model}, which the pinned ACP adapter refuses"
+        end
+      end
+    end
+
     # Onboarding asks for Anthropic only; the first model that needs another
     # provider is where its key is collected.
     test "prompts for the provider's key when the chosen model has none on the account", %{
@@ -144,8 +177,17 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
       # Switching runtime re-scopes the list — codex can't reach an
       # anthropic/ model, and the changeset rejects one.
+      #
+      # Derived from the catalog, not hard-coded: this assertion named
+      # `openai/gpt-5.3-codex` until #1669, so it kept passing after that id
+      # was removed from the catalog for being refused by the pinned adapter —
+      # it was matching the placeholder instead, and thereby pinning the bug.
       html = render_change(view, "validate", %{"agent" => %{"runtime" => "codex"}})
-      assert html =~ "openai/gpt-5.3-codex"
+
+      for model <- ModelCatalog.suggestions("codex") do
+        assert has_element?(view, ~s(datalist#model-options option[value="#{model}"]))
+      end
+
       refute html =~ "anthropic/claude-opus-5"
     end
 

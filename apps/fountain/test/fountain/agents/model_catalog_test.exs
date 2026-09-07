@@ -3,6 +3,7 @@ defmodule Fountain.Agents.ModelCatalogTest do
 
   alias Fountain.Agents.Agent
   alias Fountain.Agents.ModelCatalog
+  alias Fountain.RefusedModels
 
   # The suggestion list is Fountain's product data; the parser it is built on
   # is the library's (`Managoat.Runtimes.Model`, tested there). What is pinned
@@ -50,39 +51,13 @@ defmodule Fountain.Agents.ModelCatalogTest do
     end
   end
 
-  # The ids the pinned ACP adapters refuse at `session/set_model`, with the
-  # date each was observed. A refusal happens before a prompt is written, so
-  # since #1640 it fails the turn outright — suggesting one of these is an
-  # outage, not a stale hint. Every entry here was served happily by its
-  # provider at the time it was refused, which is exactly why the provider
-  # check alone did not catch it: see the two-gates note in `ModelCatalog`.
-  #
-  # Removing an entry is legitimate **after** an adapter pin moves and the
-  # refusal rate for that id goes to zero on real turns. It is not legitimate
-  # because the model works in a `curl` to the provider.
-  @refused_by_pinned_adapters %{
-    # claude-agent-acp 0.66.0 — "Invalid value for config option model".
-    # 289 refusals for claude-sonnet-4-6 alone, 2026-08-16..2026-09-06.
-    "anthropic/claude-sonnet-4-6" => "2026-09-06",
-    # Suggested for one day (#1659) and refused on the turns it got (#1669).
-    # `claude-fable-5` was never suggested; one agent was pinned to it by hand
-    # and it is refused the same way, so it is listed to stop it being added.
-    "anthropic/claude-fable-5-1" => "2026-09-06",
-    "anthropic/claude-fable-5" => "2026-09-06",
-    "anthropic/claude-opus-4-7" => "2026-08-27",
-    "anthropic/claude-opus-4-8" => "2026-08-23",
-    # codex-acp 1.10.0 — "Invalid params". Refused after the #1640 bump that
-    # added gpt-6-astra; it was accepted by 1.9.x.
-    "openai/gpt-5.3-codex" => "2026-09-06",
-    # Google retired it for new keys; opencode's adapter refused it too.
-    "google/gemini-2.5-pro" => "2026-08-20"
-  }
-
+  # The registry lives in `Fountain.RefusedModels` so every surface that names
+  # a model reads one list — see its moduledoc for why that matters.
   test "no suggestion is an id the pinned adapters are known to refuse" do
     suggested =
       Agent.runtimes() |> Enum.flat_map(&ModelCatalog.suggestions/1) |> MapSet.new()
 
-    for {model, observed} <- @refused_by_pinned_adapters do
+    for {model, observed} <- RefusedModels.all() do
       refute MapSet.member?(suggested, model),
              """
              #{model} is suggested again, but the pinned ACP adapter refused it \
