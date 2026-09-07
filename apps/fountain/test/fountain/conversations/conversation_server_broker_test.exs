@@ -280,9 +280,10 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       # The floor: the broker's host, and nothing else, whatever the env said.
       assert_receive {:policy, %Managoat.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
 
-      # The CA, in the OS trust store.
+      # The CA, in the OS trust store — under the lock, and only if it
+      # differs from what is already there (#1674).
       assert_receive {:wrote, "/tmp/agent-vault-ca.crt", "PEM"}, 2_000
-      assert_receive {:exec, ["-lc", "sudo install -D -m 644 " <> _]}, 2_000
+      assert_receive {:exec, ["-lc", "( flock -w 120 9 || true; cmp -s " <> _]}, 2_000
 
       # The clone sees the placeholder and the proxy, so git goes through the
       # broker and the broker rewrites the auth header.
