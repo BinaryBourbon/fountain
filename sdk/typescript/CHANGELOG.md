@@ -10,6 +10,13 @@ server releases.
 
 ---
 
+## [1.23.0] - 2026-09-07
+
+### Added
+
+- Environment creation, update and response types expose `setup_timeout_seconds`
+  (1–900, default 120) for bounded cold setup.
+
 ## [1.22.0] — 2026-09-07
 
 ### Changed

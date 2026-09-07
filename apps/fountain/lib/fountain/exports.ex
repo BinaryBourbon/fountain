@@ -374,6 +374,7 @@ defmodule Fountain.Exports do
         "packages" => env.packages,
         "env_vars" => env.env_vars,
         "setup_script" => env.setup_script,
+        "setup_timeout_seconds" => env.setup_timeout_seconds,
         "networking_type" => env.networking_type,
         "networking_config" => env.networking_config,
         "repositories" => env.repositories,

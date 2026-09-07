@@ -3723,6 +3723,8 @@ export interface components {
             /** @description Secrets stored on this environment. */
             secret_count?: number;
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
             /** Format: date-time */
             updated_at?: string;
         };
@@ -3753,6 +3755,8 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
         };
         /** EnvironmentResponse */
         EnvironmentResponse: {
@@ -3781,6 +3785,8 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
         };
         /** Error */
         Error: {

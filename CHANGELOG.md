@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
+  toolchain setup run within an explicit bound. It persists through API/spec
+  round trips and invalidates checkpoints when changed. The overall provisioning
+  deadline and failed-setup handling remain in force.
+
 - Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
 - Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
 

@@ -37,8 +37,9 @@ defmodule Fountain.Conversations.ConversationServer do
   }
 
   # Absolute ceiling on provisioning (#329). Generous against the summed
-  # per-step timeouts (packages 300s + clone 600s + setup 120s + slack), so
-  # it only ever fires when a step stalls without raising — the case where
+  # default step timeouts (packages 300s + clone 600s + setup 120s). Setup
+  # may opt into up to 900s, but this overall ceiling still applies. It also
+  # catches a step that stalls without raising — the case where
   # the row sat in `starting` holding a quota slot until the next deploy:
   # the reaper exempts rows whose server is alive, and the server's own
   # timers queue behind the stuck handle_continue. Overridable in tests.
