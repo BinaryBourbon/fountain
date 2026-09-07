@@ -192,9 +192,17 @@ defmodule FountainWeb.ConversationJSON do
     }
   end
 
-  @doc "A turn's stored usage as the wire object: `input`, `output`, and the cache fields when present."
+  @doc "Stored token counts and adapter accounting claims; absent counts remain absent in qualified reports."
   def usage_data(%{} = u) do
-    %{input: u["input"] || 0, output: u["output"] || 0}
+    counts =
+      if is_map(u["accounting"]) do
+        %{} |> put_present(:input, u["input"]) |> put_present(:output, u["output"])
+      else
+        %{input: u["input"] || 0, output: u["output"] || 0}
+      end
+
+    counts
+    |> put_present(:accounting, u["accounting"])
     |> put_present(:cache_read, u["cache_read"])
     |> put_present(:cache_write, u["cache_write"])
   end

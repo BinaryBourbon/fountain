@@ -280,6 +280,65 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body["data"]["usage_total"] == %{"input" => 120, "output" => 30}
     end
 
+    test "exposes partial accounting, metadata-only reports and unqualified history", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+
+      accounting = %{
+        "version" => 1,
+        "source" => "codex/thread-token-usage-delta",
+        "scope" => "root_thread_prompt",
+        "completeness" => "partial"
+      }
+
+      partial =
+        Managoat.ACP.Usage.from_prompt_result(%{
+          "usage" => %{"inputTokens" => 12, "outputTokens" => 3, "cachedReadTokens" => 40},
+          "_meta" => %{"usageAccounting" => accounting}
+        })
+
+      unknown =
+        Managoat.ACP.Usage.from_prompt_result(%{
+          "usage" => nil,
+          "_meta" => %{"usageAccounting" => accounting}
+        })
+
+      legacy = %{"input" => 2, "output" => 1}
+
+      for usage <- [partial, unknown, legacy] do
+        turn = insert_turn(conv, status: "completed")
+        assert {:ok, _} = Fountain.Conversations._unsafe_record_turn_usage(turn, usage)
+      end
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/turns")
+        |> json_response(200)
+
+      assert Enum.map(body["data"], & &1["usage"]) == [partial, unknown, legacy]
+      assert unknown == %{"accounting" => accounting}
+      refute Map.has_key?(List.last(body["data"])["usage"], "accounting")
+
+      total =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}")
+        |> json_response(200)
+
+      assert total["data"]["usage_total"] == %{"input" => 14, "output" => 4}
+
+      {_key, other_key} = insert_api_key(insert_verified_user())
+      # This endpoint still authorizes the parent conversation before reading usage.
+      assert conn
+             |> authed_with_key(other_key)
+             |> get("/api/conversations/#{conv.id}/turns")
+             |> response(404)
+    end
+
     test "returns 200 with an empty list when there are no turns", %{
       conn: conn,
       user: user,

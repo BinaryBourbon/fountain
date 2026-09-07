@@ -38,7 +38,8 @@ defmodule Fountain.Conversations.Turn do
     # (#827): `%{"input" => n, "output" => n, "cache_read" => n?,
     # "cache_write" => n?}`. Written once by `Conversations._unsafe_record_turn_usage/2`,
     # never summed from the live `usage_update`s (their meaning differs per
-    # runtime). nil when the runtime reported nothing.
+    # runtime). Optional "accounting" preserves adapter scope/version/completeness;
+    # it may be the only key when token counts are unknown. nil when nothing was reported.
     field :usage, :map
     # ACP selection evidence, distinct from the agent's saved configuration.
     field :model_selection, :map

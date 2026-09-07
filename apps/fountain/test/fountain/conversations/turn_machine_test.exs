@@ -236,6 +236,40 @@ defmodule Fountain.Conversations.TurnMachineTest do
                TurnMachine.handle(m, {:done, "cancelled", nil})
     end
 
+    test "adapter accounting survives termination and storage without invented counts", %{
+      machine: machine,
+      row: row,
+      conv: conv
+    } do
+      accounting = %{
+        "version" => 1,
+        "source" => "codex/thread-token-usage-delta",
+        "scope" => "root_thread_prompt",
+        "completeness" => "partial"
+      }
+
+      usage =
+        Managoat.ACP.Usage.from_prompt_result(%{
+          "stopReason" => "cancelled",
+          "usage" => nil,
+          "_meta" => %{"usageAccounting" => accounting}
+        })
+
+      assert {^machine, [{:finish, "failed", _, _}]} =
+               TurnMachine.handle(machine, {:done, "cancelled", usage})
+
+      stored = Fountain.Repo.get!(Conversations.Turn, row.id) |> Fountain.Repo.preload(:images)
+      assert stored.usage == %{"accounting" => accounting}
+
+      assert %{data: [%{usage: %{accounting: ^accounting}}]} =
+               FountainWeb.ConversationJSON.turns(%{turns: [stored]})
+
+      assert %{usage_input_tokens: 0, usage_output_tokens: 0} =
+               Conversations._unsafe_get_conversation!(conv.id)
+
+      assert {:error, :already_recorded} = Conversations._unsafe_record_turn_usage(stored, usage)
+    end
+
     test "a failed peer ends the turn it drove and drops the connection", %{machine: m} do
       assert {^m,
               [

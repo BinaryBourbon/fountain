@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [1.22.0] — 2026-09-07
+
+### Changed
+
+- Turn usage exposes adapter accounting source, version, scope and completeness.
+  Metadata-only reports omit unmeasured input/output counters, so those fields
+  are now optional. Check for missing counts before arithmetic; missing means
+  unknown, not zero. Historical reports gain no invented accounting metadata.
+
 ## [1.21.1] — 2026-09-06
 
 ### Fixed
