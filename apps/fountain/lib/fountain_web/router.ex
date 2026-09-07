@@ -771,6 +771,7 @@ defmodule FountainWeb.Router do
       live "/admin", AdminLive.Index, :index
       live "/admin/users", AdminLive.Users, :index
       live "/admin/sandboxes", AdminLive.Sandboxes, :index
+      live "/admin/inference", AdminLive.Inference, :index
       live "/admin/activity", AdminLive.Activity, :index
       # Lives in ee/ with the rest of billing (#472): it is a revenue page.
       live "/admin/finance", Live.AdminFinanceLive, :index
