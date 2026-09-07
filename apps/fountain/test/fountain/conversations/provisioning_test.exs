@@ -4,6 +4,19 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
   alias Fountain.Conversations.Provisioning
 
+  # The behavioural CA test below runs the generated command through a real
+  # shell, so it needs the tools the sandbox has and a Mac does not: GNU
+  # `install -D`, `flock` and `sha256sum`. Skipped rather than weakened
+  # elsewhere, because stubbing `flock` would remove the one property that
+  # test exists to check. CI runs on ubuntu, where it always runs.
+  @posix_trust_store (case :os.type() do
+                        {:unix, :linux} ->
+                          Enum.all?(~w(flock sha256sum), &(System.find_executable(&1) != nil))
+
+                        _ ->
+                          false
+                      end)
+
   # Full-stack: Provisioning -> Managoat.Sandbox facade -> real Sprites
   # adapter -> stubbed SDK, so the provider-quirk pins below still assert
   # the exact wire shapes Sprites receives.
@@ -190,7 +203,11 @@ defmodule Fountain.Conversations.ProvisioningTest do
   end
 
   describe "install_broker_ca/2" do
-    # Keep the absolute paths and sandbox command wiring pinned here.
+    # Pins the absolute paths and the sandbox command wiring. What the
+    # command *does* — rebuild once, skip on an unchanged bundle, repair a
+    # corrupted one, and retry after a failed rebuild — is the behavioural
+    # test below; `install_broker_ca/2`'s docstring has why each of those
+    # matters on a shared sandbox.
     test "writes the CA where update-ca-certificates reads it, then runs it" do
       conv = insert_conversation()
       test = self()
@@ -241,6 +258,10 @@ defmodule Fountain.Conversations.ProvisioningTest do
     end
 
     @tag :tmp_dir
+    @tag skip:
+           unless(@posix_trust_store,
+             do: "needs GNU install -D, flock and sha256sum; runs on Linux"
+           )
     test "rebuilds only when needed and retries a failed rebuild", %{tmp_dir: tmp_dir} do
       conv = insert_conversation()
       test = self()
