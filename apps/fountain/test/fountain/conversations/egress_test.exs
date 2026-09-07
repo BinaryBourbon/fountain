@@ -252,12 +252,35 @@ defmodule Fountain.Conversations.EgressTest do
       assert {:ok, @session, rebuilt} =
                Egress.reprepare("c", %{}, %{}, env, network: :unrestricted, user_id: user.id)
 
-      assert rebuilt == [{"KEEP", "1"}, {"ALSO", "2"}] ++ Broker.sandbox_env(@session)
+      # The CA half of `old` is already in the list and stays where it is.
+      assert rebuilt ==
+               [{"KEEP", "1"}] ++
+                 Broker.ca_env() ++ [{"ALSO", "2"}] ++ Broker.proxy_env(@session)
 
       stub(Broker, :prepare, fn _id, _b, _bi, _o -> {:error, :down} end)
 
       assert {:error, :down} =
                Egress.reprepare("c", %{}, %{}, env, network: :unrestricted, user_id: user.id)
+    end
+
+    # #1674: stripping the CA keys by name takes the tenant's own
+    # SSL_CERT_FILE with them, and re-adding the broker's value on top is the
+    # bug the issue reported — an hour into the conversation rather than at
+    # provisioning, where it would have been noticed.
+    test "reprepare/5 leaves an env_vars override of the CA defaults alone",
+         %{user: user} do
+      broker_on([user.id])
+      stub(Broker, :prepare, fn _id, _b, _bi, _o -> {:ok, @session} end)
+
+      env =
+        Broker.ca_env() ++
+          [{"SSL_CERT_FILE", "/home/sprite/mine.crt"}] ++ Broker.proxy_env(@session)
+
+      assert {:ok, @session, rebuilt} =
+               Egress.reprepare("c", %{}, %{}, env, network: :unrestricted, user_id: user.id)
+
+      assert List.last(Enum.filter(rebuilt, &(elem(&1, 0) == "SSL_CERT_FILE"))) ==
+               {"SSL_CERT_FILE", "/home/sprite/mine.crt"}
     end
 
     test "drop_oauth_token/3 forgets the token on both sides and re-splits the API key" do
