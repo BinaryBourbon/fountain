@@ -1,4 +1,4 @@
-# Four independent whole-PR reviews, safe fixes, verified re-review, then approval or a human decision.
+# Four independent whole-PR reviews, safe fixes, verified re-review, then approval, changes requested, or an explicit human decision.
 version: 1
 reviewers:
   - id: qa-team
@@ -120,10 +120,8 @@ approval:
   require_all_reviewers: true
   require_independent_rereview: true
   human_review_when:
-    - unresolved_blocking_finding
     - unresolved_human_objection
     - reviewer_requests_product_decision
-    - incomplete_verification
   # A path here sends the PR to a maintainer even when all four reviewers
   # are satisfied and every check passed, so it is reserved for the places
   # where a wrong automatic approval is hard to undo or would weaken the

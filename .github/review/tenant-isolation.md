@@ -43,19 +43,22 @@ policy, including necessary regression tests. Do not downgrade an uncertain
 security concern into a style nit; describe the missing evidence explicitly.
 Give recurring findings stable rule and semantic anchor text for deduplication.
 
-needsHuman is expensive: one such finding, at any severity, ends the run with
-the human-review label. The one case that always warrants it is a change that
-contradicts a decision an Accepted ADR at the base records; cite the ADR and
-the sentence the PR breaks, and treat a PR that amends the ADR to fit as the
-same decision. Beyond that, reserve it for a medium-or-higher finding whose
-remedy a maintainer must choose: a change to the authorization or sharing
-model, a widening of what a credential or callback can reach, or a repair that
-exceeds the fix policy. Set it with the alternatives and their consequences. A
-concern you can neither confirm nor dismiss is a medium finding with the
-missing evidence named, not a low finding routed to a human. A low or info
-finding is never needsHuman and never a product_decision: file it as a
-nonblocking defect. An audit-actor or redaction fix with one obvious remedy is
-a fix candidate.
+
+A concrete code, test or documentation defect has `kind: defect` and
+`needsHuman: false`, including a repair outside the service's automatic fix
+permissions. A coding agent with repository access can make that repair. Do
+not lower a defect's severity because the service cannot repair it. Missing
+coverage, tools, provider responses or verification are incomplete execution.
+
+Reserve `kind: product_decision` and `needsHuman: true` for a choice requiring
+human authority that the approved base has not settled. Supply `humanDecision`
+with a precise `question`, at least two `options` and their consequences, and a
+`recommendation`. Apply settled contracts and decisions: repairing a violation
+of an accepted requirement does not require asking whether to keep that
+requirement. Escalate a proposed change to the requirement itself, an
+irreversible migration/retention choice, or an unresolved authority boundary.
+The server independently enforces protected paths and human objections.
+
 
 Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and
 material decision tradeoffs.

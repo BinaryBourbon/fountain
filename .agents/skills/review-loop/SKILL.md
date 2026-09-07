@@ -7,7 +7,7 @@ description: >-
 
 # Work with Review Loop
 
-Review Loop can push permitted fixes and ends with approval or a human handoff.
+Review Loop can push permitted fixes and reports approval, changes requested, an explicit human decision, or incomplete execution.
 Approval covers the current PR revision; it does not merge it. This skill adds
 no permission to push, merge, spend on retries or decide product behavior.
 Use the user's existing task authorization.
@@ -30,6 +30,25 @@ gh pr checks PR --repo OWNER/REPO
 
 A green dispatch means admission, not approval. An old approval or a resolved
 thread does not establish that the current revision passes.
+
+## Route the result
+
+A current-head `CHANGES_REQUESTED` review by the installed Review Loop App is
+coding work. Repair the confirmed defect within your existing authorization,
+including when the service's automatic fixer is excluded from that path. Keep
+severity and required tests intact; a narrow bot policy does not require a human
+to write the code.
+
+`needs-human-review` means a decision or explicit approval requirement. Read the
+question and alternatives, apply decisions the user has already authorized, and
+ask only for an unsettled choice. A PR can carry both signals: make independent
+permitted repairs while preserving the decision. Incomplete review or provider
+failure requires diagnosing missing execution/evidence before a bounded retry;
+it is not proof of a code defect or a product decision.
+
+Check App identity and current head before acting on a review event. Historical
+reviews retain their original commit IDs. Avoid duplicate coding work by recording
+the review/run ID you are handling.
 
 ## Coordinate repairs
 
