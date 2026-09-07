@@ -23,8 +23,27 @@ defmodule Fountain.RefusedModels do
   this one map. Adding a surface means adding a test that consumes it here, not
   a second copy of the list.
 
+  Surfaces guarded today: the catalog suggestions, the new-agent form's default
+  and per-runtime placeholders, and `Fountain.Agents.Starter` — the model of the
+  one agent every verified account owns (ADR 0038 decision 4), and so the
+  highest-stakes of the three.
+
   Surfaces still outside its reach are tracked on #1727: the shipped `fountain`
   skill manifest, the `/help` pages and the OpenAPI field description.
+
+  ## Membership in the catalog is the stronger check
+
+  Absence from this map is not sufficient on its own. A model id leaves the
+  catalog two ways, and only one of them lands here: an adapter **refusal**,
+  and a provider **retirement**. `gpt-5-codex` was retired on 2026-08-22 while
+  it was both the codex suggestion and the codex placeholder, which
+  `ModelCatalog` records as the worse of the two defects — and a retired id
+  never becomes a refusal, so it would never appear in this map.
+
+  Where a surface can assert it, prefer `ModelCatalog.known?/1`: it catches
+  both paths. This map is what names the refused ones for a message a reader
+  can act on, and what stops a refused id being *re-added* to the catalog it
+  was removed from.
 
   ## Removing an entry
 

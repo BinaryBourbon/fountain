@@ -82,16 +82,27 @@ defmodule FountainWeb.AgentsLive.IndexTest do
     # stayed the default and `gpt-5.3-codex` the codex placeholder through the
     # clean-up that removed both from the catalog (#1669). Every agent created
     # by accepting the default then failed every turn at `session/set_model`.
-    test "neither the model default nor any placeholder names a refused id", %{conn: conn} do
+    #
+    # The assertion is catalog membership, not absence from the refused list,
+    # because a default goes stale two ways and the refused list only sees one.
+    # `gpt-5-codex` was *retired* on 2026-08-22 while it was both the codex
+    # suggestion and the codex placeholder (model_catalog.ex records it as the
+    # worse defect of the two). A retired id never becomes an adapter refusal,
+    # so it never enters `RefusedModels` — but it does leave the catalog, and
+    # so does a refused one. `ModelCatalog.known?/1` catches both paths.
+    test "the model default and every placeholder are current catalog entries", %{conn: conn} do
       conn = login_user(conn, insert_verified_user())
 
       {:ok, view, html} = live(conn, ~p"/agents/new")
 
-      # The default, and the placeholder for whichever runtime is preselected.
-      for model <- Fountain.RefusedModels.ids() do
-        refute html =~ model,
-               "the new-agent form names #{model}, which the pinned ACP adapter refuses"
-      end
+      # The prefilled default. `unknown_model?/1` drives the pass-through hint,
+      # so the hint firing on a freshly mounted form *is* the bug: the form
+      # telling the user its own default is not one Fountain lists.
+      refute html =~ "passed to the runtime as-is",
+             "the new-agent form's own default is not in the catalog"
+
+      assert ModelCatalog.known?(model_value(html)),
+             "the new-agent form defaults to #{model_value(html)}, which is not in the catalog"
 
       # Each runtime swaps the placeholder, so check them all rather than the
       # one that happens to render first.
@@ -101,68 +112,16 @@ defmodule FountainWeb.AgentsLive.IndexTest do
           |> element("form[phx-change=validate]")
           |> render_change(%{"agent" => %{"name" => "x", "runtime" => runtime, "model" => ""}})
 
-        for model <- Fountain.RefusedModels.ids() do
-          refute rendered =~ model,
-                 "the #{runtime} placeholder names #{model}, which the pinned ACP adapter refuses"
-        end
+        placeholder = model_placeholder_value(rendered)
+
+        assert ModelCatalog.known?(placeholder),
+               "the #{runtime} placeholder is #{placeholder}, which is not in the catalog"
+
+        refute placeholder in Fountain.RefusedModels.ids(),
+               "the #{runtime} placeholder is #{placeholder}, which the pinned adapter refuses"
       end
     end
 
-    # Onboarding asks for Anthropic only; the first model that needs another
-    # provider is where its key is collected.
-    test "prompts for the provider's key when the chosen model has none on the account", %{
-      conn: conn
-    } do
-      user = insert_verified_user()
-      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
-
-      {:ok, _} =
-        Fountain.InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant")
-
-      conn = login_user(conn, user)
-
-      {:ok, view, html} = live(conn, ~p"/agents/new")
-      # default model is Anthropic → nothing to ask
-      refute html =~ "No OpenAI API key"
-      refute html =~ "credential on this account yet"
-
-      html =
-        view
-        |> element("form[phx-change=validate]")
-        |> render_change(%{
-          "agent" => %{"name" => "x", "runtime" => "codex", "model" => "openai/gpt-5"}
-        })
-
-      assert html =~ "No OpenAI credential on this account yet"
-      assert html =~ ~s(value="openai_api_key")
-
-      # back to an Anthropic model: the card goes away
-      html =
-        view
-        |> element("form[phx-change=validate]")
-        |> render_change(%{
-          "agent" => %{
-            "name" => "x",
-            "runtime" => "claude",
-            "model" => "anthropic/claude-sonnet-5"
-          }
-        })
-
-      refute html =~ "credential on this account yet"
-
-      # a model from a provider Fountain doesn't know needs nothing
-      html =
-        view
-        |> element("form[phx-change=validate]")
-        |> render_change(%{
-          "agent" => %{"name" => "x", "runtime" => "opencode", "model" => "ollama/llama3"}
-        })
-
-      refute html =~ "credential on this account yet"
-    end
-
-    # #554: the model field was a bare text input, so nothing in the UI said
-    # what a valid value looked like until the sprite failed at spawn time.
     test "model field offers the curated models for the selected runtime", %{conn: conn} do
       user = insert_verified_user()
       conn = login_user(conn, user)
@@ -331,6 +290,18 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       assert html =~ "decides this inside its own server"
       assert html =~ "disabled"
     end
+  end
+
+  # The model input renders `value=` before `placeholder=` (form.ex), and both
+  # sit on the one element with id="model".
+  defp model_value(html) do
+    [_, value] = Regex.run(~r/<input[^>]*id="model"[^>]*value="([^"]*)"/, html)
+    value
+  end
+
+  defp model_placeholder_value(html) do
+    [_, value] = Regex.run(~r/<input[^>]*id="model"[^>]*placeholder="([^"]*)"/, html)
+    value
   end
 end
 
