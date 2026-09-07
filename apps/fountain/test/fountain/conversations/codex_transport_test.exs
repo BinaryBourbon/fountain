@@ -79,6 +79,24 @@ defmodule Fountain.Conversations.CodexTransportTest do
 
     assert config(result)["model_providers"]["fountain_openai_http"]["base_url"] ==
              "https://gw.example/v1"
+
+    # And the duplicates are gone from what codex is handed, so it cannot
+    # resolve them the other way and reach a different endpoint or key.
+    for name <- ["OPENAI_API_KEY", "OPENAI_BASE_URL"] do
+      assert Enum.count(result[:env], &match?({^name, _}, &1)) == 1
+    end
+
+    assert {"OPENAI_BASE_URL", "https://gw.example/v1"} in result[:env]
+    assert {"OPENAI_API_KEY", "sk-vault"} in result[:env]
+  end
+
+  # A name that appears once is left where SpriteEnv put it.
+  test "an env with no duplicates is passed through untouched" do
+    env = [key("sk-x"), {"OPENAI_BASE_URL", "https://gw.example/v1"}, {"KEEP", "1"}]
+
+    assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env)
+
+    assert Enum.reject(result[:env], &match?({"CODEX_CONFIG", _}, &1)) == env
   end
 
   # The built-in provider reads OPENAI_BASE_URL, so an environment pointing

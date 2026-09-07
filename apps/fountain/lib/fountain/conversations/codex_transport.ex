@@ -48,12 +48,20 @@ defmodule Fountain.Conversations.CodexTransport do
   @provider_id "fountain_openai_http"
   @openai_base_url "https://api.openai.com/v1"
 
+  # The names this module reads and acts on. `CODEX_CONFIG` is already
+  # collapsed by the rewrite, which rejects every entry and appends one.
+  @resolved_names ["OPENAI_API_KEY", "OPENAI_BASE_URL"]
+
   def spawn_opts(%{broker: broker}, "codex", opts) when not is_nil(broker) do
     env = Keyword.get(opts, :env, [])
 
     # `SpriteEnv.build/4` concatenates its pieces without merging, so a name
-    # can appear more than once; its moduledoc's precedence is last entry
-    # wins. Resolved once here, for every read below.
+    # can appear more than once. Nothing states which duplicate the sandbox
+    # process then reads — `SpriteEnv`'s moduledoc is about `merge_secrets/3`,
+    # which runs before the list is built, and `Managoat.Sandbox.spawn/4` is a
+    # dependency. So this does not rely on the answer: it resolves last entry
+    # wins, and `collapse/2` leaves exactly that entry in the env it emits, so
+    # Fountain and codex cannot disagree whichever rule the adapter follows.
     resolved = Map.new(env)
     raw = Map.get(resolved, "CODEX_CONFIG", "{}")
 
@@ -74,7 +82,7 @@ defmodule Fountain.Conversations.CodexTransport do
         Enum.reject(env, &match?({"CODEX_CONFIG", _}, &1)) ++
           [{"CODEX_CONFIG", Jason.encode!(config)}]
 
-      {:ok, Keyword.put(opts, :env, env)}
+      {:ok, Keyword.put(opts, :env, collapse(env, @resolved_names))}
     else
       # Do not include the config: it may contain provider credentials.
       _ -> {:error, :invalid_codex_config}
@@ -150,6 +158,22 @@ defmodule Fountain.Conversations.CodexTransport do
         "OpenAI-Project" => "OPENAI_PROJECT"
       }
     }
+  end
+
+  # Leave one entry per name — the one `resolved` acted on. Reading a
+  # duplicate one way and handing codex a list it may read the other way is
+  # how the endpoint and the credential could disagree. Untouched when the
+  # name appears once, which is every ordinary conversation.
+  defp collapse(env, names) do
+    Enum.reduce(names, env, fn name, acc ->
+      case Enum.filter(acc, &match?({^name, _}, &1)) do
+        [_, _ | _] = duplicated ->
+          Enum.reject(acc, &match?({^name, _}, &1)) ++ [List.last(duplicated)]
+
+        _ ->
+          acc
+      end
+    end)
   end
 
   defp base_url(env) do
