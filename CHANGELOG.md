@@ -52,7 +52,8 @@ upgrade, is in
   out — around 300 seconds on every turn, before falling back to HTTP and
   answering in about a second. The built-in `openai` provider is reserved and
   cannot be overridden, so Fountain declares the same endpoint under an id of
-  its own, carrying across `OPENAI_BASE_URL` where an environment sets one. A
+  its own, carrying across `OPENAI_BASE_URL`, the OpenAI-Organization and
+  OpenAI-Project header mappings and standalone web search. A
   conversation whose spawn has no `OPENAI_API_KEY` keeps the built-in
   provider, which can still authenticate from `~/.codex/auth.json`. An agent
   that names its own provider in `CODEX_CONFIG` keeps it; a `model_provider`

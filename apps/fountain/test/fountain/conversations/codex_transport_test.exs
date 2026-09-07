@@ -32,15 +32,50 @@ defmodule Fountain.Conversations.CodexTransportTest do
 
     assert config["model_provider"] == "fountain_openai_http"
 
+    # Everything the built-in provider declares, minus the two fields that
+    # cannot carry across: `requires_openai_auth` (a custom provider cannot
+    # read auth.json, so `env_key` replaces it) and the compiled-in `version`
+    # header, which names the CLI build Fountain is not in a position to know.
+    # Audited against codex-rs/model-provider-info/src/lib.rs at rust-v0.153.3.
     assert config["model_providers"] == %{
              "fountain_openai_http" => %{
                "name" => "OpenAI",
                "base_url" => "https://api.openai.com/v1",
                "wire_api" => "responses",
                "env_key" => "OPENAI_API_KEY",
-               "supports_websockets" => false
+               "supports_websockets" => false,
+               "supports_standalone_web_search" => true,
+               "env_http_headers" => %{
+                 "OpenAI-Organization" => "OPENAI_ORGANIZATION",
+                 "OpenAI-Project" => "OPENAI_PROJECT"
+               }
              }
            }
+  end
+
+  # `SpriteEnv.build/4` appends the decrypted secrets after the runtime's own
+  # defaults, so a vault entry for either variable appears twice and the last
+  # one is what the process gets. Reading the first would substitute on a key
+  # the conversation is not using, and would miss a deliberately emptied one.
+  test "the effective value of a repeated variable is the one that counts" do
+    env = [
+      key("sk-runtime-default"),
+      {"OPENAI_BASE_URL", "https://api.openai.com/v1"},
+      key(""),
+      {"OPENAI_BASE_URL", "https://gw.example/v1"}
+    ]
+
+    assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env)
+
+    # Emptied by the later entry: no credential, so no substitution.
+    refute Map.has_key?(config(result), "model_provider")
+
+    env = List.keyreplace(env, "OPENAI_API_KEY", 0, key("sk-x")) ++ [key("sk-vault")]
+
+    assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env)
+
+    assert config(result)["model_providers"]["fountain_openai_http"]["base_url"] ==
+             "https://gw.example/v1"
   end
 
   # The built-in provider reads OPENAI_BASE_URL, so an environment pointing
