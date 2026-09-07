@@ -171,4 +171,48 @@ defmodule FountainWeb.Plugs.RateLimitTest do
       assert String.to_integer(retry_after) >= 1
     end
   end
+
+  describe "key: :api_key" do
+    defp with_key(conn, id), do: Plug.Conn.assign(conn, :current_api_key, %{id: id})
+
+    test "init/1 accepts :ip and :api_key and refuses anything else" do
+      assert RateLimit.init(bucket: "b", max: 1).key == :ip
+      assert RateLimit.init(bucket: "b", max: 1, key: :api_key).key == :api_key
+
+      assert_raise ArgumentError, fn ->
+        RateLimit.init(bucket: "b", max: 1, key: :user)
+      end
+    end
+
+    test "two keys are two buckets; the same key is one", %{conn: conn} do
+      opts = RateLimit.init(bucket: unique_bucket(), max: 1, key: :api_key)
+
+      assert RateLimit.key_for(with_key(conn, "k1"), opts) ==
+               RateLimit.key_for(with_key(conn, "k1"), opts)
+
+      refute RateLimit.key_for(with_key(conn, "k1"), opts) ==
+               RateLimit.key_for(with_key(conn, "k2"), opts)
+    end
+
+    test "a request with no key assigned falls back to the address bucket", %{conn: conn} do
+      by_key = RateLimit.init(bucket: unique_bucket(), max: 1, key: :api_key)
+      by_ip = %{by_key | key: :ip}
+
+      assert RateLimit.key_for(conn, by_key) == RateLimit.key_for(conn, by_ip)
+    end
+
+    test "exhausting one key's bucket leaves another key's requests alone", %{conn: conn} do
+      opts = RateLimit.init(bucket: unique_bucket(), max: 2, key: :api_key)
+      noisy = with_key(conn, Ecto.UUID.generate())
+      quiet = with_key(conn, Ecto.UUID.generate())
+
+      refute RateLimit.call(noisy, opts).halted
+      refute RateLimit.call(noisy, opts).halted
+      limited = RateLimit.call(noisy, opts)
+      assert limited.halted
+      assert limited.status == 429
+
+      refute RateLimit.call(quiet, opts).halted
+    end
+  end
 end

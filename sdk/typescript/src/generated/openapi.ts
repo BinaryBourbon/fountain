@@ -10052,6 +10052,8 @@ export interface operations {
                 channel_id?: string;
                 /** @description Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary. */
                 status?: string;
+                /** @description Return at most this many conversations, most recently updated first (1 to 500; 400 outside that range). Without it the whole list is returned, which on a busy account is hundreds of rows per call — a client that needs one conversation should filter (`agent_id`, `sandbox_id`, `channel_id`) and cap. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -10068,7 +10070,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationListResponse"];
                 };
             };
-            /** @description Unknown status */
+            /** @description Unknown status or limit out of range */
             400: {
                 headers: {
                     [name: string]: unknown;
