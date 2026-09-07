@@ -85,6 +85,7 @@ defmodule Fountain.Conversations.ProvisioningStepsTest do
       stub(Managoat.Sandbox, :exec, fn _handle, "bash", ["-lc", "echo hi"], opts ->
         assert opts[:env] == sprite_env
         assert opts[:stderr_to_stdout]
+        assert opts[:timeout] == 120_000
         {:ok, "hi\n", 0}
       end)
 
@@ -104,6 +105,24 @@ defmodule Fountain.Conversations.ProvisioningStepsTest do
                )
 
       assert stages(conv.id, "setup") == [{"started", %{}}, {"done", %{"exit_code" => 0}}]
+    end
+
+    test "a persisted timeout reaches exec and timeout remains failed setup" do
+      conv = insert_conversation()
+      env = insert_env(setup_script: "install-dependencies", setup_timeout_seconds: 900)
+
+      expect(Managoat.Sandbox, :exec, fn _handle, "bash", ["-lc", "install-dependencies"], opts ->
+        assert opts[:timeout] == 900_000
+        {:error, :timeout}
+      end)
+
+      assert {:error, {:setup_unreachable, :timeout}} =
+               Provisioning.run_setup_script(handle(), env, [], conv.id)
+
+      assert stages(conv.id, "setup") == [
+               {"started", %{}},
+               {"failed", %{"reason" => ":timeout"}}
+             ]
     end
 
     test "a non-zero exit is the step's failure, with the exit code" do

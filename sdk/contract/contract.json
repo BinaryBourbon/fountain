@@ -10427,6 +10427,10 @@
           "required": false,
           "type": "string"
         },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
+        },
         "updated_at": {
           "format": "date-time",
           "required": false,
@@ -10502,6 +10506,10 @@
         "setup_script": {
           "required": false,
           "type": "string"
+        },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -10570,6 +10578,10 @@
         "setup_script": {
           "required": false,
           "type": "string"
+        },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"
