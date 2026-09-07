@@ -359,6 +359,14 @@ class TurnTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_typed_execution_limits_reach_the_launch_wire(self):
+        with FakeFountain() as fake:
+            limits = {"wall_time_seconds": 60, "max_model_turns": 3, "max_estimated_cost_usd": 0.25}
+            client = Fountain(api_key="fk_test", base_url=fake.base_url)
+            client.run("hello", agent="reposage", execution_limits=limits).result()
+            create = next(r for r in fake.state.requests if r[:2] == ("POST", "/api/conversations"))
+            self.assertEqual(create[3]["execution_limits"], limits)
+
     def test_run_resolves_names_streams_and_returns_result(self):
         with FakeFountain() as fake:
             client = Fountain(

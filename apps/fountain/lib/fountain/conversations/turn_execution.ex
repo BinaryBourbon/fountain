@@ -22,6 +22,8 @@ defmodule Fountain.Conversations.TurnExecution do
     field :connection_id, :binary_id
     field :provider_session_id, :string
     field :deadline_at, :utc_datetime_usec
+    # Immutable alongside the absolute deadline; recovery never re-resolves it.
+    field :execution_limits, :map, default: %{}
     field :state, :string, default: "active"
     field :spawn_submitted_at, :utc_datetime_usec
     field :attempt_id, :binary_id
@@ -43,6 +45,7 @@ defmodule Fountain.Conversations.TurnExecution do
       :connection_id,
       :provider_session_id,
       :deadline_at,
+      :execution_limits,
       :state,
       :spawn_submitted_at,
       :attempt_id,
@@ -59,6 +62,7 @@ defmodule Fountain.Conversations.TurnExecution do
       :provider,
       :connection_id,
       :deadline_at,
+      :execution_limits,
       :state
     ])
     |> validate_inclusion(:state, @states)
@@ -76,7 +80,8 @@ defmodule Fountain.Conversations.TurnExecution do
       :sandbox_name,
       :provider,
       :connection_id,
-      :deadline_at
+      :deadline_at,
+      :execution_limits
     ]
 
     fields =

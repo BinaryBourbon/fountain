@@ -217,6 +217,22 @@ The Events operations in the [generated reference](/api/docs) define stream
 selection, cursors, and framing. See [Build a chat app](build/index.md) for
 how a client combines the list, transcript, and live stream.
 
+### Execution limits (preview)
+
+Conversation creation accepts `execution_limits`: positive integer
+`wall_time_seconds` and `max_model_turns`, plus positive numeric
+`max_estimated_cost_usd`. Omitted fields inherit host/account ceilings. Requests
+and channel resumes may narrow an allowance; they cannot widen or clear it.
+Future turns also inherit any tighter account policy. Recovery must retain the
+original turn's deadline and allowance.
+
+Bounded execution is not enabled in this preview. Nonempty effective limits
+return `422 execution_limits_unsupported` before a worker starts. Wider requests
+return `execution_limits_widen`; malformed values return a validation error.
+SDK cost limits are estimates and can overshoot through work already in flight.
+A turn stopped by an enforced limit exposes `limit_reason` with its failed status
+and any recorded partial usage.
+
 ## Sandboxes
 
 A sandbox is the machine that hosts a conversation. Several conversations

@@ -382,6 +382,7 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
     assert [event] = events
     assert event.state == "failed"
     assert Jason.decode!(event.data)["limit_reason"] == "wall_time_limit"
+    assert Jason.decode!(event.data)["stop_reason"] == "wall_time_limit"
     assert Repo.get!(Turn, c.turn.id).status == "failed"
   end
 

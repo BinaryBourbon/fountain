@@ -118,19 +118,11 @@ defmodule Fountain.Conversations.ConversationServer do
   render the whole transcript.
   """
   def send_prompt(conv_id, prompt, images \\ [], opts \\ []) do
+    # ownership: the caller authorized this conversation before calling the server.
     result =
-      case whereis(conv_id) do
-        nil ->
-          case Conversations.wake_conversation(conv_id, prompt) do
-            {:ok, _conv} -> :ok
-            {:error, :gone} -> {:error, :gone}
-            {:error, :not_found} -> {:error, :not_running}
-            {:error, _} = err -> err
-          end
-
-        pid ->
-          call_server(pid, {:send_prompt, prompt, images})
-      end
+      Conversations._unsafe_dispatch_prompt(conv_id, prompt, fn pid ->
+        call_server(pid, {:send_prompt, prompt, images})
+      end)
 
     # Size and image count, never the text. A prompt is the tenant's content —
     # frequently the most sensitive thing in the system — and #545 is explicit
@@ -1510,7 +1502,7 @@ defmodule Fountain.Conversations.ConversationServer do
       state = close_autonomous_turn(state, "superseded_by_prompt")
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      with :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
+      with :ok <- TurnMachine.gate(conv, state.inference_source),
            :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
         {:reply, :ok, kick_turn(state, prompt, agent, images)}
@@ -1669,7 +1661,7 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      case TurnMachine.gate(conv.user_id, state.inference_source) do
+      case TurnMachine.gate(conv, state.inference_source) do
         :ok ->
           state = close_autonomous_turn(state, "superseded_by_prompt")
           agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)

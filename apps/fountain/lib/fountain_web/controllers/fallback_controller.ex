@@ -365,6 +365,31 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, {reason, field}})
+      when reason in [:execution_limits_invalid, :execution_limits_widen] do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: Atom.to_string(reason),
+      field: field,
+      message:
+        if(reason == :execution_limits_widen,
+          do: "the requested limit exceeds the authorized allowance",
+          else: "execution_limits must contain only valid typed controls"
+        )
+    })
+  end
+
+  def call(conn, {:error, {:execution_limits_unsupported, fields}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "execution_limits_unsupported",
+      fields: fields,
+      message: "this runtime transport cannot enforce the requested controls"
+    })
+  end
+
   def call(conn, {:error, :invalid_sandbox_api_access}) do
     conn
     |> put_status(:unprocessable_entity)

@@ -88,10 +88,10 @@
     "ChangesetError": { "required": ["errors"] },
     "ConnectionListResponse": { "required": ["data"] },
     "ConnectionProviderListResponse": { "required": ["data"] },
-    "Conversation": { "required": ["id", "status"] },
+    "Conversation": { "required": ["id", "status"], "fields": ["execution_limits"] },
     "ConversationCreateRequest": {
       "required": ["agent_id"],
-      "optional": ["channel_id", "environment_id", "fresh", "images", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id"]
+      "optional": ["channel_id", "environment_id", "fresh", "images", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id", "execution_limits"]
     },
     "ConversationListResponse": { "required": ["data"] },
     "ConversationResponse": { "required": ["data"] },
@@ -100,6 +100,7 @@
     "EnvironmentListResponse": { "required": ["data"] },
     "EnvironmentResponse": { "required": ["data"] },
     "Error": { "fields": ["error"] },
+    "ExecutionLimits": { "optional": ["wall_time_seconds", "max_model_turns", "max_estimated_cost_usd"] },
     "LogEvent": {
       "required": ["kind"],
       "fields": ["blocks", "data", "id", "stage", "state", "stream", "turn_id"]
@@ -127,7 +128,7 @@
     "TeammateConversationListResponse": { "required": ["data"] },
     "TeammateListResponse": { "required": ["data"] },
     "TeammateResponse": { "required": ["data"] },
-    "Turn": { "fields": ["turn_number"] },
+    "Turn": { "fields": ["turn_number", "limit_reason"] },
     "TurnListResponse": { "required": ["data"] },
     "Vault": { "required": ["id"], "fields": ["name"] },
     "VaultListResponse": { "required": ["data"] },

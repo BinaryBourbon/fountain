@@ -3479,6 +3479,7 @@ export interface components {
              * @description Per-launch environment override; null means the agent's environment.
              */
             environment_id?: string | null;
+            execution_limits?: components["schemas"]["ExecutionLimits"];
             /** @description The first turn's prompt — what to title an untitled conversation with. Null until the first turn exists. */
             readonly first_prompt?: string | null;
             /** Format: uuid */
@@ -3538,6 +3539,7 @@ export interface components {
              * @description Optional environment to provision from instead of the agent's own; the conversation stays pinned to it across wakes. Must be owned by the caller (404 otherwise) and satisfy the agent's allowed_environment_ids when that allowlist is set (422 environment_not_allowed). Part of the channel_id resume key.
              */
             environment_id?: string | null;
+            execution_limits?: components["schemas"]["ExecutionLimits"];
             /** @description With channel_id: skip the resume and open a new conversation (201), which then becomes the channel's binding. Sent by a chat harness relaying its owner's rotate command. Ignored without channel_id. */
             fresh?: boolean | null;
             /** @description Optional images to attach to the initial prompt. */
@@ -3791,6 +3793,15 @@ export interface components {
         /** Error */
         Error: {
             error: string;
+        };
+        /**
+         * ExecutionLimits
+         * @description Per-turn allowance. Omitted fields inherit host/account ceilings; explicit null fields cannot clear them. Unsupported controls are refused before worker creation. SDK cost is estimated, not billed, and in-flight work can exceed it.
+         */
+        ExecutionLimits: {
+            max_estimated_cost_usd?: number;
+            max_model_turns?: number;
+            wall_time_seconds?: number;
         };
         /**
          * Export
@@ -4722,6 +4733,8 @@ export interface components {
             image_count?: number;
             /** Format: date-time */
             inserted_at?: string;
+            /** @description The enforced limit that ended this turn; null when no limit outcome was recorded. */
+            limit_reason?: string | null;
             /** @description ACP model selection evidence; null for turns without a selection report. */
             model_selection?: {
                 effective_model?: string | null;

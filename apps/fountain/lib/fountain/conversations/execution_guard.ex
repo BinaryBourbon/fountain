@@ -18,7 +18,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
   import Ecto.Query
 
   alias Fountain.{Audit, Repo}
-  alias Fountain.Conversations.{Conversation, Sandbox, Turn, TurnExecution}
+  alias Fountain.Conversations.{Conversation, ExecutionLimits, Sandbox, Turn, TurnExecution}
 
   @fenced ~w(awaiting_identity ready submitted uncertain)
   @terminal_turns ~w(completed failed interrupted)
@@ -69,7 +69,22 @@ defmodule Fountain.Conversations.ExecutionGuard do
           if prior && is_nil(prior.provider_session_id),
             do: Repo.rollback(:connection_unidentified)
 
+          user = Repo.get!(Fountain.Accounts.User, conv.user_id)
+
+          limits =
+            case ExecutionLimits.for_new_turn(
+                   ExecutionLimits.host_ceiling(),
+                   user.execution_limits,
+                   conv.execution_limits
+                 ) do
+              {:ok, limits} -> limits
+              {:error, reason} -> Repo.rollback(reason)
+            end
+
+          enforce_deadline_ceiling!(turn, deadline_at, limits)
+
           attrs = %{
+            execution_limits: limits,
             turn_id: turn.id,
             conversation_id: conv.id,
             user_id: conv.user_id,
@@ -522,6 +537,16 @@ defmodule Fountain.Conversations.ExecutionGuard do
         from e in TurnExecution,
           where: e.conversation_id == ^conversation_id and e.state not in ["completed", "stopped"]
       )
+
+  defp enforce_deadline_ceiling!(turn, deadline_at, %{"wall_time_seconds" => seconds}) do
+    if is_nil(turn.started_at), do: Repo.rollback(:turn_not_started)
+    ceiling = DateTime.add(turn.started_at, seconds, :second)
+
+    if DateTime.compare(deadline_at, ceiling) == :gt,
+      do: Repo.rollback({:execution_limits_widen, "wall_time_seconds"})
+  end
+
+  defp enforce_deadline_ceiling!(_turn, _deadline_at, _limits), do: :ok
 
   defp valid_session_id?(id),
     do: is_binary(id) and byte_size(id) in 1..256 and Regex.match?(~r/\A[A-Za-z0-9_-]+\z/, id)

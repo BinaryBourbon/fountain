@@ -1048,6 +1048,20 @@ defmodule Fountain.Accounts do
     end)
   end
 
+  @doc """
+  Set the operator-owned per-turn ceilings for an already-authorized account.
+  Like the sandbox-cap setter, this belongs behind the admin boundary; no
+  ordinary tenant profile or registration path accepts these fields.
+  """
+  def update_execution_limits(%User{} = user, limits, opts \\ []) do
+    user
+    |> User.execution_limits_changeset(limits)
+    |> Repo.update()
+    |> audited_account("account.execution_limits_changed", "user", opts, fn updated ->
+      %{"from" => user.execution_limits, "to" => updated.execution_limits}
+    end)
+  end
+
   @doc false
   def hash_key(raw_key) when is_binary(raw_key) do
     :crypto.hash(:sha256, raw_key) |> Base.encode16(case: :lower)

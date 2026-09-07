@@ -94,9 +94,23 @@ defmodule Fountain.RunTest do
 
     on_exit(fn -> Fountain.TestServer.stop(server) end)
     client = Fountain.new(api_key: "key", base_url: server.url, app_url: "")
-    run = Fountain.run(client, "hello", agent: "writer", collect_events: true)
+    limits = %{wall_time_seconds: 60, max_model_turns: 3, max_estimated_cost_usd: 0.25}
 
-    assert_receive {:request, %{method: "POST", path: "/api/conversations"}}, 1_000
+    run =
+      Fountain.run(client, "hello",
+        agent: "writer",
+        collect_events: true,
+        execution_limits: limits
+      )
+
+    assert_receive {:request, %{method: "POST", path: "/api/conversations", body: body}}, 1_000
+
+    assert Jason.decode!(body)["execution_limits"] == %{
+             "wall_time_seconds" => 60,
+             "max_model_turns" => 3,
+             "max_estimated_cost_usd" => 0.25
+           }
+
     assert {:ok, result} = Run.await(run)
     assert result.conversation_id == "c1"
     assert result.text == "Hello\n\nworld"

@@ -10,6 +10,7 @@ import type {
   AuthMe,
   Catalog,
   ConversationRecord,
+  ExecutionLimits,
   LogEvent,
   SandboxDiff,
   SandboxFile,
@@ -62,6 +63,8 @@ export interface RunConfig extends RunOptions {
    * environment and vault). Defaults to the agent's `sandbox_mode`.
    */
   sandboxMode?: "ephemeral" | "persistent";
+  /** Per-turn limits. The server rejects unsupported controls or wider allowances. */
+  executionLimits?: ExecutionLimits;
 }
 
 /**
@@ -146,6 +149,7 @@ export class Fountain {
           if (config.spriteName) body.sprite_name = config.spriteName;
           if (config.sandbox) body.sandbox_id = config.sandbox;
           if (config.sandboxMode) body.sandbox_mode = config.sandboxMode;
+          if (config.executionLimits !== undefined) body.execution_limits = config.executionLimits;
 
           const conversation = await this.api.data<ConversationRecord>(
             "POST",

@@ -68,6 +68,17 @@ describe("run", () => {
     });
   });
 
+  test("preserves typed limits in the launch request", async () => {
+    fake.onTurn = (c, n) => fake.scriptTurn(c.id, { turnNumber: n, turnId: "t1", text: ["ok"] });
+    await client().run("hi", {
+      agent: "reposage",
+      executionLimits: { wall_time_seconds: 60, max_model_turns: 3, max_estimated_cost_usd: 0.25 },
+    });
+    const create = fake.requests.find((r) => r.method === "POST" && r.path === "/api/conversations");
+    assert.deepEqual((create?.body as Record<string, unknown>).execution_limits,
+      { wall_time_seconds: 60, max_model_turns: 3, max_estimated_cost_usd: 0.25 });
+  });
+
   test("an unknown agent name names the ones that exist", async () => {
     await assert.rejects(
       async () => {

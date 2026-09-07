@@ -26,6 +26,9 @@ defmodule Fountain.Accounts.User do
     # `Fountain.Credits`, in the same transaction as the ledger row; never
     # cast from user input.
     field :credit_balance_cents, :integer, default: 0
+    # Operator-owned per-turn ceilings. Never accepted by registration,
+    # OAuth, principal creation or the tenant's ordinary profile changesets.
+    field :execution_limits, :map, default: %{}
     field :role, :string, default: "user"
     # A claimable principal (ADR 0044): a tenant with no identity, opened by a
     # trusted application before its visitor has an account and claimed later
@@ -108,6 +111,17 @@ defmodule Fountain.Accounts.User do
     user
     |> cast(attrs, [:sandbox_limit_override])
     |> validate_number(:sandbox_limit_override, greater_than_or_equal_to: 0)
+  end
+
+  @doc "Operator-only per-turn ceilings; nil clears this account's override."
+  def execution_limits_changeset(user, limits) do
+    case Fountain.Conversations.ExecutionLimits.normalize(limits) do
+      {:ok, normalized} ->
+        change(user, execution_limits: normalized)
+
+      {:error, {:execution_limits_invalid, field}} ->
+        user |> change() |> add_error(:execution_limits, "invalid #{field}")
+    end
   end
 
   @doc "Changeset for the Stripe customer id, written when a Checkout is opened."

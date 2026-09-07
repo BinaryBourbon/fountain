@@ -31,7 +31,7 @@ from .run import Run
 from .sse import parse_sse, stream_events, stream_path
 from .team import Team, TeamSchedules
 from .turn import TurnFollower
-from .types import RunResult
+from .types import ExecutionLimits, RunResult
 
 __all__ = [
     "AuthError",
@@ -55,6 +55,7 @@ __all__ = [
     "ResolutionError",
     "Run",
     "RunResult",
+    "ExecutionLimits",
     "SubscriptionRequiredError",
     "TimeoutError",
     "Team",

@@ -975,6 +975,18 @@ credit_packs =
       |> Enum.sort()
   end
 
+# Per-turn host ceilings. Invalid configuration must not silently remove a bound.
+# Nonempty policies refuse work until the runtime transport can enforce them.
+case Fountain.Conversations.ExecutionLimits.from_json_env(
+       System.get_env("TURN_EXECUTION_LIMIT_CEILING")
+     ) do
+  {:ok, limits} ->
+    config :fountain, :execution_limit_ceiling, limits
+
+  {:error, _} ->
+    raise "TURN_EXECUTION_LIMIT_CEILING must be a JSON object of valid typed execution limits"
+end
+
 # Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
 # the per-account floor and ceiling the balance rule is clamped to, and the
 # fleet ceiling — the most live sandboxes the deployment will run in total,

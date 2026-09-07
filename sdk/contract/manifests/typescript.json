@@ -93,11 +93,11 @@
     "ConnectionProviderRequest": {},
     "Conversation": {
       "required": ["id", "status"],
-      "fields": ["agent_id", "environment_id", "sandbox_id", "title", "unread", "vault_id"]
+      "fields": ["agent_id", "environment_id", "sandbox_id", "title", "unread", "vault_id", "execution_limits"]
     },
     "ConversationCreateRequest": {
       "required": ["agent_id"],
-      "optional": ["channel_id", "environment_id", "fresh", "images", "permission_policy", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id"]
+      "optional": ["channel_id", "environment_id", "fresh", "images", "permission_policy", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id", "execution_limits"]
     },
     "ConversationListResponse": { "required": ["data"] },
     "ConversationResponse": { "required": ["data"] },
@@ -106,6 +106,7 @@
     "EnvironmentRequest": {},
     "EnvironmentUpdate": {},
     "Error": { "required": ["error"] },
+    "ExecutionLimits": { "optional": ["wall_time_seconds", "max_model_turns", "max_estimated_cost_usd"] },
     "ImageInput": {},
     "LogEvent": {
       "required": ["id", "kind", "ts"],
@@ -134,7 +135,7 @@
     "TeammateContact": {},
     "Turn": {
       "required": ["id", "turn_number", "status"],
-      "fields": ["exit_code", "prompt"]
+      "fields": ["exit_code", "prompt", "limit_reason"]
     },
     "TurnListResponse": { "required": ["data"] },
     "Vault": { "required": ["id", "name"] },

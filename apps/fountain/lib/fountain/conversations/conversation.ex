@@ -54,6 +54,9 @@ defmodule Fountain.Conversations.Conversation do
     # tightens this conversation too. The widening case is rejected at the door
     # in `start_conversation/2` rather than silently clamped.
     field :permission_policy, :map
+    # The launch allowance, further intersected with current host/account
+    # ceilings at each new turn. A resume may narrow this, never widen it.
+    field :execution_limits, :map, default: %{}
     # The caller-defined tools of the bridge (#1202, `Fountain.CallerTools`).
     field :caller_tools, {:array, :map}, default: []
 
@@ -101,6 +104,18 @@ defmodule Fountain.Conversations.Conversation do
     end
   end
 
+  defp validate_execution_limits(%{valid?: false} = changeset), do: changeset
+
+  defp validate_execution_limits(changeset) do
+    requested = get_field(changeset, :execution_limits)
+    saved = if changeset.data.__meta__.state == :loaded, do: changeset.data.execution_limits
+
+    case Fountain.Conversations.ExecutionLimits.for_resume(nil, nil, saved, requested) do
+      {:ok, limits} -> put_change(changeset, :execution_limits, limits)
+      {:error, {reason, field}} -> add_error(changeset, :execution_limits, "#{reason}: #{field}")
+    end
+  end
+
   def changeset(conv, attrs) do
     conv
     |> cast(attrs, [
@@ -120,6 +135,7 @@ defmodule Fountain.Conversations.Conversation do
       :environment_id,
       :channel_id,
       :permission_policy,
+      :execution_limits,
       :caller_tools
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
@@ -129,6 +145,7 @@ defmodule Fountain.Conversations.Conversation do
     |> validate_inclusion(:source, @sources)
     |> validate_inclusion(:sandbox_api_access, @sandbox_api_access_modes)
     |> validate_sandbox_api_access_immutable()
+    |> validate_execution_limits()
     |> foreign_key_constraint(:sandbox_id)
     |> foreign_key_constraint(:agent_id)
     |> foreign_key_constraint(:agent_version_id)

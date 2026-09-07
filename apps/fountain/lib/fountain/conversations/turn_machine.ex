@@ -515,7 +515,10 @@ defmodule Fountain.Conversations.TurnMachine do
 
     stage_meta =
       if row.limit_reason,
-        do: Map.put(stage_meta, :limit_reason, row.limit_reason),
+        do:
+          stage_meta
+          |> Map.put(:limit_reason, row.limit_reason)
+          |> Map.put(:stop_reason, row.limit_reason),
         else: stage_meta
 
     publish_stage(
@@ -792,8 +795,16 @@ defmodule Fountain.Conversations.TurnMachine do
   # gate: a live server outlives the ceiling it started under exactly as it
   # outlives the balance, so the same backstop shape applies. A turn on the
   # tenant's own key is never touched by it.
-  @spec gate(String.t(), :own | :platform | nil) :: :ok | {:error, term()}
-  def gate(user_id, inference \\ nil) do
+  @spec gate(String.t() | Conversation.t(), :own | :platform | nil) :: :ok | {:error, term()}
+  def gate(user_or_conversation, inference \\ nil)
+
+  def gate(%Conversation{} = conv, inference) do
+    # ownership: the actor fetched this conversation before applying its turn gates.
+    with :ok <- gate(conv.user_id, inference),
+         do: Conversations._unsafe_execution_limits_gate(conv)
+  end
+
+  def gate(user_id, inference) do
     with :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id) do
       if inference == :platform,

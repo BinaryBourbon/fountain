@@ -306,6 +306,29 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule ExecutionLimits do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ExecutionLimits",
+      type: :object,
+      additionalProperties: false,
+      description:
+        "Per-turn allowance. Omitted fields inherit host/account ceilings; explicit null fields cannot clear them. Unsupported controls are refused before worker creation. SDK cost is estimated, not billed, and in-flight work can exceed it.",
+      properties: %{
+        wall_time_seconds: %Schema{type: :integer, minimum: 1, maximum: 31_536_000},
+        max_model_turns: %Schema{type: :integer, minimum: 1, maximum: 9_007_199_254_740_991},
+        max_estimated_cost_usd: %Schema{
+          type: :number,
+          minimum: 0,
+          exclusiveMinimum: true,
+          maximum: 9_007_199_254_740_991
+        }
+      }
+    })
+  end
+
   defmodule Conversation do
     @moduledoc false
     require OpenApiSpex
@@ -349,6 +372,7 @@ defmodule FountainWeb.Schemas do
           description:
             "Immutable sandbox callback credential policy. none never issues a callback token."
         },
+        execution_limits: ExecutionLimits,
         permission_policy: %Schema{
           type: :object,
           nullable: true,
@@ -506,6 +530,7 @@ defmodule FountainWeb.Schemas do
           description:
             "none omits the sandbox Fountain credential on provision and every wake. Requires a fresh ephemeral sandbox; unavailable on attach or policy-changing channel resume."
         },
+        execution_limits: ExecutionLimits,
         permission_policy: %Schema{
           type: :object,
           nullable: true,
@@ -679,6 +704,12 @@ defmodule FountainWeb.Schemas do
               "after its prompt was answered (#817)."
         },
         exit_code: %Schema{type: :integer, nullable: true},
+        limit_reason: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The enforced limit that ended this turn; null when no limit outcome was recorded."
+        },
         started_at: %Schema{type: :string, format: :"date-time", nullable: true},
         ended_at: %Schema{type: :string, format: :"date-time", nullable: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},

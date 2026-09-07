@@ -1802,11 +1802,21 @@ defmodule Fountain.Conversations do
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id) do
         %Conversation{} = conv ->
           if fresh_requested?(attrs) do
-            with {:ok, _} <- unbind_channel(conv),
+            with {:ok, _limits} <-
+                   resolve_execution_limits(user_id, agent.runtime, attrs["execution_limits"]),
+                 {:ok, _} <- unbind_channel(conv),
                  {:ok, fresh} <- start_conversation(attrs, opts),
                  do: {:ok, fresh, :created}
           else
             with :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+                 {:ok, limits} <-
+                   resolve_execution_limits(
+                     user_id,
+                     conv.runtime,
+                     attrs["execution_limits"],
+                     conv.execution_limits
+                   ),
+                 {:ok, conv} <- maybe_narrow_execution_limits(conv, limits),
                  do: {:ok, conv, :resumed}
           end
 
@@ -1931,6 +1941,8 @@ defmodule Fountain.Conversations do
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
          {:ok, api_access} <- resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
+         {:ok, execution_limits} <-
+           resolve_execution_limits(user_id, agent.runtime, attrs["execution_limits"]),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
@@ -1980,6 +1992,7 @@ defmodule Fountain.Conversations do
              title: attrs["title"],
              sandbox_api_access: api_access,
              permission_policy: perm_policy,
+             execution_limits: execution_limits,
              caller_tools: attrs["caller_tools"] || []
            }) do
       # Recorded here rather than in either branch below: both of them return
@@ -2479,6 +2492,8 @@ defmodule Fountain.Conversations do
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
+         {:ok, execution_limits} <-
+           resolve_execution_limits(user_id, agent.runtime, attrs["execution_limits"]),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
@@ -2506,6 +2521,7 @@ defmodule Fountain.Conversations do
              channel_id: attrs["channel_id"],
              title: attrs["title"],
              permission_policy: perm_policy,
+             execution_limits: execution_limits,
              # The bridge's tools (#1202) ride on both create paths: this
              # one is what a home sandbox's second conversation takes.
              caller_tools: attrs["caller_tools"] || []
@@ -2858,6 +2874,58 @@ defmodule Fountain.Conversations do
     end
   end
 
+  @doc "Dispatch an already-authorized prompt only after checking current execution policy."
+  def _unsafe_dispatch_prompt(conversation_id, prompt, send_to_server) do
+    with %Conversation{} = conv <-
+           _unsafe_get_conversation(conversation_id) || {:error, :not_running},
+         :ok <- _unsafe_execution_limits_gate(conv) do
+      case ConversationServer.whereis(conversation_id) do
+        nil ->
+          case wake_conversation(conversation_id, prompt) do
+            {:ok, _conv} -> :ok
+            {:error, :not_found} -> {:error, :not_running}
+            {:error, _} = error -> error
+          end
+
+        pid ->
+          send_to_server.(pid)
+      end
+    end
+  end
+
+  @doc "Check current ceilings before an already-owned conversation starts another turn."
+  def _unsafe_execution_limits_gate(%Conversation{} = conv) do
+    user = Fountain.Accounts.get_user!(conv.user_id)
+    limits = Fountain.Conversations.ExecutionLimits
+
+    with {:ok, resolved} <-
+           limits.for_new_turn(
+             limits.host_ceiling(),
+             user.execution_limits,
+             conv.execution_limits
+           ) do
+      limits.require_controls(resolved, limits.enforced_controls(conv.runtime))
+    end
+  end
+
+  defp resolve_execution_limits(user_id, runtime, request, saved \\ nil) do
+    # ownership: each caller has fetched its agent or conversation for this user.
+    user = Fountain.Accounts.get_user!(user_id)
+    limits = Fountain.Conversations.ExecutionLimits
+
+    with {:ok, resolved} <-
+           limits.for_resume(limits.host_ceiling(), user.execution_limits, saved, request),
+         :ok <- limits.require_controls(resolved, limits.enforced_controls(runtime)) do
+      {:ok, resolved}
+    end
+  end
+
+  defp maybe_narrow_execution_limits(%Conversation{execution_limits: limits} = conv, limits),
+    do: {:ok, conv}
+
+  defp maybe_narrow_execution_limits(conv, limits),
+    do: update_conversation(conv, %{execution_limits: limits})
+
   # A per-launch permission override (#939). Unlike the vault and environment
   # overrides, this one needs no allowlist on the agent: `check_narrows/2`
   # refuses anything looser than the agent's own policy, so a launch cannot
@@ -2936,6 +3004,7 @@ defmodule Fountain.Conversations do
     # below is the conversation's own agent_id, same tenant by construction.
     with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
          :ok <- assert_resumable(conv),
+         :ok <- _unsafe_execution_limits_gate(conv),
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do

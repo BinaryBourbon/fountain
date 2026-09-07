@@ -18,6 +18,7 @@ export type {
   ConnectionProviderInput,
   ConnectionProviderPatch,
   ConversationRecord,
+  ExecutionLimits,
   ConversationTreeNode,
   Environment,
   EnvironmentInput,

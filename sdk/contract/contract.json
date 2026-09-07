@@ -9889,6 +9889,10 @@
           "required": false,
           "type": "string"
         },
+        "execution_limits": {
+          "ref": "ExecutionLimits",
+          "required": false
+        },
         "first_prompt": {
           "nullable": true,
           "required": false,
@@ -10042,6 +10046,10 @@
           "nullable": true,
           "required": false,
           "type": "string"
+        },
+        "execution_limits": {
+          "ref": "ExecutionLimits",
+          "required": false
         },
         "fresh": {
           "nullable": true,
@@ -10591,6 +10599,24 @@
         "error": {
           "required": true,
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ExecutionLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_estimated_cost_usd": {
+          "required": false,
+          "type": "number"
+        },
+        "max_model_turns": {
+          "required": false,
+          "type": "integer"
+        },
+        "wall_time_seconds": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -12724,6 +12750,11 @@
         },
         "inserted_at": {
           "format": "date-time",
+          "required": false,
+          "type": "string"
+        },
+        "limit_reason": {
+          "nullable": true,
           "required": false,
           "type": "string"
         },

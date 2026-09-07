@@ -4,6 +4,16 @@ import Testing
 @testable import FountainKit
 
 @Suite struct RequestBuildingTests {
+  @Test func typedExecutionLimitsEncodeWithoutNullFields() throws {
+    let request = ConversationCreateRequest(agentID: "agent", executionLimits: ExecutionLimits(wallTimeSeconds: 60, maxEstimatedCostUSD: 0.25))
+    let bytes = try JSONEncoder().encode(request)
+    let body = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    let limits = try #require(body["execution_limits"] as? [String: Any])
+    #expect(limits["wall_time_seconds"] as? Int == 60)
+    #expect(limits["max_estimated_cost_usd"] as? Double == 0.25)
+    #expect(limits["max_model_turns"] == nil)
+  }
+
   @Test func setsAuthAcceptAndUserAgent() async throws {
     let transport = FakeTransport(json: #"{"data": []}"#)
     let client = FountainClient.fake(transport)

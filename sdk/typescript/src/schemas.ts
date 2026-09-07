@@ -39,6 +39,7 @@ export type VaultPatch = S["VaultUpdate"];
 
 /** One run of an agent inside a sandbox. */
 export type ConversationRecord = S["Conversation"];
+export type ExecutionLimits = S["ExecutionLimits"];
 /** A machine, with the conversations on it. */
 export type SandboxRecord = S["SandboxDetail"];
 /** One directory on a sandbox, directories first (ADR 0039). */

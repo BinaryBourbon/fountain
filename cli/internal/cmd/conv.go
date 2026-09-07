@@ -86,6 +86,9 @@ func init() {
 	runCmd.Flags().String("environment", "", "environment name or id to provision from, instead of the agent's own")
 	runCmd.Flags().String("sandbox", "", "sandbox id to attach to, instead of provisioning a new one")
 	runCmd.Flags().String("sandbox-mode", "", "ephemeral or persistent, instead of the agent's default")
+	runCmd.Flags().Int64("wall-time-seconds", 0, "per-turn wall-clock limit; requires server support")
+	runCmd.Flags().Int64("max-model-turns", 0, "SDK model-turn limit; requires runtime support")
+	runCmd.Flags().Float64("max-estimated-cost-usd", 0, "SDK estimated dollar limit, not a billed-cost cap")
 	rootCmd.AddCommand(runCmd)
 }
 
@@ -288,6 +291,11 @@ func runAgent(cmd *cobra.Command, target string) error {
 		body["sandbox_mode"] = mode
 	}
 
+	limits := executionLimitsFromFlags(cmd)
+	if len(limits) > 0 {
+		body["execution_limits"] = limits
+	}
+
 	c := activeClient()
 	var resp struct {
 		Data map[string]any `json:"data"`
@@ -300,6 +308,26 @@ func runAgent(cmd *cobra.Command, target string) error {
 	// Fresh conversation: there is no history to skip, and draining first
 	// could miss provisioning events emitted between create and follow.
 	return followUntilIdle(convID, "")
+}
+
+// Explicit zero remains on the wire so the server refuses it instead of
+// treating an invalid requested limit as omission and running without it.
+func executionLimitsFromFlags(cmd *cobra.Command) map[string]any {
+	limits := map[string]any{}
+	for _, flag := range []struct{ name, field string }{
+		{"wall-time-seconds", "wall_time_seconds"},
+		{"max-model-turns", "max_model_turns"},
+	} {
+		if cmd.Flags().Changed(flag.name) {
+			value, _ := cmd.Flags().GetInt64(flag.name)
+			limits[flag.field] = value
+		}
+	}
+	if cmd.Flags().Changed("max-estimated-cost-usd") {
+		value, _ := cmd.Flags().GetFloat64("max-estimated-cost-usd")
+		limits["max_estimated_cost_usd"] = value
+	}
+	return limits
 }
 
 // ── stream loop ─────────────────────────────────────────────────────────

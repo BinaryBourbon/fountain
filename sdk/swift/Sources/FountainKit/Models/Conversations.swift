@@ -1,3 +1,22 @@
+/// Per-turn controls. The server refuses unsupported controls and wider allowances.
+public struct ExecutionLimits: Sendable, Codable, Hashable {
+  public var wallTimeSeconds: Int?
+  public var maxModelTurns: Int?
+  public var maxEstimatedCostUSD: Double?
+
+  public init(wallTimeSeconds: Int? = nil, maxModelTurns: Int? = nil, maxEstimatedCostUSD: Double? = nil) {
+    self.wallTimeSeconds = wallTimeSeconds
+    self.maxModelTurns = maxModelTurns
+    self.maxEstimatedCostUSD = maxEstimatedCostUSD
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case wallTimeSeconds = "wall_time_seconds"
+    case maxModelTurns = "max_model_turns"
+    case maxEstimatedCostUSD = "max_estimated_cost_usd"
+  }
+}
+
 import Foundation
 
 /// A single run of an agent inside a sandbox: turns, log events, a status
@@ -14,6 +33,7 @@ public struct Conversation: Sendable, Decodable, Identifiable, Hashable {
   public var vaultID: String?
   public var environmentID: String?
   public var permissionPolicy: [String: String]?
+  public var executionLimits: ExecutionLimits?
   public var runtime: Runtime
   public var acp: Bool?
   public var status: ConversationStatus
@@ -41,6 +61,7 @@ public struct Conversation: Sendable, Decodable, Identifiable, Hashable {
     case vaultID = "vault_id"
     case environmentID = "environment_id"
     case permissionPolicy = "permission_policy"
+    case executionLimits = "execution_limits"
     case runtimeSessionID = "runtime_session_id"
     case parentConversationID = "parent_conversation_id"
     case channelID = "channel_id"
@@ -82,6 +103,7 @@ public struct Turn: Sendable, Decodable, Identifiable, Hashable {
   public var status: TurnStatus
   public var origin: TurnOrigin?
   public var exitCode: Int?
+  public var limitReason: String?
   public var startedAt: Date?
   public var endedAt: Date?
   public var insertedAt: Date?
@@ -93,6 +115,7 @@ public struct Turn: Sendable, Decodable, Identifiable, Hashable {
     case id, prompt, status, origin, usage
     case turnNumber = "turn_number"
     case exitCode = "exit_code"
+    case limitReason = "limit_reason"
     case startedAt = "started_at"
     case endedAt = "ended_at"
     case insertedAt = "inserted_at"
@@ -136,6 +159,7 @@ public struct ConversationCreateRequest: Sendable, Encodable {
   public var vaultID: String?
   public var environmentID: String?
   public var permissionPolicy: [String: String]?
+  public var executionLimits: ExecutionLimits?
   public var images: [ImageInput]?
   public var spriteName: String?
   public var sandboxMode: SandboxMode?
@@ -152,6 +176,7 @@ public struct ConversationCreateRequest: Sendable, Encodable {
     vaultID: String? = nil,
     environmentID: String? = nil,
     permissionPolicy: [String: String]? = nil,
+    executionLimits: ExecutionLimits? = nil,
     images: [ImageInput]? = nil,
     spriteName: String? = nil,
     sandboxMode: SandboxMode? = nil,
@@ -165,6 +190,7 @@ public struct ConversationCreateRequest: Sendable, Encodable {
     self.vaultID = vaultID
     self.environmentID = environmentID
     self.permissionPolicy = permissionPolicy
+    self.executionLimits = executionLimits
     self.images = images
     self.spriteName = spriteName
     self.sandboxMode = sandboxMode
@@ -179,6 +205,7 @@ public struct ConversationCreateRequest: Sendable, Encodable {
     case vaultID = "vault_id"
     case environmentID = "environment_id"
     case permissionPolicy = "permission_policy"
+    case executionLimits = "execution_limits"
     case spriteName = "sprite_name"
     case sandboxMode = "sandbox_mode"
     case sandboxID = "sandbox_id"

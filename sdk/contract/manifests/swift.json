@@ -76,6 +76,7 @@
     "POST /api/vaults/{vault_id}/secrets"
   ],
   "schemas": {
+    "ExecutionLimits": { "optional": ["wall_time_seconds", "max_model_turns", "max_estimated_cost_usd"] },
     "TurnUsage": { "optional": ["input", "output", "cache_read", "cache_write", "accounting"] },
     "UsageAccounting": { "required": ["version", "source", "scope", "completeness"] },
     "Agent": { "required": ["id", "name"] },
@@ -89,10 +90,10 @@
     "ChangesetError": { "required": ["errors"] },
     "ConnectionListResponse": { "required": ["data"] },
     "ConnectionProviderListResponse": { "required": ["data"] },
-    "Conversation": { "required": ["id"], "fields": ["status"] },
+    "Conversation": { "required": ["id"], "fields": ["status", "execution_limits"] },
     "ConversationCreateRequest": {
       "required": ["agent_id"],
-      "optional": ["channel_id", "environment_id", "fresh", "images", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id"]
+      "optional": ["channel_id", "environment_id", "fresh", "images", "prompt", "sandbox_id", "sandbox_mode", "sprite_name", "title", "vault_id", "execution_limits"]
     },
     "ConversationListResponse": { "required": ["data"] },
     "ConversationResponse": { "required": ["data"] },
@@ -128,7 +129,7 @@
     "TeammateConversationListResponse": { "required": ["data"] },
     "TeammateListResponse": { "required": ["data"] },
     "TeammateResponse": { "required": ["data"] },
-    "Turn": { "required": ["turn_number"] },
+    "Turn": { "required": ["turn_number"], "fields": ["limit_reason"] },
     "TurnListResponse": { "required": ["data"] },
     "Vault": { "required": ["id", "name"] },
     "VaultListResponse": { "required": ["data"] },

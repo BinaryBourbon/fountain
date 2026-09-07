@@ -54,6 +54,7 @@ defmodule FountainWeb.ConversationJSON do
       environment_id: c.environment_id,
       sandbox_api_access: c.sandbox_api_access,
       permission_policy: c.permission_policy,
+      execution_limits: c.execution_limits,
       runtime: c.runtime,
       # Derived, never stored — the same signal as on an agent (#702). A
       # protocol client asks before reopening a conversation, because a
@@ -181,6 +182,7 @@ defmodule FountainWeb.ConversationJSON do
       # `user` or `autonomous` (#817); rows from before the column read as user.
       origin: t.origin || "user",
       exit_code: t.exit_code,
+      limit_reason: t.limit_reason,
       started_at: t.started_at,
       ended_at: t.ended_at,
       inserted_at: t.inserted_at,

@@ -338,11 +338,14 @@ fountain run <agent-name-or-id> [flags]
 Options:
 
 ```
-      --environment string    environment name or id to provision from, instead of the agent's own
-  -p, --prompt string         prompt text (required)
-      --sandbox string        sandbox id to attach to, instead of provisioning a new one
-      --sandbox-mode string   ephemeral or persistent, instead of the agent's default
-      --vault string          vault name or id
+      --environment string             environment name or id to provision from, instead of the agent's own
+      --max-estimated-cost-usd float   SDK estimated dollar limit, not a billed-cost cap
+      --max-model-turns int            SDK model-turn limit; requires runtime support
+  -p, --prompt string                  prompt text (required)
+      --sandbox string                 sandbox id to attach to, instead of provisioning a new one
+      --sandbox-mode string            ephemeral or persistent, instead of the agent's default
+      --vault string                   vault name or id
+      --wall-time-seconds int          per-turn wall-clock limit; requires server support
 ```
 
 ## `fountain runner`

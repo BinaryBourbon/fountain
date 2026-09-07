@@ -1,29 +1,33 @@
 ---
 type: ADR
 title: "Durable turn deadlines and remote execution identity"
-description: "Persist turn deadlines and provider-operation intent before I/O; the journal is implemented locally, while API, transport and lifecycle enforcement remain unbuilt."
+description: "Persist turn deadlines and provider-operation intent before I/O; the journal and typed policy are implemented, while transport and lifecycle enforcement remain unbuilt."
 tags: [conversations, sandbox, reliability, limits]
 status: draft
 adr: "0046"
 adr_status: "Proposed"
 date: 2026-09-07
-generated: { by: process:codex, at: 2026-09-07T22:39:25Z }
-verified: { by: process:codex, at: 2026-09-07T22:39:25Z }
+generated: { by: process:codex, at: 2026-09-07T23:43:51Z }
+verified: { by: process:codex, at: 2026-09-07T23:43:51Z }
 stale_after: 2026-09-14
 ---
 
 # 0046 — Durable turn deadlines and remote execution identity
 
-**Status:** Proposed; not shipped. `ExecutionGuard`, `TurnExecution` and their
-migration are implemented locally. Full precommit passes: 4,632 tests and six
-doctests, zero failures, two existing skips and seven exclusions. Thirty guard
-regressions cover the journal. The existing
-turn writer and ACP finisher preserve a registered deadline failure. Local
-failure/interruption retains a remote-stop obligation; reset refuses unfinished
-executions, and recovery marks lost termination owners uncertain without replay. Public
-limits, host/account policy, command transport, deadline scheduling, remaining
-lifecycle surfaces, SDK pins and production acceptance remain unbuilt. No API
-or scheduler activates bounded turns yet.
+**Status:** Proposed; not shipped. The journal foundation is in draft
+[Fountain #1744](https://github.com/BinaryBourbon/fountain/pull/1744), with passing
+CI at `f7404395b49019e4d122b91ba7991330b49addd3`.
+
+The stacked typed-policy layer is local: validated host/account ceilings,
+conversation allowance narrowing, immutable journal snapshots, HTTP admission
+checks, API stop reasons, and SDK/CLI request fields are implemented. All nonempty
+effective limits are currently refused because the runtime transport and deadline
+worker are not integrated. There is no user-configurable bypass of that gate.
+Validation passes 4,663 tests and 6 doctests in full precommit, all four SDK suites
+and contract checks, CLI tests/vet, and 20 separate-connection database races.
+The typed-layer evidence and prior failures are recorded in
+`decisions/evidence/typed-execution-limits.json`.
+No deployment or production timeout activation has occurred.
 
 ## Context
 
@@ -78,9 +82,9 @@ review before enabling termination in production.
 
 ## Required integration and acceptance
 
-- Validate typed limits against runtime capabilities and host/account ceilings.
-  A conversation override cannot widen its authorized allowance. Define each
-  limit's per-turn or per-session scope; SDK cost estimates are not billed cost.
+- Typed validation and host/account narrowing are implemented locally. The
+  admission capability set stays empty until the transport actually enforces
+  the controls. SDK estimates remain separate from billed cost.
 - Record identity outside the conversation mailbox. Bind it to the command ref,
   original connection and turn; do not infer it from sandbox output or argv.
 - Route every bounded turn start/end, autonomous turn, interruption and restart
@@ -103,6 +107,12 @@ Integration surfaces already inspected:
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
 | Deadline supervisor | Expire due rows, claim one termination, recover abandoned submissions as uncertain, publish the persisted outcome. |
 
+Bounded connections also need a shutdown policy after successful replies: the
+current warm connection can continue background work outside a turn. Completion
+must not silently discard that obligation. Register before title generation,
+adapter preparation, or any model prompt; keep cancellation intent ahead of
+blocking provider writes.
+
 Journal retention after confirmed cleanup and account deletion also needs an
 explicit policy. Uncertainty must never be erased by transcript deletion.
 
@@ -114,7 +124,7 @@ Do not activate deadline claims using an unpublished or floating SDK dependency.
 
 ## Validation scope
 
-The database race proof in `decisions/evidence/turn-deadline-races.json` used separate
+The parent journal proof at `f740439` in `decisions/evidence/turn-deadline-races.json` used separate
 PostgreSQL connections: completion won 13 cases and expiry won 7. Every
 expired case authorized exactly one of two competing termination claims. No
 provider calls occurred. This proves database arbitration, not a running public
