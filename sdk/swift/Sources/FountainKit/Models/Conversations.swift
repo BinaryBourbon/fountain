@@ -1,10 +1,14 @@
+import Foundation
+
 /// Per-turn controls. The server refuses unsupported controls and wider allowances.
 public struct ExecutionLimits: Sendable, Codable, Hashable {
   public var wallTimeSeconds: Int?
   public var maxModelTurns: Int?
   public var maxEstimatedCostUSD: Double?
 
-  public init(wallTimeSeconds: Int? = nil, maxModelTurns: Int? = nil, maxEstimatedCostUSD: Double? = nil) {
+  public init(
+    wallTimeSeconds: Int? = nil, maxModelTurns: Int? = nil, maxEstimatedCostUSD: Double? = nil
+  ) {
     self.wallTimeSeconds = wallTimeSeconds
     self.maxModelTurns = maxModelTurns
     self.maxEstimatedCostUSD = maxEstimatedCostUSD
@@ -16,8 +20,6 @@ public struct ExecutionLimits: Sendable, Codable, Hashable {
     case maxEstimatedCostUSD = "max_estimated_cost_usd"
   }
 }
-
-import Foundation
 
 /// A single run of an agent inside a sandbox: turns, log events, a status
 /// lifecycle.

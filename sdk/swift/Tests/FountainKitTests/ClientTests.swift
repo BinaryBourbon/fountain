@@ -5,7 +5,9 @@ import Testing
 
 @Suite struct RequestBuildingTests {
   @Test func typedExecutionLimitsEncodeWithoutNullFields() throws {
-    let request = ConversationCreateRequest(agentID: "agent", executionLimits: ExecutionLimits(wallTimeSeconds: 60, maxEstimatedCostUSD: 0.25))
+    let request = ConversationCreateRequest(
+      agentID: "agent",
+      executionLimits: ExecutionLimits(wallTimeSeconds: 60, maxEstimatedCostUSD: 0.25))
     let bytes = try JSONEncoder().encode(request)
     let body = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
     let limits = try #require(body["execution_limits"] as? [String: Any])

@@ -1,0 +1,4 @@
+# Exact false positives: these values are SHA-256 file digests, verified against
+# docs/api.md and sdk/typescript/src/generated/openapi.ts at this commit.
+89f6f99602adad1f408ace2813b09b939e1691b1:decisions/evidence/typed-execution-limits.json:generic-api-key:98
+89f6f99602adad1f408ace2813b09b939e1691b1:decisions/evidence/typed-execution-limits.json:generic-api-key:116
