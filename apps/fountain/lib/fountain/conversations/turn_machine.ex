@@ -332,7 +332,9 @@ defmodule Fountain.Conversations.TurnMachine do
   # — the response is the only place the runtime reports it — before the turn
   # row is closed. nil records nothing.
   def handle(%__MODULE__{} = turn, {:done, stop_reason, usage}, ctx) do
-    status = if stop_reason in ["refusal", "cancelled"], do: "failed", else: "completed"
+    # An answered prompt is not necessarily finished work. Token/request limits
+    # and unknown future stop reasons must not become success for API consumers.
+    status = if stop_reason == "end_turn", do: "completed", else: "failed"
     record_usage(turn, with_inference(usage, ctx))
 
     {turn,

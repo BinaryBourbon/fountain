@@ -30,6 +30,10 @@ upgrade, is in
 
 ### Fixed
 
+- ACP token/request limits and unknown stop reasons now fail the turn instead
+  of reporting completion. Reported usage and the original stop reason remain
+  available; only `end_turn` establishes normal completion (#1732).
+
 - The broker's root CA is installed under a lock, and the operating-system
   trust store is rebuilt only when the bundle on the machine is not the one
   that CA produces. Conversations sharing a sandbox each ran
