@@ -64,6 +64,11 @@ defmodule Fountain.Agents.ModelCatalogTest do
     # claude-agent-acp 0.66.0 — "Invalid value for config option model".
     # 289 refusals for claude-sonnet-4-6 alone, 2026-08-16..2026-09-06.
     "anthropic/claude-sonnet-4-6" => "2026-09-06",
+    # Suggested for one day (#1659) and refused on the turns it got (#1669).
+    # `claude-fable-5` was never suggested; one agent was pinned to it by hand
+    # and it is refused the same way, so it is listed to stop it being added.
+    "anthropic/claude-fable-5-1" => "2026-09-06",
+    "anthropic/claude-fable-5" => "2026-09-06",
     "anthropic/claude-opus-4-7" => "2026-08-27",
     "anthropic/claude-opus-4-8" => "2026-08-23",
     # codex-acp 1.10.0 — "Invalid params". Refused after the #1640 bump that
