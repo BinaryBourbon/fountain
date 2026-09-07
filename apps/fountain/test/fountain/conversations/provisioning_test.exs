@@ -190,21 +190,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
   end
 
   describe "install_broker_ca/2" do
-    # #1674. Three properties, all about the shared sandbox (ADR 0023), and
-    # all readable off this one string:
-    #
-    #   * The rebuild is serialised. `update-ca-certificates` builds
-    #     `ca-certificates.crt.new` at a fixed path and renames it into
-    #     place, so two runs at once publish a bundle one of them was still
-    #     writing.
-    #   * The skip is gated on the bundle, not on the event. The marker holds
-    #     the bundle's digest, so a rebuild by apt's `ca-certificates`
-    #     postinst or by a tenant setup script — both outside this lock —
-    #     invalidates it and the next conversation repairs the machine.
-    #   * The marker is stamped only when the lock was actually held. Without
-    #     `flock`, or after waiting out the 120 seconds, the rebuild still
-    #     happens and records nothing, which is the unconditional rebuild
-    #     every provision did before this change.
+    # Keep the absolute paths and sandbox command wiring pinned here.
     test "writes the CA where update-ca-certificates reads it, then runs it" do
       conv = insert_conversation()
       test = self()
@@ -252,6 +238,111 @@ defmodule Fountain.Conversations.ProvisioningTest do
                  "sudo visudo -cf '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo install -m 440 '/tmp/fountain-broker-proxy.sudoers' '/etc/sudoers.d/fountain-broker-proxy' && " <>
                  "git config --global http.proxyAuthMethod basic"
+    end
+
+    @tag :tmp_dir
+    test "rebuilds only when needed and retries a failed rebuild", %{tmp_dir: tmp_dir} do
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM\n"} end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, path, data, _opts ->
+        send(test, {:staged, path, data})
+        :ok
+      end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, "bash", ["-lc", cmd], _opts ->
+        send(test, {:install_command, cmd})
+        {:ok, "", 0}
+      end)
+
+      assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+      assert_received {:staged, staging, pem}
+      assert_received {:install_command, cmd}
+
+      # Redirect every absolute write into this test's tree. Run without a login
+      # shell so PATH keeps our sudo, trust-store builder and git stubs.
+      cmd =
+        String.replace(
+          cmd,
+          ~r{/usr/local/share/ca-certificates|/etc/ssl/certs|/etc/sudoers.d|/tmp/},
+          fn prefix -> tmp_dir <> prefix end
+        )
+
+      ca = tmp_dir <> Fountain.Broker.ca_path()
+      bundle = tmp_dir <> Fountain.Broker.system_ca_bundle()
+      marker = ca <> ".trust-store-ready"
+      counter = Path.join(tmp_dir, "rebuilds")
+      failure = Path.join(tmp_dir, "fail-rebuild")
+      bin = Path.join(tmp_dir, "bin")
+
+      for dir <- [
+            bin,
+            Path.dirname(ca),
+            Path.dirname(bundle),
+            tmp_dir <> "/etc/sudoers.d",
+            tmp_dir <> "/tmp"
+          ] do
+        File.mkdir_p!(dir)
+      end
+
+      for {name, body} <- [
+            {"sudo", ~s(exec "$@"\n)},
+            {"visudo", "exit 0\n"},
+            {"git", "exit 0\n"},
+            {"update-ca-certificates",
+             """
+             echo rebuild >> "$TEST_CA_ROOT/rebuilds"
+             [ ! -f "$TEST_CA_ROOT/fail-rebuild" ] || exit 3
+             cat "$TEST_CA_ROOT/usr/local/share/ca-certificates/agent-vault.crt" > "$TEST_CA_ROOT/etc/ssl/certs/ca-certificates.crt"
+             echo system-roots >> "$TEST_CA_ROOT/etc/ssl/certs/ca-certificates.crt"
+             """}
+          ] do
+        path = Path.join(bin, name)
+        File.write!(path, "#!/bin/sh\n" <> body)
+        File.chmod!(path, 0o755)
+      end
+
+      run = fn ->
+        # The EXIT trap consumes the staging file on every invocation.
+        File.write!(tmp_dir <> staging, pem)
+
+        result =
+          System.cmd("bash", ["-c", cmd],
+            env: [{"PATH", bin <> ":" <> System.fetch_env!("PATH")}, {"TEST_CA_ROOT", tmp_dir}],
+            stderr_to_stdout: true
+          )
+
+        refute File.exists?(tmp_dir <> staging)
+        result
+      end
+
+      assert {_, 0} = run.()
+      assert File.read!(ca) == pem
+      assert File.read!(bundle) == pem <> "system-roots\n"
+      assert File.exists?(marker)
+      assert File.read!(counter) == "rebuild\n"
+
+      assert {_, 0} = run.()
+      assert File.read!(counter) == "rebuild\n"
+
+      File.write!(bundle, "truncated bundle\n")
+      assert {_, 0} = run.()
+      assert File.read!(bundle) == pem <> "system-roots\n"
+      assert File.read!(counter) == String.duplicate("rebuild\n", 2)
+
+      File.write!(bundle, "corrupted again\n")
+      File.touch!(failure)
+      assert {_, 3} = run.()
+      refute File.exists?(marker)
+      assert File.read!(counter) == String.duplicate("rebuild\n", 3)
+
+      File.rm!(failure)
+      assert {_, 0} = run.()
+      assert File.read!(bundle) == pem <> "system-roots\n"
+      assert File.exists?(marker)
+      assert File.read!(counter) == String.duplicate("rebuild\n", 4)
     end
 
     # The trap that removes the staging file runs inside bash, so an exec that
