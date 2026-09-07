@@ -165,6 +165,32 @@ defmodule Fountain.Conversations.CodexTransportTest do
     assert updated["model_providers"]["custom"] == original["model_providers"]["custom"]
   end
 
+  # `List.keystore/4` rewrites the *first* entry, but a process with the
+  # variable twice sees the last. Rewriting the first would have left an
+  # untouched later entry winning, so the whole policy — proxy support and
+  # provider selection both — would silently not reach codex.
+  test "a repeated CODEX_CONFIG is read and rewritten as the process sees it" do
+    stale = Jason.encode!(%{"model" => "stale"})
+    live = Jason.encode!(%{"model" => "live"})
+
+    env = [
+      key("sk-x"),
+      {"CODEX_CONFIG", stale},
+      {"KEEP", "1"},
+      {"CODEX_CONFIG", live}
+    ]
+
+    assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env)
+
+    # Read from the effective entry, not the first.
+    assert config(result)["model"] == "live"
+
+    # And written as one entry, last, so nothing shadows it.
+    assert Enum.count(result[:env], &match?({"CODEX_CONFIG", _}, &1)) == 1
+    assert {"CODEX_CONFIG", _} = List.last(result[:env])
+    assert {"KEEP", "1"} in result[:env]
+  end
+
   test "unbrokered Codex and other runtimes retain their exact options" do
     opts = [env: [{"CODEX_CONFIG", "unchanged"}]]
     assert {:ok, ^opts} = CodexTransport.spawn_opts(%{broker: nil}, "codex", opts)

@@ -65,6 +65,7 @@ defmodule Fountain.Conversations.CodexTransport do
       env =
         Enum.reject(env, &match?({"CODEX_CONFIG", _}, &1)) ++
           [{"CODEX_CONFIG", Jason.encode!(config)}]
+
       {:ok, Keyword.put(opts, :env, env)}
     else
       # Do not include the config: it may contain provider credentials.
