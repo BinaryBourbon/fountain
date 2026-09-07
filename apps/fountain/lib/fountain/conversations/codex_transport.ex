@@ -51,11 +51,7 @@ defmodule Fountain.Conversations.CodexTransport do
   def spawn_opts(%{broker: broker}, "codex", opts) when not is_nil(broker) do
     env = Keyword.get(opts, :env, [])
 
-    raw =
-      case List.keyfind(env, "CODEX_CONFIG", 0) do
-        nil -> "{}"
-        {_, value} -> value
-      end
+    raw = Map.get(Map.new(env), "CODEX_CONFIG", "{}")
 
     with {:ok, config} when is_map(config) <- Jason.decode(raw),
          features when is_map(features) <- Map.get(config, "features", %{}),
@@ -66,7 +62,9 @@ defmodule Fountain.Conversations.CodexTransport do
         |> Map.delete("features.respect_system_proxy")
         |> select_http_provider(providers, env)
 
-      env = List.keystore(env, "CODEX_CONFIG", 0, {"CODEX_CONFIG", Jason.encode!(config)})
+      env =
+        Enum.reject(env, &match?({"CODEX_CONFIG", _}, &1)) ++
+          [{"CODEX_CONFIG", Jason.encode!(config)}]
       {:ok, Keyword.put(opts, :env, env)}
     else
       # Do not include the config: it may contain provider credentials.
