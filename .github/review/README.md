@@ -55,6 +55,11 @@ An existing Go guest-handshake fixture race is tracked in
 enabled. A failure produces incomplete verification and a human handoff;
 rerunning until it turns green is not evidence that the defect was fixed.
 
+Deploy Review Loop support for `verification.command_timeout_minutes` first.
+The expanded recipe needs a thirty-minute command allowance: its measured cold
+Credo/Dialyzer stage took about 23 minutes and the full recipe about 48 minutes.
+See [measured command budget](verification.md#measured-command-budget).
+
 Merge this configuration through Fountain's normal reviewed PR process. Its
 own changes require human review; no live run can use its policy before merge.
 The dispatch workflow uses the public `managoat/review-loop-action` at an

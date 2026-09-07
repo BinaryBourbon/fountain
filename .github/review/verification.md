@@ -31,3 +31,21 @@ test run or exhausted deadline leaves incomplete work. Do not skip tests, lower
 coverage thresholds, rewrite verification scripts or add release-bypass labels
 to obtain approval. Docs-only PRs still receive independent core verification
 in this initial recipe; their conditional GitHub CI path is preserved.
+
+## Measured command budget
+
+At `d7b668a27dbeaeb3e32434b7800075ab6a849f2c`, all twenty commands passed on a
+fresh isolated worker in about 48 minutes, with two BEAM schedulers. The
+library/umbrella command took 8m49s and cold Credo/Dialyzer took 22m50s. The
+worker was deleted afterward. An earlier ten-minute attempt timed out during
+library/umbrella tests; that failure and its deletion remain recorded.
+
+The policy therefore gives each command up to thirty minutes, within the
+existing 120-minute run deadline. Pre-push and post-push independent verification
+can together consume roughly 96 minutes before review and GitHub CI; extra fix
+rounds are permitted only while the remaining budget allows. Do not skip gates
+or raise a deadline merely to report success.
+
+Deploy a Review Loop version supporting `verification.command_timeout_minutes`
+before merging this policy. The measured standalone recipe is not evidence of
+a production candidate check or PR approval at this configuration.

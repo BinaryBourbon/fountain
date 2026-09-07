@@ -84,6 +84,8 @@ verification:
         - .github/workflows/sdk-publish.yml
         - .github/workflows/sdk-release-gate.yml
     - path: .github/workflows/secrets-scan.yml
+  # Cold Credo/Dialyzer took ~23 minutes on the measured fresh worker.
+  command_timeout_minutes: 30
   commands:
     # Clean-checkout lockfile guard; && preserves each stage's failure.
     - rl-env sh -c 'mix deps.get && mix deps.unlock --unused && git diff --exit-code -- mix.lock'
