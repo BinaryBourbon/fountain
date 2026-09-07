@@ -7,6 +7,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
   use Fountain.ConversationServerCase
 
   alias Fountain.Environments
+  alias Fountain.Vaults
 
   @dek <<0::256>>
   @session %{vault: "c-test", token: "av_sess_conv", expires_at: nil}
@@ -454,6 +455,320 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
 
       assert_receive {:released, conv_id}, 2_000
       assert conv_id == conv.id
+    end
+  end
+
+  # #1736. The broker's copy of a vault or environment secret was split once,
+  # at init; a value edited during the conversation never reached it. And the
+  # session token sits in the env of every process the sandbox already runs,
+  # the idle ACP peer that carries the next turn included, so a new session
+  # would not have reached them either: the live session's rules are
+  # rewritten in place. Turn two goes through that idle peer here, which is
+  # the path a client app's second prompt takes.
+  describe "a secret edited between two turns" do
+    @caps %{"loadSession" => true, "sessionCapabilities" => %{"resume" => %{}}}
+
+    setup %{user: user, agent: agent, env: env} do
+      configure_broker([user.id])
+
+      # The tenant's real key, not `stub_happy_sprite/1`'s zeros: a
+      # connection's token is encrypted by the factory under the real one,
+      # and a token that does not decrypt is a connection that is not there.
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+      {:ok, _} =
+        Environments.upsert_secret(env, %{"key" => "GITHUB_TOKEN", "value" => "ghp_real"}, dek)
+
+      vault = insert_vault(user_id: user.id)
+
+      {:ok, _} =
+        Vaults.upsert_secret(vault, %{"key" => "GITHUB_TOKEN", "value" => "ghp_from_vault"}, dek)
+
+      conv = insert_conversation(user_id: user.id, agent: agent, vault_id: vault.id)
+      # A connection (#1178) beside the vault, so its token is brokered too.
+      conn = insert_connection(user)
+      test = self()
+
+      # A session with an end in sight: `@session`'s nil end reads as
+      # expiring, and a session that is expiring is re-minted every turn,
+      # which would hide what these tests are about.
+      session = %{@session | expires_at: DateTime.add(DateTime.utc_now(), 3_600, :second)}
+
+      stub_happy_sprite()
+      Mimic.stub(Fountain.Crypto, :load_tenant_key, fn _user_id -> {:ok, dek} end)
+      stub(Fountain.Broker, :preflight, fn -> :ok end)
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+
+      stub(Fountain.Broker, :prepare, fn conv_id, brokered, _bindings, _opts ->
+        send(test, {:prepared, conv_id, brokered})
+        {:ok, session}
+      end)
+
+      stub(Fountain.Broker, :refresh, fn conv_id, brokered, _bindings, _opts ->
+        send(test, {:refreshed, conv_id, brokered})
+        {:ok, 1}
+      end)
+
+      Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn _prompt, _creds ->
+        {:error, :stubbed_in_test}
+      end)
+
+      ref = make_ref()
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
+        send(test, {:spawned, cmd, args, opts})
+        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, data ->
+        send(test, {:wrote, IO.iodata_to_binary(data)})
+        :ok
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      # Turn one: the vault's value went to the broker, the placeholder and
+      # the session token into the process env.
+      assert_receive {:prepared, _, %{"GITHUB_TOKEN" => "ghp_from_vault"}}, 2_000
+      assert_receive {:spawned, _cmd, _args, opts}, 2_000
+      assert {"GITHUB_TOKEN", "__github_token__"} in Keyword.fetch!(opts, :env)
+
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      peer = :sys.get_state(pid).acp_peer
+      assert is_pid(peer)
+
+      {:ok,
+       conv: conv,
+       vault: vault,
+       conn: conn,
+       dek: dek,
+       pid: pid,
+       ref: ref,
+       peer: peer,
+       session: session}
+    end
+
+    test "a vault override of a connection's key, added then deleted, hands the token back", %{
+      vault: vault,
+      conn: conn,
+      dek: dek,
+      pid: pid,
+      ref: ref
+    } do
+      key = conn.env_key
+
+      {:ok, _} = Vaults.upsert_secret(vault, %{"key" => key, "value" => "ya29.override"}, dek)
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+      assert_receive {:refreshed, _, %{^key => "ya29.override"}}, 2_000
+      %{"method" => "session/prompt", "id" => prompt_id} = next_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      secret = vault |> Vaults._unsafe_list_secrets() |> Enum.find(&(&1.key == key))
+      {:ok, _} = Vaults.delete_secret(vault, secret)
+      assert :ok = GenServer.call(pid, {:send_prompt, "once more", []})
+
+      # The connection is still active: its token, not a hole (review row 1).
+      token = conn.access_token
+      assert_receive {:refreshed, _, %{^key => ^token}}, 2_000
+      assert %{"method" => "session/prompt"} = next_prompt(pid, ref)
+    end
+
+    test "a vault value edited between two turns reaches the live session, token kept", %{
+      conv: conv,
+      vault: vault,
+      dek: dek,
+      pid: pid,
+      ref: ref,
+      peer: peer
+    } do
+      {:ok, _} =
+        Vaults.upsert_secret(vault, %{"key" => "GITHUB_TOKEN", "value" => "ghp_rotated"}, dek)
+
+      # A new session would reach nothing: the peer holds its token.
+      reject(Fountain.Broker, :prepare, 4)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+
+      assert_receive {:refreshed, conv_id, %{"GITHUB_TOKEN" => "ghp_rotated"}}, 2_000
+      assert conv_id == conv.id
+
+      # The same peer carries the turn, on the same session.
+      assert %{"method" => "session/prompt"} = next_prompt(pid, ref)
+      refute_receive {:spawned, _, _, _}, 50
+      assert :sys.get_state(pid).acp_peer == peer
+      assert :sys.get_state(pid).broker.token == @session.token
+    end
+
+    test "a deleted vault key hands the name back to the environment", %{
+      vault: vault,
+      pid: pid,
+      ref: ref
+    } do
+      # Ownership: the vault is this test's own row.
+      secret = vault |> Vaults._unsafe_list_secrets() |> Enum.find(&(&1.key == "GITHUB_TOKEN"))
+      {:ok, _} = Vaults.delete_secret(vault, secret)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+
+      # The environment's value, which the vault had been masking.
+      assert_receive {:refreshed, _, %{"GITHUB_TOKEN" => "ghp_real"}}, 2_000
+      assert %{"method" => "session/prompt"} = next_prompt(pid, ref)
+    end
+
+    test "an unchanged secret writes nothing", %{pid: pid, ref: ref} do
+      reject(Fountain.Broker, :prepare, 4)
+      reject(Fountain.Broker, :refresh, 4)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+      assert %{"method" => "session/prompt"} = next_prompt(pid, ref)
+    end
+
+    test "a rewrite that finds no live session mints a fresh one, and the idle peer goes with it",
+         %{vault: vault, dek: dek, pid: pid, peer: peer, session: session} do
+      {:ok, _} =
+        Vaults.upsert_secret(vault, %{"key" => "GITHUB_TOKEN", "value" => "ghp_rotated"}, dek)
+
+      test = self()
+      stub(Fountain.Broker, :refresh, fn _c, _b, _bindings, _opts -> {:ok, 0} end)
+
+      stub(Fountain.Broker, :prepare, fn _c, brokered, _bindings, _opts ->
+        send(test, {:prepared, brokered})
+        {:ok, %{session | token: "av_sess_fresh"}}
+      end)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+
+      # The peer held the old token in its env; nothing could hand it the
+      # new one, so the turn is a fresh spawn carrying the new session.
+      assert_receive {:prepared, %{"GITHUB_TOKEN" => "ghp_rotated"}}, 2_000
+      assert_receive {:spawned, _cmd, _args, opts}, 2_000
+
+      assert {"HTTPS_PROXY", "http://av_sess_fresh:c-test@broker.test:14322"} in Keyword.fetch!(
+               opts,
+               :env
+             )
+
+      refute Process.alive?(peer)
+      assert :sys.get_state(pid).broker.token == "av_sess_fresh"
+    end
+
+    test "an expiring session is replaced before the turn, and the idle peer with it", %{
+      pid: pid,
+      peer: peer,
+      session: session
+    } do
+      test = self()
+      reject(Fountain.Broker, :refresh, 4)
+      stub(Fountain.Broker, :expiring?, fn _session -> true end)
+
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, _opts ->
+        send(test, :reminted)
+        {:ok, %{session | token: "av_sess_fresh"}}
+      end)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+
+      assert_receive :reminted, 2_000
+      assert_receive {:spawned, _cmd, _args, opts}, 2_000
+
+      assert {"HTTPS_PROXY", "http://av_sess_fresh:c-test@broker.test:14322"} in Keyword.fetch!(
+               opts,
+               :env
+             )
+
+      refute Process.alive?(peer)
+    end
+
+    test "a vault edited while the machine was parked reaches the broker on the wake", %{
+      user: user,
+      agent: agent
+    } do
+      # The reattach path: a new server reads the vault at init, so the
+      # edit is in the session it mints before anything is written.
+      vault = insert_vault(user_id: user.id)
+
+      {:ok, _} =
+        Vaults.upsert_secret(vault, %{"key" => "GITHUB_TOKEN", "value" => "ghp_parked"}, @dek)
+
+      sandbox = insert_sandbox(user_id: user.id, status: "ready", sprite_name: "parked")
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox: sandbox,
+          status: "idle",
+          vault_id: vault.id
+        )
+
+      {:ok, _} =
+        Vaults.upsert_secret(vault, %{"key" => "GITHUB_TOKEN", "value" => "ghp_woken"}, @dek)
+
+      stub_happy_sprite("parked")
+      {pid, _ref, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      assert_receive {:prepared, conv_id, %{"GITHUB_TOKEN" => "ghp_woken"}}, 2_000
+      assert conv_id == conv.id
+    end
+  end
+
+  # The ACP wire, as `conversation_server_acp_test.exs` drives it: every byte
+  # the server writes to stdin arrives as `{:wrote, line}`, and the command's
+  # ref is ours so a test can feed stdout back.
+  defp next_write do
+    assert_receive {:wrote, line}, 1_000
+    Jason.decode!(line)
+  end
+
+  defp reply(pid, ref, id, result) do
+    line = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "result" => result}) <> "\n"
+    send(pid, {:stdout, %{ref: ref}, line})
+    settle(pid)
+  end
+
+  defp settle(pid) do
+    peer = :sys.get_state(pid).acp_peer
+
+    if is_pid(peer) do
+      try do
+        _ = :sys.get_state(peer)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
+    _ = :sys.get_state(pid)
+    :ok
+  end
+
+  defp drive_to_prompt(pid, ref) do
+    %{"id" => init_id, "method" => "initialize"} = next_write()
+    reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+    %{"id" => new_id, "method" => "session/new"} = next_write()
+    reply(pid, ref, new_id, %{"sessionId" => "sess_1", "models" => %{}})
+    %{"id" => set_id, "method" => "session/set_model"} = next_write()
+    reply(pid, ref, set_id, %{})
+
+    %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+    settle(pid)
+    prompt_id
+  end
+
+  # The next prompt on an idle peer, answering a model check on the way.
+  defp next_prompt(pid, ref) do
+    case next_write() do
+      %{"method" => "session/set_model", "id" => id} ->
+        reply(pid, ref, id, %{})
+        next_prompt(pid, ref)
+
+      other ->
+        other
     end
   end
 end

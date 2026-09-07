@@ -513,9 +513,11 @@ defmodule Fountain.Broker do
 
   Idempotent, and run on every provision and reattach, so an edited secret
   or binding reaches the broker on the next wake, the same way the `.env`
-  file is refreshed. `opts`: `network:` (`network_for/1`), and `user_id:`,
-  which the native backend needs to reach the tenant's key and looks up
-  from the conversation when the caller has not got it to hand.
+  file is refreshed. Between wakes the conversation process holds the
+  session, and `refresh/4` is how an edit reaches it before the next turn
+  (#1736). `opts`: `network:` (`network_for/1`), and `user_id:`, which the
+  native backend needs to reach the tenant's key and looks up from the
+  conversation when the caller has not got it to hand.
   """
   @spec prepare(String.t(), %{String.t() => String.t()}, bindings(), keyword()) ::
           {:ok, session()} | {:error, term()}
@@ -524,6 +526,25 @@ defmodule Fountain.Broker do
     case backend() do
       nil -> {:error, {:broker, :session, :not_configured}}
       backend -> impl(backend).prepare(conversation_id, brokered, bindings, opts)
+    end
+  end
+
+  @doc """
+  Replace the rules of the conversation's live sessions with what `brokered`
+  and `bindings` say now, keeping every token (#1736). `prepare/4` mints a
+  new token, and a new token reaches only the next process spawned with it:
+  a sandbox process, and the idle ACP peer that carries the next turn, hold
+  the token they started with. A secret edited or rotated during a live
+  conversation goes through here. Same `opts` as `prepare/4`; returns how
+  many sessions changed.
+  """
+  @spec refresh(String.t(), %{String.t() => String.t()}, bindings(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def refresh(conversation_id, brokered, bindings \\ %{}, opts \\ [])
+      when is_binary(conversation_id) and is_map(brokered) and is_map(bindings) do
+    case backend() do
+      nil -> {:error, {:broker, :session, :not_configured}}
+      backend -> impl(backend).refresh(conversation_id, brokered, bindings, opts)
     end
   end
 

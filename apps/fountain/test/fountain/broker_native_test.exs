@@ -276,6 +276,74 @@ defmodule Fountain.BrokerNativeTest do
     end
   end
 
+  describe "refresh/4" do
+    # #1736: a running process holds its token, so an edited secret has to
+    # reach the rules behind that token, not a new token.
+    test "rewrites the rules of every live session in place, tokens kept", %{
+      user: user,
+      conv: conv
+    } do
+      {:ok, first} =
+        Broker.prepare(conv.id, %{"GITHUB_TOKEN" => "ghp_old"}, %{}, user_id: user.id)
+
+      {:ok, second} =
+        Broker.prepare(conv.id, %{"GITHUB_TOKEN" => "ghp_old"}, %{}, user_id: user.id)
+
+      other = insert_conversation(user_id: user.id, agent: insert_agent(user_id: user.id))
+
+      {:ok, theirs} =
+        Broker.prepare(other.id, %{"GITHUB_TOKEN" => "ghp_other"}, %{}, user_id: user.id)
+
+      assert {:ok, 2} =
+               Broker.refresh(
+                 conv.id,
+                 %{"GITHUB_TOKEN" => "ghp_new", "K" => "v"},
+                 %{"K" => [binding("K", "api.example.com", "bearer")]},
+                 user_id: user.id
+               )
+
+      for session <- [first, second] do
+        assert {:ok, %{rules: rules, meta: meta}} = Sessions.lookup(session.token)
+
+        assert %Rule{name: "github-api", credential: "ghp_new"} =
+                 Enum.find(rules, &(&1.name == "github-api"))
+
+        assert %Rule{pattern: "api.example.com", credential: "v"} =
+                 Enum.find(rules, &(&1.scheme == :bearer and &1.pattern == "api.example.com"))
+
+        assert meta["credential_keys"]["k-api-example-com"] == ["K"]
+      end
+
+      # Another conversation's session is not this conversation's to rewrite.
+      assert {:ok, %{rules: [%Rule{credential: "ghp_other"} | _]}} = Sessions.lookup(theirs.token)
+    end
+
+    test "an expired session is left alone, and no live session is zero", %{
+      user: user,
+      conv: conv
+    } do
+      {:ok, session} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
+
+      Fountain.Repo.update_all(Fountain.Broker.Native.Session,
+        set: [expires_at: DateTime.add(DateTime.utc_now(), -1, :second)]
+      )
+
+      assert {:ok, 0} = Broker.refresh(conv.id, %{"GH_TOKEN" => "h"}, %{}, user_id: user.id)
+      assert :error = Sessions.lookup(session.token)
+    end
+
+    test "resolves the tenant from the conversation when the caller has no user id", %{
+      conv: conv
+    } do
+      {:ok, session} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"})
+      assert {:ok, 1} = Broker.refresh(conv.id, %{"GH_TOKEN" => "h"})
+      assert {:ok, %{rules: [%Rule{credential: "h"} | _]}} = Sessions.lookup(session.token)
+
+      assert {:error, {:broker, :session, :unknown_conversation}} =
+               Broker.refresh(Ecto.UUID.generate(), %{"GH_TOKEN" => "h"})
+    end
+  end
+
   describe "the store" do
     test "an unknown token is :error", _ctx do
       assert :error = Sessions.lookup("fb_nope")

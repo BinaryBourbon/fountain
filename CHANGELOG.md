@@ -35,6 +35,18 @@ upgrade, is in
 
 ### Fixed
 
+- A secret edited or rotated in an environment or vault during a brokered
+  conversation reaches the broker before the next turn. The broker's copy was
+  split once, at provisioning, and only the tenant's connection tokens were
+  read again; a change also minted a new session, whose token reaches only the
+  next spawned process, while the idle agent that carries the next turn kept
+  the old one. Now the environment and vault are read before every turn and
+  the live session's rules are rewritten in place, token kept; when a token
+  does have to be replaced, the idle agent is closed so the next turn spawns
+  with it. A client that writes a fresh one-hour GitHub App token into a
+  vault before each prompt no longer sees `401 Bad credentials` an hour in
+  (#1736).
+
 - ACP token/request limits and unknown stop reasons now fail the turn instead
   of reporting completion. Reported usage and the original stop reason remain
   available; only `end_turn` establishes normal completion (#1732).
