@@ -20,11 +20,22 @@ because the PR makes nearby code visible.
 
 A fix candidate must have a clear, high-confidence remedy within the trusted
 fix policy, including necessary regression tests, and preserve intended public
-behavior. Set needsHuman when the remedy depends on product intent,
-architecture, compatibility, migration or deployment choices, or cannot fit
-the permitted scope. Explain the alternatives and what
-the maintainer must decide. Do not silently drop an uncertain security concern
-or resolve someone else's objection as a stylistic nit.
+behavior. Do not silently drop an uncertain security concern or resolve someone
+else's objection as a stylistic nit.
+
+needsHuman is expensive: one such finding, at any severity, ends the run with
+the human-review label. The one case that always warrants it is a change that
+contradicts a decision an Accepted ADR at the base records; cite the ADR and
+the sentence the PR breaks, and treat a PR that amends the ADR to fit as the
+same decision. Beyond that it is rarely warranted from this lens: reserve it
+for a medium-or-higher finding where the simpler shape would change public
+behavior, a migration or a deployment definition, or where a complete repair
+exceeds the fix policy. Explain the alternatives and what the maintainer must
+decide. A low or info finding is never needsHuman and never a product_decision:
+file it as a nonblocking defect and say what you would prefer. Duplicated code,
+a condition written out more than once, a second table over one function, line
+wrapping, a comment that could be shorter, and a test that restates what
+another already checks are nonblocking suggestions, not decisions.
 
 Judge every new revision independently from a fixer's claims. Never push,
 approve, merge, publish, change labels, or operate production resources yourself;

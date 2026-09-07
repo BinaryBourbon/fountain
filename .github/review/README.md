@@ -17,13 +17,32 @@ It resolves service-owned threads when policy permits; human objections remain
 blockers until a maintainer addresses them.
 
 Clear medium-or-higher defects can receive an automatic fix within the
-configured file and path bounds. Reviewers must flag uncertain remedies,
-changes exceeding those bounds, public-contract choices and protected changes
-for a human. The host enforces the configured file bound, permitted paths,
-three-round limit, exact-revision checks and final approval. Confidence
-is a reviewer judgment, not a separate numeric score enforced by the host.
-Ambiguous decisions end with `needs-human-review` and alternatives; this setup
-does not impersonate Paul or launch an interactive pairing agent.
+configured file and path bounds. The host enforces the configured file bound,
+permitted paths, three-round limit, exact-revision checks and final approval.
+Confidence is a reviewer judgment, not a separate numeric score enforced by
+the host. This setup does not impersonate Paul or launch an interactive
+pairing agent.
+
+A human decision is the expensive outcome, and two things produce one. A
+reviewer can set `needsHuman` on a finding, which ends the run with `needs-
+human-review` at any severity: the host downgrades a low or info *defect* to
+nonblocking, but a low or info finding marked `needsHuman` or filed as a
+`product_decision` still goes to a maintainer. The instructions therefore name
+one case that always warrants `needsHuman`: a change that contradicts a
+decision an Accepted ADR records, cited by ADR and sentence. Beyond that they
+reserve it for a medium-or-higher finding whose remedy a maintainer must choose
+and which is hard to reverse once merged (a public contract, a migration or
+retention change, licensing, the authorization model, a repair outside the fix
+policy), and say that a low or info finding is never one. Intent the approved
+base already records is settled when the PR follows it. The other producer is
+`human_review_paths`, which is now the short list of places where a wrong
+automatic approval is hard to undo or would weaken a gate: the policy and these
+instructions, workflows, migrations, licensing, the release and deployment
+definitions, the SDK version files whose merge publishes, the gate thresholds
+and scripts, and the ADRs themselves, so a PR that edits a decision always
+reaches a maintainer. The first eleven runs against this repository all ended
+with the label, most of them for a dependency bump, a doc, or a low finding
+about wrapping or duplicated code; that is what both changes answer.
 
 An approval covers the entire evaluated PR and never merges it. A new revision,
 failed check or human objection can invalidate an earlier approval. Repository

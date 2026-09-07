@@ -124,47 +124,41 @@ approval:
     - unresolved_human_objection
     - reviewer_requests_product_decision
     - incomplete_verification
+  # A path here sends the PR to a maintainer even when all four reviewers
+  # are satisfied and every check passed, so it is reserved for the places
+  # where a wrong automatic approval is hard to undo or would weaken the
+  # gates themselves: this policy and the instructions it names, workflows
+  # (they run with repository secrets), migrations, licensing, the release
+  # and deployment definitions, the SDK version files whose merge publishes
+  # a package, the files that set a gate's threshold or scope, and the ADRs,
+  # because a PR that changes a recorded decision is the one thing the
+  # maintainer always wants to see (the reviewers escalate a PR that
+  # contradicts one without editing it). Source, tests, docs, config,
+  # dependency bumps and the other scripts are what the reviewers and the
+  # verification recipe exist to judge; listing them here sent every one of
+  # the first eleven runs to a human.
   human_review_paths:
-    - .github/**
-    - scripts/**
-    - config/**
+    - .github/review-loop.yml
+    - .github/review/**
+    - .github/workflows/**
     - "**/migrations/**"
-    - "**/mix.exs"
-    - "**/mix.lock"
-    - "**/package.json"
-    - "**/package-lock.json"
-    - "**/go.mod"
-    - "**/go.sum"
     - "**/LICENSE*"
-    - sdk/contract/manifests/**
-    - sdk/contract/omissions.json
-    - sdk/conformance/matrix.json
+    - NOTICE
+    - Dockerfile
+    - rel/**
+    - deploy/**
+    - sdk/typescript/package.json
+    - sdk/python/pyproject.toml
+    - sdk/elixir/mix.exs
     - coverage.exs
-    - .tool-versions
-    - .formatter.exs
     - .credo.exs
     - "**/.sobelow-conf"
-    - .gitleaks.toml
-    - Dockerfile
-    - compose*.yml
-    - compose*.yaml
-    - k8s/**
-    - images/**
+    - scripts/coverage-gate.exs
+    - scripts/hex-audit-gate.exs
+    - scripts/sobelow.sh
+    - scripts/test-partition.sh
+    - scripts/test-libraries.sh
     - decisions/**
-    - CLAUDE.md
-    - CONTRIBUTING.md
-    - AGENTS.md
-    - deploy/**
-    - deployed/**
-    - rel/**
-    - fly.toml
-    - render.yaml
-    - docker-compose.yml
-    - docker-compose.yaml
-    - Package.swift
-    - Package.resolved
-    - "**/pyproject.toml"
-    - "**/uv.lock"
   human_review_label: needs-human-review
 limits:
   max_fix_rounds: 3
