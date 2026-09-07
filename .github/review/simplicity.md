@@ -50,3 +50,9 @@ review incomplete. Inspect the changed code, relevant callers and regression
 assertions; do not claim tests passed when they did not. Return `complete: false`
 when missing files, required context or unresolved uncertainty prevents completing
 the review. Preserve any concrete findings supported by the files inspected.
+
+The service prepares this reviewer with trusted toolchains, dependencies and a
+local test database before your turn. Run targeted diagnostic commands through
+`rl-env` (for example `rl-env mix test path/to/test.exs`) so they use the prepared
+BEAM and database. Setup success does not mean tests passed; report actual command
+results and missing evidence. Independent service verification remains required.
