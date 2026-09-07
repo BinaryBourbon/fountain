@@ -85,7 +85,7 @@ verification:
         - .github/workflows/sdk-release-gate.yml
     - path: .github/workflows/secrets-scan.yml
   commands:
-    # Match precommit's lockfile guard; && preserves each stage's failure.
+    # Clean-checkout lockfile guard; && preserves each stage's failure.
     - rl-env sh -c 'mix deps.get && mix deps.unlock --unused && git diff --exit-code -- mix.lock'
     - rl-env mix format --check-formatted
     # Assemble prod as precommit does. Plain deps.get preserves test/dev deps.
@@ -98,7 +98,8 @@ verification:
     - rl-env env MIX_TEST_PARTITION=4 bash scripts/test-partition.sh 6
     - rl-env env MIX_TEST_PARTITION=5 bash scripts/test-partition.sh 6
     - rl-env env MIX_TEST_PARTITION=6 bash scripts/test-partition.sh 6
-    - rl-env bash scripts/test-libraries.sh
+    # Root tests share one VM and catch cross-app config leaks missed by partitions.
+    - rl-env sh -c 'bash scripts/test-libraries.sh && mix test'
     - rl-env sh -c 'mix credo --strict && MIX_ENV=dev mix dialyzer'
     - rl-env elixir scripts/hex-audit-gate.exs
     - rl-env bash scripts/sobelow.sh
