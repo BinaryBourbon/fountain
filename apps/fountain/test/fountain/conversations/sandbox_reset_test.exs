@@ -106,6 +106,43 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "ready"
   end
 
+  test "refused after a local timeout while remote termination remains uncertain", ctx do
+    alias Fountain.Conversations.ExecutionGuard
+    turn = insert_turn(ctx.a, status: "running")
+    now = DateTime.utc_now()
+    deadline = DateTime.add(now, 60)
+    connection = Ecto.UUID.generate()
+    {:ok, execution} = ExecutionGuard._unsafe_register(turn.id, connection, deadline)
+    {:ok, _} = ExecutionGuard._unsafe_claim_spawn(execution.id)
+    {:ok, _} = ExecutionGuard._unsafe_bind_identity(execution.id, connection, "19")
+    {:ok, _} = ExecutionGuard._unsafe_expire(execution.id, now: deadline)
+    {:ok, %{execution: attempt}} = ExecutionGuard._unsafe_claim_termination(execution.id)
+    {:ok, _} = ExecutionGuard._unsafe_record_termination(execution.id, attempt.attempt_id, :lost)
+    test = self()
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+    assert {:error, :sandbox_mid_turn} = Conversations.reset_sandbox(ctx.home)
+    refute_received :destroyed
+    assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "ready"
+    assert Conversations._unsafe_get_conversation!(ctx.a.id).runtime_session_id == "sess-a"
+
+    {:ok, _} = ExecutionGuard._unsafe_record_termination(execution.id, attempt.attempt_id, :ok)
+    assert {:ok, %{status: "terminated"}} = Conversations.reset_sandbox(ctx.home)
+    assert_received :destroyed
+  end
+
+  test "reset retires the binding before the provider call", ctx do
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h ->
+      assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "terminated"
+      :ok
+    end)
+
+    assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
+
+    assert {:error, {:sandbox_not_resettable, "terminated"}} =
+             Conversations.reset_sandbox(ctx.home)
+  end
+
   test "refused for an ephemeral sandbox and for one already gone", ctx do
     ephemeral = insert_sandbox(user_id: ctx.user.id, status: "ready", mode: "ephemeral")
 

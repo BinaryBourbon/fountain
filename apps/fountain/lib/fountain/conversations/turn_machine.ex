@@ -511,16 +511,23 @@ defmodule Fountain.Conversations.TurnMachine do
         ended_at: now()
       })
 
+    stage_meta = Map.merge(stage_meta, %{turn_id: row.id, turn_number: row.turn_number})
+
+    stage_meta =
+      if row.limit_reason,
+        do: Map.put(stage_meta, :limit_reason, row.limit_reason),
+        else: stage_meta
+
     publish_stage(
       turn.conversation_id,
       "turn",
-      if(status == "completed", do: "done", else: "failed"),
-      Map.merge(%{turn_id: row.id, turn_number: row.turn_number}, stage_meta)
+      if(row.status == "completed", do: "done", else: "failed"),
+      stage_meta
     )
 
     end_span(
       turn.span,
-      if(status == "completed", do: :ok, else: :error),
+      if(row.status == "completed", do: :ok, else: :error),
       span_attrs
     )
 

@@ -1235,22 +1235,28 @@ defmodule Fountain.Conversations do
   same best-effort contract — it cannot fail this update.
   """
   def _unsafe_update_turn(%Turn{} = turn, attrs) do
-    changeset =
-      turn
-      |> Turn.changeset(attrs)
-      |> maybe_put_reply_text(turn)
+    # ownership: this is the already-owned actor's turn or a system recovery write.
+    result =
+      Fountain.Conversations.ExecutionGuard._unsafe_write_turn(turn, attrs, fn current, allowed ->
+        changeset = current |> Turn.changeset(allowed) |> maybe_put_reply_text(current)
 
-    result = Repo.update(changeset)
+        case Repo.update(changeset) do
+          {:ok, updated} -> {:ok, {updated, changeset}}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
 
-    # The write that *materialises* the reply, not every later update to a
-    # turn that already has one — a turn is written again after it ends, and
-    # activation happens once.
-    with {:ok, updated} <- result,
-         text when is_binary(text) <- Ecto.Changeset.get_change(changeset, :reply_text) do
-      Fountain.Activation.turn_replied(updated)
+    case result do
+      {:ok, {updated, changeset}} ->
+        if is_binary(Ecto.Changeset.get_change(changeset, :reply_text)) do
+          Fountain.Activation.turn_replied(updated)
+        end
+
+        {:ok, updated}
+
+      {:error, reason} ->
+        {:error, reason}
     end
-
-    result
   end
 
   @doc """
@@ -1384,7 +1390,7 @@ defmodule Fountain.Conversations do
   defp maybe_put_reply_text(%Ecto.Changeset{valid?: false} = changeset, _turn), do: changeset
 
   defp maybe_put_reply_text(changeset, %Turn{reply_text: nil} = turn) do
-    case Ecto.Changeset.get_change(changeset, :status) do
+    case Ecto.Changeset.get_field(changeset, :status) do
       status when status in @terminal_turn_statuses ->
         Ecto.Changeset.put_change(changeset, :reply_text, _unsafe_turn_reply_text(turn))
 
@@ -2320,9 +2326,9 @@ defmodule Fountain.Conversations do
   `persistent` sandbox resets: an ephemeral one is a conversation's own and
   ends with it (`{:sandbox_not_resettable, "ephemeral"}`), a terminated or
   failed one is already gone (`{:sandbox_not_resettable, status}`). Refused
-  with `:sandbox_mid_turn` while any conversation on it runs a turn — the
-  check and the row flip share the per-sandbox advisory lock that turn
-  creation takes, so a turn cannot slip in between them.
+  with `:sandbox_mid_turn` while a turn runs or its bounded remote execution
+  remains unresolved. Bounded registration and reset share a machine lock;
+  reset retires the row before releasing that lock and contacting the provider.
 
   `opts[:reason]` says *why*, and reaches every transcript on the machine and
   the audit row: `"home_reset"` (the owner asked — the default),
@@ -2354,9 +2360,21 @@ defmodule Fountain.Conversations do
           :erlang.phash2(sandbox_id)
         ])
 
-        if _unsafe_running_turns_elsewhere(sandbox_id, nil) > 0 do
+        # ownership: reset_sandbox received the caller's tenant-scoped sandbox;
+        # system retirement calls it only for the already-owned agent's homes.
+        if _unsafe_running_turns_elsewhere(sandbox_id, nil) > 0 or
+             Fountain.Conversations.ExecutionGuard._unsafe_sandbox_open?(sandbox_id) do
           Repo.rollback(:sandbox_mid_turn)
         else
+          # Retire before releasing the machine lock. A bounded registration
+          # after this point must refuse, even while provider destruction waits.
+          current = Repo.get!(Sandbox, sandbox_id)
+
+          if current.status in ["terminated", "failed"],
+            do: Repo.rollback({:sandbox_not_resettable, current.status})
+
+          {:ok, _} = update_sandbox(current, %{status: "terminated", terminated_at: now})
+
           ids =
             Repo.all(
               from c in Conversation,
