@@ -3,6 +3,29 @@ import { ensure } from '../lib/execution.mjs';
 import { browserCredentials } from './browser-credentials.mjs';
 import { waitForLiveView } from '../lib/browser-liveview.mjs';
 
+// Picks the pinned provider in the new-agent form. Returns whether an explicit
+// selection was made; a hidden selector is only acceptable when the catalog
+// enables exactly the pinned provider.
+export async function selectBrowserProvider(provider, catalog, pinned) {
+  const enabledProviders = catalog.data.sandbox_providers.enabled;
+  ensure(enabledProviders.includes(pinned), 'Pinned browser provider is not enabled');
+  // Runtime/model validation can temporarily replace the form. A zero count
+  // during that patch is not evidence of a single-provider deployment.
+  const selected = enabledProviders.length > 1 || (await provider.count()) > 0;
+  if (selected) await provider.selectOption(pinned);
+  else ensure(JSON.stringify(enabledProviders) === JSON.stringify([pinned]), 'Hidden provider selector does not imply the pinned sole provider');
+  return selected;
+}
+
+// An explicit selection must persist as the stored value. Only a hidden
+// sole-provider selector may rely on the instance default.
+export function verifyBrowserProvider(agent, catalog, pinned, selected) {
+  const savedProvider = selected
+    ? agent.sandbox_provider
+    : (agent.sandbox_provider ?? catalog.data.sandbox_providers.default);
+  ensure(savedProvider === pinned, 'UI agent sandbox provider did not persist');
+}
+
 // Called with a fresh browser context by the browser driver. All writes go
 // through visible console forms. Public API reads independently establish
 // identity, persistence and revocation; they never create the UI fixtures.
@@ -38,17 +61,12 @@ export async function browserConsole(ctx, page, evidence, { handoff } = {}) {
     await page.getByLabel('Model', { exact: true }).fill(settings.agent.model);
     const provider = page.locator('select[name="agent[sandbox_provider]"]');
     const { body: catalog } = await client.request('GET', '/api/catalog', { expected: 200 });
-    const enabledProviders = catalog.data.sandbox_providers.enabled;
-    ensure(enabledProviders.includes(settings.agent.sandbox_provider), 'Pinned browser provider is not enabled');
-    // Runtime/model validation can temporarily replace the form. A zero count
-    // during that patch is not evidence of a single-provider deployment.
-    if (enabledProviders.length > 1 || await provider.count()) await provider.selectOption(settings.agent.sandbox_provider);
-    else ensure(JSON.stringify(enabledProviders) === JSON.stringify([settings.agent.sandbox_provider]), 'Hidden provider selector does not imply the pinned sole provider');
+    const selectedProvider = await selectBrowserProvider(provider, catalog, settings.agent.sandbox_provider);
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.waitForURL(`${config.base_url}/agents`);
     agent = await adoptBrowserFixture(fixtures, intent, ctx.signal);
     ensure(agent.runtime === settings.agent.runtime && agent.model === settings.agent.model, 'UI agent runtime/model did not persist');
-    ensure((agent.sandbox_provider ?? catalog.data.sandbox_providers.default) === settings.agent.sandbox_provider, 'UI agent sandbox provider did not persist');
+    verifyBrowserProvider(agent, catalog, settings.agent.sandbox_provider, selectedProvider);
     report.browser.console.agent_id = agent.id;
   });
 
