@@ -172,6 +172,18 @@ upgrade, is in
   round trips and invalidates checkpoints when changed. The overall provisioning
   deadline and failed-setup handling remain in force.
 
+- `claude-fable-5-1` is suggested for anthropic again, so `GET /api/catalog`
+  lists it. It was removed on 2026-09-07 because the claude adapter refused
+  it; the refusal was not the adapter version but a cold cache. The Claude
+  Code binary learns an org's "additional models" (Fable among them) from a
+  fetch it makes after a session starts and caches for the next launch, so
+  the first session in a fresh sandbox never listed Fable on any adapter
+  version. Two `managoat_runtimes` releases fix that: 0.3.3 moves the adapter
+  pin to 0.75.1 (the bundled CLI must be 2.1.255 or later for Fable 5.1), and
+  0.3.4 warms the cache at provisioning. Verified with a real turn on the new
+  pin. `claude-fable-5` stays unsuggested: the adapter refuses it even with
+  the cache warm.
+
 - Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
 - Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
 
