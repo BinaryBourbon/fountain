@@ -32,7 +32,7 @@ A PR cannot authorize itself by editing these files.
 
 Reviewer runtimes and models are pinned in `.github/review-loop.yml`. The fixer
 uses the operator-selected default. Parallelism is bounded by host and Fountain capacity. The repository policy permits four
-reviewers at once, 30 tasks, 500,000 reported tokens and 120 minutes per run.
+reviewers at once, 30 tasks, 50,000,000 reported tokens and 120 minutes per run.
 Daily budgets are separate operator settings. Neither token nor task counts
 are dollar-cost reporting.
 
