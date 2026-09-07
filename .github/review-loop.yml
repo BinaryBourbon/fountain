@@ -171,4 +171,4 @@ limits:
   max_elapsed_minutes: 120
   max_parallel_reviewers: 4
   max_agent_tasks: 30
-  max_reported_tokens: 500000
+  max_reported_tokens: 50000000
