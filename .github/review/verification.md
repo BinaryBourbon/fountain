@@ -10,13 +10,16 @@ GitHub write token or provider credential belongs in this machine.
 
 Independent verification runs all six core and ee test partitions sequentially
 using the upstream runner's nonzero-test and coverage-export guards, then runs
-every sibling app's suite. It also checks formatting, compilation, Credo,
-security scanning, the wire contract, conformance fixtures, the TypeScript,
+every sibling app's suite. It covers the core `mix precommit` stages: compilation,
+unused-dependency/lockfile checks, formatting, Credo, Dialyzer in dev, security
+scanning, release assembly in prod, and tests. Related commands use `&&` so a
+failed stage stops execution. Plain `mix deps.get` preserves dev/test dependencies
+when preparing prod. It also checks the wire contract, conformance fixtures, the TypeScript,
 Python and Elixir SDKs, both Go modules and the Hermes plugin. Each command must
 exit successfully; a failed stage is not excused by a later successful one.
 
 The complete GitHub CI workflow additionally supplies the six-way partitioned
-coverage gate, release boot, Dialyzer, generated-type freshness, Swift on Linux
+coverage gate, release boot, generated-type freshness, Swift on Linux
 and macOS, docs prose, core distribution and Compose checks. The secret scan
 always applies. Other required workflows follow the actual SDK, ADR and sandbox
 image path filters in the base policy. Only success for the recorded PR, head
