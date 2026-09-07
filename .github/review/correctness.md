@@ -34,9 +34,12 @@ and their consequences. Existing ADRs at the base provide context, not permissio
 to expand the server's fix policy. Never push, merge, publish, create external
 resources or claim the service's verification ran from your own test output.
 
-For triage, a fix candidate needs a clear, high-confidence remedy in one
-permitted file. Set needsHuman when a safe remedy needs broader scope or a
-product decision. Low/info suggestions remain nonblocking; a speculative
+For triage, a fix candidate needs a clear, high-confidence remedy within the
+trusted fix policy, including necessary regression tests. Set needsHuman when
+a complete repair exceeds that scope or requires a product decision. Low/info suggestions remain nonblocking; a speculative
 concern must not become a confident defect without evidence. Explain uncertainty
 and alternatives. Give recurring findings stable rule and semantic anchor text
 so the service can consolidate duplicates and preserve discussion history.
+
+Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and
+material decision tradeoffs.
