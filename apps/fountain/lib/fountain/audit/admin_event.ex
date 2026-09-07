@@ -49,6 +49,8 @@ defmodule Fountain.Audit.AdminEvent do
     admin.user.viewed
     admin.conversation.viewed
     admin.credits.granted
+    admin.platform_inference_key.set
+    admin.platform_inference_key.cleared
   )
 
   def event_types, do: @event_types
