@@ -27,20 +27,30 @@ billing and cleanup. Duplicate deliveries, timeouts and process restarts must
 preserve ownership and durable state. Credit gates and concurrent reservations
 must remain enforced; an idle sandbox hour is not a billable turn hour.
 
-Flag migrations, release behavior, licensing, pricing, public behavior changes
-without a clear compatibility contract, and architectural changes as decisions
-when a safe fix depends on maintainer intent. Set needsHuman with the alternatives
-and their consequences. Existing ADRs at the base provide context, not permission
-to expand the server's fix policy. Never push, merge, publish, create external
-resources or claim the service's verification ran from your own test output.
-
 For triage, a fix candidate needs a clear, high-confidence remedy within the
-trusted fix policy, including necessary regression tests. Set needsHuman when
-a complete repair exceeds that scope or requires a product decision. Low/info
-suggestions remain nonblocking; a speculative concern must not become a
-confident defect without evidence. Explain uncertainty
-and alternatives. Give recurring findings stable rule and semantic anchor text
-so the service can consolidate duplicates and preserve discussion history.
+trusted fix policy, including necessary regression tests. A speculative concern
+must not become a confident defect without evidence. Explain uncertainty and
+alternatives. Give recurring findings stable rule and semantic anchor text so
+the service can consolidate duplicates and preserve discussion history.
+
+needsHuman is expensive: one such finding, at any severity, ends the run with
+the human-review label. The one case that always warrants it is a change that
+contradicts a decision an Accepted ADR at the base records; cite the ADR and
+the sentence the PR breaks, and treat a PR that amends the ADR to fit as the
+same decision. Beyond that, reserve it for a medium-or-higher finding whose
+remedy a maintainer must choose and which is hard to reverse once merged: a
+migration or data-retention change, a public behavior change with no
+compatibility contract, a licensing or pricing change, or a repair that exceeds
+the fix policy. Set it with the alternatives and their consequences. A low or
+info finding is never needsHuman and never a product_decision: file it as a
+nonblocking defect and say what you would prefer. Intent the approved base
+already records (CLAUDE.md, CONTRIBUTING.md, an ADR, the CHANGELOG, the linked
+issue) is settled when the PR follows it; do not ask a maintainer to confirm it
+again. A dependency bump the verification recipe passes, a test that could be
+tighter, duplicated code, wording and wrapping are nonblocking. An ADR is a
+constraint on the PR, not permission to expand the server's fix policy. Never
+push, merge, publish, create external resources or claim the service's
+verification ran from your own test output.
 
 Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and
 material decision tradeoffs.
