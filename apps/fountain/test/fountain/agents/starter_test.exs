@@ -13,6 +13,7 @@ defmodule Fountain.Agents.StarterTest do
   use Fountain.DataCase, async: true
 
   alias Fountain.{Accounts, Agents, Audit}
+  alias Fountain.Agents.ModelCatalog
   alias Fountain.Agents.Starter
 
   defp agents(user), do: Agents.list_agents(user.id, [])
@@ -132,6 +133,22 @@ defmodule Fountain.Agents.StarterTest do
 
       assert attrs["runtime"] == "claude"
       assert attrs["model"] =~ ~r"^anthropic/"
+    end
+
+    # The prefix check above is gate one — the provider. It is the half
+    # `ModelCatalog`'s two-gates note calls necessary and not sufficient, and
+    # the starter agent is the highest-stakes place to get gate two wrong:
+    # `@model` becomes the model of the one agent every verified account owns
+    # (ADR 0038 decision 4), so an id the pinned adapter refuses would fail the
+    # first request every new account makes, before any prompt is written.
+    test "the model is a current catalog entry, not merely an anthropic id" do
+      model = Starter.attrs(Ecto.UUID.generate())["model"]
+
+      refute model in Fountain.RefusedModels.ids(),
+             "the starter agent is pinned to #{model}, which the pinned ACP adapter refuses"
+
+      assert ModelCatalog.known?(model),
+             "the starter agent is pinned to #{model}, which is not in the catalog"
     end
   end
 end
