@@ -45,8 +45,7 @@ remedy. Use stable rule and semantic anchor text for recurring findings.
 A concrete code, test or documentation defect has `kind: defect` and
 `needsHuman: false`, including a repair outside the service's automatic fix
 permissions. A coding agent with repository access can make that repair. Do
-not lower a defect's severity because the service cannot repair it. Missing
-coverage, tools, provider responses or verification are incomplete execution.
+not lower a defect's severity because the service cannot repair it. Missing required coverage or context is incomplete review, never a human decision.
 
 Reserve `kind: product_decision` and `needsHuman: true` for a choice requiring
 human authority that the approved base has not settled. Supply `humanDecision`
@@ -60,3 +59,12 @@ The server independently enforces protected paths and human objections.
 
 Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and
 material decision tradeoffs.
+
+`complete` describes completion of this source review, not whether diagnostic
+commands ran in this worker. The server executes the required verification
+commands independently before approval. An unavailable optional local test or
+missing worker dependency does not by itself make an otherwise completed source
+review incomplete. Inspect the changed code, relevant callers and regression
+assertions; do not claim tests passed when they did not. Return `complete: false`
+when missing files, required context or unresolved uncertainty prevents completing
+the review. Preserve any concrete findings supported by the files inspected.
