@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import FountainKit
 
 @Test func environmentSetupTimeoutRoundTrips() throws {
@@ -12,5 +13,6 @@ import Testing
   let environment = try JSONDecoder().decode(FountainKit.Environment.self, from: payload)
   #expect(environment.setupTimeoutSeconds == 900)
   let older = Data(#"{"id":"env","name":"reviewer"}"#.utf8)
-  #expect(try JSONDecoder().decode(FountainKit.Environment.self, from: older).setupTimeoutSeconds == nil)
+  #expect(
+    try JSONDecoder().decode(FountainKit.Environment.self, from: older).setupTimeoutSeconds == nil)
 }

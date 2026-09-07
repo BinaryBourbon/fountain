@@ -71,7 +71,10 @@ defmodule Fountain.Environments.Environment do
     env
     |> cast(attrs, cast_fields())
     |> validate_required([:name, :setup_timeout_seconds])
-    |> validate_number(:setup_timeout_seconds, greater_than_or_equal_to: 1, less_than_or_equal_to: 900)
+    |> validate_number(:setup_timeout_seconds,
+      greater_than_or_equal_to: 1,
+      less_than_or_equal_to: 900
+    )
     |> validate_inclusion(:networking_type, @networking)
     |> validate_length(:name, min: 1, max: 200)
     |> validate_change(:networking_config, &validate_networking_config/2)
