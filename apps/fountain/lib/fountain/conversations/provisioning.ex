@@ -41,6 +41,11 @@ defmodule Fountain.Conversations.Provisioning do
 
   @env_file "/home/sprite/.env"
 
+  # One lock file for the machine, not for the conversation: what it
+  # serialises is `update-ca-certificates`, whose temporary bundle path is
+  # fixed and shared by every run on the sandbox.
+  @ca_lock "/tmp/fountain-broker-ca.lock"
+
   @doc """
   Write the machine's env (runtime defaults + env_vars + secrets) to
   `/home/sprite/.env` so a `setup_script` that does `source .env` picks up
@@ -407,8 +412,28 @@ defmodule Fountain.Conversations.Provisioning do
 
   Gate 0 found that one `update-ca-certificates` satisfies curl, git and npm
   at once, where per-tool variables each fail in their own way. Node is the
-  exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.sandbox_env/1`
+  exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.ca_env/0`
   points at the same file.
+
+  It runs under a lock, and only when the CA on disk differs from the one
+  being installed (#1674). Both halves are about the shared sandbox (ADR
+  0023): every conversation on the machine runs this on provision *and* on
+  reattach, and `update-ca-certificates` builds the trust bundle in a fixed
+  temporary file (`ca-certificates.crt.new`) before renaming it into place.
+  Two runs at once therefore share that path — one truncates what the other
+  is still writing, and the rename publishes a bundle of five certificates
+  where there should be 122. A client that reads it in that state has no
+  broker root and fails every request with `UnknownIssuer`, then waits out a
+  full idle timeout before retrying. It was one read in six on a sandbox with
+  forty conversations. The CA is derived from the deployment's master key and
+  so is byte-identical on every conversation, which is what makes the `cmp`
+  skip both correct and the end of the reruns; the lock covers the first
+  install, where there is nothing to compare against yet.
+
+  Locking is best effort — `flock -w 120 9 || true` — because a sandbox
+  without `flock` should provision the way it did before, not fail. The work
+  itself stays `&&`-chained, so its exit status is still what the caller
+  sees.
 
   It also pins git's `http.proxyAuthMethod` to `basic`. git defaults to
   `anyauth`, which by definition cannot send a credential until it has seen a
@@ -442,8 +467,10 @@ defmodule Fountain.Conversations.Provisioning do
     # Written as the sandbox user where it may, then moved into the root-owned
     # trust directory the way `install_packages/4` reaches apt: through sudo.
     install =
-      "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
-        "sudo update-ca-certificates && " <>
+      "( flock -w 120 9 || true; " <>
+        "cmp -s #{shell_quote(staging)} #{shell_quote(path)} || " <>
+        "{ sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
+        "sudo update-ca-certificates; } ) 9>#{shell_quote(@ca_lock)} && " <>
         sudo_env_keep_command() <>
         " && " <>
         git_proxy_auth_command()

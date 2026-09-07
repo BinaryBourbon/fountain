@@ -363,10 +363,15 @@ defmodule Fountain.Broker do
   end
 
   @doc """
-  The environment pairs a brokered sandbox gets. `HTTPS_PROXY` carries the
-  session token (as `http://<token>:<vault>@host:port`), so it is process-only
-  (`Identity.@process_only`); the lower case twins are for apt and the tools
-  that only read those.
+  The environment pairs a brokered sandbox gets: `proxy_env/1` and then
+  `ca_env/0`, in the order this has always returned them.
+
+  The two halves are not equal, and `Fountain.Conversations.SpriteEnv.build/4`
+  puts them on either side of the tenant's own values rather than taking this
+  list whole. `HTTPS_PROXY` carries
+  the session token (as `http://<token>:<vault>@host:port`), so it is
+  process-only (`Identity.@process_only`); the lower case twins are for apt
+  and the tools that only read those.
 
   The CA variables make each toolchain trust the broker's MITM certificate.
   `install_broker_ca` puts the CA in the OS trust store, which curl, git and
@@ -379,15 +384,20 @@ defmodule Fountain.Broker do
   `invalid peer certificate: UnknownIssuer` the moment it reaches a MITM'd host.
   """
   @spec sandbox_env(session()) :: [{String.t(), String.t()}]
-  def sandbox_env(%{token: token, vault: vault}) do
-    url = proxy_url_with(token, vault)
+  def sandbox_env(%{token: _, vault: _} = session), do: proxy_env(session) ++ ca_env()
 
+  @doc """
+  The half that points a toolchain at a trust store holding the broker's CA.
+
+  These are **defaults**: `SpriteEnv.build/4` emits them before the
+  environment's `env_vars` and the decrypted secrets, so a tenant that has a
+  reason to name its own bundle can (#1674). Naming a bundle without the
+  broker CA costs that tenant its own egress and nobody else's — the values
+  are hints to a client, not the chokepoint.
+  """
+  @spec ca_env() :: [{String.t(), String.t()}]
+  def ca_env do
     [
-      {"HTTPS_PROXY", url},
-      {"HTTP_PROXY", url},
-      {"https_proxy", url},
-      {"http_proxy", url},
-      {"NO_PROXY", "localhost,127.0.0.1"},
       {"NODE_EXTRA_CA_CERTS", @ca_path},
       {"SSL_CERT_FILE", @system_ca_bundle},
       {"REQUESTS_CA_BUNDLE", @system_ca_bundle},
@@ -396,11 +406,38 @@ defmodule Fountain.Broker do
     ]
   end
 
+  @doc """
+  The half that names the proxy, and the one thing a tenant may not have back.
+
+  `SpriteEnv.build/4` emits these last. The broker is where an agent's egress
+  is credentialed and logged (ADR 0019); an `env_vars` entry that could
+  replace `HTTPS_PROXY` would be an opt-out of it.
+  """
+  @spec proxy_env(session()) :: [{String.t(), String.t()}]
+  def proxy_env(%{token: token, vault: vault}) do
+    url = proxy_url_with(token, vault)
+
+    [
+      {"HTTPS_PROXY", url},
+      {"HTTP_PROXY", url},
+      {"https_proxy", url},
+      {"http_proxy", url},
+      {"NO_PROXY", "localhost,127.0.0.1"}
+    ]
+  end
+
   @doc "Every variable `sandbox_env/1` sets, for a refresh to replace."
   @spec env_keys() :: [String.t()]
-  def env_keys,
-    do:
-      ~w(HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO UV_NATIVE_TLS)
+  def env_keys, do: proxy_keys() ++ ca_keys()
+
+  @doc "The keys `proxy_env/1` sets."
+  @spec proxy_keys() :: [String.t()]
+  def proxy_keys, do: ~w(HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY)
+
+  @doc "The keys `ca_env/0` sets."
+  @spec ca_keys() :: [String.t()]
+  def ca_keys,
+    do: ~w(NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO UV_NATIVE_TLS)
 
   @doc "The variables that carry the session token, which `Identity` keeps off the shared `.env`."
   @spec process_only_keys() :: [String.t()]

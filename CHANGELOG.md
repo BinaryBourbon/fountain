@@ -30,6 +30,18 @@ upgrade, is in
 
 ### Fixed
 
+- The broker's root CA is installed under a lock, and the operating-system
+  trust store is rebuilt only when the CA on disk differs. Conversations
+  sharing a sandbox each ran `update-ca-certificates`, which builds the
+  bundle at a fixed temporary path, so two runs at once published a
+  truncated one. A client that read it in that state trusted no broker root
+  and failed every request with `UnknownIssuer` (#1674).
+
+- An environment's `env_vars` can override the broker's CA variables
+  (`SSL_CERT_FILE` and the rest). They were written before the broker's own,
+  so the documented setting silently did nothing. The proxy variables still
+  win over everything: they are what makes egress brokered (#1674).
+
 - Codex launches on Sprites with inherited and ambient capabilities cleared,
   allowing its bubblewrap sandbox to start without falling back to approval
   escalation on every command (#1672). Existing adapter processes need a restart.

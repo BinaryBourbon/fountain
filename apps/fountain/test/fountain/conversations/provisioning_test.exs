@@ -212,14 +212,54 @@ defmodule Fountain.Conversations.ProvisioningTest do
       assert_received {:exec, "bash", ["-lc", cmd]}
 
       assert cmd ==
-               "sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
-                 "'/usr/local/share/ca-certificates/agent-vault.crt' && sudo update-ca-certificates && " <>
+               "( flock -w 120 9 || true; " <>
+                 "cmp -s '/tmp/agent-vault-ca.crt' '/usr/local/share/ca-certificates/agent-vault.crt' || " <>
+                 "{ sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
+                 "'/usr/local/share/ca-certificates/agent-vault.crt' && " <>
+                 "sudo update-ca-certificates; } ) 9>'/tmp/fountain-broker-ca.lock' && " <>
                  "printf '%s\\n' 'Defaults env_keep += \"HTTPS_PROXY HTTP_PROXY https_proxy http_proxy " <>
                  "NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO " <>
                  "UV_NATIVE_TLS\"' > '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo visudo -cf '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo install -m 440 '/tmp/fountain-broker-proxy.sudoers' '/etc/sudoers.d/fountain-broker-proxy' && " <>
                  "git config --global http.proxyAuthMethod basic"
+    end
+
+    # #1674. `update-ca-certificates` builds `ca-certificates.crt.new` at a
+    # fixed path and renames it into place, so two runs on one shared sandbox
+    # publish a bundle one of them was still writing. Every conversation runs
+    # this on provision and on reattach, and the CA is the same bytes every
+    # time: hold a lock, and only rebuild the trust store when it changed.
+    test "serialises the trust-store rebuild and skips it when the CA is unchanged" do
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _cmd, [_, script], _opts ->
+        send(test, {:script, script})
+        {:ok, "", 0}
+      end)
+
+      assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+      assert_received {:script, script}
+
+      assert script =~ "flock -w 120 9"
+      assert script =~ "9>'/tmp/fountain-broker-ca.lock'"
+
+      # The comparison guards both the install and the rebuild, so an
+      # unchanged CA touches neither.
+      assert script =~
+               ~r/cmp -s '.*agent-vault-ca\.crt' '.*agent-vault\.crt' \|\| \{ sudo install .* && sudo update-ca-certificates; \}/
+
+      # A sandbox with no flock provisions the way it always did.
+      assert script =~ "flock -w 120 9 || true"
+
+      # The sudoers drop-in and git's proxy auth are outside the lock and
+      # still gate the exit status.
+      assert script =~ "&& sudo visudo -cf"
+      assert String.ends_with?(script, "git config --global http.proxyAuthMethod basic")
     end
 
     test "pins git's proxy auth to basic, so a brokered clone never waits for a 407" do
