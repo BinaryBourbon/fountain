@@ -16,10 +16,11 @@ findings, accepts low/info suggestions as nonblocking, and retains explanations.
 It resolves service-owned threads when policy permits; human objections remain
 blockers until a maintainer addresses them.
 
-Clear medium-or-higher defects can receive an automatic one-file fix. Reviewers
-must flag uncertain remedies, multi-file changes, public-contract choices and
-protected changes for a human. The host enforces the one-file bound, permitted
-paths, three-round limit, exact-revision checks and final approval. Confidence
+Clear medium-or-higher defects can receive an automatic fix within the
+configured file and path bounds. Reviewers must flag uncertain remedies,
+changes exceeding those bounds, public-contract choices and protected changes
+for a human. The host enforces the configured file bound, permitted paths,
+three-round limit, exact-revision checks and final approval. Confidence
 is a reviewer judgment, not a separate numeric score enforced by the host.
 Ambiguous decisions end with `needs-human-review` and alternatives; this setup
 does not impersonate Paul or launch an interactive pairing agent.

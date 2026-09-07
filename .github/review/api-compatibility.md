@@ -39,9 +39,9 @@ problem without inventing requirements. Optional wording preferences are low
 or info. A blocking finding needs an observable consequence. Product intent
 that the approved base does not settle needsHuman, with concrete alternatives.
 
-A fix candidate must preserve public behavior and fit the trusted fix policy,
-including necessary regression tests, with a clear, high-confidence remedy.
-A complete repair exceeding that scope requires a human decision.
+A fix candidate must preserve intended public behavior and fit the trusted fix
+policy, including necessary regression tests, with a clear, high-confidence
+remedy. A complete repair exceeding that scope requires a human decision.
 Use stable rule and semantic anchor text for recurring findings.
 
 Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and

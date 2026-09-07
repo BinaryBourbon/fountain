@@ -40,8 +40,9 @@ and never use production credentials or create real provider resources.
 
 A fix candidate needs a clear, high-confidence remedy within the trusted fix
 policy, including necessary regression tests. Authorization-model changes or
-repairs exceeding that scope need human judgment, with alternatives and consequences. Do not downgrade an uncertain
-security concern into a style nit; describe the missing evidence explicitly.
+repairs exceeding that scope need human judgment, with alternatives and
+consequences. Do not downgrade an uncertain security concern into a style nit;
+describe the missing evidence explicitly.
 Give recurring findings stable rule and semantic anchor text for deduplication.
 
 Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and
