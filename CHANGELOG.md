@@ -46,6 +46,15 @@ upgrade, is in
   variables still win over everything: they are what makes egress brokered.
   Both halves of the rule are now in the manual, under Secrets (#1674).
 
+- A brokered Codex conversation reaches OpenAI over a provider with the
+  WebSocket transport turned off. Codex's `responses_websocket` dialer cannot
+  use an https-scheme proxy and spent the full connect timeout finding that
+  out — around 300 seconds on every turn, before falling back to HTTP and
+  answering in about a second. The built-in `openai` provider is reserved and
+  cannot be overridden, so Fountain declares the same endpoint under an id of
+  its own. An agent already pointed at a gateway keeps the provider it names
+  (#1674).
+
 - Codex launches on Sprites with inherited and ambient capabilities cleared,
   allowing its bubblewrap sandbox to start without falling back to approval
   escalation on every command (#1672). Existing adapter processes need a restart.
