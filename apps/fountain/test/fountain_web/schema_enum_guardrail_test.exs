@@ -43,6 +43,12 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # list of atoms is stringified first — the domain keeps them as atoms, the
   # wire carries strings.
   @derived %{
+    {FountainWeb.Schemas.Conversation, "sandbox_api_access"} =>
+      {Conversation, :sandbox_api_access_modes},
+    {FountainWeb.Schemas.ConversationCreateRequest, "sandbox_api_access"} =>
+      {Conversation, :sandbox_api_access_modes},
+    {FountainWeb.Schemas.CatalogResponse, "data.sandbox_api_access.[]"} =>
+      {Conversation, :sandbox_api_access_modes},
     {FountainWeb.Schemas.Connection, "status"} => {Fountain.Connections.Connection, :statuses},
     # Claimable principals (ADR 0044). Three schemas restate the same list,
     # which is exactly the drift this test exists for.
@@ -73,9 +79,12 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.AdminRoleRequest, "role"} => {User, :roles},
     {FountainWeb.Schemas.AdminUser, "role"} => {User, :roles},
     {FountainWeb.Schemas.AuthMeResponse, "role"} => {User, :roles},
-    {FountainWeb.Schemas.Agent, "runtime"} => {Agent, :runtimes},
-    {FountainWeb.Schemas.AgentRequest, "runtime"} => {Agent, :runtimes},
-    {FountainWeb.Schemas.AgentUpdate, "runtime"} => {Agent, :runtimes},
+    # Known values include fixture rows retained after a test runtime is disabled.
+    # Catalog/admission use the separately tested enabled-runtime list, as sandbox
+    # providers distinguish known_providers/0 from enabled_providers/0.
+    {FountainWeb.Schemas.Agent, "runtime"} => {Agent, :known_runtimes},
+    {FountainWeb.Schemas.AgentRequest, "runtime"} => {Agent, :known_runtimes},
+    {FountainWeb.Schemas.AgentUpdate, "runtime"} => {Agent, :known_runtimes},
     {FountainWeb.Schemas.Agent, "sandbox_provider"} =>
       {Fountain.SandboxProviders, :known_providers},
     {FountainWeb.Schemas.Sandbox, "provider"} => {Fountain.SandboxProviders, :known_providers},
@@ -86,7 +95,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     # A conversation's runtime is copied from its agent at spawn, so it must
     # speak the same vocabulary even though the column carries no inclusion
     # validation of its own.
-    {FountainWeb.Schemas.Conversation, "runtime"} => {Agent, :runtimes},
+    {FountainWeb.Schemas.Conversation, "runtime"} => {Agent, :known_runtimes},
     {FountainWeb.Schemas.Agent, "avatar_media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.AvatarRequest, "media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.ImageInput, "media_type"} => {Images, :valid_media_types},
@@ -131,7 +140,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.SandboxDetail, "provider"} =>
       {Fountain.SandboxProviders, :known_providers},
     {FountainWeb.Schemas.SandboxConversation, "status"} => {Conversation, :statuses},
-    {FountainWeb.Schemas.SandboxConversation, "runtime"} => {Agent, :runtimes},
+    {FountainWeb.Schemas.SandboxConversation, "runtime"} => {Agent, :known_runtimes},
     {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses},
     {FountainWeb.Schemas.Turn, "origin"} => {Turn, :origins},
     {FountainWeb.Schemas.Teammate, "presence.state"} =>
@@ -152,6 +161,12 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # Enums with no domain list behind them. Each entry needs a reason: the
   # point of the list is that adding to it is a deliberate act.
   @api_local %{
+    {FountainWeb.Schemas.UsageAccounting, "completeness"} =>
+      "Adapter claim validated by Managoat.ACP.Usage; the library exposes no enum accessor",
+    {FountainWeb.Schemas.Turn, "model_selection.status"} =>
+      "ACP selection outcomes built per report in TurnMachine",
+    {FountainWeb.Schemas.Turn, "model_selection.source"} =>
+      "ACP peer evidence: a runtime model field or a setter acknowledgement",
     # `client_source` is nullable on the wire (no client yet), so the enum
     # carries a nil the domain list does not.
     {FountainWeb.Schemas.ConnectionProvider, "client_source"} =>

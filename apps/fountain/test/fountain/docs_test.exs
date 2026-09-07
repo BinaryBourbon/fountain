@@ -42,6 +42,21 @@ defmodule Fountain.DocsTest do
 
   @repo_root Path.expand("../../../..", __DIR__)
 
+  test "the portable alert table matches the shipped rule names" do
+    rules = File.read!(Path.join(@repo_root, "deploy/k8s/prometheusrule.yaml"))
+    page = File.read!(Path.join(@repo_root, "docs/guides/operate/observability.md"))
+    [_, table] = Regex.run(~r/### Portable baseline\n(.*?)### Added by the hosted overlay/s, page)
+
+    shipped =
+      Regex.scan(~r/^\s*- alert: (\w+)/m, rules, capture: :all_but_first) |> List.flatten()
+
+    documented =
+      Regex.scan(~r/\| `(Fountain\w+)` \|/, table, capture: :all_but_first) |> List.flatten()
+
+    assert shipped != []
+    assert Enum.sort(documented) == Enum.sort(shipped)
+  end
+
   describe "nav ← docs/nav.yml" do
     test "parses the real docs/nav.yml into pages and one-level sections" do
       nav = Docs.nav_source()

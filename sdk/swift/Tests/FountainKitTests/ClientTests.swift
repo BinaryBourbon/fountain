@@ -40,6 +40,21 @@ import Testing
 }
 
 @Suite struct DecodingTests {
+  @Test func decodesAccountingWithoutInventingMissingCounts() throws {
+    let bytes = Data(
+      #"{"accounting":{"version":1,"source":"codex/thread-token-usage-delta","scope":"root_thread_prompt","completeness":"partial"}}"#
+        .utf8)
+    let usage = try JSONDecoder().decode(Usage.self, from: bytes)
+    #expect(usage.input == nil)
+    #expect(usage.output == nil)
+    #expect(usage.accounting?.version == 1)
+    #expect(usage.accounting?.scope == "root_thread_prompt")
+    #expect(usage.accounting?.completeness == "partial")
+    let legacy = try JSONDecoder().decode(Usage.self, from: Data(#"{"input":1,"output":2}"#.utf8))
+    #expect(legacy.accounting == nil)
+    #expect(legacy.input == 1)
+  }
+
   // Shape verified against GET /api/agents on 2026-08-31.
   static let agentJSON = """
     {"id":"66a4e14f-7ecd-42d2-9136-6a4829383d47","name":"cantor","description":null,

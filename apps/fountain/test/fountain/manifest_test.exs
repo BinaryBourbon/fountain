@@ -24,6 +24,69 @@ defmodule Fountain.ManifestTest do
     %{"kind" => "Agent", "name" => name, "spec" => spec}
   end
 
+  describe "spec keys" do
+    test "rejects unknown keys on each kind before it creates records", %{user: user} do
+      resources = [
+        env_resource("bad-env", %{
+          "network_policy" => "limited",
+          "allowed_hosts" => ["example.test"]
+        }),
+        vault_resource("bad-vault", %{"descrption" => "private"}),
+        agent_resource("bad-agent", %{"permisson_policy" => %{"default" => "auto_deny"}}),
+        vault_resource("good-vault")
+      ]
+
+      assert {:ok, [env, vault, good, agent]} = Manifest.apply_manifest(user.id, resources)
+      assert env.action == :error
+      assert Enum.sort(Map.keys(env.errors)) == ["allowed_hosts", "network_policy"]
+      assert vault.action == :error
+      assert Map.has_key?(vault.errors, "descrption")
+      assert agent.action == :error
+      assert Map.has_key?(agent.errors, "permisson_policy")
+      assert good.action == :created
+      refute Environments.get_environment_by_name("bad-env", user.id)
+      refute Vaults.get_vault_by_name("bad-vault", user.id)
+      refute Agents.get_agent_by_name("bad-agent", user.id)
+    end
+
+    test "a rejected update writes neither attributes nor secrets", %{user: user} do
+      assert {:ok, [%{action: :created}]} =
+               Manifest.apply_manifest(user.id, [
+                 env_resource("locked", %{
+                   "setup_script" => "original",
+                   "networking_type" => "limited",
+                   "networking_config" => %{"allowed_hosts" => ["example.test"]},
+                   "secrets" => %{"TOKEN" => "original"}
+                 })
+               ])
+
+      assert {:ok, [%{action: :error, secrets: []}]} =
+               Manifest.apply_manifest(user.id, [
+                 env_resource("locked", %{
+                   "setup_script" => "changed",
+                   "network_policy" => "unrestricted",
+                   "secrets" => %{"TOKEN" => "replacement"}
+                 })
+               ])
+
+      env = Environments.get_environment_by_name("locked", user.id)
+      assert env.setup_script == "original"
+      assert env.networking_type == "limited"
+      {:ok, dek} = Crypto.load_tenant_key(user.id)
+      assert Environments.decrypted_env(env, dek) == %{"TOKEN" => "original"}
+    end
+
+    test "database fields and secrets on an Agent are not accepted spec keys", %{user: user} do
+      for resource <- [
+            env_resource("e", %{"inserted_at" => "2026-01-01T00:00:00Z"}),
+            vault_resource("v", %{"secret_count" => 4}),
+            agent_resource("a", %{"avatar_media_type" => "image/png", "secrets" => %{}})
+          ] do
+        assert {:ok, [%{action: :error}]} = Manifest.apply_manifest(user.id, [resource])
+      end
+    end
+  end
+
   describe "apply_manifest/2 creation" do
     test "creates environments, vaults, and agents with secrets", %{user: user} do
       resources = [

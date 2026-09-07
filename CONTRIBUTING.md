@@ -66,7 +66,8 @@ the alias still exits 0. Confirm you reached `N tests, 0 failures`.
 
 CI additionally runs `hex.audit`, the Go CLI checks (`go test ./...`,
 `go vet ./...` in `cli/`), a release boot check, OpenAPI validation, and the
-docs gates. If you touched `docs/`, run the three prose gates too:
+docs gates. If you touched `docs/` or an extension manual, read the three prose reports too.
+They advise on wording in CI; findings do not block a merge:
 
 ```bash
 python3 scripts/docs-style.py
@@ -95,6 +96,24 @@ mix test apps/fountain/test/fountain/docs_test.exs
 
 To read a page as it will ship, start the server and open `/docs`. That route
 is the only place `docs/` is published.
+
+### If a test went red and then green
+
+Do not re-run it and move on. Keep the failed run's evidence and compare the
+commits, workflow conditions, runner environment and external dependencies.
+Record unexplained failures with what you know. File confirmed flakes:
+
+```bash
+gh issue create --label flake --label area:testing --title "Flake: <what raced>"
+```
+
+Or use the **Flaky test** issue template, which applies the same labels. Every
+flake carries the `flake` label, so
+[the open ones](https://github.com/BinaryBourbon/fountain/issues?q=is%3Aopen+label%3Aflake)
+are one query. Search before filing — the same flake gets found repeatedly, and
+a second issue splits the evidence. What makes one actionable is in CLAUDE.md
+under *Flaky tests*: the failing assertion, a rate rather than an adjective,
+and the run URLs.
 
 ## Extension migrations share one `schema_migrations`
 
@@ -410,3 +429,15 @@ to `main`.
 If your change is architecturally significant, or constrains future work, write
 an ADR using [`decisions/0001-template.md`](decisions/0001-template.md) and
 refresh the index (`scripts/decisions-index.sh`) in the same PR.
+
+## CI maintenance
+
+`CI required` is the aggregate merge check. It verifies every job expected for
+full CI, a docs-only PR, or main's tested-tree reuse path. `Detect secrets`
+is a separate required check. Configure these after the workflow has landed;
+see `scripts/ci/README.md` for activation and test-timing refresh commands.
+
+The six test jobs export complete module timings alongside their coverage.
+Refresh the manifest when new files accumulate or partitions drift. Partition
+1's allocation includes a reserve for the sibling suites, which run after its
+core tests. Keep that reserve in line with the CI step's observed duration.

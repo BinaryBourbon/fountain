@@ -18,7 +18,7 @@ defmodule FountainWeb.ConnectionsController do
   """
   use FountainWeb, :controller
 
-  alias Fountain.{Broker, Connections}
+  alias Fountain.Connections
   alias Fountain.Connections.{OAuth, Provider}
   alias FountainWeb.Audited
   alias Managoat.McpAuth.UrlGuard
@@ -124,7 +124,7 @@ defmodule FountainWeb.ConnectionsController do
   # The feature is for brokered accounts only: without the broker the token
   # would have to enter a sandbox in the clear.
   defp require_connections(conn, _opts) do
-    if Broker.enabled_for?(conn.assigns.current_user.id) do
+    if Fountain.Connections.enabled_for?(conn.assigns.current_user.id) do
       conn
     else
       conn

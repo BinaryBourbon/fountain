@@ -74,88 +74,100 @@ defmodule Fountain.Manifest do
   # ── per-kind reconciliation ───────────────────────────────────────────────
 
   defp apply_environment(user_id, %{"name" => name} = res, dek, opts) do
-    {attrs, secrets} = split_spec(res, name)
+    with :ok <- validate_spec(res, Environments.Environment, ~w(secrets)) do
+      {attrs, secrets} = split_spec(res, name)
 
-    outcome =
-      case Environments.get_environment_by_name(name, user_id) do
-        nil ->
-          {:created, Environments.create_environment(Map.put(attrs, "user_id", user_id), opts)}
+      outcome =
+        case Environments.get_environment_by_name(name, user_id) do
+          nil ->
+            {:created, Environments.create_environment(Map.put(attrs, "user_id", user_id), opts)}
 
-        env ->
-          {:updated, Environments.update_environment(env, attrs, opts)}
+          env ->
+            {:updated, Environments.update_environment(env, attrs, opts)}
+        end
+
+      case outcome do
+        {action, {:ok, env}} ->
+          secret_results =
+            upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek, secret_opts(opts)))
+
+          {result("Environment", name, action, nil, secret_results, env.id), env}
+
+        {_action, {:error, changeset}} ->
+          {result("Environment", name, :error, changeset_errors(changeset), []), nil}
       end
-
-    case outcome do
-      {action, {:ok, env}} ->
-        secret_results =
-          upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek, secret_opts(opts)))
-
-        {result("Environment", name, action, nil, secret_results, env.id), env}
-
-      {_action, {:error, changeset}} ->
-        {result("Environment", name, :error, changeset_errors(changeset), []), nil}
+    else
+      {:error, errors} -> {result("Environment", name, :error, errors, []), nil}
     end
   end
 
   defp apply_vault(user_id, %{"name" => name} = res, dek, opts) do
-    {attrs, secrets} = split_spec(res, name)
+    with :ok <- validate_spec(res, Vaults.Vault, ~w(secrets)) do
+      {attrs, secrets} = split_spec(res, name)
 
-    outcome =
-      case Vaults.get_vault_by_name(name, user_id) do
-        nil -> {:created, Vaults.create_vault(Map.put(attrs, "user_id", user_id), opts)}
-        vault -> {:updated, Vaults.update_vault(vault, attrs, opts)}
+      outcome =
+        case Vaults.get_vault_by_name(name, user_id) do
+          nil -> {:created, Vaults.create_vault(Map.put(attrs, "user_id", user_id), opts)}
+          vault -> {:updated, Vaults.update_vault(vault, attrs, opts)}
+        end
+
+      case outcome do
+        {action, {:ok, vault}} ->
+          secret_results =
+            upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek, secret_opts(opts)))
+
+          result("Vault", name, action, nil, secret_results, vault.id)
+
+        {_action, {:error, changeset}} ->
+          result("Vault", name, :error, changeset_errors(changeset), [])
       end
-
-    case outcome do
-      {action, {:ok, vault}} ->
-        secret_results =
-          upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek, secret_opts(opts)))
-
-        result("Vault", name, action, nil, secret_results, vault.id)
-
-      {_action, {:error, changeset}} ->
-        result("Vault", name, :error, changeset_errors(changeset), [])
+    else
+      {:error, errors} -> result("Vault", name, :error, errors, [])
     end
   end
 
   defp apply_agent(user_id, %{"name" => name} = res, env_id_by_name, opts) do
-    {attrs, _secrets} = split_spec(res, name)
-    {env_ref, attrs} = Map.pop(attrs, "environment")
+    with :ok <- validate_spec(res, Agents.Agent, ~w(environment)) do
+      {attrs, _secrets} = split_spec(res, name)
+      {env_ref, attrs} = Map.pop(attrs, "environment")
 
-    case resolve_environment_ref(user_id, env_ref, env_id_by_name) do
-      {:ok, env_attrs} ->
-        attrs = Map.merge(attrs, env_attrs)
+      case resolve_environment_ref(user_id, env_ref, env_id_by_name) do
+        {:ok, env_attrs} ->
+          attrs = Map.merge(attrs, env_attrs)
 
-        outcome =
-          case Agents.get_agent_by_name(name, user_id) do
-            nil -> {:created, Agents.create_agent(Map.put(attrs, "user_id", user_id), opts)}
-            agent -> {:updated, Agents.update_agent(agent, attrs, opts)}
+          outcome =
+            case Agents.get_agent_by_name(name, user_id) do
+              nil -> {:created, Agents.create_agent(Map.put(attrs, "user_id", user_id), opts)}
+              agent -> {:updated, Agents.update_agent(agent, attrs, opts)}
+            end
+
+          case outcome do
+            {action, {:ok, _agent}} ->
+              result("Agent", name, action, nil, [])
+
+            # Moving the agent's environment rebuilds its machine, which a
+            # running turn blocks (#1084). Reported against the field that
+            # caused it so `fountain apply` says what to do about it.
+            {_action, {:error, :sandbox_mid_turn}} ->
+              errors = %{
+                "environment" => [
+                  "the agent is running a turn on its own machine; changing its " <>
+                    "environment rebuilds that machine — retry once the turn ends"
+                ]
+              }
+
+              result("Agent", name, :error, errors, [])
+
+            {_action, {:error, cs}} ->
+              result("Agent", name, :error, changeset_errors(cs), [])
           end
 
-        case outcome do
-          {action, {:ok, _agent}} ->
-            result("Agent", name, action, nil, [])
-
-          # Moving the agent's environment rebuilds its machine, which a
-          # running turn blocks (#1084). Reported against the field that
-          # caused it so `fountain apply` says what to do about it.
-          {_action, {:error, :sandbox_mid_turn}} ->
-            errors = %{
-              "environment" => [
-                "the agent is running a turn on its own machine; changing its " <>
-                  "environment rebuilds that machine — retry once the turn ends"
-              ]
-            }
-
-            result("Agent", name, :error, errors, [])
-
-          {_action, {:error, cs}} ->
-            result("Agent", name, :error, changeset_errors(cs), [])
-        end
-
-      {:error, ref} ->
-        errors = %{"environment" => ["environment not found: #{ref}"]}
-        result("Agent", name, :error, errors, [])
+        {:error, ref} ->
+          errors = %{"environment" => ["environment not found: #{ref}"]}
+          result("Agent", name, :error, errors, [])
+      end
+    else
+      {:error, errors} -> result("Agent", name, :error, errors, [])
     end
   end
 
@@ -228,6 +240,20 @@ defmodule Fountain.Manifest do
   end
 
   defp valid_resource?(_res), do: false
+
+  # Use the changeset's cast fields, not every database field: timestamps,
+  # virtual counts and other read-only state must not look configurable.
+  defp validate_spec(res, schema, extra_keys) do
+    allowed =
+      Enum.map(schema.cast_fields(), &Atom.to_string/1) ++ extra_keys ++ ~w(id user_id created_by)
+
+    unknown = Map.keys(res["spec"] || %{}) -- allowed
+
+    case unknown do
+      [] -> :ok
+      keys -> {:error, Map.new(keys, &{&1, ["is not a supported spec key"]})}
+    end
+  end
 
   # The top-level resource name is authoritative — it is the upsert key, so
   # it overrides any `name` a spec happens to carry.

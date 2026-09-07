@@ -153,6 +153,14 @@ fountain.team.schedules.create("watchtower", {
 `stream` cover the rest of the teammate lifecycle. `team.schedules` has the
 five resource verbs and `run` for an immediate invocation.
 
+## Cancel a wait
+
+`run.cancel()` stops the local wait and skips the final status request. The
+agent continues its work. A silent stream can delay cancellation by up to
+five seconds. Idle reads reconnect from the last complete event.
+
+A custom HTTP transport must honor the supplied socket timeout.
+
 ## Errors and the raw API
 
 Catch `ConversationBusyError`, `NotReadyError`, `QuotaExceededError`,

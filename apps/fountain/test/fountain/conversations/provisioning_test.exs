@@ -4,6 +4,19 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
   alias Fountain.Conversations.Provisioning
 
+  # The behavioural CA test below runs the generated command through a real
+  # shell, so it needs the tools the sandbox has and a Mac does not: GNU
+  # `install -D`, `flock` and `sha256sum`. Skipped rather than weakened
+  # elsewhere, because stubbing `flock` would remove the one property that
+  # test exists to check. CI runs on ubuntu, where it always runs.
+  @posix_trust_store (case :os.type() do
+                        {:unix, :linux} ->
+                          Enum.all?(~w(flock sha256sum), &(System.find_executable(&1) != nil))
+
+                        _ ->
+                          false
+                      end)
+
   # Full-stack: Provisioning -> Managoat.Sandbox facade -> real Sprites
   # adapter -> stubbed SDK, so the provider-quirk pins below still assert
   # the exact wire shapes Sprites receives.
@@ -190,6 +203,12 @@ defmodule Fountain.Conversations.ProvisioningTest do
   end
 
   describe "install_broker_ca/2" do
+    # Pins the absolute paths and the sandbox command wiring. What the
+    # command *does* — rebuild once, skip on an unchanged bundle, repair a
+    # corrupted one, retry after a failed rebuild, and refuse to rebuild when
+    # another installer holds the lock — is the behavioural test below;
+    # `install_broker_ca/2`'s docstring has why each of those matters on a
+    # shared sandbox.
     test "writes the CA where update-ca-certificates reads it, then runs it" do
       conv = insert_conversation()
       test = self()
@@ -207,19 +226,215 @@ defmodule Fountain.Conversations.ProvisioningTest do
       end)
 
       assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
-      assert_received {:wrote, "/tmp/agent-vault-ca.crt", "PEM", [mode: 0o644]}
+
+      # The staging file is per invocation, so several conversations writing
+      # it at once cannot change each other's input to `cmp` and `install`.
+      assert_received {:wrote, staging, "PEM", [mode: 0o644]}
+      assert String.starts_with?(staging, "/tmp/agent-vault-ca.crt.")
+      refute staging == "/tmp/agent-vault-ca.crt"
 
       assert_received {:exec, "bash", ["-lc", cmd]}
+      ca = "/usr/local/share/ca-certificates/agent-vault.crt"
+      bundle = "/etc/ssl/certs/ca-certificates.crt"
+      marker = ca <> ".trust-store-ready"
 
       assert cmd ==
-               "sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
-                 "'/usr/local/share/ca-certificates/agent-vault.crt' && sudo update-ca-certificates && " <>
+               "( trap 'rm -f -- '\\''#{staging}'\\''' EXIT; " <>
+                 "safe=0; " <>
+                 "if command -v flock >/dev/null 2>&1; then flock -w 120 9 || exit 75; safe=1; fi; " <>
+                 "{ cmp -s '#{staging}' '#{ca}' && " <>
+                 "sha256sum -c --status '#{marker}' 2>/dev/null; } || " <>
+                 "{ sudo rm -f -- '#{marker}' && " <>
+                 "sudo install -D -m 644 '#{staging}' '#{ca}' && " <>
+                 "sudo update-ca-certificates && " <>
+                 "{ [ \"$safe\" = 1 ] && sudo sh -c " <>
+                 "'sha256sum '\\''#{bundle}'\\'' > '\\''#{marker}'\\''' " <>
+                 "|| true; }; } " <>
+                 ") 9>'/tmp/fountain-broker-ca.lock' && " <>
                  "printf '%s\\n' 'Defaults env_keep += \"HTTPS_PROXY HTTP_PROXY https_proxy http_proxy " <>
                  "NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO " <>
                  "UV_NATIVE_TLS\"' > '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo visudo -cf '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo install -m 440 '/tmp/fountain-broker-proxy.sudoers' '/etc/sudoers.d/fountain-broker-proxy' && " <>
                  "git config --global http.proxyAuthMethod basic"
+    end
+
+    @tag :tmp_dir
+    @tag skip:
+           unless(@posix_trust_store,
+             do: "needs GNU install -D, flock and sha256sum; runs on Linux"
+           )
+    test "rebuilds only when needed and retries a failed rebuild", %{tmp_dir: tmp_dir} do
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM\n"} end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, path, data, _opts ->
+        send(test, {:staged, path, data})
+        :ok
+      end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, "bash", ["-lc", cmd], _opts ->
+        send(test, {:install_command, cmd})
+        {:ok, "", 0}
+      end)
+
+      assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+      assert_received {:staged, staging, pem}
+      assert_received {:install_command, cmd}
+
+      # Redirect every absolute write into this test's tree. Run without a login
+      # shell so PATH keeps our sudo, trust-store builder and git stubs.
+      cmd =
+        String.replace(
+          cmd,
+          ~r{/usr/local/share/ca-certificates|/etc/ssl/certs|/etc/sudoers.d|/tmp/},
+          fn prefix -> tmp_dir <> prefix end
+        )
+
+      ca = tmp_dir <> Fountain.Broker.ca_path()
+      bundle = tmp_dir <> Fountain.Broker.system_ca_bundle()
+      marker = ca <> ".trust-store-ready"
+      counter = Path.join(tmp_dir, "rebuilds")
+      failure = Path.join(tmp_dir, "fail-rebuild")
+      bin = Path.join(tmp_dir, "bin")
+
+      for dir <- [
+            bin,
+            Path.dirname(ca),
+            Path.dirname(bundle),
+            tmp_dir <> "/etc/sudoers.d",
+            tmp_dir <> "/tmp"
+          ] do
+        File.mkdir_p!(dir)
+      end
+
+      for {name, body} <- [
+            {"sudo", ~s(exec "$@"\n)},
+            {"visudo", "exit 0\n"},
+            {"git", "exit 0\n"},
+            {"update-ca-certificates",
+             """
+             echo rebuild >> "$TEST_CA_ROOT/rebuilds"
+             [ ! -f "$TEST_CA_ROOT/fail-rebuild" ] || exit 3
+             cat "$TEST_CA_ROOT/usr/local/share/ca-certificates/agent-vault.crt" > "$TEST_CA_ROOT/etc/ssl/certs/ca-certificates.crt"
+             echo system-roots >> "$TEST_CA_ROOT/etc/ssl/certs/ca-certificates.crt"
+             """}
+          ] do
+        path = Path.join(bin, name)
+        File.write!(path, "#!/bin/sh\n" <> body)
+        File.chmod!(path, 0o755)
+      end
+
+      run = fn ->
+        # The EXIT trap consumes the staging file on every invocation.
+        File.write!(tmp_dir <> staging, pem)
+
+        result =
+          System.cmd("bash", ["-c", cmd],
+            env: [{"PATH", bin <> ":" <> System.fetch_env!("PATH")}, {"TEST_CA_ROOT", tmp_dir}],
+            stderr_to_stdout: true
+          )
+
+        refute File.exists?(tmp_dir <> staging)
+        result
+      end
+
+      assert {_, 0} = run.()
+      assert File.read!(ca) == pem
+      assert File.read!(bundle) == pem <> "system-roots\n"
+      assert File.exists?(marker)
+      assert File.read!(counter) == "rebuild\n"
+
+      assert {_, 0} = run.()
+      assert File.read!(counter) == "rebuild\n"
+
+      File.write!(bundle, "truncated bundle\n")
+      assert {_, 0} = run.()
+      assert File.read!(bundle) == pem <> "system-roots\n"
+      assert File.read!(counter) == String.duplicate("rebuild\n", 2)
+
+      File.write!(bundle, "corrupted again\n")
+      File.touch!(failure)
+      assert {_, 3} = run.()
+      refute File.exists?(marker)
+      assert File.read!(counter) == String.duplicate("rebuild\n", 3)
+
+      File.rm!(failure)
+      assert {_, 0} = run.()
+      assert File.read!(bundle) == pem <> "system-roots\n"
+      assert File.exists?(marker)
+      assert File.read!(counter) == String.duplicate("rebuild\n", 4)
+
+      # Another installer holds the machine lock. Waiting it out and
+      # rebuilding anyway is the concurrent write against the fixed temporary
+      # bundle that this whole command exists to prevent — and worse, the
+      # holder stamps its digest after its own rebuild returns, so a bundle
+      # truncated in between is recorded as good and never repaired. Exit 75
+      # and touch nothing instead: a failed conversation is recoverable.
+      lock = Path.join(tmp_dir, "/tmp/fountain-broker-ca.lock")
+      File.write!(bundle, "corrupted while another installer holds the lock\n")
+
+      holder =
+        Task.async(fn ->
+          System.cmd("flock", [lock, "sleep", "3"], stderr_to_stdout: true)
+        end)
+
+      # Give the holder the lock before racing it, and shorten only the wait
+      # so the test does not sit out the real 120 seconds. Everything else in
+      # the command, including which failure the timeout produces, is the
+      # string Fountain builds.
+      Process.sleep(300)
+      contended = String.replace(cmd, "flock -w 120 9", "flock -w 1 9")
+      refute contended == cmd
+
+      File.write!(tmp_dir <> staging, pem)
+
+      assert {_, 75} =
+               System.cmd("bash", ["-c", contended],
+                 env: [
+                   {"PATH", bin <> ":" <> System.fetch_env!("PATH")},
+                   {"TEST_CA_ROOT", tmp_dir}
+                 ],
+                 stderr_to_stdout: true
+               )
+
+      refute File.exists?(tmp_dir <> staging)
+
+      # Nothing was rebuilt, and the corrupted bundle was left for whoever
+      # holds the lock — or for the next conversation, whose `sha256sum -c`
+      # still misses.
+      assert File.read!(bundle) == "corrupted while another installer holds the lock\n"
+      assert File.read!(counter) == String.duplicate("rebuild\n", 4)
+
+      Task.await(holder, 10_000)
+    end
+
+    # The trap that removes the staging file runs inside bash, so an exec that
+    # never got that far leaves a uniquely-named PEM on a machine that
+    # reattaches for weeks. The old fixed path was self-limiting.
+    test "removes the staged CA when the exec never ran" do
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn
+        _h, "bash", _args, _opts ->
+          {:error, :timeout}
+
+        _h, cmd, args, _opts ->
+          send(test, {:exec, cmd, args})
+          {:ok, "", 0}
+      end)
+
+      assert {:error, {:broker, :ca_install, :timeout}} =
+               Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+
+      assert_received {:exec, "rm", ["-f", "--", staged]}
+      assert String.starts_with?(staged, "/tmp/agent-vault-ca.crt.")
     end
 
     test "pins git's proxy auth to basic, so a brokered clone never waits for a 407" do

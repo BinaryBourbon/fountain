@@ -48,7 +48,7 @@ defmodule FountainWeb.SchemaGuardrailTest do
 
   # The allowlist may shrink freely. Growing it means editing this number in
   # the same diff, which is the whole ratchet: a reviewer sees the number move.
-  @ceiling 70
+  @ceiling 1
 
   describe "the ratchet" do
     test "the allowlist has not grown" do
@@ -148,14 +148,7 @@ defmodule FountainWeb.SchemaGuardrailTest do
     #
     # Adding to this list is how a response gets held to its whole schema, not
     # just to the parts it happens to send.
-    @unrendered %{
-      # #1418: `expires_at` is declared and `AuthMeController.show/2` never
-      # renders it. Which way it goes is an API decision rather than a test
-      # one — a client that wants to warn before a key lapses would need the
-      # field rendered, and a client that does not wants it dropped from the
-      # schema. Recorded here with the pointer rather than decided here.
-      {"GET /api/auth/me", "expires_at"} => 1418
-    }
+    @unrendered %{}
 
     test "GET /api/auth/me renders every property AuthMeResponse declares" do
       user = insert_verified_user()

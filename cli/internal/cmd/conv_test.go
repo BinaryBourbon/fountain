@@ -229,3 +229,21 @@ func TestTurnFailureHint(t *testing.T) {
 		t.Fatalf("expected no hint for an unrelated reason, got %q", hint)
 	}
 }
+
+func TestSystemNoticesInTurnOutput(t *testing.T) {
+	tests := []struct{ name, raw, want string }{
+		{"published pull request", `{"type":"system","subtype":"code_change_published","provider":"github","url":"https://github.com/acme/app/pull/42","repo":"acme/app","identifier":"42"}`, "\n▸ published: github pull request acme/app#42\n  https://github.com/acme/app/pull/42\n"},
+		{"missing optional fields", `{"type":"system","subtype":"code_change_published"}`, "\n▸ published\n"},
+		{"unknown subtype", `{"type":"system","subtype":"future_notice","secret":"do not dump"}`, "\n\x1b[2m▸ system: future_notice\x1b[0m\n"},
+		{"unknown fields stay on one line", `{"type":"system","subtype":"future\nnotice"}`, "\n\x1b[2m▸ system: future notice\x1b[0m\n"},
+		{"malformed subtype", `{"type":"system","subtype":42}`, "\n\x1b[2m▸ system: notice\x1b[0m\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatOutput(map[string]any{"stream": "stdout", "stage": "turn", "data": tt.raw})
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

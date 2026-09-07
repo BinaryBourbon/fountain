@@ -16,7 +16,107 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
+- Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
+
+- `sandbox_api_access: "none"` on conversation creation omits the Fountain
+  sandbox callback credential before provisioning and on every wake. It requires
+  a fresh ephemeral sandbox, is immutable, and refuses machine sharing and
+  channel resumes with a different setting. The catalog advertises support;
+  existing launches retain `owner` behavior. Applications processing mutually
+  untrusted work can keep all Fountain API authority on their service host.
+
+### Fixed
+
+- The broker's root CA is installed under a lock, and the operating-system
+  trust store is rebuilt only when the bundle on the machine is not the one
+  that CA produces. Conversations sharing a sandbox each ran
+  `update-ca-certificates`, which builds the bundle at a fixed temporary
+  path, so two runs at once published a truncated one. A client that read it
+  in that state trusted no broker root and failed every request with
+  `UnknownIssuer`. A sandbox whose bundle is damaged, whether before this
+  change or afterwards by a package install or a setup script, repairs itself
+  on its next provision or wake (#1674).
+
+- An environment's `env_vars` can override the broker's CA variables
+  (`SSL_CERT_FILE` and the rest). They were written before the broker's own,
+  so a value set for one of those names silently did nothing. The proxy
+  variables still win over everything: they are what makes egress brokered.
+  Both halves of the rule are now in the manual, under Secrets (#1674).
+
+- A brokered Codex conversation reaches OpenAI over a provider with the
+  WebSocket transport turned off. Codex's `responses_websocket` dialer cannot
+  use an https-scheme proxy and spent the full connect timeout finding that
+  out — around 300 seconds on every turn, before falling back to HTTP and
+  answering in about a second. The built-in `openai` provider is reserved and
+  cannot be overridden, so Fountain declares the same endpoint under an id of
+  its own, carrying across `OPENAI_BASE_URL`, the OpenAI-Organization and
+  OpenAI-Project header mappings and standalone web search. A
+  conversation whose spawn has no `OPENAI_API_KEY` keeps the built-in
+  provider, which can still authenticate from `~/.codex/auth.json`. An agent
+  that names its own provider in `CODEX_CONFIG` keeps it; a `model_provider`
+  written into `~/.codex/config.toml` by a setup script is not read, and is
+  overridden (#1674).
+
+- Codex launches on Sprites with inherited and ambient capabilities cleared,
+  allowing its bubblewrap sandbox to start without falling back to approval
+  escalation on every command (#1672). Existing adapter processes need a restart.
+
+- Reattach and idle-process cleanup recover conversation identity from a Sprites
+  process's environment after its command changes. Unidentified processes are
+  never selected by list order on a shared sandbox. ACP updates from another
+  session are discarded and foreign permission requests are cancelled before
+  policy evaluation (#1658).
+
+- A runtime confirming a model in its own canonical designation is no longer
+  read as a substitution (`managoat_acp` 0.2.2). Claude's adapter accepts
+  `claude-opus-5` and confirms `opus`, and `claude-sonnet-5` and confirms
+  `sonnet`; strict equality failed those turns before any prompt was written,
+  so every claude agent stopped answering while codex, which echoes the id
+  verbatim, kept working. A confirmation naming a genuinely different model
+  still fails the turn, as does an outright refusal.
+
+- The model catalog no longer suggests ids the pinned ACP adapters refuse.
+  `claude-sonnet-4-6`, `claude-opus-4-7` and `claude-opus-4-8` are refused by
+  `claude-agent-acp` 0.66.0, and `gpt-5.3-codex` by `codex-acp` 1.10.0. All
+  four answer a real inference call, so the provider check that vets this list
+  passed them; the adapter refuses them at `session/set_model`, before a prompt
+  is written. Since the model enforcement in the previous entry a refusal fails
+  the turn, so a suggested id the adapter refuses is an outage rather than a
+  stale hint. `gpt-6-astra` is listed for openai. A test pins the refused set
+  so none of them can be relisted from a provider check alone.
+
+- The new-agent form no longer starts you on a model the adapter refuses. Its
+  prefilled model was `claude-sonnet-4-6` and its codex placeholder
+  `gpt-5.3-codex`, so opening New agent, typing a name and saving produced an
+  agent that failed every turn at `session/set_model` — the form's own hint
+  ("Not one of the models Fountain lists") was firing on the value the form
+  supplied. The catalog clean-up in the previous entry reached the suggestion
+  list only; a default is what you get by doing nothing and a placeholder what
+  you get by typing the hint, so both are stronger claims than a suggestion.
+  Defaults, placeholders and the starter agent every verified account owns are
+  now held to catalog membership, which also catches a *retired* id — the way
+  `gpt-5-codex` went stale on 2026-08-22 — and not only a refused one.
+
+- `claude-fable-5-1` is no longer suggested for anthropic, so `GET
+  /api/catalog` no longer lists it. It was added on 2026-09-06 from Anthropic's
+  published model id, and the pinned `claude-agent-acp` refuses it at
+  `session/set_model`. No saved agent used it. `claude-fable-5` is refused the
+  same way and was never suggested; both are recorded so neither can be
+  relisted from a provider check alone.
+
+- The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
+- Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
+
 ### Changed
+
+- OpenAPI operations declare shared pipeline failures and controller refusals. The schema guard no longer exempts missing response statuses.
+- The API manual is a workflow guide linking to the generated reference at `/api/docs`; existing section anchors remain available.
+- Portable Prometheus rules cover stage and reattach failures, per-provider turn failure rates, and slow first output. Thresholds have executable alert fixtures.
+
+- Manifest apply rejects unknown `spec` keys before writing that resource or its secrets. Previously, Ecto silently discarded them, including misspelled network restrictions. Correct these keys before upgrading. Bulk apply keeps its HTTP 200 response with per-resource errors; other valid resources still apply. Ownership keys remain ignored.
 
 - **Credential brokerage is on for every account on the hosted platform**
   (ADR 0019 §9, home-cloud#163). It was limited access, enrolled by hand, and
@@ -167,6 +267,16 @@ upgrade, is in
   pin drops from 3,048 to 2,835, and the tracker closes.
 
 ### Fixed
+
+- Stop ACP turns before inference when an explicit model is rejected or cannot
+  be selected. Apply saved model changes to reused sessions and expose per-turn
+  model selection evidence in the API and stream.
+
+- The CLI displays published code changes with their URL, and renders unknown system notices as a dim line.
+- `/api/auth/me` now returns the presented API key's `expires_at`, or null for a key without an expiry, as its schema declares.
+
+- Deduplicate database gauges across replicas in sandbox, conversation and Oban alerts.
+- Label turn duration and first-output metrics by sandbox provider so hosted alerts can exclude self-hosted runners.
 
 - **ACP `session/new` carried the agent's unsubstituted MCP configuration**
   (#1404). Fountain resolves `${VAR}` references once at provision and writes

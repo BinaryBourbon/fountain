@@ -3,6 +3,7 @@ defmodule Fountain.Agents.ModelCatalogTest do
 
   alias Fountain.Agents.Agent
   alias Fountain.Agents.ModelCatalog
+  alias Fountain.RefusedModels
 
   # The suggestion list is Fountain's product data; the parser it is built on
   # is the library's (`Managoat.Runtimes.Model`, tested there). What is pinned
@@ -47,6 +48,23 @@ defmodule Fountain.Agents.ModelCatalogTest do
 
       assert changeset.valid?,
              "#{runtime} suggestion #{model} is rejected: #{inspect(changeset.errors)}"
+    end
+  end
+
+  # The registry lives in `Fountain.RefusedModels` so every surface that names
+  # a model reads one list — see its moduledoc for why that matters.
+  test "no suggestion is an id the pinned adapters are known to refuse" do
+    suggested =
+      Agent.runtimes() |> Enum.flat_map(&ModelCatalog.suggestions/1) |> MapSet.new()
+
+    for {model, observed} <- RefusedModels.all() do
+      refute MapSet.member?(suggested, model),
+             """
+             #{model} is suggested again, but the pinned ACP adapter refused it \
+             on #{observed}. A refusal fails the turn before any prompt is sent \
+             (#1640), so this suggestion is an outage for every agent that takes \
+             it. Confirm the adapter accepts it on a real turn before relisting.
+             """
     end
   end
 

@@ -243,3 +243,36 @@ describe("vaults", () => {
     assert.equal((await fountain.vaults.get("staging")).description, "staging creds");
   });
 });
+
+describe("vault expiry metadata", () => {
+  test("sends only metadata with PATCH and preserves explicit null", async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const fountain = new Fountain({
+      baseUrl: "https://fountain.test", apiKey: "fk_test",
+      fetch: async (url, init) => {
+        requests.push({ url, init });
+        return Response.json({ data: { id: "secret-id", key: "TOKEN", vault_id: "aaaaaaaa-1111-1111-1111-111111111111", expires_at: null } });
+      },
+    });
+    const secret = await fountain.vaults.secrets.update("aaaaaaaa-1111-1111-1111-111111111111", "TOKEN", { expires_at: null });
+    assert.equal(secret.expires_at, null);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]!.init?.method, "PATCH");
+    assert.equal(new URL(requests[0]!.url).pathname, "/api/vaults/aaaaaaaa-1111-1111-1111-111111111111/secrets/TOKEN");
+    assert.deepEqual(JSON.parse(String(requests[0]!.init?.body)), { expires_at: null });
+    await fountain.vaults.secrets.update("aaaaaaaa-1111-1111-1111-111111111111", "TOKEN", {});
+    assert.deepEqual(JSON.parse(String(requests[1]!.init?.body)), {});
+  });
+
+  test("conversation sandbox filter reaches the public query alongside roots_only", async () => {
+    let requested = "";
+    const fountain = new Fountain({
+      baseUrl: "https://fountain.test", apiKey: "fk_test",
+      fetch: async (url) => { requested = url; return Response.json({ data: [] }); },
+    });
+    await fountain.conversations({ sandboxId: "sandbox-id" });
+    const url = new URL(requested);
+    assert.equal(url.searchParams.get("sandbox_id"), "sandbox-id");
+    assert.equal(url.searchParams.get("roots_only"), "true");
+  });
+});

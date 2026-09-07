@@ -153,11 +153,11 @@ defmodule FountainWeb.Telemetry do
       distribution("fountain.turn.completed.duration_ms",
         event_name: [:fountain, :turn, :completed],
         measurement: :duration_ms,
-        tags: [:runtime, :status],
+        tags: [:runtime, :status, :provider],
         reporter_options: [
           buckets: [1000, 5000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_800_000]
         ],
-        description: "Turn duration by runtime and terminal status"
+        description: "Turn duration by runtime, provider and terminal status"
       ),
       # Time to first token (#535) — the latency between hitting enter and
       # seeing the agent do something, which is the one a user actually
@@ -174,7 +174,7 @@ defmodule FountainWeb.Telemetry do
       distribution("fountain.turn.first_output.elapsed_ms",
         event_name: [:fountain, :turn, :first_output],
         measurement: :elapsed_ms,
-        tags: [:runtime],
+        tags: [:runtime, :provider],
         reporter_options: [buckets: [250, 500, 1000, 2500, 5000, 10_000, 30_000, 60_000]],
         description: "Time from turn start to the sandbox's first output byte"
       ),

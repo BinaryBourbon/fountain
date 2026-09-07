@@ -13,7 +13,7 @@ and again. It is config, and not a process. Nothing runs until a
 An Agent decides eight things.
 
 - **`model`**, as `provider/model-id`. An example is
-  `anthropic/claude-sonnet-4-6`.
+  `anthropic/claude-sonnet-5`.
 - **`runtime`**, one of `claude`, `codex`, `gemini` or `opencode`.
 - **`environment`**, an optional [Environment](environment.md) to start from.
 - **`system`** and **`description`**, the system prompt and a summary that a
@@ -95,7 +95,7 @@ kind: Agent
 metadata:
   name: researcher
 spec:
-  model: anthropic/claude-sonnet-4-6
+  model: anthropic/claude-sonnet-5
   runtime: claude
   environment: python-data-env
   skills:

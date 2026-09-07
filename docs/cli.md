@@ -330,6 +330,10 @@ The server reconciles the environments, then the vaults, then the agents. It
 resolves an agent's `environment:` name reference, and that includes an
 environment that already exists on the server.
 
+The server rejects unknown `spec` keys per resource. The CLI prints those
+errors and exits nonzero; valid resources in the same manifest still apply.
+Correct a misspelled field before you retry.
+
 Against an older server with no `/api/apply`, the CLI falls back to one call
 for each resource.
 

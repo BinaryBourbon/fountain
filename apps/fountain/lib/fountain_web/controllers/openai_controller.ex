@@ -287,6 +287,7 @@ defmodule FountainWeb.OpenAIController do
     ],
     request_body: {"Chat-completions request", "application/json", @chat_request},
     responses: [
+      internal_server_error: {"Internal error", "application/json", @openai_error},
       ok:
         {"The completion (or, with `stream: true`, its SSE stream)", "application/json",
          @chat_response},
@@ -302,6 +303,7 @@ defmodule FountainWeb.OpenAIController do
       "OpenAI's `GET /v1/models`, so a base-URL client's model picker fills itself. Each " <>
         "agent is a model whose `id` is the agent's name.",
     responses: [
+      not_found: {"Not found", "application/json", @openai_error},
       ok:
         {"Model list", "application/json",
          %OpenApiSpex.Schema{
@@ -684,6 +686,29 @@ defmodule FountainWeb.OpenAIController do
       "this thread is already running a turn; wait for it to finish and send again",
       "conflict_error",
       "thread_busy"
+    )
+  end
+
+  defp respond_error(conn, {:error, :no_runner_online}) do
+    openai_error(
+      conn,
+      409,
+      "this agent runs on a self-hosted runner and none of yours is connected — " <>
+        "start `fountain runner` on the machine and try again",
+      "conflict_error",
+      "no_runner_online"
+    )
+  end
+
+  defp respond_error(conn, {:error, :sandbox_at_capacity}) do
+    conn
+    |> put_resp_header("retry-after", "5")
+    |> openai_error(
+      409,
+      "another conversation is running a turn on this sandbox; " <>
+        "wait for it to finish or interrupt it, then send again",
+      "conflict_error",
+      "sandbox_at_capacity"
     )
   end
 

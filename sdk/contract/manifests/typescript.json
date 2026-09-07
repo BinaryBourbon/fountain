@@ -58,6 +58,7 @@
     "PATCH /api/team/{agent_id}",
     "PATCH /api/team/{agent_id}/schedules/{id}",
     "PATCH /api/vaults/{id}",
+    "PATCH /api/vaults/{vault_id}/secrets/{id}",
     "POST /api/agents",
     "POST /api/connection-providers",
     "POST /api/connection-providers/{id}/discover",
@@ -141,6 +142,7 @@
     "TurnListResponse": { "required": ["data"] },
     "Vault": { "required": ["id", "name"] },
     "VaultRequest": {},
+    "VaultSecretMetadataRequest": { "optional": ["expires_at"] },
     "VaultSecret": {},
     "VaultUpdate": {}
   },

@@ -42,7 +42,7 @@ defmodule FountainWeb.MarketingInstanceTest do
       # The title too. The marketing site names the category here; an instance
       # is a front door and not the project, so it keeps the bare brand.
       assert body =~ "<title>#{Fountain.Brand.name()}</title>"
-      refute body =~ "Serverless sandboxes for coding agents"
+      refute body =~ "Claude Code, Codex and Gemini CLI behind one API"
     end
 
     # The footer groups its links now. A deployment that is not the marketing

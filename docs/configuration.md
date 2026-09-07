@@ -70,6 +70,17 @@ message.
 | `CHECKPOINT_CREATION_ENABLED` | `false` | — | Set to `true`, and Fountain takes a checkpoint of each persistent home when it parks, on a provider that has checkpoints (Sprites). The checkpoint belongs to that one machine. It can roll the machine back, and it cannot rebuild a machine that the provider lost. Each park adds one checkpoint, and Fountain does not delete old ones. The same flag also makes Fountain checkpoint each environment after it provisions a sandbox, which Sprites cannot restore into a new sandbox. |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | The durable log volume for one conversation. Once a conversation has persisted this much sandbox output, Fountain writes one truncation marker and discards the rest. Retention bounds age, and this bounds rate. The same `0` rule and the same boot refusal apply. |
 
+## Deployed ACP fixture
+
+Use these only on an isolated test instance. The fixed fixture runtime exercises
+the real sandbox/ACP path without model inference. It does not enable arbitrary
+custom harnesses. See [Test the deployed ACP path](integrations/acp.md#test-the-deployed-acp-path).
+
+| Variable | Default | Required | Meaning |
+|---|---|---|---|
+| `DEPLOYED_ACP_FIXTURE_ENABLED` | `false` | — | Set exactly `true` to offer the fixed `fountain-fixture` runtime on a test deployment. The account UUID below is also required. |
+| `DEPLOYED_ACP_FIXTURE_USER_ID` | — | With the fixture enabled | UUID of the dedicated verified test account allowed to create and launch fixture agents. Other accounts are refused. |
+
 ## Webhooks
 
 | Variable | Default | Required | Effect |
@@ -194,6 +205,21 @@ behaves as it always did, and each tenant supplies a credential of their own.
 | `PLATFORM_ANTHROPIC_API_KEY` | — | No. | The Anthropic key Fountain runs a tenant on when that tenant has none. This is the first key to set. The default agent uses the claude runtime. |
 | `PLATFORM_OPENAI_API_KEY` | — | No. | The same, for an agent on an `openai/` model. |
 | `PLATFORM_GEMINI_API_KEY` | — | No. | The same, for an agent on a `google/` model. |
+
+### Set a key from the admin panel
+
+An admin can also set each key at `/admin/inference`. Fountain stores that
+key in the database, encrypted under `MASTER_SECRETS_KEY`, and uses it from
+the next conversation on. No restart is necessary.
+
+A key set in the panel wins over the variable. Clear the key in the panel to
+go back to the variable. The page shows the source of each provider's live
+key, the last four characters of that key, and who set it. Each save and each
+clear leaves an `admin.platform_inference_key` event on the admin activity
+page.
+
+Use the variable to seed a new deployment. Use the panel to rotate a key on a
+deployment that already runs.
 | `PLATFORM_INFERENCE_DAILY_CENTS` | `5000` | No. | The most the keys above may cost in one UTC day, across every tenant. A conversation beyond it gets `503 platform_inference_unavailable`. It works only with `CREDITS_ENABLED=true`. |
 | `PLATFORM_INFERENCE_RATES` | — | No. | Per-model prices, in cents per million tokens. See below. |
 
@@ -362,7 +388,11 @@ Without PostHog you can force a flag on for each user.
 |---|---|---|---|
 | `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key. That is the public `phc_…` token, and not a personal key. Unset, Fountain looks up no flag remotely. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
-| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms` or `openai_compat`. It wins over PostHog. |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms`, `connections` or `openai_compat`. It wins over PostHog. |
+
+For a hosted Connections rollout, leave the global override unset. Enable
+`connections` for the intended test accounts in PostHog, with evaluation
+runtime set to `all`. Enable the credential broker too.
 
 ## Product analytics
 

@@ -179,9 +179,9 @@ export class Fountain {
    * sandbox is listed under its parent's tree, not again at the top level.
    * Pass `{ rootsOnly: false }` for the flat list, children included.
    */
-  async conversations(opts: { rootsOnly?: boolean } = {}): Promise<ConversationRecord[]> {
+  async conversations(opts: { rootsOnly?: boolean; sandboxId?: string } = {}): Promise<ConversationRecord[]> {
     return this.api.list<ConversationRecord>("/api/conversations", {
-      query: { roots_only: opts.rootsOnly === false ? undefined : "true" },
+      query: { roots_only: opts.rootsOnly === false ? undefined : "true", sandbox_id: opts.sandboxId },
     });
   }
 

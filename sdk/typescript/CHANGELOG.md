@@ -10,6 +10,44 @@ server releases.
 
 ---
 
+## [1.22.0] — 2026-09-07
+
+### Changed
+
+- Turn usage exposes adapter accounting source, version, scope and completeness.
+  Metadata-only reports omit unmeasured input/output counters, so those fields
+  are now optional. Check for missing counts before arithmetic; missing means
+  unknown, not zero. Historical reports gain no invented accounting metadata.
+
+## [1.21.1] — 2026-09-06
+
+### Fixed
+
+- Generated turn types expose model selection evidence: requested and effective models, selection status, evidence source, and failure details.
+
+## [1.21.0] — 2026-09-06
+
+### Added
+
+- `vaults.secrets.update(vault, key, {expires_at})` changes advisory expiry without replacing the value. Null clears expiry; omission preserves it.
+- `conversations({sandboxId})` filters by machine, alongside the existing root filter.
+
+### Fixed
+
+- Generated types describe field-validation and coded 422 refusals with a dedicated schema.
+
+## [1.20.2] — 2026-09-06
+
+### Fixed
+
+- Generated operation types include shared authentication, rate-limit and content-negotiation errors, plus documented controller refusals. Runtime request behavior is unchanged.
+
+## [1.20.1] — 2026-09-05
+
+### Added
+
+- `me()` exposes `connections_enabled` separately from the account’s `brokered` status.
+
 ## [1.20.0] — 2026-09-03
 
 ### Changed

@@ -54,14 +54,22 @@ public struct Conversation: Sendable, Decodable, Identifiable, Hashable {
   }
 }
 
+public struct UsageAccounting: Sendable, Decodable, Hashable {
+  public var version: Int
+  public var source: String
+  public var scope: String
+  public var completeness: String
+}
+
 public struct Usage: Sendable, Decodable, Hashable {
   public var input: Int?
   public var output: Int?
   public var cacheRead: Int?
   public var cacheWrite: Int?
+  public var accounting: UsageAccounting?
 
   enum CodingKeys: String, CodingKey {
-    case input, output
+    case input, output, accounting
     case cacheRead = "cache_read"
     case cacheWrite = "cache_write"
   }

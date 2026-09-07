@@ -52,12 +52,13 @@ defmodule FountainWeb.ConversationJSON do
       agent_version: agent_version_number(c),
       vault_id: c.vault_id,
       environment_id: c.environment_id,
+      sandbox_api_access: c.sandbox_api_access,
       permission_policy: c.permission_policy,
       runtime: c.runtime,
       # Derived, never stored — the same signal as on an agent (#702). A
       # protocol client asks before reopening a conversation, because a
       # legacy-runtime one has no ACP transcript to replay.
-      acp: Managoat.Runtimes.ACP.enabled?(c.runtime),
+      acp: Fountain.RuntimeDispatch.acp_enabled?(c.runtime),
       status: c.status,
       runtime_session_id: c.runtime_session_id,
       source: c.source,
@@ -186,13 +187,22 @@ defmodule FountainWeb.ConversationJSON do
       image_count: length(t.images || []),
       # The end-of-turn figure as the runtime reported it (#827); null when
       # it reported none or the turn predates the column.
+      model_selection: t.model_selection,
       usage: t.usage && usage_data(t.usage)
     }
   end
 
-  @doc "A turn's stored usage as the wire object: `input`, `output`, and the cache fields when present."
+  @doc "Stored token counts and adapter accounting claims; absent counts remain absent in qualified reports."
   def usage_data(%{} = u) do
-    %{input: u["input"] || 0, output: u["output"] || 0}
+    counts =
+      if is_map(u["accounting"]) do
+        %{} |> put_present(:input, u["input"]) |> put_present(:output, u["output"])
+      else
+        %{input: u["input"] || 0, output: u["output"] || 0}
+      end
+
+    counts
+    |> put_present(:accounting, u["accounting"])
     |> put_present(:cache_read, u["cache_read"])
     |> put_present(:cache_write, u["cache_write"])
   end

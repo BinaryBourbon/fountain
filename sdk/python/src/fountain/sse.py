@@ -8,6 +8,10 @@ from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional
 from .errors import ConnectionError, FountainError
 from .http import HttpClient, Response
 
+# Bound an idle socket read so cancel() can stop even behind a silent proxy.
+# A read timeout reconnects from the last complete event; it is not a run deadline.
+STREAM_READ_TIMEOUT = 5.0
+
 
 def parse_sse(lines: Iterable[bytes]) -> Iterator[Dict[str, Optional[str]]]:
     """Parse an iterable of SSE lines. Heartbeat comments are omitted."""
@@ -90,9 +94,9 @@ def stream_path(
         if deadline is not None and time.monotonic() >= deadline:
             return
         headers = {"Last-Event-ID": str(last_id)} if last_id > 0 else None
-        timeout = None
+        timeout = STREAM_READ_TIMEOUT
         if deadline is not None:
-            timeout = max(0.001, deadline - time.monotonic())
+            timeout = min(timeout, max(0.001, deadline - time.monotonic()))
         response: Optional[Response] = None
         response_done: Optional[threading.Event] = None
         try:

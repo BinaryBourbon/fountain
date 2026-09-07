@@ -12,7 +12,12 @@ no app of yours: each is a
 [platform provider](../../catalog/connections/index.md) with Fountain's own
 client.
 
-!!! note "Needs the credential broker"
+!!! note "Connections"
+
+    Connections and credential binding management also need the `connections`
+    feature flag. On your own instance, add `connections` to `FEATURE_FLAGS_ON`
+    after configuring the broker and provider apps. Hosted accounts are enrolled
+    separately; see [feature status](../../reference/feature-status.md).
     Connections exist only for accounts the egress broker is on for
     (ADR 0019). On other accounts the Connections page and the routes are
     absent. The broker is on for every account on the hosted platform. On

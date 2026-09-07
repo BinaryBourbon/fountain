@@ -1,7 +1,15 @@
-# gemini
+# Run Gemini CLI as an API
 
 > Google's Gemini CLI. The last runtime to reach ACP, and it reached it on
 > 2026-08-22.
+
+Run Gemini CLI on a sandbox with your repositories, packages and credentials.
+Send a prompt over HTTP, follow the transcript, and send the next prompt to
+the same conversation. Fountain manages the machine between turns.
+
+To use a chat interface, [open Conversations](https://fountain-conversations.demo.managoat.com/).
+To call it from your own code, follow the [quickstart](../../quickstart.md),
+then use the agent definition below.
 
 ## Summary
 
@@ -36,6 +44,19 @@ spec:
 ```
 
 Add your Gemini key at `/account/inference-credentials`.
+
+## Call it over HTTP
+
+After you apply the agent definition, set `FOUNTAIN_AGENT_ID` to the returned
+agent id, `FOUNTAIN_BASE_URL` to your instance URL, and `FOUNTAIN_API_KEY` to
+your Fountain account key. The account key is separate from the model credential.
+
+```sh
+--8<-- "docs/snippets/first-request.sh"
+```
+
+Use the returned conversation id to [follow events and send another prompt](../../api.md).
+A self-hosted instance uses the same request at its own base URL.
 
 ## Verify
 

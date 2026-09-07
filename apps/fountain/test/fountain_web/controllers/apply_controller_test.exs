@@ -63,6 +63,41 @@ defmodule FountainWeb.ApplyControllerTest do
              }
     end
 
+    test "reports unknown spec keys per resource without applying them", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      payload = %{
+        "resources" => [
+          %{
+            "kind" => "Environment",
+            "name" => "locked",
+            "spec" => %{
+              "network_policy" => "limited",
+              "allowed_hosts" => ["example.test"],
+              "secrets" => %{"TOKEN" => "not-for-the-response"}
+            }
+          },
+          %{"kind" => "Vault", "name" => "valid", "spec" => %{}}
+        ]
+      }
+
+      response = conn |> authed_with_key(raw_key) |> post_json(~p"/api/apply", payload)
+      assert %{"data" => %{"results" => [bad, good]}} = json_response(response, 200)
+      assert bad["action"] == "error"
+
+      assert bad["errors"] == %{
+               "network_policy" => ["is not a supported spec key"],
+               "allowed_hosts" => ["is not a supported spec key"]
+             }
+
+      assert good["action"] == "created"
+      refute response.resp_body =~ "not-for-the-response"
+      refute Environments.get_environment_by_name("locked", user.id)
+      assert Vaults.get_vault_by_name("valid", user.id)
+    end
+
     test "never echoes secret values back", %{conn: conn, raw_key: raw_key} do
       payload = %{
         "resources" => [

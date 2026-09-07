@@ -14,6 +14,17 @@ orchestrator that built the first cut; that fleet stopped running against this
 repo after launch and both files were deleted, so this is now the only place
 the goal is written down.
 
+## Working with Review Loop
+
+When working on a Review Loop PR, read the
+[repository skill](.agents/skills/review-loop/SKILL.md) for bot commits, CI repairs,
+human decisions and bounded retries. Report outcomes briefly. The approved-base
+`.github/review-loop.yml` and its referenced files remain the policy authority.
+
+The skill is copied unchanged from
+[Review Loop Action `9278790`](https://github.com/managoat/review-loop-action/blob/92787907f1b236d471555e3d231443582e46ce12/skills/review-loop/SKILL.md).
+Review upstream changes before replacing it; its MIT license is included.
+
 ## Quick start
 
 ```bash
@@ -407,22 +418,25 @@ build tells you which toolchain to go and look at:
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
 | **sdk-clients** | The four SDKs (Elixir, TypeScript, Python, and Swift in its own `swift-sdk` job), their contract and conformance checks, both Go modules (`cli/` and `apps/fountain_buzz/cli`), and the Hermes plugin |
-| **docs-prose** | The three prose gates, when a diff touches docs *and* code. A docs-only diff gets them from the `docs` job instead |
+| **docs-prose** | Advisory wording reports when docs, prose configuration or the workflow changes, and on a full main run. Docs-only PRs get them from `docs`; structural checks still block |
+| **gate** | `CI required`: validates all expected job results and records a successful PR checkout tree |
 
-Dialyzer bounds `elixir-static` and that job bounds the others, so it is the
-first thing to look at before adding a gate there.
+Measure the slowest partition plus coverage and runner queue delays before
+adding runners. Dialyzer can dominate cold runs; the core release has its own
+compiled-build cache. `scripts/ci/README.md` describes timing refresh and
+required-check activation.
 
 `mix hex.audit` is not one of these: `scripts/hex-audit-gate.exs` **fails the
 build** on a security advisory unless it is acknowledged in `mix.exs`, and
 only retirements stay non-blocking (an upstream maintainer can retire a
 package at any moment, and that should not break unrelated work).
 
-On `main` the run usually short-circuits: the `already-tested` job compares
-the pushed commit's tree with the head of the merged PR and, when they are
-identical and that head has a successful `pull_request` CI run, every other
-job is skipped and `build.yml` starts straight away (the run still concludes
-`success`, which is its gate). A rebased squash-merge is that case; anything
-else — a tree that differs, no PR, no green run — gets the full run.
+On `main`, `already-tested` can reuse a successful PR run's `tested-tree`
+artifact. That artifact records the actual checkout tree (normally GitHub's
+synthetic PR merge), and is uploaded only after `CI required` passes. A missing,
+expired or different artifact runs full CI. Main runs independently; superseded
+PR runs cancel. Wording reports are advisory; security and structural docs
+checks remain blocking.
 
 ### Coverage
 
@@ -508,6 +522,53 @@ use ExUnitProperties                 # StreamData property tests (installed)
 
 Mimic is available. Prefer integration tests through real changesets over heavy mocking.
 
+### Flaky tests
+
+A test that fails and then passes with no code change deserves investigation.
+Keep the failed run's evidence and compare the commits, workflow conditions,
+runner environment and external dependencies before calling it a flake.
+**File confirmed flakes.** Record an unexplained failure with what you know
+rather than dismissing it because a rerun passed.
+
+```bash
+gh issue create --label flake --label area:testing --title "Flake: <what raced>"
+```
+
+`flake` is the label every one of them carries; `area:testing` and the area
+the test covers go alongside it. Search before filing —
+`gh issue list --label flake --state all` — because the same flake gets found
+repeatedly and a second issue splits the evidence.
+
+File rather than fix in place when you are mid-task on something else, so a
+campaign's diffs stay about the campaign (#1539). Fix it in place when it was
+your own change that flaked.
+
+What the issue needs, because a flake nobody can reproduce is a flake nobody
+can close:
+
+- the failing assertion with its `left:`/`right:`, and the file and line;
+- **how often, out of what** — "one full-suite run in eight", "four
+  first-attempt CI failures this week" — with the run URLs;
+- the mechanism if you have it: what the test asserts on versus what it waits
+  on. That difference is the whole bug in most of them.
+
+Two places to investigate are failed first attempts followed by successful
+reruns, and failed `push` runs on `main`. This query finds rerun candidates;
+a successful later attempt alone does not establish why the first failed:
+
+```bash
+gh run list --workflow ci.yml --limit 200 \
+  --json databaseId,attempt,conclusion,headBranch --jq '.[] | select(.attempt > 1)'
+gh api /repos/BinaryBourbon/fountain/actions/runs/<id>/attempts/1/jobs
+```
+
+A green PR does not prove that a failed post-merge run is a flake. The merged
+tree can include other changes, push-only jobs can test different behavior,
+and the runner or external services can differ. Compare those conditions
+before classifying the failure. Before filing from either source, date the
+failure against `git log` on the file a fix would touch: of four found this
+way on 2026-09-04, two had already been fixed after the failed run.
+
 ## Things NOT to do
 
 - **Don't reach for `_unsafe_*` without established ownership.** These skip tenant scoping; the legitimate caller shapes (including the scoped-parent-fetch-then-`_unsafe_`-child pattern) are in the tenant isolation section above.
@@ -524,6 +585,10 @@ Mimic is available. Prefer integration tests through real changesets over heavy 
   having its connection pulled away. `Task.async` is right where the caller
   keeps the ref and handles the reply (`Analytics.Sink`).
 - **Don't push directly to `main`.** All changes go through PRs; the CI gate must pass.
+- **Don't re-run a red test until it goes green and move on.** Keep the failed
+  run's evidence and investigate what changed between attempts. File confirmed
+  flakes with the `flake` label, and record unexplained failures with what you
+  know — see *Flaky tests* above.
 - **Don't add `async: false` to tests unless the test genuinely requires it** (e.g. global ETS state). The SQL Sandbox handles DB isolation.
 
 ## Adding a new context
@@ -616,15 +681,18 @@ Guardrails that trip people who only edit markdown:
   `GuardrailCase` is what turns them into the tests in that file; the
   library runs the same template against a fixture manual, so a change to a
   check is tested there before it runs against `docs/`.
-- **`python3 scripts/docs-style.py`** enforces the style sheet
+- **Wording checks advise; structural checks block.** CI retains the full
+  wording reports as `prose-advice` and caps each log at 60 lines. The style
+  standards still guide writing; their heuristics do not block unrelated fixes.
+- **`python3 scripts/docs-style.py`** checks the style sheet
   (`standards/voice-and-style.md`): no em dashes, no colon-introduced
   lists, no "simply"/"obviously"/"coming soon". It skips the backlog in
   `scripts/docs-style-allow.txt`, so a file **not** on that list is checked and
   every new page is covered by default. Cleaning a page means deleting its
   line; the list only shrinks (#911).
-- **`vale lint docs $(ls -d apps/*/docs)` enforces ASD-STE100 Simplified
+- **`vale lint docs $(ls -d apps/*/docs)` checks ASD-STE100 Simplified
   Technical English.** An extension's slice of the manual (ADR 0043) is held to
-  the same gate; vale selects from its path arguments, so those directories are
+  the same report; vale selects from its path arguments, so those directories are
   named explicitly, while `docs-style.py` and `destink.mjs` discover them. Every
   published page is written in it. The standard is
   `standards/simplified-technical-english.md`; config is
@@ -641,7 +709,7 @@ Guardrails that trip people who only edit markdown:
   table cells, a code span opening a sentence, `anything` matching the -ing
   rule) and where a suppression comment is legitimate.
 - **`node scripts/destink/destink.mjs` looks for AI-writing tells.** The third
-  prose gate. The engine is the published
+  prose report. The engine is the published
   [`sentences`](https://github.com/lex00/sentences) package (MIT), pinned by
   the version range in `scripts/destink/package.json` — bump it and run
   `npm install --prefix scripts/destink` to pull in an upstream change.

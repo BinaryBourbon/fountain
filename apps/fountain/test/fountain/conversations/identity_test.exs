@@ -100,11 +100,13 @@ defmodule Fountain.Conversations.IdentityTest do
       assert :none = Identity.pick_session([tagged("theirs", @other)], @conv)
     end
 
-    test "falls back to an untagged head only when nothing carries our tag" do
+    test "never offers an untagged process, even when it is the only session" do
       legacy = %Session{id: "legacy", command: "claude-agent-acp"}
 
-      assert {:untagged, ^legacy} =
+      assert :none =
                Identity.pick_session([tagged("theirs", @other), legacy], @conv)
+
+      assert :none = Identity.pick_session([legacy], @conv)
 
       assert {:tagged, %Session{id: "ours"}} =
                Identity.pick_session([legacy, tagged("ours", @conv)], @conv)

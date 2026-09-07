@@ -1,0 +1,51 @@
+name: Flaky test
+description: A test that failed and then passed with nothing changed.
+title: "Flake: "
+labels: ["flake", "area:testing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A flake that nobody can reproduce is a flake nobody can close. The
+        three fields below are what makes one actionable: what failed, how
+        often, and — if you got that far — what it raced.
+
+        Search first: [existing flakes](https://github.com/BinaryBourbon/fountain/issues?q=label%3Aflake).
+        The same one gets found repeatedly, and a second issue splits the evidence.
+  - type: input
+    id: test
+    attributes:
+      label: The test
+      description: File, line and test name.
+      placeholder: apps/fountain/test/fountain_web/live/verify_pending_live_test.exs:96 — "the poll advances even when the broadcast never arrives"
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: The failure
+      description: The assertion and its `left:` / `right:`. Paste the output rather than describing it.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: rate
+    attributes:
+      label: How often, out of what
+      description: >
+        A rate, not an adjective — "one full-suite run in eight", "four
+        first-attempt CI failures this week". Link the runs.
+      placeholder: |
+        1 failure in 8 full local suite runs on main.
+        https://github.com/BinaryBourbon/fountain/actions/runs/...
+    validations:
+      required: true
+  - type: textarea
+    id: mechanism
+    attributes:
+      label: Mechanism, if you have it
+      description: >
+        What the test asserts on versus what it waits on. That difference is
+        the whole bug in most of them. Leave blank if you did not get this far.
+    validations:
+      required: false

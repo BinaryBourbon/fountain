@@ -1,5 +1,37 @@
 # Fountain
 
+Use Claude Code, Codex and Gemini CLI from a chat app, with a real computer
+behind each conversation. Watch the agent work, steer it, and come back to
+the same files.
+
+<a href="https://fountain-conversations.demo.managoat.com/"><img src="apps/fountain/priv/static/images/apps/conversations.jpg" alt="Conversations showing a cart task, tool calls, an expanded code diff, and tests in progress" width="620"></a>
+<a href="https://fountain-workbench.demo.managoat.com/"><img src="apps/fountain/priv/static/images/apps/workbench-mobile.jpg" alt="Workbench on a phone, with a cart work item assigned to Builder" width="180"></a>
+
+*Real app screens with a seeded local example.*
+
+[Open Conversations](https://fountain-conversations.demo.managoat.com/) ·
+[Build with the API](docs/quickstart.md) · [Self-host](docs/self-hosting.md)
+
+## The apps
+
+Choose a chat, a team of agents, or a workbench for a shared project.
+
+| App | What it is | |
+|---|---|---|
+| [**Conversations**](https://github.com/managoat/demos/tree/main/apps/fountain-conversations) | ChatGPT, except the model has a real computer and you can watch it use one: start a run, follow it turn by turn, steer it, read the raw log. | [Open it](https://fountain-conversations.demo.managoat.com/) |
+| [**Team**](https://github.com/managoat/demos/tree/main/apps/fountain-team) | A group chat whose contacts are agents you made, one click each: roster on the left, thread on the right, routines on a schedule. | [Open it](https://fountain-team.demo.managoat.com/) |
+| [**Workbench**](https://github.com/managoat/demos/tree/main/apps/fountain-workbench) | Multiplayer engineering: projects over an environment and a vault, work items in them, and teammates you put on a work item by typing. | [Open it](https://fountain-workbench.demo.managoat.com) |
+
+### Team
+
+<img src="apps/fountain/priv/static/images/apps/team.jpg" alt="Team with Builder, Reviewer, and Researcher in the roster and Builder’s thread open" width="800">
+
+### Workbench
+
+<img src="apps/fountain/priv/static/images/apps/workbench.jpg" alt="Workbench with the storefront project, acceptance criteria, and Builder assigned to the cart work item" width="800">
+
+## What runs underneath
+
 **A conversational API to a computer. The meter runs while an agent works and
 stops while the machine waits, so a conversation nobody is talking to costs
 nothing.**
@@ -33,28 +65,8 @@ four.
 
 ## Self-hosting
 
-Run your own instance: [docs/self-hosting.md](docs/self-hosting.md).
-
-```sh
-cp .env.compose.example .env   # then fill in the generated keys
-docker compose up -d
-```
-
-Prefer a platform? [`render.yaml`](render.yaml) declares one service and a
-managed Postgres; [`fly.toml`](fly.toml) declares one machine, and you attach
-a database in a second command. Both pin a release image and one instance —
-Fountain clusters over Erlang distribution, so a second replica is two
-schedulers racing over the same sandboxes. Coolify and Dokploy run the compose
-file above straight from this repo. Prefer Kubernetes? A portable baseline —
-plain manifests, `kubectl apply -k`, no operators assumed — lives in
-[`deploy/k8s/`](deploy/k8s/).
-
-Scale-to-zero hosts (Cloud Run, App Runner, Vercel) do not work: the sandbox
-reaper and the credit pricer run inside the app process, so a parked instance
-quietly stops both. [docs/self-hosting.md](docs/self-hosting.md) has the three
-properties a host must have.
-
-## The apps
+[Run your own Fountain instance](docs/self-hosting.md) with the same apps,
+API, CLI and SDKs under your own keys and infrastructure.
 
 Fountain's own UI is an operator console. You configure things in it; you do
 not watch an agent work in it. The three apps we build for that are separate
@@ -62,12 +74,6 @@ single-page apps on their own origins, talking to `/api` with a key you paste
 in or an OAuth sign-in. Each is static files, so a hosted build works against
 your instance as soon as it admits the origin
 (`API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com`).
-
-| App | What it is | |
-|---|---|---|
-| [**Conversations**](https://github.com/managoat/fountain-conversations) | ChatGPT, except the model has a real computer and you can watch it use one: start a run, follow it turn by turn, steer it, read the raw log. | [Open it](https://fountain-conversations.demo.managoat.com/) |
-| [**Team**](https://github.com/managoat/fountain-team) | A group chat whose contacts are agents you made, one click each: roster on the left, thread on the right, routines on a schedule. | [Open it](https://fountain-team.demo.managoat.com/) |
-| [**Workbench**](https://github.com/managoat/fountain-workbench) | Multiplayer engineering: projects over an environment and a vault, work items in them, and teammates you put on a work item by typing. | [Open it](https://fountain-workbench.demo.managoat.com) |
 
 `CONVERSATIONS_APP_URL` and `TEAM_APP_URL` point the console's own links at
 copies you host. [The console, the apps, and the API](docs/concepts/surfaces.md)
@@ -213,7 +219,7 @@ curl -sX POST $FOUNTAIN_URL/api/environments/$ENV_ID/secrets \
 curl -sX POST $FOUNTAIN_URL/api/agents \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"researcher","model":"anthropic/claude-sonnet-4-6","runtime":"claude","environment_id":"$ENV_ID"}'
+  -d '{"name":"researcher","model":"anthropic/claude-sonnet-5","runtime":"claude","environment_id":"$ENV_ID"}'
 ```
 
 ### Run a conversation and stream output

@@ -76,6 +76,8 @@
     "POST /api/vaults/{vault_id}/secrets"
   ],
   "schemas": {
+    "TurnUsage": { "optional": ["input", "output", "cache_read", "cache_write", "accounting"] },
+    "UsageAccounting": { "required": ["version", "source", "scope", "completeness"] },
     "Agent": { "required": ["id", "name"] },
     "AgentListResponse": { "required": ["data"] },
     "AgentResponse": { "required": ["data"] },

@@ -19,11 +19,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
     machine = %TurnMachine{
       conversation_id: conv.id,
       row: row,
-      metrics: %{
-        started_mono: System.monotonic_time(:millisecond),
-        runtime: "claude",
-        first_output?: false
-      }
+      metrics: TurnMachine.start_metrics("claude", :runner, System.monotonic_time(:millisecond))
     }
 
     {:ok, user: user, agent: agent, conv: conv, row: row, machine: machine}
@@ -151,13 +147,27 @@ defmodule Fountain.Conversations.TurnMachineTest do
   end
 
   describe "handle/3 with a refused model" do
-    test "model_rejected is a stage event and the turn continues", %{machine: m, conv: conv} do
-      assert {^m, []} = TurnMachine.handle(m, {:model_rejected, "gpt-9", "no such model"})
+    test "model_rejected fails the turn and persists selection evidence", %{
+      machine: m,
+      conv: conv
+    } do
+      assert {updated, [{:finish, "failed", _, _}, {:drop_connection, "failed"}]} =
+               TurnMachine.handle(m, {:model_rejected, "gpt-9", "no such model"})
 
-      assert [
-               {"failed",
-                %{"requested" => "gpt-9", "using" => "the runtime's default for this turn"}}
-             ] =
+      assert updated.row.model_selection[:requested_model] == "gpt-9"
+
+      assert [{"failed", %{"requested_model" => "gpt-9", "effective_model" => nil}}] =
+               stages(conv.id, "model")
+
+      assert Fountain.Repo.get!(Conversations.Turn, m.row.id).model_selection["status"] ==
+               "failed"
+    end
+
+    test "selected model evidence comes from the peer", %{machine: m, conv: conv} do
+      assert {updated, []} = TurnMachine.handle(m, {:model_selected, "astra", "astra", "runtime"})
+      assert updated.row.model_selection[:effective_model] == "astra"
+
+      assert [{"done", %{"effective_model" => "astra", "source" => "runtime"}}] =
                stages(conv.id, "model")
     end
 
@@ -226,6 +236,40 @@ defmodule Fountain.Conversations.TurnMachineTest do
                TurnMachine.handle(m, {:done, "cancelled", nil})
     end
 
+    test "adapter accounting survives termination and storage without invented counts", %{
+      machine: machine,
+      row: row,
+      conv: conv
+    } do
+      accounting = %{
+        "version" => 1,
+        "source" => "codex/thread-token-usage-delta",
+        "scope" => "root_thread_prompt",
+        "completeness" => "partial"
+      }
+
+      usage =
+        Managoat.ACP.Usage.from_prompt_result(%{
+          "stopReason" => "cancelled",
+          "usage" => nil,
+          "_meta" => %{"usageAccounting" => accounting}
+        })
+
+      assert {^machine, [{:finish, "failed", _, _}]} =
+               TurnMachine.handle(machine, {:done, "cancelled", usage})
+
+      stored = Fountain.Repo.get!(Conversations.Turn, row.id) |> Fountain.Repo.preload(:images)
+      assert stored.usage == %{"accounting" => accounting}
+
+      assert %{data: [%{usage: %{accounting: ^accounting}}]} =
+               FountainWeb.ConversationJSON.turns(%{turns: [stored]})
+
+      assert %{usage_input_tokens: 0, usage_output_tokens: 0} =
+               Conversations._unsafe_get_conversation!(conv.id)
+
+      assert {:error, :already_recorded} = Conversations._unsafe_record_turn_usage(stored, usage)
+    end
+
     test "a failed peer ends the turn it drove and drops the connection", %{machine: m} do
       assert {^m,
               [
@@ -256,6 +300,73 @@ defmodule Fountain.Conversations.TurnMachineTest do
         })
 
       assert no_key =~ "no Anthropic API key is on file"
+    end
+
+    # The failure that reads as a quiet conversation. A first turn whose ACP
+    # `initialize` fails leaves `runtime_session_id` set — `session_plan/2`
+    # persisted it before the turn ran — and no rollout under it, so every
+    # later prompt resumes a session that was never opened and fails the same
+    # way, with the conversation back to `idle` in between.
+    test "a resume against a session that is not there clears the id first", %{machine: m} do
+      error = %{
+        "code" => -32_603,
+        "message" => "Internal error",
+        "data" => %{"details" => "no rollout found for thread id be412434-0b99"}
+      }
+
+      assert {^m,
+              [
+                {:forget_runtime_session, "session_gone",
+                 "no rollout found for thread id be412434-0b99"},
+                {:finish, "failed", %{"error" => message, "acp.session_gone" => true},
+                 %{reason: message}},
+                {:drop_connection, "failed"}
+              ]} = TurnMachine.handle(m, {:failed, {:acp_error, :resume_session, error}})
+
+      assert message =~ "no rollout found for thread id be412434-0b99"
+      assert message =~ "Send your prompt again"
+      assert message =~ "will not remember"
+    end
+
+    test "the -32002 a replaced disk answers with is the same failure", %{machine: m} do
+      assert {^m, [{:forget_runtime_session, "session_gone", _} | _]} =
+               TurnMachine.handle(
+                 m,
+                 {:failed,
+                  {:acp_error, :load_session,
+                   %{"code" => -32_002, "message" => "Resource not found"}}}
+               )
+    end
+
+    test "a resume that failed for any other reason keeps the session", %{machine: m} do
+      assert {^m, [{:finish, "failed", %{"error" => error}, _}, {:drop_connection, "failed"}]} =
+               TurnMachine.handle(
+                 m,
+                 {:failed,
+                  {:acp_error, :resume_session, %{"code" => -32_603, "message" => "peer died"}}}
+               )
+
+      # The catch-all's inspected tuple, and no clearing: a session that may
+      # still be good is not thrown away over a transient failure.
+      assert error =~ "acp_error"
+    end
+
+    test "a failure on any other call is never read as a missing session", %{machine: m} do
+      assert {^m, [{:finish, "failed", _, _}, {:drop_connection, "failed"}]} =
+               TurnMachine.handle(
+                 m,
+                 {:failed, {:acp_error, :prompt, %{"message" => "resource not found"}}}
+               )
+    end
+
+    test "the same failure with no turn open still clears the session", %{machine: m} do
+      idle = idle(m)
+
+      assert {^idle, [{:forget_runtime_session, "session_gone", _}, {:drop_connection, "failed"}]} =
+               TurnMachine.handle(
+                 idle,
+                 {:failed, {:acp_error, :resume_session, %{"code" => -32_002}}}
+               )
     end
 
     test "the same refusal on another runtime is an ordinary peer failure", %{machine: m} do
@@ -291,7 +402,12 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
 
       assert_receive {:telemetry, [:fountain, :turn, :completed], %{duration_ms: _},
-                      %{runtime: "claude", status: "completed", conv_id: conv_id}}
+                      %{
+                        runtime: "claude",
+                        provider: "runner",
+                        status: "completed",
+                        conv_id: conv_id
+                      }}
 
       assert conv_id == conv.id
     end
@@ -336,7 +452,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert once.metrics.first_output?
 
       assert_receive {:telemetry, [:fountain, :turn, :first_output], %{elapsed_ms: _},
-                      %{runtime: "claude"}}
+                      %{runtime: "claude", provider: "runner"}}
 
       assert TurnMachine.maybe_emit_first_output(once) == once
       refute_receive {:telemetry, [:fountain, :turn, :first_output], _, _}, 50
@@ -493,6 +609,32 @@ defmodule Fountain.Conversations.TurnMachineTest do
 
       assert [{"done", %{"event" => "reset", "reason" => "fresh_sandbox"}}] =
                stages(conv.id, "session")
+    end
+
+    test "reset_runtime_session/4 records the reason the caller knows", %{conv: conv} do
+      {:ok, conv} = Conversations.update_conversation(conv, %{runtime_session_id: "old"})
+      assert :ok = TurnMachine.reset_runtime_session(conv, conv.id, "session_gone", "no rollout")
+      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == nil
+
+      assert [{"done", %{"reason" => "session_gone", "detail" => "no rollout"}}] =
+               stages(conv.id, "session")
+    end
+
+    test "forget_runtime_session/2 clears the server's copy along with the row", %{conv: conv} do
+      {:ok, conv} = Conversations.update_conversation(conv, %{runtime_session_id: "old"})
+      state = %{conversation_id: conv.id, runtime_session_id: "old"}
+
+      assert %{runtime_session_id: nil} = TurnMachine.forget_runtime_session(state, conv)
+      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == nil
+      assert [{"done", %{"reason" => "fresh_sandbox"}}] = stages(conv.id, "session")
+    end
+
+    test "forget_runtime_session/2 on a conversation with no session is not an event",
+         %{conv: conv} do
+      state = %{conversation_id: conv.id, runtime_session_id: nil}
+
+      assert ^state = TurnMachine.forget_runtime_session(state, conv)
+      assert stages(conv.id, "session") == []
     end
 
     test "model_unavailable_message/2 names the model when there is one" do

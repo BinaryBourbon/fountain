@@ -1,0 +1,21 @@
+# Enable REVIEW_LOOP_ENABLED only after production preflight and callback checks.
+# REVIEW_LOOP_URL is the deployed service's HTTPS origin.
+name: Request Review Loop
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  dispatch:
+    if: ${{ vars.REVIEW_LOOP_ENABLED == 'true' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: managoat/review-loop-action@f10fac7d0e21607dd4aa0da7d794e94780db2a65 # v1.0.0
+        with:
+          service-url: ${{ vars.REVIEW_LOOP_URL }}

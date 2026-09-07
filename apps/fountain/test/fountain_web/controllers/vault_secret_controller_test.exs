@@ -1,5 +1,6 @@
 defmodule FountainWeb.VaultSecretControllerTest do
   use FountainWeb.ConnCase, async: true
+  require Ecto.Query
 
   setup do
     user = insert_verified_user()
@@ -98,6 +99,125 @@ defmodule FountainWeb.VaultSecretControllerTest do
         |> post_json("/api/vaults/#{other_vault.id}/secrets", %{key: "API_TOKEN", value: "t0k3n"})
 
       assert json_response(conn, 404)
+    end
+  end
+
+  describe "PATCH /api/vaults/:vault_id/secrets/:id" do
+    test "sets, extends and clears expiry without changing ciphertext or exposing values", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      vault = insert_vault(user_id: user.id)
+      secret = insert_vault_secret(vault, key: "TOKEN", value: "expiry-test-secret")
+
+      patch_expiry = fn attrs ->
+        conn |> authed_with_key(key) |> patch_json("/api/vaults/#{vault.id}/secrets/TOKEN", attrs)
+      end
+
+      for expiry <- ["2027-01-15T00:00:00Z", "2027-02-15T00:00:00Z", nil] do
+        Fountain.Repo.update_all(
+          Ecto.Query.from(s in Fountain.Vaults.VaultSecret, where: s.id == ^secret.id),
+          set: [expiry_notified_at: ~U[2026-09-01 00:00:00Z]]
+        )
+
+        response = patch_expiry.(%{expires_at: expiry})
+        body = json_response(response, 200)["data"]
+        assert body["expires_at"] == expiry
+        refute Map.has_key?(body, "value")
+        refute response.resp_body =~ "expiry-test-secret"
+        stored = Fountain.Repo.reload!(secret)
+        assert stored.value_ciphertext == secret.value_ciphertext
+        assert stored.expiry_notified_at == nil
+      end
+
+      events =
+        Fountain.Repo.all(
+          Ecto.Query.from(a in Fountain.Audit.Event,
+            where: a.user_id == ^user.id and a.action == "vault.secret.update"
+          )
+        )
+
+      assert length(events) == 3
+      assert Enum.all?(events, &(&1.actor == "api" and &1.metadata == %{"key" => "TOKEN"}))
+    end
+
+    test "omission and identical expiry preserve the notification and create no audit mutation",
+         %{
+           conn: conn,
+           user: user,
+           raw_key: key
+         } do
+      vault = insert_vault(user_id: user.id)
+      secret = insert_vault_secret(vault, key: "TOKEN", expires_at: "2027-01-15T00:00:00Z")
+
+      secret =
+        secret
+        |> Ecto.Changeset.change(expiry_notified_at: ~U[2026-09-01 00:00:00Z])
+        |> Fountain.Repo.update!()
+
+      for attrs <- [%{}, %{expires_at: "2027-01-15T00:00:00Z"}] do
+        response =
+          conn
+          |> authed_with_key(key)
+          |> patch_json("/api/vaults/#{vault.id}/secrets/TOKEN", attrs)
+
+        assert json_response(response, 200)["data"]["expires_at"] == "2027-01-15T00:00:00Z"
+        assert Fountain.Repo.reload!(secret).expiry_notified_at == secret.expiry_notified_at
+      end
+
+      refute Fountain.Repo.exists?(
+               Ecto.Query.from(a in Fountain.Audit.Event,
+                 where: a.user_id == ^user.id and a.action == "vault.secret.update"
+               )
+             )
+    end
+
+    test "rejects invalid expiry and value or identity fields without changing the secret", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      vault = insert_vault(user_id: user.id)
+      secret = insert_vault_secret(vault, key: "TOKEN")
+
+      for attrs <- [
+            %{expires_at: "invalid"},
+            %{value: "replacement"},
+            %{key: "OTHER"},
+            %{vault_id: Ecto.UUID.generate()}
+          ] do
+        response =
+          conn
+          |> authed_with_key(key)
+          |> patch_json("/api/vaults/#{vault.id}/secrets/TOKEN", attrs)
+
+        assert json_response(response, 422)
+        assert Fountain.Repo.reload!(secret).value_ciphertext == secret.value_ciphertext
+        assert Fountain.Repo.reload!(secret).expires_at == nil
+      end
+    end
+
+    test "cannot update another tenant's secret or create a missing one", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      mine = insert_vault(user_id: user.id)
+      foreign = insert_vault(user_id: insert_verified_user().id)
+      secret = insert_vault_secret(foreign, key: "TOKEN")
+
+      for vault_id <- [foreign.id, mine.id, Ecto.UUID.generate()] do
+        response =
+          conn
+          |> authed_with_key(key)
+          |> patch_json("/api/vaults/#{vault_id}/secrets/TOKEN", %{expires_at: nil})
+
+        assert json_response(response, 404)
+      end
+
+      assert Fountain.Repo.reload!(secret).value_ciphertext == secret.value_ciphertext
+      assert Fountain.Vaults._unsafe_list_secrets(mine) == []
     end
   end
 

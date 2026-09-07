@@ -496,7 +496,12 @@ defmodule FountainWeb.MetricsTest do
       # nothing else, so the bucket counts below are this test's alone.
       Fountain.Telemetry.event(
         [:turn, :completed],
-        %{runtime: "opencode", status: "completed", conv_id: Ecto.UUID.generate()},
+        %{
+          runtime: "opencode",
+          status: "completed",
+          provider: "runner",
+          conv_id: Ecto.UUID.generate()
+        },
         %{duration_ms: 42_000}
       )
 
@@ -504,7 +509,7 @@ defmodule FountainWeb.MetricsTest do
       {200, body} = scrape()
 
       series =
-        ~s(fountain_turn_completed_duration_ms_bucket{runtime="opencode",status="completed")
+        ~s(fountain_turn_completed_duration_ms_bucket{provider="runner",runtime="opencode",status="completed")
 
       # 42s lands above the 30s boundary and below 60s. A duration handed over
       # in seconds or in native units lands in a different bucket entirely.
@@ -523,14 +528,15 @@ defmodule FountainWeb.MetricsTest do
       # can ever be named keeps the exact-count assertions meaningful.
       Fountain.Telemetry.event(
         [:turn, :first_output],
-        %{runtime: "probe-runtime", conv_id: Ecto.UUID.generate()},
+        %{runtime: "probe-runtime", provider: "runner", conv_id: Ecto.UUID.generate()},
         %{elapsed_ms: 1_500}
       )
 
       Process.sleep(50)
       {200, body} = scrape()
 
-      series = ~s(fountain_turn_first_output_elapsed_ms_bucket{runtime="probe-runtime")
+      series =
+        ~s(fountain_turn_first_output_elapsed_ms_bucket{provider="runner",runtime="probe-runtime")
 
       # 1.5s is above the 1s boundary and below 2.5s.
       assert body =~ ~s(#{series},le="2500"} 1)

@@ -11,6 +11,7 @@ defmodule FountainWeb.CatalogControllerTest do
     body = conn |> authed_with_key(key) |> get("/api/catalog") |> json_response(200)
     data = body["data"]
 
+    assert data["sandbox_api_access"] == ["owner", "none"]
     assert data["runtimes"] == Fountain.Agents.Agent.runtimes()
     assert data["models"]["claude"] == Fountain.Agents.ModelCatalog.suggestions("claude")
     assert Enum.all?(data["models"]["opencode"], &String.contains?(&1, "/"))

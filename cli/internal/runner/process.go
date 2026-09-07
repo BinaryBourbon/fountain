@@ -388,7 +388,7 @@ func (p *Process) Spawn(req Request, emit Emitter) (map[string]any, func(), erro
 	p.mu.Unlock()
 
 	reqID := req.ID
-	after := func() { s.attach(reqID) }
+	after := func() { s.attach(reqID, emit) }
 	return map[string]any{"session_id": id}, after, nil
 }
 
@@ -487,7 +487,7 @@ func (p *Process) Attach(req Request, emit Emitter) (map[string]any, func(), err
 		return nil, nil, err
 	}
 	reqID := req.ID
-	return map[string]any{"session_id": s.id}, func() { s.attach(reqID) }, nil
+	return map[string]any{"session_id": s.id}, func() { s.attach(reqID, emit) }, nil
 }
 
 // stopSessions terminates every live session of a sandbox (suspend/destroy).

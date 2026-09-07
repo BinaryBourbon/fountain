@@ -113,6 +113,94 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
     end
   end
 
+  describe "reattaching an existing machine" do
+    setup %{user: user, agent: agent} do
+      sandbox = insert_sandbox(user_id: user.id, status: "ready", sprite_name: "existing")
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+      stub_happy_sprite("existing")
+      stub(Fountain.Broker, :preflight, fn -> :ok end)
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, _opts -> {:ok, @session} end)
+      {:ok, conv: conv, sandbox: sandbox}
+    end
+
+    test "a newly brokered tenant gets the floor before credentials are written", %{
+      user: user,
+      conv: conv
+    } do
+      configure_broker([user.id])
+      test = self()
+
+      stub(Managoat.Sandbox.Sprites, :apply_network_policy, fn _h, policy ->
+        send(test, {:wake_step, {:policy, policy}})
+        :ok
+      end)
+
+      stub(Fountain.Conversations.Provisioning, :write_env_file, fn _h, _env ->
+        send(test, {:wake_step, :env})
+        :ok
+      end)
+
+      {pid, _ref, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      assert_receive {:wake_step, first_step}
+      assert first_step == {:policy, %Managoat.Sandbox.NetworkPolicy{allow: ["broker.test"]}}
+
+      assert_receive {:wake_step, :env}
+      assert Enum.map(stage_events(conv.id, "network"), & &1.state) == ["started", "done"]
+    end
+
+    for reason <- [:not_found, :forbidden] do
+      test "a policy refusal #{reason} stops the wake without retiring the disk", %{
+        user: user,
+        conv: conv,
+        sandbox: sandbox
+      } do
+        configure_broker([user.id])
+
+        stub(Managoat.Sandbox.Sprites, :apply_network_policy, fn _h, _policy ->
+          {:error, unquote(reason)}
+        end)
+
+        reject(Fountain.Conversations.Provisioning, :write_env_file, 2)
+        reject(Managoat.Sandbox.Sprites, :list_sessions, 1)
+        reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+        {_pid, ref, :stopped} = start_server(conv)
+        assert assert_stopped(ref) == :normal
+        assert Fountain.Repo.reload!(sandbox).status == "ready"
+        assert Fountain.Repo.reload!(conv).status == "idle"
+        assert [event] = stage_events(conv.id, "reattach")
+        assert event.state == "failed"
+        assert Jason.decode!(event.data)["retryable"]
+      end
+    end
+
+    test "a removed tenant gets its limited environment policy back", %{conv: conv, env: env} do
+      configure_broker(["someone-else"])
+
+      {:ok, _} =
+        Environments.update_environment(env, %{
+          networking_type: "limited",
+          networking_config: %{"allowed_hosts" => ["example.com"]}
+        })
+
+      test = self()
+
+      stub(Fountain.Conversations.Provisioning, :apply_network_policy, fn _h, current_env, id ->
+        send(test, {:environment_policy, current_env.networking_config, id})
+        :ok
+      end)
+
+      reject(Fountain.Broker, :prepare, 4)
+      {pid, _ref, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      assert_receive {:environment_policy, %{"allowed_hosts" => ["example.com"]}, id}
+      assert id == conv.id
+    end
+  end
+
   describe "a brokered conversation" do
     setup %{user: user} do
       configure_broker([user.id])
@@ -192,9 +280,10 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       # The floor: the broker's host, and nothing else, whatever the env said.
       assert_receive {:policy, %Managoat.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
 
-      # The CA, in the OS trust store.
-      assert_receive {:wrote, "/tmp/agent-vault-ca.crt", "PEM"}, 2_000
-      assert_receive {:exec, ["-lc", "sudo install -D -m 644 " <> _]}, 2_000
+      # The CA, in the OS trust store — under the lock, and only if it
+      # differs from what is already there (#1674).
+      assert_receive {:wrote, "/tmp/agent-vault-ca.crt." <> _, "PEM"}, 2_000
+      assert_receive {:exec, ["-lc", "( trap 'rm -f -- " <> _]}, 2_000
 
       # The clone sees the placeholder and the proxy, so git goes through the
       # broker and the broker rewrites the auth header.

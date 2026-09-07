@@ -54,6 +54,32 @@ defmodule Fountain.Conversations.Pending do
 
   # ── permission requests (#940) ────────────────────────────────────────────
 
+  @doc "Re-arm a persisted request using its original ask time after transport recovery."
+  def restore_permission_timer(%__MODULE__{} = pending, turn) do
+    if pending.permission_timer, do: Process.cancel_timer(pending.permission_timer)
+
+    timer =
+      case turn do
+        %{pending_permission: %{"request_id" => id} = request} ->
+          remaining =
+            case DateTime.from_iso8601(request["asked_at"] || "") do
+              {:ok, asked_at, _} ->
+                elapsed = max(DateTime.diff(DateTime.utc_now(), asked_at, :millisecond), 0)
+                max(Lifecycle.ask_timeout_ms() - elapsed, 0)
+
+              _ ->
+                0
+            end
+
+          Process.send_after(self(), {:permission_timeout, id}, remaining)
+
+        _ ->
+          nil
+      end
+
+    %{pending | permission_timer: timer}
+  end
+
   @doc """
   `ask`: the agent is blocked and a human has to answer (#940).
 

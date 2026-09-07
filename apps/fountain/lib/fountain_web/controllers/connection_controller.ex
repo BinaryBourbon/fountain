@@ -16,7 +16,7 @@ defmodule FountainWeb.ConnectionController do
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.{Broker, Connections}
+  alias Fountain.Connections
   alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
@@ -109,7 +109,7 @@ defmodule FountainWeb.ConnectionController do
   end
 
   defp require_connections(conn, _opts) do
-    if Broker.enabled_for?(conn.assigns.current_user.id) do
+    if Fountain.Connections.enabled_for?(conn.assigns.current_user.id) do
       conn
     else
       conn

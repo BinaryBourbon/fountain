@@ -30,6 +30,7 @@ defmodule FountainWeb.AuthMeController do
     json(conn, %{
       id: user.id,
       email: user.email,
+      expires_at: conn.assigns.current_api_key.expires_at,
       role: user.role,
       email_verified: not is_nil(user.email_verified_at),
       # Read side of #525: a client that just bootstrapped an account can see
@@ -42,7 +43,8 @@ defmodule FountainWeb.AuthMeController do
       # Read-only: whether this account is on the broker ratchet (ADR 0019),
       # so a client can label the mode instead of probing
       # /api/secret-bindings for a 200 vs 404 (#1154).
-      brokered: Fountain.Broker.enabled_for?(user.id)
+      brokered: Fountain.Broker.enabled_for?(user.id),
+      connections_enabled: Fountain.Connections.enabled_for?(user.id)
     })
   end
 end

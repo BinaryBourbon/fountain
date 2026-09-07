@@ -20,7 +20,7 @@ defmodule FountainWeb.SecretBindingsLive.Index do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
 
-    if Broker.enabled_for?(user.id) do
+    if Fountain.Connections.enabled_for?(user.id) do
       {:ok,
        socket
        |> assign(:page_title, "Credential bindings")

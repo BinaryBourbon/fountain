@@ -692,7 +692,7 @@ defmodule Fountain.Conversations do
   "fountain:team"` (the *bound* channel — a conversation unbound by
   `Fountain.Team.remove_teammate/3` no longer matches; a teammate's full
   history is `Team.list_teammate_conversations/2`), and `status: [..]` (a
-  list of conversation statuses). Unpaged, like the list always was, except
+  list of conversation statuses), and `sandbox_id: id`. Unpaged, like the list always was, except
   for `limit: n` — which the console's dashboard uses to ask for the five it
   shows instead of every row a busy account has.
 
@@ -722,6 +722,9 @@ defmodule Fountain.Conversations do
       Enum.reduce(opts, query, fn
         {:agent_id, id}, q when is_binary(id) and id != "" ->
           where(q, [conv: c], c.agent_id == ^id)
+
+        {:sandbox_id, id}, q when is_binary(id) and id != "" ->
+          where(q, [conv: c], c.sandbox_id == ^id)
 
         {:channel_id, id}, q when is_binary(id) and id != "" ->
           where(q, [conv: c], c.channel_id == ^id)
@@ -1615,6 +1618,34 @@ defmodule Fountain.Conversations do
     |> Repo.all()
   end
 
+  @doc "The newest durable event cursor across this user's conversations, or zero."
+  def latest_user_log_event_id(user_id) when is_binary(user_id) do
+    user_log_events_query(user_id)
+    |> select([e], max(e.id))
+    |> Repo.one()
+    |> Kernel.||(0)
+  end
+
+  @doc """
+  Durable events after a user's cursor, including conversations that have finished.
+  Returns at most 500 rows in id order, with each conversation's runtime for blocks.
+  """
+  def list_user_log_events(user_id, after_id) when is_binary(user_id) do
+    user_log_events_query(user_id)
+    |> where([e], e.id > ^after_id)
+    |> order_by([e], asc: e.id)
+    |> limit(500)
+    |> select([e, c], {e, c.runtime})
+    |> Repo.all()
+  end
+
+  defp user_log_events_query(user_id) do
+    from e in LogEvent,
+      join: c in Conversation,
+      on: c.id == e.conversation_id,
+      where: c.user_id == ^user_id
+  end
+
   defp apply_limit(query, nil), do: query
 
   defp apply_limit(query, limit) when is_integer(limit) and limit > 0,
@@ -1769,7 +1800,8 @@ defmodule Fountain.Conversations do
                  {:ok, fresh} <- start_conversation(attrs, opts),
                  do: {:ok, fresh, :created}
           else
-            {:ok, conv, :resumed}
+            with :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+                 do: {:ok, conv, :resumed}
           end
 
         nil ->
@@ -1869,6 +1901,7 @@ defmodule Fountain.Conversations do
                                 agent's own (#783); subject to `agent.allowed_environment_ids`
     - `permission_policy`     — optional per-tool permission override (#939); may only
                                 narrow the agent's own policy, never widen it
+    - `sandbox_api_access`    — "owner" (default) or "none"; none requires a fresh ephemeral sandbox
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
     - `title`                 — optional display title (the team page names a teammate with it)
@@ -1886,10 +1919,11 @@ defmodule Fountain.Conversations do
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
-         {:ok, runtime_module} <- Managoat.Runtimes.for_runtime(agent.runtime),
+         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
+         {:ok, api_access} <- resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
@@ -1938,6 +1972,7 @@ defmodule Fountain.Conversations do
              parent_conversation_id: parent_id,
              channel_id: attrs["channel_id"],
              title: attrs["title"],
+             sandbox_api_access: api_access,
              permission_policy: perm_policy,
              caller_tools: attrs["caller_tools"] || []
            }) do
@@ -2040,6 +2075,31 @@ defmodule Fountain.Conversations do
       {:error, _} = err ->
         err
     end
+  end
+
+  defp resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],
+    do: {:ok, "owner"}
+
+  defp resolve_sandbox_api_access("none", "ephemeral"), do: {:ok, "none"}
+  defp resolve_sandbox_api_access(_access, _mode), do: {:error, :invalid_sandbox_api_access}
+
+  defp check_sandbox_api_resume(_conv, nil), do: :ok
+  defp check_sandbox_api_resume(%Conversation{sandbox_api_access: access}, access), do: :ok
+  defp check_sandbox_api_resume(_conv, _access), do: {:error, :invalid_sandbox_api_access}
+
+  defp check_sandbox_api_attach(sandbox, access) do
+    # A fresh none launch must never inherit another conversation's credential,
+    # and attaching an owner conversation must not inject one into its machine.
+    has_none =
+      Repo.exists?(
+        from(c in Conversation,
+          where: c.sandbox_id == ^sandbox.id and c.sandbox_api_access == "none"
+        )
+      )
+
+    if access in [nil, "owner"] and not has_none,
+      do: :ok,
+      else: {:error, :invalid_sandbox_api_access}
   end
 
   # The launch's sandbox mode: the agent's default unless the launch names
@@ -2397,7 +2457,7 @@ defmodule Fountain.Conversations do
        )
        when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
-         {:ok, _runtime_module} <- Managoat.Runtimes.for_runtime(agent.runtime),
+         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
@@ -2409,6 +2469,7 @@ defmodule Fountain.Conversations do
          # with no platform key configured runs no query here.
          :ok <- Fountain.PlatformInference.gate(user_id, agent.model),
          %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
+         :ok <- check_sandbox_api_attach(sandbox, attrs["sandbox_api_access"]),
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
          :ok <- check_attach_capacity(sandbox, agent, attrs["prompt"]),
          {:ok, conv} <-
@@ -2506,7 +2567,7 @@ defmodule Fountain.Conversations do
   # `ConversationServer` as any prompt is.
   defp check_attach_capacity(%Sandbox{} = sandbox, %Agents.Agent{runtime: runtime}, prompt)
        when is_binary(prompt) and prompt != "" do
-    capacity = Managoat.Runtimes.ACP.concurrency(runtime)
+    capacity = Fountain.RuntimeDispatch.concurrency(runtime)
 
     if _unsafe_sandbox_at_capacity?(sandbox.id, nil, capacity),
       do: {:error, :sandbox_at_capacity},
@@ -2806,7 +2867,7 @@ defmodule Fountain.Conversations do
   # rather than accepted-and-ignored — see `ACP.asks_permission?/1`, measured.
   defp check_runtime_asks(policy, agent) do
     if not Managoat.ACP.Permissions.needs_enforcement?(policy) or
-         Managoat.Runtimes.ACP.asks_permission?(agent.runtime) do
+         Fountain.RuntimeDispatch.asks_permission?(agent.runtime) do
       :ok
     else
       {:error, {:permission_policy_unenforceable, agent.runtime}}
@@ -2859,7 +2920,7 @@ defmodule Fountain.Conversations do
          :ok <- assert_resumable(conv),
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
-         {:ok, runtime_module} <- Managoat.Runtimes.for_runtime(conv.runtime) do
+         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
       case maybe_reuse_sandbox(conv) do
         {:reuse, sandbox_id} ->
           # Reuse provisions nothing, so the fresh-path gates below never ran

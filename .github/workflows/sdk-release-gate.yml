@@ -25,6 +25,8 @@ on:
     paths:
       - "sdk/typescript/**"
       - "scripts/sdk-release.mjs"
+      - "scripts/sdk-publish-tag*.mjs"
+      - ".github/workflows/sdk-publish.yml"
       - ".github/workflows/sdk-release-gate.yml"
 
 permissions:
@@ -48,6 +50,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+
+      - name: Publish tag regression tests
+        run: node --test scripts/sdk-publish-tag.test.mjs
 
       - name: Does this PR need a version bump?
         run: node scripts/sdk-release.mjs guard "origin/${{ github.base_ref }}"
