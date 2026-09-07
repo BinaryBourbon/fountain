@@ -92,6 +92,21 @@ stores those in the clear and returns them in the clear. So the difference
 between `env_vars` and `secrets` is about who can read a value back. It is not
 about who can use one.
 
+On a deployment with the egress broker on, the sandbox also gets a small set
+of variables from the broker. These divide into two halves with opposite
+precedence.
+
+The certificate variables (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`,
+`CARGO_HTTP_CAINFO`, `NODE_EXTRA_CA_CERTS` and `UV_NATIVE_TLS`) are defaults.
+An `env_vars` entry or a secret with the same name replaces them. You can
+point a tool at a different trust store. That store must hold the broker
+root, or the agent cannot reach a brokered host.
+
+The proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, their lower case twins and
+`NO_PROXY`) always win. The broker is where Fountain attaches credentials to
+egress and makes a record of it. A value you set for one of those names has
+no effect.
+
 ## Hop 4: substitution, then the process
 
 An agent config string takes `${VAR}` interpolation, which Fountain resolves

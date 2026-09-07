@@ -415,26 +415,43 @@ defmodule Fountain.Conversations.Provisioning do
   exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.ca_env/0`
   points at the same file.
 
-  It runs under a lock, rebuilding when the CA differs or no successful
-  rebuild has been recorded (#1674). Both halves concern the shared sandbox (ADR
-  0023): every conversation on the machine runs this on provision *and* on
-  reattach, and `update-ca-certificates` builds the trust bundle in a fixed
-  temporary file (`ca-certificates.crt.new`) before renaming it into place.
-  Two runs at once therefore share that path — one truncates what the other
-  is still writing, and the rename publishes a bundle of five certificates
-  where there should be 122. A client that reads it in that state has no
-  broker root and fails every request with `UnknownIssuer`, then waits out a
-  full idle timeout before retrying. It was one read in six on a sandbox with
-  forty conversations. The CA is derived from the deployment's master key and
-  so is byte-identical on every conversation. Skipping requires matching CA
-  bytes and a success marker, invalidated before installation and published
-  only after the rebuild succeeds. Existing sandboxes without the marker
-  rebuild once to repair any previously damaged bundle. Each invocation uses
-  its own staging file so concurrent writes cannot change the input.
+  It runs under a lock, and rebuilds the trust store only when the bundle it
+  has is not the one this CA produces (#1674). Both halves concern the shared
+  sandbox (ADR 0023): every conversation on the machine runs this on
+  provision *and* on reattach, and `update-ca-certificates` builds the trust
+  bundle in a fixed temporary file (`ca-certificates.crt.new`) before
+  renaming it into place. Two runs at once therefore share that path — one
+  truncates what the other is still writing, and the rename publishes a
+  bundle of five certificates where there should be 122. A client that reads
+  it in that state has no broker root and fails every request with
+  `UnknownIssuer`, then waits out a full idle timeout before retrying. It was
+  one read in six on a sandbox with forty conversations.
 
-  Locking is best effort — `flock -w 120 9 || true` — because a sandbox
-  without `flock` should provision the way it did before, not fail. The work
-  itself stays `&&`-chained, so its exit status is still what the caller
+  Three details, each of which was wrong in an earlier cut of this:
+
+    * **The marker holds the bundle's digest, not a flag.** The CA is derived
+      from the deployment's master key, so comparing it proves the *source*
+      is unchanged — not that the bundle still contains it. `apt` running
+      `ca-certificates`' postinst, and any tenant `setup_script`, rebuild
+      that bundle outside this lock. Recording `sha256sum` of the bundle
+      means any later change to it re-arms the guard and the next
+      conversation repairs the machine. A sandbox already damaged before this
+      shipped has no marker at all, and repairs on its next wake.
+    * **The marker is stamped only when the lock was held.** `flock` failing
+      is two conditions: the binary is absent (a sandbox that should
+      provision the way it did before, not fail), or the 120-second wait
+      expired (someone else is mid-rebuild). Either way the rebuild still
+      runs, and either way it records nothing — so the next conversation
+      rebuilds too, which is exactly the unconditional rebuild that predates
+      this change. Stamping after an unlocked run would let one racy rebuild
+      suppress every future repair.
+    * **The staging file is per invocation.** It is written outside the lock,
+      so a fixed path is the same bug one level up: two conversations writing
+      it at once can hand each other a torn file to compare and install. The
+      subshell's `EXIT` trap removes it, and the error arm removes it for an
+      exec that never reached bash.
+
+  The work stays `&&`-chained, so its exit status is still what the caller
   sees.
 
   It also pins git's `http.proxyAuthMethod` to `basic`. git defaults to
@@ -465,18 +482,23 @@ defmodule Fountain.Conversations.Provisioning do
   def install_broker_ca(handle, conv_id) do
     path = Fountain.Broker.ca_path()
     staging = Fountain.Broker.ca_staging_path() <> "." <> Ecto.UUID.generate()
+    bundle = Fountain.Broker.system_ca_bundle()
     marker = path <> ".trust-store-ready"
     cleanup = "rm -f -- #{shell_quote(staging)}"
+    stamp = "sha256sum #{shell_quote(bundle)} > #{shell_quote(marker)}"
 
     # Written as the sandbox user where it may, then moved into the root-owned
     # trust directory the way `install_packages/4` reaches apt: through sudo.
     install =
-      "( trap #{shell_quote(cleanup)} EXIT; flock -w 120 9 || true; " <>
+      "( trap #{shell_quote(cleanup)} EXIT; safe=0; flock -w 120 9 2>/dev/null && safe=1; " <>
         "{ cmp -s #{shell_quote(staging)} #{shell_quote(path)} && " <>
-        "test -f #{shell_quote(marker)}; } || " <>
+        "sha256sum -c --status #{shell_quote(marker)} 2>/dev/null; } || " <>
         "{ sudo rm -f -- #{shell_quote(marker)} && " <>
         "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
-        "sudo update-ca-certificates && sudo touch #{shell_quote(marker)}; } " <>
+        "sudo update-ca-certificates && " <>
+        ~s({ [ "$safe" = 1 ] && sudo sh -c ) <>
+        shell_quote(stamp) <>
+        " || true; }; } " <>
         ") 9>#{shell_quote(@ca_lock)} && " <>
         sudo_env_keep_command() <>
         " && " <>
@@ -500,6 +522,11 @@ defmodule Fountain.Conversations.Provisioning do
           {:error, {:broker, :ca_install_exit, code, String.slice(to_string(out), 0, 500)}}
 
         {:error, reason} ->
+          # The trap runs inside bash; a transport failure or an expired
+          # budget means bash may never have started, and the staged PEM has
+          # a name no later invocation will reuse. Best effort, and only
+          # worth anything if the sandbox is reachable again by now.
+          _ = Sandbox.exec(handle, "rm", ["-f", "--", staging], timeout: 5_000)
           publish_stage(conv_id, "broker", "failed", %{reason: "ca_install_unreachable"})
           {:error, {:broker, :ca_install, reason}}
       end

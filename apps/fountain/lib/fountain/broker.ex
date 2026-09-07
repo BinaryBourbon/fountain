@@ -107,6 +107,14 @@ defmodule Fountain.Broker do
   # rejects every non-brokered host (pypi, crates.io) it also has to reach.
   @system_ca_bundle "/etc/ssl/certs/ca-certificates.crt"
 
+  @doc """
+  The OS trust bundle the CA variables point at, and the artifact
+  `install_broker_ca/2` is protecting: `update-ca-certificates` derives it
+  from `ca_path/0` and the real roots.
+  """
+  @spec system_ca_bundle() :: String.t()
+  def system_ca_bundle, do: @system_ca_bundle
+
   @typedoc "A minted proxy session for one conversation."
   @type session :: %{
           vault: String.t(),

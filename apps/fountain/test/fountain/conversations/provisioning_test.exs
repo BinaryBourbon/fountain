@@ -190,6 +190,21 @@ defmodule Fountain.Conversations.ProvisioningTest do
   end
 
   describe "install_broker_ca/2" do
+    # #1674. Three properties, all about the shared sandbox (ADR 0023), and
+    # all readable off this one string:
+    #
+    #   * The rebuild is serialised. `update-ca-certificates` builds
+    #     `ca-certificates.crt.new` at a fixed path and renames it into
+    #     place, so two runs at once publish a bundle one of them was still
+    #     writing.
+    #   * The skip is gated on the bundle, not on the event. The marker holds
+    #     the bundle's digest, so a rebuild by apt's `ca-certificates`
+    #     postinst or by a tenant setup script — both outside this lock —
+    #     invalidates it and the next conversation repairs the machine.
+    #   * The marker is stamped only when the lock was actually held. Without
+    #     `flock`, or after waiting out the 120 seconds, the rebuild still
+    #     happens and records nothing, which is the unconditional rebuild
+    #     every provision did before this change.
     test "writes the CA where update-ca-certificates reads it, then runs it" do
       conv = insert_conversation()
       test = self()
@@ -216,14 +231,20 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
       assert_received {:exec, "bash", ["-lc", cmd]}
       ca = "/usr/local/share/ca-certificates/agent-vault.crt"
+      bundle = "/etc/ssl/certs/ca-certificates.crt"
       marker = ca <> ".trust-store-ready"
 
       assert cmd ==
-               "( trap 'rm -f -- '\\''#{staging}'\\''' EXIT; flock -w 120 9 || true; " <>
-                 "{ cmp -s '#{staging}' '#{ca}' && test -f '#{marker}'; } || " <>
+               "( trap 'rm -f -- '\\''#{staging}'\\''' EXIT; " <>
+                 "safe=0; flock -w 120 9 2>/dev/null && safe=1; " <>
+                 "{ cmp -s '#{staging}' '#{ca}' && " <>
+                 "sha256sum -c --status '#{marker}' 2>/dev/null; } || " <>
                  "{ sudo rm -f -- '#{marker}' && " <>
                  "sudo install -D -m 644 '#{staging}' '#{ca}' && " <>
-                 "sudo update-ca-certificates && sudo touch '#{marker}'; } " <>
+                 "sudo update-ca-certificates && " <>
+                 "{ [ \"$safe\" = 1 ] && sudo sh -c " <>
+                 "'sha256sum '\\''#{bundle}'\\'' > '\\''#{marker}'\\''' " <>
+                 "|| true; }; } " <>
                  ") 9>'/tmp/fountain-broker-ca.lock' && " <>
                  "printf '%s\\n' 'Defaults env_keep += \"HTTPS_PROXY HTTP_PROXY https_proxy http_proxy " <>
                  "NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO " <>
@@ -233,51 +254,30 @@ defmodule Fountain.Conversations.ProvisioningTest do
                  "git config --global http.proxyAuthMethod basic"
     end
 
-    # #1674. `update-ca-certificates` builds `ca-certificates.crt.new` at a
-    # fixed path and renames it into place, so two runs on one shared sandbox
-    # publish a bundle one of them was still writing. Every conversation runs
-    # this on provision and on reattach, and the CA is the same bytes every
-    # time: hold a lock, and only rebuild the trust store when it changed.
-    test "serialises the trust-store rebuild and skips it when the CA is unchanged" do
+    # The trap that removes the staging file runs inside bash, so an exec that
+    # never got that far leaves a uniquely-named PEM on a machine that
+    # reattaches for weeks. The old fixed path was self-limiting.
+    test "removes the staged CA when the exec never ran" do
       conv = insert_conversation()
       test = self()
 
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
       Mimic.stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
 
-      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _h, _cmd, [_, script], _opts ->
-        send(test, {:script, script})
-        {:ok, "", 0}
+      Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn
+        _h, "bash", _args, _opts ->
+          {:error, :timeout}
+
+        _h, cmd, args, _opts ->
+          send(test, {:exec, cmd, args})
+          {:ok, "", 0}
       end)
 
-      assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
-      assert_received {:script, script}
+      assert {:error, {:broker, :ca_install, :timeout}} =
+               Provisioning.install_broker_ca(sandbox_handle(), conv.id)
 
-      assert script =~ "flock -w 120 9"
-      assert script =~ "9>'/tmp/fountain-broker-ca.lock'"
-
-      # Skipping needs both halves: the CA bytes already installed, *and* a
-      # marker saying a rebuild with them succeeded. A sandbox damaged by the
-      # old race has the right CA and a truncated bundle, so bytes alone
-      # would leave it broken for the life of the machine.
-      assert script =~
-               ~r/\{ cmp -s '[^']+' '[^']+' && test -f '[^']+\.trust-store-ready'; \} \|\| \{ sudo rm -f/
-
-      # The marker goes before the rebuild and comes back only after it, so
-      # an interrupted rebuild is retried rather than recorded as done.
-      assert script =~
-               ~r/sudo rm -f -- '[^']+\.trust-store-ready' && sudo install .* && sudo update-ca-certificates && sudo touch '[^']+\.trust-store-ready'/
-
-      # The staging file is removed however the subshell ends.
-      assert script =~ ~r/^\( trap 'rm -f -- /
-
-      # A sandbox with no flock provisions the way it always did.
-      assert script =~ "flock -w 120 9 || true"
-
-      # The sudoers drop-in and git's proxy auth are outside the lock and
-      # still gate the exit status.
-      assert script =~ "&& sudo visudo -cf"
-      assert String.ends_with?(script, "git config --global http.proxyAuthMethod basic")
+      assert_received {:exec, "rm", ["-f", "--", staged]}
+      assert String.starts_with?(staged, "/tmp/agent-vault-ca.crt.")
     end
 
     test "pins git's proxy auth to basic, so a brokered clone never waits for a 407" do

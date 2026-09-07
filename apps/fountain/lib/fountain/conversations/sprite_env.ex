@@ -78,8 +78,9 @@ defmodule Fountain.Conversations.SpriteEnv do
   MITM root" — so an `env_vars` entry naming a different bundle wins, and
   costs that tenant its own egress and nobody else's. Its proxy variables
   are the chokepoint (ADR 0019), so nothing overrides them. Before #1674 the
-  whole list came last and a documented `env_vars` setting silently did
-  nothing.
+  whole list came last, so an `env_vars` entry for one of those names was
+  written and then overwritten one line later. `docs/concepts/secrets.md`
+  publishes both halves of the rule.
 
   `opts` carries what `ConversationServer` holds: `:runtime_module`,
   `:env_credentials`, `:callback_token`, `:conversation_id` and
