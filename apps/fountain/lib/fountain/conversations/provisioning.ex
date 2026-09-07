@@ -415,8 +415,8 @@ defmodule Fountain.Conversations.Provisioning do
   exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.ca_env/0`
   points at the same file.
 
-  It runs under a lock, and only when the CA on disk differs from the one
-  being installed (#1674). Both halves are about the shared sandbox (ADR
+  It runs under a lock, rebuilding when the CA differs or no successful
+  rebuild has been recorded (#1674). Both halves concern the shared sandbox (ADR
   0023): every conversation on the machine runs this on provision *and* on
   reattach, and `update-ca-certificates` builds the trust bundle in a fixed
   temporary file (`ca-certificates.crt.new`) before renaming it into place.
@@ -426,9 +426,11 @@ defmodule Fountain.Conversations.Provisioning do
   broker root and fails every request with `UnknownIssuer`, then waits out a
   full idle timeout before retrying. It was one read in six on a sandbox with
   forty conversations. The CA is derived from the deployment's master key and
-  so is byte-identical on every conversation, which is what makes the `cmp`
-  skip both correct and the end of the reruns; the lock covers the first
-  install, where there is nothing to compare against yet.
+  so is byte-identical on every conversation. Skipping requires matching CA
+  bytes and a success marker, invalidated before installation and published
+  only after the rebuild succeeds. Existing sandboxes without the marker
+  rebuild once to repair any previously damaged bundle. Each invocation uses
+  its own staging file so concurrent writes cannot change the input.
 
   Locking is best effort — `flock -w 120 9 || true` — because a sandbox
   without `flock` should provision the way it did before, not fail. The work
@@ -462,15 +464,20 @@ defmodule Fountain.Conversations.Provisioning do
   @spec install_broker_ca(Handle.t(), String.t()) :: :ok | {:error, term()}
   def install_broker_ca(handle, conv_id) do
     path = Fountain.Broker.ca_path()
-    staging = Fountain.Broker.ca_staging_path()
+    staging = Fountain.Broker.ca_staging_path() <> "." <> Ecto.UUID.generate()
+    marker = path <> ".trust-store-ready"
+    cleanup = "rm -f -- #{shell_quote(staging)}"
 
     # Written as the sandbox user where it may, then moved into the root-owned
     # trust directory the way `install_packages/4` reaches apt: through sudo.
     install =
-      "( flock -w 120 9 || true; " <>
-        "cmp -s #{shell_quote(staging)} #{shell_quote(path)} || " <>
-        "{ sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
-        "sudo update-ca-certificates; } ) 9>#{shell_quote(@ca_lock)} && " <>
+      "( trap #{shell_quote(cleanup)} EXIT; flock -w 120 9 || true; " <>
+        "{ cmp -s #{shell_quote(staging)} #{shell_quote(path)} && " <>
+        "test -f #{shell_quote(marker)}; } || " <>
+        "{ sudo rm -f -- #{shell_quote(marker)} && " <>
+        "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
+        "sudo update-ca-certificates && sudo touch #{shell_quote(marker)}; } " <>
+        ") 9>#{shell_quote(@ca_lock)} && " <>
         sudo_env_keep_command() <>
         " && " <>
         git_proxy_auth_command()
@@ -482,7 +489,7 @@ defmodule Fountain.Conversations.Provisioning do
            ) do
       case Sandbox.exec(handle, "bash", ["-lc", install],
              stderr_to_stdout: true,
-             timeout: 60_000
+             timeout: 150_000
            ) do
         {:ok, _out, 0} ->
           :ok
