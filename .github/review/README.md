@@ -23,26 +23,25 @@ Confidence is a reviewer judgment, not a separate numeric score enforced by
 the host. This setup does not impersonate Paul or launch an interactive
 pairing agent.
 
-A human decision is the expensive outcome, and two things produce one. A
-reviewer can set `needsHuman` on a finding, which ends the run with `needs-
-human-review` at any severity: the host downgrades a low or info *defect* to
-nonblocking, but a low or info finding marked `needsHuman` or filed as a
-`product_decision` still goes to a maintainer. The instructions therefore name
-one case that always warrants `needsHuman`: a change that contradicts a
-decision an Accepted ADR records, cited by ADR and sentence. Beyond that they
-reserve it for a medium-or-higher finding whose remedy a maintainer must choose
-and which is hard to reverse once merged (a public contract, a migration or
-retention change, licensing, the authorization model, a repair outside the fix
-policy), and say that a low or info finding is never one. Intent the approved
-base already records is settled when the PR follows it. The other producer is
-`human_review_paths`, which is now the short list of places where a wrong
-automatic approval is hard to undo or would weaken a gate: the policy and these
-instructions, workflows, migrations, licensing, the release and deployment
-definitions, the SDK version files whose merge publishes, the gate thresholds
-and scripts, and the ADRs themselves, so a PR that edits a decision always
-reaches a maintainer. The first eleven runs against this repository all ended
-with the label, most of them for a dependency bump, a doc, or a low finding
-about wrapping or duplicated code; that is what both changes answer.
+Review Loop separates the next actor from the severity of a finding. Confirmed
+code defects receive a commit-specific GitHub `CHANGES_REQUESTED` review when
+the automatic fixer cannot complete them. A coding agent can make those repairs
+under its own repository authorization, including outside the bot's path or
+file allowance. Low/info defects remain nonblocking when policy permits.
+
+`needs-human-review` is reserved for an unsettled decision or explicit approval
+requirement. Reviewers use `kind: product_decision`, `needsHuman: true`, and a
+`humanDecision` containing the question, alternatives with consequences, and
+recommendation. Apply requirements already settled by the approved base: a
+repair restoring an accepted ADR is ordinary coding work; changing the ADR's
+decision needs authority. The trusted `human_review_paths` still cover review
+policy, workflows, migrations, licensing, deployment/release definitions, gate
+controls and ADR changes. Automatic fixer permissions remain unchanged.
+
+A PR with both repairs and a decision receives both signals. Provider failures,
+missing evidence and uncertainty alone are incomplete execution, not a human
+decision. The run API exposes `outcome`, `humanReviewRequired`, and reasons for
+routing. Check App identity and current commit before reacting to review events.
 
 An approval covers the entire evaluated PR and never merges it. A new revision,
 failed check or human objection can invalidate an earlier approval. Repository
@@ -71,10 +70,10 @@ gate is skipped or changed to get an approval.
 An existing Go guest-handshake fixture race is tracked in
 [#1641](https://github.com/BinaryBourbon/fountain/issues/1641), reproduced in
 2 of 100 focused local runs on the inspected main revision. Its gate remains
-enabled. A failure produces incomplete verification and a human handoff;
+enabled. A confirmed failed check requests changes; missing execution is incomplete;
 rerunning until it turns green is not evidence that the defect was fixed.
 
-Deploy Review Loop support for `verification.command_timeout_minutes` first.
+Deploy Review Loop outcome-routing support before using these reviewer contracts.
 The expanded recipe needs a thirty-minute command allowance: its measured cold
 Credo/Dialyzer stage took about 23 minutes and the full recipe about 48 minutes.
 See [measured command budget](verification.md#measured-command-budget).
@@ -94,3 +93,27 @@ no Fountain login or inference secret belongs in repository Actions secrets.
 To stop automatic admission, set `REVIEW_LOOP_ENABLED` to `false`; cancel active
 runs separately in Review Loop. Maintainer commands and decisions are documented
 in the service's [GitHub lifecycle guide](https://github.com/managoat/review-loop/blob/main/docs/GITHUB-LIFECYCLE.md).
+
+## Reviewer workspace preparation
+
+`reviewer-setup.sh` prepares the exact PR checkout using the verifier bootstrap
+from `REVIEW_LOOP_BASE`, then installs locked Hex dependencies and migrates a
+local test database. Review Loop loads this script from the approved base and
+bounds setup to 15 minutes; the [cold preparation sample](verification.md#measured-reviewer-preparation) took 6m30s including a targeted test. A changed tracked file or failed setup stops review.
+
+Run diagnostics through `rl-env`. Setup success is not a passing test result;
+independent service verification still decides whether the revision passes.
+
+Hex 2.5.1 passes only a proxy host/port to Erlang httpc, so it cannot directly
+use Fountain's HTTPS proxy. The recipe starts a loopback-only socat relay and
+wraps `rl-env` to use it. The remote connection validates the broker's certificate
+chain and hostname; authentication stays in process environments. The relay and
+database belong to this ephemeral worker and end when it is deleted.
+
+Test the relay with `python3 scripts/test-reviewer-proxy.py` on Linux with Python 3,
+OpenSSL, and socat installed. It executes the recipe's relay code using temporary
+paths and local certificates, covering valid TLS, wrong hostnames, untrusted
+issuers, changed endpoints, and credential placement. It needs no provider keys.
+
+`python3 scripts/test-reviewer-setup-cwd.py` checks that bootstrap ignores PR-local
+Python modules while repository dependency/database commands enter the checkout.

@@ -37,8 +37,9 @@ defmodule Fountain.Conversations.ConversationServer do
   }
 
   # Absolute ceiling on provisioning (#329). Generous against the summed
-  # per-step timeouts (packages 300s + clone 600s + setup 120s + slack), so
-  # it only ever fires when a step stalls without raising — the case where
+  # default step timeouts (packages 300s + clone 600s + setup 120s). Setup
+  # may opt into up to 900s, but this overall ceiling still applies. It also
+  # catches a step that stalls without raising — the case where
   # the row sat in `starting` holding a quota slot until the next deploy:
   # the reaper exempts rows whose server is alive, and the server's own
   # timers queue behind the stuck handle_continue. Overridable in tests.
@@ -2304,9 +2305,8 @@ defmodule Fountain.Conversations.ConversationServer do
   defp run_turn(state, conv, turn, prompt, agent, images) do
     state = %{state | inference_model: agent && agent.model}
 
-    # Before either path (#1736): a fresh spawn takes the env this rebuilds,
-    # and an idle peer holds its token, so the rules must already be right.
-    # A peer whose token was replaced is closed: only a fresh spawn carries it.
+    # Before either path (#1736): a fresh spawn takes the env this rebuilds, an
+    # idle peer holds its token, and one whose token was replaced is closed.
     {state, replaced?} = Egress.refresh_before_turn(state)
     state = if replaced?, do: drop_connection(state, "broker_session_replaced"), else: state
 

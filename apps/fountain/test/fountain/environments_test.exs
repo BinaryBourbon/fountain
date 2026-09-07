@@ -19,6 +19,36 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
+  describe "setup timeout" do
+    test "defaults to two minutes and validates persisted bounds" do
+      user = insert_verified_user()
+      assert insert_env(user_id: user.id).setup_timeout_seconds == 120
+
+      for seconds <- [1, 900] do
+        env = insert_env(user_id: user.id, setup_timeout_seconds: seconds)
+        assert Environments.get_environment!(env.id, user.id).setup_timeout_seconds == seconds
+      end
+
+      for invalid <- [0, 901, -1, 1.5, nil] do
+        assert {:error, changeset} =
+                 Environments.create_environment(
+                   env_attrs(user_id: user.id, setup_timeout_seconds: invalid)
+                 )
+
+        assert Keyword.has_key?(changeset.errors, :setup_timeout_seconds)
+      end
+    end
+
+    test "changing the timeout invalidates the provisioning checkpoint" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id, checkpoint_id: "old-checkpoint")
+      assert {:ok, updated} = Environments.update_environment(env, %{setup_timeout_seconds: 900})
+      assert updated.checkpoint_id == nil
+      assert {:ok, renamed} = Environments.update_environment(updated, %{name: "renamed"})
+      assert renamed.setup_timeout_seconds == 900
+    end
+  end
+
   describe "get_environment/2" do
     test "returns environment scoped to user" do
       user = insert_verified_user()

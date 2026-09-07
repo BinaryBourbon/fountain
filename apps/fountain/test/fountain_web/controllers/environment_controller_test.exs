@@ -103,6 +103,56 @@ defmodule FountainWeb.EnvironmentControllerTest do
     end
   end
 
+  test "setup timeout round-trips without allowing another tenant to update it", %{
+    conn: conn,
+    raw_key: raw_key
+  } do
+    created =
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/environments", %{name: "long-setup", setup_timeout_seconds: 900})
+      |> json_response(201)
+
+    id = created["data"]["id"]
+    assert created["data"]["setup_timeout_seconds"] == 900
+
+    updated =
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> put_json("/api/environments/#{id}", %{setup_timeout_seconds: 600})
+      |> json_response(200)
+
+    assert updated["data"]["setup_timeout_seconds"] == 600
+    {_other_key, other_raw} = insert_api_key(insert_verified_user())
+
+    denied =
+      build_conn()
+      |> authed_with_key(other_raw)
+      |> put_json("/api/environments/#{id}", %{setup_timeout_seconds: 1})
+
+    assert json_response(denied, 404)
+
+    fetched =
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> get("/api/environments/#{id}")
+      |> json_response(200)
+
+    assert fetched["data"]["setup_timeout_seconds"] == 600
+  end
+
+  test "setup timeout outside the allowed range is refused by the API", %{
+    conn: conn,
+    raw_key: raw_key
+  } do
+    response =
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/environments", %{name: "unbounded-setup", setup_timeout_seconds: 901})
+
+    assert json_response(response, 422)
+  end
+
   describe "PUT /api/environments/:id" do
     test "updates the environment and returns 200", %{conn: conn, user: user, raw_key: raw_key} do
       env = insert_env(user_id: user.id)

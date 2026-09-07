@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
+  toolchain setup run within an explicit bound. It persists through API/spec
+  round trips and invalidates checkpoints when changed. The overall provisioning
+  deadline and failed-setup handling remain in force.
+
 - Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
 - Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
 
@@ -41,6 +46,10 @@ upgrade, is in
   with it. A client that writes a fresh one-hour GitHub App token into a
   vault before each prompt no longer sees `401 Bad credentials` an hour in
   (#1736).
+
+- ACP token/request limits and unknown stop reasons now fail the turn instead
+  of reporting completion. Reported usage and the original stop reason remain
+  available; only `end_turn` establishes normal completion (#1732).
 
 - The broker's root CA is installed under a lock, and the operating-system
   trust store is rebuilt only when the bundle on the machine is not the one
