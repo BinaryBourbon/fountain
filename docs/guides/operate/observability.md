@@ -109,6 +109,8 @@ check the shipped expressions and their failure fixtures.
 | `FountainBrokerLogDropping` | The broker drops request-log rows. |
 | `FountainBrokerCaExpiring` | The broker root CA expires within 14 days. |
 
+The admin page at `/admin/broker` shows the same picture without Grafana. It lists the listener state, the live sessions, the request counts by outcome for a window, the busiest hosts, the bindings the proxy attached a credential for, and the requests it denied or that failed.
+
 ### If you run CNPG
 
 The four portable backup rules watch the dump CronJob. They do **not** cover
