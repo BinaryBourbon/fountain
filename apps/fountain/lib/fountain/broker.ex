@@ -434,7 +434,12 @@ defmodule Fountain.Broker do
     ]
   end
 
-  @doc "Every variable `sandbox_env/1` sets, for a refresh to replace."
+  @doc """
+  Every variable `sandbox_env/1` sets. `Egress.reprepare/5` replaces the two
+  halves separately (#1674), so the one caller left is the sudoers `env_keep`
+  line — a different constraint: dropping a key there breaks apt inside a
+  setup script rather than a token rotation.
+  """
   @spec env_keys() :: [String.t()]
   def env_keys, do: proxy_keys() ++ ca_keys()
 

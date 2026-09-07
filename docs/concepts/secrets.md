@@ -103,9 +103,16 @@ point a tool at a different trust store. That store must hold the broker
 root, or the agent cannot reach a brokered host.
 
 The proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, their lower case twins and
-`NO_PROXY`) always win. The broker is where Fountain attaches credentials to
-egress and makes a record of it. A value you set for one of those names has
-no effect.
+`NO_PROXY`) always win in the environment an agent runs in. The broker is
+where Fountain attaches credentials to egress and makes a record of it.
+
+The four proxy URL names have one exception, and it is in `/home/sprite/.env`
+only. The broker's value for those four carries the conversation's session
+token, so Fountain keeps it out of that shared file. Your `env_vars` entry is
+then the only assignment left in the file. A `setup_script` that does
+`source .env` picks it up for the rest of that script. This does not open a
+path out. A brokered sandbox can reach the broker host and no other, so a
+different proxy name there costs you your own egress.
 
 ## Hop 4: substitution, then the process
 

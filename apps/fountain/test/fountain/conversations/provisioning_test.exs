@@ -205,9 +205,10 @@ defmodule Fountain.Conversations.ProvisioningTest do
   describe "install_broker_ca/2" do
     # Pins the absolute paths and the sandbox command wiring. What the
     # command *does* — rebuild once, skip on an unchanged bundle, repair a
-    # corrupted one, and retry after a failed rebuild — is the behavioural
-    # test below; `install_broker_ca/2`'s docstring has why each of those
-    # matters on a shared sandbox.
+    # corrupted one, retry after a failed rebuild, and refuse to rebuild when
+    # another installer holds the lock — is the behavioural test below;
+    # `install_broker_ca/2`'s docstring has why each of those matters on a
+    # shared sandbox.
     test "writes the CA where update-ca-certificates reads it, then runs it" do
       conv = insert_conversation()
       test = self()
@@ -239,7 +240,8 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
       assert cmd ==
                "( trap 'rm -f -- '\\''#{staging}'\\''' EXIT; " <>
-                 "safe=0; flock -w 120 9 2>/dev/null && safe=1; " <>
+                 "safe=0; " <>
+                 "if command -v flock >/dev/null 2>&1; then flock -w 120 9 || exit 75; safe=1; fi; " <>
                  "{ cmp -s '#{staging}' '#{ca}' && " <>
                  "sha256sum -c --status '#{marker}' 2>/dev/null; } || " <>
                  "{ sudo rm -f -- '#{marker}' && " <>
@@ -364,6 +366,49 @@ defmodule Fountain.Conversations.ProvisioningTest do
       assert File.read!(bundle) == pem <> "system-roots\n"
       assert File.exists?(marker)
       assert File.read!(counter) == String.duplicate("rebuild\n", 4)
+
+      # Another installer holds the machine lock. Waiting it out and
+      # rebuilding anyway is the concurrent write against the fixed temporary
+      # bundle that this whole command exists to prevent — and worse, the
+      # holder stamps its digest after its own rebuild returns, so a bundle
+      # truncated in between is recorded as good and never repaired. Exit 75
+      # and touch nothing instead: a failed conversation is recoverable.
+      lock = Path.join(tmp_dir, "/tmp/fountain-broker-ca.lock")
+      File.write!(bundle, "corrupted while another installer holds the lock\n")
+
+      holder =
+        Task.async(fn ->
+          System.cmd("flock", [lock, "sleep", "3"], stderr_to_stdout: true)
+        end)
+
+      # Give the holder the lock before racing it, and shorten only the wait
+      # so the test does not sit out the real 120 seconds. Everything else in
+      # the command, including which failure the timeout produces, is the
+      # string Fountain builds.
+      Process.sleep(300)
+      contended = String.replace(cmd, "flock -w 120 9", "flock -w 1 9")
+      refute contended == cmd
+
+      File.write!(tmp_dir <> staging, pem)
+
+      assert {_, 75} =
+               System.cmd("bash", ["-c", contended],
+                 env: [
+                   {"PATH", bin <> ":" <> System.fetch_env!("PATH")},
+                   {"TEST_CA_ROOT", tmp_dir}
+                 ],
+                 stderr_to_stdout: true
+               )
+
+      refute File.exists?(tmp_dir <> staging)
+
+      # Nothing was rebuilt, and the corrupted bundle was left for whoever
+      # holds the lock — or for the next conversation, whose `sha256sum -c`
+      # still misses.
+      assert File.read!(bundle) == "corrupted while another installer holds the lock\n"
+      assert File.read!(counter) == String.duplicate("rebuild\n", 4)
+
+      Task.await(holder, 10_000)
     end
 
     # The trap that removes the staging file runs inside bash, so an exec that

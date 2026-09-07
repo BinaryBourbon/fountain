@@ -437,14 +437,18 @@ defmodule Fountain.Conversations.Provisioning do
       means any later change to it re-arms the guard and the next
       conversation repairs the machine. A sandbox already damaged before this
       shipped has no marker at all, and repairs on its next wake.
-    * **The marker is stamped only when the lock was held.** `flock` failing
-      is two conditions: the binary is absent (a sandbox that should
-      provision the way it did before, not fail), or the 120-second wait
-      expired (someone else is mid-rebuild). Either way the rebuild still
-      runs, and either way it records nothing — so the next conversation
-      rebuilds too, which is exactly the unconditional rebuild that predates
-      this change. Stamping after an unlocked run would let one racy rebuild
-      suppress every future repair.
+    * **`flock` failing is two conditions, and they are not the same.** The
+      binary being absent is a sandbox that should provision the way it did
+      before, not fail: it rebuilds unlocked and stamps nothing, so the next
+      conversation rebuilds too. The 120-second wait expiring is the
+      opposite — somebody is holding the lock precisely because they are
+      mid-rebuild, and rebuilding anyway is the concurrent write this exists
+      to prevent. Worse, the holder stamps `sha256sum` after its own
+      `update-ca-certificates` returns, so a waiter that publishes a
+      truncated bundle in between gets it recorded as good and nothing ever
+      repairs it. A timeout therefore exits 75 and touches nothing. The
+      conversation fails loudly, which is recoverable; a trust store
+      truncated for every conversation on the machine is not.
     * **The staging file is per invocation.** It is written outside the lock,
       so a fixed path is the same bug one level up: two conversations writing
       it at once can hand each other a torn file to compare and install. The
@@ -490,7 +494,8 @@ defmodule Fountain.Conversations.Provisioning do
     # Written as the sandbox user where it may, then moved into the root-owned
     # trust directory the way `install_packages/4` reaches apt: through sudo.
     install =
-      "( trap #{shell_quote(cleanup)} EXIT; safe=0; flock -w 120 9 2>/dev/null && safe=1; " <>
+      "( trap #{shell_quote(cleanup)} EXIT; safe=0; " <>
+        "if command -v flock >/dev/null 2>&1; then flock -w 120 9 || exit 75; safe=1; fi; " <>
         "{ cmp -s #{shell_quote(staging)} #{shell_quote(path)} && " <>
         "sha256sum -c --status #{shell_quote(marker)} 2>/dev/null; } || " <>
         "{ sudo rm -f -- #{shell_quote(marker)} && " <>

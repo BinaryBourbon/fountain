@@ -121,8 +121,6 @@ defmodule Fountain.Conversations.SpriteEnv do
   # Split by key rather than by position: `:brokered` is whatever
   # `Egress.sandbox_env/1` handed over, and a pair belonging to neither half
   # keeps the old behaviour of coming last.
-  defp split_brokered([]), do: {[], []}
-
   defp split_brokered(brokered) do
     ca_keys = Fountain.Broker.ca_keys()
     Enum.split_with(brokered, fn {k, _v} -> to_string(k) in ca_keys end)
