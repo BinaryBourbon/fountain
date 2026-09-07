@@ -66,9 +66,15 @@ defmodule Fountain.Agents.ModelCatalog do
   # turns for the same model — a suggestion refused on most of its turns is
   # not a suggestion, it is an outage waiting for someone to enforce it.
   @catalog %{
-    # `claude-fable-5-1` came from Anthropic's published model id on
-    # 2026-09-06 (#1659) with no local inference check and no adapter check.
-    # It has run no turns here, so it is neither confirmed nor known-refused.
+    # `claude-fable-5-1` was added on 2026-09-06 (#1659) from Anthropic's
+    # published model id, with no local inference check and no adapter check,
+    # and removed on 2026-09-07 (#1669) once it had run turns: the pinned
+    # `claude-agent-acp` refuses it at `session/set_model` with "Invalid value
+    # for config option model", exactly like the three below. It was added in
+    # the same window this file's two-gates note was written and survived the
+    # clean-up that removed the others, because a published provider id looks
+    # like the check has already been done. It is gate one; the adapter is the
+    # gate that decides a turn.
     #
     # `claude-opus-4-8`, `claude-opus-4-7` and `claude-sonnet-4-6` were removed
     # on 2026-09-06. All three answer a real inference call — the 2026-08-22
@@ -77,7 +83,6 @@ defmodule Fountain.Agents.ModelCatalog do
     # so a turn never reaches the provider at all. See the two-gates note
     # above `@catalog`.
     "anthropic" => ~w(
-      claude-fable-5-1
       claude-opus-5
       claude-sonnet-5
       claude-haiku-4-5

@@ -75,6 +75,53 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       assert path =~ "/auth/login"
     end
 
+    # The form's default and placeholder are stronger claims than a catalog
+    # suggestion: a suggestion has to be chosen, a default is what you get by
+    # doing nothing, and a placeholder is what you get by typing the hint. All
+    # three had been outside the refused-id guard, so `claude-sonnet-4-6`
+    # stayed the default and `gpt-5.3-codex` the codex placeholder through the
+    # clean-up that removed both from the catalog (#1669). Every agent created
+    # by accepting the default then failed every turn at `session/set_model`.
+    #
+    # The assertion is catalog membership, not absence from the refused list,
+    # because a default goes stale two ways and the refused list only sees one.
+    # `gpt-5-codex` was *retired* on 2026-08-22 while it was both the codex
+    # suggestion and the codex placeholder (model_catalog.ex records it as the
+    # worse defect of the two). A retired id never becomes an adapter refusal,
+    # so it never enters `RefusedModels` — but it does leave the catalog, and
+    # so does a refused one. `ModelCatalog.known?/1` catches both paths.
+    test "the model default and every placeholder are current catalog entries", %{conn: conn} do
+      conn = login_user(conn, insert_verified_user())
+
+      {:ok, view, html} = live(conn, ~p"/agents/new")
+
+      # The prefilled default. `unknown_model?/1` drives the pass-through hint,
+      # so the hint firing on a freshly mounted form *is* the bug: the form
+      # telling the user its own default is not one Fountain lists.
+      refute html =~ "passed to the runtime as-is",
+             "the new-agent form's own default is not in the catalog"
+
+      assert ModelCatalog.known?(model_value(html)),
+             "the new-agent form defaults to #{model_value(html)}, which is not in the catalog"
+
+      # Each runtime swaps the placeholder, so check them all rather than the
+      # one that happens to render first.
+      for runtime <- Fountain.Agents.Agent.runtimes() do
+        rendered =
+          view
+          |> element("form[phx-change=validate]")
+          |> render_change(%{"agent" => %{"name" => "x", "runtime" => runtime, "model" => ""}})
+
+        placeholder = model_placeholder_value(rendered)
+
+        assert ModelCatalog.known?(placeholder),
+               "the #{runtime} placeholder is #{placeholder}, which is not in the catalog"
+
+        refute placeholder in Fountain.RefusedModels.ids(),
+               "the #{runtime} placeholder is #{placeholder}, which the pinned adapter refuses"
+      end
+    end
+
     # Onboarding asks for Anthropic only; the first model that needs another
     # provider is where its key is collected.
     test "prompts for the provider's key when the chosen model has none on the account", %{
@@ -144,8 +191,17 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
       # Switching runtime re-scopes the list — codex can't reach an
       # anthropic/ model, and the changeset rejects one.
+      #
+      # Derived from the catalog, not hard-coded: this assertion named
+      # `openai/gpt-5.3-codex` until #1669, so it kept passing after that id
+      # was removed from the catalog for being refused by the pinned adapter —
+      # it was matching the placeholder instead, and thereby pinning the bug.
       html = render_change(view, "validate", %{"agent" => %{"runtime" => "codex"}})
-      assert html =~ "openai/gpt-5.3-codex"
+
+      for model <- ModelCatalog.suggestions("codex") do
+        assert has_element?(view, ~s(datalist#model-options option[value="#{model}"]))
+      end
+
       refute html =~ "anthropic/claude-opus-5"
     end
 
@@ -289,6 +345,18 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       assert html =~ "decides this inside its own server"
       assert html =~ "disabled"
     end
+  end
+
+  # The model input renders `value=` before `placeholder=` (form.ex), and both
+  # sit on the one element with id="model".
+  defp model_value(html) do
+    [_, value] = Regex.run(~r/<input[^>]*id="model"[^>]*value="([^"]*)"/, html)
+    value
+  end
+
+  defp model_placeholder_value(html) do
+    [_, value] = Regex.run(~r/<input[^>]*id="model"[^>]*placeholder="([^"]*)"/, html)
+    value
   end
 end
 

@@ -23,7 +23,7 @@ defmodule FountainWeb.AgentsLive.Form do
        :missing_credential,
        InferenceCredentials.missing_for_model(
          user_id,
-         agent.model || "anthropic/claude-sonnet-4-6"
+         agent.model || "anthropic/claude-sonnet-5"
        )
      )
      |> assign(:credential_message, nil)
@@ -61,7 +61,7 @@ defmodule FountainWeb.AgentsLive.Form do
       "name" => a.name || "",
       "description" => a.description || "",
       "system" => a.system || "",
-      "model" => a.model || "anthropic/claude-sonnet-4-6",
+      "model" => a.model || "anthropic/claude-sonnet-5",
       "runtime" => a.runtime || "claude",
       "sandbox_provider" => a.sandbox_provider || "",
       "sandbox_mode" => a.sandbox_mode || "ephemeral",
@@ -186,9 +186,9 @@ defmodule FountainWeb.AgentsLive.Form do
   # Each runtime but opencode only reaches one provider, and the changeset
   # rejects a mismatched prefix (#553). Track the selected runtime so the hint
   # can't lead someone into that error.
-  defp model_placeholder("codex"), do: "openai/gpt-5.3-codex"
+  defp model_placeholder("codex"), do: "openai/gpt-6-astra"
   defp model_placeholder("gemini"), do: "google/gemini-3.1-pro-preview"
-  defp model_placeholder(_runtime), do: "anthropic/claude-sonnet-4-6"
+  defp model_placeholder(_runtime), do: "anthropic/claude-sonnet-5"
 
   # A model id off the curated list is legitimate — new models ship between
   # deploys — so say it will be used rather than flagging it as wrong. Stay

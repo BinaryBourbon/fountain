@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
+  toolchain setup run within an explicit bound. It persists through API/spec
+  round trips and invalidates checkpoints when changed. The overall provisioning
+  deadline and failed-setup handling remain in force.
+
 - Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
 - Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
 
@@ -29,6 +34,40 @@ upgrade, is in
   untrusted work can keep all Fountain API authority on their service host.
 
 ### Fixed
+
+- ACP token/request limits and unknown stop reasons now fail the turn instead
+  of reporting completion. Reported usage and the original stop reason remain
+  available; only `end_turn` establishes normal completion (#1732).
+
+- The broker's root CA is installed under a lock, and the operating-system
+  trust store is rebuilt only when the bundle on the machine is not the one
+  that CA produces. Conversations sharing a sandbox each ran
+  `update-ca-certificates`, which builds the bundle at a fixed temporary
+  path, so two runs at once published a truncated one. A client that read it
+  in that state trusted no broker root and failed every request with
+  `UnknownIssuer`. A sandbox whose bundle is damaged, whether before this
+  change or afterwards by a package install or a setup script, repairs itself
+  on its next provision or wake (#1674).
+
+- An environment's `env_vars` can override the broker's CA variables
+  (`SSL_CERT_FILE` and the rest). They were written before the broker's own,
+  so a value set for one of those names silently did nothing. The proxy
+  variables still win over everything: they are what makes egress brokered.
+  Both halves of the rule are now in the manual, under Secrets (#1674).
+
+- A brokered Codex conversation reaches OpenAI over a provider with the
+  WebSocket transport turned off. Codex's `responses_websocket` dialer cannot
+  use an https-scheme proxy and spent the full connect timeout finding that
+  out — around 300 seconds on every turn, before falling back to HTTP and
+  answering in about a second. The built-in `openai` provider is reserved and
+  cannot be overridden, so Fountain declares the same endpoint under an id of
+  its own, carrying across `OPENAI_BASE_URL`, the OpenAI-Organization and
+  OpenAI-Project header mappings and standalone web search. A
+  conversation whose spawn has no `OPENAI_API_KEY` keeps the built-in
+  provider, which can still authenticate from `~/.codex/auth.json`. An agent
+  that names its own provider in `CODEX_CONFIG` keeps it; a `model_provider`
+  written into `~/.codex/config.toml` by a setup script is not read, and is
+  overridden (#1674).
 
 - Codex launches on Sprites with inherited and ambient capabilities cleared,
   allowing its bubblewrap sandbox to start without falling back to approval
@@ -57,6 +96,25 @@ upgrade, is in
   the turn, so a suggested id the adapter refuses is an outage rather than a
   stale hint. `gpt-6-astra` is listed for openai. A test pins the refused set
   so none of them can be relisted from a provider check alone.
+
+- The new-agent form no longer starts you on a model the adapter refuses. Its
+  prefilled model was `claude-sonnet-4-6` and its codex placeholder
+  `gpt-5.3-codex`, so opening New agent, typing a name and saving produced an
+  agent that failed every turn at `session/set_model` — the form's own hint
+  ("Not one of the models Fountain lists") was firing on the value the form
+  supplied. The catalog clean-up in the previous entry reached the suggestion
+  list only; a default is what you get by doing nothing and a placeholder what
+  you get by typing the hint, so both are stronger claims than a suggestion.
+  Defaults, placeholders and the starter agent every verified account owns are
+  now held to catalog membership, which also catches a *retired* id — the way
+  `gpt-5-codex` went stale on 2026-08-22 — and not only a refused one.
+
+- `claude-fable-5-1` is no longer suggested for anthropic, so `GET
+  /api/catalog` no longer lists it. It was added on 2026-09-06 from Anthropic's
+  published model id, and the pinned `claude-agent-acp` refuses it at
+  `session/set_model`. No saved agent used it. `claude-fable-5` is refused the
+  same way and was never suggested; both are recorded so neither can be
+  relisted from a provider check alone.
 
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.

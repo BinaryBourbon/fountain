@@ -93,6 +93,28 @@ The CLI takes the bare model id, so Fountain removes the `openai/` prefix
 before it calls the CLI. You never see that in normal use. It matters when you
 read a spawn command in the logs.
 
+On a deployment with the egress broker on, Fountain moves the conversation
+onto a model provider of its own. The provider is the same endpoint with the
+WebSocket transport off. Codex's WebSocket dialer cannot use the broker's
+https-scheme proxy. It waits out the full connect timeout before it falls back
+to HTTP, which was about 300 seconds on every turn. Fountain
+carries across `OPENAI_BASE_URL`, the OpenAI-Organization and OpenAI-Project
+header mappings, and standalone web search. A conversation with no
+`OPENAI_API_KEY` keeps the built-in provider, which reads `~/.codex/auth.json`.
+
+Fountain reads only the `CODEX_CONFIG` overlay when it does this. A
+`model_provider` that your setup script writes into `~/.codex/config.toml` is
+not read, and the overlay wins over the file. An agent that reached a gateway
+that way now reaches the endpoint above instead. To keep your own provider,
+name it in `CODEX_CONFIG`, which Fountain leaves alone.
+
+The sandbox images do not pin the Codex CLI. The field that turns the
+transport off is `supports_websockets`, which Codex 0.153.3 accepts. A later
+Codex that ignores the field brings the 300-second wait back, and nothing in
+Fountain reports it. The symptom is the gap between the `model` stream stage
+and the first agent output. See
+[openai/codex#13103](https://github.com/openai/codex/issues/13103).
+
 ## Related
 
 - [About agents](../../concepts/agent.md)

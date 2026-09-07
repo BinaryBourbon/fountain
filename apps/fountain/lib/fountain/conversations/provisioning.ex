@@ -41,6 +41,11 @@ defmodule Fountain.Conversations.Provisioning do
 
   @env_file "/home/sprite/.env"
 
+  # One lock file for the machine, not for the conversation: what it
+  # serialises is `update-ca-certificates`, whose temporary bundle path is
+  # fixed and shared by every run on the sandbox.
+  @ca_lock "/tmp/fountain-broker-ca.lock"
+
   @doc """
   Write the machine's env (runtime defaults + env_vars + secrets) to
   `/home/sprite/.env` so a `setup_script` that does `source .env` picks up
@@ -407,8 +412,51 @@ defmodule Fountain.Conversations.Provisioning do
 
   Gate 0 found that one `update-ca-certificates` satisfies curl, git and npm
   at once, where per-tool variables each fail in their own way. Node is the
-  exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.sandbox_env/1`
+  exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.ca_env/0`
   points at the same file.
+
+  It runs under a lock, and rebuilds the trust store only when the bundle it
+  has is not the one this CA produces (#1674). Both halves concern the shared
+  sandbox (ADR 0023): every conversation on the machine runs this on
+  provision *and* on reattach, and `update-ca-certificates` builds the trust
+  bundle in a fixed temporary file (`ca-certificates.crt.new`) before
+  renaming it into place. Two runs at once therefore share that path — one
+  truncates what the other is still writing, and the rename publishes a
+  bundle of five certificates where there should be 122. A client that reads
+  it in that state has no broker root and fails every request with
+  `UnknownIssuer`, then waits out a full idle timeout before retrying. It was
+  one read in six on a sandbox with forty conversations.
+
+  Three details, each of which was wrong in an earlier cut of this:
+
+    * **The marker holds the bundle's digest, not a flag.** The CA is derived
+      from the deployment's master key, so comparing it proves the *source*
+      is unchanged — not that the bundle still contains it. `apt` running
+      `ca-certificates`' postinst, and any tenant `setup_script`, rebuild
+      that bundle outside this lock. Recording `sha256sum` of the bundle
+      means any later change to it re-arms the guard and the next
+      conversation repairs the machine. A sandbox already damaged before this
+      shipped has no marker at all, and repairs on its next wake.
+    * **`flock` failing is two conditions, and they are not the same.** The
+      binary being absent is a sandbox that should provision the way it did
+      before, not fail: it rebuilds unlocked and stamps nothing, so the next
+      conversation rebuilds too. The 120-second wait expiring is the
+      opposite — somebody is holding the lock precisely because they are
+      mid-rebuild, and rebuilding anyway is the concurrent write this exists
+      to prevent. Worse, the holder stamps `sha256sum` after its own
+      `update-ca-certificates` returns, so a waiter that publishes a
+      truncated bundle in between gets it recorded as good and nothing ever
+      repairs it. A timeout therefore exits 75 and touches nothing. The
+      conversation fails loudly, which is recoverable; a trust store
+      truncated for every conversation on the machine is not.
+    * **The staging file is per invocation.** It is written outside the lock,
+      so a fixed path is the same bug one level up: two conversations writing
+      it at once can hand each other a torn file to compare and install. The
+      subshell's `EXIT` trap removes it, and the error arm removes it for an
+      exec that never reached bash.
+
+  The work stays `&&`-chained, so its exit status is still what the caller
+  sees.
 
   It also pins git's `http.proxyAuthMethod` to `basic`. git defaults to
   `anyauth`, which by definition cannot send a credential until it has seen a
@@ -437,13 +485,26 @@ defmodule Fountain.Conversations.Provisioning do
   @spec install_broker_ca(Handle.t(), String.t()) :: :ok | {:error, term()}
   def install_broker_ca(handle, conv_id) do
     path = Fountain.Broker.ca_path()
-    staging = Fountain.Broker.ca_staging_path()
+    staging = Fountain.Broker.ca_staging_path() <> "." <> Ecto.UUID.generate()
+    bundle = Fountain.Broker.system_ca_bundle()
+    marker = path <> ".trust-store-ready"
+    cleanup = "rm -f -- #{shell_quote(staging)}"
+    stamp = "sha256sum #{shell_quote(bundle)} > #{shell_quote(marker)}"
 
     # Written as the sandbox user where it may, then moved into the root-owned
     # trust directory the way `install_packages/4` reaches apt: through sudo.
     install =
-      "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
+      "( trap #{shell_quote(cleanup)} EXIT; safe=0; " <>
+        "if command -v flock >/dev/null 2>&1; then flock -w 120 9 || exit 75; safe=1; fi; " <>
+        "{ cmp -s #{shell_quote(staging)} #{shell_quote(path)} && " <>
+        "sha256sum -c --status #{shell_quote(marker)} 2>/dev/null; } || " <>
+        "{ sudo rm -f -- #{shell_quote(marker)} && " <>
+        "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
         "sudo update-ca-certificates && " <>
+        ~s({ [ "$safe" = 1 ] && sudo sh -c ) <>
+        shell_quote(stamp) <>
+        " || true; }; } " <>
+        ") 9>#{shell_quote(@ca_lock)} && " <>
         sudo_env_keep_command() <>
         " && " <>
         git_proxy_auth_command()
@@ -455,7 +516,7 @@ defmodule Fountain.Conversations.Provisioning do
            ) do
       case Sandbox.exec(handle, "bash", ["-lc", install],
              stderr_to_stdout: true,
-             timeout: 60_000
+             timeout: 150_000
            ) do
         {:ok, _out, 0} ->
           :ok
@@ -466,6 +527,11 @@ defmodule Fountain.Conversations.Provisioning do
           {:error, {:broker, :ca_install_exit, code, String.slice(to_string(out), 0, 500)}}
 
         {:error, reason} ->
+          # The trap runs inside bash; a transport failure or an expired
+          # budget means bash may never have started, and the staged PEM has
+          # a name no later invocation will reuse. Best effort, and only
+          # worth anything if the sandbox is reachable again by now.
+          _ = Sandbox.exec(handle, "rm", ["-f", "--", staging], timeout: 5_000)
           publish_stage(conv_id, "broker", "failed", %{reason: "ca_install_unreachable"})
           {:error, {:broker, :ca_install, reason}}
       end
@@ -736,7 +802,7 @@ defmodule Fountain.Conversations.Provisioning do
   def run_setup_script(_handle, nil, _sprite_env, _conv_id), do: :ok
   def run_setup_script(_handle, %{setup_script: ""}, _sprite_env, _conv_id), do: :ok
 
-  def run_setup_script(handle, %{setup_script: script}, sprite_env, conv_id) do
+  def run_setup_script(handle, %{setup_script: script} = environment, sprite_env, conv_id) do
     Fountain.Telemetry.span(
       [:setup_script],
       %{conv_id: conv_id, script_size: byte_size(script)},
@@ -746,7 +812,7 @@ defmodule Fountain.Conversations.Provisioning do
         case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
                env: sprite_env,
                stderr_to_stdout: true,
-               timeout: 120_000
+               timeout: Map.get(environment, :setup_timeout_seconds, 120) * 1000
              ) do
           {:ok, output, code} ->
             Conversations.log!(%{

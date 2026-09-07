@@ -156,6 +156,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # Enums with no domain list behind them. Each entry needs a reason: the
   # point of the list is that adding to it is a deliberate act.
   @api_local %{
+    {FountainWeb.Schemas.UsageAccounting, "completeness"} =>
+      "Adapter claim validated by Managoat.ACP.Usage; the library exposes no enum accessor",
     {FountainWeb.Schemas.Turn, "model_selection.status"} =>
       "ACP selection outcomes built per report in TurnMachine",
     {FountainWeb.Schemas.Turn, "model_selection.source"} =>

@@ -10427,6 +10427,10 @@
           "required": false,
           "type": "string"
         },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
+        },
         "updated_at": {
           "format": "date-time",
           "required": false,
@@ -10502,6 +10506,10 @@
         "setup_script": {
           "required": false,
           "type": "string"
+        },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -10570,6 +10578,10 @@
         "setup_script": {
           "required": false,
           "type": "string"
+        },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -12812,6 +12824,10 @@
     },
     "TurnUsage": {
       "properties": {
+        "accounting": {
+          "ref": "UsageAccounting",
+          "required": false
+        },
         "cache_read": {
           "nullable": true,
           "required": false,
@@ -12823,11 +12839,11 @@
           "type": "integer"
         },
         "input": {
-          "required": true,
+          "required": false,
           "type": "integer"
         },
         "output": {
-          "required": true,
+          "required": false,
           "type": "integer"
         }
       },
@@ -12852,6 +12868,31 @@
         "message": {
           "required": false,
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "UsageAccounting": {
+      "properties": {
+        "completeness": {
+          "enum": [
+            "partial",
+            "reported"
+          ],
+          "required": true,
+          "type": "string"
+        },
+        "scope": {
+          "required": true,
+          "type": "string"
+        },
+        "source": {
+          "required": true,
+          "type": "string"
+        },
+        "version": {
+          "required": true,
+          "type": "integer"
         }
       },
       "type": "object"
