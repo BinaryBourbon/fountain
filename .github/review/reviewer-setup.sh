@@ -15,6 +15,8 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 git show "$REVIEW_LOOP_BASE:.github/review/setup.sh" > "$rl_reviewer_bootstrap"
+# Toolchain and relay bootstrap must not evaluate PR-local Mix/Python modules.
+cd /
 sh "$rl_reviewer_bootstrap"
 # Hex 2.5.1/httpc ignores an HTTPS proxy's scheme. Keep the remote hop
 # encrypted and authenticated: a loopback-only TLS relay carries its CONNECT.
@@ -88,6 +90,7 @@ wrapper = wrapper.replace("BROKER_ENDPOINT", repr((proxy.hostname, proxy.port or
 (root / "rl-env").chmod(0o755)
 PY_RELAY
 fi
+cd "$REVIEW_LOOP_WORKSPACE"
 rl-env mix deps.get
 rl-env sh -c 'mix deps.unlock --unused && git diff --exit-code -- mix.lock'
 rl-env sh -c 'mix ecto.create --quiet && mix ecto.migrate --quiet'

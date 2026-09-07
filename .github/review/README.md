@@ -99,7 +99,7 @@ in the service's [GitHub lifecycle guide](https://github.com/managoat/review-loo
 `reviewer-setup.sh` prepares the exact PR checkout using the verifier bootstrap
 from `REVIEW_LOOP_BASE`, then installs locked Hex dependencies and migrates a
 local test database. Review Loop loads this script from the approved base and
-bounds setup to 15 minutes. A changed tracked file or failed setup stops review.
+bounds setup to 15 minutes; the [cold preparation sample](verification.md#measured-reviewer-preparation) took 6m30s including a targeted test. A changed tracked file or failed setup stops review.
 
 Run diagnostics through `rl-env`. Setup success is not a passing test result;
 independent service verification still decides whether the revision passes.
@@ -114,3 +114,6 @@ Test the relay with `python3 scripts/test-reviewer-proxy.py` on Linux with Pytho
 OpenSSL, and socat installed. It executes the recipe's relay code using temporary
 paths and local certificates, covering valid TLS, wrong hostnames, untrusted
 issuers, changed endpoints, and credential placement. It needs no provider keys.
+
+`python3 scripts/test-reviewer-setup-cwd.py` checks that bootstrap ignores PR-local
+Python modules while repository dependency/database commands enter the checkout.
