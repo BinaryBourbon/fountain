@@ -453,11 +453,8 @@ defmodule Fountain.Conversations.ConversationServer do
       # kick re-reads them and rewrites the session's rules when one has
       # changed.
       connection_keys: [],
-      # Where the tenant's own brokered secrets came from, and which keys
-      # they were (#1736): the environment and vault rows are read again
-      # before each turn, so a secret edited or rotated during the
-      # conversation reaches the broker like a connection token does. nil
-      # and [] on an unbrokered conversation.
+      # Where the tenant's own brokered secrets came from and which keys they
+      # were (#1736); `Egress.refresh_before_turn/1` reads the rows again.
       secret_sources: nil,
       tenant_keys: [],
       # This conversation's one resolved MCP configuration (#1404). See
@@ -2309,7 +2306,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
     # Before either path (#1736): a fresh spawn takes the env this rebuilds,
     # and an idle peer holds its token, so the rules must already be right.
-    state = Egress.refresh_before_turn(state)
+    # A peer whose token was replaced is closed: only a fresh spawn carries it.
+    {state, replaced?} = Egress.refresh_before_turn(state)
+    state = if replaced?, do: drop_connection(state, "broker_session_replaced"), else: state
+
     TurnMachine.store_images(turn, images)
     TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)
 

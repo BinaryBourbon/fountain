@@ -209,22 +209,31 @@ defmodule Fountain.Conversations.EgressTest do
       assert next["GITHUB_TOKEN"] == "ghp_old"
     end
 
-    test "refresh_tenant_secrets/5 drops a deleted key, and an inference credential it masked takes the name back" do
-      creds = %{anthropic_api_key: "sk-ant-api03-inference"}
-
+    test "refresh_tenant_secrets/5 drops a deleted key, and what it masked takes the name back" do
       # The tenant's own ANTHROPIC_API_KEY won at init; deleting it hands the
-      # name back to the runtime's credential, as init would.
-      brokered = %{"GITHUB_TOKEN" => "ghp", "ANTHROPIC_API_KEY" => "sk-ant-api03-own"}
+      # name back to the runtime's credential, as init would. Same for a
+      # vault override of a connection's key (the review's row 1): the
+      # connection token is in the underlay, and comes back.
+      underlay = %{"ANTHROPIC_API_KEY" => "sk-ant-api03-inference", "GOOGLE_TOKEN" => "ya29.live"}
+
+      brokered = %{
+        "GITHUB_TOKEN" => "ghp",
+        "ANTHROPIC_API_KEY" => "sk-ant-api03-own",
+        "GOOGLE_TOKEN" => "ya29.override"
+      }
 
       assert Egress.refresh_tenant_secrets(
-               ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"],
+               ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "GOOGLE_TOKEN"],
                %{"GITHUB_TOKEN" => "ghp"},
                brokered,
                %{},
-               creds
+               underlay
              ) ==
-               {%{"GITHUB_TOKEN" => "ghp", "ANTHROPIC_API_KEY" => "sk-ant-api03-inference"},
-                ["GITHUB_TOKEN"], true}
+               {%{
+                  "GITHUB_TOKEN" => "ghp",
+                  "ANTHROPIC_API_KEY" => "sk-ant-api03-inference",
+                  "GOOGLE_TOKEN" => "ya29.live"
+                }, ["GITHUB_TOKEN"], true}
 
       # A deleted key nothing else supplies leaves the broker.
       assert Egress.refresh_tenant_secrets(

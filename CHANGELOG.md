@@ -36,9 +36,11 @@ upgrade, is in
   read again; a change also minted a new session, whose token reaches only the
   next spawned process, while the idle agent that carries the next turn kept
   the old one. Now the environment and vault are read before every turn and
-  the live session's rules are rewritten in place, token kept, so a client
-  that writes a fresh one-hour GitHub App token into a vault before each
-  prompt no longer sees `401 Bad credentials` an hour in (#1736).
+  the live session's rules are rewritten in place, token kept; when a token
+  does have to be replaced, the idle agent is closed so the next turn spawns
+  with it. A client that writes a fresh one-hour GitHub App token into a
+  vault before each prompt no longer sees `401 Bad credentials` an hour in
+  (#1736).
 
 - The broker's root CA is installed under a lock, and the operating-system
   trust store is rebuilt only when the bundle on the machine is not the one

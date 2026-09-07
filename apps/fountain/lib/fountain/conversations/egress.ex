@@ -134,19 +134,19 @@ defmodule Fountain.Conversations.Egress do
   # way `refresh_connection_secrets/3` re-reads the connection tokens.
   # `merged` is the environment + vault merge as `SpriteEnv.merge_secrets/3`
   # returns it now, `tenant_keys` the keys the previous read brokered. An
-  # edited value replaces the broker's; a deleted key is dropped, and the
-  # inference credential it was masking (if any) takes the name back, as at
-  # provisioning. Returns the brokered map, the tenant's brokered keys now,
-  # and whether anything moved. Runs after the connection refresh so a
-  # tenant's own secret of a connection's name wins, as it does at init.
+  # edited value replaces the broker's; a deleted key is dropped, and what
+  # it was masking takes the name back, as at provisioning: `underlay` is
+  # the map of those values, the runtime's inference credentials and the
+  # connection tokens under their env var names. Returns the brokered map,
+  # the tenant's brokered keys now, and whether anything moved. Runs after
+  # the connection refresh so a tenant's own secret of a connection's name
+  # wins, as it does at init.
   @spec refresh_tenant_secrets([String.t()], map(), map(), Broker.bindings(), map()) ::
           {map(), [String.t()], boolean()}
-  def refresh_tenant_secrets(tenant_keys, merged, brokered, bindings, inference_credentials) do
+  def refresh_tenant_secrets(tenant_keys, merged, brokered, bindings, underlay) do
     {_sandbox, fresh} = Broker.split(merged, bindings)
     fresh_keys = fresh |> Map.keys() |> Enum.sort()
     removed = tenant_keys -- fresh_keys
-
-    {_creds, underlay, _implicit} = Broker.split_inference(inference_credentials, bindings)
 
     next =
       brokered
@@ -324,19 +324,20 @@ defmodule Fountain.Conversations.Egress do
   new token for the next spawn. Reads `broker`, `brokered`, `tenant_keys`,
   `connection_keys`, `secret_sources`, `broker_bindings` and
   `inference_credentials` (plus the ids and the DEK); writes `brokered`,
-  `tenant_keys`, `broker` and `sprite_env`. The state of an unbrokered
-  conversation comes back unchanged.
+  `tenant_keys`, `broker` and `sprite_env`. Returns the state and whether
+  the session token was replaced. The state of an unbrokered conversation
+  comes back unchanged.
 
   The token is in the env of every process the sandbox already runs — the
   idle ACP peer that carries the next turn included — so a new session
   would reach none of them; only the rules can move. A rewrite that fails
-  falls through to a fresh session: the next spawn carries the change,
-  which is what a turn got before #1736. A re-mint that fails leaves the
-  turn on the old token, to fail at the proxy, which names the cause,
-  rather than silently here.
+  falls through to a fresh session, and the caller closes the idle peer on
+  the `true` that comes back, so the next spawn carries the new token. A
+  re-mint that fails leaves the turn on the old token, to fail at the
+  proxy, which names the cause, rather than silently here.
   """
-  @spec refresh_before_turn(map()) :: map()
-  def refresh_before_turn(%{broker: nil} = state), do: state
+  @spec refresh_before_turn(map()) :: {map(), boolean()}
+  def refresh_before_turn(%{broker: nil} = state), do: {state, false}
 
   def refresh_before_turn(%{broker: session} = state) do
     {state, changed?} = reread_secrets(state)
@@ -352,17 +353,17 @@ defmodule Fountain.Conversations.Egress do
              user_id: state.user_id
            ) do
         {:ok, fresh, sprite_env} ->
-          %{state | broker: fresh, sprite_env: sprite_env}
+          {%{state | broker: fresh, sprite_env: sprite_env}, fresh.token != session.token}
 
         {:error, reason} ->
           Logger.warning(
             "conv #{state.conversation_id}: broker session refresh failed: #{inspect(reason)}"
           )
 
-          state
+          {state, false}
       end
     else
-      state
+      {state, false}
     end
   end
 
@@ -374,13 +375,21 @@ defmodule Fountain.Conversations.Egress do
     {brokered, rotated?} =
       refresh_connection_secrets(state.connection_keys, state.user_id, state.brokered)
 
+    # What a deleted tenant secret hands its name back to: the inference
+    # credential of that name, or the connection token it had overridden
+    # (the connection refresh above has just put the current one in place).
+    {_creds, inference, _implicit} =
+      Broker.split_inference(state.inference_credentials, state.broker_bindings)
+
+    underlay = Map.merge(inference, Map.take(brokered, state.connection_keys))
+
     {brokered, tenant_keys, edited?} =
       refresh_tenant_secrets(
         state.tenant_keys,
         tenant_secrets(state),
         brokered,
         state.broker_bindings,
-        state.inference_credentials
+        underlay
       )
 
     {%{state | brokered: brokered, tenant_keys: tenant_keys}, rotated? or edited?}
