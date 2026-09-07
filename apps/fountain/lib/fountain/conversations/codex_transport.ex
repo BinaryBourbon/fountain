@@ -51,16 +51,24 @@ defmodule Fountain.Conversations.CodexTransport do
   def spawn_opts(%{broker: broker}, "codex", opts) when not is_nil(broker) do
     env = Keyword.get(opts, :env, [])
 
-    raw = Map.get(Map.new(env), "CODEX_CONFIG", "{}")
+    # `SpriteEnv.build/4` concatenates its pieces without merging, so a name
+    # can appear more than once; its moduledoc's precedence is last entry
+    # wins. Resolved once here, for every read below.
+    resolved = Map.new(env)
+    raw = Map.get(resolved, "CODEX_CONFIG", "{}")
 
     with {:ok, config} when is_map(config) <- Jason.decode(raw),
          features when is_map(features) <- Map.get(config, "features", %{}),
+         # Type-checked here so a non-map is `:invalid_codex_config` rather
+         # than a crash; `select_http_provider/2` reads it from `config`.
          providers when is_map(providers) <- Map.get(config, "model_providers", %{}) do
+      _ = providers
+
       config =
         config
         |> Map.put("features", Map.put(features, "respect_system_proxy", true))
         |> Map.delete("features.respect_system_proxy")
-        |> select_http_provider(providers, env)
+        |> select_http_provider(resolved)
 
       env =
         Enum.reject(env, &match?({"CODEX_CONFIG", _}, &1)) ++
@@ -79,24 +87,33 @@ defmodule Fountain.Conversations.CodexTransport do
   # transport off. Only the one that would otherwise dial OpenAI directly: an
   # agent already pointed at a gateway keeps the provider it names, because
   # that provider decides its own transport and its endpoint is not ours to
-  # replace. A declaration of this id that the config already carries is the
-  # operator's, and is left alone.
-  defp select_http_provider(config, providers, env) do
-    # SpriteEnv appends secrets and broker placeholders after plain variables.
-    # Resolve both endpoint and credential with the same last-entry precedence.
-    env = Map.new(env)
+  # replace.
+  #
+  # Selecting and declaring have to agree. A config that *selects* this id
+  # chose the declaration beside it, so both are left alone. A config that
+  # merely *declares* it without selecting it has chosen nothing, and writing
+  # the selection over someone else's definition would hand the turn an
+  # endpoint nothing picked — possibly with `supports_websockets` unset, which
+  # is the stall this exists to remove. There, the definition is ours too.
+  defp select_http_provider(config, env) do
+    providers = Map.get(config, "model_providers", %{})
 
-    if substitute?(config, env) do
-      config
-      |> Map.put("model_provider", @provider_id)
-      |> Map.put("model_providers", Map.put_new(providers, @provider_id, provider(env)))
-    else
-      config
+    cond do
+      Map.get(config, "model_provider") == @provider_id ->
+        config
+
+      substitute?(config, env) ->
+        config
+        |> Map.put("model_provider", @provider_id)
+        |> Map.put("model_providers", Map.put(providers, @provider_id, provider(env)))
+
+      true ->
+        config
     end
   end
 
   defp substitute?(config, env) do
-    Map.get(config, "model_provider", "openai") in ["openai", @provider_id] and
+    Map.get(config, "model_provider", "openai") == "openai" and
       match?(
         value when is_binary(value) and value != "",
         Map.get(env, "OPENAI_API_KEY")

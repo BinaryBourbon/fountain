@@ -53,11 +53,14 @@ defmodule Fountain.Conversations.CodexTransportTest do
            }
   end
 
-  # `SpriteEnv.build/4` appends the decrypted secrets after the runtime's own
-  # defaults, so a vault entry for either variable appears twice and the last
-  # one is what the process gets. Reading the first would substitute on a key
-  # the conversation is not using, and would miss a deliberately emptied one.
-  test "the effective value of a repeated variable is the one that counts" do
+  # `SpriteEnv.build/4` concatenates the runtime's defaults, the environment's
+  # vars and the decrypted secrets without merging, so a vault entry for
+  # either variable appears twice. Resolve it the way that moduledoc says the
+  # list is meant to be read — last entry wins — so a value the tenant set
+  # later is the one acted on, including one deliberately emptied. What a
+  # duplicated `environ` means to the spawned process belongs to the sandbox
+  # adapter, not here.
+  test "a repeated variable resolves with SpriteEnv's last-entry precedence" do
     env = [
       key("sk-runtime-default"),
       {"OPENAI_BASE_URL", "https://api.openai.com/v1"},
@@ -127,6 +130,36 @@ defmodule Fountain.Conversations.CodexTransportTest do
     assert config["features"]["respect_system_proxy"] == true
   end
 
+  # `Map.put` for the selection and `Map.put_new` for the declaration
+  # disagreed on one shape: a config that declares this id without selecting
+  # it. The selection was written over a definition Fountain did not author,
+  # so the turn ran on an endpoint nothing picked — possibly with
+  # `supports_websockets` unset, which is the stall this module removes.
+  test "a declaration of our id that nothing selected does not become the endpoint" do
+    stray = %{
+      "base_url" => "https://someone-elses.example/v1",
+      "wire_api" => "responses"
+    }
+
+    for selected <- [nil, "openai"] do
+      original =
+        %{"model_providers" => %{"fountain_openai_http" => stray}}
+        |> then(&if(selected, do: Map.put(&1, "model_provider", selected), else: &1))
+
+      assert {:ok, result} =
+               CodexTransport.spawn_opts(%{broker: %{}}, "codex",
+                 env: [key("sk-x"), {"CODEX_CONFIG", Jason.encode!(original)}]
+               )
+
+      config = config(result)
+      provider = config["model_providers"]["fountain_openai_http"]
+
+      assert config["model_provider"] == "fountain_openai_http"
+      assert provider["base_url"] == "https://api.openai.com/v1"
+      assert provider["supports_websockets"] == false
+    end
+  end
+
   test "a provider declaration of our own id is left as the operator wrote it" do
     mine = %{"base_url" => "https://proxy.internal/v1", "supports_websockets" => false}
 
@@ -165,11 +198,12 @@ defmodule Fountain.Conversations.CodexTransportTest do
     assert updated["model_providers"]["custom"] == original["model_providers"]["custom"]
   end
 
-  # `List.keystore/4` rewrites the *first* entry, but a process with the
-  # variable twice sees the last. Rewriting the first would have left an
-  # untouched later entry winning, so the whole policy — proxy support and
-  # provider selection both — would silently not reach codex.
-  test "a repeated CODEX_CONFIG is read and rewritten as the process sees it" do
+  # `List.keystore/4` rewrites the *first* entry. Read under the same
+  # last-entry precedence, that would have left a later untouched entry
+  # carrying the config, so the whole policy — proxy support and provider
+  # selection both — would not have been the one applied. The write half is
+  # independent of the question: exactly one entry is emitted, last.
+  test "a repeated CODEX_CONFIG is read and rewritten under one precedence" do
     stale = Jason.encode!(%{"model" => "stale"})
     live = Jason.encode!(%{"model" => "live"})
 
@@ -211,6 +245,22 @@ defmodule Fountain.Conversations.CodexTransportTest do
         ] do
       assert {:error, :invalid_codex_config} =
                CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: [{"CODEX_CONFIG", raw}])
+    end
+  end
+
+  # The gate below is only as good as this: `substitute?/2` is false without
+  # `OPENAI_API_KEY` in the spawn env, and for a conversation whose OpenAI key
+  # is an inference credential the only producer is the runtime module — a hex
+  # dependency. If a later `managoat_runtimes` stops exporting it, every
+  # brokered Codex turn quietly keeps the built-in provider and the 300-second
+  # stall comes back with nothing failing. Pinned the way
+  # `conversation_server_broker_test.exs` pins the same fact for Claude.
+  test "the runtime module exports the credential this module gates on" do
+    assert Managoat.Runtimes.Codex.default_env(nil, %{openai_api_key: "sk-__openai_api_key__"}) ==
+             [{"OPENAI_API_KEY", "sk-__openai_api_key__"}]
+
+    for absent <- [%{}, %{openai_api_key: nil}, %{openai_api_key: ""}] do
+      assert Managoat.Runtimes.Codex.default_env(nil, absent) == []
     end
   end
 
