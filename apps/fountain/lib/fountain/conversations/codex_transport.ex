@@ -20,8 +20,7 @@ defmodule Fountain.Conversations.CodexTransport do
   # reserved, so declare the same endpoint with the websocket transport off
   # and select it.
   #
-  # Two things the substitution has to carry across, because the built-in
-  # provider has them and a custom one does not:
+  # Endpoint and authentication need special handling in the substitution:
   #
   #   * **The endpoint.** The built-in reads `OPENAI_BASE_URL`, which is how
   #     an environment points codex at a gateway. `base_url/1` reads the same
@@ -84,6 +83,10 @@ defmodule Fountain.Conversations.CodexTransport do
   # replace. A declaration of this id that the config already carries is the
   # operator's, and is left alone.
   defp select_http_provider(config, providers, env) do
+    # SpriteEnv appends secrets and broker placeholders after plain variables.
+    # Resolve both endpoint and credential with the same last-entry precedence.
+    env = Map.new(env)
+
     if substitute?(config, env) do
       config
       |> Map.put("model_provider", @provider_id)
@@ -96,24 +99,46 @@ defmodule Fountain.Conversations.CodexTransport do
   defp substitute?(config, env) do
     Map.get(config, "model_provider", "openai") in ["openai", @provider_id] and
       match?(
-        {_, value} when is_binary(value) and value != "",
-        List.keyfind(env, "OPENAI_API_KEY", 0)
+        value when is_binary(value) and value != "",
+        Map.get(env, "OPENAI_API_KEY")
       )
   end
 
+  # Field audit: Codex rust-v0.147.0 (installed in the review image) and
+  # rust-v0.153.3, codex-rs/model-provider-info/src/lib.rs,
+  # built_in_model_providers -> create_openai_provider:
+  # https://github.com/openai/codex/blob/rust-v0.147.0/codex-rs/model-provider-info/src/lib.rs
+  # Both set name, base_url, wire_api, env_http_headers, http_headers,
+  # requires_openai_auth, supports_websockets and supports_standalone_web_search.
+  # Preserve organization/project mappings and standalone search. Their sole
+  # provider http_header is the compiled CLI version; deliberately omit it:
+  # Fountain does not know the conversation sandbox's CLI version, and using
+  # the review image's version would misidentify an unpinned installation.
+  # Neither version declares OpenAI-Beta or originator as provider headers.
+  # env_key replaces requires_openai_auth only with a spawn credential;
+  # supports_websockets is deliberately false. env_key_instructions,
+  # experimental_bearer_token, auth, aws and query_params are all unset.
+  # request_max_retries, stream_max_retries, stream_idle_timeout_ms and
+  # websocket_connect_timeout_ms are also unset, using the same global
+  # defaults for built-in and custom providers; keep them unset here.
   defp provider(env) do
     %{
       "name" => "OpenAI",
       "base_url" => base_url(env),
       "wire_api" => "responses",
       "env_key" => "OPENAI_API_KEY",
-      "supports_websockets" => false
+      "supports_websockets" => false,
+      "supports_standalone_web_search" => true,
+      "env_http_headers" => %{
+        "OpenAI-Organization" => "OPENAI_ORGANIZATION",
+        "OpenAI-Project" => "OPENAI_PROJECT"
+      }
     }
   end
 
   defp base_url(env) do
-    case List.keyfind(env, "OPENAI_BASE_URL", 0) do
-      {_, url} when is_binary(url) and url != "" -> url
+    case Map.get(env, "OPENAI_BASE_URL") do
+      url when is_binary(url) and url != "" -> url
       _ -> @openai_base_url
     end
   end
