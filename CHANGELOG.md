@@ -88,6 +88,25 @@ upgrade, is in
   stale hint. `gpt-6-astra` is listed for openai. A test pins the refused set
   so none of them can be relisted from a provider check alone.
 
+- The new-agent form no longer starts you on a model the adapter refuses. Its
+  prefilled model was `claude-sonnet-4-6` and its codex placeholder
+  `gpt-5.3-codex`, so opening New agent, typing a name and saving produced an
+  agent that failed every turn at `session/set_model` — the form's own hint
+  ("Not one of the models Fountain lists") was firing on the value the form
+  supplied. The catalog clean-up in the previous entry reached the suggestion
+  list only; a default is what you get by doing nothing and a placeholder what
+  you get by typing the hint, so both are stronger claims than a suggestion.
+  Defaults, placeholders and the starter agent every verified account owns are
+  now held to catalog membership, which also catches a *retired* id — the way
+  `gpt-5-codex` went stale on 2026-08-22 — and not only a refused one.
+
+- `claude-fable-5-1` is no longer suggested for anthropic, so `GET
+  /api/catalog` no longer lists it. It was added on 2026-09-06 from Anthropic's
+  published model id, and the pinned `claude-agent-acp` refuses it at
+  `session/set_model`. No saved agent used it. `claude-fable-5` is refused the
+  same way and was never suggested; both are recorded so neither can be
+  relisted from a provider check alone.
+
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
 
