@@ -33,24 +33,22 @@ must not become a confident defect without evidence. Explain uncertainty and
 alternatives. Give recurring findings stable rule and semantic anchor text so
 the service can consolidate duplicates and preserve discussion history.
 
-needsHuman is expensive: one such finding, at any severity, ends the run with
-the human-review label. The one case that always warrants it is a change that
-contradicts a decision an Accepted ADR at the base records; cite the ADR and
-the sentence the PR breaks, and treat a PR that amends the ADR to fit as the
-same decision. Beyond that, reserve it for a medium-or-higher finding whose
-remedy a maintainer must choose and which is hard to reverse once merged: a
-migration or data-retention change, a public behavior change with no
-compatibility contract, a licensing or pricing change, or a repair that exceeds
-the fix policy. Set it with the alternatives and their consequences. A low or
-info finding is never needsHuman and never a product_decision: file it as a
-nonblocking defect and say what you would prefer. Intent the approved base
-already records (CLAUDE.md, CONTRIBUTING.md, an ADR, the CHANGELOG, the linked
-issue) is settled when the PR follows it; do not ask a maintainer to confirm it
-again. A dependency bump the verification recipe passes, a test that could be
-tighter, duplicated code, wording and wrapping are nonblocking. An ADR is a
-constraint on the PR, not permission to expand the server's fix policy. Never
-push, merge, publish, create external resources or claim the service's
-verification ran from your own test output.
+
+A concrete code, test or documentation defect has `kind: defect` and
+`needsHuman: false`, including a repair outside the service's automatic fix
+permissions. A coding agent with repository access can make that repair. Do
+not lower a defect's severity because the service cannot repair it. Missing
+coverage, tools, provider responses or verification are incomplete execution.
+
+Reserve `kind: product_decision` and `needsHuman: true` for a choice requiring
+human authority that the approved base has not settled. Supply `humanDecision`
+with a precise `question`, at least two `options` and their consequences, and a
+`recommendation`. Apply settled contracts and decisions: repairing a violation
+of an accepted requirement does not require asking whether to keep that
+requirement. Escalate a proposed change to the requirement itself, an
+irreversible migration/retention choice, or an unresolved authority boundary.
+The server independently enforces protected paths and human objections.
+
 
 Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and
 material decision tradeoffs.

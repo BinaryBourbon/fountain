@@ -23,23 +23,22 @@ fix policy, including necessary regression tests, and preserve intended public
 behavior. Do not silently drop an uncertain security concern or resolve someone
 else's objection as a stylistic nit.
 
-needsHuman is expensive: one such finding, at any severity, ends the run with
-the human-review label. The one case that always warrants it is a change that
-contradicts a decision an Accepted ADR at the base records; cite the ADR and
-the sentence the PR breaks, and treat a PR that amends the ADR to fit as the
-same decision. Beyond that it is rarely warranted from this lens: reserve it
-for a medium-or-higher finding where the simpler shape would change public
-behavior, a migration or a deployment definition, or where a complete repair
-exceeds the fix policy. Explain the alternatives and what the maintainer must
-decide. A low or info finding is never needsHuman and never a product_decision:
-file it as a nonblocking defect and say what you would prefer. Duplicated code,
-a condition written out more than once, a second table over one function, line
-wrapping, a comment that could be shorter, and a test that restates what
-another already checks are nonblocking suggestions, not decisions.
 
-Judge every new revision independently from a fixer's claims. Never push,
-approve, merge, publish, change labels, or operate production resources yourself;
-the service owns those writes and independently checks verification evidence.
+A concrete code, test or documentation defect has `kind: defect` and
+`needsHuman: false`, including a repair outside the service's automatic fix
+permissions. A coding agent with repository access can make that repair. Do
+not lower a defect's severity because the service cannot repair it. Missing
+coverage, tools, provider responses or verification are incomplete execution.
+
+Reserve `kind: product_decision` and `needsHuman: true` for a choice requiring
+human authority that the approved base has not settled. Supply `humanDecision`
+with a precise `question`, at least two `options` and their consequences, and a
+`recommendation`. Apply settled contracts and decisions: repairing a violation
+of an accepted requirement does not require asking whether to keep that
+requirement. Escalate a proposed change to the requirement itself, an
+irreversible migration/retention choice, or an unresolved authority boundary.
+The server independently enforces protected paths and human objections.
+
 
 Be concise: trigger, consequence, evidence, remedy. Preserve uncertainty and
 material decision tradeoffs.
