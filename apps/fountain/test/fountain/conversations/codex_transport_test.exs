@@ -55,12 +55,12 @@ defmodule Fountain.Conversations.CodexTransportTest do
 
   # `SpriteEnv.build/4` concatenates the runtime's defaults, the environment's
   # vars and the decrypted secrets without merging, so a vault entry for
-  # either variable appears twice. Resolve it the way that moduledoc says the
-  # list is meant to be read — last entry wins — so a value the tenant set
-  # later is the one acted on, including one deliberately emptied. What a
-  # duplicated `environ` means to the spawned process belongs to the sandbox
-  # adapter, not here.
-  test "a repeated variable resolves with SpriteEnv's last-entry precedence" do
+  # either variable appears twice. Nothing in this repository states which one
+  # the spawned process then reads — `SpriteEnv`'s moduledoc is about
+  # `merge_secrets/3`, which runs before the list exists — so the module does
+  # not depend on the answer: it resolves last entry wins and emits an env
+  # carrying only that entry.
+  test "a repeated variable resolves last-entry-wins and only that entry is emitted" do
     env = [
       key("sk-runtime-default"),
       {"OPENAI_BASE_URL", "https://api.openai.com/v1"},
@@ -274,11 +274,19 @@ defmodule Fountain.Conversations.CodexTransportTest do
   # stall comes back with nothing failing. Pinned the way
   # `conversation_server_broker_test.exs` pins the same fact for Claude.
   test "the runtime module exports the credential this module gates on" do
-    assert Managoat.Runtimes.Codex.default_env(nil, %{openai_api_key: "sk-__openai_api_key__"}) ==
-             [{"OPENAI_API_KEY", "sk-__openai_api_key__"}]
+    assert {"OPENAI_API_KEY", "sk-__openai_api_key__"} in Managoat.Runtimes.Codex.default_env(
+             nil,
+             %{openai_api_key: "sk-__openai_api_key__"}
+           )
 
+    # Membership, not equality: this pins the credential this module gates on,
+    # and an unrelated pair added upstream should not fail a test about it.
     for absent <- [%{}, %{openai_api_key: nil}, %{openai_api_key: ""}] do
-      assert Managoat.Runtimes.Codex.default_env(nil, absent) == []
+      refute List.keymember?(
+               Managoat.Runtimes.Codex.default_env(nil, absent),
+               "OPENAI_API_KEY",
+               0
+             )
     end
   end
 
