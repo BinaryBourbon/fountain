@@ -26,24 +26,51 @@ defmodule Fountain.Conversations.CodexTransportTest do
   # own and select it.
   test "brokered Codex talks to OpenAI over a provider with no websocket transport" do
     assert {:ok, result} =
-             CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: [])
+             CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: [key("sk-x")])
 
     config = config(result)
 
     assert config["model_provider"] == "fountain_openai_http"
 
-    assert config["model_providers"]["fountain_openai_http"] == %{
-             "name" => "OpenAI",
-             "base_url" => "https://api.openai.com/v1",
-             "wire_api" => "responses",
-             "env_key" => "OPENAI_API_KEY",
-             "supports_websockets" => false
+    assert config["model_providers"] == %{
+             "fountain_openai_http" => %{
+               "name" => "OpenAI",
+               "base_url" => "https://api.openai.com/v1",
+               "wire_api" => "responses",
+               "env_key" => "OPENAI_API_KEY",
+               "supports_websockets" => false
+             }
            }
+  end
 
-    # Nothing else may name the built-in provider: codex rejects the whole
-    # configuration with "model_providers contains reserved built-in provider
-    # IDs" rather than ignoring the entry.
-    refute Map.has_key?(config["model_providers"], "openai")
+  # The built-in provider reads OPENAI_BASE_URL, so an environment pointing
+  # codex at a gateway through `env_vars` was already working. Hard-coding
+  # OpenAI's URL into the replacement would have redirected it silently.
+  test "the replacement provider keeps the endpoint OPENAI_BASE_URL names" do
+    env = [key("sk-x"), {"OPENAI_BASE_URL", "https://gw.example/v1"}]
+
+    assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env)
+
+    assert config(result)["model_providers"]["fountain_openai_http"]["base_url"] ==
+             "https://gw.example/v1"
+  end
+
+  # A custom provider does not read ~/.codex/auth.json, so a conversation
+  # with no OPENAI_API_KEY in its spawn env would have nothing to
+  # authenticate with. A shared sandbox may still hold the auth.json that
+  # `codex login --with-api-key` wrote for whoever provisioned it, and the
+  # built-in provider can use it. Paying the stall beats losing the turn.
+  test "a spawn with no OPENAI_API_KEY keeps the built-in provider" do
+    for env <- [[], [{"OPENAI_API_KEY", ""}]] do
+      assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env)
+
+      config = config(result)
+
+      refute Map.has_key?(config, "model_provider")
+      refute Map.has_key?(config, "model_providers")
+      # The proxy half does not depend on the credential.
+      assert config["features"]["respect_system_proxy"] == true
+    end
   end
 
   test "an agent already pointed at a gateway keeps the provider it names" do
@@ -54,7 +81,7 @@ defmodule Fountain.Conversations.CodexTransportTest do
 
     assert {:ok, result} =
              CodexTransport.spawn_opts(%{broker: %{}}, "codex",
-               env: [{"CODEX_CONFIG", Jason.encode!(original)}]
+               env: [key("sk-x"), {"CODEX_CONFIG", Jason.encode!(original)}]
              )
 
     config = config(result)
@@ -75,7 +102,7 @@ defmodule Fountain.Conversations.CodexTransportTest do
 
     assert {:ok, result} =
              CodexTransport.spawn_opts(%{broker: %{}}, "codex",
-               env: [{"CODEX_CONFIG", Jason.encode!(original)}]
+               env: [key("sk-x"), {"CODEX_CONFIG", Jason.encode!(original)}]
              )
 
     assert config(result)["model_providers"]["fountain_openai_http"] == mine
@@ -89,12 +116,17 @@ defmodule Fountain.Conversations.CodexTransportTest do
       "model_providers" => %{"custom" => %{"base_url" => "https://example.com"}}
     }
 
-    opts = [env: [{"CODEX_CONFIG", Jason.encode!(original)}]]
+    opts = [env: [key("sk-x"), {"CODEX_CONFIG", Jason.encode!(original)}]]
     assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", opts)
     updated = config(result)
     assert updated["features"] == %{"multi_agent" => false, "respect_system_proxy" => true}
     refute Map.has_key?(updated, "features.respect_system_proxy")
     assert updated["model"] == original["model"]
+
+    # Exactly one entry added, every neighbour untouched.
+    assert Map.keys(updated["model_providers"]) |> Enum.sort() ==
+             ["custom", "fountain_openai_http"]
+
     assert updated["model_providers"]["custom"] == original["model_providers"]["custom"]
   end
 
@@ -120,6 +152,8 @@ defmodule Fountain.Conversations.CodexTransportTest do
                CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: [{"CODEX_CONFIG", raw}])
     end
   end
+
+  defp key(value), do: {"OPENAI_API_KEY", value}
 
   defp config(opts) do
     {_, raw} = List.keyfind(opts[:env], "CODEX_CONFIG", 0)

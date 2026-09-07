@@ -18,19 +18,36 @@ defmodule Fountain.Conversations.CodexTransport do
   # built-in provider IDs` is a hard configuration error, from the file and
   # from here alike (openai/codex#13103). A provider id of our own is not
   # reserved, so declare the same endpoint with the websocket transport off
-  # and select it. `env_key` rather than the built-in's `auth.json`, because a
-  # custom provider does not read that store; `OPENAI_API_KEY` is in the
-  # sandbox env either way, and on a brokered conversation it is the
-  # placeholder the broker substitutes for the real key on the way out
-  # (`Fountain.Broker.split_inference/2`), so nothing about who pays changes.
+  # and select it.
+  #
+  # Two things the substitution has to carry across, because the built-in
+  # provider has them and a custom one does not:
+  #
+  #   * **The endpoint.** The built-in reads `OPENAI_BASE_URL`, which is how
+  #     an environment points codex at a gateway. `base_url/1` reads the same
+  #     variable out of the spawn env, so hard-coding OpenAI's URL here does
+  #     not silently redirect a conversation that had been going elsewhere.
+  #   * **The credential.** A custom provider does not read `~/.codex/auth.json`,
+  #     which is where `codex login --with-api-key` puts the key at provision
+  #     time (ADR 0019 gate 3) and where a sandbox shared by several
+  #     conversations still holds one. So the substitution happens only when
+  #     `OPENAI_API_KEY` is in this spawn's env for `env_key` to name. Without
+  #     it the conversation keeps the built-in provider and pays the stall —
+  #     the wrong provider would cost it the turn instead.
+  #
+  # Brokered, `OPENAI_API_KEY` holds the placeholder the broker substitutes
+  # for the real key on the way out (`Fountain.Broker.split_inference/2`), so
+  # nothing about which key pays changes.
+  #
+  # **Scope.** This reads the CODEX_CONFIG overlay and nothing else. A
+  # `model_provider` an environment's setup script wrote into
+  # `~/.codex/config.toml` is invisible here, and the overlay outranks the
+  # file, so such a conversation is moved onto this provider. Fountain writes
+  # no `model_provider` of its own into that file; `env_vars` is the supported
+  # way to point codex somewhere else, and `OPENAI_BASE_URL` set there is
+  # carried across.
   @provider_id "fountain_openai_http"
-  @provider %{
-    "name" => "OpenAI",
-    "base_url" => "https://api.openai.com/v1",
-    "wire_api" => "responses",
-    "env_key" => "OPENAI_API_KEY",
-    "supports_websockets" => false
-  }
+  @openai_base_url "https://api.openai.com/v1"
 
   def spawn_opts(%{broker: broker}, "codex", opts) when not is_nil(broker) do
     env = Keyword.get(opts, :env, [])
@@ -48,7 +65,7 @@ defmodule Fountain.Conversations.CodexTransport do
         config
         |> Map.put("features", Map.put(features, "respect_system_proxy", true))
         |> Map.delete("features.respect_system_proxy")
-        |> disable_websockets(providers)
+        |> select_http_provider(providers, env)
 
       env = List.keystore(env, "CODEX_CONFIG", 0, {"CODEX_CONFIG", Jason.encode!(config)})
       {:ok, Keyword.put(opts, :env, env)}
@@ -60,16 +77,44 @@ defmodule Fountain.Conversations.CodexTransport do
 
   def spawn_opts(_state, _runtime, opts), do: {:ok, opts}
 
-  # Only the conversation that would otherwise dial OpenAI directly. An agent
-  # already pointed at a gateway keeps the provider it names: that provider
-  # decides its own transport, and its base URL is not ours to replace.
-  defp disable_websockets(config, providers) do
-    if Map.get(config, "model_provider", "openai") in ["openai", @provider_id] do
+  # Repoint the conversation at an equivalent provider with the websocket
+  # transport off. Only the one that would otherwise dial OpenAI directly: an
+  # agent already pointed at a gateway keeps the provider it names, because
+  # that provider decides its own transport and its endpoint is not ours to
+  # replace. A declaration of this id that the config already carries is the
+  # operator's, and is left alone.
+  defp select_http_provider(config, providers, env) do
+    if substitute?(config, env) do
       config
       |> Map.put("model_provider", @provider_id)
-      |> Map.put("model_providers", Map.put_new(providers, @provider_id, @provider))
+      |> Map.put("model_providers", Map.put_new(providers, @provider_id, provider(env)))
     else
       config
+    end
+  end
+
+  defp substitute?(config, env) do
+    Map.get(config, "model_provider", "openai") in ["openai", @provider_id] and
+      match?(
+        {_, value} when is_binary(value) and value != "",
+        List.keyfind(env, "OPENAI_API_KEY", 0)
+      )
+  end
+
+  defp provider(env) do
+    %{
+      "name" => "OpenAI",
+      "base_url" => base_url(env),
+      "wire_api" => "responses",
+      "env_key" => "OPENAI_API_KEY",
+      "supports_websockets" => false
+    }
+  end
+
+  defp base_url(env) do
+    case List.keyfind(env, "OPENAI_BASE_URL", 0) do
+      {_, url} when is_binary(url) and url != "" -> url
+      _ -> @openai_base_url
     end
   end
 end

@@ -52,8 +52,12 @@ upgrade, is in
   out — around 300 seconds on every turn, before falling back to HTTP and
   answering in about a second. The built-in `openai` provider is reserved and
   cannot be overridden, so Fountain declares the same endpoint under an id of
-  its own. An agent already pointed at a gateway keeps the provider it names
-  (#1674).
+  its own, carrying across `OPENAI_BASE_URL` where an environment sets one. A
+  conversation whose spawn has no `OPENAI_API_KEY` keeps the built-in
+  provider, which can still authenticate from `~/.codex/auth.json`. An agent
+  that names its own provider in `CODEX_CONFIG` keeps it; a `model_provider`
+  written into `~/.codex/config.toml` by a setup script is not read, and is
+  overridden (#1674).
 
 - Codex launches on Sprites with inherited and ambient capabilities cleared,
   allowing its bubblewrap sandbox to start without falling back to approval
