@@ -31,11 +31,14 @@ upgrade, is in
 ### Fixed
 
 - The broker's root CA is installed under a lock, and the operating-system
-  trust store is rebuilt only when the CA on disk differs. Conversations
-  sharing a sandbox each ran `update-ca-certificates`, which builds the
-  bundle at a fixed temporary path, so two runs at once published a
-  truncated one. A client that read it in that state trusted no broker root
-  and failed every request with `UnknownIssuer` (#1674).
+  trust store is rebuilt only when the installed CA differs or no successful
+  rebuild has been recorded. Conversations sharing a sandbox each ran
+  `update-ca-certificates`, which builds the bundle at a fixed temporary
+  path, so two runs at once published a truncated one. A client that read it
+  in that state trusted no broker root and failed every request with
+  `UnknownIssuer`. A sandbox already damaged this way repairs itself on its
+  next provision, and each install stages the CA under a path of its own
+  (#1674).
 
 - An environment's `env_vars` can override the broker's CA variables
   (`SSL_CERT_FILE` and the rest). They were written before the broker's own,

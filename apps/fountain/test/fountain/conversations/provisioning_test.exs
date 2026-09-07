@@ -207,16 +207,24 @@ defmodule Fountain.Conversations.ProvisioningTest do
       end)
 
       assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
-      assert_received {:wrote, "/tmp/agent-vault-ca.crt", "PEM", [mode: 0o644]}
+
+      # The staging file is per invocation, so several conversations writing
+      # it at once cannot change each other's input to `cmp` and `install`.
+      assert_received {:wrote, staging, "PEM", [mode: 0o644]}
+      assert String.starts_with?(staging, "/tmp/agent-vault-ca.crt.")
+      refute staging == "/tmp/agent-vault-ca.crt"
 
       assert_received {:exec, "bash", ["-lc", cmd]}
+      ca = "/usr/local/share/ca-certificates/agent-vault.crt"
+      marker = ca <> ".trust-store-ready"
 
       assert cmd ==
-               "( flock -w 120 9 || true; " <>
-                 "cmp -s '/tmp/agent-vault-ca.crt' '/usr/local/share/ca-certificates/agent-vault.crt' || " <>
-                 "{ sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
-                 "'/usr/local/share/ca-certificates/agent-vault.crt' && " <>
-                 "sudo update-ca-certificates; } ) 9>'/tmp/fountain-broker-ca.lock' && " <>
+               "( trap 'rm -f -- '\\''#{staging}'\\''' EXIT; flock -w 120 9 || true; " <>
+                 "{ cmp -s '#{staging}' '#{ca}' && test -f '#{marker}'; } || " <>
+                 "{ sudo rm -f -- '#{marker}' && " <>
+                 "sudo install -D -m 644 '#{staging}' '#{ca}' && " <>
+                 "sudo update-ca-certificates && sudo touch '#{marker}'; } " <>
+                 ") 9>'/tmp/fountain-broker-ca.lock' && " <>
                  "printf '%s\\n' 'Defaults env_keep += \"HTTPS_PROXY HTTP_PROXY https_proxy http_proxy " <>
                  "NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO " <>
                  "UV_NATIVE_TLS\"' > '/tmp/fountain-broker-proxy.sudoers' && " <>
@@ -248,10 +256,20 @@ defmodule Fountain.Conversations.ProvisioningTest do
       assert script =~ "flock -w 120 9"
       assert script =~ "9>'/tmp/fountain-broker-ca.lock'"
 
-      # The comparison guards both the install and the rebuild, so an
-      # unchanged CA touches neither.
+      # Skipping needs both halves: the CA bytes already installed, *and* a
+      # marker saying a rebuild with them succeeded. A sandbox damaged by the
+      # old race has the right CA and a truncated bundle, so bytes alone
+      # would leave it broken for the life of the machine.
       assert script =~
-               ~r/cmp -s '.*agent-vault-ca\.crt' '.*agent-vault\.crt' \|\| \{ sudo install .* && sudo update-ca-certificates; \}/
+               ~r/\{ cmp -s '[^']+' '[^']+' && test -f '[^']+\.trust-store-ready'; \} \|\| \{ sudo rm -f/
+
+      # The marker goes before the rebuild and comes back only after it, so
+      # an interrupted rebuild is retried rather than recorded as done.
+      assert script =~
+               ~r/sudo rm -f -- '[^']+\.trust-store-ready' && sudo install .* && sudo update-ca-certificates && sudo touch '[^']+\.trust-store-ready'/
+
+      # The staging file is removed however the subshell ends.
+      assert script =~ ~r/^\( trap 'rm -f -- /
 
       # A sandbox with no flock provisions the way it always did.
       assert script =~ "flock -w 120 9 || true"
