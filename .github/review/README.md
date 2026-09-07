@@ -41,11 +41,12 @@ are dollar-cost reporting.
 `setup.sh` installs pinned, hash-checked toolchains on a fresh Ubuntu 24.04 or
 26.04 worker before PR checkout, plus a disposable local PostgreSQL database
 (the supported distro major, 16 or 18). GitHub CI separately verifies PostgreSQL 16.
-Twenty commands run the core/ee partitions, extension tests, static checks,
+Twenty commands run the core/ee partitions, extension and single-VM umbrella
+tests, precommit static checks, Dialyzer, prod release assembly,
 contracts, SDKs, CLIs and plugin tests. The eight required workflow definitions
 and their path filters were checked against Fountain main at
 `539a300207728bebc5216af586e497ce07778f94`. GitHub CI additionally supplies
-coverage, release/boot, Dialyzer, Swift, docs and distribution gates. No failed
+coverage, release boot, Swift, docs and distribution gates. No failed
 gate is skipped or changed to get an approval.
 
 An existing Go guest-handshake fixture race is tracked in
@@ -53,6 +54,11 @@ An existing Go guest-handshake fixture race is tracked in
 2 of 100 focused local runs on the inspected main revision. Its gate remains
 enabled. A failure produces incomplete verification and a human handoff;
 rerunning until it turns green is not evidence that the defect was fixed.
+
+Deploy Review Loop support for `verification.command_timeout_minutes` first.
+The expanded recipe needs a thirty-minute command allowance: its measured cold
+Credo/Dialyzer stage took about 23 minutes and the full recipe about 48 minutes.
+See [measured command budget](verification.md#measured-command-budget).
 
 Merge this configuration through Fountain's normal reviewed PR process. Its
 own changes require human review; no live run can use its policy before merge.
