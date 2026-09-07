@@ -81,7 +81,12 @@ environment secrets  --merge-->  vault secrets  -->  the sandbox
 ```
 
 The merge happens once, at spawn. Edit either one afterwards and the edit does
-not reach a sandbox that already runs.
+not reach a sandbox that already runs. A brokered secret is the exception.
+Before each turn, Fountain reads the environment and the vault again and
+gives the broker the new value. A rotated `GITHUB_TOKEN` in a vault works on
+the next turn of a conversation that already runs. The section
+[Bindings, when the broker is on](#bindings-when-the-broker-is-on) says which
+secrets the broker holds.
 
 A conversation can name a different environment from its agent's default, and
 it can attach a vault. The agent's `allowed_environment_ids` and

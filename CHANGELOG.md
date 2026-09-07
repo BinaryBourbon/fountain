@@ -30,6 +30,16 @@ upgrade, is in
 
 ### Fixed
 
+- A secret edited or rotated in an environment or vault during a brokered
+  conversation reaches the broker before the next turn. The broker's copy was
+  split once, at provisioning, and only the tenant's connection tokens were
+  read again; a change also minted a new session, whose token reaches only the
+  next spawned process, while the idle agent that carries the next turn kept
+  the old one. Now the environment and vault are read before every turn and
+  the live session's rules are rewritten in place, token kept, so a client
+  that writes a fresh one-hour GitHub App token into a vault before each
+  prompt no longer sees `401 Bad credentials` an hour in (#1736).
+
 - The broker's root CA is installed under a lock, and the operating-system
   trust store is rebuilt only when the bundle on the machine is not the one
   that CA produces. Conversations sharing a sandbox each ran

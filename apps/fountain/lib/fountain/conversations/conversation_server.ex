@@ -450,8 +450,16 @@ defmodule Fountain.Conversations.ConversationServer do
       broker_bindings: %{},
       # The env var names of the tenant's connections brokered into this
       # conversation (#1178): their access tokens rotate hourly, so each turn
-      # kick re-reads them and re-prepares the vault when one has changed.
+      # kick re-reads them and rewrites the session's rules when one has
+      # changed.
       connection_keys: [],
+      # Where the tenant's own brokered secrets came from, and which keys
+      # they were (#1736): the environment and vault rows are read again
+      # before each turn, so a secret edited or rotated during the
+      # conversation reaches the broker like a connection token does. nil
+      # and [] on an unbrokered conversation.
+      secret_sources: nil,
+      tenant_keys: [],
       # This conversation's one resolved MCP configuration (#1404). See
       # `McpServers.resolve_for_session/2`.
       resolved_mcp_servers: nil,
@@ -695,6 +703,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
         {secrets, brokered} = Egress.split_brokered(conv.user_id, merged, bindings)
 
+        # The tenant's own brokered keys: what the environment and vault
+        # rows contributed, less the connection tokens (#1736). Read again
+        # before each turn by `broker_refresh/1`.
+        tenant_keys = (brokered |> Map.keys() |> Enum.sort()) -- connection_keys
+
         {env_creds, brokered, bindings} =
           Egress.split_inference(conv.user_id, inference_creds, brokered, bindings)
 
@@ -711,6 +724,8 @@ defmodule Fountain.Conversations.ConversationServer do
               brokered: brokered,
               broker_bindings: bindings,
               connection_keys: connection_keys,
+              secret_sources: %{environment_id: env && env.id, vault_id: vault && vault.id},
+              tenant_keys: tenant_keys,
               broker_network: Fountain.Broker.network_for(env)
           }
 
@@ -1482,42 +1497,6 @@ defmodule Fountain.Conversations.ConversationServer do
         )
 
         state
-    end
-  end
-
-  # A session near its end is replaced before the turn that would outlive it.
-  # The env is rebuilt with the new token; everything else in it is unchanged.
-  defp broker_refresh(%{broker: nil} = state), do: state
-
-  defp broker_refresh(%{broker: session} = state) do
-    {brokered, rotated?} =
-      Egress.refresh_connection_secrets(state.connection_keys, state.user_id, state.brokered)
-
-    state = %{state | brokered: brokered}
-
-    if rotated? or Fountain.Broker.expiring?(session) do
-      case Egress.reprepare(
-             state.conversation_id,
-             state.brokered,
-             state.broker_bindings,
-             state.sprite_env,
-             network: state.broker_network,
-             user_id: state.user_id
-           ) do
-        {:ok, fresh, sprite_env} ->
-          %{state | broker: fresh, sprite_env: sprite_env}
-
-        {:error, reason} ->
-          # The turn runs on the old token, and fails at the proxy if it has
-          # expired. Fail loud there rather than silently here.
-          Logger.warning(
-            "conv #{state.conversation_id}: broker session refresh failed: #{inspect(reason)}"
-          )
-
-          state
-      end
-    else
-      state
     end
   end
 
@@ -2327,6 +2306,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp run_turn(state, conv, turn, prompt, agent, images) do
     state = %{state | inference_model: agent && agent.model}
+
+    # Before either path (#1736): a fresh spawn takes the env this rebuilds,
+    # and an idle peer holds its token, so the rules must already be right.
+    state = Egress.refresh_before_turn(state)
     TurnMachine.store_images(turn, images)
     TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)
 
@@ -2415,8 +2398,6 @@ defmodule Fountain.Conversations.ConversationServer do
     # run to time, and a stamp left in state would attach itself to the
     # next turn.
     turn_started_mono = System.monotonic_time(:millisecond)
-
-    state = broker_refresh(state)
 
     try do
       spawn_opts =
