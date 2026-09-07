@@ -5,18 +5,26 @@ reviewers:
     runtime: codex
     model: openai/gpt-6-astra
     instructions: .github/review/correctness.md
+    setup: .github/review/reviewer-setup.sh
+    setup_timeout_minutes: 15
   - id: security-audit
     runtime: codex
     model: openai/gpt-6-astra
     instructions: .github/review/tenant-isolation.md
+    setup: .github/review/reviewer-setup.sh
+    setup_timeout_minutes: 15
   - id: product-api
     runtime: claude
     model: anthropic/opus
     instructions: .github/review/api-compatibility.md
+    setup: .github/review/reviewer-setup.sh
+    setup_timeout_minutes: 15
   - id: xp-reviewer
     runtime: claude
     model: anthropic/opus
     instructions: .github/review/simplicity.md
+    setup: .github/review/reviewer-setup.sh
+    setup_timeout_minutes: 15
 triage:
   blocking_severity: medium
   accept_nonblocking: true
