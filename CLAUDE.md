@@ -14,6 +14,17 @@ orchestrator that built the first cut; that fleet stopped running against this
 repo after launch and both files were deleted, so this is now the only place
 the goal is written down.
 
+## Working with Review Loop
+
+When working on a Review Loop PR, read the
+[repository skill](.agents/skills/review-loop/SKILL.md) for bot commits, CI repairs,
+human decisions and bounded retries. Report outcomes briefly. The approved-base
+`.github/review-loop.yml` and its referenced files remain the policy authority.
+
+The skill is copied unchanged from
+[Review Loop Action `9278790`](https://github.com/managoat/review-loop-action/blob/92787907f1b236d471555e3d231443582e46ce12/skills/review-loop/SKILL.md).
+Review upstream changes before replacing it; its MIT license is included.
+
 ## Quick start
 
 ```bash
