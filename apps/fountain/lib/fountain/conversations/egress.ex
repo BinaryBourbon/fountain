@@ -244,9 +244,12 @@ defmodule Fountain.Conversations.Egress do
   are already in the list `SpriteEnv.build/4` produced, and stripping them by
   key would take an `env_vars` override of `SSL_CERT_FILE` with them —
   re-adding the broker's value on top, which is the bug #1674 reported, an
-  hour into the conversation rather than at provisioning. They are prepended
-  only for a list that carries none, which is a conversation whose env was
-  assembled before it was brokered.
+  hour into the conversation rather than at provisioning.
+
+  There is no arm here for a list that carries no CA defaults:
+  `broker_prepare/1` runs before `build_sprite_env/5` on both entry paths
+  (`ConversationServer` lines 863 and 1114), so a brokered conversation's env
+  has always been assembled with them.
   """
   @spec reprepare(String.t(), map(), Broker.bindings(), [{String.t(), String.t()}], keyword()) ::
           {:ok, map(), [{String.t(), String.t()}]} | {:error, term()}
@@ -254,15 +257,8 @@ defmodule Fountain.Conversations.Egress do
     case Broker.prepare(conversation_id, brokered, bindings, opts) do
       {:ok, session} ->
         proxy_keys = Broker.proxy_keys()
-        ca_keys = Broker.ca_keys()
         kept = Enum.reject(sprite_env, fn {k, _} -> to_string(k) in proxy_keys end)
-
-        ca =
-          if Enum.any?(kept, fn {k, _} -> to_string(k) in ca_keys end),
-            do: [],
-            else: Broker.ca_env()
-
-        {:ok, session, ca ++ kept ++ Broker.proxy_env(session)}
+        {:ok, session, kept ++ Broker.proxy_env(session)}
 
       {:error, _} = error ->
         error

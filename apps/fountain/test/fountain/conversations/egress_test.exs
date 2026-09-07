@@ -283,20 +283,6 @@ defmodule Fountain.Conversations.EgressTest do
                {"SSL_CERT_FILE", "/home/sprite/mine.crt"}
     end
 
-    test "reprepare/5 supplies the CA defaults to an env assembled before brokerage",
-         %{user: user} do
-      broker_on([user.id])
-      stub(Broker, :prepare, fn _id, _b, _bi, _o -> {:ok, @session} end)
-
-      assert {:ok, @session, rebuilt} =
-               Egress.reprepare("c", %{}, %{}, [{"KEEP", "1"}],
-                 network: :unrestricted,
-                 user_id: user.id
-               )
-
-      assert rebuilt == Broker.ca_env() ++ [{"KEEP", "1"}] ++ Broker.proxy_env(@session)
-    end
-
     test "drop_oauth_token/3 forgets the token on both sides and re-splits the API key" do
       creds = %{claude_code_oauth_token: "sk-ant-oat01-x", anthropic_api_key: "sk-ant-api03-k"}
       brokered = %{"CLAUDE_CODE_OAUTH_TOKEN" => "sk-ant-oat01-x", "GITHUB_TOKEN" => "ghp"}
