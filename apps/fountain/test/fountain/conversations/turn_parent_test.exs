@@ -285,7 +285,9 @@ defmodule Fountain.Conversations.TurnParentTest do
       assert {:error, :not_running} =
                Conversations._unsafe_create_turn_on_sandbox(attrs, c.sandbox.id, :unbounded)
 
-      assert {:error, :not_running} = Conversations._unsafe_create_autonomous_turn(attrs)
+      assert {:error, :not_running} =
+               Conversations._unsafe_create_autonomous_turn(attrs, c.sandbox.id)
+
       assert Repo.get!(Conversation, c.conv.id).status == status
     end
 

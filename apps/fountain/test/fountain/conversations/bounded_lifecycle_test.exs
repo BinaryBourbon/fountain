@@ -295,7 +295,11 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
   test "an old unbounded connection cannot create an autonomous turn under new limits", c do
     assert {:error, :execution_fenced} =
-             Fountain.Conversations.Connection.open_autonomous_turn(c.conv.id, c.user.id)
+             Fountain.Conversations.Connection.open_autonomous_turn(
+               c.conv.id,
+               c.user.id,
+               c.conv.sandbox_id
+             )
 
     assert Repo.aggregate(Turn, :count) == 0
   end

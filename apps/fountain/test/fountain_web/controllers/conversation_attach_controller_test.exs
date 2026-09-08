@@ -27,6 +27,25 @@ defmodule FountainWeb.ConversationAttachControllerTest do
     |> post_json("/api/conversations", Map.merge(%{"agent_id" => ctx.agent.id}, body))
   end
 
+  test "an unresolved managed park refuses attachment with a conflict", ctx do
+    alias Fountain.Conversations.{SandboxOperations, SandboxTransitions}
+    {:ok, pending} = Fountain.Conversations.update_sandbox(ctx.sandbox, %{status: "pending"})
+    {:ok, creation} = SandboxOperations._unsafe_submit_create(pending, ctx.first)
+
+    handle = %Managoat.Sandbox.Handle{
+      provider: :sprites,
+      name: pending.sprite_name,
+      instance_id: "managed-attach-test"
+    }
+
+    {:ok, _} = SandboxOperations._unsafe_complete_create(creation.id, {:ok, handle})
+    {:ok, ready} = SandboxOperations._unsafe_finish_provision(pending, ctx.first)
+    {:ok, _} = SandboxTransitions._unsafe_submit(ready, "park")
+
+    assert %{"error" => "provider_operation_fenced"} =
+             ctx |> create(%{"sandbox_id" => ready.id}) |> json_response(409)
+  end
+
   test "attaches: 201, idle, on the named sandbox", ctx do
     data =
       ctx

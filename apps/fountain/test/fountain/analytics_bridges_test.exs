@@ -368,7 +368,8 @@ defmodule Fountain.AnalyticsBridgesTest do
     # directly, so these go through the real function.
     defp create_conversation!(user) do
       agent = insert_agent(user_id: user.id)
-      sandbox = insert_sandbox(user_id: user.id)
+      # Match the fresh launch's disk identity, before its first holder exists.
+      sandbox = insert_sandbox(user_id: user.id, agent_id: agent.id)
 
       {:ok, conv} =
         Conversations.create_conversation(%{

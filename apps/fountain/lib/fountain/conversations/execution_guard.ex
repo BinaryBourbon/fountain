@@ -96,12 +96,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
   end
 
   @doc "An idle legacy connection cannot start background work after bounded policy is applied."
-  def _unsafe_autonomous_turn(conversation_id, writer) do
+  def _unsafe_autonomous_turn(conversation_id, sandbox_id, writer) do
     transaction(fn ->
-      observed = Repo.get(Conversation, conversation_id) || Repo.rollback(:not_found)
-      lock_sandbox(observed.sandbox_id)
+      lock_sandbox(sandbox_id)
       conv = lock_parent(conversation_id) || Repo.rollback(:not_found)
-      if conv.sandbox_id != observed.sandbox_id, do: Repo.rollback(:ownership_changed)
+      if conv.sandbox_id != sandbox_id, do: Repo.rollback(:ownership_changed)
       if conv.status in ["terminated", "failed"], do: Repo.rollback(:not_running)
       require_ready_sandbox!(conv)
       user = Repo.get!(Fountain.Accounts.User, conv.user_id)

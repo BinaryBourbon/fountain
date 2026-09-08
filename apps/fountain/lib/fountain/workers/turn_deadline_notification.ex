@@ -29,8 +29,24 @@ defmodule Fountain.Workers.TurnDeadlineNotification do
     if event do
       # ownership: the event query above scopes its conversation to the saved tenant.
       Conversations._unsafe_notify_stage(event)
+      notify_replacement(event)
     end
 
     :ok
   end
+
+  defp notify_replacement(%LogEvent{stage: "sandbox", data: data} = event) do
+    with {:ok,
+          %{"event" => "replaced", "source_sandbox_id" => source, "sandbox_id" => destination}} <-
+           Jason.decode(data),
+         true <- is_binary(source) and is_binary(destination),
+         pid when is_pid(pid) <-
+           Fountain.Conversations.ConversationServer.whereis(event.conversation_id) do
+      GenServer.cast(pid, {:machine_replaced, source, destination})
+    else
+      _ -> :ok
+    end
+  end
+
+  defp notify_replacement(_), do: :ok
 end

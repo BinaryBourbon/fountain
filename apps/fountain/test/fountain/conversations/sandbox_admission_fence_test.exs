@@ -20,7 +20,9 @@ defmodule Fountain.Conversations.SandboxAdmissionFenceTest do
       assert {:error, :sandbox_not_ready} =
                Conversations._unsafe_create_turn_on_sandbox(attrs, c.sandbox.id, :unbounded)
 
-      assert {:error, :sandbox_not_ready} = Conversations._unsafe_create_autonomous_turn(attrs)
+      assert {:error, :sandbox_not_ready} =
+               Conversations._unsafe_create_autonomous_turn(attrs, c.sandbox.id)
+
       assert Repo.aggregate(Turn, :count) == 0
       assert Repo.reload!(c.conv).status == "idle"
     end
@@ -37,7 +39,10 @@ defmodule Fountain.Conversations.SandboxAdmissionFenceTest do
     first |> Ecto.Changeset.change(status: "completed") |> Repo.update!()
 
     assert {:ok, second} =
-             Conversations._unsafe_create_autonomous_turn(%{turn_attrs(c.conv) | turn_number: 2})
+             Conversations._unsafe_create_autonomous_turn(
+               %{turn_attrs(c.conv) | turn_number: 2},
+               c.sandbox.id
+             )
 
     assert second.status == "running"
     assert Repo.reload!(c.conv).status == "running"
@@ -50,7 +55,9 @@ defmodule Fountain.Conversations.SandboxAdmissionFenceTest do
     assert {:error, :ownership_changed} =
              Conversations._unsafe_create_turn_on_sandbox(attrs, c.sandbox.id, :unbounded)
 
-    assert {:error, :ownership_changed} = Conversations._unsafe_create_autonomous_turn(attrs)
+    assert {:error, :ownership_changed} =
+             Conversations._unsafe_create_autonomous_turn(attrs, c.sandbox.id)
+
     assert Repo.aggregate(Turn, :count) == 0
   end
 

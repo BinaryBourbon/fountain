@@ -500,11 +500,49 @@ only durable transition, stage and notification writes. A regression forces real
 PostgreSQL audit insert failures and verifies that park, resume, capacity and stage records remain
 intact.
 
-Unknown transition outcomes remain fenced, without an automatic replay. Full
-holder attachment/transfer arbitration, actor shutdown versus concurrent wake,
+Unknown transition outcomes remain fenced, without an automatic replay.
+Authoritative idle-bound rechecks, actor startup/shutdown versus concurrent wake,
 recovery of uncertain park/resume outcomes, ordinary creation name coverage and
 live provider acceptance remain unfinished. Execution controls and the recovery
 worker remain disabled. These source changes do not activate production cleanup.
+
+## Holder arbitration
+
+`SandboxHolders` now serializes conversation creation, updates and replacement
+with the same machine locks as turn admission and cleanup. Two-machine transfers
+lock the numeric advisory keys in sorted order, then re-read parent ownership.
+A stale update cannot overwrite a newer binding. Destination identity, runtime,
+credential isolation and unresolved provider operations are checked under those
+locks. Active turns and unresolved executions prevent a holder transfer.
+
+A fresh pending machine can accept its first conversation. Ready and suspended
+machines retain their supported attachment path. Legacy Team machines without
+disk-identity columns may reuse only unanimous, locked historical lineage; any
+provider-operation record disqualifies that fallback. This does not adopt a
+provider machine by name or resolve an uncertain create.
+
+Replacement moves its initiating conversation and current live co-tenants in one
+transaction. A refusal leaves every binding unchanged. A co-tenant's separate
+winning transfer is preserved. Replacement stages, webhooks and local notification
+jobs commit with the move. Delivery checks the recorded owner; a delayed message
+can close only an actor still on the original machine whose conversation now
+names that replacement. Newer actors and bindings ignore it.
+
+Autonomous admission now requires the actor's original sandbox ID through
+`Connection.open_autonomous_turn/3` and the journal guard. A stale actor cannot
+record an autonomous turn against its conversation's new machine. This is an
+admission guarantee, not evidence that an already-started remote background
+operation stopped.
+
+`scripts/verify-sandbox-holder-races.exs` exercises real contexts on independent
+local PostgreSQL connections, including both forced lock orders, reciprocal
+transfers and bulk replacement versus an individual move. It also reruns the
+existing deadline, reset/admission and park/resume arbitration suites. See
+`decisions/evidence/sandbox-holders.json` for exact scope and results.
+
+Actor startup versus the durable replacement claim and queued-prompt preservation
+remain integration gates. These database changes do not complete wake recovery or
+enable the recovery worker or execution controls.
 
 `scripts/verify-sandbox-admission-races.exs` exercises real reset and admission
 contexts through separate local PostgreSQL connections, with outbound deletion

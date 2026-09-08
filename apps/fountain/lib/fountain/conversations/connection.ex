@@ -312,21 +312,25 @@ defmodule Fountain.Conversations.Connection do
   Returns the row, the span opened over it and the tracer reading it; the
   caller holds them and arms the quiet timer.
   """
-  @spec open_autonomous_turn(String.t(), String.t()) :: {map(), term(), term()} | {:error, term()}
-  def open_autonomous_turn(conversation_id, user_id) do
+  @spec open_autonomous_turn(String.t(), String.t(), String.t()) ::
+          {map(), term(), term()} | {:error, term()}
+  def open_autonomous_turn(conversation_id, user_id, sandbox_id) do
     # ownership: a server's own conversation, established at init.
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
 
     result =
-      Conversations._unsafe_create_autonomous_turn(%{
-        conversation_id: conv.id,
-        turn_number: turn_number,
-        prompt: "(background task follow-up)",
-        origin: "autonomous",
-        status: "running",
-        started_at: now()
-      })
+      Conversations._unsafe_create_autonomous_turn(
+        %{
+          conversation_id: conv.id,
+          turn_number: turn_number,
+          prompt: "(background task follow-up)",
+          origin: "autonomous",
+          status: "running",
+          started_at: now()
+        },
+        sandbox_id
+      )
 
     case result do
       {:ok, turn} -> start_autonomous_turn(conv, turn, user_id)

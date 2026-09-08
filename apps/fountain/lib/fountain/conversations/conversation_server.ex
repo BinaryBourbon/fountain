@@ -1735,6 +1735,10 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  def handle_cast({:machine_replaced, source_id, destination_id}, state) do
+    Lifecycle.replace_server(state, source_id, destination_id, &drop_connection/2)
+  end
+
   def handle_cast({:machine_gone, event, reason, message}, state) do
     state = if state.current_turn, do: interrupt_turn(state), else: state
     state = drop_connection(state, event)
@@ -2616,13 +2620,13 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   # An out-of-turn protocol line opened a background cycle
-  # (`Connection.open_autonomous_turn/2`). The row, its span and its tracer are
+  # (`Connection.open_autonomous_turn/3`). The row, its span and its tracer are
   # the server's to hold; the quiet timer is armed in this process.
   defp open_autonomous_turn(%{turn_execution: %{}} = state),
     do: retire_bounded_turn(state)
 
   defp open_autonomous_turn(state) do
-    case Connection.open_autonomous_turn(state.conversation_id, state.user_id) do
+    case Connection.open_autonomous_turn(state.conversation_id, state.user_id, state.sandbox_id) do
       {:error, _} ->
         drop_connection(state, "bounded_policy_requires_fresh_turn")
 

@@ -293,6 +293,24 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, :provider_operation_fenced}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "provider_operation_fenced",
+      message: "A sandbox operation is unresolved; this request cannot start more work."
+    })
+  end
+
+  def call(conn, {:error, :ownership_changed}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "ownership_changed",
+      message: "The conversation or sandbox changed; reload its current state."
+    })
+  end
+
   # Sandbox files (ADR 0039). A read never wakes a parked sandbox: 409 with
   # the status, and the caller decides whether a prompt is worth the wake.
   def call(conn, {:error, {:sandbox_not_ready, status}}) do

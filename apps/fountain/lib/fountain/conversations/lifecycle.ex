@@ -589,4 +589,16 @@ defmodule Fountain.Conversations.Lifecycle do
   defp minutes(seconds), do: div(seconds, 60)
   defp hours(nil), do: "?"
   defp hours(seconds), do: div(seconds, 3600)
+  @doc "A delayed replacement notification may stop only the actor on the old machine."
+  def replace_server(state, source_id, destination_id, drop_connection) do
+    # Ownership: this actor was started for state.user_id; scope the fresh binding.
+    current = Conversations.get_conversation(state.conversation_id, state.user_id)
+
+    if (state.sandbox_id == source_id and current) && current.sandbox_id == destination_id do
+      state = drop_connection.(state, "replaced")
+      {:stop, :normal, %{state | handle: nil}}
+    else
+      {:noreply, state}
+    end
+  end
 end

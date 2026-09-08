@@ -890,9 +890,11 @@ defmodule Fountain.Conversations do
   def unread?(_), do: false
 
   def create_conversation(attrs) do
+    # ownership: launch/Team callers supply their authenticated user_id; the
+    # holder transaction checks the sandbox and references against that owner.
     %Conversation{}
     |> Conversation.changeset(attrs)
-    |> Repo.insert()
+    |> Fountain.Conversations.SandboxHolders._unsafe_insert()
     |> tap(fn
       # The account's first conversation is the request the verified landing
       # handed over (ADR 0038). Both create paths go through this write, so
@@ -944,9 +946,9 @@ defmodule Fountain.Conversations do
   end
 
   def update_conversation(%Conversation{} = conv, attrs) do
-    conv
-    |> Conversation.changeset(attrs)
-    |> Repo.update()
+    # ownership: callers fetched conv for their tenant or initialized actor;
+    # the transaction rechecks that saved owner and sandbox binding.
+    Fountain.Conversations.SandboxHolders._unsafe_update(conv, attrs)
     |> tap(fn
       {:ok, updated} -> broadcast_sidebar_update(updated.user_id)
       _ -> :ok
@@ -1185,9 +1187,9 @@ defmodule Fountain.Conversations do
   end
 
   @doc "Admit an unbounded background turn and its running parent before notifying observers."
-  def _unsafe_create_autonomous_turn(attrs) do
+  def _unsafe_create_autonomous_turn(attrs, sandbox_id) do
     # ownership: the caller is this conversation's existing actor.
-    ExecutionGuard._unsafe_autonomous_turn(Map.fetch!(attrs, :conversation_id), fn ->
+    ExecutionGuard._unsafe_autonomous_turn(Map.fetch!(attrs, :conversation_id), sandbox_id, fn ->
       %Turn{} |> Turn.changeset(attrs) |> Repo.insert()
     end)
     |> record_started_turn()
@@ -3537,7 +3539,7 @@ defmodule Fountain.Conversations do
     # conversation was an unmetered way past billing entirely.
     # The replacement keeps the mode of the machine it replaces: a home whose
     # sprite is gone is re-provisioned as the home, and every conversation on
-    # it follows (move_cotenants/3). The old row is retired *first* for a
+    # it follows through SandboxHolders._unsafe_replace/2. The old row is retired *first* for a
     # home — the partial unique index allows one live home per identity, and
     # the probe has already said this sprite is gone (ADR 0023 gate 6).
     old = if conv.sandbox_id, do: _unsafe_get_sandbox(conv.sandbox_id)
@@ -3599,14 +3601,12 @@ defmodule Fountain.Conversations do
           old_sandbox_id = conv.sandbox_id
           _ = mark_old_sandbox_terminated(old_sandbox_id)
 
-          {:ok, conv} =
-            update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"})
-
-          # The machine was gone for everyone on it, not just the conversation
-          # that noticed (ADR 0023 gate 5).
-          move_cotenants(old_sandbox_id, new_sandbox.id, conv.id)
-
-          {:ok, _unsafe_get_conversation!(conv.id)}
+          # Ownership: this wake owns conv. Move its current co-tenants in
+          # the same transaction, or leave every binding unchanged.
+          with {:ok, conv} <-
+                 Fountain.Conversations.SandboxHolders._unsafe_replace(conv, new_sandbox.id) do
+            {:ok, _unsafe_get_conversation!(conv.id)}
+          end
 
         {:error, {:already_started, winner_pid}} ->
           # Lost a concurrent wake of the same conversation. The winner's
@@ -3642,61 +3642,6 @@ defmodule Fountain.Conversations do
   end
 
   defp assert_resumable(_), do: :ok
-
-  # A wake that found the sprite gone re-provisioned a machine for the
-  # conversation that woke. Every other live conversation on the old row was
-  # on the same dead disk, so it follows onto the new one (ADR 0023 gate 5) —
-  # the alternative leaves each co-tenant pointing at a `terminated` row and
-  # provisioning yet another machine on its own next prompt, and the shared
-  # disk they were sharing ends up as N disks.
-  #
-  # `old_sandbox_id` is the row the waking conversation *used* to name; by the
-  # time this runs the waking conversation itself already names the new one,
-  # so it is not among the co-tenants.
-  #
-  # A co-tenant whose server is somehow alive holds a handle to the dead
-  # sprite; it is told the machine is gone, cuts any turn, and stops, so its
-  # next prompt takes the wake path onto the new row. `runtime_session_id` is
-  # cleared for each: a fresh disk has no session to resume (#778).
-  defp move_cotenants(nil, _new_sandbox_id, _conv_id), do: :ok
-
-  defp move_cotenants(old_sandbox_id, new_sandbox_id, conv_id)
-       when is_binary(old_sandbox_id) and is_binary(new_sandbox_id) do
-    case _unsafe_list_cotenant_ids(old_sandbox_id, conv_id) do
-      [] ->
-        :ok
-
-      ids ->
-        message =
-          "The sandbox this conversation was on is gone; it moved to a fresh one together " <>
-            "with the conversations that shared it. The transcript is kept, but the agent " <>
-            "starts a new session and will not remember the earlier turns."
-
-        Enum.each(ids, fn id ->
-          case ConversationServer.whereis(id) do
-            nil -> :ok
-            pid -> GenServer.cast(pid, {:machine_gone, "replaced", "sprite_gone", message})
-          end
-        end)
-
-        now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-        Repo.update_all(from(c in Conversation, where: c.id in ^ids),
-          set: [sandbox_id: new_sandbox_id, runtime_session_id: nil, updated_at: now]
-        )
-
-        Enum.each(ids, fn id ->
-          publish_stage(id, "sandbox", "done", %{
-            event: "replaced",
-            reason: "sprite_gone",
-            sandbox_id: new_sandbox_id,
-            message: message
-          })
-        end)
-
-        :ok
-    end
-  end
 
   defp mark_old_sandbox_terminated(nil), do: :ok
 

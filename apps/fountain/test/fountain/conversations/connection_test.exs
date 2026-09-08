@@ -287,7 +287,8 @@ defmodule Fountain.Conversations.ConnectionTest do
       conv: conv,
       user: user
     } do
-      assert {turn, _span, tracer} = Connection.open_autonomous_turn(conv.id, user.id)
+      assert {turn, _span, tracer} =
+               Connection.open_autonomous_turn(conv.id, user.id, conv.sandbox_id)
 
       assert turn.origin == "autonomous"
       assert turn.status == "running"
@@ -305,7 +306,9 @@ defmodule Fountain.Conversations.ConnectionTest do
     test "takes the next turn number", %{conv: conv, user: user} do
       insert_turn(conv, status: "completed")
 
-      assert {turn, _span, _tracer} = Connection.open_autonomous_turn(conv.id, user.id)
+      assert {turn, _span, _tracer} =
+               Connection.open_autonomous_turn(conv.id, user.id, conv.sandbox_id)
+
       assert turn.turn_number == 2
     end
   end

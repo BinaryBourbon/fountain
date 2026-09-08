@@ -20,7 +20,7 @@ end
 admit = fn source, sandbox, attrs ->
   case source do
     :user -> Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox.id, :unbounded)
-    :autonomous -> Conversations._unsafe_create_autonomous_turn(attrs)
+    :autonomous -> Conversations._unsafe_create_autonomous_turn(attrs, sandbox.id)
   end
 end
 

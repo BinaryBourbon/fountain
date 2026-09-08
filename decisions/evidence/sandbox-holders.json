@@ -1,0 +1,179 @@
+{
+  "recorded_at": "2026-09-08T12:02:32.448886+00:00",
+  "previous_checkpoint": "e59c8827ced806d7cc32bc2dba78ab3d103f3638",
+  "scope": "Conversation holder database arbitration, atomic replacement and expected-machine autonomous admission; no production activation.",
+  "source_files": {
+    "apps/fountain/lib/fountain/conversations.ex": "sha256:640d99fcef20ccb7b22bd01d1be8f9466bdf2360ba015288e7bab4306b28febc",
+    "apps/fountain/lib/fountain/conversations/connection.ex": "sha256:2d4abec194d0491ffdd79ff9b2f2b52a21456d6782fb460820576c4045880782",
+    "apps/fountain/lib/fountain/conversations/conversation_server.ex": "sha256:5206e1b94cf5013ba62b70f7a1b5f0010166eab20895539318d1e76408784fa5",
+    "apps/fountain/lib/fountain/conversations/execution_guard.ex": "sha256:6417a141a969a209cb65b4577973276ef2005bcc682ae236aa15002ed28fd2c1",
+    "apps/fountain/lib/fountain/conversations/lifecycle.ex": "sha256:83ce0c3af54d09321e268e4b67525bbad22cc6ea91055aecd06a71ca3e8df33d",
+    "apps/fountain/lib/fountain/conversations/sandbox_holders.ex": "sha256:d5e3d9321a340b2050dd6dbdd169b9519beff7f25b504d9d379b44e09acba4ff",
+    "apps/fountain/lib/fountain/workers/turn_deadline_notification.ex": "sha256:8b6eb0eb94f60b17dee9ca17c4fef4a379662e92796e63ebd6d5e8ad2ec8bc6d",
+    "apps/fountain/lib/fountain_web/controllers/fallback_controller.ex": "sha256:9b73549a5c584d0161e7d1c065b6e8061c92648ddf05f08188ed8db89bfe9359",
+    "apps/fountain/test/fountain/analytics_bridges_test.exs": "sha256:4525cc652f9467946d723c51abd9c3d0e21c878c5428ce3f6a2c8f8406e84d81",
+    "apps/fountain/test/fountain/conversations/bounded_lifecycle_test.exs": "sha256:712f0dc4f221e1e05f8dade14c93ab5f22a1f192366d439efe2ecd1beb71a21b",
+    "apps/fountain/test/fountain/conversations/connection_test.exs": "sha256:360998a34a776d297a13063542f046c40ca20538f40a5dd83397359039b21817",
+    "apps/fountain/test/fountain/conversations/sandbox_admission_fence_test.exs": "sha256:6c0fca3eaaa927e15edfbb7cd6bc15046fb84013a176640839003a350d47e8e4",
+    "apps/fountain/test/fountain/conversations/sandbox_holders_test.exs": "sha256:87245e3e34bc085142173d91d2cb3df174cf06bccd18b32eb8348e20dcf5aafc",
+    "apps/fountain/test/fountain/conversations/sandbox_transitions_test.exs": "sha256:25774d6266427d40889c5c5cb12018e245cdedf32985fa0171c34d2aabd1ea03",
+    "apps/fountain/test/fountain/conversations/turn_parent_test.exs": "sha256:cc426ce1c3256b1a19e092c01b6d5187174b27705ae3c9f16623f39d8c251ab4",
+    "apps/fountain/test/fountain_web/controllers/conversation_attach_controller_test.exs": "sha256:609691706c3fd05bb102e67e50e88250ddf3af79211fc1beba4a16aa558ec4c5",
+    "scripts/verify-sandbox-admission-races.exs": "sha256:3556910dce973ad3ebef26a2ae3ec9ab4aff91e3c49b2ace779229900ea5ef11",
+    "scripts/verify-sandbox-holder-races.exs": "sha256:58442eaed199c7520ca13a0ce2a023bbdc696703a7d5a85e27803784829cfb23",
+    "scripts/verify-sandbox-transition-races.exs": "sha256:5b57d4e0b52a8a48f245e4ab6d9712d05da9a607467dc3c90700af1071483cef"
+  },
+  "full_precommit": {
+    "tests": 4892,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:5100688d38c1250ca442960225e3f3f0ceaa7abdb53807dcc3b13a8fb4fe70c5"
+  },
+  "focused": [
+    {
+      "tests": 36,
+      "failures": 0,
+      "scope": "Final holder/analytics slice, including corrected fresh-launch fixture and strict legacy lineage.",
+      "log_sha256": "sha256:9876bf847a60c9d67ce87d043ba65ba8709ae54e9e91389a5bb56d9de821b00d"
+    },
+    {
+      "tests": 113,
+      "failures": 0,
+      "scope": "Holder, autonomous connection, bounded lifecycle, admission, parent and transition tests before final source-row lock tightening; final full gate includes those corrections.",
+      "log_sha256": "sha256:e4fa8ac54dff4dbd4710203efac36610bd5d8f6810bcb64bf84497141871d706"
+    },
+    {
+      "tests": 94,
+      "failures": 0,
+      "scope": "Earlier holder, public attachment, wake-race and Team integration before autonomous-admission correction; final full gate covers final implementation.",
+      "log_sha256": "sha256:22d3fd60293b3d1c2caf26c39eec59787e0c2f627fcd94720e5aaa22f903bb14"
+    }
+  ],
+  "database_races": {
+    "script": "scripts/verify-sandbox-holder-races.exs",
+    "results": {
+      "DEADLINE_RACE_RESULT": {
+        "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+        "separate_database_connections": true,
+        "outcomes": {
+          "completion_won": 9,
+          "expiry_won": 11
+        },
+        "provider_operations": 0,
+        "cases": 20,
+        "lock_wait_cannot_extend_deadline": true,
+        "delayed_lock_tables": [
+          "conversations",
+          "turns"
+        ],
+        "delayed_operations": [
+          "spawn",
+          "stdin_write"
+        ],
+        "completed_connections_require_cleanup": true,
+        "deadline_event_reuse_cases": 11
+      },
+      "SANDBOX_ADMISSION_RACE_RESULT": {
+        "scope": "Local reset/admission and identity arbitration; deletion acknowledgments are synthetic",
+        "separate_database_connections": true,
+        "admission_cases": 40,
+        "outcomes": {
+          "autonomous:admission_first": 6,
+          "autonomous:reset_first": 14,
+          "user:admission_first": 9,
+          "user:reset_first": 11
+        },
+        "conflicting_identity_cases": 20,
+        "retirement_ready_cases": 40,
+        "forced_retirement_before_ready_cases": 2,
+        "forced_reset_and_admission_orderings": 4,
+        "provider_operations": 0
+      },
+      "SANDBOX_TRANSITION_RACE_RESULT": {
+        "separate_database_connections": true,
+        "live_provider_operations": 0,
+        "outcomes": {
+          "autonomous:admission_first": 6,
+          "autonomous:park_first": 14,
+          "user:admission_first": 4,
+          "user:park_first": 16
+        },
+        "park_admission_races": 40,
+        "deterministic_lock_orders": 4,
+        "duplicate_park_races": 20,
+        "resume_destroy_races": 20
+      },
+      "SANDBOX_HOLDER_RACE_RESULT": {
+        "random_races": 120,
+        "forced_lock_orders": 10,
+        "reciprocal_transfers": 20,
+        "bulk_individual_transfer": {
+          "bulk_won": 15,
+          "individual_preserved": 7
+        },
+        "attachment_cleanup": {
+          "attachment_won": 16,
+          "cleanup_won": 6
+        },
+        "attachment_park": {
+          "attachment_included": 11,
+          "park_won": 11
+        },
+        "transfer_admission": {
+          "autonomous:admission_won": 15,
+          "autonomous:transfer_won": 7,
+          "user:admission_won": 15,
+          "user:transfer_won": 7
+        },
+        "separate_database_connections": true,
+        "live_provider_operations": 0
+      }
+    },
+    "log_sha256": "sha256:2eacbf91b500cfc860293768562bdcb6ab149a59a03cdcdbd3d418175e9a586b"
+  },
+  "verified_behavior": [
+    "Creation and transfers acquire the same machine locks as lifecycle grants and turn admission; two-machine locks use sorted numeric keys.",
+    "Fresh ownership, disk identity, runtime and credential-isolation checks reject stale or foreign attachment and unresolved provider operations.",
+    "Uncertain creates cannot gain holders after a stale ready write; confirmed creation identity and retained capacity must still agree.",
+    "Updates re-read the parent and rebuild changesets, preserving requested association loading without copying stale associations.",
+    "Bulk replacement moves its initiator and current live co-tenants atomically, preserving an individual co-tenant transfer that committed first.",
+    "Replacement stages, webhook jobs and local notification jobs commit with the move; outer rollback leaves all bindings and notifications unchanged.",
+    "A delayed replacement message cannot stop a newer actor or binding; a matching message closes only the original actor connection.",
+    "Autonomous admission requires the actor-original sandbox ID through the actual Connection path; an old actor cannot record a turn on the new machine.",
+    "Legacy Team identity reuse requires unanimous locked historical lineage and no provider-operation record; it does not adopt a provider machine by name.",
+    "An unresolved managed park returns HTTP409 to an actual public attachment request."
+  ],
+  "failed_run_corrections": [
+    {
+      "log_sha256": "sha256:083a7ca116ad93a182fff1ad7644d37a8043baad1b14f6166e5f4e3c1567f9eb",
+      "failures": 6,
+      "cause": "Initial implementation lost preloaded associations and refused established legacy Team lineage and missing legacy source rows. Corrected fresh association loading and constrained historical-lineage reuse; replacement now moves every holder atomically."
+    },
+    {
+      "log_sha256": "sha256:e6fc80bc9a926d1394720eae75e93829461ebe19b82b4531bf0a2f7df3aee74d",
+      "cause": "Static ownership annotations were missing at new internal helper call sites; added precise ownership comments."
+    },
+    {
+      "log_sha256": "sha256:7c0b3be9ec0b719b954d464e4a493eb8ecc836ba882690775fc8a630591f06d4",
+      "cause": "New race script omitted require Ecto.Query; corrected its macro import before executing the proof."
+    },
+    {
+      "log_sha256": "sha256:44d797137b050336c9aff9b0adfdf365215d56c07454c540ed76a83f5d29c94d",
+      "failures": 2,
+      "cause": "Analytics fresh-launch fixture omitted sandbox.agent_id while supplying a conversation agent. Fixture now matches actual launch identity; analytics assertions are unchanged."
+    }
+  ],
+  "dependency": "managoat_sandbox 0.4.2",
+  "live_provider_operations": 0,
+  "public_execution_controls_enabled": false,
+  "recovery_worker_enabled_by_default": false,
+  "remaining": [
+    "Authoritative idle-bound rechecks after lifecycle locks.",
+    "Actor startup versus durable replacement ownership, shutdown versus wake, and queued-prompt preservation.",
+    "Recovery of uncertain park/resume outcomes without replaying provider writes.",
+    "Confirmed-create missing-machine retirement and coordinated replacement; unknown create is never resolved from404.",
+    "Ordinary creation permanent physical-name registry coverage.",
+    "Provider conditional identity safety and full live acceptance before activation/stack merge.",
+    "Aggregate inference limits and actual dollar-cost reporting."
+  ]
+}

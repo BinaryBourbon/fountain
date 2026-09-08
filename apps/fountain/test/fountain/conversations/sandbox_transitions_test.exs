@@ -40,7 +40,8 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
     assert {:error, :sandbox_not_ready} =
              Conversations._unsafe_create_turn_on_sandbox(attrs, c.sandbox.id, :unbounded)
 
-    assert {:error, :sandbox_not_ready} = Conversations._unsafe_create_autonomous_turn(attrs)
+    assert {:error, :sandbox_not_ready} =
+             Conversations._unsafe_create_autonomous_turn(attrs, c.sandbox.id)
 
     assert {:ok, parked} =
              SandboxTransitions._unsafe_complete(operation.id, {:ok, :skipped}, :idle)
@@ -65,7 +66,10 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
     turn |> Ecto.Changeset.change(status: "completed") |> Repo.update!()
 
     {:ok, _} =
-      Conversations._unsafe_create_autonomous_turn(%{turn_attrs(c.conv) | turn_number: 2})
+      Conversations._unsafe_create_autonomous_turn(
+        %{turn_attrs(c.conv) | turn_number: 2},
+        c.sandbox.id
+      )
 
     assert {:error, :sandbox_mid_turn} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
     assert Repo.reload!(c.sandbox).status == "ready"
@@ -76,7 +80,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
     c.sandbox |> Repo.reload!() |> Ecto.Changeset.change(status: "ready") |> Repo.update!()
 
     assert {:error, :provider_operation_fenced} =
-             Conversations._unsafe_create_autonomous_turn(turn_attrs(c.conv))
+             Conversations._unsafe_create_autonomous_turn(turn_attrs(c.conv), c.sandbox.id)
 
     assert {:error, :provider_operation_fenced} =
              SandboxTransitions._unsafe_submit(Repo.reload!(c.sandbox), "park")
