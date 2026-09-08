@@ -313,6 +313,34 @@ recorded in `decisions/evidence/turn-parent-fences.json`. The final full gate al
 verifies the explicit legacy webhook call restored after the catalogue check
 caught its loss from the source scanner; event names and assertions are unchanged.
 
+## Durable release refusal
+
+Release now checks persisted running turns and unfinished execution journals
+under the parent lock, including when its actor is absent or locally idle.
+Refusal returns `busy` without changing the parent, interrupting the turn,
+closing the actor's connection, revoking its callback credential or publishing a
+release event. The actor closes only after the parent transaction commits.
+Admission shares that lock and cannot revive a released parent.
+
+Confirmed cleanup permits release; unknown spawn, pending termination and
+uncertain termination remain busy. Releasing one idle conversation leaves its
+sandbox and unrelated active co-tenants untouched. This preserves release's
+busy-without-interruption contract. It is not a machine-wide park, transfer or
+destruction fence; those paths and provider incarnation remain activation gates.
+
+Full precommit passes **4,765 tests and 6 doctests, zero failures**. The focused
+suite passes 103 tests, including ten new regressions and one real-actor refusal.
+Sixty independent PostgreSQL races cover release against admission, orphan
+recovery and cleanup acknowledgment; twenty earlier deadline races also pass.
+Identities and acknowledgments are synthetic. Evidence, observed schedules and
+the corrected association-loading fixture comparisons are retained in
+`decisions/evidence/release-fence.json`. No provider operations occurred.
+
+The parent PR's separate CI dependency audit is red: the EEF feed for
+CVE-2026-32686 currently includes Decimal 3.1.1, while the maintainer advisory
+identifies 3.0.0 as patched. This discrepancy remains unresolved; the audit has
+not been waived. Local precommit does not run that separate CI gate.
+
 ## Durable deadline events
 
 The prepared event layer passes full precommit: 4,682 tests and 6 doctests,
