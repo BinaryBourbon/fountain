@@ -116,6 +116,11 @@ defmodule Fountain.Conversations.SandboxTransitions do
              {:expired, reason},
          do: Repo.rollback(:lifecycle_bound_not_reached)
 
+      if action == "park" and
+           (observed.mode != sandbox.mode or
+              Fountain.Conversations.SandboxActivity.managed_action(sandbox, reason) != :park),
+         do: Repo.rollback(:lifecycle_action_changed)
+
       attrs = %{
         sandbox_id: sandbox.id,
         user_id: sandbox.user_id,

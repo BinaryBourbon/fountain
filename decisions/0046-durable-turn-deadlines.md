@@ -501,7 +501,7 @@ PostgreSQL audit insert failures and verifies that park, resume, capacity and st
 intact.
 
 Unknown transition outcomes remain fenced, without an automatic replay.
-Actor startup/shutdown versus concurrent wake, destructive lifecycle-bound rechecks,
+Actor startup/shutdown versus concurrent wake,
 recovery of uncertain park/resume outcomes, ordinary creation name coverage and
 live provider acceptance remain unfinished. Execution controls and the recovery
 worker remain disabled. These source changes do not activate production cleanup.
@@ -580,8 +580,8 @@ continuous-run ceiling still starts at creation or the last wake.
 
 The managed reaper uses the same activity calculation as a selection hint. The
 grant remains authoritative after waiting for locks. Legacy unjournaled paths
-retain their previous behavior. Destructive lifecycle grants still need their
-own bound recheck; this park change does not authorize their activation.
+retain their previous behavior. Bound-driven deletion now has its own locked eligibility check, described below.
+Neither path is approved for production activation yet.
 
 `scripts/verify-sandbox-idle-races.exs` forces PostgreSQL lock waits while idle
 policy is disabled, extended or tightened, a long turn completes, a holder
@@ -590,3 +590,31 @@ A winning fresh attachment now prevents idle parking. Evidence is recorded in
 `decisions/evidence/sandbox-idle.json`. Actor wake coordination, uncertain
 transition recovery and live acceptance remain gates; the stack stays draft and
 execution controls and recovery stay disabled.
+
+## Bound-driven deletion
+
+The managed actor and reaper use a dedicated deletion entry point for lifecycle
+bounds. Its grant requires a current ready machine, current policy and the
+matching continuous-run deadline after machine, parent and identity locks. A
+running turn or unresolved execution still refuses deletion. Explicit owned
+termination and retired-holder recovery keep their separate eligibility rules.
+
+The current machine mode also determines the action. Managed Sprites machines
+park when idle. At the maximum lifetime, persistent homes park and ephemeral
+machines may be deleted. The reaper now parks managed homes at that ceiling.
+A stale mode cannot downgrade deletion to parking, delete a current home, or
+skip a current home's checkpoint. Recent completion and attachment refresh idle
+activity; they do not reset the continuous-run lifetime clock. A wake does.
+
+Bound execution refuses an outer transaction. Its composable grant has no audit
+side effects; execution audits only after the grant commits. Audit insert
+failures cannot undo an accepted deletion. Uncertain provider replies retain the
+reservation and do not authorize replay.
+
+`scripts/verify-sandbox-destroy-bound-races.exs` forces eight PostgreSQL lock waits
+covering changed policy, mode, wake and admission, and reruns the preceding
+proofs. `decisions/evidence/sandbox-destroy-bound.json` records the validation.
+These are local database and adapter tests. Legacy unjournaled behavior, durable
+wake ownership, actor shutdown/publication coordination, uncertain-transition
+recovery and live acceptance remain integration work. Execution controls and
+recovery stay disabled; the lifecycle stack stays draft.

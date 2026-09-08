@@ -487,7 +487,7 @@ defmodule Fountain.Conversations.Lifecycle do
     if managed?(sandbox_id) do
       sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
 
-      case Fountain.Conversations.SandboxOperations._unsafe_destroy(sandbox) do
+      case Fountain.Conversations.SandboxOperations._unsafe_destroy_at_bound(sandbox, reason) do
         result
         when result in [
                :ok,

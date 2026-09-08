@@ -1,0 +1,169 @@
+{
+  "recorded_at": "2026-09-08T12:54:48.944615+00:00",
+  "previous_checkpoint": "ea5c2fca58c0384f8aa13784e30b343408c61cbe",
+  "scope": "Fresh eligibility and mode for managed lifecycle deletion; persistent-home reaper parking; committed bound-execution audits. No production activation.",
+  "source_files": {
+    "apps/fountain/lib/fountain/conversations/lifecycle.ex": "sha256:820de0e53dfc2a8d6f4a918bf10a76a209231f899dabfc1b2716e0fca2b3d89f",
+    "apps/fountain/lib/fountain/conversations/sandbox_activity.ex": "sha256:47d103fa46ae841b55a6cd89f991140d6070060f8bffd47dc8511e6fd3c245bf",
+    "apps/fountain/lib/fountain/conversations/sandbox_operations.ex": "sha256:56a91c4a987c8d1c5b00d1d96f16ed9893a58b8561399c3df3d42e5cde81269b",
+    "apps/fountain/lib/fountain/conversations/sandbox_transitions.ex": "sha256:bc5339be7b22ac83ce8a91afe8bb19dc9f947f0ccb796ca8cc3144b58e11f3b0",
+    "apps/fountain/lib/fountain/workers/sandbox_reaper.ex": "sha256:65200328b5e564b9d7aaa3eb3c1e7698a34128273c5181052cbcac7890caf4e5",
+    "apps/fountain/test/fountain/conversations/sandbox_activity_test.exs": "sha256:a336223b4d6fcb16e811c7a9e21af5e5a391ee311d70263920d934374146a3d0",
+    "scripts/verify-sandbox-destroy-bound-races.exs": "sha256:683b7dee85cfeac6390b1d78f289f4fe3819a066c8c20fde7d2f26d92f39e49b"
+  },
+  "full_precommit": {
+    "tests": 4917,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:6b15f2ff1c12f2f4770c9ffeb043d63958739a621f11495142e6c5bcc4f28836"
+  },
+  "focused": {
+    "tests": 122,
+    "failures": 0,
+    "log_sha256": "sha256:e728d93a0313e8a4d28d460c0163856e738581449f831b5b181fb466bc4e6d35"
+  },
+  "database_races": {
+    "script": "scripts/verify-sandbox-destroy-bound-races.exs",
+    "results": {
+      "DEADLINE_RACE_RESULT": {
+        "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+        "cases": 20,
+        "separate_database_connections": true,
+        "outcomes": {
+          "completion_won": 13,
+          "expiry_won": 7
+        },
+        "provider_operations": 0,
+        "lock_wait_cannot_extend_deadline": true,
+        "delayed_lock_tables": [
+          "conversations",
+          "turns"
+        ],
+        "delayed_operations": [
+          "spawn",
+          "stdin_write"
+        ],
+        "completed_connections_require_cleanup": true,
+        "deadline_event_reuse_cases": 7
+      },
+      "SANDBOX_ADMISSION_RACE_RESULT": {
+        "scope": "Local reset/admission and identity arbitration; deletion acknowledgments are synthetic",
+        "separate_database_connections": true,
+        "admission_cases": 40,
+        "outcomes": {
+          "autonomous:admission_first": 6,
+          "autonomous:reset_first": 14,
+          "user:admission_first": 5,
+          "user:reset_first": 15
+        },
+        "conflicting_identity_cases": 20,
+        "retirement_ready_cases": 40,
+        "forced_retirement_before_ready_cases": 2,
+        "forced_reset_and_admission_orderings": 4,
+        "provider_operations": 0
+      },
+      "SANDBOX_TRANSITION_RACE_RESULT": {
+        "separate_database_connections": true,
+        "live_provider_operations": 0,
+        "outcomes": {
+          "autonomous:admission_first": 6,
+          "autonomous:park_first": 14,
+          "user:admission_first": 2,
+          "user:park_first": 18
+        },
+        "park_admission_races": 40,
+        "deterministic_lock_orders": 4,
+        "duplicate_park_races": 20,
+        "resume_destroy_races": 20
+      },
+      "SANDBOX_HOLDER_RACE_RESULT": {
+        "separate_database_connections": true,
+        "live_provider_operations": 0,
+        "random_races": 120,
+        "forced_lock_orders": 10,
+        "reciprocal_transfers": 20,
+        "bulk_individual_transfer": {
+          "bulk_won": 15,
+          "individual_preserved": 7
+        },
+        "attachment_cleanup": {
+          "attachment_won": 13,
+          "cleanup_won": 9
+        },
+        "attachment_park": {
+          "attachment_kept_active": 13,
+          "park_won": 9
+        },
+        "transfer_admission": {
+          "autonomous:admission_won": 13,
+          "autonomous:transfer_won": 9,
+          "user:admission_won": 13,
+          "user:transfer_won": 9
+        }
+      },
+      "SANDBOX_IDLE_RACE_RESULT": {
+        "forced_lock_wait_cases": 6,
+        "cases": [
+          "disabled",
+          "extended",
+          "tightened",
+          "completion",
+          "attachment",
+          "wake"
+        ],
+        "separate_database_connections": true,
+        "observed_postgres_lock_waits": true,
+        "clock_sampled_after_lock": true,
+        "live_provider_operations": 0
+      },
+      "SANDBOX_DESTROY_BOUND_RACE_RESULT": {
+        "forced_lock_wait_cases": 8,
+        "cases": [
+          "disabled",
+          "extended",
+          "tightened",
+          "completion",
+          "attachment",
+          "wake",
+          "home",
+          "admission"
+        ],
+        "separate_database_connections": true,
+        "observed_postgres_lock_waits": true,
+        "clock_sampled_after_lock": true,
+        "live_provider_operations": 0
+      }
+    },
+    "log_sha256": "sha256:550bfe2f4767d690210a4c8424ba534d40ce74aa2e376ae7572077be498067fe"
+  },
+  "verified_behavior": [
+    "Actor and reaper lifecycle deletion use a dedicated grant that checks the current ready row, policy, clock and action after locks.",
+    "A current persistent home cannot be deleted by a stale ephemeral observation; managed homes park at their maximum lifetime.",
+    "Managed idle expiration parks, and an ephemeral maximum lifetime cannot be downgraded to parking.",
+    "A stale observed mode cannot skip the checkpoint required by the current persistent home.",
+    "Wake resets the continuous-run clock. Completion and attachment refresh idle activity but do not reset maximum lifetime.",
+    "Running turns and unresolved executions still refuse deletion. Disabled/extended policy leaves the actor connection intact.",
+    "Explicit owned deletion and retired-holder recovery retain their independent eligibility rules.",
+    "Bound execution refuses an outer transaction. Its composable grant has no premature audit; real failed audit inserts cannot undo committed deletion.",
+    "Uncertain deletion retains capacity and refuses replay.",
+    "Eight forced lock-wait cases use distinct PostgreSQL backends and observe actual Lock waits; all previous proofs reran."
+  ],
+  "validation_history": [
+    {
+      "scope": "Earlier focused slice before final bound-audit ordering: 120 tests, zero failures.",
+      "log_sha256": "sha256:de8f14aff56d7b91be343c788c82876977a945593611fef99556a8376837f299"
+    },
+    {
+      "scope": "Earlier six-suite independent proof before audit relocation passed; final proof reran after relocation.",
+      "log_sha256": "sha256:a12a2e70d40d674fb1d9eb694d7ea0e8707ab2c11a24f046efff8b93184f7361"
+    }
+  ],
+  "remaining_activation_gates": [
+    "Legacy unjournaled creation/lifecycle behavior and permanent physical identity coverage.",
+    "Durable wake ownership before actor startup; shutdown, publication and queued-prompt coordination.",
+    "Uncertain park/resume recovery and confirmed-create absence handling; unknown creates remain fenced.",
+    "Conditional provider identity and live provider acceptance. Logical parking does not prove stopped compute or billing.",
+    "Execution controls and recovery remain disabled; lifecycle PR stack remains draft.",
+    "Aggregate inference limits and dollar reporting remain open; off-cluster backups are deferred."
+  ]
+}

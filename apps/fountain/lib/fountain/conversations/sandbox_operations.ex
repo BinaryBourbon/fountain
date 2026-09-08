@@ -282,6 +282,18 @@ defmodule Fountain.Conversations.SandboxOperations do
     end
   end
 
+  @doc "Reclaim at a current lifecycle bound, with provider I/O only after the grant commits."
+  def _unsafe_destroy_at_bound(sandbox, reason) when reason in [:idle, :max_lifetime] do
+    if Repo.in_transaction?() do
+      {:error, :provider_transaction_open}
+    else
+      submission = _unsafe_submit_destroy_at_bound(sandbox, reason)
+
+      with {:ok, operation} <- audit_result(submission, "sandbox.operation_submitted"),
+           do: _unsafe_complete_destroy(operation.id, destroy_once(operation))
+    end
+  end
+
   @doc "Route owned cleanup through its existing journal; never downgrade a managed claim."
   def _unsafe_destroy_or_legacy(%Sandbox{} = sandbox, handle, opts \\ []) do
     if _unsafe_managed?(sandbox.id) do
@@ -330,83 +342,108 @@ defmodule Fountain.Conversations.SandboxOperations do
   end
 
   @doc "Retire the logical machine and commit one deletion grant while admission is excluded."
-  def _unsafe_submit_destroy(%Sandbox{} = observed, opts \\ []) do
-    result =
-      Repo.transaction(fn ->
-        lock_machine(observed.id)
+  def _unsafe_submit_destroy(observed, opts \\ []) do
+    observed
+    |> submit_destroy(opts, nil)
+    |> audit_result("sandbox.operation_submitted")
+  end
 
-        parents =
-          Repo.all(
-            from c in Conversation,
-              where: c.sandbox_id == ^observed.id,
-              order_by: c.id,
-              lock: "FOR UPDATE"
+  @doc "Reserve bound-driven deletion using current policy, run clock and machine mode."
+  def _unsafe_submit_destroy_at_bound(observed, reason) when reason in [:idle, :max_lifetime],
+    do: submit_destroy(observed, [], reason)
+
+  defp submit_destroy(%Sandbox{} = observed, opts, reason) do
+    Repo.transaction(fn ->
+      lock_machine(observed.id)
+
+      parents =
+        Repo.all(
+          from c in Conversation,
+            where: c.sandbox_id == ^observed.id,
+            order_by: c.id,
+            lock: "FOR UPDATE"
+        )
+
+      sandbox = lock_sandbox(observed.id)
+      creation = lock_creation(observed.id) || Repo.rollback(:provider_identity_missing)
+
+      unless retained_binding?(creation, observed) and
+               (is_nil(sandbox) or retained_binding?(creation, sandbox)) and
+               Enum.all?(parents, &retained_owner?(creation, &1.user_id)),
+             do: Repo.rollback(:ownership_changed)
+
+      if creation.provider != "sprites" or creation.state != "confirmed" or
+           is_nil(creation.provider_instance_id),
+         do: Repo.rollback(:provider_identity_missing)
+
+      if Keyword.get(opts, :recovery, false) and not cleanup_due?(creation, sandbox, parents),
+        do: Repo.rollback(:sandbox_held)
+
+      existing =
+        Repo.one(
+          from o in SandboxOperation,
+            where: o.sandbox_id == ^observed.id and o.action == "destroy",
+            lock: "FOR UPDATE"
+        )
+
+      if existing do
+        Repo.rollback(
+          if(existing.state == "confirmed",
+            do: :provider_already_destroyed,
+            else: :provider_operation_fenced
           )
+        )
+      end
 
-        sandbox = lock_sandbox(observed.id)
-        creation = lock_creation(observed.id) || Repo.rollback(:provider_identity_missing)
+      # Ownership: locked parents and the creation claim above agree on this sandbox owner.
+      if Fountain.Conversations._unsafe_running_turns_elsewhere(observed.id, nil) > 0 or
+           Fountain.Conversations.ExecutionGuard._unsafe_sandbox_open?(observed.id),
+         do: Repo.rollback(:sandbox_mid_turn)
 
-        unless retained_binding?(creation, observed) and
-                 (is_nil(sandbox) or retained_binding?(creation, sandbox)) and
-                 Enum.all?(parents, &retained_owner?(creation, &1.user_id)),
-               do: Repo.rollback(:ownership_changed)
+      holder = Keyword.get(opts, :holder)
 
-        if creation.provider != "sprites" or creation.state != "confirmed" or
-             is_nil(creation.provider_instance_id),
-           do: Repo.rollback(:provider_identity_missing)
+      if holder && Enum.any?(parents, &(&1.id != holder and &1.status not in @terminal)),
+        do: Repo.rollback(:sandbox_held)
 
-        if Keyword.get(opts, :recovery, false) and not cleanup_due?(creation, sandbox, parents),
-          do: Repo.rollback(:sandbox_held)
+      now = DateTime.utc_now()
+      if reason, do: assert_destroy_bound!(sandbox, parents, reason, now)
 
-        existing =
-          Repo.one(
-            from o in SandboxOperation,
-              where: o.sandbox_id == ^observed.id and o.action == "destroy",
-              lock: "FOR UPDATE"
-          )
+      operation =
+        %SandboxOperation{}
+        |> SandboxOperation.changeset(%{
+          sandbox_id: creation.sandbox_id,
+          user_id: creation.user_id,
+          provider: creation.provider,
+          sandbox_name: creation.sandbox_name,
+          provider_instance_id: creation.provider_instance_id,
+          creation_id: creation.id,
+          action: "destroy",
+          state: "submitted",
+          submitted_at: now
+        })
+        |> insert_operation!()
 
-        if existing do
-          Repo.rollback(
-            if(existing.state == "confirmed",
-              do: :provider_already_destroyed,
-              else: :provider_operation_fenced
-            )
-          )
-        end
+      if sandbox do
+        retire_row(sandbox, nil)
+      end
 
-        # Ownership: locked parents and the creation claim above agree on this sandbox owner.
-        if Fountain.Conversations._unsafe_running_turns_elsewhere(observed.id, nil) > 0 or
-             Fountain.Conversations.ExecutionGuard._unsafe_sandbox_open?(observed.id),
-           do: Repo.rollback(:sandbox_mid_turn)
+      operation
+    end)
+  end
 
-        holder = Keyword.get(opts, :holder)
+  defp assert_destroy_bound!(nil, _parents, _reason, _now),
+    do: Repo.rollback(:sandbox_not_ready)
 
-        if holder && Enum.any?(parents, &(&1.id != holder and &1.status not in @terminal)),
-          do: Repo.rollback(:sandbox_held)
+  defp assert_destroy_bound!(sandbox, parents, reason, now) do
+    if sandbox.status != "ready", do: Repo.rollback(:sandbox_not_ready)
 
-        operation =
-          %SandboxOperation{}
-          |> SandboxOperation.changeset(%{
-            sandbox_id: creation.sandbox_id,
-            user_id: creation.user_id,
-            provider: creation.provider,
-            sandbox_name: creation.sandbox_name,
-            provider_instance_id: creation.provider_instance_id,
-            creation_id: creation.id,
-            action: "destroy",
-            state: "submitted",
-            submitted_at: DateTime.utc_now()
-          })
-          |> insert_operation!()
+    # Ownership: submit_destroy locked this machine and its current tenant-owned parents.
+    if Fountain.Conversations.SandboxActivity._unsafe_check(sandbox, parents, now) !=
+         {:expired, reason},
+       do: Repo.rollback(:lifecycle_bound_not_reached)
 
-        if sandbox do
-          retire_row(sandbox, nil)
-        end
-
-        operation
-      end)
-
-    audit_result(result, "sandbox.operation_submitted")
+    if Fountain.Conversations.SandboxActivity.managed_action(sandbox, reason) != :destroy,
+      do: Repo.rollback(:lifecycle_action_changed)
   end
 
   @doc "Only a confirmed delete/absence result releases the physical reservation."

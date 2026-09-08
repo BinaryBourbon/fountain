@@ -236,9 +236,10 @@ defmodule Fountain.Workers.SandboxReaper do
             end
 
           {sandbox, {:expired, :max_lifetime}}, {p, e} ->
-            case expire(sandbox, "past max lifetime") do
-              {:error, _} -> {p, e}
-              _ -> {p, e + 1}
+            case max_lifetime_sweep(sandbox) do
+              :parked -> {p + 1, e}
+              :expired -> {p, e + 1}
+              :held -> {p, e}
             end
 
           {_sandbox, :ok}, acc ->
@@ -298,6 +299,22 @@ defmodule Fountain.Workers.SandboxReaper do
     end
   end
 
+  # Ownership: the reaper selected this machine; the grant rechecks its current mode and bound.
+  defp max_lifetime_sweep(sandbox) do
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id) and
+         Fountain.Conversations.SandboxActivity.managed_action(sandbox, :max_lifetime) == :park do
+      case Fountain.Conversations.SandboxTransitions._unsafe_park(sandbox, :max_lifetime) do
+        {:ok, _} -> :parked
+        {:error, _} -> :held
+      end
+    else
+      case expire(sandbox, "past max lifetime", :max_lifetime) do
+        {:error, _} -> :held
+        _ -> :expired
+      end
+    end
+  end
+
   defp legacy_idle_sweep(sandbox) do
     provider = Conversations.sandbox_provider_atom(sandbox)
 
@@ -308,7 +325,7 @@ defmodule Fountain.Workers.SandboxReaper do
       :parked
     else
       :destroy ->
-        expire(sandbox, "idle on a provider without suspend")
+        expire(sandbox, "idle on a provider without suspend", :idle)
         :expired
 
       {:error, reason} ->
@@ -317,7 +334,7 @@ defmodule Fountain.Workers.SandboxReaper do
             "expiring instead"
         )
 
-        expire(sandbox, "idle; suspend call failed")
+        expire(sandbox, "idle; suspend call failed", :idle)
         :expired
     end
   end
@@ -340,9 +357,9 @@ defmodule Fountain.Workers.SandboxReaper do
     sandbox
   end
 
-  defp expire(sandbox, reason) do
+  defp expire(sandbox, reason, bound) do
     if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id) do
-      case Fountain.Conversations.SandboxOperations._unsafe_destroy(sandbox) do
+      case Fountain.Conversations.SandboxOperations._unsafe_destroy_at_bound(sandbox, bound) do
         result
         when result in [
                :ok,

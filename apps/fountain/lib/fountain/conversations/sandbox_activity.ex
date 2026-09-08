@@ -11,6 +11,11 @@ defmodule Fountain.Conversations.SandboxActivity do
   alias Fountain.Repo
   alias Fountain.Conversations.{Lifecycle, Turn}
 
+  @doc "Action for journaled Sprites machines; persistent homes keep their disk."
+  def managed_action(_sandbox, :idle), do: :park
+  def managed_action(%{mode: "persistent"}, :max_lifetime), do: :park
+  def managed_action(_sandbox, :max_lifetime), do: :destroy
+
   def _unsafe_check(sandbox, parents, now) do
     ids = Enum.map(parents, & &1.id)
 
