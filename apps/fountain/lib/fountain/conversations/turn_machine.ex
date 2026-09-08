@@ -835,7 +835,7 @@ defmodule Fountain.Conversations.TurnMachine do
   ends.
   """
   @spec open(String.t(), String.t(), String.t()) ::
-          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity
+          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity | {:error, term()}
   def open(conversation_id, sandbox_id, prompt) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
@@ -865,6 +865,9 @@ defmodule Fountain.Conversations.TurnMachine do
         })
 
         :at_capacity
+
+      {:error, _} = error ->
+        error
     end
   end
 

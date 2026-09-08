@@ -905,7 +905,15 @@ defmodule Fountain.Conversations do
   if alive), then delete the conversation row. Cascades to turns and log
   events via the FK.
   """
-  def delete_conversation(%Conversation{id: id, user_id: user_id} = conv, opts \\ []) do
+  def delete_conversation(%Conversation{} = conv, opts \\ []) do
+    # ownership: conv is the caller's tenant-scoped row. Persist cleanup before
+    # any potentially blocking termination and before deleting that parent.
+    with {:ok, _} <- ExecutionGuard._unsafe_interrupt(conv.id) do
+      delete_after_retirement(conv, opts)
+    end
+  end
+
+  defp delete_after_retirement(%Conversation{id: id, user_id: user_id} = conv, opts) do
     # `audit: false` on the cascade: this terminate is an implementation
     # detail of deleting, not a second thing the user asked for, and the
     # `conversation.deleted` below already accounts for the sandbox going
@@ -1054,35 +1062,21 @@ defmodule Fountain.Conversations do
   capacity is used up by another conversation's running turn.
 
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`: `:unbounded` (claude,
-  codex — several processes on one disk is the laptop shape) inserts exactly
-  as `_unsafe_create_turn/1` does; an integer is checked and inserted under
-  a per-sandbox advisory lock, so two conversations prompting the same
+  codex — several processes on one disk is the laptop shape) permits parallel
+  conversations; an integer additionally limits them. Every admission locks the
+  sandbox and parent and commits any bounded execution journal with the turn,
+  so two conversations prompting the same
   opencode or gemini machine at the same moment cannot both win. Answers
   `{:error, :sandbox_at_capacity}` rather than queueing (ADR 0023 step 4).
   Usage is recorded after the transaction commits, never inside it.
   """
-  def _unsafe_create_turn_on_sandbox(attrs, _sandbox_id, :unbounded),
-    do: _unsafe_create_turn(attrs)
-
   def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
-      when is_binary(sandbox_id) and is_integer(capacity) and capacity > 0 do
-    conv_id = Map.fetch!(attrs, :conversation_id)
-
+      when capacity == :unbounded or (is_integer(capacity) and capacity > 0) do
+    # ownership: attrs belongs to the calling actor; admission rechecks the
+    # persisted parent/sandbox and commits a bounded journal with the turn.
     result =
-      Repo.transaction(fn ->
-        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
-          @sandbox_lock_namespace,
-          :erlang.phash2(sandbox_id)
-        ])
-
-        if _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
-          Repo.rollback(:sandbox_at_capacity)
-        else
-          case %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
-            {:ok, turn} -> turn
-            {:error, changeset} -> Repo.rollback(changeset)
-          end
-        end
+      ExecutionGuard._unsafe_admit_turn(attrs, sandbox_id, capacity, fn ->
+        %Turn{} |> Turn.changeset(attrs) |> Repo.insert()
       end)
 
     with {:ok, turn} <- result do
@@ -2940,7 +2934,9 @@ defmodule Fountain.Conversations do
              user.execution_limits,
              conv.execution_limits
            ) do
-      limits.require_controls(resolved, limits.enforced_controls(conv.runtime))
+      # ownership: the caller fetched this conversation for its actor or authorized API operation.
+      with :ok <- limits.require_controls(resolved, limits.enforced_controls(conv.runtime)),
+           do: ExecutionGuard._unsafe_admission_gate(conv.id)
     end
   end
 

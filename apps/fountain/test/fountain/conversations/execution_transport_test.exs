@@ -276,7 +276,14 @@ defmodule Fountain.Conversations.ExecutionTransportTest do
         execution_limits: limits
       )
 
-    on_exit(fn -> if Process.alive?(peer), do: GenServer.stop(peer) end)
+    on_exit(fn ->
+      try do
+        GenServer.stop(peer)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
     :ok = Managoat.ACP.Testing.ScriptedAgent.connect(agent, peer)
     assert_receive {:acp, ^ref, {:done, "end_turn", _}}, 2_000
     assert_received {:scripted_agent, :wrote, %{"method" => "session/prompt"}}

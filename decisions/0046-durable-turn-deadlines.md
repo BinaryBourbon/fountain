@@ -23,8 +23,8 @@ The typed-policy layer is in draft
 CI at `7db76444cb0abb987e4c3ad62d1b8aa18b29d254`: validated host/account ceilings,
 conversation allowance narrowing, immutable journal snapshots, HTTP admission
 checks, API stop reasons, and SDK/CLI request fields are implemented. All nonempty
-effective limits are currently refused because the runtime transport and deadline
-worker are not integrated. There is no user-configurable bypass of that gate.
+effective limits are currently refused until released provider identity support and the complete lifecycle acceptance
+gates pass. There is no user-configurable bypass of that gate.
 Validation passes 4,663 tests and 6 doctests in full precommit, all four SDK suites
 and contract checks, CLI tests/vet, and 20 separate-connection database races.
 The typed-layer evidence and prior failures are recorded in
@@ -120,12 +120,12 @@ Integration surfaces already inspected:
 
 | Surface | Remaining work |
 | --- | --- |
-| `TurnMachine.open` and autonomous starts | Atomically reserve authorized limits and register before any provider work. |
-| `ConversationServer.run_turn` and warm reuse | Preserve the deadline and connection identity; gate every prompt before writing it. |
-| `TurnMachine.start_acp_peer` | Route the writer through a supervised transport that captures trusted session metadata outside the actor mailbox. |
-| `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
-| `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
-| Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
+| `TurnMachine.open` and autonomous starts | Local atomic admission/journal integration and autonomous refusal are implemented; 20 independent-connection admission races pass. |
+| `ConversationServer.run_turn` and warm reuse | Local bounded turns use tracked setup and a fresh connection, including after credential refresh. |
+| `TurnMachine.start_acp_peer` | Real actor tests use the supervised writer; released provider identity and live acceptance remain. |
+| `ConversationServer.interrupt_turn` | Local public cancellation commits before contacting a blocked actor/provider. |
+| `wake_conversation`, `Rehydrator`, Horde starts | Wake admission refuses open journals; a newly started actor retires old execution before provisioning/reattachment. |
+| Interrupted provisioning and parent deletion | Deletion retains cleanup against the original sandbox; all sandbox transfer/reset/incarnation paths still require the final audit. |
 | Deadline supervisor | Coordinator has passing draft CI; durable deadline-stage delivery passes local full validation. Public acceptance remains. |
 
 The prepared transport branch retires every bounded connection after a reply,
@@ -187,16 +187,59 @@ tests and 6 doctests with zero failures. Twenty independent-connection database
 races also pass, including delayed spawn and stdin authorization after locks on
 both parent and turn rows. See `decisions/evidence/execution-transport.json`.
 
-`ConversationServer.run_fresh_turn` does not yet select this transport. Before
-wiring it, move adapter installation into the identified command: the current
-`Connection.spawn_command` performs a separate untracked `Sandbox.exec` through
-`Runtimes.ACP.install`. That installer currently builds one script, so expose and
-reuse its preparation script through the library instead of copying its pin or
-shell logic into Fountain. Preserve stdin for the eventual ACP process. Register
-before preparation; bound or omit separate title inference. Then wire fresh,
-warm, autonomous, cancellation and recovery paths together. Public capability
-admission stays empty until these gates and released Sprites identity support
-are complete.
+The next local branch now selects this transport for an atomically admitted
+bounded turn. `managoat_runtimes` 0.4.2 is published and consumed: its bootstrap
+runs adapter installation and the final tagged/capability-cleared argv inside one
+provider command. No pin or installer script is copied into Fountain. Initial
+sandbox provisioning remains separate; this turn journal does not cover it.
+
+## Actor lifecycle integration
+
+The local integration commits the turn and journal together before turn setup.
+It rechecks ownership, current limits, transport/runtime support and capacity;
+failed registration rolls the turn back. SDK-only requests without a wall limit
+are refused instead of receiving an invented deadline. Public capabilities remain
+empty. Offline tests substitute that capability function explicitly; there is no
+operator flag enabling the unfinished production path.
+
+Bounded turns skip separate title inference, always use a fresh command, and
+carry the journal through broker credential refresh. Their ACP writer receives
+typed SDK options (Claude only); Codex wall deadlines preserve its capability
+wrapper. A zero command exit without an ACP prompt reply is incomplete. Actor
+messages recheck the journal, and independent retirement notifies an actor that
+would otherwise wait silently on its peer. Completed bounded connections are
+closed locally while the journal retains remote cleanup.
+
+Public interruption commits retirement without waiting for the actor. Termination
+and deletion also persist intent before teardown. A missing parent cannot erase
+already committed retirement: cleanup still requires the original sandbox row's
+tenant/name/provider binding. A changed or missing sandbox identity stays
+uncertain. A surviving parent must still have its original tenant/sandbox binding.
+An active journal whose turn vanished without retirement remains uncertain.
+
+Wake admission refuses unresolved execution. A new actor retires a prior journal
+before provisioning or reattachment; it does not replay an unknown spawn. An old
+unbounded connection cannot open an autonomous turn after bounded policy applies.
+
+Seventeen lifecycle regressions cover real actor launch/SDK options, completion,
+early exit, cancellation with a blocked actor, silent-peer deadlines, restart
+retirement, parent deletion, changed sandbox identity and lifecycle timer
+preservation. Fresh launch lives in `TurnLaunch`; `ConversationServer` shrinks
+from its 2,767-line pin to 2,706. Its size regression also passes.
+
+`scripts/verify-bounded-lifecycle-races.exs` uses independent connections in a
+dedicated local PostgreSQL database. Twenty admission races each commit one turn
+and journal. Twenty cancellation/spawn-intent races preserve uncertainty rather
+than replay; twenty parent-deletion/cleanup-claim races retain original cleanup
+authority. Provider acknowledgments are synthetic fixtures, and no provider I/O
+occurs. The original twenty completion/deadline races also pass.
+
+Full precommit passes **4,716 tests and 6 doctests, zero failures** after the
+size-gate extraction. Evidence and prior corrected failures are recorded in
+`decisions/evidence/bounded-lifecycle.json`. Late write atomicity, every sandbox
+lifecycle path and live provider acceptance remain activation gates. The released Sprites identity
+change is still required. These tests do not prove actual termination, escaped
+process cleanup, aggregate budgets or stopped billing.
 
 ## Durable deadline events
 
