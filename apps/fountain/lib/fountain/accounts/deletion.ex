@@ -190,8 +190,9 @@ defmodule Fountain.Accounts.Deletion do
     provider = Fountain.Conversations.sandbox_provider_atom(sandbox)
     handle = Managoat.Sandbox.build_handle(provider, name)
 
+    # Ownership: the deletion query selected this user's sandboxes.
     result =
-      case Managoat.Sandbox.destroy(handle) do
+      case Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle) do
         :ok ->
           true
 

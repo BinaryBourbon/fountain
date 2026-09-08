@@ -410,18 +410,32 @@ stops without publishing a ready row. This does not establish remote cleanup or
 correct retention of uncertain provider spend; those still need the operation
 journal below.
 
-Sandbox 0.4.0, Runner 0.2.3 and Runtimes 0.4.3 are released and locked here.
+Sandbox 0.4.1, Runner 0.2.3 and Runtimes 0.4.3 are released and locked here.
 Sandbox's optional `create_new` refuses conflicts and returns provider identity
 on confirmed creation; ordinary `create` retains its adoption behavior. The
-Fountain provisioning path still uses ordinary `create`. Switching it requires
-durable intent before the request, retained uncertainty and coordinated cleanup;
-the dependency upgrade alone does not provide those properties.
+ordinary provisioning path retains `create`. Bounded conversations now use the
+operation journal and `create_new`; public execution controls remain disabled.
 
-**Integration is incomplete.** Provisioning and cleanup do not yet call this
-identity interface. Recording a GET response does not authorize a later
-name-based DELETE or prove an uncertain create belongs to this row. Durable
-machine-operation intent, unknown-outcome reconciliation, and coordinated
-provisioning, parking and destruction remain required before activation.
+`SandboxOperations` commits fresh-create intent before provider I/O and keeps
+historical ownership, the original interval start, and capacity after parent
+deletion. Conflicts cannot adopt an existing name. Readiness binds only the
+confirmed fresh response, after checking the parent and machine again. Cleanup
+call sites route managed claims through a durable delete intent. Uncertain
+results block another service call and retain capacity and potential provider
+time; they do not prove actual cost. Legacy suspend events cannot discount these
+managed intervals.
+
+Managed cleanup now uses Sandbox 0.4.1's `destroy_once`: one DELETE and at most
+one GET, sharing a deadline with retries and redirects disabled. Only a 404
+confirms absence. HTTP acceptance alone retains uncertainty.
+
+**Integration is incomplete.**
+The journal's permanent name claim prevents another managed create from adopting
+it; ordinary legacy creation is not yet covered by that registry. Recording a
+GET response does not authorize a later name-based DELETE or prove an uncertain
+create belongs to this row. Recovery scanning, park/resume coordination, full
+holder arbitration and live provider acceptance remain required. The `park` and
+`resume` action names are schema vocabulary, not implemented operations.
 
 `scripts/verify-sandbox-admission-races.exs` exercises real reset and admission
 contexts through separate local PostgreSQL connections, with outbound deletion

@@ -398,11 +398,31 @@ defmodule Fountain.Conversations.Lifecycle do
     )
   end
 
-  @doc """
-  Tear down the sandbox; the conversation stays `idle` and resumable (setting
-  it `terminated` here would make a cost control into data loss). Serves both
-  the max-lifetime ceiling and the idle bound on a provider that cannot park.
-  """
+  @doc "Retire a terminating conversation's machine unless another holder or execution needs it."
+  def terminate_machine(sandbox_id, conversation_id, handle) do
+    # Ownership: the terminating server loaded this parent and its sandbox at init.
+    sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+
+    cleanup =
+      Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(
+        sandbox,
+        handle,
+        holder: conversation_id
+      )
+
+    # A holder admitted after the server's earlier kept? check retains its machine.
+    unless cleanup in [{:error, :sandbox_held}, {:error, :sandbox_mid_turn}] do
+      {:ok, _} =
+        Conversations.update_sandbox(sandbox, %{
+          status: "terminated",
+          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+    end
+
+    cleanup
+  end
+
+  @doc "Reclaim the sandbox at an idle or lifetime bound; keep its conversation resumable."
   @spec destroy(
           String.t(),
           String.t() | nil,
@@ -411,7 +431,11 @@ defmodule Fountain.Conversations.Lifecycle do
           :idle | :max_lifetime
         ) :: :ok
   def destroy(conversation_id, sandbox_id, user_id, handle, reason) do
-    if handle, do: _ = Managoat.Sandbox.destroy(handle)
+    if sandbox_id do
+      sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+      _ = Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle)
+    end
+
     Egress.release(user_id, conversation_id)
 
     if sandbox_id do

@@ -866,9 +866,8 @@ defmodule Fountain.Conversations.ConversationServer do
                provider,
                env,
                state.conversation_id
-             ),
-           :ok <- Provisioning.discard_interrupted_attempt(provider, sandbox, interrupted?) do
-        Provisioning.create_sandbox_handle(provider, sandbox)
+             ) do
+        Provisioning.create_sandbox_handle(provider, sandbox, conv)
       end
 
     case handle_result do
@@ -929,8 +928,8 @@ defmodule Fountain.Conversations.ConversationServer do
                  state.runtime_module,
                  agent,
                  sprite_env
-               ) do
-          {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+               ),
+             {:ok, _} <- Provisioning.finish_provision(sandbox, conv) do
           Output.publish_stage(state.conversation_id, "provision", "done")
 
           # Best-effort: snapshot the fully-provisioned state so subsequent
@@ -956,7 +955,12 @@ defmodule Fountain.Conversations.ConversationServer do
         else
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
-            _ = Managoat.Sandbox.destroy(handle)
+
+            _ =
+              Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle,
+                holder: conv.id
+              )
+
             Egress.release(state.user_id, state.conversation_id)
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
@@ -1633,12 +1637,8 @@ defmodule Fountain.Conversations.ConversationServer do
       {:stop, :normal, :ok, %{state | handle: nil}}
     else
       state = drop_connection(state, "terminated")
-      if state.handle, do: _ = Managoat.Sandbox.destroy(state.handle)
+      Lifecycle.terminate_machine(state.sandbox_id, state.conversation_id, state.handle)
       Egress.release(state.user_id, state.conversation_id)
-      sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
-
-      {:ok, _} =
-        Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now()})
 
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
       {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})

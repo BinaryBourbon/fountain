@@ -363,7 +363,10 @@ defmodule Fountain.Workers.SandboxReaper do
   defp destroy(sandbox_id, sprite_name, provider) do
     # build_handle/2 is pure — we already know the sandbox exists (it came
     # out of the listing), so there is nothing to look up first.
-    case Managoat.Sandbox.destroy(Managoat.Sandbox.build_handle(provider, sprite_name)) do
+    sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+    handle = Managoat.Sandbox.build_handle(provider, sprite_name)
+
+    case Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle) do
       :ok ->
         Logger.info("reaper: destroyed leaked sprite #{sprite_name} (sandbox #{sandbox_id})")
         true

@@ -30,6 +30,11 @@ defmodule Fountain.Quotas do
   sandbox view's "anything non-terminal": the admin table will list a suspended
   sandbox that the per-user counter ignores. Waking one re-runs the quota gate
   (`Conversations.wake_suspended_sandbox/2`).
+
+  Managed creates also retain a provider reservation. The union counts a live
+  row and its reservation once, and retains the slot after logical retirement
+  or parent deletion until provider cleanup is confirmed. Managed parking does
+  not yet release that reservation.
   """
 
   import Ecto.Query
@@ -43,25 +48,17 @@ defmodule Fountain.Quotas do
   @doc """
   Number of sandboxes currently counting against `user_id`'s cap.
 
-  Pass `exclude: sandbox_id` to leave a specific sandbox out. The wake path
-  needs this: it provisions the replacement before retiring the sandbox it is
-  replacing, so without the exclusion a conversation sitting exactly at the cap
-  could never be woken even though concurrency would not increase.
+  `exclude: sandbox_id` excludes a logical row during legacy replacement.
+  A retained provider reservation cannot be excluded: until its operation is
+  confirmed, a replacement could increase physical concurrency.
   """
   @spec active_sandbox_count(binary(), keyword()) :: non_neg_integer()
   def active_sandbox_count(user_id, opts \\ []) when is_binary(user_id) do
-    query =
-      from s in Sandbox,
-        where: s.user_id == ^user_id and s.status in @active_statuses,
+    Repo.one(
+      from s in subquery(counted_sandboxes(opts)),
+        where: s.user_id == ^user_id,
         select: count(s.id)
-
-    query =
-      case Keyword.get(opts, :exclude) do
-        nil -> query
-        excluded -> from s in query, where: s.id != ^excluded
-      end
-
-    Repo.one(query) || 0
+    ) || 0
   end
 
   @doc """
@@ -73,8 +70,7 @@ defmodule Fountain.Quotas do
   """
   @spec active_sandbox_counts() :: %{optional(binary()) => non_neg_integer()}
   def active_sandbox_counts do
-    from(s in Sandbox,
-      where: s.status in @active_statuses,
+    from(s in subquery(counted_sandboxes([])),
       group_by: s.user_id,
       select: {s.user_id, count(s.id)}
     )
@@ -133,7 +129,7 @@ defmodule Fountain.Quotas do
   @doc "Live sandboxes across every tenant, against the fleet ceiling."
   @spec fleet_count() :: non_neg_integer()
   def fleet_count do
-    Repo.one(from(s in Sandbox, where: s.status in @active_statuses, select: count(s.id))) || 0
+    Repo.one(from(s in subquery(counted_sandboxes([])), select: count(s.id))) || 0
   end
 
   @doc "The reserve, floor, ceiling and fleet ceiling in force."
@@ -162,19 +158,7 @@ defmodule Fountain.Quotas do
   def check_fleet_ceiling(opts \\ []) do
     ceiling = settings().fleet_ceiling
 
-    count =
-      case Keyword.get(opts, :exclude) do
-        nil ->
-          fleet_count()
-
-        excluded ->
-          Repo.one(
-            from(s in Sandbox,
-              where: s.status in @active_statuses and s.id != ^excluded,
-              select: count(s.id)
-            )
-          ) || 0
-      end
+    count = Repo.one(from(s in subquery(counted_sandboxes(opts)), select: count(s.id))) || 0
 
     if count < ceiling, do: :ok, else: {:error, :fleet_full}
   end
@@ -256,4 +240,24 @@ defmodule Fountain.Quotas do
 
   @doc "Sandbox statuses that count against the cap."
   def active_statuses, do: @active_statuses
+
+  # UNION counts a live row and its provider reservation once. Excluding an
+  # old logical row cannot exclude an unresolved physical provider obligation;
+  # deleting a parent cannot erase one either.
+  defp counted_sandboxes(opts) do
+    active =
+      from s in Sandbox,
+        where: s.status in @active_statuses,
+        select: %{id: s.id, user_id: s.user_id}
+
+    active =
+      case Keyword.get(opts, :exclude) do
+        nil -> active
+        id -> from s in active, where: s.id != ^id
+      end
+
+    # Ownership: fleet/tenant quota enforcement intentionally reads retained capacity globally.
+    reserved = Fountain.Conversations.SandboxOperations._unsafe_reserved_slots()
+    union(active, ^reserved)
+  end
 end

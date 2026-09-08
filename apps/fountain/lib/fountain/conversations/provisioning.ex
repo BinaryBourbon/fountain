@@ -773,6 +773,29 @@ defmodule Fountain.Conversations.Provisioning do
     )
   end
 
+  def create_sandbox_handle(provider, sandbox, conversation) do
+    # Ownership: ConversationServer loaded this parent and its sandbox at init.
+    operations = Fountain.Conversations.SandboxOperations
+
+    if map_size(conversation.execution_limits || %{}) > 0 or
+         operations._unsafe_managed?(sandbox.id) do
+      operations._unsafe_create(sandbox, conversation)
+    else
+      with :ok <- discard_interrupted_attempt(provider, sandbox, sandbox.status == "starting") do
+        create_sandbox_handle(provider, sandbox)
+      end
+    end
+  end
+
+  def finish_provision(sandbox, conversation) do
+    # Ownership: the server supplies its loaded parent and sandbox; the journal rechecks both.
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id) do
+      Fountain.Conversations.SandboxOperations._unsafe_finish_provision(sandbox, conversation)
+    else
+      Conversations.update_sandbox(sandbox, %{status: "ready"})
+    end
+  end
+
   # Best-effort, and deliberately not fatal: a sandbox with no reportable URL
   # is still a working sandbox. Stored on the row so the API and the UI can
   # show it without a provider round trip.
@@ -903,6 +926,15 @@ defmodule Fountain.Conversations.Provisioning do
   def discard_interrupted_attempt(_provider, _sandbox, false), do: :ok
 
   def discard_interrupted_attempt(provider, sandbox, true) do
+    # Ownership: the provision server supplied its own sandbox.
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id) do
+      {:error, :provider_operation_fenced}
+    else
+      discard_legacy_attempt(provider, sandbox)
+    end
+  end
+
+  defp discard_legacy_attempt(provider, sandbox) do
     Logger.warning(
       "sandbox #{sandbox.id}: sprite #{sandbox.sprite_name} was left mid-provision by an " <>
         "interrupted attempt; destroying it before provisioning again"

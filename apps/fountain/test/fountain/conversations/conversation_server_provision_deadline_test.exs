@@ -192,4 +192,62 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
 
     GenServer.call(pid, :terminate_conv, 30_000)
   end
+
+  test "bounded actor retains an uncertain deletion across restart and reaper cleanup" do
+    Application.put_env(:fountain, :provision_deadline_ms, 30_000)
+    stub_happy_sprite()
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+
+    conv =
+      conv
+      |> Ecto.Changeset.change(execution_limits: %{"wall_time_seconds" => 60})
+      |> Repo.update!()
+
+    expected_id = Ecto.UUID.generate()
+    owner = self()
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :create_new, fn name, _ ->
+      send(owner, :fresh_create)
+      refute Repo.in_transaction?()
+      {:ok, %Managoat.Sandbox.Handle{provider: :sprites, name: name, instance_id: expected_id}}
+    end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn _, _ ->
+      send(owner, :delete_attempt)
+      {:error, :timeout}
+    end)
+
+    {pid, _, :alive} = start_server(conv)
+    assert_receive :fresh_create
+    sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    assert sandbox.status == "ready"
+    assert sandbox.provider_instance_id == expected_id
+    assert GenServer.call(pid, :terminate_conv, 30_000) == :ok
+    assert_receive :delete_attempt
+    assert %{status: "terminated", terminated_at: nil} = Repo.reload!(sandbox)
+    assert Fountain.Quotas.active_sandbox_count(user.id) == 1
+
+    {:ok, restarted} =
+      GenServer.start(ConversationServer,
+        conversation_id: conv.id,
+        sandbox_id: conv.sandbox_id,
+        runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+      )
+
+    ref = Process.monitor(restarted)
+    assert_receive {:DOWN, ^ref, :process, ^restarted, :normal}, 5_000
+    refute_received :fresh_create
+
+    Mimic.stub(Managoat.Sandbox, :list_all_names, fn provider ->
+      names = if provider == :sprites, do: [sandbox.sprite_name], else: []
+      {:ok, MapSet.new(names)}
+    end)
+
+    assert :ok = Fountain.Workers.SandboxReaper.perform(%Oban.Job{})
+    assert :ok = Fountain.Workers.SandboxReaper.perform(%Oban.Job{})
+    assert Fountain.Quotas.active_sandbox_count(user.id) == 1
+    refute_received :delete_attempt
+  end
 end

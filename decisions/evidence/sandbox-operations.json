@@ -1,0 +1,91 @@
+{
+  "recorded_at": "2026-09-08T08:47:57.936401+00:00",
+  "previous_checkpoint": "2da76af2905a6656eb71c19ec807cf1c18628e04",
+  "scope": "Offline durable create/delete integration and retained capacity/intervals; no production activation.",
+  "source_files": {
+    "apps/fountain/lib/fountain/accounts/deletion.ex": "sha256:9087211429a3ab0f1fd595f0cbd5bdb696af51819ca9e62b9068cd2c3698646d",
+    "apps/fountain/lib/fountain/conversations.ex": "sha256:4f66b8e195cd6d9101b3909b2c0dd41b3897ef86a28cba4ceb865674149bc7ea",
+    "apps/fountain/lib/fountain/conversations/conversation_server.ex": "sha256:cabe5e0905d2083198daa31d7f2d3ce23f7d3ebea50d9a70aab7c437e78faa00",
+    "apps/fountain/lib/fountain/conversations/lifecycle.ex": "sha256:64bdf44d74e1b7276736d6dbb49a9860171c3ba2c12595c86c36fdeb21205d98",
+    "apps/fountain/lib/fountain/conversations/provisioning.ex": "sha256:ec879988621a718aa3827865428067bd87a8b1758d454eaf336b134db67e7592",
+    "apps/fountain/lib/fountain/conversations/sandbox_operation.ex": "sha256:0923d29d24a0903d28bfebce9de4809a6c998f7bfeb8fd66b85905d683c6036d",
+    "apps/fountain/lib/fountain/conversations/sandbox_operations.ex": "sha256:9257f7e2b0d40acaa64819437e295b73f92fb7ecdb93c11188a5193694814eca",
+    "apps/fountain/lib/fountain/quotas.ex": "sha256:cc52282456164c591d7b2a8891e656a556686e6c499e3ca0f417c7a638a096f9",
+    "apps/fountain/lib/fountain/workers/sandbox_reaper.ex": "sha256:335eb59a215bab005ae8a1e99af68962f1932cf303b52417b0daf62c18b7d80b",
+    "apps/fountain/mix.exs": "sha256:707f350cee60d45309838809effc41043f0d8dc154c74e839045d739d8c4752a",
+    "apps/fountain/priv/repo/migrations/20260908080000_create_sandbox_operations.exs": "sha256:24b44d77154b38c6a8a7c65319097219d42915fcf9ff4340edf99a743b64bd41",
+    "apps/fountain/test/fountain/conversations/conversation_server_provision_deadline_test.exs": "sha256:bf41f12b1fb8b2c9ce79e153314a77826559df6e48e218c09f1b9a6c30ec8177",
+    "apps/fountain/test/fountain/conversations/sandbox_operations_test.exs": "sha256:50c4aff412c6291d3b3ba755b13a04a332fc4fa67922b704c08d2fd92e9e8b4b",
+    "ee/lib/fountain/billing/sandbox_usage.ex": "sha256:f548ef4b190278af2515581d682d9cdaf89d6494e1d1cba6395b024c5d908c37",
+    "mix.lock": "sha256:9301825c0ef9b3e24f6a252b0183fac63a19c642a9d5e575d1732f7f76f87bd3"
+  },
+  "full_precommit": {
+    "tests": 4829,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:bb4dd6f1a4580aeacf4b14db3811e560040a0641e44c099d29e98deddc98573b"
+  },
+  "focused_published_sdk": {
+    "tests": 51,
+    "failures": 0,
+    "log_sha256": "sha256:5a5f87f18565695deddcea64c959d2ade619630834329acb1d98fa68cb1bd751"
+  },
+  "behavior_verified": [
+    "Create intent exists before one fresh provider request; conflicting names cannot be adopted.",
+    "Uncertain creates retain quota across logical retirement and parent deletion.",
+    "Late causal results retain identity without reviving retired parents.",
+    "Readiness binds the confirmed fresh identity under parent and machine locks.",
+    "A delete intent prevents a second service cleanup write after uncertainty.",
+    "Confirmed absence releases the reservation and ends its retained interval.",
+    "A real actor provisions, binds identity, retains an uncertain deletion, and refuses recreation on restart.",
+    "Two actual reaper sweeps preserve the uncertain delete and slot without replay.",
+    "Managed potential provider time survives parent deletion and ignores legacy suspend discounts."
+  ],
+  "released_sdk": {
+    "package": "managoat_sandbox",
+    "version": "0.4.1",
+    "pr": "https://github.com/managoat/managoat_sandbox/pull/11",
+    "reviewed_head": "ca4d7ace60b686704272d9ebcfd222d60482bbf5",
+    "merge_commit": "3ccdab94d8e03e9940a653e81bf4712eaecc083d",
+    "publish_run": 34205188511,
+    "publish_conclusion": "success",
+    "tests": 309,
+    "failures": 0,
+    "coverage_percent": 97.44,
+    "precommit_log_sha256": "sha256:f60a6899dc23823c6f3ec89d963161edfc5c2197a85130d5c434c63eee69f8eb",
+    "semantics": "One DELETE and at most one confirmation GET, no retries or redirects, shared timeout. Only 404 confirms absence. No conditional identity write."
+  },
+  "prior_runs": [
+    {
+      "result": "Integration fixture used invalid Mimic zero-call expectation; corrected to reject/3.",
+      "log_sha256": "sha256:51ccb3711ed425227f8045b49c730b4782f8b91807cc165a96864c98b3830600"
+    },
+    {
+      "result": "Ownership audit required comments at internal calls; comments added.",
+      "log_sha256": "sha256:d50e079b0390a354d7691bdbd427b38182721d87ac1f39b32f737e4d5d8ac634"
+    },
+    {
+      "result": "Full gate failed only the unchanged server-size pin; extracted termination bookkeeping into Lifecycle, keeping 2697 lines.",
+      "log_sha256": "sha256:838850afeb4ae3adc1f8998a02c1f2d2f01fbf5b94c3b55712f014f753ccfada"
+    },
+    {
+      "result": "Full gate passed before consuming SDK0.4.1; superseded by the final gate above.",
+      "log_sha256": "sha256:0e1a1ac94696f91e9bd4b663dd5453a84e3a8829e0948129110422e436bb057e"
+    },
+    {
+      "result": "SDK fixture incorrectly named an unconfigured fake provider; limited unsupported-adapter assertion to configured adapters.",
+      "log_sha256": "sha256:0fda33ce9fb3721de20ac320c7473178d07bfebd6a4ef7d21294ec5d9dc38b9d"
+    }
+  ],
+  "remaining_activation_gates": [
+    "Bounded recovery scanning and reconciliation of unknown operations.",
+    "Durable park/resume coordination and provider-cost semantics.",
+    "Full shared-holder arbitration across lifecycle bookkeeping and cleanup.",
+    "Cleanup after account ownership is nilified.",
+    "Physical-name registry coverage for ordinary legacy creation.",
+    "Live provider acceptance and safe identity authorization for name-based deletion."
+  ],
+  "public_execution_controls_enabled": false,
+  "live_provider_operations": 0,
+  "dollar_cost_proof": false
+}

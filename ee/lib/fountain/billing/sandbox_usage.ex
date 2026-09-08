@@ -9,11 +9,15 @@ defmodule Fountain.Billing.SandboxUsage do
 
   ## Where the numbers come from
 
-  The `sandboxes` table is the authority, not `usage_events`. A sandbox row
+  Legacy intervals come from `sandboxes`, not `usage_events`. A sandbox row
   carries the four facts an interval needs — `provider`, `user_id`,
   `inserted_at` and `terminated_at` — it is written by the one choke point
   every status change goes through (`Conversations.update_sandbox/2`), and it
-  is never pruned. `usage_events` supplies exactly one thing on top: the
+  normally remains after retirement. Managed provider operations also retain
+  the original start and owner when parent rows disappear. Their interval stays
+  open until the provider reservation is released. An uncertain operation is
+  potential provider time, not proof of actual usage or dollar cost.
+  `usage_events` supplies exactly one thing on top: the
   `sandbox_suspended` / `sandbox_resumed` pairs that say when a sandbox was
   parked rather than running.
 
@@ -108,6 +112,7 @@ defmodule Fountain.Billing.SandboxUsage do
   alias Fountain.Billing.UsageEvent
   alias Fountain.Conversations.Conversation
   alias Fountain.Conversations.Sandbox
+  alias Fountain.Conversations.SandboxOperation
   alias Fountain.Conversations.Turn
   alias Fountain.Repo
 
@@ -164,7 +169,13 @@ defmodule Fountain.Billing.SandboxUsage do
       |> Enum.reject(fn {_sandbox, seconds} -> seconds <= 0 end)
 
     sandboxes_in_period = Enum.map(overlapping, &elem(&1, 0))
-    parked = parked_seconds(sandboxes_in_period, period_start, ceiling)
+    # A legacy logical suspend does not establish that a managed provider
+    # obligation stopped. Durable park/resume accounting is not enabled yet.
+    parked =
+      sandboxes_in_period
+      |> Enum.reject(& &1.managed)
+      |> parked_seconds(period_start, ceiling)
+
     busy = busy_seconds(sandboxes_in_period, period_start, ceiling)
 
     overlapping
@@ -338,6 +349,9 @@ defmodule Fountain.Billing.SandboxUsage do
   defp overlapping_sandboxes(period_start, period_end, opts) do
     query =
       from s in Sandbox,
+        left_join: c in SandboxOperation,
+        on: c.sandbox_id == s.id and c.action == "create",
+        where: is_nil(c.id),
         where: s.inserted_at < ^period_end,
         where: is_nil(s.terminated_at) or s.terminated_at >= ^period_start,
         select: %{
@@ -347,7 +361,8 @@ defmodule Fountain.Billing.SandboxUsage do
           status: s.status,
           inserted_at: s.inserted_at,
           terminated_at: s.terminated_at,
-          updated_at: s.updated_at
+          updated_at: s.updated_at,
+          managed: false
         }
 
     query =
@@ -356,7 +371,40 @@ defmodule Fountain.Billing.SandboxUsage do
         user_id -> from s in query, where: s.user_id == ^user_id
       end
 
-    Repo.all(query)
+    Repo.all(query) ++ managed_intervals(period_start, period_end, opts)
+  end
+
+  defp managed_intervals(period_start, period_end, opts) do
+    query =
+      from c in SandboxOperation,
+        left_join: d in SandboxOperation,
+        on: d.creation_id == c.id and d.action == "destroy" and d.state == "confirmed",
+        where: c.action == "create" and c.sandbox_started_at < ^period_end,
+        select: %{
+          id: c.sandbox_id,
+          user_id: c.user_id,
+          provider: c.provider,
+          inserted_at: c.sandbox_started_at,
+          updated_at: c.updated_at,
+          holds_slot: c.holds_slot,
+          destroyed_at: d.confirmed_at
+        }
+
+    query =
+      case Keyword.get(opts, :user_id) do
+        nil -> query
+        user_id -> from c in query, where: c.user_id == ^user_id
+      end
+
+    query
+    |> Repo.all()
+    |> Enum.map(fn row ->
+      ending = if row.holds_slot, do: nil, else: row.destroyed_at || row.updated_at
+      Map.merge(row, %{terminated_at: ending, status: "managed", managed: true})
+    end)
+    |> Enum.filter(fn row ->
+      is_nil(row.terminated_at) or DateTime.compare(row.terminated_at, period_start) != :lt
+    end)
   end
 
   # When the sandbox stopped costing money. `terminated_at` where it is set;

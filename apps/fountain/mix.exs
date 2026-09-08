@@ -62,7 +62,7 @@ defmodule Fountain.MixProject do
       {:managoat_runner, "~> 0.2.3"},
       {:managoat_runtimes, "~> 0.4.3"},
       {:managoat_substitution, "~> 0.1.0"},
-      {:managoat_sandbox, "~> 0.4.0"},
+      {:managoat_sandbox, "~> 0.4.1"},
       {:sentry, "~> 13.3"},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.5"},

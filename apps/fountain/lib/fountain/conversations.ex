@@ -236,14 +236,20 @@ defmodule Fountain.Conversations do
           |> stamp_terminated_at()
 
         case Repo.update(changeset) do
-          {:ok, updated} -> {current.status, updated}
+          {:ok, updated} -> {current, updated}
           {:error, changeset} -> Repo.rollback(changeset)
         end
       end)
 
     case result do
-      {:ok, {was, updated}} ->
-        record_sandbox_usage(was, updated)
+      {:ok, {previous, updated}} ->
+        if previous.status in ~w(terminated failed) and is_nil(previous.terminated_at) and
+             not is_nil(updated.terminated_at) do
+          record_terminal_sandbox_usage(previous.status, updated)
+        else
+          record_sandbox_usage(previous.status, updated)
+        end
+
         {:ok, updated}
 
       {:error, _} = error ->
@@ -272,17 +278,24 @@ defmodule Fountain.Conversations do
   #
   # Only fills a gap — a caller that passes its own `terminated_at` keeps it.
   defp stamp_terminated_at(changeset) do
+    # Ownership: update_sandbox re-read the caller-owned row under lock.
     status = Ecto.Changeset.get_field(changeset, :status)
 
-    if status in @billable_terminal and
-         is_nil(Ecto.Changeset.get_field(changeset, :terminated_at)) do
-      Ecto.Changeset.put_change(
-        changeset,
-        :terminated_at,
-        DateTime.utc_now() |> DateTime.truncate(:second)
-      )
-    else
-      changeset
+    cond do
+      status in @billable_terminal and
+          Fountain.Conversations.SandboxOperations._unsafe_holds_slot?(changeset.data.id) ->
+        Ecto.Changeset.put_change(changeset, :terminated_at, nil)
+
+      status in @billable_terminal and
+          is_nil(Ecto.Changeset.get_field(changeset, :terminated_at)) ->
+        Ecto.Changeset.put_change(
+          changeset,
+          :terminated_at,
+          DateTime.utc_now() |> DateTime.truncate(:second)
+        )
+
+      true ->
+        changeset
     end
   end
 
@@ -333,6 +346,12 @@ defmodule Fountain.Conversations do
 
   defp record_sandbox_usage(was, %Sandbox{status: status} = sandbox)
        when status in @billable_terminal and was not in @billable_terminal do
+    record_terminal_sandbox_usage(was, sandbox)
+  end
+
+  defp record_sandbox_usage(_was, _sandbox), do: :ok
+
+  defp record_terminal_sandbox_usage(was, %Sandbox{status: status} = sandbox) do
     # A sandbox that dies before reaching "ready" never emitted
     # sandbox_provisioned, but it is about to emit sandbox_terminated with a
     # duration — so the conversation count and the sandbox minutes on the
@@ -357,20 +376,20 @@ defmodule Fountain.Conversations do
     # `failed` counts too: a sprite that died mid-provision still ran, and was
     # still billed by Sprites. Recording only clean terminations would
     # understate cost precisely when something is going wrong.
-    Fountain.Billing.record_usage(
-      sandbox.user_id,
-      "sandbox_terminated",
-      sandbox.id,
-      "sandbox",
-      %{
-        "duration_ms" => sandbox_duration_ms(sandbox),
-        "final_status" => status,
-        "provider" => sandbox.provider
-      }
-    )
+    if sandbox.terminated_at do
+      Fountain.Billing.record_usage(
+        sandbox.user_id,
+        "sandbox_terminated",
+        sandbox.id,
+        "sandbox",
+        %{
+          "duration_ms" => sandbox_duration_ms(sandbox),
+          "final_status" => status,
+          "provider" => sandbox.provider
+        }
+      )
+    end
   end
-
-  defp record_sandbox_usage(_was, _sandbox), do: :ok
 
   defp sandbox_duration_ms(%Sandbox{inserted_at: nil}), do: 0
 
@@ -2478,7 +2497,8 @@ defmodule Fountain.Conversations do
   defp _unsafe_retire_home(%Sandbox{} = sandbox) do
     handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
-    case Managoat.Sandbox.destroy(handle) do
+    # Ownership: home reset/deletion supplied the scoped agent home.
+    case Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle) do
       :ok ->
         :ok
 
