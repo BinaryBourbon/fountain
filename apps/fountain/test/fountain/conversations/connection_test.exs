@@ -19,7 +19,8 @@ defmodule Fountain.Conversations.ConnectionTest do
 
   setup do
     user = insert_verified_user()
-    conv = insert_conversation(user_id: user.id, status: "idle")
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+    conv = insert_conversation(user_id: user.id, status: "idle", sandbox: sandbox)
     {:ok, user: user, conv: conv}
   end
 

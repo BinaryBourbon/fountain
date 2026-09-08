@@ -13,7 +13,8 @@ defmodule Fountain.Conversations.TurnMachineTest do
   setup do
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "claude")
-    conv = insert_conversation(user_id: user.id, agent: agent)
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+    conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox)
     row = insert_turn(conv, status: "running", started_at: DateTime.utc_now())
 
     machine = %TurnMachine{
@@ -649,9 +650,9 @@ defmodule Fountain.Conversations.TurnMachineTest do
   # one-turn-at-a-time rule bites for the second.
   defp two_gemini_conversations(user) do
     agent = insert_agent(user_id: user.id, runtime: "gemini")
-    busy = insert_conversation(user_id: user.id, agent: agent)
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+    busy = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox)
     insert_turn(busy, status: "running", started_at: DateTime.utc_now())
-    sandbox = Conversations._unsafe_get_sandbox!(busy.sandbox_id)
     other = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox)
     {busy, other}
   end

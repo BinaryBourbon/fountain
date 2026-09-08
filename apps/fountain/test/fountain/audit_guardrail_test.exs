@@ -58,6 +58,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
     {"conversation caller tools", &__MODULE__.do_caller_tools/1, "conversation.caller_tools_set"},
     {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
+    {"sandbox identity", &__MODULE__.do_sandbox_identity/1, "sandbox.provider_identity_bound"},
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
     {"suspend", &__MODULE__.do_suspend/1, "account.suspended"},
@@ -396,6 +397,12 @@ defmodule Fountain.AuditGuardrailTest do
       Conversations.set_caller_tools(conv, [
         %{"name" => "lookup", "description" => "", "parameters" => %{}}
       ])
+  end
+
+  def do_sandbox_identity(user) do
+    sandbox = insert_sandbox(user_id: user.id, status: "starting")
+    # Ownership: this fixture belongs to the supplied user.
+    {:ok, _} = Conversations.SandboxIdentity._unsafe_bind(sandbox, Ecto.UUID.generate())
   end
 
   def do_sandbox_reset(user) do

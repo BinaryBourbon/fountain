@@ -1,0 +1,97 @@
+{
+  "recorded_at": "2026-09-08T06:08:01.029533+00:00",
+  "base": "57a2b06a",
+  "scope": "Local sandbox admission and identity recording; provider lifecycle integration is incomplete",
+  "full_precommit": {
+    "tests": 4794,
+    "doctests": 6,
+    "failures": 0,
+    "core_tests": 4617,
+    "extension_tests": [
+      144,
+      33
+    ],
+    "core_skipped": 2,
+    "core_excluded": 7
+  },
+  "focused": {
+    "tests": 159,
+    "failures": 0,
+    "new_regressions": 19
+  },
+  "races": {
+    "DEADLINE_RACE_RESULT": {
+      "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+      "outcomes": {
+        "completion_won": 11,
+        "expiry_won": 9
+      },
+      "separate_database_connections": true,
+      "provider_operations": 0,
+      "cases": 20,
+      "lock_wait_cannot_extend_deadline": true,
+      "delayed_lock_tables": [
+        "conversations",
+        "turns"
+      ],
+      "delayed_operations": [
+        "spawn",
+        "stdin_write"
+      ],
+      "completed_connections_require_cleanup": true,
+      "deadline_event_reuse_cases": 9
+    },
+    "SANDBOX_ADMISSION_RACE_RESULT": {
+      "scope": "Local reset/admission and identity arbitration; deletion acknowledgments are synthetic",
+      "admission_cases": 40,
+      "outcomes": {
+        "autonomous:reset_first": 20,
+        "user:admission_first": 8,
+        "user:reset_first": 12
+      },
+      "conflicting_identity_cases": 20,
+      "forced_reset_and_admission_orderings": 4,
+      "separate_database_connections": true,
+      "provider_operations": 0
+    }
+  },
+  "prior_failures": [
+    "Before the admission fix, six of seven new cases failed because user admission accepted non-ready or differently owned machines.",
+    "The initial full suite failed four existing cases that started work on pending test fixtures. Those fixtures now explicitly create ready machines; assertions are unchanged.",
+    "The initial race fixture reused one persistent home identity. Each independent scenario now creates its own local user."
+  ],
+  "validation_note": "After final precommit started, only the reset docstring, ADR text, and the standalone forced-order proof changed. The final proof was executed separately.",
+  "log_sha256": {
+    "precommit": "sha256:1485be842584d691497127993a84ca5233a0b2d598e486dbc1b74ca25bddb990",
+    "focused": "sha256:49e8fb8726be8869f2c200a17f75bc30d67a19a62c5f41c07495dfd9e55a8b28",
+    "races": "sha256:f466f3bda9c600b3281b38c1232d0751122ff7468dace0305cfb182d3feb31dd",
+    "admission_before_fix": "sha256:1ea1cf93376e80f61c20f6104790237c48fbdda106af2437d7286318f5fa7b32",
+    "initial_precommit": "sha256:e88bb1edb26d8d99bd02cb819c8218502f1b58a787d7341ef461079adb67dac3",
+    "initial_race_fixture": "sha256:82004dad77965ba006129bcd5165522a95565d229ace946f3f1df70ed7a630f2",
+    "final_compile": "sha256:2a1f5bc0afbfe4da9fbf5e296af1dc2dfe3c1db5286a206c3e2181b44834a992",
+    "final_dependency_audit": "sha256:96719711bf85bbaf23fd4c990d6a56d3a48804dac303746a569c0d1c2ee2902d"
+  },
+  "source_sha256": {
+    "apps/fountain/lib/fountain/conversations.ex": "sha256:2aa77c221fc0653e5d2edba246224acd611126a6cbbbf6cb4a2fc91b78604e13",
+    "apps/fountain/lib/fountain/conversations/execution_guard.ex": "sha256:599fe87045e163404239241009e9bdd7995fdf347cba964a747fc46e17c82339",
+    "apps/fountain/lib/fountain/conversations/sandbox.ex": "sha256:0c02d7910841ae88623a32a3981c07ca43c4ba48f81a4320ac2e5a8bffd5d846",
+    "apps/fountain/lib/fountain/conversations/sandbox_identity.ex": "sha256:26d43cea67a299c054391bcb636258f20edf6c2b9c9978c3982028620a883afb",
+    "apps/fountain/priv/repo/migrations/20260908053000_add_sandbox_provider_identity.exs": "sha256:9bd44497d55b795c659bcbe701cc0f51099a745d0ee1b416e2043f0ef395fe9b",
+    "apps/fountain/test/fountain/conversations/sandbox_admission_fence_test.exs": "sha256:b47df05fb809251b1d7008dba52ff6fe42fd4990fa08e53ea6c221d1ae002e00",
+    "apps/fountain/test/fountain/conversations/sandbox_identity_test.exs": "sha256:b85ae77f6ff3fea0a3e0da724cb1371b99e78564d01b61efcf61e4a210bda230",
+    "apps/fountain/test/fountain/audit_guardrail_test.exs": "sha256:64a13d42f9baaa5a37bc58948c4c9efd4e3ee2b8f3e16c1dbab51bcc1e72b49f",
+    "apps/fountain/test/fountain/conversations/connection_test.exs": "sha256:4c9a21356bca0366f2d52c1bb71f7f3a51107b5573018fef15ef435152dbef87",
+    "apps/fountain/test/fountain/conversations/turn_machine_test.exs": "sha256:c8da9a3a231d80e27b427ef6467530c3a43e90e47ec6cc6ec0f305db42c46609",
+    "scripts/verify-sandbox-admission-races.exs": "sha256:697989cf9c4c80060b6879a718a4fd1748de6b541fc74b943d10c8c113870836"
+  },
+  "limits": [
+    "No provider operations or production deployment occurred. Race deletion acknowledgments are synthetic.",
+    "Provider identity recording is not wired into provisioning or cleanup.",
+    "GET then name-based DELETE is not an atomic incarnation check.",
+    "Durable create/park/destroy intent, uncertain outcomes, and lifecycle coordination remain required before activating controls."
+  ],
+  "final_dependency_audit": {
+    "exit_code": 0,
+    "acknowledgment": "Uses reviewed CI correction from PR 1753"
+  }
+}

@@ -37,6 +37,9 @@ defmodule Fountain.Conversations.Sandbox do
     field :provider, :string, default: "sprites"
     # Adapter-opaque state (e.g. a server-assigned id). Never tenant-visible.
     field :provider_meta, :map, default: %{}
+    # Bound once from provider control metadata by SandboxIdentity. Deliberately
+    # absent from the general changeset's cast list; callers cannot choose it.
+    field :provider_instance_id, :string
     field :mode, :string, default: "ephemeral"
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime

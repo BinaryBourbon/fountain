@@ -32,6 +32,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
       conv = lock_parent(conv_id) || Repo.rollback(:not_found)
       if conv.sandbox_id != sandbox_id, do: Repo.rollback(:ownership_changed)
       if conv.status in ["terminated", "failed"], do: Repo.rollback(:not_running)
+      sandbox = require_ready_sandbox!(conv)
       if open_execution?(conv.id), do: Repo.rollback(:execution_fenced)
 
       user = Repo.get!(Fountain.Accounts.User, conv.user_id)
@@ -71,7 +72,6 @@ defmodule Fountain.Conversations.ExecutionGuard do
         end
 
       if map_size(limits) > 0 do
-        sandbox = Repo.get(Sandbox, sandbox_id) || Repo.rollback(:sandbox_not_found)
         if sandbox.provider != "sprites", do: Repo.rollback(:provider_not_supported)
 
         case Managoat.Runtimes.ACP.execution_limits(
@@ -98,8 +98,12 @@ defmodule Fountain.Conversations.ExecutionGuard do
   @doc "An idle legacy connection cannot start background work after bounded policy is applied."
   def _unsafe_autonomous_turn(conversation_id, writer) do
     transaction(fn ->
+      observed = Repo.get(Conversation, conversation_id) || Repo.rollback(:not_found)
+      lock_sandbox(observed.sandbox_id)
       conv = lock_parent(conversation_id) || Repo.rollback(:not_found)
+      if conv.sandbox_id != observed.sandbox_id, do: Repo.rollback(:ownership_changed)
       if conv.status in ["terminated", "failed"], do: Repo.rollback(:not_running)
+      require_ready_sandbox!(conv)
       user = Repo.get!(Fountain.Accounts.User, conv.user_id)
 
       case ExecutionLimits.for_new_turn(
@@ -954,6 +958,18 @@ defmodule Fountain.Conversations.ExecutionGuard do
 
   defp lock_parent(id),
     do: Repo.one(from c in Conversation, where: c.id == ^id, lock: "FOR UPDATE")
+
+  # All turn sources participate in reset's machine lock, including unlimited
+  # background work. The row check happens after that lock, before any writer.
+  defp require_ready_sandbox!(conv) do
+    sandbox =
+      Repo.one(from s in Sandbox, where: s.id == ^conv.sandbox_id, lock: "FOR UPDATE") ||
+        Repo.rollback(:sandbox_not_found)
+
+    if sandbox.user_id != conv.user_id, do: Repo.rollback(:ownership_changed)
+    if sandbox.status != "ready", do: Repo.rollback(:sandbox_not_ready)
+    sandbox
+  end
 
   defp lock_execution_by_turn(id),
     do: Repo.one(from e in TurnExecution, where: e.turn_id == ^id, lock: "FOR UPDATE")

@@ -389,6 +389,31 @@ after migrating a dedicated local database whose name starts with
 `fountain_deadline_races_`. The script refuses other environments and leaves only
 local fixtures; it cannot start provider workers.
 
+## Sandbox admission and identity preparation
+
+All user and autonomous turn admissions now take the machine lock before the
+parent lock and require a ready sandbox owned by that parent. This includes
+unlimited turns: a reset that retires the machine prevents either source from
+starting work, and an admitted turn makes reset refuse with `sandbox_mid_turn`.
+
+`SandboxIdentity` can record a provider ID from control metadata. The first
+binding is immutable through this interface, survives row retirement, and emits
+one audit event. General sandbox attributes cannot set it. Provider lookup runs
+before the binding transaction, which rechecks the observed owner, provider and
+name. Conflicting identities and stale or retired rows are refused.
+
+**Integration is incomplete.** Provisioning and cleanup do not yet call this
+identity interface. Recording a GET response does not authorize a later
+name-based DELETE or prove an uncertain create belongs to this row. Durable
+machine-operation intent, unknown-outcome reconciliation, and coordinated
+provisioning, parking and destruction remain required before activation.
+
+`scripts/verify-sandbox-admission-races.exs` exercises real reset and admission
+contexts through separate local PostgreSQL connections, with outbound deletion
+stubbed. It covers both turn sources, forces both lock orderings and races two
+identity bindings. This proves database arbitration only; no provider operation
+or production deployment is claimed.
+
 ## Alternatives considered
 
 - Actor mailbox timers cannot enforce a deadline during a blocked callback.

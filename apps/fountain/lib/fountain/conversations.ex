@@ -2469,7 +2469,7 @@ defmodule Fountain.Conversations do
   ends with it (`{:sandbox_not_resettable, "ephemeral"}`), a terminated or
   failed one is already gone (`{:sandbox_not_resettable, status}`). Refused
   with `:sandbox_mid_turn` while a turn runs or its bounded remote execution
-  remains unresolved. Bounded registration and reset share a machine lock;
+  remains unresolved. User and autonomous admission share reset's machine lock;
   reset retires the row before releasing that lock and contacting the provider.
 
   `opts[:reason]` says *why*, and reaches every transcript on the machine and
