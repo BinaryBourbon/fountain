@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
+  dependency set for typed execution limits and confirmed session termination.
+  Fountain deadline enforcement remains disabled pending transport and lifecycle
+  integration.
+
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
   toolchain setup run within an explicit bound. It persists through API/spec
   round trips and invalidates checkpoints when changed. The overall provisioning

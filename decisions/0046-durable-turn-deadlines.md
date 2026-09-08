@@ -8,8 +8,8 @@ adr: "0046"
 adr_status: "Proposed"
 date: 2026-09-07
 generated: { by: process:codex, at: 2026-09-07T23:43:51Z }
-verified: { by: process:codex, at: 2026-09-07T23:43:51Z }
-stale_after: 2026-09-14
+verified: { by: process:codex, at: 2026-09-08T00:21:51Z }
+stale_after: 2026-09-15
 ---
 
 # 0046 — Durable turn deadlines and remote execution identity
@@ -18,7 +18,9 @@ stale_after: 2026-09-14
 [Fountain #1744](https://github.com/BinaryBourbon/fountain/pull/1744), with passing
 CI at `f7404395b49019e4d122b91ba7991330b49addd3`.
 
-The stacked typed-policy layer is local: validated host/account ceilings,
+The typed-policy layer is in draft
+[Fountain #1745](https://github.com/BinaryBourbon/fountain/pull/1745), with passing
+CI at `cadeab6f88c13285ba2cc08f9fa2ae572b00e8b1`: validated host/account ceilings,
 conversation allowance narrowing, immutable journal snapshots, HTTP admission
 checks, API stop reasons, and SDK/CLI request fields are implemented. All nonempty
 effective limits are currently refused because the runtime transport and deadline
@@ -27,7 +29,12 @@ Validation passes 4,663 tests and 6 doctests in full precommit, all four SDK sui
 and contract checks, CLI tests/vet, and 20 separate-connection database races.
 The typed-layer evidence and prior failures are recorded in
 `decisions/evidence/typed-execution-limits.json`.
-No deployment or production timeout activation has occurred.
+The next local branch resolves ACP 0.4.0, Runtimes 0.4.1, Runner 0.2.2, and
+Sandbox 0.3.0 from Hex; full precommit also passes on this set. The compatibility
+releases, source bindings, and fresh-process check are recorded in
+`decisions/evidence/execution-limit-dependencies.json`. The independent deadline
+worker is not implemented yet. No deployment or production timeout activation
+has occurred.
 
 ## Context
 
@@ -84,12 +91,16 @@ review before enabling termination in production.
 
 - Typed validation and host/account narrowing are implemented locally. The
   admission capability set stays empty until the transport actually enforces
-  the controls. SDK estimates remain separate from billed cost.
+  the controls. Admission must check the selected sandbox provider as well as
+  the runtime: Runner accepts Sandbox 0.3 but still refuses confirmed termination.
+  SDK estimates remain separate from billed cost.
 - Record identity outside the conversation mailbox. Bind it to the command ref,
   original connection and turn; do not infer it from sandbox output or argv.
 - Route every bounded turn start/end, autonomous turn, interruption and restart
   through the journal. Fence late database writes, stage events and warm reuse.
-- Run deadline handling independently of the actor. Recover persisted intents
+- Run deadline handling independently of the actor. Keep expiration scans
+  separate from the bounded termination pool, so blocked provider cleanup cannot
+  consume all capacity for expiring other turns. Recover persisted intents
   without repeating unknown spawns or termination requests. Preserve partial
   usage and the original absolute deadline.
 - Publish API/SDK/CLI documentation and prove timeout, restart, cancellation,
