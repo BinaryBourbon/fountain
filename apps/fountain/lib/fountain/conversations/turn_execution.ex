@@ -22,6 +22,7 @@ defmodule Fountain.Conversations.TurnExecution do
     field :connection_id, :binary_id
     field :provider_session_id, :string
     field :deadline_at, :utc_datetime_usec
+    field :deadline_event_id, :integer
     # Immutable alongside the absolute deadline; recovery never re-resolves it.
     field :execution_limits, :map, default: %{}
     field :state, :string, default: "active"
@@ -45,6 +46,7 @@ defmodule Fountain.Conversations.TurnExecution do
       :connection_id,
       :provider_session_id,
       :deadline_at,
+      :deadline_event_id,
       :execution_limits,
       :state,
       :spawn_submitted_at,
@@ -91,6 +93,7 @@ defmodule Fountain.Conversations.TurnExecution do
       if changeset.data.spawn_submitted_at, do: [:spawn_submitted_at | fields], else: fields
 
     fields = if changeset.data.attempt_id, do: [:attempt_id | fields], else: fields
+    fields = if changeset.data.deadline_event_id, do: [:deadline_event_id | fields], else: fields
 
     Enum.reduce(fields, changeset, fn field, acc ->
       if Map.has_key?(acc.changes, field), do: add_error(acc, field, "is immutable"), else: acc

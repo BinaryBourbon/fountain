@@ -137,6 +137,10 @@ upgrade, is in
   immediate error. Starts carrying images or naming a `sandbox_id` never
   queue.
 
+- Commit deadline failure events and delivery jobs with the failed turn. Late
+  completion and interruption reuse the original event, and notification retries
+  retain its id. Public bounded execution remains disabled.
+
 - Add a supervised execution-deadline coordinator with separate expiration and
   termination task pools. Local task timeouts and restarts retain uncertain
   remote operations. It starts only where `FOUNTAIN_EXECUTION_LIMITS` configures
