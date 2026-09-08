@@ -51,6 +51,10 @@ defmodule Fountain.Audit.AdminEvent do
     admin.credits.granted
     admin.platform_inference_key.set
     admin.platform_inference_key.cleared
+    admin.platform_chatgpt.connected
+    admin.platform_chatgpt.disconnected
+    admin.platform_chatgpt.revoked
+    admin.platform_chatgpt.expired
   )
 
   def event_types, do: @event_types

@@ -46,10 +46,19 @@ defmodule Fountain.Conversations.SpriteEnv do
   `:no_credential` keeps the behaviour that predates platform keys: the
   conversation provisions anyway, and the provider's own auth failure lands
   on the transcript rather than a refusal invented here.
+
+  `runtime` is the conversation's own (`conv.runtime`), which is what the
+  sandbox is dispatched on and can differ from the agent's after an edit;
+  nil falls back to the agent's.
   """
-  @spec select_inference(map() | nil, map()) :: {:own | :platform, map()}
-  def select_inference(agent, own_creds) do
-    case InferenceCredentials.select(agent && agent.model, own_creds) do
+  @spec select_inference(map() | nil, map(), String.t() | nil) :: {:own | :platform, map()}
+  def select_inference(agent, own_creds, runtime \\ nil) do
+    brokered? = (agent && Fountain.Broker.enabled_for?(agent.user_id)) || false
+    runtime = runtime || (agent && agent.runtime)
+
+    case InferenceCredentials.select(agent && agent.model, own_creds, runtime,
+           brokered: brokered?
+         ) do
       {:ok, source, creds} -> {source, creds}
       {:error, :no_credential} -> {:own, own_creds}
     end
@@ -95,8 +104,11 @@ defmodule Fountain.Conversations.SpriteEnv do
     conversation_id = Keyword.fetch!(opts, :conversation_id)
     {ca_defaults, proxy} = split_brokered(Keyword.get(opts, :brokered, []))
 
+    env_credentials = Keyword.fetch!(opts, :env_credentials)
+
     sprite_env =
-      (runtime_module.default_env(agent, Keyword.fetch!(opts, :env_credentials)) || []) ++
+      (runtime_module.default_env(agent, env_credentials) || []) ++
+        Fountain.Conversations.CodexChatGPT.env(runtime_module, env_credentials) ++
         CallbackKey.env(Keyword.fetch!(opts, :callback_token)) ++
         conversation_env(conversation_id) ++
         sandbox_id_env(Keyword.fetch!(opts, :sandbox_id)) ++

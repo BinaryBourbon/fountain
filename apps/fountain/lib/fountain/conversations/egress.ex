@@ -110,6 +110,30 @@ defmodule Fountain.Conversations.Egress do
 
   defp remote_connection_hosts(_agent, _connections), do: %{}
 
+  @doc """
+  Re-read the deployment's ChatGPT access token for a conversation that runs
+  on it (ADR 0047 decision 5). Only when the credentials carry the grant and
+  the broker still holds that same value — a tenant's own secret of the
+  name, or a grant already dropped, is left alone. A rotated token replaces
+  both copies and the caller rewrites the live session's rules; a refresh
+  that fails, or a grant gone revoked, leaves the old token in place to
+  fail at the proxy with the provider's reason rather than silently here.
+  """
+  @spec refresh_platform_chatgpt(map(), map()) :: {map(), map(), boolean()}
+  def refresh_platform_chatgpt(inference_credentials, brokered) do
+    key = Fountain.Conversations.CodexChatGPT.env_key()
+    credential = Fountain.Conversations.CodexChatGPT.credential()
+    old = Map.get(inference_credentials, credential)
+
+    with true <- is_binary(old) and old != "",
+         true <- Map.get(brokered, key) == old,
+         {:ok, fresh} when fresh != old <- Fountain.PlatformChatGPT.access_token() do
+      {Map.put(inference_credentials, credential, fresh), Map.put(brokered, key, fresh), true}
+    else
+      _ -> {inference_credentials, brokered, false}
+    end
+  end
+
   # Re-read the brokered connection tokens; a rotated one is swapped into
   # `brokered` and the caller re-prepares the vault. A refresh that fails
   # leaves the old token in place: the turn runs on it and, if it has
@@ -372,8 +396,18 @@ defmodule Fountain.Conversations.Egress do
   # decrypts of two rows per turn; a turn is a sandbox spawn or an ACP
   # prompt, so the read is not what a turn waits on.
   defp reread_secrets(state) do
+    # The deployment's ChatGPT grant first (ADR 0047 decision 5): it rotates
+    # on the server's own schedule, and the conversation's copy of the
+    # credential is what the underlay below is built from.
+    {inference_credentials, brokered, grant_rotated?} =
+      refresh_platform_chatgpt(state.inference_credentials, state.brokered)
+
+    state = %{state | inference_credentials: inference_credentials}
+
     {brokered, rotated?} =
-      refresh_connection_secrets(state.connection_keys, state.user_id, state.brokered)
+      refresh_connection_secrets(state.connection_keys, state.user_id, brokered)
+
+    rotated? = rotated? or grant_rotated?
 
     # What a deleted tenant secret hands its name back to: the inference
     # credential of that name, or the connection token it had overridden

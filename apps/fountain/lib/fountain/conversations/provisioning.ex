@@ -870,10 +870,18 @@ defmodule Fountain.Conversations.Provisioning do
     Code.ensure_loaded(runtime_module)
 
     with :ok <- prepare_acp_adapter(handle, runtime, sprite_env) do
-      if function_exported?(runtime_module, :prepare_sandbox, 3) do
-        runtime_module.prepare_sandbox(handle, agent, sprite_env)
-      else
-        :ok
+      # A codex spawn on the deployment's ChatGPT grant (ADR 0047) gets its
+      # `auth.json` from Fountain, not from the library's `codex login`.
+      case Fountain.Conversations.CodexChatGPT.prepare_sandbox(handle, runtime, sprite_env) do
+        :skip ->
+          if function_exported?(runtime_module, :prepare_sandbox, 3) do
+            runtime_module.prepare_sandbox(handle, agent, sprite_env)
+          else
+            :ok
+          end
+
+        result ->
+          result
       end
     end
   end

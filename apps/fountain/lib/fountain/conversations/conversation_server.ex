@@ -21,20 +21,9 @@ defmodule Fountain.Conversations.ConversationServer do
     Vaults
   }
 
-  alias Fountain.Conversations.{
-    CallbackKey,
-    Connection,
-    Conversation,
-    Egress,
-    Lifecycle,
-    McpServers,
-    Output,
-    Pending,
-    Provisioning,
-    Reattachment,
-    SpriteEnv,
-    TurnMachine
-  }
+  alias Fountain.Conversations.{CallbackKey, CodexChatGPT, Connection, Conversation, Egress}
+  alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning}
+  alias Fountain.Conversations.{Reattachment, SpriteEnv, TurnMachine}
 
   # Absolute ceiling on provisioning (#329). Generous against the summed
   # default step timeouts (packages 300s + clone 600s + setup 120s). Setup
@@ -688,7 +677,9 @@ defmodule Fountain.Conversations.ConversationServer do
 
     case SpriteEnv.load_tenant_state(conv.user_id) do
       {:ok, dek, own_creds} ->
-        {inference_source, inference_creds} = SpriteEnv.select_inference(agent, own_creds)
+        {inference_source, inference_creds} =
+          SpriteEnv.select_inference(agent, own_creds, conv.runtime)
+
         bindings = Egress.bindings(conv.user_id)
 
         {merged, bindings, connection_keys} =
@@ -1172,11 +1163,23 @@ defmodule Fountain.Conversations.ConversationServer do
 
       # Same for the agent's system prompt: an edit reaches the existing
       # computer on its next wake (#848).
-      Provisioning.write_instructions(
-        handle,
-        conv.runtime || (agent && agent.runtime) || "claude",
-        agent
-      )
+      runtime = conv.runtime || (agent && agent.runtime) || "claude"
+      Provisioning.write_instructions(handle, runtime, agent)
+
+      # The credential path can change between provision and wake (ADR 0047:
+      # a grant connected, revoked or disconnected in between), and codex's
+      # auth.json is written at provisioning. Re-prepare so the file matches
+      # this spawn; best effort, like the rest of the wake.
+      case Provisioning.prepare_runtime_sprite(
+             handle,
+             runtime,
+             state.runtime_module,
+             agent,
+             sprite_env
+           ) do
+        :ok -> :ok
+        {:error, reason} -> Logger.warning("runtime prepare on wake: #{inspect(reason)}")
+      end
 
       # Normally the wake path already flipped suspended → ready under the
       # quota reservation; this covers the reaper parking the row mid-wake.
@@ -2449,13 +2452,10 @@ defmodule Fountain.Conversations.ConversationServer do
                         callback_token: state.callback_token,
                         resolved: state.resolved_mcp_servers
                       ),
-                    model:
-                      agent &&
-                        Managoat.Runtimes.Model.acp_model(
-                          conv.runtime || agent.runtime,
-                          agent.model
-                        ),
-                    permission_policy: TurnMachine.effective_permission_policy(conv, agent)
+                    model: TurnMachine.acp_model(conv, agent),
+                    permission_policy: TurnMachine.effective_permission_policy(conv, agent),
+                    auth:
+                      CodexChatGPT.peer_auth(state.runtime_module, state.inference_credentials)
                   )
                 else
                   {nil, nil}
