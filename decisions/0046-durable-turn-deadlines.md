@@ -241,6 +241,36 @@ lifecycle path and live provider acceptance remain activation gates. The release
 change is still required. These tests do not prove actual termination, escaped
 process cleanup, aggregate budgets or stopped billing.
 
+## Transcript and accounting fences
+
+The follow-on transcript layer serializes bounded output and turn-tagged model
+stages with retirement. It reads the clock after acquiring the parent, journal
+and turn locks. Rejected output creates neither a row nor a PubSub/sidebar
+notification. Turn stages now retain their explicit turn foreign key. A terminal
+stage must agree with the persisted turn outcome; deadline events retain their
+existing durable identity and delivery path.
+
+A retired turn refuses stale changes to its prompt, reply, model selection and
+permission state. The winning terminal update may retain its exit code. Delayed
+usage uses a separate parent-before-turn transaction: only the first committed
+report increments conversation totals, including when the caller holds a stale
+Turn struct. This preserves submitted accounting after retirement without
+asserting that a disconnected provider can always deliver its final usage.
+
+Full precommit passes **4,728 tests and 6 doctests, zero failures**. The focused
+suite passes 90 tests, including twelve new regressions. Sixty new independent
+PostgreSQL races cover duplicate usage, usage/cancellation and output/cancellation;
+four delayed-lock cases cover actual output/model writers. Twenty earlier
+deadline races also pass. All twenty output/cancellation races observed
+cancellation first; the separate active-output regression verifies accepted
+writes. The analytics fixture correction and validation hashes are retained in
+`decisions/evidence/bounded-transcript.json`. No provider I/O occurred in these
+new proofs.
+
+This layer still does not fence every conversation/session metadata mutation or
+untagged lifecycle event. Sandbox transfer, parking, replacement and incarnation
+safety remain separate activation gates. Public controls remain disabled.
+
 ## Durable deadline events
 
 The prepared event layer passes full precommit: 4,682 tests and 6 doctests,
@@ -269,9 +299,9 @@ not enqueue more webhook jobs. Malformed retained metadata cannot prevent the
 committed stage from reaching local subscribers. HTTP delivery and provider
 termination remain independent operations.
 
-This fences terminal deadline events only. In-memory actor state, other late
-stage/output writes, warm connections and all remaining lifecycle gates still
-need integration before public activation.
+The deadline-event layer alone fences terminal deadline events. The later
+lifecycle and transcript sections describe additional integration; the remaining
+activation gates still apply.
 
 ## Validation scope
 

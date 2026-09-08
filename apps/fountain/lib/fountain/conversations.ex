@@ -1365,7 +1365,20 @@ defmodule Fountain.Conversations do
     output = counter_value(Map.get(usage, "output"))
 
     Repo.transaction(fn ->
-      {:ok, updated} = turn |> Turn.changeset(%{usage: usage}) |> Repo.update()
+      # Same parent-before-turn lock order as ExecutionGuard. Delayed accounting
+      # survives retirement, but duplicate deliveries cannot debit twice.
+      Repo.one(from c in Conversation, where: c.id == ^turn.conversation_id, lock: "FOR UPDATE") ||
+        Repo.rollback(:not_found)
+
+      current =
+        Repo.one(
+          from t in Turn,
+            where: t.id == ^turn.id and t.conversation_id == ^turn.conversation_id,
+            lock: "FOR UPDATE"
+        ) || Repo.rollback(:not_found)
+
+      if is_map(current.usage), do: Repo.rollback(:already_recorded)
+      {:ok, updated} = current |> Turn.changeset(%{usage: usage}) |> Repo.update()
 
       {1, _} =
         Repo.update_all(
@@ -1455,7 +1468,9 @@ defmodule Fountain.Conversations do
 
   @doc """
   Insert a log event. Returns the inserted struct (with integer `:id`,
-  used as the SSE event id).
+  used as the SSE event id), or nil for output from a retired bounded turn.
+  Stage callers use `publish_stage/4`; the deadline journal inserts its own
+  terminal event while holding the same locks.
   """
   def log!(attrs) do
     # Microsecond precision so the LiveView can compute stage durations
@@ -1469,9 +1484,17 @@ defmodule Fountain.Conversations do
     # log path is covered whether or not its author knew to.
     attrs = redact_attrs(attrs)
 
-    %LogEvent{}
-    |> LogEvent.changeset(attrs)
-    |> Repo.insert!()
+    writer = fn -> %LogEvent{} |> LogEvent.changeset(attrs) |> Repo.insert!() end
+
+    if attrs[:kind] == "output" do
+      # ownership: callers supply the owned conversation and exact output turn.
+      {:ok, event} =
+        ExecutionGuard._unsafe_write_event(attrs[:conversation_id], attrs[:turn_id], writer)
+
+      event
+    else
+      writer.()
+    end
   end
 
   defp redact_attrs(%{conversation_id: conv_id, data: data} = attrs)
@@ -1493,9 +1516,12 @@ defmodule Fountain.Conversations do
   and fixed. `conv_id` stays in metadata and must never become a tag.
   """
   def publish_stage(conv_id, stage, status, meta \\ %{}) do
+    turn_id = Map.get(meta, :turn_id) || Map.get(meta, "turn_id")
+
     writer = fn ->
       log!(%{
         conversation_id: conv_id,
+        turn_id: turn_id,
         kind: "stage",
         stage: stage,
         state: status,
@@ -1503,20 +1529,22 @@ defmodule Fountain.Conversations do
       })
     end
 
-    turn_id = Map.get(meta, :turn_id) || Map.get(meta, "turn_id")
-
     result =
       if stage == "turn" and status in ["done", "failed", "interrupted"] and
            match?({:ok, _}, Ecto.UUID.cast(turn_id)) do
         # ownership: lifecycle caller owns conv_id; the journal query binds this
         # turn to that conversation and serializes it with deadline expiration.
-        {:ok, result} = ExecutionGuard._unsafe_terminal_stage(conv_id, turn_id, writer)
+        {:ok, result} = ExecutionGuard._unsafe_terminal_stage(conv_id, turn_id, status, writer)
         result
       else
-        {:new, writer.()}
+        {:ok, event} = ExecutionGuard._unsafe_write_event(conv_id, turn_id, writer)
+        {:new, event}
       end
 
     case result do
+      {:new, nil} ->
+        nil
+
       {:existing, event} ->
         event
 
