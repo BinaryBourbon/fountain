@@ -296,10 +296,18 @@ defmodule Fountain.Conversations.SandboxOperations do
 
   @doc "Route owned cleanup through its existing journal; never downgrade a managed claim."
   def _unsafe_destroy_or_legacy(%Sandbox{} = sandbox, handle, opts \\ []) do
-    if _unsafe_managed?(sandbox.id) do
-      _unsafe_destroy(sandbox, opts)
-    else
-      if handle, do: Managoat.Sandbox.destroy(handle), else: :ok
+    cond do
+      Fountain.Conversations.ActorStartups.unfinished?(sandbox.id) ->
+        {:error, :startup_unresolved}
+
+      _unsafe_managed?(sandbox.id) ->
+        _unsafe_destroy(sandbox, opts)
+
+      handle ->
+        Managoat.Sandbox.destroy(handle)
+
+      true ->
+        :ok
     end
   end
 

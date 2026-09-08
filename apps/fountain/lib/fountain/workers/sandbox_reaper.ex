@@ -223,7 +223,9 @@ defmodule Fountain.Workers.SandboxReaper do
         |> where([s], s.status == "ready" and s.updated_at < ^grace_cutoff)
         |> Repo.all()
         |> Repo.preload(:conversations)
-        |> Enum.reject(&server_alive?/1)
+        |> Enum.reject(
+          &(server_alive?(&1) or Fountain.Conversations.ActorStartups.unfinished?(&1.id))
+        )
         |> Enum.map(&{&1, check_bounds(&1, now)})
 
       {parked, expired} =

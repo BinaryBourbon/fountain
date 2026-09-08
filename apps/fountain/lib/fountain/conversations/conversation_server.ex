@@ -1221,69 +1221,79 @@ defmodule Fountain.Conversations.ConversationServer do
           if(new_state.current_turn, do: "reattached", else: "turn_ended")
         )
 
-      Fountain.Conversations.PromptDeliveryActor.schedule(new_state)
-      {:noreply, new_state}
+      case Fountain.Conversations.ActorStartups.complete(new_state) do
+        :ok ->
+          Fountain.Conversations.PromptDeliveryActor.schedule(new_state)
+          {:noreply, new_state}
+
+        {:error, _} ->
+          {:stop, :normal, new_state}
+      end
     else
       {:error, :not_found} ->
-        # The provider says the sandbox is gone. That is the one answer that
-        # justifies retiring the row: the disk no longer exists, so the next
-        # prompt must provision fresh.
-        Logger.warning(
-          "reattach failed for sprite #{sandbox.sprite_name}: not found — marking sandbox failed"
-        )
+        Fountain.Conversations.ActorStartups.after_return(state, fn ->
+          # The provider says the sandbox is gone. That is the one answer that
+          # justifies retiring the row: the disk no longer exists, so the next
+          # prompt must provision fresh.
+          Logger.warning(
+            "reattach failed for sprite #{sandbox.sprite_name}: not found — marking sandbox failed"
+          )
 
-        ProvisionContext.stage(context, "reattach", "failed", %{
-          reason: "not_found",
-          retryable: false,
-          node: to_string(node())
-        })
-
-        {:ok, _} =
-          Conversations.update_sandbox(sandbox, %{
-            status: "failed",
-            terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-          })
-
-        # Don't mark the conversation failed — the user can still send a
-        # prompt and auto-wake will spin a fresh sandbox.
-        {:stop, :normal, state}
-
-      {:error, reason} ->
-        # Anything else — a transport error, a timeout, a 5xx, a credential
-        # problem — says nothing about the sandbox, only about our ability to
-        # reach the provider right now. The row is left exactly as it was and
-        # the server stops; the next prompt takes the same reattach path again.
-        #
-        # This arm used to mark the row `failed` too. On 2026-08-18 a 70-second
-        # DNS outage did exactly that to nine live sandboxes at once (a Horde
-        # failover re-ran reattach for every conversation on the partitioned
-        # pod, and every probe answered nxdomain), and `SandboxReaper`'s
-        # destroy pass would have taken the sprites — one of them holding a
-        # completed turn and a live ACP session — an hour later (#799). A
-        # transient failure must not become a destroyed disk; the same rule
-        # `probe_sandbox/4` applies on the wake path.
-        Logger.warning(
-          "reattach failed for sprite #{sandbox.sprite_name}: #{inspect(reason)} — " <>
-            "transient; sandbox row left untouched"
-        )
-
-        running_turn = find_running_turn(state.conversation_id)
-
-        if sandbox.provider == "runner" and
-             reason in [
-               {:unavailable, :runner_offline},
-               {:unavailable, :runner_disconnected}
-             ] and not is_nil(running_turn) and not is_nil(running_turn.acp_prompt_id) do
-          Reattachment.wait_for_runner(%{state | current_turn: running_turn}, &fail_transport/2)
-        else
           ProvisionContext.stage(context, "reattach", "failed", %{
-            reason: inspect(reason),
-            retryable: true,
+            reason: "not_found",
+            retryable: false,
             node: to_string(node())
           })
 
+          {:ok, _} =
+            Conversations.update_sandbox(sandbox, %{
+              status: "failed",
+              terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
+
+          # Don't mark the conversation failed — the user can still send a
+          # prompt and auto-wake will spin a fresh sandbox.
           {:stop, :normal, state}
-        end
+        end)
+
+      {:error, reason} ->
+        Fountain.Conversations.ActorStartups.after_return(state, fn ->
+          # Anything else — a transport error, a timeout, a 5xx, a credential
+          # problem — says nothing about the sandbox, only about our ability to
+          # reach the provider right now. The row is left exactly as it was and
+          # the server stops; the next prompt takes the same reattach path again.
+          #
+          # This arm used to mark the row `failed` too. On 2026-08-18 a 70-second
+          # DNS outage did exactly that to nine live sandboxes at once (a Horde
+          # failover re-ran reattach for every conversation on the partitioned
+          # pod, and every probe answered nxdomain), and `SandboxReaper`'s
+          # destroy pass would have taken the sprites — one of them holding a
+          # completed turn and a live ACP session — an hour later (#799). A
+          # transient failure must not become a destroyed disk; the same rule
+          # `probe_sandbox/4` applies on the wake path.
+          Logger.warning(
+            "reattach failed for sprite #{sandbox.sprite_name}: #{inspect(reason)} — " <>
+              "transient; sandbox row left untouched"
+          )
+
+          running_turn = find_running_turn(state.conversation_id)
+
+          if sandbox.provider == "runner" and
+               reason in [
+                 {:unavailable, :runner_offline},
+                 {:unavailable, :runner_disconnected}
+               ] and not is_nil(running_turn) and not is_nil(running_turn.acp_prompt_id) do
+            Reattachment.wait_for_runner(%{state | current_turn: running_turn}, &fail_transport/2)
+          else
+            ProvisionContext.stage(context, "reattach", "failed", %{
+              reason: inspect(reason),
+              retryable: true,
+              node: to_string(node())
+            })
+
+            {:stop, :normal, state}
+          end
+        end)
     end
   end
 

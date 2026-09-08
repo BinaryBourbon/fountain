@@ -855,10 +855,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
 
   @doc "Unfinished remote work also prevents reset after its local turn has ended."
   def _unsafe_sandbox_open?(sandbox_id) do
-    Repo.exists?(
-      from e in TurnExecution,
-        where: e.sandbox_id == ^sandbox_id and e.state not in ["completed", "stopped"]
-    )
+    Fountain.Conversations.ActorStartups.unfinished?(sandbox_id) or
+      Repo.exists?(
+        from e in TurnExecution,
+          where: e.sandbox_id == ^sandbox_id and e.state not in ["completed", "stopped"]
+      )
   end
 
   def _unsafe_fenced?(conversation_id) do

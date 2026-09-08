@@ -261,6 +261,8 @@ defmodule Fountain.Conversations.SandboxHolders do
   defp assert_unfenced!(nil), do: :ok
 
   defp assert_unfenced!(sandbox_id) do
+    if Conversations.ActorStartups.unfinished?(sandbox_id), do: Repo.rollback(:startup_unresolved)
+
     if Repo.exists?(
          from o in SandboxOperation,
            where: o.sandbox_id == ^sandbox_id and o.state in ~w(submitted uncertain)

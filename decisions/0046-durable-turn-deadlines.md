@@ -993,7 +993,54 @@ See `decisions/evidence/ready-wake-launch.json` for the validation checkpoint.
 
 This covers the local handoff after a ready machine has been selected. The
 suspended-provider resume still precedes that handoff. Crashes before handoff,
-abandoned acknowledged actors, bounded reattach completion, provider operation
-links and legacy rollout need further integration. No provider operation is
+abandoned acknowledged actors, repeated reattach attempts, provider operation
+links and legacy rollout need further integration. The first reconnect deadline
+now has the durable outcome described below. No provider operation is
 replayed based on a missing process. The stack remains draft and undeployed;
 live acceptance still gates execution controls and provider recovery.
+
+
+## Reconnect startup outcomes (integration in progress)
+
+A ready machine did not imply that a new worker had finished reconnecting. A
+real actor blocked in its first provider lookup survived the provision watchdog:
+the watchdog treated the ready row as settled. Reconnect now records a separate
+startup outcome with the actor claim before credentials or provider access.
+
+The startup retains its original tenant, parent, machine and absolute deadline.
+A newly acknowledged launch supplies that deadline. A later incarnation using
+old ready-machine ancestry receives its own bounded setup interval. The original
+creation deadline is never rewritten. Fresh provisioning keeps its existing
+watchdog and unresolved-creation fences.
+
+Completion, an explicit return from the reconnect path, and expiry arbitrate
+under the original machine, parent and actor locks. Completion samples time
+after those locks; a late callback commits expiry instead of reporting success.
+Expiry revokes the conversation's callback key and native broker sessions,
+refuses its queued opening, and commits a failed reattach stage with notification
+jobs before the watchdog stops its original process. A failed decision rolls
+back all changes and the watchdog retries that decision.
+
+Timeout retains the active claim and startup history. It does not retire the
+machine, discard provider operations, or interrupt cotenant turns. Expired
+incarnations cannot publish scoped callbacks, run their return continuation or
+release ownership through normal teardown. Unfinished startup also blocks reset,
+replacement and cleanup; the abandoned-machine sweep skips that machine.
+Completed or explicitly returned startup permits ordinary actor teardown.
+Neither a stopped process nor a timeout is evidence that remote work ended.
+
+The database rejects rewritten startup identity, deadline or settled outcome.
+Rollback refuses to erase startup history. Real actor tests cover a blocked
+provider lookup; transactional tests cover credential scope, cotenant turns,
+late callbacks, cleanup fences and failed notification enqueue. Independent
+PostgreSQL connections cover completion versus expiry, teardown versus expiry,
+and a completion lock held beyond its deadline.
+See `decisions/evidence/actor-startup-outcomes.json` for the checkpoint.
+
+This bounds the first reconnect for an incarnation. Repeated reattach within a
+running actor, outcome reconciliation after node loss, provider work before the
+launch handoff, and complete legacy park/resume serialization remain open.
+Provider identity links, conditional deletion and live acceptance still gate
+rollout. The stack stays draft; execution controls and provider recovery remain
+disabled. Retained startup ownership must be reconciled before its machine can
+be reclaimed.

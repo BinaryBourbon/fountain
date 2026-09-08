@@ -70,8 +70,15 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
   end
 
   @doc "Commit a timeout only for the actor's still-owned, unfinished provisioning."
-  def _unsafe_expire(conversation_id, sandbox_id, actor_claim \\ nil),
-    do: fail_pending(conversation_id, sandbox_id, "provision deadline exceeded", actor_claim)
+  def _unsafe_expire(conversation_id, sandbox_id, actor_claim \\ nil) do
+    case Conversations.ActorStartups.expire(conversation_id, sandbox_id, actor_claim) do
+      :legacy ->
+        fail_pending(conversation_id, sandbox_id, "provision deadline exceeded", actor_claim)
+
+      result ->
+        result
+    end
+  end
 
   @doc "Record an actor-start failure only while its original machine is still pending."
   def _unsafe_fail_start(conversation_id, sandbox_id) do

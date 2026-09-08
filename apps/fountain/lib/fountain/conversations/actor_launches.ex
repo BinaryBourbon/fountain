@@ -83,6 +83,8 @@ defmodule Fountain.Conversations.ActorLaunches do
              do: Repo.rollback(:ownership_changed)
 
       # Ownership: the locked parent and machine belong to the observed tenant.
+      if Conversations.ActorStartups.fenced?(sandbox.id), do: Repo.rollback(:startup_unresolved)
+
       if Conversations.SandboxTransitions._unsafe_pending?(sandbox.id),
         do: Repo.rollback(:provider_operation_fenced)
 

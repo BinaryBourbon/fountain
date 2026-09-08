@@ -11,7 +11,7 @@ defmodule Fountain.Conversations.ActorOwnership do
   scoped callbacks then lose authority.
   """
   import Ecto.Query
-  alias Fountain.Repo
+  alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{ActorClaim, Conversation, Sandbox}
 
   def start(state, conversation, sandbox, provision_deadline_ms) do
@@ -23,15 +23,22 @@ defmodule Fountain.Conversations.ActorOwnership do
              conversation.id,
              sandbox.id,
              id,
-             Map.get(state, :launch_id)
+             Map.get(state, :launch_id),
+             provision_deadline_ms
            ) do
+      startup = Conversations.ActorStartups.fetch(id)
+
       if is_nil(Map.get(state, :actor_claim)) do
         Fountain.Conversations.ProvisionWatchdog.start(
           conversation.id,
           sandbox.id,
           provision_deadline_ms,
           actor_claim: id,
-          deadline_at: if(launch && machine.status == "pending", do: launch.deadline_at)
+          deadline_at:
+            if(startup,
+              do: startup.deadline_at,
+              else: if(launch && machine.status == "pending", do: launch.deadline_at)
+            )
         )
       end
 
@@ -46,7 +53,7 @@ defmodule Fountain.Conversations.ActorOwnership do
          do: {:ok, claim}
   end
 
-  defp claim_binding(user_id, conversation_id, sandbox_id, id, launch_id) do
+  defp claim_binding(user_id, conversation_id, sandbox_id, id, launch_id, startup_ms \\ nil) do
     Repo.transaction(fn ->
       lock_machine(sandbox_id)
 
@@ -73,6 +80,7 @@ defmodule Fountain.Conversations.ActorOwnership do
             Repo.rollback(:ownership_changed)
 
           existing && existing.id == id && existing.sandbox_id == sandbox_id ->
+            unless Conversations.ActorStartups.writable?(id), do: Repo.rollback(:actor_retired)
             {existing, nil}
 
           existing && existing.sandbox_id == sandbox_id ->
@@ -80,6 +88,10 @@ defmodule Fountain.Conversations.ActorOwnership do
 
           true ->
             if Repo.get(ActorClaim, id), do: Repo.rollback(:actor_retired)
+
+            if Conversations.ActorStartups.fenced?(sandbox.id),
+              do: Repo.rollback(:startup_unresolved)
+
             assert_new_start!(sandbox)
 
             launch =
@@ -97,6 +109,9 @@ defmodule Fountain.Conversations.ActorOwnership do
                 sandbox_id: sandbox_id,
                 launch_id: launch && launch.id
               })
+
+            if startup_ms,
+              do: Conversations.ActorStartups.save!(claim, sandbox, launch, startup_ms)
 
             {claim, launch}
         end
@@ -125,8 +140,12 @@ defmodule Fountain.Conversations.ActorOwnership do
              where: a.conversation_id == ^conversation_id and a.state == "active",
              lock: "FOR UPDATE"
          ) do
-      nil -> is_nil(id)
-      claim -> claim.id == id && claim.sandbox_id == sandbox_id
+      nil ->
+        is_nil(id)
+
+      claim ->
+        claim.id == id && claim.sandbox_id == sandbox_id &&
+          Conversations.ActorStartups.writable?(id)
     end
   end
 
@@ -156,7 +175,9 @@ defmodule Fountain.Conversations.ActorOwnership do
 
   # An exiting actor retires its own claim without changing a successor's claim.
   defp release(state) do
-    if id = Map.get(state, :actor_claim) do
+    id = Map.get(state, :actor_claim)
+
+    if id && Conversations.ActorStartups.releasable?(id) do
       from(a in ActorClaim,
         where:
           a.id == ^id and a.user_id == ^state.user_id and
