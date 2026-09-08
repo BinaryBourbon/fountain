@@ -172,5 +172,27 @@
     "execution_controls_enabled": false,
     "recovery_enabled": false,
     "live_provider_operations": 0
+  },
+  "sdk_contract": {
+    "source_files": {
+      "sdk/contract/contract.json": "sha256:c3cba3a3f5333cb695acf1d9fa6cc57c49fa19fcd19f76f15865da9dfebf9f6b",
+      "sdk/typescript/src/generated/openapi.ts": "sha256:c2e28a3943fdebbacc04fc8d8c0c05da75ea344d7f6cc93ecd974fcd10b4e890"
+    },
+    "server_projection": {
+      "operations": 163,
+      "schemas": 190,
+      "check": "scripts/sdk-contract/build.sh --check",
+      "passed": true
+    },
+    "clients_verified": [
+      "TypeScript",
+      "Python",
+      "Elixir",
+      "Swift"
+    ],
+    "typescript_typecheck_passed": true,
+    "typescript_tests": 104,
+    "shared_conformance_scenarios": 24,
+    "server_source_unchanged_since_full_precommit": true
   }
 }

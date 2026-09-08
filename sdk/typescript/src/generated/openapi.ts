@@ -1240,7 +1240,7 @@ export interface paths {
         put?: never;
         /**
          * Send another prompt
-         * @description Queues a new turn. If the ConversationServer has been GC'd (e.g. across a BEAM restart) a fresh sprite is provisioned and the runtime resumes via its session id.
+         * @description Persists a prompt and images before notifying or waking its worker. Repeat Idempotency-Key with the same payload to retrieve the same receipt. A claimed receipt is never replayed; delivery refusal is an explicit outcome.
          */
         post: operations["FountainWeb.ConversationController.prompt"];
         delete?: never;
@@ -3542,7 +3542,7 @@ export interface components {
             execution_limits?: components["schemas"]["ExecutionLimits"];
             /** @description With channel_id: skip the resume and open a new conversation (201), which then becomes the channel's binding. Sent by a chat harness relaying its owner's rotate command. Ignored without channel_id. */
             fresh?: boolean | null;
-            /** @description Optional images to attach to the initial prompt. */
+            /** @description Optional images attached to the initial prompt. Requires nonblank prompt text. */
             images?: components["schemas"]["ImageInput"][] | null;
             /** @description Per-launch permission override (#939). Keys are matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); "default" covers the rest. Prefer a kind: claude titles a tool call with the command it is about to run, so a title matches one invocation only. Merged with the agent's own policy, taking the stricter of the two. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped, and one the runtime never consults is refused with 422 permission_policy_unenforceable. */
             permission_policy?: {
@@ -4028,8 +4028,15 @@ export interface components {
         };
         /** PromptResponse */
         PromptResponse: {
-            /** @example queued */
-            status: string;
+            /** Format: date-time */
+            delivery_deadline_at: string;
+            failure_reason?: string | null;
+            /** Format: uuid */
+            receipt_id: string;
+            /** @enum {string} */
+            status: "queued" | "claimed" | "refused";
+            /** Format: uuid */
+            turn_id: string;
         };
         /** ReadinessResponse */
         ReadinessResponse: {
@@ -10534,7 +10541,10 @@ export interface operations {
     "FountainWeb.ConversationController.prompt": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1–200 bytes; scoped to this conversation and complete prompt payload. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 conversation_id: string;
             };
@@ -10547,7 +10557,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Queued */
+            /** @description Accepted receipt */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10608,6 +10618,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Idempotency key reused with another payload */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Conversation is terminal */

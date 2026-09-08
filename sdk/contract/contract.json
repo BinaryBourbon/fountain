@@ -5746,6 +5746,12 @@
       }
     },
     "POST /api/conversations/{conversation_id}/prompts": {
+      "header_params": {
+        "Idempotency-Key": {
+          "required": false,
+          "type": "string"
+        }
+      },
       "operation_id": "FountainWeb.ConversationController.prompt",
       "path_params": [
         "conversation_id"
@@ -5792,6 +5798,11 @@
         "406": {
           "application/json": {
             "ref": "NegotiationError"
+          }
+        },
+        "409": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "410": {
@@ -11133,7 +11144,32 @@
     },
     "PromptResponse": {
       "properties": {
+        "delivery_deadline_at": {
+          "format": "date-time",
+          "required": true,
+          "type": "string"
+        },
+        "failure_reason": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "receipt_id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
         "status": {
+          "enum": [
+            "claimed",
+            "queued",
+            "refused"
+          ],
+          "required": true,
+          "type": "string"
+        },
+        "turn_id": {
+          "format": "uuid",
           "required": true,
           "type": "string"
         }
