@@ -368,6 +368,28 @@ defmodule Fountain.Conversations.ExecutionGuard do
     )
   end
 
+  @doc "Deadline candidates only; pending provider cleanup must not starve expiration."
+  def _unsafe_due_deadlines(now, limit \\ 50) when limit in 1..100 do
+    Repo.all(
+      from e in TurnExecution,
+        where: e.state == "active" and e.deadline_at <= ^now,
+        order_by: [asc: e.deadline_at, asc: e.id],
+        limit: ^limit,
+        select: e.id
+    )
+  end
+
+  @doc "Known sessions awaiting their one termination claim, independently of deadlines."
+  def _unsafe_ready_terminations(limit \\ 50) when limit in 1..100 do
+    Repo.all(
+      from e in TurnExecution,
+        where: e.state == "ready",
+        order_by: [asc: e.deadline_at, asc: e.id],
+        limit: ^limit,
+        select: e.id
+    )
+  end
+
   @doc "Unfinished remote work also prevents reset after its local turn has ended."
   def _unsafe_sandbox_open?(sandbox_id) do
     Repo.exists?(

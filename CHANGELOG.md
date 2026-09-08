@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- Add a supervised execution-deadline coordinator with separate expiration and
+  termination task pools. Local task timeouts and restarts retain uncertain
+  remote operations. Public bounded execution remains disabled until session
+  identity, event delivery, and lifecycle integration are complete.
+
 - Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
   dependency set for typed execution limits and confirmed session termination.
   Fountain deadline enforcement remains disabled pending transport and lifecycle

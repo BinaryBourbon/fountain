@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Durable turn deadlines and remote execution identity"
-description: "Persist turn deadlines and provider-operation intent before I/O; the journal and typed policy are implemented, while transport and lifecycle enforcement remain unbuilt."
+description: "Persist turn deadlines and provider-operation intent before I/O; the journal, typed policy and deadline coordinator are implemented; transport and lifecycle integration remain incomplete."
 tags: [conversations, sandbox, reliability, limits]
 status: draft
 adr: "0046"
 adr_status: "Proposed"
 date: 2026-09-07
 generated: { by: process:codex, at: 2026-09-07T23:43:51Z }
-verified: { by: process:codex, at: 2026-09-08T00:21:51Z }
+verified: { by: process:codex, at: 2026-09-08T00:50:26Z }
 stale_after: 2026-09-15
 ---
 
@@ -20,7 +20,7 @@ CI at `f7404395b49019e4d122b91ba7991330b49addd3`.
 
 The typed-policy layer is in draft
 [Fountain #1745](https://github.com/BinaryBourbon/fountain/pull/1745), with passing
-CI at `cadeab6f88c13285ba2cc08f9fa2ae572b00e8b1`: validated host/account ceilings,
+CI at `7db76444cb0abb987e4c3ad62d1b8aa18b29d254`: validated host/account ceilings,
 conversation allowance narrowing, immutable journal snapshots, HTTP admission
 checks, API stop reasons, and SDK/CLI request fields are implemented. All nonempty
 effective limits are currently refused because the runtime transport and deadline
@@ -29,12 +29,17 @@ Validation passes 4,663 tests and 6 doctests in full precommit, all four SDK sui
 and contract checks, CLI tests/vet, and 20 separate-connection database races.
 The typed-layer evidence and prior failures are recorded in
 `decisions/evidence/typed-execution-limits.json`.
-The next local branch resolves ACP 0.4.0, Runtimes 0.4.1, Runner 0.2.2, and
+That branch also resolves ACP 0.4.0, Runtimes 0.4.1, Runner 0.2.2, and
 Sandbox 0.3.0 from Hex; full precommit also passes on this set. The compatibility
 releases, source bindings, and fresh-process check are recorded in
 `decisions/evidence/execution-limit-dependencies.json`. The independent deadline
-worker is not implemented yet. No deployment or production timeout activation
-has occurred.
+coordinator is now implemented locally and wired into application supervision.
+It has separate expiration/termination pools, hard local task timeouts, bounded
+shutdown draining, and recovery that never replays uncertain writes. Its 38
+focused worker/journal tests and full precommit pass: 4,671 tests, 6 doctests,
+zero failures. Evidence and corrected shutdown failures are recorded in
+`decisions/evidence/execution-deadline-worker.json`. No deployment or production
+timeout activation has occurred.
 
 ## Context
 
@@ -102,7 +107,9 @@ review before enabling termination in production.
   separate from the bounded termination pool, so blocked provider cleanup cannot
   consume all capacity for expiring other turns. Recover persisted intents
   without repeating unknown spawns or termination requests. Preserve partial
-  usage and the original absolute deadline.
+  usage and the original absolute deadline. The coordinator currently updates
+  durable turn state independently; it still needs durable stage-event delivery
+  so a blocked actor is not required to publish the outcome.
 - Publish API/SDK/CLI documentation and prove timeout, restart, cancellation,
   neighboring-session isolation and actual cleanup through the public API.
 
@@ -116,7 +123,7 @@ Integration surfaces already inspected:
 | `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
 | `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
-| Deadline supervisor | Expire due rows, claim one termination, recover abandoned submissions as uncertain, publish the persisted outcome. |
+| Deadline supervisor | Coordinator and bounded task pools implemented locally; durable deadline-stage delivery and public acceptance remain. |
 
 Bounded connections also need a shutdown policy after successful replies: the
 current warm connection can continue background work outside a turn. Completion
@@ -132,6 +139,22 @@ notifications await [Sprites #33](https://github.com/superfly/sprites-ex/pull/33
 tracked through release and exact pinning in
 [Review Loop #109](https://github.com/managoat/review-loop/issues/109).
 Do not activate deadline claims using an unpublished or floating SDK dependency.
+
+## Coordinator behavior
+
+The coordinator scans due deadlines separately from known sessions awaiting
+termination. Each pool admits at most eight tasks; a scan returns at most 100
+candidates. A blocked termination cannot consume expiration slots. Task-local
+10-second kill timers survive coordinator death. The provider call itself gets
+5 seconds; neither local timeout proves that remote work stopped. Submitted
+claims older than 60 seconds become uncertain, retaining their nonce and fence.
+A normal coordinator shutdown gives tasks one second to finish journal writes,
+then kills and awaits any remaining local tasks.
+
+Tests start owned coordinators explicitly; normal test boot disables the child
+to avoid scanning other tests' sandboxed fixtures. No public capability was
+enabled by this change. All actor/lifecycle and trusted-identity requirements
+above remain activation gates.
 
 ## Validation scope
 

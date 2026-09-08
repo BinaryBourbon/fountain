@@ -66,6 +66,7 @@ defmodule Fountain.Application do
         # module the release might not carry.
         {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
       ] ++
+        execution_deadline_children() ++
         cluster_children(cluster_topologies) ++
         [
           # Horde.Registry + Horde.DynamicSupervisor are CRDT-backed
@@ -187,5 +188,11 @@ defmodule Fountain.Application do
     end
 
     :ok
+  end
+
+  defp execution_deadline_children do
+    if Application.get_env(:fountain, :execution_deadline_worker_enabled, true),
+      do: [Fountain.Conversations.ExecutionDeadlineWorker],
+      else: []
   end
 end
