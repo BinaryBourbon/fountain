@@ -69,7 +69,11 @@ defmodule Fountain.Conversations.PendingTest do
         })
 
       assert is_reference(pending.permission_timer)
-      assert_receive {:permission_timeout, "old-request"}
+      # The deadline is immediate; observing its message is subject to scheduler
+      # load. Pin the timer state before allowing time for delivery, so this
+      # cannot hide a regression that grants a new permission window.
+      assert Process.read_timer(pending.permission_timer) in [false, 0]
+      assert_receive {:permission_timeout, "old-request"}, 5_000
     end
 
     test "restoring a current request replaces its timer without extending its original deadline" do

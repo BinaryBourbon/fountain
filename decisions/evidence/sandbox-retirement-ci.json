@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-09-08T07:30:39.248488+00:00",
+  "scope": "Known permission-timer observation flake; no production code change in this follow-up.",
+  "issue": "https://github.com/BinaryBourbon/fountain/issues/1721",
+  "failed_head": "beabbc0cbc3b5353ababac2c672682739f3cbf31",
+  "failed_job": "https://github.com/BinaryBourbon/fountain/actions/runs/34198503089/job/101971678812",
+  "failed_log_sha256": "sha256:62aec1d109b7c3fa836c68314f5b552ec65229b561dd118a5d1e8c4b815ea425",
+  "diagnosis": "ExUnit found the expected timeout message just after its default 100 ms assertion deadline. The other five partitions passed.",
+  "correction": "Assert zero remaining timer time or expiry before allowing five seconds for message observation. A renewed permission window remains a failure.",
+  "focused": {
+    "tests": 15,
+    "failures": 0,
+    "log_sha256": "sha256:b3027823e6e60b107eecc69e0f550ef8d50b8875832c667cd0a4154869eeae96"
+  },
+  "full_precommit": {
+    "tests": 4808,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:2db94f5955cc5a9471261c531315aaed1322fbb017f1b22feac5fcf369418aee"
+  },
+  "source_sha256": {
+    "apps/fountain/test/fountain/conversations/pending_test.exs": "sha256:214f4afe9c5320be70fe1a20c9bd204ea4b3a315a1fec71e3a9ef087a2c8d8b9"
+  }
+}
