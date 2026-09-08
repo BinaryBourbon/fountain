@@ -107,7 +107,7 @@ defmodule Fountain.Conversations.Connection do
           {:ok, term(), term(), integer()} | {:error, term()}
   def resume(%__MODULE__{} = conn, conversation_id, user_id, conv, turn, prompt, images) do
     agent = TurnMachine.agent_for(conv)
-    model = agent && Managoat.Runtimes.Model.acp_model(conv.runtime || agent.runtime, agent.model)
+    model = TurnMachine.acp_model(conv, agent)
     turn_span = TurnMachine.open_span(user_id, conv, turn, :continue, agent)
 
     previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)

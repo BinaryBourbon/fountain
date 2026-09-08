@@ -2935,7 +2935,12 @@ defmodule Fountain.Conversations do
                # Whose inference key would run this (#1388): refused only when it
                # would be Fountain's and the deployment has spent its day. A door
                # with no platform key configured runs no query here.
-               :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model, agent.runtime),
+               :ok <-
+                 Fountain.PlatformInference.gate(
+                   conv.user_id,
+                   agent.model,
+                   conv.runtime
+                 ),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
             case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
               {:error, {:already_started, winner_pid}} ->
@@ -3235,7 +3240,12 @@ defmodule Fountain.Conversations do
          # Whose inference key would run this (#1388): refused only when it
          # would be Fountain's and the deployment has spent its day. A door
          # with no platform key configured runs no query here.
-         :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model, agent.runtime),
+         :ok <-
+           Fountain.PlatformInference.gate(
+             conv.user_id,
+             agent.model,
+             conv.runtime
+           ),
          # A fresh sandbox is a fresh placement decision — re-resolve from
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.

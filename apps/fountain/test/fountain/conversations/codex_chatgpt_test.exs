@@ -36,6 +36,13 @@ defmodule Fountain.Conversations.CodexChatGPTTest do
 
     assert CodexChatGPT.prepare_sandbox(@handle, "codex", [{"CODEX_CHATGPT_ACCESS_TOKEN", ""}]) ==
              :skip
+
+    # A key beside the grant wins, as it does in the transport: the tenant's
+    # environment may name OPENAI_API_KEY without holding a credential row.
+    assert CodexChatGPT.prepare_sandbox(@handle, "codex", [
+             {"CODEX_CHATGPT_ACCESS_TOKEN", @placeholder},
+             {"OPENAI_API_KEY", "sk-from-vault"}
+           ]) == :skip
   end
 
   test "prepare_sandbox/3 writes the chatgptAuthTokens file with the placeholder and the synthesised id_token" do

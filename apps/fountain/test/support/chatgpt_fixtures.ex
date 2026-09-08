@@ -68,7 +68,13 @@ defmodule Fountain.ChatGPTFixtures do
   the decoded JSON body returning `{status, body}`; a path with no handler
   fails the test, so a call nobody expected is visible.
   """
-  def stub(handlers) when is_map(handlers) do
+  def stub_auth(handlers) when is_map(handlers) do
+    # The refresh runs in `Fountain.PlatformChatGPT.Refresher`, a process of
+    # its own, so the stub must be visible beyond the test's `$callers`
+    # chain. Shared mode does that; every test file using this is
+    # `async: false` for the one platform row anyway.
+    Req.Test.set_req_test_to_shared(%{})
+
     Req.Test.stub(OAuth, fn conn ->
       {:ok, raw, conn} = Plug.Conn.read_body(conn)
       body = if raw == "", do: %{}, else: Jason.decode!(raw)
@@ -86,7 +92,7 @@ defmodule Fountain.ChatGPTFixtures do
 
   @doc "A refresh that rotates: the old refresh token is accepted once and the new tokens come back."
   def stub_refresh(opts \\ %{}) do
-    stub(%{
+    stub_auth(%{
       "/oauth/token" => fn body ->
         expected = Map.get(opts, :expect_refresh, "rt_original")
 
@@ -106,6 +112,6 @@ defmodule Fountain.ChatGPTFixtures do
 
   @doc "A refresh the server refuses with a terminal code."
   def stub_refusal(code \\ "refresh_token_reused") do
-    stub(%{"/oauth/token" => fn _ -> {400, %{"error" => %{"code" => code}}} end})
+    stub_auth(%{"/oauth/token" => fn _ -> {400, %{"error" => %{"code" => code}}} end})
   end
 end

@@ -46,12 +46,17 @@ defmodule Fountain.Conversations.SpriteEnv do
   `:no_credential` keeps the behaviour that predates platform keys: the
   conversation provisions anyway, and the provider's own auth failure lands
   on the transcript rather than a refusal invented here.
-  """
-  @spec select_inference(map() | nil, map()) :: {:own | :platform, map()}
-  def select_inference(agent, own_creds) do
-    brokered? = (agent && Fountain.Broker.enabled_for?(agent.user_id)) || false
 
-    case InferenceCredentials.select(agent && agent.model, own_creds, agent && agent.runtime,
+  `runtime` is the conversation's own (`conv.runtime`), which is what the
+  sandbox is dispatched on and can differ from the agent's after an edit;
+  nil falls back to the agent's.
+  """
+  @spec select_inference(map() | nil, map(), String.t() | nil) :: {:own | :platform, map()}
+  def select_inference(agent, own_creds, runtime \\ nil) do
+    brokered? = (agent && Fountain.Broker.enabled_for?(agent.user_id)) || false
+    runtime = runtime || (agent && agent.runtime)
+
+    case InferenceCredentials.select(agent && agent.model, own_creds, runtime,
            brokered: brokered?
          ) do
       {:ok, source, creds} -> {source, creds}

@@ -18,7 +18,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
   alias Fountain.Repo
 
   setup do
-    stub(%{})
+    stub_auth(%{})
     admin = insert_active_user()
     {:ok, admin} = Accounts.update_user_role(admin, "admin")
     %{admin: admin}
@@ -70,7 +70,9 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
     end
 
     test "expired", %{conn: conn, admin: admin} do
-      {:ok, _} = PlatformChatGPT.connect_workspace_token("wst_x", ~D[2020-01-01])
+      {:ok, _} =
+        PlatformChatGPT.connect_workspace_token("wst_x", ~D[2020-01-01], account_id: "acct_ws")
+
       assert {:error, :expired} = PlatformChatGPT.access_token()
 
       {:ok, _lv, html} = open(conn, admin)
@@ -160,7 +162,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
       conn: conn,
       admin: admin
     } do
-      stub(%{
+      stub_auth(%{
         "/api/accounts/deviceauth/usercode" => fn %{"client_id" => "app_EMoamEEZ73f0CkXaXp7hrann"} ->
           {200, %{"user_code" => "ABCD-1234", "device_auth_id" => "dev_1", "interval" => 0}}
         end,
@@ -206,7 +208,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
     } do
       test_pid = self()
 
-      stub(%{
+      stub_auth(%{
         "/api/accounts/deviceauth/usercode" => fn _ ->
           # A one-second interval, so the page holds the code long enough to see.
           {200, %{"user_code" => "WXYZ-9876", "device_auth_id" => "dev_2", "interval" => 1}}

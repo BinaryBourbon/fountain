@@ -261,7 +261,10 @@ defmodule Fountain.InferenceCredentials do
   `true`. The grant is offered to brokered conversations only: unbrokered,
   the access token itself would land in the sandbox file, and the whole
   point of the grant is that a sandbox holds a placeholder. The platform
-  API key has no such rule, as before.
+  API key has no such rule, as before. `:refresh` (default `true`) is
+  whether a stale grant is refreshed on the way out; a caller that only
+  asks whether a credential exists passes `false` and never waits on the
+  auth server.
   """
   @spec select(String.t() | nil, %{atom() => String.t()}, String.t() | nil, keyword()) ::
           {:ok, :own, %{atom() => String.t()}}
@@ -279,7 +282,7 @@ defmodule Fountain.InferenceCredentials do
         {:ok, :own, own_creds}
 
       true ->
-        case platform_credential(provider, runtime, Keyword.get(opts, :brokered, true)) do
+        case platform_credential(provider, runtime, Keyword.get(opts, :brokered, true), opts) do
           {:ok, credential, key} -> {:ok, :platform, Map.put(own_creds, credential, key)}
           :none -> {:error, :no_credential}
         end
@@ -290,14 +293,14 @@ defmodule Fountain.InferenceCredentials do
   # decision 6). A grant that is revoked, expired or fails to refresh is
   # `:none` here and the key takes over — at the next conversation, not
   # within a turn.
-  defp platform_credential("openai", "codex", true) do
-    case Fountain.PlatformChatGPT.credential() do
+  defp platform_credential("openai", "codex", true, opts) do
+    case Fountain.PlatformChatGPT.credential(refresh: Keyword.get(opts, :refresh, true)) do
       {:ok, token} -> {:ok, :codex_chatgpt_access_token, token}
       :none -> Fountain.PlatformInference.key_for("openai")
     end
   end
 
-  defp platform_credential(provider, _runtime, _brokered?),
+  defp platform_credential(provider, _runtime, _brokered?, _opts),
     do: Fountain.PlatformInference.key_for(provider)
 
   defp present?(creds, credential) do

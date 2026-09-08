@@ -12,6 +12,7 @@ defmodule Fountain.PlatformChatGPTTest do
   """
 
   use Fountain.DataCase, async: false
+  use Mimic
 
   import Ecto.Query, only: [from: 2]
   import Fountain.ChatGPTFixtures
@@ -38,7 +39,7 @@ defmodule Fountain.PlatformChatGPTTest do
 
     # Nothing in these tests should reach the auth server unless a test says
     # so; a stub that raises makes a stray call a failure, not a hang.
-    stub(%{})
+    stub_auth(%{})
     :ok
   end
 
@@ -137,6 +138,20 @@ defmodule Fountain.PlatformChatGPTTest do
       assert PlatformChatGPT.credential() == {:ok, access}
     end
 
+    test "credential(refresh: false) answers from the row and never dials out" do
+      stale = access_token(60)
+      connect!(%{access_token: stale})
+      # No stub for /oauth/token: a refresh here would raise.
+      assert PlatformChatGPT.credential(refresh: false) == {:ok, stale}
+
+      assert {:ok, :platform, %{codex_chatgpt_access_token: ^stale}} =
+               InferenceCredentials.select("openai/gpt-5.5-codex", %{}, "codex", refresh: false)
+
+      stub_refusal()
+      assert PlatformChatGPT.access_token() == {:error, :revoked}
+      assert PlatformChatGPT.credential(refresh: false) == :none
+    end
+
     test "refreshes within the margin, persists the rotated refresh token, then serves the new one" do
       connect!(%{access_token: access_token(60), refresh_token: "rt_original"})
       new_access = access_token(7_200, %{"n" => 2})
@@ -176,11 +191,16 @@ defmodule Fountain.PlatformChatGPTTest do
       # Revoked stays revoked: no second round-trip, no second event.
       assert PlatformChatGPT.access_token() == {:error, :revoked}
       assert length(events("admin.platform_chatgpt.revoked")) == 1
+
+      # The sandbox file's claims are still served: the file holds a
+      # placeholder, and a revoke landing mid-provision must not fail the
+      # spawn whose token the broker already took.
+      assert {:ok, %{account_id: "acct_platform_1"}} = PlatformChatGPT.sandbox_auth()
     end
 
     test "a bare invalid_grant is terminal too" do
       connect!(%{access_token: access_token(60)})
-      stub(%{"/oauth/token" => fn _ -> {400, %{"error" => "invalid_grant"}} end})
+      stub_auth(%{"/oauth/token" => fn _ -> {400, %{"error" => "invalid_grant"}} end})
 
       assert PlatformChatGPT.access_token() == {:error, :revoked}
       assert row().revoked_reason == "invalid_grant"
@@ -189,7 +209,7 @@ defmodule Fountain.PlatformChatGPTTest do
     test "a transient failure keeps the row and the old token" do
       access = access_token(60)
       connect!(%{access_token: access, refresh_token: "rt_original"})
-      stub(%{"/oauth/token" => fn _ -> {503, %{"error" => "try_later"}} end})
+      stub_auth(%{"/oauth/token" => fn _ -> {503, %{"error" => "try_later"}} end})
 
       assert {:error, {:token, 503, "try_later"}} = PlatformChatGPT.access_token()
 
@@ -245,6 +265,21 @@ defmodule Fountain.PlatformChatGPTTest do
       assert {:ok, account} = PlatformChatGPT.connect_workspace_token(token, nil)
       assert account.account_id == "acct_jwt"
       assert DateTime.diff(account.access_expires_at, DateTime.utc_now(), :second) > 3_000
+    end
+
+    test "an opaque token needs an account id: codex sends it on every request" do
+      assert {:error, :no_account_id} = PlatformChatGPT.connect_workspace_token("wst_opaque", nil)
+
+      assert {:error, :no_account_id} =
+               PlatformChatGPT.connect_workspace_token("wst_opaque", nil, account_id: "  ")
+
+      refute PlatformChatGPT.active?()
+      assert PlatformChatGPT.sandbox_auth() == :none
+
+      assert {:ok, _} =
+               PlatformChatGPT.connect_workspace_token("wst_opaque", nil, account_id: " acct_x ")
+
+      assert {:ok, %{account_id: "acct_x"}} = PlatformChatGPT.sandbox_auth()
     end
 
     test "refuses a blank, a whitespace-bearing, or an oversized value" do
@@ -309,7 +344,7 @@ defmodule Fountain.PlatformChatGPTTest do
       connect!()
       assert PlatformChatGPT.keepalive() == {:ok, :skipped}
 
-      {:ok, _} = PlatformChatGPT.connect_workspace_token("wst_static", nil)
+      {:ok, _} = PlatformChatGPT.connect_workspace_token("wst_static", nil, account_id: "acct_ws")
 
       row()
       |> Ecto.Changeset.change(last_refreshed_at: ~U[2020-01-01 00:00:00Z])
@@ -419,16 +454,41 @@ defmodule Fountain.PlatformChatGPTTest do
 
     test "the ceiling gate counts the grant as platform-served" do
       user = insert_verified_user()
-      refute PlatformInference.serves?("openai", "codex")
+      refute PlatformInference.serves?("openai", "codex", true)
       assert :ok = PlatformInference.gate(user.id, "openai/gpt-5.5-codex", "codex")
 
       connect!()
-      assert PlatformInference.serves?("openai", "codex")
-      refute PlatformInference.serves?("openai", "opencode")
-      refute PlatformInference.serves?("anthropic", "codex")
+      assert PlatformInference.serves?("openai", "codex", true)
+      # The same question select/4 asks: unbrokered, the grant is never
+      # handed out, so the gate must not refuse for it either.
+      refute PlatformInference.serves?("openai", "codex", false)
+      refute PlatformInference.serves?("openai", "opencode", true)
+      refute PlatformInference.serves?("anthropic", "codex", true)
       # With credits off the ceiling never trips, so the gate is :ok — the
       # point is that the branch runs, which `serves?/2` pins.
       assert :ok = PlatformInference.gate(user.id, "openai/gpt-5.5-codex", "codex")
+    end
+  end
+
+  describe "titles for a conversation on the grant" do
+    test "fall back to the platform OpenAI key, and to no title without one" do
+      creds = %{codex_chatgpt_access_token: "at_placeholder"}
+
+      assert {:error, :no_credentials} =
+               Fountain.Conversations.TitleGenerator.generate("fix the login bug", creds)
+
+      Application.put_env(:fountain, :platform_openai_api_key, "sk-platform")
+
+      Req
+      |> expect(:post, fn url, opts ->
+        assert url =~ "api.openai.com"
+        assert Enum.any?(Keyword.get(opts, :headers, []), fn {_k, v} -> v =~ "sk-platform" end)
+        refute inspect(opts) =~ "at_placeholder"
+        {:ok, %{status: 200, body: %{"choices" => [%{"message" => %{"content" => "Fix Login"}}]}}}
+      end)
+
+      assert {:ok, "Fix Login"} =
+               Fountain.Conversations.TitleGenerator.generate("fix the login bug", creds)
     end
   end
 

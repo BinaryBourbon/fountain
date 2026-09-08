@@ -340,7 +340,8 @@ defmodule Fountain.PlatformInference do
   def gate(user_id, model, runtime \\ nil) when is_binary(user_id) do
     provider = Managoat.Runtimes.Model.provider(model)
 
-    if serves?(provider, runtime) and not Fountain.InferenceCredentials.has_own?(user_id, model) do
+    if serves?(provider, runtime, Fountain.Broker.enabled_for?(user_id)) and
+         not Fountain.InferenceCredentials.has_own?(user_id, model) do
       check_ceiling()
     else
       :ok
@@ -350,12 +351,15 @@ defmodule Fountain.PlatformInference do
   @doc """
   Whether this deployment would run a tenant with no credential of their own
   on something of Fountain's for this provider and runtime: a platform key,
-  or the ChatGPT grant for codex.
+  or, for a brokered codex conversation, the ChatGPT grant. The same three
+  questions `InferenceCredentials.select/4` asks, so the gate never refuses
+  for a credential the selection would not hand out.
   """
-  @spec serves?(String.t() | nil, String.t() | nil) :: boolean()
-  def serves?(provider, runtime) do
+  @spec serves?(String.t() | nil, String.t() | nil, boolean()) :: boolean()
+  def serves?(provider, runtime, brokered?) do
     key_for(provider) != :none or
-      (provider == "openai" and runtime == "codex" and Fountain.PlatformChatGPT.active?())
+      (brokered? and provider == "openai" and runtime == "codex" and
+         Fountain.PlatformChatGPT.active?())
   end
 
   @doc """

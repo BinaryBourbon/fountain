@@ -6,9 +6,9 @@ defmodule Fountain.PlatformChatGPT do
   An admin signs the Fountain **server** in to ChatGPT once, by pasting the
   `auth.json` a laptop's `codex login` wrote or by the device-code flow
   (`Fountain.PlatformChatGPT.Device`). From then on Fountain owns the
-  refresh token and is the only thing that ever uses it: the token rotates
-  and is single-use, so a second holder would kill the grant for both. A
-  sandbox never sees it. What a sandbox gets is `auth.json` in
+  refresh token and is the only thing that ever uses it: the token rotates on
+  every refresh, and the one place it lives is the one place that is
+  refreshed. A sandbox never sees it. What a sandbox gets is `auth.json` in
   `chatgptAuthTokens` mode with a placeholder where the bearer goes
   (`Fountain.Conversations.CodexChatGPT`), and the broker substitutes the
   current access token on `chatgpt.com` (`Fountain.Broker`).
@@ -16,10 +16,11 @@ defmodule Fountain.PlatformChatGPT do
   ## What is here
 
     * `access_token/0` — the current access token, refreshed when it is
-      within `PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS` of its expiry, under
-      an advisory lock so two conversations cannot both spend the one
-      refresh token. The rotated refresh token is persisted *before* the new
-      access token is handed out. A terminal refusal marks the row `revoked`
+      within `PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS` of its expiry, through
+      `Fountain.PlatformChatGPT.Refresher` so the deployment's many
+      conversations queue on one round-trip rather than each making their
+      own. The rotated refresh token is persisted *before* the new access
+      token is handed out. A terminal refusal marks the row `revoked`
       with the server's reason code; a workspace token past its expiry
       marks it `expired`.
     * `credential/0` — `{:ok, token}` or `:none`, for
@@ -47,13 +48,8 @@ defmodule Fountain.PlatformChatGPT do
 
   alias Fountain.Audit
   alias Fountain.Crypto
-  alias Fountain.PlatformChatGPT.{Account, OAuth, Tokens}
+  alias Fountain.PlatformChatGPT.{Account, OAuth, Refresher, Tokens}
   alias Fountain.Repo
-
-  # Its own namespace beside Connections' 4331; there is one platform row,
-  # so the key is constant.
-  @refresh_lock_namespace 4332
-  @refresh_lock_key 1
 
   @system_actor "system:platform_chatgpt"
 
@@ -64,14 +60,31 @@ defmodule Fountain.PlatformChatGPT do
   def active?, do: match?(%Account{status: "active"}, platform_row())
 
   @doc """
-  The grant as `Fountain.InferenceCredentials.select/3` wants it:
+  The grant as `Fountain.InferenceCredentials.select/4` wants it:
   `{:ok, access_token}` when it is active and refreshable, else `:none`.
+
+  `refresh: false` answers from the row alone, refreshing nothing: for a
+  caller that only asks whether a grant is there (a page render), not for
+  one about to hand the token to a sandbox.
   """
-  @spec credential() :: {:ok, String.t()} | :none
-  def credential do
-    case access_token() do
-      {:ok, token} -> {:ok, token}
-      _ -> :none
+  @spec credential(keyword()) :: {:ok, String.t()} | :none
+  def credential(opts \\ []) do
+    if Keyword.get(opts, :refresh, true) do
+      case access_token() do
+        {:ok, token} -> {:ok, token}
+        _ -> :none
+      end
+    else
+      case platform_row() do
+        %Account{status: "active"} = row ->
+          case decrypt(row.access_token_ciphertext) do
+            {:ok, token} -> {:ok, token}
+            _ -> :none
+          end
+
+        _ ->
+          :none
+      end
     end
   end
 
@@ -95,7 +108,7 @@ defmodule Fountain.PlatformChatGPT do
     cond do
       fresh?(row) -> decrypt(row.access_token_ciphertext)
       is_nil(row.refresh_token_ciphertext) -> expire_or_serve(row)
-      true -> refresh_locked(row, :if_stale)
+      true -> Refresher.refresh(:if_stale)
     end
   end
 
@@ -114,13 +127,15 @@ defmodule Fountain.PlatformChatGPT do
   @doc """
   What the sandbox's `auth.json` carries beside the placeholder: the real
   account id (not a secret; it goes in a header codex sends in the clear)
-  and an unsigned `id_token` built from the stored claims.
+  and an unsigned `id_token` built from the stored claims. Whatever the
+  row's status: the file holds a placeholder, and the token that matters is
+  the one the broker already took at selection. Only a row that is gone, or
+  one with no account id, is `:none`.
   """
   @spec sandbox_auth() :: {:ok, %{account_id: String.t(), id_token: String.t()}} | :none
   def sandbox_auth do
     case platform_row() do
-      %Account{status: "active", account_id: account_id, id_claims: claims}
-      when is_binary(account_id) ->
+      %Account{account_id: account_id, id_claims: claims} when is_binary(account_id) ->
         {:ok, %{account_id: account_id, id_token: Tokens.synthesize_id_token(claims)}}
 
       _ ->
@@ -212,7 +227,10 @@ defmodule Fountain.PlatformChatGPT do
   non-interactive credential, so where it exists it is the one to use.
   `expires_on` is the expiry the admin console shows, or nil for none;
   the row goes `expired` when it passes. The account id is taken from the
-  token when it is a JWT, else from `:account_id` in `opts`.
+  token when it is a JWT, else from `:account_id` in `opts`; without one
+  the connect is refused (`{:error, :no_account_id}`), because codex sends
+  it on every request and a row without it would fail every provision
+  while the page said "connected".
   """
   @spec connect_workspace_token(String.t(), Date.t() | nil, keyword()) ::
           {:ok, Account.t()} | {:error, term()}
@@ -305,7 +323,7 @@ defmodule Fountain.PlatformChatGPT do
       %Account{status: "active", refresh_token_ciphertext: cipher} = row
       when is_binary(cipher) ->
         if stale_for_keepalive?(row) do
-          case refresh_locked(row, :force) do
+          case Refresher.refresh(:force) do
             {:ok, _token} -> {:ok, :refreshed}
             {:error, _} = error -> error
           end
@@ -318,54 +336,33 @@ defmodule Fountain.PlatformChatGPT do
     end
   end
 
-  # Serialized under an advisory lock, with the row re-read under it. Two
-  # conversations refreshing the same stale grant would otherwise race: the
-  # first rotates the refresh token, the second replays the stale one, and
-  # the server answers `refresh_token_reused` — which would revoke a grant
-  # that had just been renewed. The lock spans the round-trip.
-  defp refresh_locked(_row, mode) do
-    outcome =
-      Repo.transaction(
-        fn ->
-          Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
-            @refresh_lock_namespace,
-            @refresh_lock_key
-          ])
+  @doc false
+  # The body of a refresh, run by `Fountain.PlatformChatGPT.Refresher` and
+  # by nothing else: one at a time on this node, no database lock and no
+  # connection held across the HTTP round-trip. The row is re-read here
+  # because a queued caller may find the refresh already done, and the
+  # write is a compare-and-swap on the refresh token this read started
+  # from, so a node that lost the race to another serves the winner's token
+  # rather than overwriting it.
+  def refresh_serialized(mode) do
+    case platform_row() do
+      nil ->
+        {:error, :not_connected}
 
-          case platform_row() do
-            nil -> {:error, :not_connected}
-            current -> locked_refresh(current, mode)
-          end
-        end,
-        timeout: Application.get_env(:fountain, :connections_timeout_ms, 15_000) * 2 + 5_000
-      )
-
-    # The status write that follows a refusal audits, and an audit must not
-    # run inside a transaction (ADR 0013), so it happens out here.
-    case outcome do
-      {:ok, {:refused, current, code}} ->
-        _ = mark_revoked(current, code)
+      %Account{status: "revoked"} ->
         {:error, :revoked}
 
-      {:ok, result} ->
-        result
+      %Account{status: "expired"} ->
+        {:error, :expired}
 
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
+      %Account{refresh_token_ciphertext: nil} = row ->
+        decrypt(row.access_token_ciphertext)
 
-  # A concurrent refresh may have finished while we waited on the lock: the
-  # re-read row can already be fresh (serve it, unless forced), revoked or
-  # expired (say so). Only a row still stale under the lock goes to the
-  # server — with the refresh token the row holds *now*.
-  defp locked_refresh(current, mode) do
-    cond do
-      current.status == "revoked" -> {:error, :revoked}
-      current.status == "expired" -> {:error, :expired}
-      is_nil(current.refresh_token_ciphertext) -> decrypt(current.access_token_ciphertext)
-      mode == :if_stale and fresh?(current) -> decrypt(current.access_token_ciphertext)
-      true -> do_refresh(current)
+      row when mode == :if_stale ->
+        if fresh?(row), do: decrypt(row.access_token_ciphertext), else: do_refresh(row)
+
+      row ->
+        do_refresh(row)
     end
   end
 
@@ -376,22 +373,40 @@ defmodule Fountain.PlatformChatGPT do
           # The rotated refresh token lands before the access token is
           # handed out: a crash between the two would otherwise leave the
           # row holding a refresh token the server has already retired.
-          case current |> Account.refresh_changeset(refresh_attrs(fresh)) |> Repo.update() do
-            {:ok, _} -> {:ok, access}
-            {:error, changeset} -> {:error, changeset}
-          end
+          swap_in(current, refresh_attrs(fresh), access)
 
         {:error, {:terminal, code}} ->
-          {:refused, current, code}
+          _ = mark_revoked(current, code)
+          {:error, :revoked}
 
         {:error, reason} ->
           Logger.warning(
-            "platform chatgpt: refresh failed, keeping the current token: " <>
-              inspect(reason)
+            "platform chatgpt: refresh failed, keeping the current token: " <> inspect(reason)
           )
 
           {:error, reason}
       end
+    end
+  end
+
+  # Written only over the refresh token the read started from. Zero rows
+  # means another node rotated first: its tokens are the live ones, and the
+  # chain this node minted is simply never used.
+  defp swap_in(current, attrs, access) do
+    sets = attrs |> Map.put(:updated_at, now()) |> Enum.to_list()
+
+    {n, _} =
+      from(a in Account,
+        where:
+          a.id == ^current.id and a.refresh_token_ciphertext == ^current.refresh_token_ciphertext
+      )
+      |> Repo.update_all(set: sets)
+
+    case {n, platform_row()} do
+      {1, _} -> {:ok, access}
+      {0, %Account{status: "active"} = winner} -> decrypt(winner.access_token_ciphertext)
+      {0, %Account{status: status}} -> {:error, String.to_existing_atom(status)}
+      {0, nil} -> {:error, :not_connected}
     end
   end
 
@@ -526,9 +541,9 @@ defmodule Fountain.PlatformChatGPT do
         {:ok, claims["account_id"], Map.drop(claims, ["email"])}
 
       {:error, _} ->
-        case given_account_id do
-          id when is_binary(id) and id != "" -> {:ok, id, %{"account_id" => id}}
-          _ -> {:ok, nil, %{}}
+        case String.trim(given_account_id || "") do
+          "" -> {:error, :no_account_id}
+          id -> {:ok, id, %{"account_id" => id}}
         end
     end
   end

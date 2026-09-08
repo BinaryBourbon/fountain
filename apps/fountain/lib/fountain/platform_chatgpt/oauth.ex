@@ -5,9 +5,9 @@ defmodule Fountain.PlatformChatGPT.OAuth do
   from `codex-rs/login/src/auth/manager.rs` and `device_code_auth.rs` on
   2026-09-08; the client id is Codex's own public one.
 
-  The refresh token is single-use and rotates: every successful refresh
-  hands back a new one and the old one is dead. The server names its
-  terminal codes, and this module turns them into `{:error, {:terminal,
+  The refresh token rotates: every successful refresh hands back a new one.
+  Measured 2026-09-08, an old one is not refused outright (a reuse forks a
+  second chain), but the server does name terminal codes, and this module turns them into `{:error, {:terminal,
   code}}` so the caller can mark the grant revoked with the reason, rather
   than retrying a token that will never work again.
 
@@ -174,7 +174,9 @@ defmodule Fountain.PlatformChatGPT.OAuth do
     |> String.trim_trailing("/")
   end
 
-  defp interval(n) when is_integer(n) and n >= 0, do: n
+  # Never zero: a server that says 0 would have the poll spin. Codex's own
+  # floor is positive too.
+  defp interval(n) when is_integer(n) and n >= 1, do: n
   defp interval(_), do: 5
 
   defp present(value) when is_binary(value) and value != "", do: value

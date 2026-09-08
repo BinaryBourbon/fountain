@@ -71,14 +71,21 @@ defmodule Fountain.Conversations.CodexChatGPT do
 
   @doc """
   Write the sandbox's `auth.json` when this codex spawn runs on the grant.
-  `:skip` when it does not (the library's `prepare_sandbox/3` then runs as
-  today); `:ok` or `{:error, reason}` when it does.
+  `:skip` when it does not, or when an `OPENAI_API_KEY` sits beside the
+  grant (the library's `prepare_sandbox/3` then runs as today); `:ok` or
+  `{:error, reason}` when it does.
   """
   @spec prepare_sandbox(Managoat.Sandbox.Handle.t(), String.t(), [{String.t(), String.t()}]) ::
           :skip | :ok | {:error, term()}
   def prepare_sandbox(handle, @runtime, sprite_env) do
-    case List.keyfind(sprite_env, @env_key, 0) do
-      {@env_key, value} when is_binary(value) and value != "" ->
+    # A key beside the grant wins, as it does in `CodexTransport`: the
+    # tenant's environment or vault may name `OPENAI_API_KEY` without
+    # holding an inference credential, and that spawn runs on the key
+    # through the library's login, not on this file.
+    case {List.keyfind(sprite_env, @env_key, 0), List.keyfind(sprite_env, "OPENAI_API_KEY", 0)} do
+      {{@env_key, value}, key}
+      when is_binary(value) and value != "" and
+             (is_nil(key) or elem(key, 1) in [nil, ""]) ->
         case PlatformChatGPT.sandbox_auth() do
           {:ok, auth} -> write(handle, auth_json(value, auth))
           :none -> {:error, :platform_chatgpt_not_connected}

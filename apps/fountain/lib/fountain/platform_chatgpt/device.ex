@@ -38,7 +38,11 @@ defmodule Fountain.PlatformChatGPT.Device do
     with {:ok, started} <- OAuth.device_start(),
          :ok <-
            send_to(notify, {:code, Map.take(started, [:verification_url, :user_code])}),
-         {:ok, grant} <- poll(started, System.monotonic_time(:millisecond) + @poll_deadline_ms),
+         {:ok, grant} <-
+           poll(
+             Map.put(started, :notify, notify),
+             System.monotonic_time(:millisecond) + @poll_deadline_ms
+           ),
          {:ok, tokens} <- OAuth.device_exchange(grant),
          {:ok, _account} <-
            PlatformChatGPT.connect_from_tokens(tokens, "device_code",
@@ -56,11 +60,18 @@ defmodule Fountain.PlatformChatGPT.Device do
         {:ok, grant}
 
       :pending ->
-        if System.monotonic_time(:millisecond) >= deadline do
-          {:error, :device_timeout}
-        else
-          Process.sleep(interval * 1_000)
-          poll(started, deadline)
+        cond do
+          System.monotonic_time(:millisecond) >= deadline ->
+            {:error, :device_timeout}
+
+          # The page that asked is gone: nobody will see the code or the
+          # result, so stop polling the auth server on its behalf.
+          not Process.alive?(started.notify) ->
+            {:error, :abandoned}
+
+          true ->
+            Process.sleep(max(interval, 1) * 1_000)
+            poll(started, deadline)
         end
 
       {:error, _} = error ->

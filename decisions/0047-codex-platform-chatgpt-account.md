@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Run the codex runtime on the platform's ChatGPT account"
-description: "An admin signs the Fountain server in to ChatGPT once; the server keeps the rotating refresh token, the broker carries the access token to chatgpt.com, and a codex sandbox holds only a placeholder. Built in #1755 (G1 to G3) with tests; none of the five G0 measurements has been taken and no live ChatGPT account has run a turn on it."
+description: "An admin signs the Fountain server in to ChatGPT once; the server keeps the rotating refresh token, the broker carries the access token to chatgpt.com, and a codex sandbox holds only a placeholder. Built and measured in #1755: four of the five G0 measurements pass, a codex turn has run on the grant through Fountain, and the idle-lifetime measurement is due 2026-09-17."
 tags: [inference, broker, codex, security, billing]
 status: draft
 adr: "0047"
@@ -13,15 +13,13 @@ stale_after: 2026-10-08
 
 # 0047 — Run the codex runtime on the platform's ChatGPT account
 
-**Status:** Proposed, 2026-09-08. **Built in #1755 with regression tests,
-out of the order the gates below prescribe: G1, G2 and G3 are in the code,
-and none of the measurements in [Measured](#measured) has been taken.** No
-ChatGPT account has signed the server in and no codex turn has run on the
-grant; every claim about what the auth server and the Codex backend accept
-rests on reading `openai/codex` on 2026-09-08, not on a request. The PR that
-runs G0 fills the Measured block, sets `verified`, and, if measurement 2
-fails, marks this ADR Superseded and reverts the grant path rather than
-leaving a door nothing can open.
+**Status:** Proposed, 2026-09-08. **Built and measured in #1755**, out of
+the order the gates below prescribe: G1, G2 and G3 are in the code, and
+four of the five measurements in [Measured](#measured) were taken on
+2026-09-08 with a real ChatGPT Pro account, including a codex turn on the
+grant through Fountain proper. What is still open is measurement 5, the
+idle lifetime, due 2026-09-17; the PR that records it sets `verified` and
+moves this to Accepted. Production has not yet run a turn on it.
 
 Amends [0038](0038-onboarding-first-reply.md) decision 3 (platform inference
 keys) with a second kind of platform credential, and
@@ -47,9 +45,11 @@ The Claude OAuth credential is a long-lived static string from
 placeholder and the broker substitutes it on `api.anthropic.com`. ChatGPT
 has no such string:
 
-- Codex's ChatGPT login is OAuth with a **rotating, single-use refresh
-  token**. The auth server returns `refresh_token_reused` as a terminal
-  error. OpenAI's CI guidance says one `auth.json` per runner, never shared
+- Codex's ChatGPT login is OAuth with a **rotating refresh token**, which
+  the source and OpenAI's own guidance treat as single-use: the auth server
+  names `refresh_token_reused` as a terminal error (measurement 3 found a
+  reuse forks rather than revokes today; the guidance is still the contract
+  to design against). OpenAI's CI guidance says one `auth.json` per runner, never shared
   across concurrent jobs. openai/codex#15502 and #15410 report the copy flow
   breaking for exactly this reason; #15410 was closed as not planned.
 - Fountain runs many sandboxes per tenant concurrently, and several
@@ -174,11 +174,14 @@ now Fountain's, and using that same `auth.json` anywhere else will break both.
 
 ### 3. Fountain owns the refresh token and is the only thing that ever uses it
 
-`Fountain.PlatformChatGPT.access_token/0` mirrors
-`Connections.access_token/1`: refresh when within the margin of `exp`,
-serialized under an advisory lock (a second concurrent refresh is a dead
-grant), and the rotated refresh token is persisted **before** the new access
-token is handed out. The margin must exceed the longest turn the deployment
+`Fountain.PlatformChatGPT.access_token/0` refreshes when within the margin
+of `exp`, through `Fountain.PlatformChatGPT.Refresher`, one process per
+node, so the deployment's many conversations queue on one round-trip
+holding no database connection (unlike `Connections`, whose per-row lock
+spans one tenant, this grant is every tenant's); across nodes the write is
+a compare-and-swap on the refresh token the read started from, and a loser
+serves the winner's tokens. The rotated refresh token is persisted
+**before** the new access token is handed out. The margin must exceed the longest turn the deployment
 expects, because codex cannot recover a 401 in this mode (decision 5); it
 starts at 15 minutes and is config. A keepalive worker
 (`Fountain.Workers.PlatformChatGPTKeepalive`, an Oban cron job like
@@ -419,8 +422,10 @@ G0's.
 ## Alternatives considered
 
 - **Copy `auth.json` into each sandbox, like the Claude token.** The refresh
-  token rotates and is single-use, so the first sandbox to refresh kills
-  every other copy. OpenAI says so and the issue tracker confirms it.
+  token rotates, OpenAI's guidance says one file per runner, and the issue
+  tracker has the copy flow breaking; measurement 3 found reuse forking
+  rather than revoking today, which is not a contract, and either way the
+  refresh token would sit in every sandbox.
 - **Let codex refresh inside the sandbox and read the rotated token back.**
   Concurrent sandboxes race on one grant, and the sandbox would hold the
   refresh token, which is the one secret worth stealing.

@@ -117,8 +117,11 @@ defmodule FountainWeb.AdminLive.Inference do
            notify: self(),
            actor_user_id: socket.assigns.current_user.id
          ) do
-      {:ok, _pid} ->
-        {:noreply, assign(socket, :device, %{state: :starting})}
+      {:ok, pid} ->
+        # Monitored, so a task that dies without reporting (a crash, a
+        # constraint from a paste in another tab) frees the button.
+        ref = Process.monitor(pid)
+        {:noreply, assign(socket, :device, %{state: :starting, ref: ref})}
 
       {:error, reason} ->
         {:noreply,
@@ -138,7 +141,26 @@ defmodule FountainWeb.AdminLive.Inference do
 
   @impl true
   def handle_info({:platform_chatgpt_device, {:code, code}}, socket) do
-    {:noreply, assign(socket, :device, %{state: :waiting, code: code})}
+    {:noreply,
+     assign(
+       socket,
+       :device,
+       Map.merge(socket.assigns.device || %{}, %{state: :waiting, code: code})
+     )}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket) do
+    case socket.assigns.device do
+      %{ref: ^ref} when reason != :normal ->
+        {:noreply,
+         socket
+         |> assign(:device, nil)
+         |> assign_chatgpt()
+         |> put_flash(:error, "Device sign-in stopped: #{inspect(reason)}")}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   def handle_info({:platform_chatgpt_device, {:connected, _status}}, socket) do
@@ -166,6 +188,11 @@ defmodule FountainWeb.AdminLive.Inference do
   defp chatgpt_error(:no_refresh_token), do: "That sign-in carries no refresh token"
   defp chatgpt_error(:invalid_id_token), do: "That sign-in carries no account id"
   defp chatgpt_error(:invalid_token), do: "Paste one token with no spaces"
+
+  defp chatgpt_error(:no_account_id),
+    do: "Enter the workspace's account id beside an opaque token; codex sends it on every request"
+
+  defp chatgpt_error(:abandoned), do: "the page that asked for the code went away"
   defp chatgpt_error(:device_timeout), do: "the code was not approved within fifteen minutes"
   defp chatgpt_error(other), do: inspect(other)
 

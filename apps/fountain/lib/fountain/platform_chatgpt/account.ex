@@ -67,6 +67,7 @@ defmodule Fountain.PlatformChatGPT.Account do
     |> put_change(:revoked_reason, nil)
     |> validate_required([:kind, :access_token_ciphertext, :last_refreshed_at])
     |> validate_inclusion(:kind, @kinds)
+    |> unique_constraint(:user_id, name: :platform_chatgpt_account_platform_row)
   end
 
   @doc "A refresh rotated the tokens; the claims are updated when the response carried an id_token."
