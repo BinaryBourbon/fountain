@@ -146,13 +146,14 @@ defmodule Fountain.Conversations.ExecutionGuard do
   end
 
   @doc "Persist cancellation without waiting for the conversation actor or provider."
-  def _unsafe_interrupt(conversation_id), do: interrupt(conversation_id, nil)
+  def _unsafe_interrupt(conversation_id), do: interrupt(conversation_id, nil, nil)
 
   @doc "A starting actor may retire execution only on its original, still-owned machine."
-  def _unsafe_interrupt_on_sandbox(conversation_id, sandbox_id) when is_binary(sandbox_id),
-    do: interrupt(conversation_id, sandbox_id)
+  def _unsafe_interrupt_on_sandbox(conversation_id, sandbox_id, actor_claim \\ nil)
+      when is_binary(sandbox_id),
+      do: interrupt(conversation_id, sandbox_id, actor_claim)
 
-  defp interrupt(conversation_id, expected_sandbox_id) do
+  defp interrupt(conversation_id, expected_sandbox_id, actor_claim) do
     transaction(fn ->
       if expected_sandbox_id do
         Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
@@ -173,6 +174,13 @@ defmodule Fountain.Conversations.ExecutionGuard do
 
         unless sandbox && parent.sandbox_id == sandbox.id && parent.user_id == sandbox.user_id,
           do: Repo.rollback(:ownership_changed)
+
+        unless Fountain.Conversations.ActorOwnership.current?(
+                 parent.id,
+                 sandbox.id,
+                 actor_claim
+               ),
+               do: Repo.rollback(:ownership_changed)
       end
 
       cancelled_receipt = cancel_queued_prompt(parent, expected_sandbox_id)

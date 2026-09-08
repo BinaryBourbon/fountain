@@ -12,23 +12,23 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
   alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{Conversation, ExecutionGuard, Sandbox}
 
-  def start(conversation_id, sandbox_id, default_ms) do
+  def start(conversation_id, sandbox_id, default_ms, opts \\ []) do
     actor = self()
     timeout = Application.get_env(:fountain, :provision_deadline_ms, default_ms)
 
     spawn(fn ->
       monitor = Process.monitor(actor)
-      wait(actor, monitor, conversation_id, sandbox_id, timeout)
+      wait(actor, monitor, conversation_id, sandbox_id, timeout, Keyword.get(opts, :actor_claim))
     end)
   end
 
-  defp wait(actor, monitor, conversation_id, sandbox_id, timeout) do
+  defp wait(actor, monitor, conversation_id, sandbox_id, timeout, actor_claim) do
     receive do
       {:DOWN, ^monitor, :process, ^actor, _reason} -> :ok
     after
       timeout ->
         # Ownership: this watchdog was created by the actor for its original binding.
-        case _unsafe_expire(conversation_id, sandbox_id) do
+        case _unsafe_expire(conversation_id, sandbox_id, actor_claim) do
           {:ok, :expired} ->
             stop(actor)
 
@@ -47,22 +47,22 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
             # against an unchanged pending row. Retry the same decision; do not
             # create another watchdog or restart the provisioning actor.
             Logger.warning("provision deadline decision unavailable; retrying")
-            wait(actor, monitor, conversation_id, sandbox_id, 1_000)
+            wait(actor, monitor, conversation_id, sandbox_id, 1_000, actor_claim)
         end
     end
   end
 
   @doc "Commit a timeout only for the actor's still-owned, unfinished provisioning."
-  def _unsafe_expire(conversation_id, sandbox_id),
-    do: fail_pending(conversation_id, sandbox_id, "provision deadline exceeded")
+  def _unsafe_expire(conversation_id, sandbox_id, actor_claim \\ nil),
+    do: fail_pending(conversation_id, sandbox_id, "provision deadline exceeded", actor_claim)
 
   @doc "Record an actor-start failure only while its original machine is still pending."
   def _unsafe_fail_start(conversation_id, sandbox_id) do
-    with {:ok, :expired} <- fail_pending(conversation_id, sandbox_id, "worker start failed"),
+    with {:ok, :expired} <- fail_pending(conversation_id, sandbox_id, "worker start failed", nil),
          do: {:ok, :failed}
   end
 
-  defp fail_pending(conversation_id, sandbox_id, reason) do
+  defp fail_pending(conversation_id, sandbox_id, reason, actor_claim) do
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(sandbox_id)])
 
@@ -74,6 +74,9 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
       cond do
         is_nil(parent) or is_nil(sandbox) or parent.sandbox_id != sandbox.id or
             parent.user_id != sandbox.user_id ->
+          :stale
+
+        not Conversations.ActorOwnership.current?(parent.id, sandbox.id, actor_claim) ->
           :stale
 
         sandbox.status not in ~w(pending starting) ->

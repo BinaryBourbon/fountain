@@ -450,6 +450,7 @@ defmodule Fountain.Conversations.ConversationServer do
       sandbox_id: Keyword.fetch!(args, :sandbox_id),
       runtime_module: Keyword.fetch!(args, :runtime_module),
       user_id: nil,
+      actor_claim: nil,
       handle: nil,
       sprite_env: [],
       # ADR 0019 gate 1a. `brokered` holds the catalog secrets the sandbox
@@ -562,12 +563,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
     Lifecycle.schedule_check()
 
-    Fountain.Conversations.ProvisionWatchdog.start(
-      state.conversation_id,
-      state.sandbox_id,
-      @provision_deadline_ms
-    )
-
     continuation =
       case Keyword.fetch(args, :binding_from) do
         {:ok, source} -> {:await_binding, source}
@@ -609,13 +604,27 @@ defmodule Fountain.Conversations.ConversationServer do
 
       {:stop, :normal, state}
     else
-      # ownership: this newly started actor fetched its parent above. A journal
-      # left by another incarnation is retired, never reattached or replayed.
-      case Fountain.Conversations.ExecutionGuard._unsafe_interrupt_on_sandbox(conv.id, sandbox.id) do
-        {:ok, :unbounded} -> provision_with_rows(state, conv, sandbox)
-        {:ok, {:bounded, _}} -> {:stop, :normal, state}
-        {:error, _} -> {:stop, :normal, state}
+      case Fountain.Conversations.ActorOwnership.start(
+             state,
+             conv,
+             sandbox,
+             @provision_deadline_ms
+           ) do
+        {:ok, claimed} -> provision_claimed(claimed, conv, sandbox)
+        _ -> {:stop, :normal, state}
       end
+    end
+  end
+
+  defp provision_claimed(state, conv, sandbox) do
+    # ownership: startup claimed this incarnation before interruption or credentials.
+    case Fountain.Conversations.ExecutionGuard._unsafe_interrupt_on_sandbox(
+           conv.id,
+           sandbox.id,
+           state.actor_claim
+         ) do
+      {:ok, :unbounded} -> provision_with_rows(state, conv, sandbox)
+      _ -> {:stop, :normal, state}
     end
   end
 
@@ -776,7 +785,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # `starting` means an earlier attempt was interrupted mid-provision — a
     # deploy or a Horde rebalance killed the server while it was blocked in
     # this function. The sprite it was building is most likely still there.
-    context = ProvisionContext.new(conv, sandbox)
+    context = ProvisionContext.new(conv, sandbox, state.actor_claim)
     interrupted? = sandbox.status == "starting"
 
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "starting"})
@@ -830,7 +839,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Fountain.SandboxSkills.mount(state.handle, runtime, (agent && agent.skills) || [])
     {state, conv} = rotate_callback_api_key(state, conv)
 
-    case broker_prepare(state, ProvisionContext.new(conv, sandbox)) do
+    case broker_prepare(state, ProvisionContext.new(conv, sandbox, state.actor_claim)) do
       {:ok, prepared} -> finish_fresh_provision(prepared, conv, sandbox, agent, env, secrets)
       {:error, reason} -> fail_provision(state, conv, sandbox, %{reason: inspect(reason)})
     end
@@ -841,7 +850,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp finish_fresh_provision(state, conv, sandbox, agent, env, secrets) do
     handle = state.handle
     runtime = conv.runtime || (agent && agent.runtime) || "claude"
-    context = ProvisionContext.new(conv, sandbox)
+    context = ProvisionContext.new(conv, sandbox, state.actor_claim)
     # Looked up once, here, because it is stable for the sandbox's life and
     # the agent needs it in its environment before the first turn runs.
     sandbox_url = Provisioning.record_sandbox_url(sandbox, handle)
@@ -927,7 +936,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp fail_provision(state, conv, sandbox, reason) do
-    context = Fountain.Conversations.ProvisionContext.new(conv, sandbox)
+    context = Fountain.Conversations.ProvisionContext.new(conv, sandbox, state.actor_claim)
     finish_provision_failure(state, context, reason)
   end
 
@@ -1105,7 +1114,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # what tells a redistribution storm (many nodes, one conversation) from a
   # crash loop (one node, restarting) without guessing.
   defp do_reattach(state, conv, sandbox, agent, env, secrets) do
-    context = ProvisionContext.new(conv, sandbox)
+    context = ProvisionContext.new(conv, sandbox, state.actor_claim)
 
     handle =
       Managoat.Sandbox.build_handle(
@@ -2200,26 +2209,16 @@ defmodule Fountain.Conversations.ConversationServer do
   defp destroy_sandbox(state, reason),
     do: Lifecycle.destroy_server(state, reason, &drop_connection/2)
 
-  # Best-effort revoke of the per-conversation API key when this server
-  # exits — clean termination (`:terminate_conv`), crash paths that hit
-  # `{:stop, :normal, state}`, and (because init/1 traps exits, #322)
-  # supervisor shutdown on deploys and Horde rebalances.
-  #
-  # Revokes only the key THIS server minted, and only while the
-  # conversation row still points at it. Reading the row's id at call time
-  # made a dying duplicate (Horde's CRDT merge mass-terminates losers)
-  # revoke the SURVIVING server's live credential — its sprite then 401'd
-  # on every callback and sub-agent spawn, surfaced nowhere. If the row has
-  # moved past our key, a successor owns the live credential and ours is
-  # already dead or inert.
-  #
-  # If the BEAM crashes hard (SIGKILL — untrappable) the row in `api_keys`
-  # is left behind, but it is not dangerous: `CallbackKey.api_key_opts/0`
-  # sets an `expires_at`, so an un-revoked key stops authenticating on its
-  # own, and RetentionPruner deletes long-expired rows. See SandboxReaper
-  # for the sprite half, which does not self-heal.
+  # Teardown may only clear shared conversation state for its current actor.
+  # Callback-key revocation remains scoped to the key minted by this process.
   @impl true
+  def terminate(_reason, %{actor_claim: nil}), do: :ok
+
   def terminate(reason, state) do
+    Fountain.Conversations.ActorOwnership.finish(state, fn -> terminate_owned(reason, state) end)
+  end
+
+  defp terminate_owned(reason, state) do
     Fountain.Conversations.Redaction.delete(state.conversation_id)
 
     if state.conversation_id && state.callback_api_key_id do

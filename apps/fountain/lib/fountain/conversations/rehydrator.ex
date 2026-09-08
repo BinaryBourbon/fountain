@@ -8,8 +8,10 @@ defmodule Fountain.Conversations.Rehydrator do
 
   Scoped to **fully-provisioned** conversations (sandbox.status == "ready"
   and conversation.status in ["idle", "running"]). Pending/starting
-  sandboxes from a crashed mid-provision are left as-is — the user's next
-  action lazily resolves them via `wake_conversation`.
+  sandboxes from a crashed mid-provision are retained for lifecycle recovery.
+  A ready machine with an unreleased actor claim also remains fenced: registry
+  absence cannot authorize taking over an unresolved process. Clean shutdown
+  releases its claim and permits the ordinary reattach path.
 
   ## Clustered boot
 

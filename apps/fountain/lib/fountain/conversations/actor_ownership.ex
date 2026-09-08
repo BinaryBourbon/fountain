@@ -1,0 +1,133 @@
+defmodule Fountain.Conversations.ActorOwnership do
+  @moduledoc """
+  Arbitrate actor startup before credentials, interruption or provider calls.
+
+  A claim identifies one process incarnation. Registry absence and elapsed time
+  never release it: an untrappable process or node loss requires recovery to
+  account for its outstanding operations before another actor can take over.
+  Normal termination releases only this incarnation. A committed holder transfer
+  supersedes the old machine's claim; its scoped callbacks then lose authority.
+  """
+  import Ecto.Query
+  alias Fountain.Repo
+  alias Fountain.Conversations.{ActorClaim, Conversation, Sandbox}
+
+  def start(state, conversation, sandbox, provision_deadline_ms) do
+    id = Map.get(state, :actor_claim) || Ecto.UUID.generate()
+
+    with {:ok, _} <- claim(conversation.user_id, conversation.id, sandbox.id, id) do
+      if is_nil(Map.get(state, :actor_claim)) do
+        Fountain.Conversations.ProvisionWatchdog.start(
+          conversation.id,
+          sandbox.id,
+          provision_deadline_ms,
+          actor_claim: id
+        )
+      end
+
+      {:ok, state |> Map.put(:actor_claim, id) |> Map.put(:user_id, conversation.user_id)}
+    end
+  end
+
+  def claim(user_id, conversation_id, sandbox_id, id) do
+    Repo.transaction(fn ->
+      lock_machine(sandbox_id)
+
+      parent =
+        Repo.one(from c in Conversation, where: c.id == ^conversation_id, lock: "FOR UPDATE")
+
+      sandbox = Repo.one(from s in Sandbox, where: s.id == ^sandbox_id, lock: "FOR UPDATE")
+
+      unless parent && sandbox && parent.user_id == user_id && sandbox.user_id == user_id &&
+               parent.sandbox_id == sandbox.id && parent.status not in ~w(terminated failed) &&
+               sandbox.status not in ~w(terminated failed),
+             do: Repo.rollback(:ownership_changed)
+
+      existing =
+        Repo.one(
+          from a in ActorClaim,
+            where: a.conversation_id == ^parent.id and a.state == "active",
+            lock: "FOR UPDATE"
+        )
+
+      cond do
+        existing && existing.user_id != user_id ->
+          Repo.rollback(:ownership_changed)
+
+        existing && existing.id == id && existing.sandbox_id == sandbox_id ->
+          existing
+
+        existing && existing.sandbox_id == sandbox_id ->
+          Repo.rollback(:actor_owned)
+
+        true ->
+          if existing do
+            existing |> Ecto.Changeset.change(state: "superseded") |> Repo.update!()
+          end
+
+          if Repo.get(ActorClaim, id), do: Repo.rollback(:actor_retired)
+
+          Repo.insert!(%ActorClaim{
+            id: id,
+            user_id: user_id,
+            conversation_id: conversation_id,
+            sandbox_id: sandbox_id
+          })
+      end
+    end)
+  end
+
+  @doc "Check while holding the original machine/parent locks; nil supports non-actor writers only."
+  def current?(conversation_id, sandbox_id, id) do
+    case Repo.one(
+           from a in ActorClaim,
+             where: a.conversation_id == ^conversation_id and a.state == "active",
+             lock: "FOR UPDATE"
+         ) do
+      nil -> is_nil(id)
+      claim -> claim.id == id && claim.sandbox_id == sandbox_id
+    end
+  end
+
+  def current?(state),
+    do: current?(state.conversation_id, state.sandbox_id, Map.get(state, :actor_claim))
+
+  @doc "Serialize local teardown and release with successor claims on the parent lock."
+  def finish(state, teardown) do
+    Repo.transaction(fn ->
+      lock_machine(state.sandbox_id)
+
+      parent =
+        Repo.one(
+          from c in Conversation, where: c.id == ^state.conversation_id, lock: "FOR UPDATE"
+        )
+
+      if parent && parent.user_id == state.user_id && parent.sandbox_id == state.sandbox_id &&
+           current?(state) do
+        teardown.()
+      end
+
+      release(state)
+    end)
+
+    :ok
+  end
+
+  # An exiting actor retires its own claim without changing a successor's claim.
+  defp release(state) do
+    if id = Map.get(state, :actor_claim) do
+      from(a in ActorClaim,
+        where:
+          a.id == ^id and a.user_id == ^state.user_id and
+            a.conversation_id == ^state.conversation_id and a.sandbox_id == ^state.sandbox_id and
+            a.state == "active"
+      )
+      |> Repo.update_all(set: [state: "stopped", updated_at: DateTime.utc_now()])
+    end
+
+    :ok
+  end
+
+  defp lock_machine(id),
+    do: Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(id)])
+end

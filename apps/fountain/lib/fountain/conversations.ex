@@ -1451,11 +1451,12 @@ defmodule Fountain.Conversations do
         :noop
 
       {:ok, {updated_turn, conv, conversation_changed?, bounded?}} ->
-        if is_nil(turn.reply_text) and is_binary(updated_turn.reply_text) do
-          Fountain.Activation.turn_replied(updated_turn)
-        end
+        if not Repo.in_transaction?() do
+          if is_nil(turn.reply_text) and is_binary(updated_turn.reply_text),
+            do: Fountain.Activation.turn_replied(updated_turn)
 
-        if conversation_changed?, do: broadcast_sidebar_update(conv.user_id)
+          if conversation_changed?, do: broadcast_sidebar_update(conv.user_id)
+        end
 
         metadata = %{
           outcome: "turn_orphaned",
@@ -1705,10 +1706,24 @@ defmodule Fountain.Conversations do
         event
 
       {:new, event} ->
-        notify_stage(event, meta)
-        Fountain.Webhooks.dispatch_stage(event)
+        if Repo.in_transaction?() do
+          defer_stage!(event)
+        else
+          notify_stage(event, meta)
+          Fountain.Webhooks.dispatch_stage(event)
+        end
+
         event
     end
+  end
+
+  defp defer_stage!(event) do
+    user_id = conversation_user_id(event.conversation_id) || raise "stage owner missing"
+    Fountain.Webhooks.dispatch_stage!(event)
+
+    %{"event_id" => event.id, "conversation_id" => event.conversation_id, "user_id" => user_id}
+    |> Fountain.Workers.TurnDeadlineNotification.new()
+    |> Oban.insert!()
   end
 
   @doc "Notify subscribers of an existing stage; deadline jobs may repeat its id."
@@ -2926,6 +2941,9 @@ defmodule Fountain.Conversations do
       {:graph_updated}
     )
   end
+
+  @doc "Notify a sidebar after the caller has established its user's ownership."
+  def _unsafe_notify_sidebar(user_id), do: broadcast_sidebar_update(user_id)
 
   defp broadcast_sidebar_update(user_id) when is_binary(user_id) do
     Phoenix.PubSub.broadcast(

@@ -4,7 +4,7 @@ defmodule Fountain.Conversations.ProvisionContext do
 
   Machine and parent locks serialize publication with holder transfers. Failure,
   queued prompt refusal and session revocation commit before provider cleanup.
-  This binding guard does not replace a durable actor epoch.
+  Actor claims also fence callbacks from an earlier process incarnation.
   """
   import Ecto.Query
   require Logger
@@ -13,21 +13,23 @@ defmodule Fountain.Conversations.ProvisionContext do
   alias Fountain.Conversations.{Conversation, ExecutionGuard, PromptDelivery, Sandbox}
 
   @enforce_keys [:user_id, :conversation_id, :sandbox_id]
-  defstruct [:user_id, :conversation_id, :sandbox_id, :phase]
+  defstruct [:user_id, :conversation_id, :sandbox_id, :phase, :actor_claim]
 
   @type t :: %__MODULE__{
           user_id: Ecto.UUID.t(),
           conversation_id: Ecto.UUID.t(),
           sandbox_id: Ecto.UUID.t(),
-          phase: :fresh | :reattach
+          phase: :fresh | :reattach,
+          actor_claim: Ecto.UUID.t() | nil
         }
   @type target :: t() | String.t()
 
-  def new(conversation, sandbox),
+  def new(conversation, sandbox, actor_claim \\ nil),
     do: %__MODULE__{
       user_id: conversation.user_id,
       conversation_id: conversation.id,
       sandbox_id: sandbox.id,
+      actor_claim: actor_claim,
       phase: if(sandbox.status in ~w(pending starting), do: :fresh, else: :reattach)
     }
 
@@ -218,6 +220,9 @@ defmodule Fountain.Conversations.ProvisionContext do
                   (Keyword.get(opts, :allow_retired, false) and context.phase == :fresh and
                      parent.status == "pending")),
              do: Repo.rollback(:ownership_changed)
+
+      unless Conversations.ActorOwnership.current?(parent.id, sandbox.id, context.actor_claim),
+        do: Repo.rollback(:ownership_changed)
 
       writer.(parent, sandbox)
     end)

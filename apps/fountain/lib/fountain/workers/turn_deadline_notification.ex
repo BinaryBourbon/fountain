@@ -30,9 +30,22 @@ defmodule Fountain.Workers.TurnDeadlineNotification do
       # ownership: the event query above scopes its conversation to the saved tenant.
       Conversations._unsafe_notify_stage(event)
       notify_replacement(event)
+      notify_orphan(event, user_id)
     end
 
     :ok
+  end
+
+  defp notify_orphan(event, user_id) do
+    with {:ok, %{"outcome" => "turn_orphaned", "turn_id" => turn_id}} <- Jason.decode(event.data),
+         turn when not is_nil(turn) <-
+           Repo.get_by(Conversations.Turn, id: turn_id, conversation_id: event.conversation_id) do
+      Fountain.Activation.turn_replied(turn)
+      # ownership: perform/1 matched the event's parent to this saved user_id.
+      Conversations._unsafe_notify_sidebar(user_id)
+    else
+      _ -> :ok
+    end
   end
 
   defp notify_replacement(%LogEvent{stage: "sandbox", data: data} = event) do

@@ -651,8 +651,8 @@ independent PostgreSQL connections. Validation is recorded in
 `decisions/evidence/provision-ownership.json` for the earlier checkpoint and
 `decisions/evidence/prompt-delivery.json` for the receipt integration.
 
-This is a binding guard, not a durable actor lease. Ordinary provisioning failures
-now use the scoped outcome transaction described below. Same-machine actor epochs,
+Binding protection now includes the process claims described below. Ordinary
+provisioning failures use a scoped outcome transaction. Abandoned-claim recovery,
 database-first wake ownership and complete accepted-prompt recovery remain unfinished. It does not establish full wake
 recovery or live provider acceptance. The lifecycle stack stays draft; execution
 controls and recovery stay disabled.
@@ -729,7 +729,7 @@ local database checks do not prove live provider behavior.
 
 Still required: safe actor recovery after a lost startup and complete
 restart/cancellation coverage through the actual entry points. Legacy raw actor callbacks remain for compatibility;
-current launch paths send receipt IDs. Same-machine actor epochs and uncertain-provider
+current launch paths send receipt IDs. Abandoned-actor and uncertain-provider
 recovery remain separate integration gates. Local validation does not authorize
 production activation.
 
@@ -773,8 +773,45 @@ The actor test also resumes the actual setup-script helper after replacement adm
 and checks that its output and failure cannot affect the running replacement.
 Validation is recorded in `decisions/evidence/provision-context.json`.
 
-This does not establish same-machine actor ownership, safe recovery of a lost actor,
-or conditional provider deletion. Cleanup still uses the existing sandbox-operation
+This does not establish safe recovery of a lost actor or conditional provider
+deletion. The startup claims below add same-machine arbitration. Cleanup still uses the existing sandbox-operation
 path after the failure commits; unmanaged provider identity and uncertain operation
 recovery remain integration gates. The lifecycle stack stays draft and disabled
 pending those checks and live acceptance.
+
+## Actor startup claims (recovery integration in progress)
+
+A real duplicate-start regression showed a second actor destroying and recreating
+its live predecessor's provisioning machine. Horde registration alone did not
+prevent the second callback from treating `starting` as an interrupted attempt.
+
+Each process now acquires a durable claim before credentials, startup interruption
+or provider work. The database allows one active claim per conversation. Its ID,
+tenant and original machine are immutable; a retired ID cannot become active again.
+Repeated delivery of the same claim is idempotent. A different incarnation on the
+same machine is refused while the existing claim is active.
+
+A committed holder transfer can supersede the old machine's claim. Provisioning
+stages, output, failures, broker minting, startup interruption and watchdogs carry
+the process claim and recheck it under the original machine and parent locks.
+A predecessor watchdog cannot fail a successor on the same machine. An unclaimed
+duplicate exits before credentials and cannot clear its predecessor's redaction state.
+
+Completed actor teardown releases only its own claim. Teardown and successor
+claims serialize on the parent lock, including when the machine stays the same.
+Stages produced within that transaction save their webhook and notification jobs
+before commit; rollback emits no stage. Orphan-turn analytics and sidebar refresh
+follow the committed notification. A clean shutdown permits reattach without
+creating another machine.
+
+Claims have no time-based takeover. An untrappable process or node failure retains
+its active claim; registry absence cannot authorize another provider attempt.
+Recovery still needs to distinguish an unstarted request from submitted or uncertain
+operations before reconciling that claim and starting another actor. This behavior
+is an integration boundary, not completed crash recovery. The lifecycle stack stays
+draft and must not be deployed until recovery and live acceptance are proved.
+
+The actor tests cover duplicate provisioning, preservation of a running bounded
+execution, clean shutdown/reattach, and redaction ownership. Independent PostgreSQL
+connections exercise competing claims and both orders of same-machine handoff
+versus predecessor publication in `scripts/verify-actor-ownership-races.exs`.

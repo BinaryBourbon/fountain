@@ -130,11 +130,26 @@ defmodule Fountain.Workers.AutonomousTurnReaperTest do
 
   describe "ConversationServer.terminate/2" do
     test "a normal stop reconciles the turn its in-memory timer can no longer close" do
-      {_user, conv, turn} = running_turn()
+      {user, conv, turn} = running_turn()
+      claim = Ecto.UUID.generate()
+
+      assert {:ok, _} =
+               Fountain.Conversations.ActorOwnership.claim(
+                 user.id,
+                 conv.id,
+                 conv.sandbox_id,
+                 claim
+               )
+
+      Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conv.id}")
+      Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user.id}")
 
       assert :ok =
                ConversationServer.terminate(:normal, %{
                  conversation_id: conv.id,
+                 user_id: user.id,
+                 sandbox_id: conv.sandbox_id,
+                 actor_claim: claim,
                  callback_api_key_id: nil,
                  current_turn: turn
                })
@@ -142,14 +157,33 @@ defmodule Fountain.Workers.AutonomousTurnReaperTest do
       assert Repo.reload(turn).status == "interrupted"
       assert Repo.reload(turn).orphaned_at
       assert Repo.reload(conv).status == "idle"
+      refute_received {:log_event, _}
+      refute_received {:sidebar_update, _}
+      assert [job] = all_enqueued(worker: Fountain.Workers.TurnDeadlineNotification)
+      assert :ok = perform_job(Fountain.Workers.TurnDeadlineNotification, job.args)
+      assert_receive {:log_event, %{stage: "reattach", state: "interrupted"}}
+      assert_receive {:sidebar_update, user_id}
+      assert user_id == user.id
     end
 
     test "a supervisor shutdown leaves the turn available for reattach" do
-      {_user, conv, turn} = running_turn()
+      {user, conv, turn} = running_turn()
+      claim = Ecto.UUID.generate()
+
+      assert {:ok, _} =
+               Fountain.Conversations.ActorOwnership.claim(
+                 user.id,
+                 conv.id,
+                 conv.sandbox_id,
+                 claim
+               )
 
       assert :ok =
                ConversationServer.terminate(:shutdown, %{
                  conversation_id: conv.id,
+                 user_id: user.id,
+                 sandbox_id: conv.sandbox_id,
+                 actor_claim: claim,
                  callback_api_key_id: nil,
                  current_turn: turn
                })
