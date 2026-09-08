@@ -2,14 +2,12 @@ defmodule Fountain.Conversations.HomeCheckpoint do
   @moduledoc """
   Checkpoint a persistent home when it parks (ADR 0023, #1073).
 
-  A home's disk is the agent's memory across every conversation on it, so
-  the moment it goes quiet is the moment its state is worth keeping. Where
-  the provider advertises `:checkpoint`, both park paths — the
-  `ConversationServer`'s idle and ceiling reclaim, and the reaper's park of a
-  home with no live server — call `on_park/1` before flipping the row to
-  `suspended`. The checkpoint id and time land in `sandboxes.provider_meta`
-  (`checkpoint_id`, `checkpoint_at`) and a `checkpoint` stage is written to
-  every live conversation on the machine, so each transcript shows it.
+  A home's disk is the agent's memory across its conversations. Legacy park
+  paths call `on_park/1`, which records checkpoint metadata and a stage event.
+  Managed park paths call `capture_once/3`; their durable transition commits
+  metadata and notification jobs only after the bounded provider operation
+  completes. Disabled checkpoints are skipped. Uncertain managed results keep
+  the transition fenced, without another provider write.
 
   What a checkpoint can restore, honestly: on Sprites a checkpoint is scoped
   to the sprite that created it (#654) and the SDK has no "create a sprite
@@ -19,8 +17,8 @@ defmodule Fountain.Conversations.HomeCheckpoint do
   is the path it is for. Ephemeral sandboxes are never checkpointed here —
   their disk dies with the conversation.
 
-  Best-effort by construction: a failed checkpoint is logged and recorded as
-  a failed stage, and the park goes ahead — an unparked machine keeps billing.
+  Legacy checkpoint failures are best effort. A managed checkpoint timeout or
+  unconfirmed response is not evidence that the provider operation stopped.
   """
 
   alias Fountain.Conversations
@@ -49,18 +47,13 @@ defmodule Fountain.Conversations.HomeCheckpoint do
 
   @doc "Capture a managed home's checkpoint once; the transition owns metadata publication."
   def capture_once(%Sandbox{mode: "persistent"}, handle, operation_id) do
-    comment = "managed park #{operation_id}"
-    # The adapter can fall back to an older checkpoint when its list has no
-    # matching comment. Validate the returned ID through the typed provider API.
-    with {:ok, id} when is_binary(id) <-
-           Managoat.Sandbox.create_checkpoint(handle, comment: comment),
-         client <- Managoat.Sandbox.Sprites.Client.get!(),
-         sprite <- Sprites.Sprite.new(client, handle.name),
-         {:ok, %Sprites.Checkpoint{id: ^id, comment: ^comment}} <-
-           Sprites.get_checkpoint(sprite, id) do
-      id
-    else
-      _ -> :skipped
+    case Managoat.Sandbox.create_checkpoint_once(handle,
+           operation_id: operation_id,
+           timeout_ms: 30_000
+         ) do
+      {:ok, id} when is_binary(id) -> id
+      {:error, :not_supported} -> :skipped
+      _ -> {:error, :provider_operation_uncertain}
     end
   end
 

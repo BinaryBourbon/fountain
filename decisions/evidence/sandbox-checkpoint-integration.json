@@ -1,0 +1,76 @@
+{
+  "recorded_at": "2026-09-08T11:01:04.096845+00:00",
+  "previous_checkpoint": "b4c833fef2685d4a9dea25404e063cc417d9ac83",
+  "scope": "Released bounded checkpoint adapter consumed by managed park; local synthetic provider evidence, no production activation.",
+  "source_files": {
+    "apps/fountain/lib/fountain/conversations/home_checkpoint.ex": "sha256:e9ec519affc7ec0ed5477230d7ba3dc60d3bf72c10c25cae6928152ac96fd206",
+    "apps/fountain/lib/fountain/conversations/sandbox_transitions.ex": "sha256:56027e7eac292f455e02910b7f945b67de494e1cbf75bcd87545354f8da67c4f",
+    "apps/fountain/mix.exs": "sha256:721337c654f0ab9f3fde7751352c45bfbf0d2c0c39bce9e805d5fac1fbe0019f",
+    "mix.lock": "sha256:816aaff1ab6123984041912f7b2b5971bbb96a9153b3de3a3e7e0329c8a232d6",
+    "apps/fountain/test/fountain/conversations/sandbox_transitions_test.exs": "sha256:d1e0dd446c0d59b693f07cbb819bfd51449d96272cfd3967add38fa2c41a4ec9",
+    "apps/fountain/test/fountain/conversations/sandbox_checkpoint_integration_test.exs": "sha256:8b5f8c1d05a3c1bf08f91098b8070c7df6a7b46d47694052d5634bd0b27654d1"
+  },
+  "dependency": {
+    "package": "managoat_sandbox",
+    "version": "0.4.2",
+    "requirement": "~> 0.4.2",
+    "source_pr": "https://github.com/managoat/managoat_sandbox/pull/12",
+    "reviewed_head": "d38c63e5d78b6e2c50a4a4983bfba5bc3b9e9198",
+    "merge_commit": "d6664bbe6b1c520433c1d56dd3a755fab5ddb29e",
+    "publication_run": "https://github.com/managoat/managoat_sandbox/actions/runs/34217069148",
+    "publication": "success",
+    "hex_inner_checksum": "4721dec2a36eedd5d8b16be0a9c100829a724c8d3d8d0081ce8db0b2a7c9a358",
+    "hex_outer_checksum": "7157247012d6d8e089608b52c71c0255e93aba843d91d887bc8584046ee42755",
+    "dependency_source_sha256": "sha256:6e7943834c4ca142c0a8246eff5da134a7ce114cc3c2431ba19e3c617d385f16"
+  },
+  "full_precommit": {
+    "tests": 4874,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:fbe4b986b3e039ddcdf1d6eb89edc245886e9317b1772bdcb291c59589d1f218"
+  },
+  "focused": {
+    "tests": 27,
+    "failures": 0,
+    "log_sha256": "sha256:778cb78094cd66eeefa64cd3b3c4fc8930fd7fa108ae75140f5f3ec01b4f5ccc"
+  },
+  "sdk_precommit": {
+    "tests": 359,
+    "failures": 0,
+    "total_coverage_percent": 97.48,
+    "log_sha256": "sha256:3e5959fc5604f5f55821b958dc3a597ac17068b56e2f66fdf93576f17fe82b8e"
+  },
+  "verified_behavior": [
+    "The host passes the committed operation ID to the released SDK; no direct provider API workaround or legacy checkpoint fallback remains in the managed path.",
+    "Checkpoint creation disabled at the adapter returns not_supported without acquiring credentials or sending a provider request; logical park can complete.",
+    "A confirmed checkpoint publishes metadata only after the still-owned transition completes.",
+    "Unconfirmed checkpoint results preserve uncertainty, capacity and the resume fence; no suspend, success event, confirmation GET after an incomplete stream, or replay is granted.",
+    "Two integration tests use the released facade and adapter with Req simulated HTTP responses; checkpoint creation itself is not mocked.",
+    "SDK real local socket tests verify closure on deadlines, oversized bodies and caller loss; a truncated HTTP body cannot authorize confirmation."
+  ],
+  "limits": {
+    "checkpoint_deadline_ms": 30000,
+    "combined_response_byte_budget": 65536,
+    "maximum_creation_requests": 1,
+    "maximum_confirmation_requests": 1,
+    "retries": false,
+    "redirects": false,
+    "outer_provider_task_timeout_ms": 35000
+  },
+  "prior_arbitration_evidence": {
+    "path": "decisions/evidence/sandbox-transitions.json",
+    "scope": "Earlier independent-connection races cover unchanged admission/retirement arbitration. They were not repeated or relabeled as checkpoint HTTP proof."
+  },
+  "public_execution_controls_enabled": false,
+  "recovery_worker_enabled_by_default": false,
+  "live_provider_operations": 0,
+  "remaining": [
+    "Full holder attachment/transfer arbitration and authoritative idle-bound rechecks.",
+    "Actor shutdown versus concurrent wake and queued-prompt preservation.",
+    "Recovery of uncertain park/resume outcomes without replaying provider writes.",
+    "Confirmed-create missing-machine retirement and coordinated replacement.",
+    "Ordinary legacy creation physical-name registry coverage.",
+    "Provider conditional identity safety and full live acceptance before activation/stack merge.",
+    "Aggregate inference limits and actual dollar-cost reporting."
+  ]
+}

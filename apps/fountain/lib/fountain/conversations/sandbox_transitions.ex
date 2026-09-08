@@ -208,10 +208,11 @@ defmodule Fountain.Conversations.SandboxTransitions do
   defp park_provider(sandbox, operation) do
     # Sprites suspend is a no-op. A home checkpoint still needs its one grant;
     # it cannot publish metadata before the transition's ownership recheck.
-    checkpoint = HomeCheckpoint.capture_once(sandbox, handle(operation), operation.id)
-
-    case Managoat.Sandbox.suspend(handle(operation)) do
-      :ok -> {:ok, checkpoint}
+    with checkpoint when checkpoint == :skipped or is_binary(checkpoint) <-
+           HomeCheckpoint.capture_once(sandbox, handle(operation), operation.id),
+         :ok <- Managoat.Sandbox.suspend(handle(operation)) do
+      {:ok, checkpoint}
+    else
       _ -> {:error, :provider_operation_uncertain}
     end
   end

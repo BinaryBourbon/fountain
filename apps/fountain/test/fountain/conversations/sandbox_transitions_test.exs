@@ -214,22 +214,17 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   test "a home checkpoint is made once and published only after transition confirmation", c do
     sandbox = c.sandbox |> Ecto.Changeset.change(mode: "persistent") |> Repo.update!()
 
-    expect(Managoat.Sandbox, :create_checkpoint, fn handle, _ ->
+    expect(Managoat.Sandbox, :create_checkpoint_once, fn handle, opts ->
       refute Repo.in_transaction?()
       assert handle.instance_id == "physical-instance"
       assert Repo.reload!(sandbox).provider_meta["checkpoint_id"] == nil
+      operation = Repo.one!(from o in SandboxOperation, where: o.action == "park")
+      assert opts[:operation_id] == operation.id
+      assert opts[:timeout_ms] == 30_000
       {:ok, "checkpoint-one"}
     end)
 
     expect(Managoat.Sandbox, :suspend, fn _ -> :ok end)
-    expect(Managoat.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{} end)
-
-    expect(Sprites, :get_checkpoint, fn sprite, "checkpoint-one" ->
-      assert sprite.name == sandbox.sprite_name
-      operation = Repo.one!(from o in SandboxOperation, where: o.action == "park")
-      {:ok, %Sprites.Checkpoint{id: "checkpoint-one", comment: "managed park #{operation.id}"}}
-    end)
-
     assert {:ok, parked} = SandboxTransitions._unsafe_park(sandbox, :idle)
     assert parked.provider_meta["checkpoint_id"] == "checkpoint-one"
     assert Repo.aggregate(from(o in SandboxOperation, where: o.action == "park"), :count) == 1
@@ -389,21 +384,31 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
     assert Repo.reload!(c.creation).holds_slot
   end
 
-  test "the adapter's older checkpoint fallback cannot become this park's checkpoint", c do
+  test "an unconfirmed checkpoint cannot publish park success or grant a retry", c do
     sandbox = c.sandbox |> Ecto.Changeset.change(mode: "persistent") |> Repo.update!()
 
-    expect(Managoat.Sandbox, :create_checkpoint, fn _handle, opts ->
-      operation = Repo.one!(from o in SandboxOperation, where: o.action == "park")
-      assert opts[:comment] == "managed park #{operation.id}"
-      {:ok, "older-checkpoint"}
+    expect(Managoat.Sandbox, :create_checkpoint_once, fn _handle, _opts ->
+      {:error, {:unavailable, :checkpoint_unconfirmed}}
     end)
 
-    expect(Managoat.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{} end)
+    reject(Managoat.Sandbox, :suspend, 1)
 
-    expect(Sprites, :get_checkpoint, fn _, "older-checkpoint" ->
-      {:ok, %Sprites.Checkpoint{id: "older-checkpoint", comment: "another attempt"}}
-    end)
+    assert {:error, :provider_operation_uncertain} =
+             SandboxTransitions._unsafe_park(sandbox, :idle)
 
+    operation = Repo.one!(from o in SandboxOperation, where: o.action == "park")
+    assert operation.state == "uncertain"
+    assert Repo.aggregate(LogEvent, :count) == 0
+    refute Repo.reload!(sandbox).provider_meta["checkpoint_id"]
+
+    assert {:error, :provider_operation_fenced} =
+             SandboxTransitions._unsafe_resume(Repo.reload!(sandbox))
+  end
+
+  test "disabled checkpoint creation skips without falling back to the legacy request", c do
+    sandbox = c.sandbox |> Ecto.Changeset.change(mode: "persistent") |> Repo.update!()
+    reject(Managoat.Sandbox, :create_checkpoint, 2)
+    reject(Managoat.Sandbox.Sprites.Client, :get!, 0)
     expect(Managoat.Sandbox, :suspend, fn _ -> :ok end)
     assert {:ok, parked} = SandboxTransitions._unsafe_park(sandbox, :idle)
     refute parked.provider_meta["checkpoint_id"]

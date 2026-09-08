@@ -468,11 +468,12 @@ A stale ready write cannot bypass the operation fence.
 
 The actor and reaper use this path for managed machines. A refusal keeps the
 actor's connection and does not report successful retirement. Home checkpoints
-are requested once with an operation-specific comment. The returned checkpoint's
-ID and comment are checked through the typed provider API because the adapter
-can otherwise fall back to an older checkpoint. Metadata is written only after
-transition confirmation. A checkpoint failure remains best effort. Sprites suspend is a no-op: logical
-parking does not establish stopped compute or billing.
+use the released Sandbox 0.4.2 `create_checkpoint_once/2` contract. The durable
+operation ID binds one creation request to one exact-comment confirmation; an
+older checkpoint cannot substitute. Disabled checkpoints are skipped. An
+unconfirmed result retains the fence without publishing park success or granting
+a retry. Metadata is written only after transition confirmation. Sprites suspend
+is a no-op: logical parking does not establish stopped compute or billing.
 
 Managed resume and ready reuse require the provider response to contain the
 recorded instance ID. Presence under the same name is insufficient. Resume
@@ -481,9 +482,13 @@ its provider request runs outside the quota transaction. The response is checked
 against current ownership, operation generation and retirement state before
 readiness is accepted. Provider tasks have a 35-second ceiling that survives
 caller death. Outer transactions are refused before provider work starts.
-The current checkpoint adapter still uses an unbounded synchronous HTTP request
-internally. The task ceiling does not prove cancellation of that transport or
-bound its response bytes; a bounded checkpoint adapter remains an activation gate.
+The released checkpoint adapter shares a 30-second deadline and 65,536-byte
+response budget across creation and confirmation, with retries and redirects
+disabled. SDK socket tests verify local transport closure on timeout, oversized
+responses and caller loss. This does not undo a submitted remote checkpoint or
+prove conditional provider-instance writes. Fountain integration tests exercise
+the released adapter against a simulated HTTP provider; live acceptance remains
+outstanding. See `decisions/evidence/sandbox-checkpoint-integration.json`.
 
 Park events, webhook jobs and local notification jobs commit with the transition.
 The existing persisted-stage notification worker delivers them after commit.
