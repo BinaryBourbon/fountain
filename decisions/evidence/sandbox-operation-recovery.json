@@ -1,0 +1,94 @@
+{
+  "recorded_at": "2026-09-08T09:33:23.912838+00:00",
+  "previous_checkpoint": "961028bf9f6e2c123ce6e0d30705a628f26cb66d",
+  "scope": "Local sandbox-operation recovery with retained ownership and bounded coordinator tasks; disabled by default.",
+  "source_files": {
+    "apps/fountain/lib/fountain/application.ex": "sha256:e77e42c4f4cecdb3d0aba4d03b54467b55da01099aec336f203c45b2ace4a5a9",
+    "apps/fountain/lib/fountain/conversations/sandbox_operation.ex": "sha256:72db53b9a149a8cb9bb100c1ba78d355b4ae3f4af2c9689d02817a3bb66a2072",
+    "apps/fountain/lib/fountain/conversations/sandbox_operation_worker.ex": "sha256:5e002129096fc8521fb6d91642d81eb0366ffa4947497078b26f327137629eb9",
+    "apps/fountain/lib/fountain/conversations/sandbox_operations.ex": "sha256:4f28b540fc1cac3d6720fc101ef156560fbc6e0a3065d248e8771edf28de2ce1",
+    "apps/fountain/priv/repo/migrations/20260908090000_add_sandbox_operation_recovery.exs": "sha256:2531de09f87257ab53f2ffa753d2387069b42488b0bce58c77d5dcda881ee436",
+    "apps/fountain/test/fountain/conversations/sandbox_operation_recovery_test.exs": "sha256:901f57b900c114d8369b0e14f2bbaab7115703d68003f60426459cebed5885e3",
+    "apps/fountain/test/fountain/conversations/sandbox_operation_worker_test.exs": "sha256:a3c53f1fe006b8970577585289393bc9cf07ea1c2a32dfa292a1a41f29fe915b",
+    "scripts/verify-sandbox-operation-races.exs": "sha256:eb78228de3209fc3eab37a6d671896535fd8e8cbbb1f9b92498fe0aa02fb7419"
+  },
+  "full_precommit": {
+    "tests": 4847,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:e921707af4b8e42a922b4c18a49d44bab9eec7ca69ea8cdf5f435bf3806b141f"
+  },
+  "focused": {
+    "tests": 36,
+    "failures": 0,
+    "log_sha256": "sha256:af3791863acd28a9f71e8caae3191cf1b82b46df2694858236790c9a5b859fd9",
+    "note": "Precedes two final default-off/batch-fairness tests included in the full gate."
+  },
+  "database_races": {
+    "results": {
+      "DEADLINE_RACE_RESULT": {
+        "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+        "separate_database_connections": true,
+        "cases": 20,
+        "outcomes": {
+          "completion_won": 14,
+          "expiry_won": 6
+        },
+        "provider_operations": 0,
+        "lock_wait_cannot_extend_deadline": true,
+        "delayed_lock_tables": [
+          "conversations",
+          "turns"
+        ],
+        "delayed_operations": [
+          "spawn",
+          "stdin_write"
+        ],
+        "completed_connections_require_cleanup": true,
+        "deadline_event_reuse_cases": 6
+      },
+      "SANDBOX_OPERATION_RACE_RESULT": {
+        "cleanup_claim_races": 20,
+        "stale_submission_late_reply_races": 20,
+        "observation_claim_races": 20,
+        "synthetic_deletes": 20,
+        "synthetic_probes": 20,
+        "separate_database_connections": true,
+        "live_provider_operations": 0
+      }
+    },
+    "log_sha256": "sha256:d348f169fe4392a53fda5431a2cd16a662420b563906a509c198a0f6e5325751",
+    "script": "scripts/verify-sandbox-operation-races.exs"
+  },
+  "verified_behavior": [
+    "An abandoned submission becomes uncertain without releasing capacity or granting another provider request.",
+    "Unknown creates are not candidates for absence probes or retry.",
+    "Confirmed creation cleanup survives deleted parent rows and nilified account ownership.",
+    "Ownership and provider-identity drift refuse cleanup or slot release.",
+    "A candidate scan does not authorize deletion after a new holder appears.",
+    "Row-locked recovery timestamps throttle duplicate coordinators and let later candidates progress.",
+    "An uncertain delete is settled only by confirmed absence, without another DELETE.",
+    "Blocked cleanup cannot starve stale-submission recovery or the separate observation pool.",
+    "Task timeouts survive coordinator failure; local exits do not confirm provider completion.",
+    "Application startup leaves the recovery worker disabled by default."
+  ],
+  "limits": {
+    "candidates_per_category": 100,
+    "cleanup_tasks": 4,
+    "observation_tasks": 4,
+    "scan_interval_ms": 5000,
+    "task_timeout_ms": 35000,
+    "submission_stale_seconds": 180,
+    "recovery_throttle_seconds": 60
+  },
+  "recovery_worker_enabled_by_default": false,
+  "public_execution_controls_enabled": false,
+  "live_provider_operations": 0,
+  "remaining": [
+    "Approve and verify recovery activation as part of the production rollout.",
+    "Complete park/resume and all holder/admission arbitration.",
+    "Cover ordinary legacy creation with the physical-name registry.",
+    "Verify provider identity safety and the full live acceptance path.",
+    "Aggregate inference limits and dollar-cost reporting remain separate unfinished work."
+  ]
+}

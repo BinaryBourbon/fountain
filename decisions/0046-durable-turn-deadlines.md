@@ -433,9 +433,30 @@ confirms absence. HTTP acceptance alone retains uncertainty.
 The journal's permanent name claim prevents another managed create from adopting
 it; ordinary legacy creation is not yet covered by that registry. Recording a
 GET response does not authorize a later name-based DELETE or prove an uncertain
-create belongs to this row. Recovery scanning, park/resume coordination, full
-holder arbitration and live provider acceptance remain required. The `park` and
+create belongs to this row. Park/resume coordination, full holder arbitration
+and live provider acceptance remain required. The `park` and
 `resume` action names are schema vocabulary, not implemented operations.
+
+`SandboxOperationWorker` now scans up to 100 candidates per category, with
+separate four-task pools for cleanup and observation. Submissions older than
+three minutes become uncertain without another provider call. Recovery claims
+are throttled for a minute under a row lock. Each task has a 35-second local
+timeout that survives coordinator failure; a blocked provider cannot stop the
+separate submission-recovery task.
+
+Confirmed creates whose parent records disappear or whose accounts are deleted
+retain cleanup authority through the journal. Ownership and provider identity
+are checked again before I/O and before recording an observed deletion.
+Recovery rechecks current holders; a live persistent home is not reclaimed merely
+because its original conversation disappeared. An uncertain delete can be settled
+by a read confirming absence. An uncertain create is never
+probed or released from a missing-name observation: its original request could
+still finish later.
+
+The recovery worker is **disabled by default** through
+`:sandbox_operation_worker_enabled`. Activation remains outstanding. Provider
+reads use the existing adapter under the task timeout; this does not establish
+aggregate inference limits or dollar-cost accounting. No live cleanup is claimed.
 
 `scripts/verify-sandbox-admission-races.exs` exercises real reset and admission
 contexts through separate local PostgreSQL connections, with outbound deletion

@@ -19,6 +19,7 @@ defmodule Fountain.Conversations.SandboxOperation do
     field :sandbox_started_at, :utc_datetime
     field :submitted_at, :utc_datetime_usec
     field :confirmed_at, :utc_datetime_usec
+    field :recovery_checked_at, :utc_datetime_usec
     timestamps(type: :utc_datetime_usec)
   end
 
@@ -37,7 +38,8 @@ defmodule Fountain.Conversations.SandboxOperation do
       :holds_slot,
       :sandbox_started_at,
       :submitted_at,
-      :confirmed_at
+      :confirmed_at,
+      :recovery_checked_at
     ])
     |> validate_required([:sandbox_id, :user_id, :provider, :sandbox_name, :action, :state])
     |> validate_inclusion(:action, ~w(create destroy park resume))

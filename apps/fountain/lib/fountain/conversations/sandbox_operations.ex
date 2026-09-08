@@ -132,6 +132,123 @@ defmodule Fountain.Conversations.SandboxOperations do
     audit_result(result, "sandbox.operation_result")
   end
 
+  @doc "Bounded recovery of abandoned submissions; no provider call or reservation release."
+  def _unsafe_recover_submissions(cutoff, limit \\ 100) when limit in 1..100 do
+    from(o in SandboxOperation,
+      where: o.state == "submitted" and o.submitted_at < ^cutoff,
+      order_by: [asc: o.submitted_at, asc: o.id],
+      limit: ^limit,
+      select: o.id
+    )
+    |> Repo.all()
+    |> Enum.count(fn id -> match?({:ok, _}, _unsafe_mark_uncertain(id)) end)
+  end
+
+  @doc "Read bounded cleanup candidates; the operation claim rechecks authority before I/O."
+  def _unsafe_recovery_candidates(cutoff, limit \\ 100) when limit in 1..100 do
+    live_holders =
+      from p in Conversation,
+        where: p.sandbox_id == parent_as(:creation).sandbox_id and p.status not in @terminal
+
+    deletes =
+      from d in SandboxOperation,
+        where: d.creation_id == parent_as(:creation).id and d.action == "destroy"
+
+    creations =
+      from c in SandboxOperation,
+        as: :creation,
+        left_join: s in Sandbox,
+        on: s.id == c.sandbox_id,
+        left_join: u in Fountain.Accounts.User,
+        on: u.id == c.user_id,
+        where: c.action == "create" and c.state == "confirmed" and c.holds_slot,
+        where: is_nil(c.recovery_checked_at) or c.recovery_checked_at < ^cutoff,
+        where:
+          is_nil(s.id) or s.status in @terminal or is_nil(u.id) or
+            (s.mode == "ephemeral" and not exists(subquery(live_holders))),
+        where: not exists(subquery(deletes)),
+        order_by: [asc_nulls_first: c.recovery_checked_at, asc: c.id],
+        limit: ^limit,
+        select: c.id
+
+    uncertain_deletes =
+      from d in SandboxOperation,
+        where: d.action == "destroy" and d.state == "uncertain",
+        where: is_nil(d.recovery_checked_at) or d.recovery_checked_at < ^cutoff,
+        order_by: [asc_nulls_first: d.recovery_checked_at, asc: d.id],
+        limit: ^limit,
+        select: d.id
+
+    %{cleanup: Repo.all(creations), reconcile: Repo.all(uncertain_deletes)}
+  end
+
+  @doc "Clean up a confirmed creation only after its machine or final ephemeral holder retires."
+  def _unsafe_recover_creation(id, cutoff) do
+    with {:ok, creation} <- claim_recovery(id, "create", "confirmed", cutoff) do
+      observed = %Sandbox{
+        id: creation.sandbox_id,
+        user_id: creation.user_id,
+        provider: creation.provider,
+        sprite_name: creation.sandbox_name,
+        provider_instance_id: creation.provider_instance_id
+      }
+
+      _unsafe_destroy(observed, recovery: true)
+    end
+  end
+
+  @doc "Observe an uncertain deletion without another write; never probe an uncertain create."
+  def _unsafe_reconcile_destroy(id, cutoff, probe \\ &Managoat.Sandbox.get/1) do
+    with {:ok, operation} <- claim_recovery(id, "destroy", "uncertain", cutoff),
+         :ok <- check_recovery_binding(operation) do
+      handle = Managoat.Sandbox.build_handle(:sprites, operation.sandbox_name)
+      result = probe.(%{handle | instance_id: operation.provider_instance_id})
+
+      # Probe success/presence, a timeout, and provider prose establish nothing.
+      if result == {:error, :not_found},
+        do: _unsafe_complete_destroy(operation.id, result),
+        else: {:error, :provider_operation_uncertain}
+    end
+  rescue
+    _ -> {:error, :provider_operation_uncertain}
+  catch
+    _, _ -> {:error, :provider_operation_uncertain}
+  end
+
+  defp claim_recovery(id, action, state, cutoff) do
+    Repo.transaction(fn ->
+      operation = lock_operation(id) || Repo.rollback(:not_found)
+
+      unless operation.action == action and operation.state == state,
+        do: Repo.rollback(:provider_operation_fenced)
+
+      if operation.recovery_checked_at &&
+           DateTime.compare(operation.recovery_checked_at, cutoff) != :lt,
+         do: Repo.rollback(:recovery_throttled)
+
+      operation
+      |> SandboxOperation.changeset(%{recovery_checked_at: DateTime.utc_now()})
+      |> Repo.update!()
+    end)
+  end
+
+  defp check_recovery_binding(observed) do
+    case Repo.transaction(fn ->
+           lock_machine(observed.sandbox_id)
+           operation = lock_operation(observed.id) || Repo.rollback(:not_found)
+           creation = lock_creation(observed.sandbox_id) || Repo.rollback(:not_found)
+           sandbox = lock_sandbox(observed.sandbox_id)
+
+           unless operation.state == "uncertain" and operation.provider == "sprites" and
+                    deletion_binding?(operation, creation) and creation.holds_slot and
+                    (is_nil(sandbox) or retained_binding?(creation, sandbox)),
+                  do: Repo.rollback(:ownership_changed)
+         end) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
   @doc "Query retained create reservations, including ones whose parents were deleted."
   def _unsafe_reserved_slots do
     from operation in SandboxOperation,
@@ -229,14 +346,17 @@ defmodule Fountain.Conversations.SandboxOperations do
         sandbox = lock_sandbox(observed.id)
         creation = lock_creation(observed.id) || Repo.rollback(:provider_identity_missing)
 
-        unless creation_binding?(creation, observed) and
-                 (is_nil(sandbox) or same_binding?(sandbox, observed)) and
-                 Enum.all?(parents, &(&1.user_id == creation.user_id)),
+        unless retained_binding?(creation, observed) and
+                 (is_nil(sandbox) or retained_binding?(creation, sandbox)) and
+                 Enum.all?(parents, &retained_owner?(creation, &1.user_id)),
                do: Repo.rollback(:ownership_changed)
 
         if creation.provider != "sprites" or creation.state != "confirmed" or
              is_nil(creation.provider_instance_id),
            do: Repo.rollback(:provider_identity_missing)
+
+        if Keyword.get(opts, :recovery, false) and not cleanup_due?(creation, sandbox, parents),
+          do: Repo.rollback(:sandbox_held)
 
         existing =
           Repo.one(
@@ -280,7 +400,7 @@ defmodule Fountain.Conversations.SandboxOperations do
           |> insert_operation!()
 
         if sandbox do
-          {:ok, _} = Fountain.Conversations.update_sandbox(sandbox, %{status: "terminated"})
+          retire_row(sandbox, nil)
         end
 
         operation
@@ -299,6 +419,11 @@ defmodule Fountain.Conversations.SandboxOperations do
           lock_machine(observed.sandbox_id)
           operation = lock_operation(operation_id) || Repo.rollback(:not_found)
           creation = lock_operation(operation.creation_id) || Repo.rollback(:not_found)
+          sandbox = lock_sandbox(operation.sandbox_id)
+
+          unless deletion_binding?(operation, creation) and
+                   (is_nil(sandbox) or retained_binding?(creation, sandbox)),
+                 do: Repo.rollback(:ownership_changed)
 
           if operation.state not in ~w(submitted uncertain),
             do: Repo.rollback(:provider_operation_fenced)
@@ -334,15 +459,7 @@ defmodule Fountain.Conversations.SandboxOperations do
   defp record_destroyed_row(operation, at) do
     case lock_sandbox(operation.sandbox_id) do
       %Sandbox{} = sandbox ->
-        if creation_binding?(operation, sandbox) do
-          status = if sandbox.status == "failed", do: "failed", else: "terminated"
-
-          {:ok, _} =
-            Fountain.Conversations.update_sandbox(sandbox, %{
-              status: status,
-              terminated_at: DateTime.truncate(at, :second)
-            })
-        end
+        if retained_binding?(operation, sandbox), do: retire_row(sandbox, at)
 
       nil ->
         :ok
@@ -363,6 +480,54 @@ defmodule Fountain.Conversations.SandboxOperations do
   defp creation_binding?(operation, sandbox) do
     operation.user_id == sandbox.user_id and operation.provider == sandbox.provider and
       operation.sandbox_name == sandbox.sprite_name
+  end
+
+  # A deleted account's retained identity still owns its cleanup obligation.
+  # Nil never matches an extant account, a different tenant, or another machine.
+  defp retained_owner?(operation, user_id) do
+    user_id == operation.user_id or
+      (is_nil(user_id) and
+         not Repo.exists?(
+           from u in Fountain.Accounts.User,
+             where: u.id == ^operation.user_id
+         ))
+  end
+
+  defp retained_binding?(operation, sandbox) do
+    retained_owner?(operation, sandbox.user_id) and operation.provider == sandbox.provider and
+      operation.sandbox_name == sandbox.sprite_name and
+      sandbox.provider_instance_id in [nil, operation.provider_instance_id]
+  end
+
+  defp deletion_binding?(operation, creation) do
+    creation.action == "create" and creation.state == "confirmed" and
+      operation.creation_id == creation.id and
+      operation.sandbox_id == creation.sandbox_id and operation.user_id == creation.user_id and
+      operation.provider == creation.provider and operation.sandbox_name == creation.sandbox_name and
+      operation.provider_instance_id == creation.provider_instance_id and
+      not is_nil(creation.provider_instance_id)
+  end
+
+  defp cleanup_due?(creation, sandbox, parents) do
+    is_nil(sandbox) or sandbox.status in @terminal or
+      not Repo.exists?(from u in Fountain.Accounts.User, where: u.id == ^creation.user_id) or
+      (sandbox.mode == "ephemeral" and Enum.all?(parents, &(&1.status in @terminal)))
+  end
+
+  defp retire_row(sandbox, at) do
+    attrs = %{
+      status: if(sandbox.status == "failed", do: "failed", else: "terminated"),
+      terminated_at: if(at, do: DateTime.truncate(at, :second))
+    }
+
+    if is_nil(sandbox.user_id) do
+      # The retained binding above proved account deletion. The general
+      # changeset requires a live user; this narrow historical write cannot revive it.
+      sandbox |> Ecto.Changeset.change(attrs) |> Repo.update!()
+    else
+      {:ok, retired} = Fountain.Conversations.update_sandbox(sandbox, attrs)
+      retired
+    end
   end
 
   defp insert_operation!(changeset) do

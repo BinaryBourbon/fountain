@@ -68,6 +68,7 @@ defmodule Fountain.Application do
         {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
       ] ++
         execution_deadline_children() ++
+        sandbox_operation_children() ++
         cluster_children(cluster_topologies) ++
         [
           # Horde.Registry + Horde.DynamicSupervisor are CRDT-backed
@@ -194,6 +195,12 @@ defmodule Fountain.Application do
   defp execution_deadline_children do
     if Application.get_env(:fountain, :execution_deadline_worker_enabled, true),
       do: [Fountain.Conversations.ExecutionDeadlineWorker],
+      else: []
+  end
+
+  defp sandbox_operation_children do
+    if Application.get_env(:fountain, :sandbox_operation_worker_enabled, false),
+      do: [Fountain.Conversations.SandboxOperationWorker],
       else: []
   end
 end
