@@ -76,6 +76,7 @@ Mimic.copy(Stripe.Customer)
 Mimic.copy(Stripe.Checkout.Session)
 
 Mimic.copy(Fountain.Conversations)
+Mimic.copy(Fountain.Workers.WebhookDelivery)
 Mimic.copy(Fountain.Conversations.ConversationServer)
 Mimic.copy(Fountain.Conversations.TitleGenerator)
 Mimic.copy(Fountain.Conversations.Provisioning)

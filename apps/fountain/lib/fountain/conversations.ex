@@ -12,6 +12,7 @@ defmodule Fountain.Conversations do
 
   alias Fountain.Audit
   alias Fountain.Conversations.{Blocks, Conversation, LogEvent, Sandbox, Turn, TurnImage}
+  alias Fountain.Conversations.ExecutionGuard
   alias Fountain.Repo
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
@@ -1491,14 +1492,14 @@ defmodule Fountain.Conversations do
   conversation's PubSub topic, and emit a `[:fountain, :stage]` telemetry
   event.
 
-  Every operationally meaningful outcome flows through here — provision
-  done/failed, reattach, turn done/failed — so the Prometheus stage counter
-  (and the alert on it) cannot drift from what clients see on the stream.
+  Deadline outcomes are persisted by the journal and notified by a durable job.
+  A late terminal stage reuses that event, or returns nil if retention deleted
+  it. Notifications are at-least-once; clients deduplicate by the log event id.
   `stage` and `status` are the metric's only tags; both value sets are small
   and fixed. `conv_id` stays in metadata and must never become a tag.
   """
   def publish_stage(conv_id, stage, status, meta \\ %{}) do
-    event =
+    writer = fn ->
       log!(%{
         conversation_id: conv_id,
         kind: "stage",
@@ -1506,6 +1507,47 @@ defmodule Fountain.Conversations do
         state: status,
         data: Jason.encode!(meta)
       })
+    end
+
+    turn_id = Map.get(meta, :turn_id) || Map.get(meta, "turn_id")
+
+    result =
+      if stage == "turn" and status in ["done", "failed", "interrupted"] and
+           match?({:ok, _}, Ecto.UUID.cast(turn_id)) do
+        # ownership: lifecycle caller owns conv_id; the journal query binds this
+        # turn to that conversation and serializes it with deadline expiration.
+        {:ok, result} = ExecutionGuard._unsafe_terminal_stage(conv_id, turn_id, writer)
+        result
+      else
+        {:new, writer.()}
+      end
+
+    case result do
+      {:existing, event} ->
+        event
+
+      {:new, event} ->
+        notify_stage(event, meta)
+        Fountain.Webhooks.dispatch_stage(event)
+        event
+    end
+  end
+
+  @doc "Notify subscribers of an existing stage; deadline jobs may repeat its id."
+  def _unsafe_notify_stage(%LogEvent{kind: "stage"} = event) do
+    meta =
+      case Jason.decode(event.data) do
+        {:ok, meta} when is_map(meta) -> meta
+        _ -> %{}
+      end
+
+    notify_stage(event, meta)
+  end
+
+  defp notify_stage(event, meta) do
+    conv_id = event.conversation_id
+    stage = event.stage
+    status = event.state
 
     Fountain.Telemetry.event(
       [:stage],
@@ -1515,12 +1557,6 @@ defmodule Fountain.Conversations do
 
     Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, event})
 
-    # Webhook dispatch hangs off the same call for the same reason the stage
-    # counter does (#700): a new lifecycle outcome cannot be added without
-    # subscribers seeing it. Best-effort by construction — `dispatch_stage/1`
-    # rescues everything, because a webhook that is not sent is a degraded
-    # integration and a stage transition that raises is a stuck agent.
-    Fountain.Webhooks.dispatch_stage(event)
     mirror_stage_to_analytics(event, meta)
 
     event

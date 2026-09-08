@@ -1,5 +1,6 @@
 alias Fountain.Repo
 alias Fountain.Conversations.{Conversation, Sandbox, Turn, TurnExecution, ExecutionGuard}
+import Ecto.Query
 config = Repo.config()
 url = URI.parse(config[:url] || "")
 host = config[:hostname] || url.host
@@ -103,10 +104,45 @@ results =
 
     case {execution.state, turn.status} do
       {"completed", "completed"} ->
+        nil = execution.deadline_event_id
         {:error, :not_ready} = ExecutionGuard._unsafe_claim_termination(execution.id)
         "completion_won"
 
       {"ready", "failed"} ->
+        event = Repo.get!(Fountain.Conversations.LogEvent, execution.deadline_event_id)
+        "failed" = event.state
+        "wall_time_limit" = Jason.decode!(event.data)["stop_reason"]
+
+        # Two late publishers share the same committed deadline outcome, even
+        # though both ask for success on independent database connections.
+        [first, second] =
+          DeadlineRace.concurrently([
+            fn ->
+              Fountain.Conversations.publish_stage(conv.id, "turn", "done", %{turn_id: turn.id})
+            end,
+            fn ->
+              Fountain.Conversations.publish_stage(conv.id, "turn", "done", %{turn_id: turn.id})
+            end
+          ])
+
+        true = first.id == event.id and second.id == event.id
+
+        1 =
+          Repo.aggregate(
+            from(e in Fountain.Conversations.LogEvent, where: e.turn_id == ^turn.id),
+            :count
+          )
+
+        1 =
+          Repo.aggregate(
+            from(j in Oban.Job,
+              where:
+                j.worker == "Fountain.Workers.TurnDeadlineNotification" and
+                  fragment("?->>'event_id'", j.args) == ^to_string(event.id)
+            ),
+            :count
+          )
+
         claims =
           DeadlineRace.concurrently([
             fn -> ExecutionGuard._unsafe_claim_termination(execution.id) end,
@@ -233,6 +269,7 @@ IO.puts(
       provider_operations: 0,
       lock_wait_cannot_extend_deadline: true,
       delayed_lock_tables: ["conversations", "turns"],
-      scope: "Local PostgreSQL arbitration and write permissions only"
+      deadline_event_reuse_cases: Enum.count(results, &(&1 == "expiry_won")),
+      scope: "Local PostgreSQL arbitration, event durability and write permissions only"
     })
 )

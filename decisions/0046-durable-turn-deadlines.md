@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Durable turn deadlines and remote execution identity"
-description: "Persist turn deadlines and provider-operation intent before I/O; the journal, typed policy and deadline coordinator are implemented; transport and lifecycle integration remain incomplete."
+description: "Persist turn deadlines and provider-operation intent before I/O; the journal, policy, coordinator and durable deadline events are implemented; transport and lifecycle integration remain incomplete."
 tags: [conversations, sandbox, reliability, limits]
 status: draft
 adr: "0046"
 adr_status: "Proposed"
 date: 2026-09-07
 generated: { by: process:codex, at: 2026-09-07T23:43:51Z }
-verified: { by: process:codex, at: 2026-09-08T00:50:26Z }
+verified: { by: process:codex, at: 2026-09-08T01:17:20Z }
 stale_after: 2026-09-15
 ---
 
@@ -39,7 +39,9 @@ shutdown draining, and recovery that never replays uncertain writes. Its 38
 focused worker/journal tests and full precommit pass: 4,671 tests, 6 doctests,
 zero failures. Evidence and corrected shutdown failures are recorded in
 `decisions/evidence/execution-deadline-worker.json`. No deployment or production
-timeout activation has occurred.
+timeout activation has occurred. The coordinator is now in draft
+[Fountain #1746](https://github.com/BinaryBourbon/fountain/pull/1746), with passing
+CI at `5e6eb3ecedce5e172a8cfad5ced1ae2bdb6c6943`.
 
 ## Context
 
@@ -107,9 +109,9 @@ review before enabling termination in production.
   separate from the bounded termination pool, so blocked provider cleanup cannot
   consume all capacity for expiring other turns. Recover persisted intents
   without repeating unknown spawns or termination requests. Preserve partial
-  usage and the original absolute deadline. The coordinator currently updates
-  durable turn state independently; it still needs durable stage-event delivery
-  so a blocked actor is not required to publish the outcome.
+  usage and the original absolute deadline. The coordinator updates durable turn state independently. A further local
+  branch commits the deadline stage and webhook/notification jobs with that
+  state; full precommit passes 4,682 tests and 6 doctests.
 - Publish API/SDK/CLI documentation and prove timeout, restart, cancellation,
   neighboring-session isolation and actual cleanup through the public API.
 
@@ -123,7 +125,7 @@ Integration surfaces already inspected:
 | `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
 | `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
-| Deadline supervisor | Coordinator and bounded task pools implemented locally; durable deadline-stage delivery and public acceptance remain. |
+| Deadline supervisor | Coordinator has passing draft CI; durable deadline-stage delivery passes local full validation. Public acceptance remains. |
 
 Bounded connections also need a shutdown policy after successful replies: the
 current warm connection can continue background work outside a turn. Completion
@@ -155,6 +157,38 @@ Tests start owned coordinators explicitly; normal test boot disables the child
 to avoid scanning other tests' sandboxed fixtures. No public capability was
 enabled by this change. All actor/lifecycle and trusted-identity requirements
 above remain activation gates.
+
+## Durable deadline events
+
+The prepared event layer passes full precommit: 4,682 tests and 6 doctests,
+zero failures. Its 74 focused tests include 11 event regressions. Twenty
+separate-connection races passed: completion won 13 and expiry won 7; every
+expired case reused one event across two competing late publishers. No provider
+operations occurred. See `decisions/evidence/deadline-events.json`.
+
+The event layer stores one failed `turn` log event in the expiration
+transaction, including `turn_id` and `wall_time_limit`. That transaction also
+queues matching tenant webhook deliveries and a retryable local notification.
+No PubSub or provider write occurs before commit. A database failure rolls back
+the turn, event and jobs together. Webhook delivery keeps its existing retry
+policy; this does not guarantee that a receiver will accept it.
+
+Terminal stage publication takes the same journal locks. A late successful
+reply or interruption reuses the committed deadline event. Its immutable id
+remains in the journal after transcript retention, so deletion cannot authorize
+a contradictory replacement. Missing parents or changed tenant ownership do
+not grant notification authority.
+
+Local notification uses the existing webhook queue and retries with the same
+log id. Streams, webhook delivery and notification-derived telemetry are
+at-least-once; notification counts are not distinct turn counts. A replay does
+not enqueue more webhook jobs. Malformed retained metadata cannot prevent the
+committed stage from reaching local subscribers. HTTP delivery and provider
+termination remain independent operations.
+
+This fences terminal deadline events only. In-memory actor state, other late
+stage/output writes, warm connections and all remaining lifecycle gates still
+need integration before public activation.
 
 ## Validation scope
 

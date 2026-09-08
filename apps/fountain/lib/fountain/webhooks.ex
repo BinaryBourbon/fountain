@@ -267,11 +267,7 @@ defmodule Fountain.Webhooks do
   """
   @spec dispatch_stage(LogEvent.t()) :: :ok
   def dispatch_stage(%LogEvent{kind: "stage"} = event) do
-    if enabled?() do
-      do_dispatch(event)
-    else
-      :ok
-    end
+    if enabled?(), do: do_dispatch(event, :best_effort), else: :ok
   rescue
     error ->
       Logger.warning("webhooks: dispatch failed: #{inspect(error)}")
@@ -280,7 +276,12 @@ defmodule Fountain.Webhooks do
 
   def dispatch_stage(_event), do: :ok
 
-  defp do_dispatch(event) do
+  @doc "Enqueue inside a caller's transaction; failure must roll back its outcome."
+  def dispatch_stage!(%LogEvent{kind: "stage"} = event) do
+    if enabled?(), do: do_dispatch(event, :transactional), else: :ok
+  end
+
+  defp do_dispatch(event, mode) do
     type = Events.type(event.stage, event.state)
 
     case conversation_and_endpoints(event.conversation_id) do
@@ -289,12 +290,20 @@ defmodule Fountain.Webhooks do
 
         endpoints
         |> Enum.filter(&Events.matches?(&1.event_types, type))
-        |> Enum.each(&Fountain.Workers.WebhookDelivery.enqueue(&1.id, payload))
+        |> Enum.each(fn endpoint ->
+          result = Fountain.Workers.WebhookDelivery.enqueue(endpoint.id, payload)
+          if mode == :transactional, do: match_enqueued!(result)
+        end)
 
       _ ->
         :ok
     end
 
+    :ok
+  end
+
+  defp match_enqueued!(result) do
+    {:ok, _job} = result
     :ok
   end
 
