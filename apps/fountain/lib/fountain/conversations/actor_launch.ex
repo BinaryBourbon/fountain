@@ -7,6 +7,8 @@ defmodule Fountain.Conversations.ActorLaunch do
     field :user_id, :binary_id
     field :conversation_id, :binary_id
     field :sandbox_id, :binary_id
+    field :source_sandbox_id, :binary_id
+    field :kind, :string, default: "create"
     field :runtime, :string
     field :opening_receipt_id, :binary_id
     field :deadline_at, :utc_datetime_usec

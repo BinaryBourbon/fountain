@@ -45,7 +45,8 @@ defmodule Fountain.Conversations.PromptWakeTest do
     assert Repo.get!(PromptWakeRequest, receipt.id).state == "requested"
     owner = self()
 
-    expect(Conversations, :_unsafe_wake_bound_conversation, fn saved ->
+    expect(Conversations, :_unsafe_wake_bound_conversation, fn saved, receipt_id ->
+      assert is_binary(receipt_id)
       assert saved.id == c.conv.id
       assert saved.sandbox_id == c.sandbox.id
       assert Repo.get!(PromptWakeRequest, receipt.id).state == "started"
@@ -103,7 +104,7 @@ defmodule Fountain.Conversations.PromptWakeTest do
     {receipt, job} = abandon_before_delivery(c)
     owner = self()
 
-    expect(Conversations, :_unsafe_wake_bound_conversation, fn _ ->
+    expect(Conversations, :_unsafe_wake_bound_conversation, fn _, _ ->
       send(owner, {:wake_in_progress, self()})
       receive do: (:continue -> {:ok, c.conv})
     end)
@@ -126,7 +127,9 @@ defmodule Fountain.Conversations.PromptWakeTest do
 
   test "an interrupted earlier wake also fences a different receipt", c do
     {receipt, _job} = abandon_before_delivery(c)
-    expect(Conversations, :_unsafe_wake_bound_conversation, fn _ -> raise "lost wake reply" end)
+
+    expect(Conversations, :_unsafe_wake_bound_conversation, fn _, _ -> raise "lost wake reply" end)
+
     assert_raise RuntimeError, "lost wake reply", fn -> PromptWake.deliver(receipt) end
     assert {:ok, _} = PromptDelivery.refuse(c.user.id, c.conv.id, receipt.id, "cancelled")
     assert {:ok, next} = PromptDelivery.accept(c.user.id, c.conv.id, "New prompt", [])
@@ -136,7 +139,7 @@ defmodule Fountain.Conversations.PromptWakeTest do
 
   test "cancellation or expiry before dispatch authorizes no wake", c do
     {receipt, job} = abandon_before_delivery(c)
-    reject(Conversations, :_unsafe_wake_bound_conversation, 1)
+    reject(Conversations, :_unsafe_wake_bound_conversation, 2)
     assert {:ok, _} = PromptDelivery.refuse(c.user.id, c.conv.id, receipt.id, "cancelled")
     assert :ok = perform_job(PromptDispatch, job.args)
     assert Repo.get!(PromptWakeRequest, receipt.id).started_at == nil
@@ -151,7 +154,7 @@ defmodule Fountain.Conversations.PromptWakeTest do
 
   test "a moved parent or forged tenant cannot spend the saved wake", c do
     {receipt, job} = abandon_before_delivery(c)
-    reject(Conversations, :_unsafe_wake_bound_conversation, 1)
+    reject(Conversations, :_unsafe_wake_bound_conversation, 2)
     other = insert_verified_user()
     assert :ok = PromptWake.deliver(%{receipt | user_id: other.id})
     replacement = insert_sandbox(user_id: c.user.id, agent_id: c.conv.agent_id, status: "ready")
@@ -172,7 +175,7 @@ defmodule Fountain.Conversations.PromptWakeTest do
       PromptDelivery.submit(c.user.id, c.conv.id, "Review", [], idempotency_key: "low-level")
 
     stub(ConversationServer, :whereis, fn _ -> nil end)
-    reject(Conversations, :_unsafe_wake_bound_conversation, 1)
+    reject(Conversations, :_unsafe_wake_bound_conversation, 2)
 
     assert {:ok, _} =
              PromptDelivery.accept(c.user.id, c.conv.id, "Review", [],

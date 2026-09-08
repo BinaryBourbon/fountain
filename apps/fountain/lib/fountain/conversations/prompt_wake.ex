@@ -47,7 +47,7 @@ defmodule Fountain.Conversations.PromptWake do
     with %PromptWakeRequest{} = request <- Repo.get(PromptWakeRequest, receipt.id),
          {:ok, parent} <- claim(request, receipt) do
       # Ownership: claim rechecked this receipt's saved tenant and original machine under locks.
-      result = Conversations._unsafe_wake_bound_conversation(parent)
+      result = Conversations._unsafe_wake_bound_conversation(parent, receipt.id)
 
       # This records return only, not provider success. An exception, process
       # death or database failure leaves the invocation fenced as started.

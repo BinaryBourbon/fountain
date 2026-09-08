@@ -75,12 +75,74 @@ defmodule Fountain.Conversations.SandboxHolders do
     end
   end
 
+  @doc "Create a replacement and move its holders under the original machine locks."
+  def _unsafe_create_replacement(observed, source_snapshot, sandbox_attrs) do
+    destination_id = Ecto.UUID.generate()
+
+    Repo.transaction(fn ->
+      lock_machines([observed.sandbox_id, destination_id])
+      parents = lock_replacement_parents(observed.sandbox_id, destination_id, observed.id)
+      current = Enum.find(parents, &(&1.id == observed.id)) || Repo.rollback(:ownership_changed)
+
+      unless Enum.all?(@binding, &(Map.get(current, &1) == Map.get(observed, &1))) and
+               current.status not in @terminal and sandbox_attrs.user_id == current.user_id,
+             do: Repo.rollback(:ownership_changed)
+
+      source = lock_optional_sandbox(observed.sandbox_id)
+      assert_source_snapshot!(source, source_snapshot, current.user_id)
+      assert_unfenced!(observed.sandbox_id)
+      assert_idle!(Enum.map(parents, & &1.id))
+      mode = if source, do: source.mode, else: "ephemeral"
+      if sandbox_attrs.mode != mode, do: Repo.rollback(:ownership_changed)
+
+      if source && source.status not in @terminal do
+        write!(Conversations.update_sandbox(source, %{status: "terminated"}))
+      end
+
+      destination =
+        %Sandbox{id: destination_id}
+        |> Sandbox.changeset(sandbox_attrs)
+        |> Repo.insert()
+        |> write!()
+
+      # Ownership: the locked source and current parent retain this tenant.
+      moved = write!(_unsafe_replace(current, destination.id))
+      {destination, moved}
+    end)
+  end
+
+  defp assert_source_snapshot!(nil, nil, _user_id), do: :ok
+
+  defp assert_source_snapshot!(%Sandbox{} = current, %Sandbox{} = observed, user_id) do
+    fields = [
+      :id,
+      :user_id,
+      :status,
+      :provider,
+      :sprite_name,
+      :provider_instance_id,
+      :provider_meta,
+      :mode,
+      :agent_id,
+      :environment_id,
+      :vault_id,
+      :updated_at,
+      :last_resumed_at,
+      :last_attached_at
+    ]
+
+    unless current.user_id == user_id and Map.take(current, fields) == Map.take(observed, fields),
+      do: Repo.rollback(:ownership_changed)
+  end
+
+  defp assert_source_snapshot!(_, _, _), do: Repo.rollback(:ownership_changed)
+
   @doc "Replace all current live holders in one transaction, including the winning initiator."
   def _unsafe_replace(observed, destination_id) do
     Repo.transaction(fn ->
       source_id = observed.sandbox_id
       lock_machines([source_id, destination_id])
-      parents = lock_parents([source_id, destination_id])
+      parents = lock_replacement_parents(source_id, destination_id, observed.id)
       initiator = Enum.find(parents, &(&1.id == observed.id)) || Repo.rollback(:ownership_changed)
 
       if initiator.sandbox_id != source_id or initiator.user_id != observed.user_id,
@@ -96,7 +158,8 @@ defmodule Fountain.Conversations.SandboxHolders do
       holders =
         Enum.filter(
           parents,
-          &(&1.sandbox_id == source_id and (&1.status not in @terminal or &1.id == initiator.id))
+          &(&1.sandbox_id == source_id and (not is_nil(source_id) or &1.id == initiator.id) and
+              (&1.status not in @terminal or &1.id == initiator.id))
         )
 
       assert_idle!(Enum.map(holders, & &1.id))
@@ -195,6 +258,8 @@ defmodule Fountain.Conversations.SandboxHolders do
     end
   end
 
+  defp assert_unfenced!(nil), do: :ok
+
   defp assert_unfenced!(sandbox_id) do
     if Repo.exists?(
          from o in SandboxOperation,
@@ -238,6 +303,19 @@ defmodule Fountain.Conversations.SandboxHolders do
       Repo.all(
         from c in Conversation, where: c.sandbox_id in ^ids, order_by: c.id, lock: "FOR UPDATE"
       )
+
+  defp lock_replacement_parents(source_id, destination_id, initiator_id) do
+    ids = Enum.reject([source_id, destination_id], &is_nil/1)
+
+    Repo.all(
+      from c in Conversation,
+        where: c.id == ^initiator_id or c.sandbox_id in ^ids,
+        order_by: c.id,
+        lock: "FOR UPDATE"
+    )
+  end
+
+  defp lock_optional_sandbox(nil), do: nil
 
   defp lock_optional_sandbox(id),
     do: Repo.one(from s in Sandbox, where: s.id == ^id, lock: "FOR UPDATE")

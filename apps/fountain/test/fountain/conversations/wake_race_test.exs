@@ -1,18 +1,5 @@
 defmodule Fountain.Conversations.WakeRaceTest do
-  @moduledoc """
-  Waking a dormant conversation races: two prompts a second apart, a Horde
-  registry that has not caught up, and both callers decide to provision.
-
-  The loser used to leave the conversation pointing at the sandbox it had just
-  terminated (#717) — because the row was repointed *before* the server was
-  started, and the losing branch cleaned up its row without undoing that. The
-  conversation then read as `terminated` through the API and the UI while the
-  winner served turns on a different sandbox, and prod accumulated orphan
-  `ready` rows nothing referenced.
-
-  These pin each branch: what the row points at, and what is left holding a
-  quota slot.
-  """
+  @moduledoc "Database replacement ownership survives Horde duplicates and startup failure."
   use Fountain.DataCase, async: false
 
   use Mimic
@@ -70,7 +57,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
     end
   end
 
-  describe "when the wake loses the race" do
+  describe "when Horde reports an existing actor" do
     setup do
       winner = spawn(fn -> Process.sleep(:infinity) end)
 
@@ -83,16 +70,20 @@ defmodule Fountain.Conversations.WakeRaceTest do
       {:ok, winner: winner}
     end
 
-    # The regression. The winner owns the conversation; the loser must not
-    # repoint the row at a sandbox it is about to terminate.
-    test "the conversation is left pointing where it was", %{conv: conv, old_sandbox: old} do
+    test "the database binding is retained until the launch is acknowledged", %{
+      conv: conv,
+      old_sandbox: old
+    } do
       {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
-
-      assert sandbox_of(conv.id).sandbox_id == old.id,
-             "the loser repointed the conversation at its own sandbox"
+      parent = sandbox_of(conv.id)
+      refute parent.sandbox_id == old.id
+      launch = Repo.get_by!(Conversations.ActorLaunch, sandbox_id: parent.sandbox_id)
+      assert launch.source_sandbox_id == old.id
+      assert launch.state == "requested"
+      assert parent.sandbox.status == "pending"
     end
 
-    test "the loser's own sandbox is retired rather than left holding a quota slot", %{
+    test "the one saved reservation remains available to its durable launch", %{
       conv: conv
     } do
       before = sandbox_ids()
@@ -100,12 +91,11 @@ defmodule Fountain.Conversations.WakeRaceTest do
       {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
 
       created = sandboxes_created_since(before)
-      assert created != [], "expected the loser to have created a sandbox row"
-
-      for sandbox <- created do
-        assert sandbox.status == "terminated",
-               "a losing wake left #{sandbox.sprite_name} in #{sandbox.status}"
-      end
+      assert [sandbox] = created
+      assert sandbox.status == "pending"
+      assert sandbox_of(conv.id).sandbox_id == sandbox.id
+      assert Repo.get_by!(Conversations.ActorLaunch, sandbox_id: sandbox.id).state == "requested"
+      assert length(all_enqueued(worker: Fountain.Workers.ActorLaunchDispatch)) == 1
     end
 
     test "the prompt is handed to the winner", %{conv: conv, winner: winner} do
@@ -133,8 +123,11 @@ defmodule Fountain.Conversations.WakeRaceTest do
       assert {:error, :boom} = Conversations.wake_conversation(conv.id)
 
       for sandbox <- sandboxes_created_since(before) do
-        assert sandbox.status == "terminated",
-               "a failed wake left #{sandbox.sprite_name} in #{sandbox.status}"
+        assert sandbox.status == "failed"
+        assert sandbox.status not in Fountain.Quotas.active_statuses()
+        launch = Repo.get_by!(Conversations.ActorLaunch, sandbox_id: sandbox.id)
+        assert launch.state == "refused"
+        assert launch.failure_reason == "start_failed"
       end
     end
   end

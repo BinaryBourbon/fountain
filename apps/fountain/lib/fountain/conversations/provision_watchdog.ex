@@ -10,7 +10,15 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
   require Logger
 
   alias Fountain.{Conversations, Repo}
-  alias Fountain.Conversations.{Conversation, ExecutionGuard, Sandbox}
+
+  alias Fountain.Conversations.{
+    ActorClaim,
+    ActorLaunch,
+    Conversation,
+    ExecutionGuard,
+    Sandbox,
+    SandboxOperation
+  }
 
   def start(conversation_id, sandbox_id, default_ms, opts \\ []) do
     actor = self()
@@ -71,6 +79,18 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
          do: {:ok, :failed}
   end
 
+  @doc "Fail an unacknowledged launch's unused machine while retaining replacement retryability."
+  def _unsafe_fail_launch(%ActorLaunch{} = launch) do
+    with {:ok, :expired} <-
+           fail_pending(
+             launch.conversation_id,
+             launch.sandbox_id,
+             "worker start failed",
+             {:launch, launch.id}
+           ),
+         do: {:ok, :failed}
+  end
+
   defp fail_pending(conversation_id, sandbox_id, reason, actor_claim) do
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(sandbox_id)])
@@ -80,12 +100,14 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
 
       sandbox = Repo.one(from s in Sandbox, where: s.id == ^sandbox_id, lock: "FOR UPDATE")
 
+      context = failure_context(parent, sandbox, actor_claim)
+
       cond do
         is_nil(parent) or is_nil(sandbox) or parent.sandbox_id != sandbox.id or
             parent.user_id != sandbox.user_id ->
           :stale
 
-        not Conversations.ActorOwnership.current?(parent.id, sandbox.id, actor_claim) ->
+        context == :stale ->
           :stale
 
         sandbox.status not in ~w(pending starting) ->
@@ -100,7 +122,8 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
           {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
           if parent.status not in ~w(terminated failed) do
-            parent |> Conversation.changeset(%{status: "failed"}) |> Repo.update!()
+            status = if context == :replacement, do: "idle", else: "failed"
+            parent |> Conversation.changeset(%{status: status}) |> Repo.update!()
             record_failure(parent, sandbox.id, reason)
           end
 
@@ -120,6 +143,39 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
     end)
   rescue
     _error in [Postgrex.Error, DBConnection.ConnectionError] -> {:error, :database_unavailable}
+  end
+
+  defp failure_context(nil, _, _), do: :stale
+  defp failure_context(_, nil, _), do: :stale
+
+  defp failure_context(parent, sandbox, {:launch, id}) do
+    launch =
+      Repo.one(
+        from l in ActorLaunch,
+          where:
+            l.id == ^id and l.conversation_id == ^parent.id and
+              l.user_id == ^parent.user_id and l.sandbox_id == ^sandbox.id and
+              l.runtime == ^parent.runtime and l.state == "requested",
+          lock: "FOR UPDATE"
+      )
+
+    # An actor on the old binding does not own this unused replacement. Any
+    # history on the new machine requires reconciliation rather than retirement.
+    unused? =
+      not Repo.exists?(from a in ActorClaim, where: a.sandbox_id == ^sandbox.id) and
+        not Repo.exists?(from o in SandboxOperation, where: o.sandbox_id == ^sandbox.id)
+
+    cond do
+      is_nil(launch) or not unused? -> :stale
+      launch.kind == "replace" -> :replacement
+      true -> :actor
+    end
+  end
+
+  defp failure_context(parent, sandbox, actor_claim) do
+    if Conversations.ActorOwnership.current?(parent.id, sandbox.id, actor_claim),
+      do: :actor,
+      else: :stale
   end
 
   defp record_failure(parent, sandbox_id, reason) do

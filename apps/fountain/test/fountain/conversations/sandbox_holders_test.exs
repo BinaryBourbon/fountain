@@ -81,6 +81,29 @@ defmodule Fountain.Conversations.SandboxHoldersTest do
     assert Repo.reload!(c.parent).sandbox_id == c.source.id
   end
 
+  test "fresh replacement cannot retire a source with an uncertain provider operation", c do
+    {:ok, operation} = SandboxTransitions._unsafe_submit(c.source, {:park, :idle})
+    {:ok, _} = SandboxOperations._unsafe_mark_uncertain(operation.id)
+    source = Repo.reload!(c.source)
+
+    attrs = %{
+      user_id: c.user.id,
+      agent_id: c.agent.id,
+      mode: source.mode,
+      sprite_name: "local-fenced-#{Ecto.UUID.generate()}",
+      status: "pending"
+    }
+
+    assert {:error, :provider_operation_fenced} =
+             Conversations.ActorLaunches.replace(c.parent, source, attrs)
+
+    assert Repo.reload!(c.parent).sandbox_id == source.id
+    assert Repo.reload!(source).status == source.status
+    assert Repo.reload!(operation).state == "uncertain"
+    assert Repo.reload!(c.creation).holds_slot
+    assert Repo.aggregate(Conversations.ActorLaunch, :count) == 0
+  end
+
   test "an unresolved create refuses attachment even after a stale ready write", c do
     sandbox = insert_sandbox(user_id: c.user.id, agent_id: c.agent.id, status: "pending")
     {:ok, parent} = Conversations.create_conversation(attrs(sandbox, c.agent))

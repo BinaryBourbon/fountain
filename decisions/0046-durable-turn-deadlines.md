@@ -90,8 +90,8 @@ Audit events are recorded after transaction commit.
 Reset and bounded registration share the existing per-sandbox advisory lock,
 then lock parent/journal/turn rows. Reset refuses any open journal on the machine
 and retires the sandbox row before provider I/O. The ordinary reset/wake path
-creates a new row and name. Interrupted provisioning can reuse a name; it must
-remain impossible to enter that path with an unresolved bounded execution.
+creates a new row and name. Interrupted provisioning stays fenced; its helper
+cannot destroy and recreate the machine or bypass an unresolved execution.
 Provider-issued incarnation checks and all recovery/reprovision paths still need
 review before enabling termination in production.
 
@@ -622,12 +622,11 @@ recovery stay disabled; the lifecycle stack stays draft.
 
 ## Provisioning ownership
 
-Fresh wake retains Horde's child arbitration, then commits the holder replacement.
-The winning actor waits up to five seconds for that binding before provisioning.
-A changed winner or owner stops it. A replayed child can use an already committed
-binding. The initiating prompt is saved before wake; its receipt notification
-follows the replacement commit. A real actor test holds the caller before commit
-and verifies that credentials and delivery wait for the new binding.
+Fresh wake now commits its replacement binding and launch before Horde startup,
+as described below. The earlier five-second binding wait remains only for stored
+legacy child specifications. A changed binding or owner stops those children.
+A real actor test holds the startup reply and verifies that credentials and
+receipt delivery observe the already committed replacement.
 
 Actor startup now checks its original machine binding under the machine and
 parent locks before it can interrupt an orphan execution. A child stored by
@@ -652,9 +651,9 @@ independent PostgreSQL connections. Validation is recorded in
 `decisions/evidence/prompt-delivery.json` for the receipt integration.
 
 Binding protection now includes the process claims described below. Ordinary
-provisioning failures use a scoped outcome transaction. Abandoned-claim recovery,
-database-first wake ownership and complete accepted-prompt recovery remain unfinished. It does not establish full wake
-recovery or live provider acceptance. The lifecycle stack stays draft; execution
+provisioning failures use a scoped outcome transaction. Database-first fresh
+replacement is now implemented below. Abandoned-claim and complete accepted-prompt
+recovery remain unfinished; local validation is not live provider acceptance. The lifecycle stack stays draft; execution
 controls and recovery stay disabled.
 
 ## Durable prompt delivery (integration in progress)
@@ -842,8 +841,9 @@ receipts on that conversation. Registry absence or age cannot release that fence
 
 This closes the pre-invocation submitter gap. It does not recover a process lost
 after the invocation claim or establish a provider incarnation. Fresh creation
-now has the durable launch protocol described below. Fresh wake and attach still
-need complete launch integration and provider journal links. A stopped actor claim
+and fresh replacement now have the durable launch protocol described below.
+Ready-machine wake and attach still need complete launch recovery and provider
+journal links. A stopped actor claim
 on a still-starting machine also needs reconciliation before any new creation.
 These are remaining integration gates, not reasons to deploy the current draft.
 
@@ -869,7 +869,7 @@ interrupted-attempt helper now refuses instead of destroying and rebuilding.
 
 This prevents unproved recreation; it does not implement recovery. Fresh creation
 now records launch provenance as described below. Ordinary provider identity,
-stopped/abandoned claim reconciliation and fresh-wake launch remain incomplete.
+stopped/abandoned claim reconciliation and ready-machine wake recovery remain incomplete.
 Legacy in-flight machines require reconciliation at rollout. Keep this stack
 draft until that path and live acceptance are demonstrated.
 
@@ -907,8 +907,50 @@ PostgreSQL connections test competing claims, claim-versus-failure outcomes and
 a receipt lock held past the deadline. Provider calls in actor tests are stubs.
 See `decisions/evidence/actor-launch.json` for validation and source hashes.
 
-This is fresh-creation integration, not complete lifecycle recovery. Fresh wake
-still needs database-first replacement binding and durable launch. Attach and
-prompt-free wake need complete launch integration. Provider journal identity,
+This is fresh-creation integration, not complete lifecycle recovery. Fresh
+replacement now uses the same launch journal as described below. Ready-machine
+wake and attach still need complete launch recovery. Provider journal identity,
 abandoned actors, interrupted prompt wakes and legacy rollout remain open.
 Execution controls and provider recovery remain disabled pending live acceptance.
+
+
+## Database-first fresh replacement (integration in progress)
+
+Fresh wake previously reserved a new machine, asked Horde to start its actor,
+then committed the replacement binding. Caller death could strand an unbound
+reservation. The actor's short binding wait did not close that gap.
+
+Fresh wake now commits source retirement, the replacement reservation, holder
+transfers and its launch job in one transaction before local startup. Fleet and
+account quota locks precede sorted machine locks and parent rows. The transaction
+checks the original parent binding and the source snapshot again. A changed
+provider identity, runtime, disk identity or source state rejects retirement.
+Uncertain provider operations retain their fence and capacity.
+
+The launch records its immutable purpose and source machine ID. Competing callers reuse that
+saved replacement, including when the winner consumes the last account or fleet
+slot. Horde's existing-actor response cannot change the database winner or retire
+its reservation. Explicit startup failure records a failed launch; its immediate
+API caller retains the startup error. An unused replacement releases its slot and
+leaves the existing conversation retryable. An old-source actor claim cannot
+strand that replacement, but all old claims and provider history remain intact.
+Any actor or provider history on the new machine requires reconciliation instead.
+Initial creation still reports a failed conversation when startup fails.
+The outbox can retry a lost local start.
+
+Shared-home retirement and idle-holder transfers commit with the new home and
+launch. Invalid placement or a failed launch save rolls back all those changes.
+Fresh wake carries the original prompt receipt ID through the invocation. A
+cancelled receipt cannot silently become permission for a prompt-free launch.
+The launch deadline cannot exceed the receipt's original delivery deadline.
+
+Separate PostgreSQL connections test competing replacements at both quota caps,
+a source identity change while wake waits, and a receipt lock held past expiry.
+Real actor callbacks verify committed binding and acknowledgment before the
+stubbed provider create. See `decisions/evidence/fresh-wake-launch.json`.
+
+This proves local fresh-replacement handoff, not complete recovery. Ready-machine
+wake and attach, interrupted wake reconciliation, abandoned actors, provider
+identity links, conditional deletion and legacy rollout remain integration work.
+The lifecycle stack stays draft; live acceptance still gates deployment and
+activation of execution controls or provider recovery.

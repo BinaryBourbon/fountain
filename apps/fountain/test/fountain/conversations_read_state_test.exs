@@ -141,15 +141,11 @@ defmodule Fountain.ConversationsReadStateTest do
     end
   end
 
-  describe "concurrent wake loses cleanly (#330)" do
-    # Two prompts race to wake the same dormant conversation. Both used to
-    # reach create_fresh_sandbox_and_start; the loser's start_child returned
-    # {:error, {:already_started, _}}, the `with` fell through, and its
-    # just-created pending sandbox row sat holding a quota slot until the
-    # reaper's pass an hour later — a user at their cap could lock themselves
-    # out for an hour by double-clicking.
-
-    test "the loser terminates its own sandbox row instead of stranding it" do
+  describe "concurrent wake retains database ownership (#330)" do
+    # A registry collision cannot retire the replacement chosen by the database.
+    # Competing callers reuse one launch; its quota slot remains until the actor
+    # acknowledges it or the durable launch records a refusal.
+    test "an existing actor response retains one bound reservation and launch" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
@@ -171,29 +167,23 @@ defmodule Fountain.ConversationsReadStateTest do
 
       assert {:ok, _conv} = Conversations.wake_conversation(conv.id, "hi")
 
-      # The row the loser created for itself is terminated, not pending —
-      # which is what #330 is about: a double-click must not strand a quota
-      # slot until the reaper's next pass.
       created =
         Fountain.Conversations.Sandbox
         |> Fountain.Repo.all()
         |> Enum.reject(&MapSet.member?(before, &1.id))
 
-      assert created != []
-
-      for sandbox <- created do
-        assert sandbox.status == "terminated"
-      end
-
-      # The conversation's *existing* sandbox is deliberately left alone now
-      # (#717). The loser does not know what the winner is running on, and
-      # `wake_conversation`'s reuse arm starts a server against exactly this
-      # sandbox — so retiring it here could terminate the one the winner is
-      # using. The winner retires it if it provisioned a replacement.
+      assert [replacement] = created
+      assert replacement.status == "pending"
+      assert Repo.reload!(conv).sandbox_id == replacement.id
+      assert Repo.reload!(sandbox).status == "terminated"
+      launch = Repo.get_by!(Conversations.ActorLaunch, sandbox_id: replacement.id)
+      assert launch.state == "requested"
+      assert launch.source_sandbox_id == sandbox.id
+      assert length(all_enqueued(worker: Fountain.Workers.ActorLaunchDispatch)) == 1
       assert Fountain.Quotas.active_sandbox_count(user.id) == 1
     end
 
-    test "the loser forwards its prompt to the winner" do
+    test "the saved receipt is forwarded to the existing actor" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
       sandbox = insert_sandbox(user_id: user.id, status: "ready")

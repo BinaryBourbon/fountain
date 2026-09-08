@@ -3237,7 +3237,7 @@ defmodule Fountain.Conversations do
   def wake_conversation(_, _), do: {:error, :invalid_prompt}
 
   @doc "Wake only the saved tenant/machine binding; a changed binding grants no replacement."
-  def _unsafe_wake_bound_conversation(%Conversation{} = original) do
+  def _unsafe_wake_bound_conversation(%Conversation{} = original, receipt_id \\ nil) do
     # Ownership: the API or durable request established the original parent.
     # Keep that exact binding through provider selection and replacement checks.
     with :ok <- require_provider_commit_boundary(),
@@ -3311,8 +3311,8 @@ defmodule Fountain.Conversations do
               {:error, :provisioning}
           end
 
-        :create_new ->
-          create_fresh_sandbox_and_start(conv, agent, runtime_module)
+        {:create_new, source} ->
+          create_fresh_sandbox_and_start(conv, agent, source, receipt_id)
 
         {:error, _} = err ->
           err
@@ -3364,7 +3364,7 @@ defmodule Fountain.Conversations do
   # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
   # confirms the sprite still exists, we can reattach without provisioning a
   # new one. Otherwise, fall through to creating a fresh sandbox.
-  defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: :create_new
+  defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: {:create_new, nil}
 
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
     case _unsafe_get_sandbox(sandbox_id) do
@@ -3377,8 +3377,8 @@ defmodule Fountain.Conversations do
       %{status: status} when status in ["pending", "starting"] ->
         {:provisioning, sandbox_id}
 
-      _ ->
-        :create_new
+      source ->
+        {:create_new, source}
     end
   end
 
@@ -3414,7 +3414,10 @@ defmodule Fountain.Conversations do
                  do: {:reuse, sandbox_id}
         end
       else
-        probe_sandbox(provider, name, status, sandbox_id)
+        case probe_sandbox(provider, name, status, sandbox_id) do
+          :create_new -> {:create_new, sandbox}
+          other -> other
+        end
       end
     end
   end
@@ -3580,92 +3583,31 @@ defmodule Fountain.Conversations do
     end
   end
 
-  defp create_fresh_sandbox_and_start(conv, agent, runtime_module) do
-    # The sandbox being replaced is excluded: it is retired immediately below,
-    # so counting it would block a wake that leaves concurrency unchanged.
-    # Waking a dormant conversation provisions a fresh sprite, so it is subject
-    # to the same gate as creating one. Without this, prompting an existing
-    # conversation was an unmetered way past billing entirely.
-    # The replacement keeps the mode of the machine it replaces: a home whose
-    # sprite is gone is re-provisioned as the home, and every conversation on
-    # it follows through SandboxHolders._unsafe_replace/2. The old row is retired *first* for a
-    # home — the partial unique index allows one live home per identity, and
-    # the probe has already said this sprite is gone (ADR 0023 gate 6).
-    old = if conv.sandbox_id, do: _unsafe_get_sandbox(conv.sandbox_id)
-    mode = (old && old.mode) || "ephemeral"
-    if mode == "persistent", do: _ = mark_old_sandbox_terminated(conv.sandbox_id)
-
+  defp create_fresh_sandbox_and_start(conv, agent, source, receipt_id) do
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_spend(conv.user_id),
-         # Whose inference key would run this (#1388): refused only when it
-         # would be Fountain's and the deployment has spent its day. A door
-         # with no platform key configured runs no query here.
          :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
-         # A fresh sandbox is a fresh placement decision — re-resolve from
-         # the agent, so a conversation whose old sandbox died can migrate
-         # providers naturally.
          {:ok, provider} <- resolve_sandbox_provider(agent),
          {:ok, sprite_name} <- mint_sprite_name(provider, conv.user_id, nil),
-         # Same reservation as start_conversation/1 — see the note there (#330).
-         {:ok, new_sandbox} <-
-           Fountain.Quotas.with_sandbox_reservation(
-             conv.user_id,
-             [exclude: conv.sandbox_id],
-             fn ->
-               create_sandbox(%{
-                 environment_id: conv.environment_id || agent.environment_id,
-                 agent_id: conv.agent_id,
-                 vault_id: conv.vault_id,
-                 mode: mode,
-                 sprite_name: sprite_name,
-                 status: "pending",
-                 provider: Atom.to_string(provider),
-                 user_id: conv.user_id
-               })
-             end
+         {:ok, {_sandbox, parent, launch}} <-
+           Fountain.Conversations.ActorLaunches.replace(
+             conv,
+             source,
+             %{
+               environment_id: conv.environment_id || agent.environment_id,
+               agent_id: conv.agent_id,
+               vault_id: conv.vault_id,
+               mode: (source && source.mode) || "ephemeral",
+               sprite_name: sprite_name,
+               status: "pending",
+               provider: Atom.to_string(provider),
+               user_id: conv.user_id
+             },
+             receipt_id
            ) do
-      # Horde arbitrates the child first (#717), but the winning child waits
-      # for the committed binding before it loads credentials or provisions.
-      # The prompt is queued only after the replacement transaction succeeds.
-      case start_conversation_process(conv, new_sandbox.id, runtime_module,
-             binding_from: conv.sandbox_id
-           ) do
-        {:ok, pid} ->
-          old_sandbox_id = conv.sandbox_id
-          _ = mark_old_sandbox_terminated(old_sandbox_id)
-
-          # Ownership: this wake owns conv. Move its current co-tenants in
-          # the same transaction, or leave every binding unchanged.
-          with {:ok, conv} <-
-                 Fountain.Conversations.SandboxHolders._unsafe_replace(conv, new_sandbox.id) do
-            Fountain.Conversations.PromptDelivery.notify_pending(conv.user_id, conv.id, pid)
-
-            {:ok, _unsafe_get_conversation!(conv.id)}
-          end
-
-        {:error, {:already_started, winner_pid}} ->
-          # Lost a concurrent wake of the same conversation. The winner's
-          # server is running against its own sandbox; this one's just-created
-          # row would otherwise sit pending — holding a quota slot — until the
-          # reaper's pass an hour later, so a user at their cap could lock
-          # themselves out by double-clicking (#330). Clean up our own row and
-          # notify the winner about saved intent. Duplicate notifications grant
-          # no additional execution.
-          #
-          # The conversation is left alone: the winner owns it, and it is the
-          # winner's sandbox the row should name.
-          _ = mark_old_sandbox_terminated(new_sandbox.id)
-
-          Fountain.Conversations.PromptDelivery.notify_pending(conv.user_id, conv.id, winner_pid)
-
-          {:ok, _unsafe_get_conversation!(conv.id)}
-
-        {:error, _} = err ->
-          # Nothing ever ran on this sandbox. Retiring it keeps a failed wake
-          # from holding a quota slot until the reaper's next pass — the same
-          # reasoning as the branch above.
-          _ = mark_old_sandbox_terminated(new_sandbox.id)
-          err
+      case Fountain.Conversations.ActorLaunches.start(parent.user_id, parent.id, launch.id) do
+        {:error, _} = error -> error
+        _ -> {:ok, get_conversation(parent.id, parent.user_id)}
       end
     end
   end
@@ -3675,22 +3617,4 @@ defmodule Fountain.Conversations do
   end
 
   defp assert_resumable(_), do: :ok
-
-  defp mark_old_sandbox_terminated(nil), do: :ok
-
-  defp mark_old_sandbox_terminated(sandbox_id) do
-    case _unsafe_get_sandbox(sandbox_id) do
-      nil ->
-        :ok
-
-      sb when sb.status in ["terminated", "failed"] ->
-        :ok
-
-      sb ->
-        update_sandbox(sb, %{
-          status: "terminated",
-          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-    end
-  end
 end

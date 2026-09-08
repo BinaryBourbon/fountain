@@ -6,8 +6,8 @@ defmodule Fountain.Conversations.ActorLaunches do
   attempt. The first actor claim acknowledges under the same machine/parent locks;
   later actors cannot recreate unfinished provisioning. Acknowledged launches are
   never redelivered by the outbox. Ready-machine maintenance can retain ancestry.
-  Fresh wake/attach and abandoned-actor/provider reconciliation remain separate
-  integration work; this module never adopts or deletes a provider resource.
+  Fresh replacement wake also commits its binding before startup. Ready attach
+  and abandoned-actor/provider reconciliation remain separate integration work; this module never adopts or deletes a provider resource.
   """
   import Ecto.Query
   alias Fountain.{Conversations, Repo}
@@ -30,21 +30,110 @@ defmodule Fountain.Conversations.ActorLaunches do
              {:ok, parent} <-
                Conversations.create_conversation(Map.put(parent_attrs, :sandbox_id, sandbox.id)),
              {:ok, receipt} <- PromptDelivery.save_initial(user_id, parent.id, opening_attrs) do
-          launch =
-            Repo.insert!(%ActorLaunch{
-              user_id: user_id,
-              conversation_id: parent.id,
-              sandbox_id: sandbox.id,
-              runtime: parent.runtime,
-              opening_receipt_id: receipt && receipt.id,
-              deadline_at: DateTime.add(DateTime.utc_now(), launch_timeout_ms(), :millisecond)
-            })
-
-          enqueue(launch)
+          launch = save!(parent, sandbox, receipt)
           {:ok, {sandbox, parent, launch}}
         end
       end)
     end
+  end
+
+  @doc "Commit replacement binding and launch before any actor can observe the new machine."
+  def replace(observed, source_snapshot, sandbox_attrs, receipt_id \\ nil) do
+    result =
+      Fountain.Quotas.with_sandbox_reservation(
+        observed.user_id,
+        [exclude: observed.sandbox_id],
+        fn ->
+          # Ownership: wake loaded the parent for this tenant; holder arbitration
+          # rechecks the original binding and the source snapshot under locks.
+          with {:ok, {sandbox, parent}} <-
+                 Conversations.SandboxHolders._unsafe_create_replacement(
+                   observed,
+                   source_snapshot,
+                   sandbox_attrs
+                 ) do
+            receipt = opening_receipt!(parent, receipt_id)
+            launch = save!(parent, sandbox, receipt, observed.sandbox_id, "replace")
+            {:ok, {sandbox, parent, launch}}
+          end
+        end
+      )
+
+    case result do
+      {:error, _} = error -> replacement_winner(observed) || error
+      success -> success
+    end
+  end
+
+  # A losing caller may hit the quota gate after the winner consumes the last
+  # slot. Reuse only a launch that explicitly names this same original binding.
+  defp replacement_winner(observed) do
+    from(l in ActorLaunch,
+      join: c in Conversation,
+      on: c.id == l.conversation_id and c.sandbox_id == l.sandbox_id,
+      join: s in Sandbox,
+      on: s.id == l.sandbox_id,
+      where:
+        c.id == ^observed.id and c.user_id == ^observed.user_id and
+          l.user_id == ^observed.user_id and s.user_id == ^observed.user_id and
+          fragment(
+            "? IS NOT DISTINCT FROM ?",
+            l.source_sandbox_id,
+            type(^observed.sandbox_id, :binary_id)
+          ) and l.kind == "replace" and l.runtime == ^observed.runtime and
+          c.runtime == ^observed.runtime and l.state in ["requested", "acknowledged"] and
+          c.status not in ["terminated", "failed"] and
+          s.status in ["pending", "starting", "ready", "suspended"],
+      select: {s, c, l}
+    )
+    |> Repo.one()
+    |> case do
+      nil -> nil
+      winner -> {:ok, winner}
+    end
+  end
+
+  defp opening_receipt!(parent, nil), do: PromptDelivery.queued(parent.user_id, parent.id)
+
+  defp opening_receipt!(parent, receipt_id) do
+    receipt =
+      Repo.one(
+        from r in PromptReceipt,
+          where:
+            r.id == ^receipt_id and r.user_id == ^parent.user_id and
+              r.conversation_id == ^parent.id,
+          lock: "FOR UPDATE"
+      )
+
+    unless receipt && receipt.state == "queued", do: Repo.rollback(:opening_cancelled)
+    receipt
+  end
+
+  defp save!(parent, sandbox, receipt, source_id \\ nil, kind \\ "create") do
+    deadline = DateTime.add(DateTime.utc_now(), launch_timeout_ms(), :millisecond)
+
+    deadline =
+      if receipt && DateTime.compare(receipt.delivery_deadline_at, deadline) == :lt,
+        do: receipt.delivery_deadline_at,
+        else: deadline
+
+    if receipt && (receipt.state != "queued" or PromptDelivery.expired?(receipt)),
+      do: Repo.rollback(:delivery_expired)
+
+    launch =
+      Repo.insert!(%ActorLaunch{
+        user_id: parent.user_id,
+        conversation_id: parent.id,
+        sandbox_id: sandbox.id,
+        source_sandbox_id: source_id,
+        kind: kind,
+        runtime: parent.runtime,
+        opening_receipt_id: receipt && receipt.id,
+        deadline_at: deadline
+      })
+
+    enqueue(launch)
+    launch
   end
 
   def enqueue(launch) do
@@ -61,62 +150,76 @@ defmodule Fountain.Conversations.ActorLaunches do
     do:
       Repo.get_by(ActorLaunch, id: launch_id, user_id: user_id, conversation_id: conversation_id)
 
-  def deliver(user_id, conversation_id, launch_id) do
+  def deliver(user_id, conversation_id, launch_id),
+    do: deliver(user_id, conversation_id, launch_id, false)
+
+  @doc "Start after acceptance, preserving a synchronous startup refusal for API callers."
+  def start(user_id, conversation_id, launch_id),
+    do: deliver(user_id, conversation_id, launch_id, true)
+
+  defp deliver(user_id, conversation_id, launch_id, return_failure?) do
     if Repo.in_transaction?() do
       {:error, :provider_transaction_open}
     else
       case fetch(user_id, conversation_id, launch_id) do
-        %ActorLaunch{state: "requested"} = launch -> deliver_requested(launch)
+        %ActorLaunch{state: "requested"} = launch -> deliver_requested(launch, return_failure?)
         _ -> :ok
       end
     end
   end
 
-  defp deliver_requested(launch) do
-    case eligible(launch) do
-      {:ok, parent} ->
-        with :ok <- admission(parent),
-             {:ok, runtime} <- Fountain.RuntimeDispatch.for_agent(parent) do
-          case Horde.DynamicSupervisor.start_child(
-                 Fountain.ConversationSupervisor,
-                 {ConversationServer,
-                  [
-                    conversation_id: parent.id,
-                    sandbox_id: launch.sandbox_id,
-                    runtime_module: runtime,
-                    launch_id: launch.id
-                  ]}
-               ) do
-            {:ok, pid} ->
-              PromptDelivery.notify_pending(parent.user_id, parent.id, pid)
+  defp deliver_requested(launch, return_failure?) do
+    result =
+      case eligible(launch) do
+        {:ok, parent} ->
+          with :ok <- admission(parent),
+               {:ok, runtime} <- Fountain.RuntimeDispatch.for_agent(parent) do
+            case Horde.DynamicSupervisor.start_child(
+                   Fountain.ConversationSupervisor,
+                   {ConversationServer,
+                    [
+                      conversation_id: parent.id,
+                      sandbox_id: launch.sandbox_id,
+                      runtime_module: runtime,
+                      launch_id: launch.id
+                    ]}
+                 ) do
+              {:ok, pid} ->
+                PromptDelivery.notify_pending(parent.user_id, parent.id, pid)
 
-            {:error, {:already_started, pid}} ->
-              PromptDelivery.notify_pending(parent.user_id, parent.id, pid)
+              {:error, {:already_started, pid}} ->
+                PromptDelivery.notify_pending(parent.user_id, parent.id, pid)
 
-            {:error, _} ->
-              refuse(launch, "start_failed")
+              {:error, reason} ->
+                refuse_start(launch, "start_failed", reason)
+            end
+          else
+            {:error, reason} -> refuse_start(launch, "admission_refused", reason)
           end
-        else
-          {:error, _} -> refuse(launch, "admission_refused")
-        end
 
-      {:error, :launch_expired} ->
-        refuse(launch, "launch_expired")
+        {:error, :launch_expired} ->
+          refuse_start(launch, "launch_expired", :launch_expired)
 
-      {:error, :opening_cancelled} ->
-        refuse(launch, "opening_cancelled")
+        {:error, :opening_cancelled} ->
+          refuse_start(launch, "opening_cancelled", :opening_cancelled)
 
-      {:error, :ownership_changed} ->
-        refuse(launch, "binding_changed")
+        {:error, :ownership_changed} ->
+          refuse_start(launch, "binding_changed", :ownership_changed)
 
-      {:error, :launch_settled} ->
-        :ok
-    end
+        {:error, :launch_settled} ->
+          :ok
+      end
 
     case Repo.get(ActorLaunch, launch.id) do
       %{state: "requested"} -> {:snooze, 15}
+      %{state: "refused"} when return_failure? -> result
       _ -> :ok
     end
+  end
+
+  defp refuse_start(launch, reason, error) do
+    refuse(launch, reason)
+    {:error, error}
   end
 
   defp eligible(observed) do
@@ -199,10 +302,7 @@ defmodule Fountain.Conversations.ActorLaunches do
       # Ownership: this launch retains its accepted parent and original machine.
       # The watchdog rechecks that binding and current actor before any failure.
       if same_binding?(launch, parent, sandbox) do
-        Conversations.ProvisionWatchdog._unsafe_fail_start(
-          launch.conversation_id,
-          launch.sandbox_id
-        )
+        Conversations.ProvisionWatchdog._unsafe_fail_launch(launch)
       end
 
       launch

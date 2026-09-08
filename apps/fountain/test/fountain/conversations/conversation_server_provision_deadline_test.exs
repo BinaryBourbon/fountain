@@ -405,7 +405,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     assert Repo.aggregate(Fountain.Broker.Native.Session, :count) == 0
   end
 
-  test "fresh wake waits for its binding before credentials and queues its prompt after commit" do
+  test "fresh wake commits binding before credentials and delivers its saved receipt" do
     Application.put_env(:fountain, :provision_deadline_ms, 30_000)
     stub_happy_sprite()
     owner = self()
@@ -422,27 +422,33 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _sup, {ConversationServer, args} ->
       args = Keyword.put(args, :runtime_module, Managoat.Runtimes.Testing.FakeRuntime)
       {:ok, pid} = GenServer.start(ConversationServer, args)
-      send(owner, {:child_before_binding, self(), pid})
+      send(owner, {:child_after_binding, self(), pid})
 
       receive do
-        :commit_binding -> {:ok, pid}
+        :return_start -> {:ok, pid}
       after
-        5_000 -> raise "binding handoff barrier timed out"
+        5_000 -> raise "startup reply barrier timed out"
       end
     end)
 
     Mimic.stub(ConversationServer, :queue_prompt_receipt, fn pid, receipt_id ->
+      refute Repo.in_transaction?()
+      refute Repo.reload!(conv).sandbox_id == old.id
       send(owner, {:queued_after_binding, pid, receipt_id, Repo.reload!(conv).sandbox_id})
       :ok
     end)
 
     wake = Task.async(fn -> Conversations.wake_conversation(conv.id, "hello") end)
-    assert_receive {:child_before_binding, caller, pid}, 5_000
+    assert_receive {:child_after_binding, caller, pid}, 5_000
     on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
-    assert Repo.reload!(conv).sandbox_id == old.id
-    refute_receive {:credentials_on, _}
-    refute_receive {:queued_after_binding, _, _, _}
-    send(caller, :commit_binding)
+    refute Repo.reload!(conv).sandbox_id == old.id
+
+    assert Repo.get_by!(Fountain.Conversations.ActorLaunch,
+             sandbox_id: Repo.reload!(conv).sandbox_id
+           )
+
+    # The actor may deliver the committed receipt before Horde returns to its caller.
+    send(caller, :return_start)
     assert {:ok, woken} = Task.await(wake, 5_000)
     destination = woken.sandbox_id
     refute destination == old.id
