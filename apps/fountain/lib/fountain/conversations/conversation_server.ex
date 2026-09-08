@@ -451,6 +451,7 @@ defmodule Fountain.Conversations.ConversationServer do
       runtime_module: Keyword.fetch!(args, :runtime_module),
       user_id: nil,
       actor_claim: nil,
+      launch_id: Keyword.get(args, :launch_id),
       handle: nil,
       sprite_env: [],
       # ADR 0019 gate 1a. `brokered` holds the catalog secrets the sandbox

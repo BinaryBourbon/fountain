@@ -2166,7 +2166,7 @@ defmodule Fountain.Conversations do
     with :ok <- require_provider_commit_boundary(),
          :ok <- Fountain.Conversations.PromptDelivery.validate_initial(attrs),
          %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
-         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
+         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
@@ -2188,12 +2188,10 @@ defmodule Fountain.Conversations do
          :new <- home_or_new(mode, user_id, agent, env_id || agent.environment_id, vault_id),
          {:ok, provider} <- resolve_sandbox_provider(agent),
          {:ok, sprite_name} <- mint_sprite_name(provider, user_id, attrs["sprite_name"]),
-         # Quota check + row insert under one per-user advisory lock: checked
-         # separately they are check-then-insert, and N concurrent requests at
-         # the cap could each pass and provision N-1 sprites over it (#330).
-         {:ok, sandbox} <-
-           Fountain.Quotas.with_sandbox_reservation(user_id, fn ->
-             create_sandbox(%{
+         {:ok, {_sandbox, conv, launch}} <-
+           Fountain.Conversations.ActorLaunches.create(
+             user_id,
+             %{
                environment_id: env_id || agent.environment_id,
                # The identity the disk is built from (ADR 0023); an attach
                # later must name the same three.
@@ -2204,28 +2202,27 @@ defmodule Fountain.Conversations do
                status: "pending",
                provider: Atom.to_string(provider),
                user_id: user_id
-             })
-           end),
-         {:ok, conv} <-
-           create_conversation(%{
-             sandbox_id: sandbox.id,
-             agent_id: agent.id,
-             # Ownership: agent came from the scoped get_agent above.
-             agent_version_id: Agents._unsafe_current_version_id(agent.id),
-             vault_id: vault_id,
-             environment_id: env_id,
-             user_id: user_id,
-             runtime: agent.runtime,
-             status: "pending",
-             source: attrs["source"] || "api",
-             parent_conversation_id: parent_id,
-             channel_id: attrs["channel_id"],
-             title: attrs["title"],
-             sandbox_api_access: api_access,
-             permission_policy: perm_policy,
-             execution_limits: execution_limits,
-             caller_tools: attrs["caller_tools"] || []
-           }) do
+             },
+             %{
+               agent_id: agent.id,
+               # Ownership: agent came from the scoped get_agent above.
+               agent_version_id: Agents._unsafe_current_version_id(agent.id),
+               vault_id: vault_id,
+               environment_id: env_id,
+               user_id: user_id,
+               runtime: agent.runtime,
+               status: "pending",
+               source: attrs["source"] || "api",
+               parent_conversation_id: parent_id,
+               channel_id: attrs["channel_id"],
+               title: attrs["title"],
+               sandbox_api_access: api_access,
+               permission_policy: perm_policy,
+               execution_limits: execution_limits,
+               caller_tools: attrs["caller_tools"] || []
+             },
+             attrs
+           ) do
       # Recorded here rather than in either branch below: both of them return
       # {:ok, conv}. The row exists and the sandbox reservation is spent even
       # when the server fails to start, so "a conversation was created" is
@@ -2249,55 +2246,18 @@ defmodule Fountain.Conversations do
         }
       })
 
-      # Opening intent commits before the actor can provision. Its child spec
-      # contains no prompt or receipt; a restart discovers saved intent instead.
-      start_result =
-        with {:ok, _receipt} <-
-               Fountain.Conversations.PromptDelivery.save_initial(user_id, conv.id, attrs) do
-          case Horde.DynamicSupervisor.start_child(
-                 Fountain.ConversationSupervisor,
-                 {ConversationServer,
-                  [
-                    conversation_id: conv.id,
-                    sandbox_id: sandbox.id,
-                    runtime_module: runtime_module
-                  ]}
-               ) do
-            {:error, {:already_started, pid}} -> {:ok, pid}
-            result -> result
-          end
-        end
+      # All accepted creation intent is durable before local startup. The actor
+      # acknowledges its launch in the same transaction as its ownership claim.
+      Fountain.Conversations.ActorLaunches.deliver(user_id, conv.id, launch.id)
+      result = _unsafe_get_conversation!(conv.id)
 
-      case start_result do
-        {:ok, pid} ->
-          Fountain.Conversations.PromptDelivery.notify_pending(user_id, conv.id, pid)
-
-          result = _unsafe_get_conversation!(conv.id)
-
-          if result.parent_conversation_id do
-            root_id = get_root_conversation_id(result.id)
-            broadcast_graph_update(root_id)
-          end
-
-          broadcast_sidebar_update(user_id)
-          {:ok, result}
-
-        {:error, reason} ->
-          # The conversation row was created successfully; mark it and its
-          # sandbox failed so the status is visible on the conversation page,
-          # then return it so callers (UI + API) navigate there rather than
-          # leaving the user stuck on the new-conversation form.
-          Logger.error(
-            "ConversationServer failed to start for conv #{conv.id}: #{inspect(reason)}"
-          )
-
-          # Ownership: this launch owns the original parent and sandbox. Failure
-          # rechecks their binding and commits queued prompt outcomes with its stage.
-          Fountain.Conversations.ProvisionWatchdog._unsafe_fail_start(conv.id, sandbox.id)
-          result = _unsafe_get_conversation!(conv.id)
-          broadcast_sidebar_update(user_id)
-          {:ok, result}
+      if result.parent_conversation_id do
+        root_id = get_root_conversation_id(result.id)
+        broadcast_graph_update(root_id)
       end
+
+      broadcast_sidebar_update(user_id)
+      {:ok, result}
     else
       nil ->
         {:error, :not_found}

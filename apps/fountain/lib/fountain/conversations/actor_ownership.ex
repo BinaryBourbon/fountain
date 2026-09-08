@@ -17,14 +17,21 @@ defmodule Fountain.Conversations.ActorOwnership do
   def start(state, conversation, sandbox, provision_deadline_ms) do
     id = Map.get(state, :actor_claim) || Ecto.UUID.generate()
 
-    with {:ok, {_claim, current, machine}} <-
-           claim_binding(conversation.user_id, conversation.id, sandbox.id, id) do
+    with {:ok, {_claim, current, machine, launch}} <-
+           claim_binding(
+             conversation.user_id,
+             conversation.id,
+             sandbox.id,
+             id,
+             Map.get(state, :launch_id)
+           ) do
       if is_nil(Map.get(state, :actor_claim)) do
         Fountain.Conversations.ProvisionWatchdog.start(
           conversation.id,
           sandbox.id,
           provision_deadline_ms,
-          actor_claim: id
+          actor_claim: id,
+          deadline_at: if(launch && machine.status == "pending", do: launch.deadline_at)
         )
       end
 
@@ -34,12 +41,12 @@ defmodule Fountain.Conversations.ActorOwnership do
   end
 
   def claim(user_id, conversation_id, sandbox_id, id) do
-    with {:ok, {claim, _parent, _sandbox}} <-
-           claim_binding(user_id, conversation_id, sandbox_id, id),
+    with {:ok, {claim, _parent, _sandbox, _launch}} <-
+           claim_binding(user_id, conversation_id, sandbox_id, id, nil),
          do: {:ok, claim}
   end
 
-  defp claim_binding(user_id, conversation_id, sandbox_id, id) do
+  defp claim_binding(user_id, conversation_id, sandbox_id, id, launch_id) do
     Repo.transaction(fn ->
       lock_machine(sandbox_id)
 
@@ -60,13 +67,13 @@ defmodule Fountain.Conversations.ActorOwnership do
             lock: "FOR UPDATE"
         )
 
-      claim =
+      {claim, launch} =
         cond do
           existing && existing.user_id != user_id ->
             Repo.rollback(:ownership_changed)
 
           existing && existing.id == id && existing.sandbox_id == sandbox_id ->
-            existing
+            {existing, nil}
 
           existing && existing.sandbox_id == sandbox_id ->
             Repo.rollback(:actor_owned)
@@ -75,19 +82,26 @@ defmodule Fountain.Conversations.ActorOwnership do
             if Repo.get(ActorClaim, id), do: Repo.rollback(:actor_retired)
             assert_new_start!(sandbox)
 
+            launch =
+              Fountain.Conversations.ActorLaunches.acknowledge!(parent, sandbox, id, launch_id)
+
             if existing do
               existing |> Ecto.Changeset.change(state: "superseded") |> Repo.update!()
             end
 
-            Repo.insert!(%ActorClaim{
-              id: id,
-              user_id: user_id,
-              conversation_id: conversation_id,
-              sandbox_id: sandbox_id
-            })
+            claim =
+              Repo.insert!(%ActorClaim{
+                id: id,
+                user_id: user_id,
+                conversation_id: conversation_id,
+                sandbox_id: sandbox_id,
+                launch_id: launch && launch.id
+              })
+
+            {claim, launch}
         end
 
-      {claim, parent, sandbox}
+      {claim, parent, sandbox, launch}
     end)
   end
 

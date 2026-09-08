@@ -14,7 +14,16 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
 
   def start(conversation_id, sandbox_id, default_ms, opts \\ []) do
     actor = self()
-    timeout = Application.get_env(:fountain, :provision_deadline_ms, default_ms)
+    configured = Application.get_env(:fountain, :provision_deadline_ms, default_ms)
+
+    timeout =
+      case Keyword.get(opts, :deadline_at) do
+        %DateTime{} = deadline ->
+          min(configured, max(DateTime.diff(deadline, DateTime.utc_now(), :millisecond), 0))
+
+        nil ->
+          configured
+      end
 
     spawn(fn ->
       monitor = Process.monitor(actor)

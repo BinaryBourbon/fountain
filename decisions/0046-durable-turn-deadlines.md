@@ -841,9 +841,9 @@ An exception or process death leaves `started`, which also fences wakes from new
 receipts on that conversation. Registry absence or age cannot release that fence.
 
 This closes the pre-invocation submitter gap. It does not recover a process lost
-after the invocation claim, establish a provider incarnation, or durably launch
-prompt-free creation/attach/wake. Those entry points still need a shared launch
-protocol linked to actor claims and the provider journal. A stopped actor claim
+after the invocation claim or establish a provider incarnation. Fresh creation
+now has the durable launch protocol described below. Fresh wake and attach still
+need complete launch integration and provider journal links. A stopped actor claim
 on a still-starting machine also needs reconciliation before any new creation.
 These are remaining integration gates, not reasons to deploy the current draft.
 
@@ -867,8 +867,48 @@ choose fresh provisioning using an earlier `pending` snapshot after the locked
 row became ready. Ready machines retain the ordinary reattach path. The legacy
 interrupted-attempt helper now refuses instead of destroying and rebuilding.
 
-This prevents unproved recreation; it does not implement recovery. A new pending
-row's launch provenance, ordinary provider creation identity, stopped/abandoned
-claim reconciliation and prompt-free launch still need the shared durable launch
-protocol. Legacy in-flight machines require reconciliation at rollout. Keep this
-stack draft until that path and live acceptance are demonstrated.
+This prevents unproved recreation; it does not implement recovery. Fresh creation
+now records launch provenance as described below. Ordinary provider identity,
+stopped/abandoned claim reconciliation and fresh-wake launch remain incomplete.
+Legacy in-flight machines require reconciliation at rollout. Keep this stack
+draft until that path and live acceptance are demonstrated.
+
+
+## Atomic creation and durable actor launch (integration in progress)
+
+Fresh creation previously committed its sandbox and parent before its opening
+prompt. Creator death could leave a partial reservation or a saved prompt with
+no durable startup path. Fresh creation now commits the sandbox reservation,
+parent, optional prompt receipt and launch request with its dispatch job.
+This transaction completes before any local actor or provider call starts.
+Creation without a prompt also has a launch request.
+
+Dispatch retries local startup until an actor acknowledges the request. The
+acknowledgment and actor claim commit together under the original machine and
+parent locks. Horde success or registry absence cannot acknowledge a request.
+Acknowledged requests are never replayed by dispatch. Their unfinished machines
+retain the existing actor-history fence against another provider create.
+
+The request retains its tenant, parent, machine, runtime, opening receipt and
+absolute deadline. Database triggers prevent identity and deadline changes.
+Cancellation, changed ownership or admission refusal prevents a new claim.
+Admission checks the deadline after its database waits; the watchdog receives
+the same deadline. A late start failure cannot fail an acknowledged actor.
+A bounded sweep restores missing dispatch jobs and retains incomplete jobs,
+including suspended jobs, without duplicating them.
+
+Normal reattach to a ready machine preserves the original launch ancestry.
+Another owned conversation may attach to that shared machine without claiming
+or changing the creator's launch. Neither path authorizes unfinished provisioning.
+
+The local regressions cover creator death, duplicate actors, admission refusal,
+cancellation, late failure, ready reattach and dispatch restoration. Independent
+PostgreSQL connections test competing claims, claim-versus-failure outcomes and
+a receipt lock held past the deadline. Provider calls in actor tests are stubs.
+See `decisions/evidence/actor-launch.json` for validation and source hashes.
+
+This is fresh-creation integration, not complete lifecycle recovery. Fresh wake
+still needs database-first replacement binding and durable launch. Attach and
+prompt-free wake need complete launch integration. Provider journal identity,
+abandoned actors, interrupted prompt wakes and legacy rollout remain open.
+Execution controls and provider recovery remain disabled pending live acceptance.

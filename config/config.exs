@@ -54,6 +54,8 @@ config :fountain, Oban,
        # Saved prompt intent survives a crashed/discarded notification job.
        # The sweep only redelivers receipt IDs; their claims prevent replay.
        {"* * * * *", Fountain.Workers.PromptDispatchSweep},
+       # Restore discarded launch jobs while their explicit request is unacknowledged.
+       {"* * * * *", Fountain.Workers.ActorLaunchSweep},
        # Every 10 minutes: price closed turns and comms messages into the
        # credit ledger (ADR 0030) and sweep expired grants. Idempotent per
        # turn, per event and per grant, so the cadence only sets how stale a

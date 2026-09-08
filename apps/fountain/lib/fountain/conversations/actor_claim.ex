@@ -7,6 +7,7 @@ defmodule Fountain.Conversations.ActorClaim do
     field :user_id, :binary_id
     field :conversation_id, :binary_id
     field :sandbox_id, :binary_id
+    field :launch_id, :binary_id
     field :state, :string, default: "active"
     timestamps(type: :utc_datetime_usec)
   end
