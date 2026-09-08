@@ -1,0 +1,46 @@
+{
+  "recorded_at": "2026-09-08T11:12:26.653665+00:00",
+  "previous_checkpoint": "e071ceb20952eefc063685a093ed40ce6c43efab",
+  "scope": "Move successful park/resume audit writes out of lifecycle transactions; no activation.",
+  "source_files": {
+    "apps/fountain/lib/fountain/conversations/sandbox_transitions.ex": "sha256:1e2e7c84ff08e8899f1a1df9aed81e99e6ae536d185ddb6d14f30c1b39e5d2e0",
+    "apps/fountain/test/fountain/conversations/sandbox_transitions_test.exs": "sha256:7a20fdb34df28a24ba84be44b5755f91e915f9f40628bab5b59297108bc9ca7a"
+  },
+  "full_precommit": {
+    "tests": 4875,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:aa15b235de1b7307236a38bfa7807b7ca4c232292ba2329bd97991eee8e10f70"
+  },
+  "focused": {
+    "tests": 28,
+    "failures": 0,
+    "log_sha256": "sha256:cdfd0856297bbcf90844046a968f9613b7a95da35450f426fffedc8d8e01509f",
+    "scope": "Includes real failed audit inserts; full precommit additionally covers the final assertion rejecting audits during successful nested journal completion."
+  },
+  "regression": {
+    "cause": "Audit.record rescues database exceptions; inside a transaction, PostgreSQL still aborts that transaction. The executing entry points already reject outer transactions and can audit after commit.",
+    "actual_database_error": "22001 string_data_right_truncation: audit action exceeds varchar(255)",
+    "failed_audit_inserts": 4,
+    "verified": [
+      "Audits observe committed submitted/confirmed operation states outside Repo transactions.",
+      "Park and resume succeed despite actual rejected audit inserts.",
+      "Capacity reservation and park stage persist.",
+      "Successful journal completion under an outer rollback emits neither an audit nor a premature stage broadcast."
+    ]
+  },
+  "checkpoint_dependency": "managoat_sandbox 0.4.2",
+  "checkpoint_evidence": "decisions/evidence/sandbox-checkpoint-integration.json",
+  "prior_arbitration_evidence": "decisions/evidence/sandbox-transitions.json",
+  "live_provider_operations": 0,
+  "public_execution_controls_enabled": false,
+  "recovery_worker_enabled_by_default": false,
+  "remaining": [
+    "Full holder attachment/transfer arbitration and authoritative idle-bound rechecks.",
+    "Actor shutdown versus concurrent wake and queued-prompt preservation.",
+    "Uncertain park/resume recovery without replaying provider writes.",
+    "Confirmed-create absence retirement/replacement and ordinary creation physical-name coverage.",
+    "Conditional provider identity safety and live acceptance before activation/stack merge.",
+    "Aggregate inference limits and actual dollar-cost reporting."
+  ]
+}

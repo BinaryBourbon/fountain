@@ -494,6 +494,11 @@ Park events, webhook jobs and local notification jobs commit with the transition
 The existing persisted-stage notification worker delivers them after commit.
 Co-tenant park messages carry the operation generation; an old message cannot
 stop an actor on a resumed machine.
+Best-effort audits run in the executing park/resume entry points after the
+journal transaction commits. Successful grant and completion transactions retain
+only durable transition, stage and notification writes. A regression forces real
+PostgreSQL audit insert failures and verifies that park, resume, capacity and stage records remain
+intact.
 
 Unknown transition outcomes remain fenced, without an automatic replay. Full
 holder attachment/transfer arbitration, actor shutdown versus concurrent wake,

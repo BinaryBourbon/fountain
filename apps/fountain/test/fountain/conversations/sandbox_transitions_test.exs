@@ -331,6 +331,9 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "park events and notifications commit together without a premature broadcast", c do
+    # Journal primitives compose with an outer transaction; only the executing
+    # entry points audit, after their commits.
+    reject(Fountain.Audit, :record, 1)
     Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{c.conv.id}")
     {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
 
@@ -412,6 +415,47 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
     expect(Managoat.Sandbox, :suspend, fn _ -> :ok end)
     assert {:ok, parked} = SandboxTransitions._unsafe_park(sandbox, :idle)
     refute parked.provider_meta["checkpoint_id"]
+  end
+
+  test "failed audit inserts cannot roll back committed park or resume", c do
+    owner = self()
+
+    expect(Fountain.Audit, :record, 4, fn attrs ->
+      refute Repo.in_transaction?()
+      assert attrs.actor == "system:sandbox_transitions"
+
+      operation =
+        Repo.one!(from o in SandboxOperation, where: o.action == ^attrs.metadata["action"])
+
+      assert operation.state == attrs.metadata["state"]
+
+      # The real audit insert exceeds PostgreSQL's varchar limit; Audit.record
+      # rescues the database error. It must happen after the lifecycle commit.
+      assert {:error, :exception} =
+               Mimic.call_original(Fountain.Audit, :record, [
+                 Map.put(attrs, :action, String.duplicate("x", 256))
+               ])
+
+      send(owner, {:audited, attrs.metadata})
+      {:error, :exception}
+    end)
+
+    expect(Managoat.Sandbox, :suspend, fn _ -> :ok end)
+
+    expect(Managoat.Sandbox, :get, fn _ ->
+      {:ok, %{raw: %{"id" => "physical-instance"}}}
+    end)
+
+    assert {:ok, parked} = SandboxTransitions._unsafe_park(c.sandbox, :idle)
+    assert parked.status == "suspended"
+    assert {:ok, ready} = SandboxTransitions._unsafe_resume(parked)
+    assert ready.status == "ready"
+    assert Repo.reload!(c.creation).holds_slot
+    assert Repo.aggregate(LogEvent, :count) == 1
+
+    for action <- ~w(park resume), state <- ~w(submitted confirmed) do
+      assert_receive {:audited, %{"action" => ^action, "state" => ^state}}
+    end
   end
 
   defp turn_attrs(conv),

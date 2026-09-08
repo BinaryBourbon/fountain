@@ -32,8 +32,9 @@ defmodule Fountain.Conversations.SandboxTransitions do
   def _unsafe_park(sandbox, reason, timeout \\ 35_000) when timeout in 1..35_000 do
     with :ok <- outside_transaction(),
          {:ok, operation} <- _unsafe_submit(sandbox, "park") do
+      audit(operation)
       result = provider_phase(fn -> park_provider(sandbox, operation) end, timeout)
-      _unsafe_complete(operation.id, result, reason)
+      complete_and_audit(operation, result, reason)
     end
   end
 
@@ -75,8 +76,9 @@ defmodule Fountain.Conversations.SandboxTransitions do
   def _unsafe_resume(sandbox) do
     with :ok <- outside_transaction(),
          {:ok, operation} <- _unsafe_submit(sandbox, "resume") do
+      audit(operation)
       result = provider_phase(fn -> resume_provider(operation) end)
-      _unsafe_complete(operation.id, result, :wake)
+      complete_and_audit(operation, result, :wake)
     end
   end
 
@@ -123,7 +125,6 @@ defmodule Fountain.Conversations.SandboxTransitions do
           provider_meta: Map.put(sandbox.provider_meta || %{}, @generation, operation.id)
         })
 
-      audit(operation)
       operation
     end)
   end
@@ -171,13 +172,26 @@ defmodule Fountain.Conversations.SandboxTransitions do
         |> Repo.update!()
 
         if operation.action == "park", do: record_park(parents, operation, reason)
-        audit(%{operation | state: "confirmed"})
         sandbox
       end)
     else
       # ownership: this is the durable operation read above, never a request-supplied owner.
       SandboxOperations._unsafe_mark_uncertain(observed.id)
       {:error, :provider_operation_uncertain}
+    end
+  end
+
+  # The executing entry points refuse outer transactions. Keep best-effort
+  # audit writes there, after commits; the composable journal primitives above
+  # must not let a rescued audit insert abort their caller's transaction.
+  defp complete_and_audit(operation, provider_result, reason) do
+    case _unsafe_complete(operation.id, provider_result, reason) do
+      {:ok, _sandbox} = result ->
+        audit(%{operation | state: "confirmed"})
+        result
+
+      error ->
+        error
     end
   end
 
