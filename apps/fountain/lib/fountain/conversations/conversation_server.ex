@@ -558,84 +558,36 @@ defmodule Fountain.Conversations.ConversationServer do
     }
 
     Lifecycle.schedule_check()
-    start_provision_watchdog(state.conversation_id, state.sandbox_id)
-    {:ok, state, {:continue, :provision}}
-  end
 
-  # A deadline for provisioning cannot live inside this server: a stuck
-  # handle_continue(:provision) blocks the mailbox, so a send_after (or a
-  # trapped exit signal) queues behind the very thing it is meant to bound.
-  # The watchdog is a separate process that, at the deadline, consults the
-  # sandbox row — the provision path's own source of truth — and only if it
-  # is still pending/starting brutally kills the server and applies the same
-  # failed/failed row transitions as the normal provision-failure path. The
-  # sprite, if one was created, is picked up by SandboxReaper's untracked
-  # sweep. A monitor exits the watchdog quietly whenever the server stops
-  # first, which covers every success and ordinary-failure path.
-  defp start_provision_watchdog(conv_id, sandbox_id) do
-    server = self()
-    deadline_ms = Application.get_env(:fountain, :provision_deadline_ms, @provision_deadline_ms)
+    Fountain.Conversations.ProvisionWatchdog.start(
+      state.conversation_id,
+      state.sandbox_id,
+      @provision_deadline_ms
+    )
 
-    spawn(fn ->
-      ref = Process.monitor(server)
-
-      receive do
-        {:DOWN, ^ref, :process, ^server, _reason} -> :ok
-      after
-        deadline_ms ->
-          sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
-
-          if sandbox.status in ["pending", "starting"] do
-            Logger.error(
-              "conv #{conv_id}: provisioning exceeded #{deadline_ms}ms; " <>
-                "failing the sandbox and killing the stuck server"
-            )
-
-            # Rows BEFORE the kill (#394). The server is restart: :transient
-            # and :killed is an abnormal exit, so a kill-first ordering let
-            # Horde restart it into handle_continue(:provision) while the row
-            # still said pending — and the restart re-provisioned a second
-            # billable sprite, then kept streaming into it while this stale
-            # struct's late "failed" write made the row lie about it. With
-            # the terminal status committed first, a restarted server stops
-            # at the terminal-status guard in :provision.
-            {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
-
-            case Conversations._unsafe_get_conversation(conv_id) do
-              %Conversation{status: status} = conv when status not in ["terminated", "failed"] ->
-                Conversations.update_conversation(conv, %{status: "failed"})
-
-              _ ->
-                :ok
-            end
-
-            Output.publish_stage(conv_id, "provision", "failed", %{
-              reason: "provision deadline exceeded"
-            })
-
-            # Prefer supervisor termination over Process.exit: it removes the
-            # child, so no restart happens at all, and it bounds the wait —
-            # the server traps exits and is stuck in a callback, so the
-            # :shutdown signal queues until the child-spec shutdown timeout
-            # expires and the supervisor escalates to :kill. terminate/2
-            # still does not run for the stuck server; expires_at bounds the
-            # un-revoked callback key, and the reaper reclaims the sprite.
-            # The fallback covers a server not running under the supervisor
-            # (tests) or one that died in the meantime.
-            case Horde.DynamicSupervisor.terminate_child(Fountain.ConversationSupervisor, server) do
-              :ok -> :ok
-              {:error, _} -> Process.exit(server, :kill)
-            end
-
-            :telemetry.execute([:fountain, :provision, :deadline_exceeded], %{count: 1}, %{
-              conversation_id: conv_id
-            })
-          end
+    continuation =
+      case Keyword.fetch(args, :binding_from) do
+        {:ok, source} -> {:await_binding, source}
+        :error -> :provision
       end
-    end)
+
+    {:ok, state, {:continue, continuation}}
   end
 
   @impl true
+  def handle_continue({:await_binding, source}, state) do
+    # Ownership: the wake caller supplies the original parent binding; the wait
+    # checks the persisted tenant and destination before any provisioning work.
+    case Fountain.Conversations.ProvisionBinding._unsafe_await(
+           state.conversation_id,
+           state.sandbox_id,
+           source
+         ) do
+      :ok -> handle_continue(:provision, state)
+      {:error, _} -> {:stop, :normal, state}
+    end
+  end
+
   def handle_continue(:provision, state) do
     conv = Conversations._unsafe_get_conversation(state.conversation_id)
     sandbox = state.sandbox_id && Conversations._unsafe_get_sandbox(state.sandbox_id)
@@ -656,7 +608,7 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       # ownership: this newly started actor fetched its parent above. A journal
       # left by another incarnation is retired, never reattached or replayed.
-      case Fountain.Conversations.ExecutionGuard._unsafe_interrupt(conv.id) do
+      case Fountain.Conversations.ExecutionGuard._unsafe_interrupt_on_sandbox(conv.id, sandbox.id) do
         {:ok, :unbounded} -> provision_with_rows(state, conv, sandbox)
         {:ok, {:bounded, _}} -> {:stop, :normal, state}
         {:error, _} -> {:stop, :normal, state}

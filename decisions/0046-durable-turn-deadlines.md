@@ -618,3 +618,40 @@ These are local database and adapter tests. Legacy unjournaled behavior, durable
 wake ownership, actor shutdown/publication coordination, uncertain-transition
 recovery and live acceptance remain integration work. Execution controls and
 recovery stay disabled; the lifecycle stack stays draft.
+
+
+## Provisioning ownership
+
+Fresh wake retains Horde's child arbitration, then commits the holder replacement.
+The winning actor waits up to five seconds for that binding before provisioning.
+A changed winner or owner stops it. A replayed child can use an already committed
+binding. The initiating prompt is queued only after replacement commits. A real
+actor test holds the caller before commit and verifies that credentials and the
+prompt remain untouched until the new binding is visible.
+
+Actor startup now checks its original machine binding under the machine and
+parent locks before it can interrupt an orphan execution. A child stored by
+Horde for an old machine stops before provisioning or credential loading when
+the parent has moved. Explicit user cancellation keeps its existing behavior.
+
+The provisioning watchdog watches the original PID. Its timeout locks the
+original machine and current parent, then rechecks ownership, provisioning
+status and active execution. A moved parent receives no stale failure. An
+accepted timeout commits the failed rows, stage and delivery jobs together
+before terminating the old PID. Unknown creation keeps its journal and capacity;
+a timeout does not authorize another provider call. Database errors retry the
+same timeout decision without restarting provisioning.
+
+The actor regressions cover a stale child with a running replacement and a
+blocked old actor whose parent moves. The watchdog tests cover transactional
+notifications, ownership drift, settled machines, cotenant execution and uncertain
+creation. `scripts/verify-provision-ownership-races.exs` forces transfer and new
+execution admission to commit while startup and watchdog decisions wait on
+independent PostgreSQL connections. Validation is recorded in
+`decisions/evidence/provision-ownership.json`.
+
+This is a binding guard, not a durable actor lease. Same-machine actor epochs,
+normal provisioning failure publication, database-first wake ownership and
+accepted prompt delivery remain unfinished. It does not establish full wake
+recovery or live provider acceptance. The lifecycle stack stays draft; execution
+controls and recovery stay disabled.

@@ -1,0 +1,81 @@
+{
+  "recorded_at": "2026-09-08T13:56:23.095581+00:00",
+  "previous_checkpoint": "e881ee4a63bcbe19a903ad7f10388cd976f8af96",
+  "scope": "Fresh-wake provisioning and initial prompt queuing wait for the replacement binding; startup interruption and provisioning timeout are scoped to the original sandbox binding; timeout outcomes and notifications commit together. No production activation.",
+  "source_files": {
+    "apps/fountain/test/fountain/conversations/sandbox_transitions_test.exs": "sha256:ae21538122c81eee02b3182e61cde145b8770c62b788fd3a33850dd005166daf",
+    "apps/fountain/lib/fountain/conversations.ex": "sha256:629e25645d901a6af4b3cfd4dde611459a5ec7fc09c1bb321fdb09231b5870d0",
+    "apps/fountain/lib/fountain/conversations/provision_binding.ex": "sha256:2f9e02954a56c38e4a4c142189d7e568ef6400f60a302c3e0f6df847c00950db",
+    "apps/fountain/test/fountain/conversations/provision_binding_test.exs": "sha256:04b61b1027e50a95c8eee3246422bf93c507609b4def4a28bbe311748a64c1c1",
+    "apps/fountain/lib/fountain/conversations/conversation_server.ex": "sha256:20db57057ce7b68eee1303165fd6cc0ac00172451faf9679f558b890138c6fd8",
+    "apps/fountain/lib/fountain/conversations/execution_guard.ex": "sha256:b036bfad31d74e39483fd7a34260c42db8d5597def4f02dc8e15452cddb249d8",
+    "apps/fountain/lib/fountain/conversations/provision_watchdog.ex": "sha256:855d6842525b2081f66339d14a259e83bb0785c61acc03d88c07b46c8f102a0e",
+    "apps/fountain/test/fountain/conversations/conversation_server_provision_deadline_test.exs": "sha256:5553092faa8f7d25d04d3d93b0396848fdc1ff2597f1357e2c291fa8ab18b545",
+    "apps/fountain/test/fountain/conversations/execution_guard_test.exs": "sha256:89580813294b5036ea8d5f560f6c2e9472cf4bc035acf937d1d296d9eed40e36",
+    "apps/fountain/test/fountain/conversations/provision_watchdog_test.exs": "sha256:060235fce153d12e661e1db430db2179f60b610ea12aa160e76f6f20d360a0ca",
+    "scripts/verify-provision-ownership-races.exs": "sha256:84ab0962920c6aea29b261879adc6860c254e41343ee4b1494f1852f368be731"
+  },
+  "full_precommit": {
+    "tests": 4936,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:f2e4f842776c252f01c024e2fbe4d64b12824b90048fad300b4962cececca1ff"
+  },
+  "focused": {
+    "tests": 79,
+    "failures": 0,
+    "log_sha256": "sha256:788ac5da46e2176d3efd689f59f7b5c188f4265f8ae97f5377356509bcddf867"
+  },
+  "database_races": {
+    "script": "scripts/verify-provision-ownership-races.exs",
+    "results": {
+      "DEADLINE_RACE_RESULT": {
+        "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+        "separate_database_connections": true,
+        "provider_operations": 0,
+        "cases": 20,
+        "outcomes": {
+          "completion_won": 13,
+          "expiry_won": 7
+        },
+        "lock_wait_cannot_extend_deadline": true,
+        "delayed_lock_tables": [
+          "conversations",
+          "turns"
+        ],
+        "delayed_operations": [
+          "spawn",
+          "stdin_write"
+        ],
+        "completed_connections_require_cleanup": true,
+        "deadline_event_reuse_cases": 7
+      },
+      "PROVISION_OWNERSHIP_RACE_RESULT": {
+        "scope": "Local transfer commits and replacement admission before a stale worker acquires its original machine lock; does not prove actor epochs or prompt delivery",
+        "separate_database_connections": true,
+        "forced_lock_waits": 2,
+        "operations": [
+          "startup_interrupt",
+          "provision_watchdog"
+        ],
+        "replacement_execution_preserved": true,
+        "stale_failure_events": 0,
+        "provider_operations": 0
+      }
+    },
+    "log_sha256": "sha256:627ab5aed970d0eeba20f9c63b247a97bb6299275fe6c9565e79014bb642981d"
+  },
+  "not_proven": [
+    "Same-machine actor epochs and leases",
+    "Normal provisioning failure publication after concurrent transfer",
+    "Database-first wake ownership and durable accepted prompt delivery",
+    "Uncertain transition recovery and ordinary creation identity coverage",
+    "Conditional provider identity and live production acceptance"
+  ],
+  "activation": {
+    "lifecycle_pr": "draft",
+    "execution_controls_enabled": false,
+    "recovery_enabled": false,
+    "live_provider_operations": 0
+  }
+}

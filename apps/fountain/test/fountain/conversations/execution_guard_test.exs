@@ -47,6 +47,37 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
     execution
   end
 
+  test "startup on the current binding retires its orphan execution", c do
+    bind(c)
+
+    assert {:ok, {:bounded, id}} =
+             ExecutionGuard._unsafe_interrupt_on_sandbox(c.conversation.id, c.sandbox.id)
+
+    assert id == c.execution.id
+    assert Repo.reload!(c.turn).status == "interrupted"
+    assert Repo.reload!(c.execution).state == "ready"
+  end
+
+  test "startup from another machine cannot interrupt the current execution", c do
+    old = insert_sandbox(user_id: c.user.id, status: "failed")
+
+    assert {:error, :ownership_changed} =
+             ExecutionGuard._unsafe_interrupt_on_sandbox(c.conversation.id, old.id)
+
+    assert Repo.reload!(c.turn).status == "running"
+    assert Repo.reload!(c.execution).state == "active"
+  end
+
+  test "startup refuses sandbox ownership drift even when the parent still points at it", c do
+    c.sandbox |> change(user_id: insert_verified_user().id) |> Repo.update!()
+
+    assert {:error, :ownership_changed} =
+             ExecutionGuard._unsafe_interrupt_on_sandbox(c.conversation.id, c.sandbox.id)
+
+    assert Repo.reload!(c.turn).status == "running"
+    assert Repo.reload!(c.execution).state == "active"
+  end
+
   test "registration derives ownership and retries cannot extend the deadline", c do
     assert c.execution.user_id == c.user.id
     assert c.execution.sandbox_id == c.sandbox.id

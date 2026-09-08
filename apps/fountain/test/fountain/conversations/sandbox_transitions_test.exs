@@ -377,16 +377,19 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
       end
     end)
 
+    # Allow scheduling and Mimic dispatch under the full async suite. The
+    # assertion is that the provider's own timer kills it after caller loss,
+    # not that provider setup fits inside 100 ms.
     caller =
       Task.Supervisor.async_nolink(Fountain.TaskSupervisor, fn ->
-        SandboxTransitions._unsafe_park(c.sandbox, :idle, 100)
+        SandboxTransitions._unsafe_park(c.sandbox, :idle, 5_000)
       end)
 
-    assert_receive {:provider_waiting, provider}, 1_000
+    assert_receive {:provider_waiting, provider}, 5_000
     monitor = Process.monitor(provider)
     Process.exit(caller.pid, :kill)
-    assert_receive {:DOWN, ^monitor, :process, ^provider, :killed}, 1_000
     assert {:exit, :killed} = Task.yield(caller, 1_000)
+    assert_receive {:DOWN, ^monitor, :process, ^provider, :killed}, 6_000
     operation = Repo.one!(from o in SandboxOperation, where: o.action == "park")
     assert operation.state == "submitted"
     assert SandboxOperations._unsafe_recover_submissions(DateTime.add(DateTime.utc_now(), 1)) == 1

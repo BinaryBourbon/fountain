@@ -3512,17 +3512,16 @@ defmodule Fountain.Conversations do
   # queued behind handle_continue(:provision), so it is processed once
   # provisioning finishes; if provisioning fails the server stops and the cast
   # dies with it, which is the right outcome — no turn on a failed provision.
+  defp start_conversation_process(conv, sandbox_id, runtime_module, opts \\ []) do
+    Horde.DynamicSupervisor.start_child(
+      Fountain.ConversationSupervisor,
+      {ConversationServer,
+       [conversation_id: conv.id, sandbox_id: sandbox_id, runtime_module: runtime_module] ++ opts}
+    )
+  end
+
   defp start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
-    with {:ok, pid} <-
-           Horde.DynamicSupervisor.start_child(
-             Fountain.ConversationSupervisor,
-             {ConversationServer,
-              [
-                conversation_id: conv.id,
-                sandbox_id: sandbox_id,
-                runtime_module: runtime_module
-              ]}
-           ) do
+    with {:ok, pid} <- start_conversation_process(conv, sandbox_id, runtime_module) do
       if is_binary(initial_prompt) and initial_prompt != "" do
         ConversationServer.queue_initial_prompt(pid, initial_prompt)
       end
@@ -3575,29 +3574,13 @@ defmodule Fountain.Conversations do
                })
              end
            ) do
-      # The row is repointed *after* the server starts, not before (#717).
-      #
-      # The old order repointed first, so a wake that then lost the start race
-      # left the conversation pointing at the sandbox it had just terminated,
-      # while the winner ran on a different one — a conversation that reads as
-      # terminated in the API and the UI while it is happily serving turns, and
-      # an orphan `ready` row nothing references. `fountain acp` reproduced it
-      # on every session, because `session/new` and the first prompt arrive a
-      # second apart and the prompt takes this path before the registry has the
-      # new server.
-      #
-      # Deferring leaves a much smaller window — between the server starting
-      # and the row being updated — in which the row still names the old
-      # sandbox. That one is transient and self-correcting; the old one was
-      # permanent.
-      #
-      # #800 closed the other half: a prompt that finds a `pending` row now
-      # waits for the registry (`ConversationServer.await_registered/2`)
-      # before coming here, so the first server — often on another pod, and
-      # so invisible to this node's registry for a beat — is found and
-      # handed the prompt instead of being raced by a second provision.
-      case start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
-        {:ok, _} ->
+      # Horde arbitrates the child first (#717), but the winning child waits
+      # for the committed binding before it loads credentials or provisions.
+      # The prompt is queued only after the replacement transaction succeeds.
+      case start_conversation_process(conv, new_sandbox.id, runtime_module,
+             binding_from: conv.sandbox_id
+           ) do
+        {:ok, pid} ->
           old_sandbox_id = conv.sandbox_id
           _ = mark_old_sandbox_terminated(old_sandbox_id)
 
@@ -3605,6 +3588,10 @@ defmodule Fountain.Conversations do
           # the same transaction, or leave every binding unchanged.
           with {:ok, conv} <-
                  Fountain.Conversations.SandboxHolders._unsafe_replace(conv, new_sandbox.id) do
+            if is_binary(initial_prompt) and initial_prompt != "" do
+              ConversationServer.queue_initial_prompt(pid, initial_prompt)
+            end
+
             {:ok, _unsafe_get_conversation!(conv.id)}
           end
 

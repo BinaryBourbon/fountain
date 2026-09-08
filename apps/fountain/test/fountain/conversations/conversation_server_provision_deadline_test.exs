@@ -177,6 +177,147 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
   end
 
+  test "fresh wake waits for its binding before credentials and queues its prompt after commit" do
+    Application.put_env(:fountain, :provision_deadline_ms, 30_000)
+    stub_happy_sprite()
+    owner = self()
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    old = insert_sandbox(user_id: user.id, agent_id: agent.id, status: "terminated")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: old, status: "idle")
+
+    Mimic.stub(Fountain.Crypto, :load_tenant_key, fn _ ->
+      send(owner, {:credentials_on, Repo.reload!(conv).sandbox_id})
+      {:ok, <<0::256>>}
+    end)
+
+    Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _sup, {ConversationServer, args} ->
+      args = Keyword.put(args, :runtime_module, Managoat.Runtimes.Testing.FakeRuntime)
+      {:ok, pid} = GenServer.start(ConversationServer, args)
+      send(owner, {:child_before_binding, self(), pid})
+
+      receive do
+        :commit_binding -> {:ok, pid}
+      after
+        5_000 -> raise "binding handoff barrier timed out"
+      end
+    end)
+
+    Mimic.stub(ConversationServer, :queue_initial_prompt, fn pid, prompt ->
+      send(owner, {:queued_after_binding, pid, prompt, Repo.reload!(conv).sandbox_id})
+      :ok
+    end)
+
+    wake = Task.async(fn -> Conversations.wake_conversation(conv.id, "hello") end)
+    assert_receive {:child_before_binding, caller, pid}, 5_000
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+    assert Repo.reload!(conv).sandbox_id == old.id
+    refute_receive {:credentials_on, _}
+    refute_receive {:queued_after_binding, _, _, _}
+    send(caller, :commit_binding)
+    assert {:ok, woken} = Task.await(wake, 5_000)
+    destination = woken.sandbox_id
+    refute destination == old.id
+    assert_receive {:queued_after_binding, ^pid, "hello", ^destination}
+    assert_receive {:credentials_on, ^destination}, 5_000
+    state = :sys.get_state(pid, 5_000)
+    assert state.sandbox_id == destination
+    assert Conversations._unsafe_get_sandbox!(destination).status == "ready"
+    assert Process.alive?(pid)
+  end
+
+  test "a stale child stops before credentials and leaves replacement execution running" do
+    stub_happy_sprite()
+    owner = self()
+
+    Mimic.stub(Fountain.Crypto, :load_tenant_key, fn _ ->
+      send(owner, :credentials_loaded)
+      {:ok, <<0::256>>}
+    end)
+
+    user = insert_verified_user()
+    old = insert_sandbox(user_id: user.id)
+    replacement = insert_sandbox(user_id: user.id, status: "ready")
+    conv = insert_conversation(user_id: user.id, sandbox: old, status: "idle")
+    {:ok, conv} = Conversations.update_conversation(conv, %{sandbox_id: replacement.id})
+    turn = insert_turn(conv, status: "running", started_at: DateTime.utc_now())
+
+    {:ok, execution} =
+      Fountain.Conversations.ExecutionGuard._unsafe_register(
+        turn.id,
+        Ecto.UUID.generate(),
+        DateTime.add(DateTime.utc_now(), 60)
+      )
+
+    {:ok, pid} =
+      GenServer.start(ConversationServer,
+        conversation_id: conv.id,
+        sandbox_id: old.id,
+        runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+      )
+
+    ref = Process.monitor(pid)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5_000
+    refute_received :credentials_loaded
+    assert Repo.reload!(turn).status == "running"
+    assert Repo.reload!(execution).state == "active"
+    assert Repo.reload!(conv).sandbox_id == replacement.id
+    assert Repo.reload!(replacement).status == "ready"
+    assert Repo.aggregate(Fountain.Conversations.LogEvent, :count) == 0
+  end
+
+  test "a moved conversation survives the old blocked actor's watchdog" do
+    # A setup barrier proves the old actor actually entered provisioning.
+    # Use an explicit watchdog deadline after the transfer so scheduler timing
+    # cannot let the timeout race the test's setup.
+    Application.put_env(:fountain, :provision_deadline_ms, 30_000)
+    stub_happy_sprite()
+    owner = self()
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+    # Carry the original binding into the stub, as init does for the real watchdog.
+    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _, _, _, _ ->
+      send(owner, {:setup_waiting, self()})
+
+      receive do
+        :arm_watchdog ->
+          Fountain.Conversations.ProvisionWatchdog.start(conv.id, conv.sandbox_id, 1)
+      end
+
+      Process.sleep(:infinity)
+    end)
+
+    {:ok, pid} =
+      GenServer.start(ConversationServer,
+        conversation_id: conv.id,
+        sandbox_id: conv.sandbox_id,
+        runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+      )
+
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+    ref = Process.monitor(pid)
+    assert_receive {:setup_waiting, ^pid}, 5_000
+    replacement = insert_sandbox(user_id: user.id, agent_id: agent.id, status: "ready")
+    current = Repo.reload!(conv)
+
+    {:ok, current} =
+      Conversations.update_conversation(current, %{sandbox_id: replacement.id, status: "idle"})
+
+    Application.put_env(:fountain, :provision_deadline_ms, 1)
+    send(pid, :arm_watchdog)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 5_000
+    assert Repo.reload!(current).status == "idle"
+    assert Repo.reload!(current).sandbox_id == replacement.id
+    assert Repo.reload!(replacement).status == "ready"
+
+    refute Repo.exists?(
+             from e in Fountain.Conversations.LogEvent,
+               where:
+                 e.conversation_id == ^conv.id and e.stage == "provision" and e.state == "failed"
+           )
+  end
+
   test "a provision that completes in time is left alone" do
     stub_happy_sprite()
     user = insert_verified_user()
