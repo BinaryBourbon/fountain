@@ -372,22 +372,15 @@ defmodule Fountain.Conversations.ConversationServer do
   takes the `sandbox_id`, and its first prompt reattaches through the
   ordinary wake path — a new runtime session on the same disk.
 
-  `{:error, :busy}` while a turn is running; nothing is interrupted. With no
-  server alive the row alone is marked, the same as `terminate_conversation/2`.
+  `{:error, :busy}` while a turn runs or remote execution remains unresolved;
+  nothing is interrupted. The same durable check applies with no server alive.
   Audited as `conversation.released` unless `audit: false`.
   """
   def release_conversation(conv_id, opts \\ []) do
     result =
       case whereis(conv_id) do
         nil ->
-          case Conversations._unsafe_get_conversation(conv_id) do
-            nil ->
-              {:error, :not_running}
-
-            conv ->
-              {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
-              :ok
-          end
+          Conversations._unsafe_release_conversation(conv_id)
 
         pid ->
           call_server(pid, :release_conv)
@@ -1652,11 +1645,15 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:release_conv, _from, state) do
-    state = drop_connection(state, "released")
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
-    Output.publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
-    {:stop, :normal, :ok, %{state | handle: nil}}
+    case Conversations._unsafe_release_conversation(state.conversation_id) do
+      :ok ->
+        state = drop_connection(state, "released")
+        Output.publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
+        {:stop, :normal, :ok, %{state | handle: nil}}
+
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
   end
 
   # A notification for the revision this server already holds is a no-op: it

@@ -117,6 +117,25 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
+  @doc "Release only a durably idle parent; refusal never retires or interrupts execution."
+  def _unsafe_release_parent(conversation_id, writer) do
+    transaction(fn ->
+      conv = lock_parent(conversation_id) || Repo.rollback(:not_running)
+
+      running? =
+        Repo.exists?(
+          from t in Turn, where: t.conversation_id == ^conversation_id and t.status == "running"
+        )
+
+      if running? or open_execution?(conversation_id), do: Repo.rollback(:busy)
+
+      case writer.(conv) do
+        {:ok, updated} -> {%{applied: true, conversation: updated}, nil, nil}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
   @doc "Find the immutable journal for an already-owned actor's turn."
   def _unsafe_for_turn(turn_id), do: Repo.get_by(TurnExecution, turn_id: turn_id)
 
