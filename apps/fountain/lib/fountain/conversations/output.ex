@@ -160,18 +160,20 @@ defmodule Fountain.Conversations.Output do
         data: data
       })
 
-    Phoenix.PubSub.broadcast(
-      Fountain.PubSub,
-      "conv:#{ctx.conversation_id}",
-      {:log_event, event}
-    )
-
-    if ctx.user_id do
+    if event do
       Phoenix.PubSub.broadcast(
         Fountain.PubSub,
-        "sidebar:#{ctx.user_id}",
-        {:sidebar_update, ctx.user_id}
+        "conv:#{ctx.conversation_id}",
+        {:log_event, event}
       )
+
+      if ctx.user_id do
+        Phoenix.PubSub.broadcast(
+          Fountain.PubSub,
+          "sidebar:#{ctx.user_id}",
+          {:sidebar_update, ctx.user_id}
+        )
+      end
     end
 
     :ok
