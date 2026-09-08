@@ -23,6 +23,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   alias Fountain.Conversations.{
     CallbackKey,
+    CodexChatGPT,
     Connection,
     Conversation,
     Egress,
@@ -2449,13 +2450,10 @@ defmodule Fountain.Conversations.ConversationServer do
                         callback_token: state.callback_token,
                         resolved: state.resolved_mcp_servers
                       ),
-                    model:
-                      agent &&
-                        Managoat.Runtimes.Model.acp_model(
-                          conv.runtime || agent.runtime,
-                          agent.model
-                        ),
-                    permission_policy: TurnMachine.effective_permission_policy(conv, agent)
+                    model: TurnMachine.acp_model(conv, agent),
+                    permission_policy: TurnMachine.effective_permission_policy(conv, agent),
+                    auth:
+                      CodexChatGPT.peer_auth(state.runtime_module, state.inference_credentials)
                   )
                 else
                   {nil, nil}

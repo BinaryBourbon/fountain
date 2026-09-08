@@ -222,6 +222,18 @@ credential and takes the API-key path.
 }
 ```
 
+**The ACP peer must not authenticate.** codex-acp advertises an `api-key`
+method whose `authenticate` reads a key from the env and runs
+`accountLogin({type: "apiKey"})`, rewriting the file above, and
+`Managoat.ACP.Peer` authenticated with the first api-key method an agent
+advertised. So the peer gained `:auth` (`managoat_acp` 0.4.1, the one
+library change this ADR needs): `Fountain.Conversations.CodexChatGPT.peer_auth/2`
+answers `:none` for a codex spawn carrying the grant and `:api_key` for
+everything else, and both peer-start sites (`TurnMachine.start_acp_peer/5`
+and `Reattachment.acp_peer/3`) pass it. With no `authenticate` call codex-acp
+reads the file, reports the account as a ChatGPT login, and opens the
+session on it (measured 2026-09-08).
+
 **Transport.** `CodexTransport` keeps its provider swap and gains a second
 shape. When the spawn env carries `CODEX_CHATGPT_ACCESS_TOKEN` and no
 `OPENAI_API_KEY`, the declared provider is the one below. Codex then
@@ -308,19 +320,44 @@ where it is available it is the one to use.
 
 ## Measured
 
-**As of 2026-09-08 none of these has been run.** They are laptop and
-dev-broker experiments, not builds, and each one decides something above.
-The G0 PR replaces every "not yet measured" below with a dated result, and
-if measurement 2 fails this ADR stops at G0. Use a throwaway `CODEX_HOME`
-and a personal ChatGPT account, never `~/.codex`.
+Run on 2026-09-08 by the maintainer and the agent together, on the
+maintainer's ChatGPT Pro account, with two throwaway `CODEX_HOME` sign-ins
+from codex-cli 0.153.4 (the version production sandboxes run). Measurement 2
+ran on a dev server on the maintainer's laptop with the broker listener on,
+`BROKER_TENANTS=*`, and a `fountain runner` inside a container built from
+`images/e2b/e2b.Dockerfile` (the production sandbox image, arm64), so the
+sandbox dialled the broker over the container's host gateway.
 
 | # | Measurement | Decides | Result |
 |---|---|---|---|
-| 1 | **Access token lifetime.** `CODEX_HOME=$(mktemp -d) codex login`, decode the middle segment of `tokens.access_token`, report `exp - iat`. | The refresh margin in decision 3; a lifetime shorter than a long turn changes decision 5. | not yet measured |
-| 2 | **Placeholder end to end, on the custom provider.** In a dev checkout with `BROKER_LISTEN_PORT` set, hand-write the `chatgptAuthTokens` file into a dev sandbox, add a manual `substitute` binding for `CODEX_CHATGPT_ACCESS_TOKEN` to host `chatgpt.com` with the real access token, set the `CODEX_CONFIG` from decision 4, run a turn that makes a tool call. Done when the reply arrives and `broker_requests` shows `chatgpt.com` with outcome `:injected`. | Whether decision 4 is viable at all. If codex rejects the placeholder shape, try a JWT-shaped placeholder via `@inference_prefix`. If the backend rejects the non-openai request shape, stop: the fallback (built-in provider over codex's explicit proxy route, upstream #13103) is a different piece of work. | not yet measured |
-| 3 | **Rotation.** Refresh with `curl` against `/oauth/token`, confirm the old refresh token is refused with `refresh_token_reused`, confirm the new access token works through the broker with the sandbox file unchanged. | Decision 5's claim that the sandbox file never changes. | not yet measured |
-| 4 | **Device flow from a non-CLI caller.** Run the three calls from `iex` with `Req` and the Codex client id. | Whether G3's Connect is possible; if the server keys on something the CLI sends, paste is the only Connect. | not yet measured |
-| 5 | **Idle lifetime.** Leave a second grant untouched and refresh on day 9 (and day 30). | The keepalive interval in decision 3. | not yet measured; start it at G0, report later |
+| 1 | **Access token lifetime.** Decoded `exp - iat` from both fresh sign-ins and from every refresh response. | The refresh margin in decision 3. | **864,000 s, ten days**, on every token seen. The 15-minute margin and the 6-day keepalive are comfortable; no turn runs near expiry. |
+| 2 | **Placeholder end to end, on the custom provider.** `chatgptAuthTokens` file with `__codex_chatgpt_access_token__`, the transport's `fountain_openai_http` provider (`requires_openai_auth`, no `env_key`, backend base URL), broker session minted by hand, codex-acp 1.10.0 (bundling codex 0.153.4) driven over stdio with no `authenticate` call, a prompt that writes a file and runs `cat`. | Whether decision 4 is viable at all. | **Passes.** codex-acp reported the account as "ChatGPT Pro" from the placeholder file; the turn made two tool calls (one "Guardian Review", which the built-in-only claim said would not run) and answered `pong` in 16 s; `broker_requests` shows 40 requests to `chatgpt.com`, all `injected` (39 × 200, 1 × 204) and nothing to any other host; the sandbox file was unchanged afterwards. |
+| 3 | **Rotation.** Refresh with `curl`, reuse the old token, refresh again with the new one, refresh a garbage token, refresh a mangled one. | Decision 5, and the whole premise. | **Refresh tokens rotate but are not single-use.** Every refresh returns a new refresh token, `expires_in: 864000`, and `earliest_refresh_at` about nine days out (advisory: an immediate second refresh succeeded). **Reusing the old token returned 200 and forked a second chain**, and both chains kept working. The terminal shapes are a 401 with `error.code = refresh_token_reused` (which the server also answers a garbage token with) and a 400 `invalid_refresh_token_ciphertext_integrity` for a corrupted one; `Fountain.PlatformChatGPT.OAuth` treats both as terminal. The brief's "first sandbox to refresh kills every other copy" did not reproduce today; the design stands on its other merits (the refresh token never leaves the server). |
+| 4 | **Device flow from a non-CLI caller.** The three calls from Elixir with Req and Codex's client id, the code approved on `auth.openai.com/codex/device`. | Whether G3's Connect is real. | **Passes.** The server issued a code with a 5 s interval, approval landed 20 s later, and the exchange returned a refresh token, an id_token with the account id and plan, and a ten-day access token. The account had device-code login switched on in ChatGPT security settings first. |
+| 5 | **Idle lifetime.** The second sign-in is left untouched; refresh it on day 9 (2026-09-17) and day 30 (2026-10-08). | The keepalive interval in decision 3. | **Pending.** Nothing before 2026-09-17 can settle it. |
+
+Three things the measurements found that the reading of the source had not:
+
+- **The ChatGPT backend serves a different model list from the API.** With
+  the grant, `session/new` listed `gpt-6-astra` at six reasoning tiers and
+  nothing else; the agent's `openai/gpt-5.3-codex`, which the API-key path
+  accepts, failed the model stage ("Choose a model available in this
+  runtime"). An agent that may run on the grant needs a model the backend
+  lists, and the catalog (`Fountain.Agents.ModelCatalog`) has no way to say
+  which credential a suggestion is for yet. Left for a follow-up; the
+  transcript names the failure plainly.
+
+- **codex-acp authenticates before the session, and its API-key method
+  rewrites `auth.json`.** The ACP peer (`Managoat.ACP.Peer`) authenticates
+  eagerly with the first API-key method an agent advertises, for good
+  reasons of its own. codex-acp advertises `api-key` (which reads a key from
+  the env and runs `accountLogin({type: "apiKey"})`, replacing the grant
+  file) and `chat-gpt` (which reads the account and returns true when it is
+  already a ChatGPT login). A grant spawn must therefore skip the API-key
+  method; that is an option on the peer, in `managoat_acp`, and the one
+  library change this ADR needs after all.
+- **The custom provider is a "gateway" to codex-acp**, which reports it as
+  such in `_auth/status_update`; nothing downstream minded.
 
 ## Consequences
 
@@ -374,7 +411,7 @@ G0's.
 |---|---|---|
 | **G0** | The five measurements above, in a throwaway `CODEX_HOME` and a dev broker. Fills the Measured block. | A codex turn completes with the placeholder in the sandbox and the bearer only at the proxy, and the lifetimes are written into this record. |
 | **G1** (built, #1755) | Migration and schema, `Fountain.PlatformChatGPT` (`connect_from_auth_json/2`, `access_token/0`, `disconnect/1`, `status/0`), the keepalive worker, the paste-to-connect row on `/admin/inference`, the audit events, a section in `docs/configuration.md`. | A pasted grant survives a forced refresh and the keepalive, `admin_inference_chatgpt_live_test.exs` covers all four row states, and a deliberately reused refresh token flips the row to `revoked` with `refresh_token_reused`. All three hold in the suite against a stubbed auth server. |
-| **G2** (built, #1755; live evidence owed) | The `@inference` entry, the runtime-aware `select/3`, the extra source in `reread_secrets/1`, the second provider shape in `CodexTransport`, and `Fountain.Conversations.CodexChatGPT` writing the sandbox file (no library change). | A tenant with no OpenAI key runs a codex agent on the grant in a real sandbox, the transcript shows a reply to a tool-calling prompt, the egress log shows only `chatgpt.com` injected for that conversation, and the ledger row for the turn says `:platform`. |
+| **G2** (built, #1755; measured 2026-09-08) | The `@inference` entry, the runtime-aware `select/4` (grant for brokered conversations only), the extra source in `reread_secrets/1`, the second provider shape in `CodexTransport`, `Fountain.Conversations.CodexChatGPT` writing the sandbox file, and the peer's `:auth` option (`managoat_acp` 0.4.1). | A tenant with no OpenAI key runs a codex agent on the grant in a real sandbox, the transcript shows a reply to a tool-calling prompt, the egress log shows only `chatgpt.com` injected for that conversation, and the ledger row for the turn says `:platform`. **Held on the dev rig through the API**: the tenant held no credential, the turn completed (`end_turn`, usage input 247 / output 5 / cache read 14,848), the sandbox file it wrote read `pong`, the egress log for the conversation showed 49 injected requests to `chatgpt.com` (one of them a 101 websocket upgrade) and nothing injected anywhere else, and the file still held the placeholder. **Not held:** the ledger row, because the dev rig ran with credits off; the turn's usage is on the row the pricer reads, so production is where that lands. |
 | **G3** (built, #1755) | Device-code Connect in a supervised task (`Task.Supervisor.start_child(Fountain.TaskSupervisor, ...)`, never `Task.async`), workspace-token paste (decision 8), revocation UX on the row. | An admin connects with no laptop-side codex install. Holds in the suite against a stubbed device flow; measurement 4 is whether the real server accepts it. |
 
 ## Alternatives considered

@@ -19,8 +19,12 @@ defmodule Fountain.PlatformChatGPT.OAuth do
   @default_base_url "https://auth.openai.com"
   @device_redirect_uri "https://auth.openai.com/deviceauth/callback"
 
-  # The codes the auth server names as terminal, plus the RFC 6749 one.
-  @terminal ~w(refresh_token_expired refresh_token_reused refresh_token_invalidated invalid_grant)
+  # The codes the auth server names as terminal, plus the RFC 6749 one, plus
+  # the one it answers a corrupted token with. Measured 2026-09-08 (ADR 0047
+  # G0): a burnt token is a 401 `refresh_token_reused`, a mangled one a 400
+  # `invalid_refresh_token_ciphertext_integrity`, both under
+  # `{"error": {"code": ...}}`. The status is not what decides; the code is.
+  @terminal ~w(refresh_token_expired refresh_token_reused refresh_token_invalidated invalid_grant invalid_refresh_token_ciphertext_integrity)
 
   @type tokens :: %{
           access_token: String.t(),

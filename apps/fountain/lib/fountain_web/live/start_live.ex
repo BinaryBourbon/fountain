@@ -112,7 +112,9 @@ defmodule FountainWeb.StartLive do
          {:ok, own} <- InferenceCredentials.decrypted_for_user(user_id, dek) do
       match?(
         {:error, :no_credential},
-        InferenceCredentials.select(agent.model, own, agent.runtime)
+        InferenceCredentials.select(agent.model, own, agent.runtime,
+          brokered: Fountain.Broker.enabled_for?(user_id)
+        )
       )
     else
       # A tenant key that will not load is a bigger problem than this banner,

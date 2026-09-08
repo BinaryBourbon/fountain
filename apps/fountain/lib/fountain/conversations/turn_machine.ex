@@ -1013,11 +1013,22 @@ defmodule Fountain.Conversations.TurnMachine do
         images: Keyword.get(opts, :images, []),
         mcp_servers: Keyword.get(opts, :mcp_servers, []),
         model: Keyword.get(opts, :model),
-        permission_policy: Keyword.get(opts, :permission_policy)
+        permission_policy: Keyword.get(opts, :permission_policy),
+        # A codex spawn on the deployment's ChatGPT grant must not be
+        # authenticated with codex-acp's api-key method (ADR 0047); see
+        # `Fountain.Conversations.CodexChatGPT.peer_auth/2`.
+        auth: Keyword.get(opts, :auth, :api_key)
       )
 
     {peer, Process.monitor(peer)}
   end
+
+  @doc "The ACP model id to pin for this turn: the agent's model in the runtime's dialect, or nil without an agent."
+  @spec acp_model(Conversation.t(), map() | nil) :: String.t() | nil
+  def acp_model(_conv, nil), do: nil
+
+  def acp_model(conv, agent),
+    do: Managoat.Runtimes.Model.acp_model(conv.runtime || agent.runtime, agent.model)
 
   # The permission policy in force for this turn (#939): the agent's own,
   # clamped by whatever narrowing the launch asked for. Resolved per turn from

@@ -52,6 +52,24 @@ defmodule Fountain.Conversations.CodexChatGPT do
   def env(_runtime_module, _credentials), do: []
 
   @doc """
+  Which `authenticate` method the ACP peer may use for this spawn
+  (`Managoat.ACP.Peer`'s `:auth`). On the grant it is `:none`: codex-acp's
+  api-key method runs `accountLogin({type: "apiKey"})` from an env var and
+  rewrites the file above, and with no key in the env it fails outright
+  (measured 2026-09-08, ADR 0047 G0). Every other spawn keeps the peer's
+  default.
+  """
+  @spec peer_auth(module() | nil, map()) :: :none | :api_key
+  def peer_auth(Managoat.Runtimes.Codex, credentials) when is_map(credentials) do
+    case Map.get(credentials, @credential) do
+      value when is_binary(value) and value != "" -> :none
+      _ -> :api_key
+    end
+  end
+
+  def peer_auth(_runtime_module, _credentials), do: :api_key
+
+  @doc """
   Write the sandbox's `auth.json` when this codex spawn runs on the grant.
   `:skip` when it does not (the library's `prepare_sandbox/3` then runs as
   today); `:ok` or `{:error, reason}` when it does.

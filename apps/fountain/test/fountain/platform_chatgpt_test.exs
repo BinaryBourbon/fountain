@@ -370,6 +370,18 @@ defmodule Fountain.PlatformChatGPTTest do
                )
     end
 
+    test "an unbrokered conversation never takes the grant: the token would land in the sandbox" do
+      connect!()
+
+      assert InferenceCredentials.select("openai/gpt-5.5-codex", %{}, "codex", brokered: false) ==
+               {:error, :no_credential}
+
+      Application.put_env(:fountain, :platform_openai_api_key, "sk-platform")
+
+      assert InferenceCredentials.select("openai/gpt-5.5-codex", %{}, "codex", brokered: false) ==
+               {:ok, :platform, %{openai_api_key: "sk-platform"}}
+    end
+
     test "the tenant's own OpenAI key always wins" do
       connect!()
       own = %{openai_api_key: "sk-mine"}
