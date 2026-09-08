@@ -1247,7 +1247,7 @@ defmodule Fountain.Conversations.TurnMachine do
       Managoat.ACP.Peer.start(
         owner: self(),
         # See reattach_acp_peer/3 for the writer's contract.
-        writer: fn iodata -> Managoat.Sandbox.write_stdin(command, iodata) end,
+        writer: command_writer(command, opts),
         ref: command.ref,
         prompt: prompt,
         mode: mode,
@@ -1260,7 +1260,8 @@ defmodule Fountain.Conversations.TurnMachine do
         # A codex spawn on the deployment's ChatGPT grant must not be
         # authenticated with codex-acp's api-key method (ADR 0047); see
         # `Fountain.Conversations.CodexChatGPT.peer_auth/2`.
-        auth: Keyword.get(opts, :auth, :api_key)
+        auth: Keyword.get(opts, :auth, :api_key),
+        execution_limits: Keyword.get(opts, :execution_limits)
       )
 
     {peer, Process.monitor(peer)}
@@ -1272,6 +1273,16 @@ defmodule Fountain.Conversations.TurnMachine do
 
   def acp_model(conv, agent),
     do: Fountain.RuntimeDispatch.acp_model(conv.runtime || agent.runtime, agent.model)
+
+  defp command_writer(command, opts) do
+    case Keyword.get(opts, :execution_transport) do
+      nil ->
+        fn data -> Managoat.Sandbox.write_stdin(command, data) end
+
+      pid when is_pid(pid) ->
+        fn data -> Fountain.Conversations.ExecutionTransport.write(pid, data) end
+    end
+  end
 
   # The permission policy in force for this turn (#939): the agent's own,
   # clamped by whatever narrowing the launch asked for. Resolved per turn from

@@ -105,27 +105,72 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
     assert deadline == c.deadline
   end
 
-  test "early completion prevents a stale deadline from killing a reused connection", c do
+  test "successful replies retire background work before a fresh successor", c do
     bind(c)
 
-    assert {:ok, %{turn: %{status: "completed"}}} =
+    assert {:ok, %{execution: %{state: "ready"}, turn: %{status: "completed"}}} =
              ExecutionGuard._unsafe_complete(c.execution.id, "completed", now: c.now)
 
     successor = insert_turn(c.conversation, status: "running")
+    next_connection = Ecto.UUID.generate()
+
+    assert {:error, :execution_fenced} =
+             ExecutionGuard._unsafe_register(successor.id, next_connection, c.deadline)
+
+    assert {:ok, %{permitted: true, execution: attempt}} =
+             ExecutionGuard._unsafe_claim_termination(c.execution.id)
+
+    assert {:ok, _} =
+             ExecutionGuard._unsafe_record_termination(attempt.id, attempt.attempt_id, :ok)
+
+    assert {:error, :connection_retired} =
+             ExecutionGuard._unsafe_register(successor.id, c.connection, c.deadline)
 
     assert {:ok, next} =
-             ExecutionGuard._unsafe_register(
-               successor.id,
-               c.connection,
-               DateTime.add(c.deadline, 60)
-             )
+             ExecutionGuard._unsafe_register(successor.id, next_connection, c.deadline)
 
-    assert {:ok, %{execution: %{state: "completed"}, turn: %{status: "completed"}}} =
+    assert {:ok, %{execution: %{state: "stopped"}, turn: %{status: "completed"}}} =
              ExecutionGuard._unsafe_expire(c.execution.id, now: DateTime.add(c.deadline, 1))
 
     assert {:error, :not_ready} = ExecutionGuard._unsafe_claim_termination(c.execution.id)
     assert Repo.get!(TurnExecution, next.id).state == "active"
     assert Repo.get!(Turn, successor.id).status == "running"
+  end
+
+  test "writes require a known identity, current connection and unfinished turn", c do
+    assert {:error, :identity_unconfirmed} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
+
+    bind(c)
+
+    assert {:error, :stale_connection} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, Ecto.UUID.generate())
+
+    assert {:ok, %{permitted: true}} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
+
+    ExecutionGuard._unsafe_complete(c.execution.id, "completed")
+
+    assert {:error, :execution_fenced} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
+  end
+
+  test "an overdue write expires the turn without granting provider I/O", c do
+    bind(c)
+
+    assert {:ok, %{permitted: false, turn: %{limit_reason: "wall_time_limit"}}} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection, now: c.deadline)
+
+    assert Repo.get!(TurnExecution, c.execution.id).deadline_event_id
+  end
+
+  test "a changed sandbox cannot receive a write under the original journal", c do
+    bind(c)
+    replacement = insert_sandbox(user_id: c.user.id, status: "ready")
+    c.conversation |> change(sandbox_id: replacement.id) |> Repo.update!()
+
+    assert {:error, :ownership_changed} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
   end
 
   test "completion exactly at the deadline is failure and retains partial usage", c do
