@@ -491,6 +491,15 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "billing_disabled", billing: "disabled"})
   end
 
+  def call(conn, {:error, reason})
+      when reason in [:invalid_prompt, :invalid_images, :invalid_idempotency_key] do
+    conn |> put_status(:unprocessable_entity) |> json(%{error: to_string(reason)})
+  end
+
+  def call(conn, {:error, :idempotency_conflict}) do
+    conn |> put_status(:conflict) |> json(%{error: "idempotency_conflict"})
+  end
+
   # ── claimable principals (ADR 0044) ───────────────────────────────────────
   #
   # Named rather than left to the 422 safety net below, because an application

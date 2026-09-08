@@ -43,6 +43,33 @@ defmodule Fountain.Conversations.AttachTest do
     assert Conversations._unsafe_list_cotenant_ids(ctx.sandbox.id, conv.id) == [ctx.first.id]
   end
 
+  test "an attached prompt and its images use durable receipt delivery", ctx do
+    stub(Conversations.ConversationServer, :whereis, fn _ -> self() end)
+    image = %{media_type: "image/png", data: <<0, 1, 2>>}
+    assert {:ok, conv} = attach(ctx, %{"prompt" => "Review", "images" => [image]})
+    receipt = Conversations.PromptDelivery.queued(ctx.user.id, conv.id)
+    assert receipt
+    assert Repo.get!(Conversations.Turn, receipt.turn_id).prompt == "Review"
+    assert Repo.one!(Conversations.TurnImage).data == image.data
+    id = receipt.id
+    assert_receive {:"$gen_cast", {:prompt_receipt, ^id}}
+    assert conv.sandbox_id == ctx.sandbox.id
+  end
+
+  test "an uncertain wake retains the accepted attach and saved prompt", ctx do
+    stub(Conversations.ConversationServer, :whereis, fn _ -> nil end)
+
+    expect(Conversations, :wake_conversation, fn id ->
+      assert Conversations.PromptDelivery.queued(ctx.user.id, id)
+      {:error, :provider_operation_fenced}
+    end)
+
+    assert {:ok, conv} = attach(ctx, %{"prompt" => "Review"})
+    assert Conversations.get_conversation(conv.id, ctx.user.id)
+    assert Conversations.PromptDelivery.queued(ctx.user.id, conv.id)
+    assert Repo.reload!(ctx.sandbox).status == "ready"
+  end
+
   test "the caller's tools ride on this create path too (#1202)", ctx do
     # A home sandbox's second conversation takes this path, not the
     # provisioning one; the prod smoke found the bridge's list dropped here.

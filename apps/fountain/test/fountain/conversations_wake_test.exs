@@ -40,7 +40,8 @@ defmodule Fountain.ConversationsWakeTest do
       sandbox = insert_sandbox(user_id: user.id, status: "terminated")
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      refute match?({:error, :gone}, Conversations.wake_conversation(conv.id))
+      expect(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:error, :offline_test_stop} end)
+      assert {:error, :offline_test_stop} = Conversations.wake_conversation(conv.id)
     end
 
     test "returns {:error, :no_agent} when conversation has no agent_id" do
@@ -57,8 +58,6 @@ defmodule Fountain.ConversationsWakeTest do
       sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-alive")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
-
-      fake_client = %{}
 
       stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
         {:ok, %{status: :running, raw: %{name: "test-sprite-alive"}}}
@@ -273,8 +272,6 @@ defmodule Fountain.ConversationsWakeTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      fake_client = %{}
-
       stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
@@ -284,22 +281,17 @@ defmodule Fountain.ConversationsWakeTest do
       assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
     end
 
-    test "returns {:ok, conv} creating fresh sandbox when sandbox is pending (not ready)" do
+    test "registry timeout retains a pending sandbox and its capacity" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-
-      # A `pending` sandbox with no server anywhere: the provision died with
-      # its BEAM. After the registry settle window (#800) the wake gives up
-      # waiting and provisions fresh.
       sandbox = insert_sandbox(user_id: user.id)
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
-        {:ok, spawn(fn -> :ok end)}
-      end)
-
-      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
-      assert woken.sandbox_id != sandbox.id
+      expect(Conversations.ConversationServer, :await_registered, fn _ -> :timeout end)
+      reject(Horde.DynamicSupervisor, :start_child, 2)
+      assert {:error, :provisioning} = Conversations.wake_conversation(conv.id)
+      assert Repo.reload!(conv).sandbox_id == sandbox.id
+      assert Repo.reload!(sandbox).status == "pending"
     end
 
     test "a pending sandbox whose server appears during the settle window is handed the prompt, not raced (#800)" do

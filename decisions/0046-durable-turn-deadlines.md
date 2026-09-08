@@ -655,3 +655,74 @@ normal provisioning failure publication, database-first wake ownership and
 accepted prompt delivery remain unfinished. It does not establish full wake
 recovery or live provider acceptance. The lifecycle stack stays draft; execution
 controls and recovery stay disabled.
+
+## Durable prompt delivery (integration in progress)
+
+The prompt API and shared `send_prompt` entry point now accept durable receipts.
+Attach uses that shared entry point. Initial creation and direct `wake_conversation`
+calls with prompt text still use legacy casts and remain integration work. These
+changes are local and have not passed the production acceptance gate.
+
+A submission stores its pending turn, ordered images, receipt and dispatch job in
+one transaction.
+The receipt keeps hashes of the idempotency key and complete payload; it duplicates
+no prompt, image bytes or raw key. Keys are scoped to the owned conversation. A
+changed payload under the same key is a conflict. The receipt survives transcript
+retention, so deleting a turn cannot make an old key authorize another admission.
+Older pending turns without receipts are not dispatched.
+
+Activation changes the saved turn to running and claims its receipt under machine,
+parent, receipt and turn locks. Any bounded execution journal commits in the same
+transaction. Runtime capacity is resolved under the admission locks. The executing
+wrapper refuses an outer transaction; usage follows commit. A claim grants one
+admission and is never reset. It does not prove that a provider received a prompt,
+nor does it permit replay after a lost acknowledgment.
+
+Actors can discover queued receipts after provisioning or reattachment. Messages
+carry only receipt IDs, and duplicate messages cannot create a second turn. Images
+are loaded from the saved turn and are not inserted again. An admission refusal
+persists a failed turn and delivery jobs together. Actor refusals recheck the
+original machine binding, so an old busy actor cannot fail a replacement's request.
+
+The dispatch job retries ID notifications every 15 seconds until the receipt is
+claimed or refused. A cast does not count as delivery. Acceptance snapshots a
+35-minute deadline, allowing the ordinary 30-minute provisioning budget plus
+notification time. Hosts can set a positive `:prompt_delivery_timeout_ms`; changes
+do not extend saved receipts. Expiry fails only an unclaimed turn and commits its
+failure event and notification jobs together. Activation checks the saved deadline
+after acquiring its row locks. Expiry does not retire a machine, clear an uncertain
+provider operation or authorize another attempt. Dispatch does not create actors or
+provider resources; complete actor recovery remains an integration gate.
+`PromptDispatchSweep` revisits queued receipts each minute through the same dispatch
+boundary, recovering notifications whose original jobs crashed, were discarded or
+were removed. It leaves existing jobs unchanged. Pages contain at most 100 receipts;
+the next page is committed before dispatch begins. Each page has a 30-second job
+timeout, and ordinary per-receipt failures do not skip later receipts.
+
+The prompt API returns the receipt ID, turn ID, deadline and saved state. Reusing an
+`Idempotency-Key` with another payload returns HTTP 409. The shared accepting wrapper
+refuses outer transactions, saves intent, then notifies an existing actor or initiates
+one wake for a new receipt. Replaying a key never repeats wake. A missing agent during
+wake records refusal; uncertain delivery retains queued intent until expiry. A
+pending sandbox's registry timeout now returns `:provisioning` and retains its
+binding and capacity instead of provisioning a replacement. Recovery after the
+submitter dies before initiating wake remains a separate actor-recovery gate.
+
+User interruption cancels queued receipts under the same parent lock as execution
+retirement. Startup retirement preserves them for delivery. A queued receipt also
+prevents releasing the conversation's machine. Claimed work follows the existing
+execution cancellation path and is never reset to queued.
+
+The local tests cover actor startup after a lost notification, duplicate delivery,
+retention, tenant scope, policy changes and transaction rollback.
+`scripts/verify-prompt-receipt-races.exs` exercises duplicate submissions, duplicate
+claims, distinct requests, user interruption and duplicate expiry against
+activation on independent PostgreSQL connections. It also forces activation to wait
+past its deadline on parent, receipt and turn locks. These tests use no live provider acceptance evidence.
+
+Still required: replace initial creation and legacy wake producers, connect safe
+actor recovery and immediate provisioning-failure outcomes, and finish
+restart/cancellation coverage through the actual entry points. Attach reaches the
+receipt path but still needs complete integration coverage. Same-machine actor epochs and uncertain-provider
+recovery remain separate integration gates. No production activation is approved
+by this local implementation.

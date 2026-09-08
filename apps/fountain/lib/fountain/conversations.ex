@@ -1186,6 +1186,22 @@ defmodule Fountain.Conversations do
     record_started_turn(result)
   end
 
+  @doc "Activate a saved prompt and record usage only after its admission commits."
+  def _unsafe_activate_prompt_receipt(conversation_id, receipt_id, sandbox_id, opts \\ []) do
+    if Repo.in_transaction?() do
+      {:error, :provider_transaction_open}
+    else
+      # Ownership: the actor owns this parent; the receipt checks its tenant and binding.
+      Fountain.Conversations.PromptDelivery._unsafe_activate(
+        conversation_id,
+        receipt_id,
+        sandbox_id,
+        opts
+      )
+      |> record_started_turn()
+    end
+  end
+
   @doc "Admit an unbounded background turn and its running parent before notifying observers."
   def _unsafe_create_autonomous_turn(attrs, sandbox_id) do
     # ownership: the caller is this conversation's existing actor.
@@ -3240,8 +3256,8 @@ defmodule Fountain.Conversations do
           # another node — `session/new` and the first prompt arrive ~30 ms
           # apart and can land on different pods — so wait for it before
           # concluding it is dead. If it turns up, hand it the prompt exactly
-          # as the `already_started` branches do; if it does not, the
-          # provision died with its BEAM and a fresh one is right (#800).
+          # as the `already_started` branches do. A timeout leaves creation
+          # unresolved; it cannot authorize another provider resource.
           case ConversationServer.await_registered(conv.id) do
             {:ok, pid} ->
               Logger.info(
@@ -3256,7 +3272,9 @@ defmodule Fountain.Conversations do
               {:ok, _unsafe_get_conversation!(conv.id)}
 
             :timeout ->
-              create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
+              # Registry absence is not evidence that a provider create failed.
+              # Retain its binding and capacity while ownership is unresolved.
+              {:error, :provisioning}
           end
 
         :create_new ->

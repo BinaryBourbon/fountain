@@ -375,7 +375,7 @@ defmodule FountainWeb.ConversationControllerTest do
       # It was the one provisioning path with no billing check at all.
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+      stub(ConversationServer, :submit_prompt, fn _id, _prompt, _images, _opts ->
         {:error, :insufficient_credits}
       end)
 
@@ -461,7 +461,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conv = insert_conversation(user_id: user.id)
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+      stub(ConversationServer, :submit_prompt, fn _id, _prompt, _images, _opts ->
         {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}}
       end)
 
@@ -574,7 +574,7 @@ defmodule FountainWeb.ConversationControllerTest do
   describe "POST /api/conversations/:conversation_id/prompts" do
     test "returns 200 with status queued on success", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts -> :ok end)
+      stub(ConversationServer, :whereis, fn _ -> self() end)
 
       conn =
         conn
@@ -591,7 +591,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+      stub(ConversationServer, :submit_prompt, fn _id, _prompt, _images, _opts ->
         {:error, :not_running}
       end)
 
@@ -606,7 +606,7 @@ defmodule FountainWeb.ConversationControllerTest do
     test "returns 400 when conversation is busy", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+      stub(ConversationServer, :submit_prompt, fn _id, _prompt, _images, _opts ->
         {:error, :busy}
       end)
 
@@ -647,7 +647,7 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 410)["error"] == "conversation_terminated"
     end
 
-    test "returns 422 when the conversation's agent was deleted", %{
+    test "records refusal when acceptance succeeds but wake finds the agent deleted", %{
       conn: conn,
       user: user,
       raw_key: raw_key
@@ -660,7 +660,10 @@ defmodule FountainWeb.ConversationControllerTest do
         |> authed_with_key(raw_key)
         |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hello"})
 
-      assert json_response(conn, 422)["error"] == "no_agent"
+      body = json_response(conn, 200)
+      assert body["status"] == "refused"
+      assert body["failure_reason"] == "admission_refused"
+      assert Fountain.Repo.get!(Fountain.Conversations.Turn, body["turn_id"]).status == "failed"
     end
 
     test "returns 422 when the wake path surfaces a changeset error", %{
@@ -670,7 +673,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+      stub(ConversationServer, :submit_prompt, fn _id, _prompt, _images, _opts ->
         {:error, Fountain.Conversations.Sandbox.changeset(%Fountain.Conversations.Sandbox{}, %{})}
       end)
 
@@ -689,7 +692,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+      stub(ConversationServer, :submit_prompt, fn _id, _prompt, _images, _opts ->
         {:error, :some_future_refusal}
       end)
 

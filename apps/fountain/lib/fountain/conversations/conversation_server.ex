@@ -105,9 +105,12 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @doc """
-  Send another prompt. If the conversation's GenServer is gone (e.g. server
-  restart), transparently wake the conversation — provision a fresh sprite
-  and queue this prompt as the first turn of the new sandbox.
+  Accept another prompt durably, then notify or wake its conversation.
+
+  The pending turn and images commit before delivery. `submit_prompt/4` returns
+  the receipt; this compatibility wrapper returns `:ok` on acceptance. A saved
+  receipt does not prove execution started. Follow its turn outcome or repeat the
+  same idempotency key to read the receipt without authorizing another wake.
 
   The persisted `runtime_session_id` is what the next turn resumes by
   (`session/resume` under ACP). Note that it only carries the conversation
@@ -118,16 +121,24 @@ defmodule Fountain.Conversations.ConversationServer do
   render the whole transcript.
   """
   def send_prompt(conv_id, prompt, images \\ [], opts \\ []) do
+    with {:ok, _receipt} <- submit_prompt(conv_id, prompt, images, opts), do: :ok
+  end
+
+  def submit_prompt(conv_id, prompt, images \\ [], opts \\ []) do
     # ownership: the caller authorized this conversation before calling the server.
     result =
-      Conversations._unsafe_dispatch_prompt(conv_id, prompt, fn pid ->
-        call_server(pid, {:send_prompt, prompt, images})
-      end)
+      with conv when not is_nil(conv) <- Conversations._unsafe_get_conversation(conv_id) do
+        Fountain.Conversations.PromptDelivery.accept(conv.user_id, conv_id, prompt, images, opts)
+      else
+        nil -> {:error, :not_running}
+      end
 
     # Size and image count, never the text. A prompt is the tenant's content —
     # frequently the most sensitive thing in the system — and #545 is explicit
     # that the trail records that a prompt happened, not what it said.
-    audit_lifecycle(conv_id, "conversation.prompted", result, opts, %{
+    audit_result = if match?({:ok, _}, result), do: :ok, else: result
+
+    audit_lifecycle(conv_id, "conversation.prompted", audit_result, opts, %{
       "prompt_bytes" => byte_size(prompt),
       "image_count" => length(images)
     })
@@ -179,6 +190,9 @@ defmodule Fountain.Conversations.ConversationServer do
     GenServer.cast(pid, {:initial_prompt, prompt, images})
   end
 
+  def queue_prompt_receipt(pid, receipt_id) when is_pid(pid),
+    do: GenServer.cast(pid, {:prompt_receipt, receipt_id})
+
   @doc """
   Interrupt the turn in flight, if any.
 
@@ -192,6 +206,9 @@ defmodule Fountain.Conversations.ConversationServer do
     # this boundary. Bounded cancellation commits before any actor/provider I/O.
     result =
       case Fountain.Conversations.ExecutionGuard._unsafe_interrupt(conv_id) do
+        {:ok, {:queued, _receipt_id}} ->
+          :ok
+
         {:ok, {:bounded, id}} ->
           if pid = whereis(conv_id), do: send(pid, {:execution_retired, id})
           :ok
@@ -903,6 +920,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # Any prompt this conversation was started for arrives as a cast,
           # already queued behind this handle_continue. See
           # queue_initial_prompt/3.
+          Fountain.Conversations.PromptDeliveryActor.schedule(new_state)
           {:noreply, new_state}
         else
           {:error, reason} ->
@@ -1181,6 +1199,7 @@ defmodule Fountain.Conversations.ConversationServer do
           if(new_state.current_turn, do: "reattached", else: "turn_ended")
         )
 
+      Fountain.Conversations.PromptDeliveryActor.schedule(new_state)
       {:noreply, new_state}
     else
       {:error, :not_found} ->
@@ -1628,6 +1647,18 @@ defmodule Fountain.Conversations.ConversationServer do
   def handle_call(msg, _from, state) do
     Logger.warning("conv #{state.conversation_id}: unexpected call #{inspect(msg)}")
     {:reply, {:error, :unknown_call}, state}
+  end
+
+  @impl true
+  def handle_cast({:prompt_receipt, receipt_id}, state) do
+    Fountain.Conversations.PromptDeliveryActor.deliver(
+      state,
+      receipt_id,
+      &close_autonomous_turn(&1, "superseded_by_prompt"),
+      fn next, conv, turn, agent, images ->
+        run_turn(next, conv, turn, turn.prompt, agent, images, store_images: false)
+      end
+    )
   end
 
   # The prompt a conversation was started for. Ignored if a turn is somehow
@@ -2339,7 +2370,7 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp run_turn(state, conv, turn, prompt, agent, images) do
+  defp run_turn(state, conv, turn, prompt, agent, images, opts \\ []) do
     # ownership: admission committed this journal with the actor's new turn.
     execution = Fountain.Conversations.ExecutionGuard._unsafe_for_turn(turn.id)
 
@@ -2361,7 +2392,7 @@ defmodule Fountain.Conversations.ConversationServer do
         do: drop_connection(state, "broker_session_replaced"),
         else: state
 
-    TurnMachine.store_images(turn, images)
+    if Keyword.get(opts, :store_images, true), do: TurnMachine.store_images(turn, images)
 
     unless execution,
       do: TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)

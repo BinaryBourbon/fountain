@@ -55,6 +55,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
         {:error, reason} -> Repo.rollback(reason)
       end
 
+      capacity =
+        if capacity == :current_runtime,
+          do: Fountain.RuntimeDispatch.concurrency(conv.runtime),
+          else: capacity
+
       # ownership: conv is the locked parent for this actor and sandbox binding.
       if is_integer(capacity) and
            Fountain.Conversations._unsafe_running_turns_elsewhere(sandbox_id, conv.id) >= capacity,
@@ -170,6 +175,8 @@ defmodule Fountain.Conversations.ExecutionGuard do
           do: Repo.rollback(:ownership_changed)
       end
 
+      cancelled_receipt = cancel_queued_prompt(parent, expected_sandbox_id)
+
       execution =
         Repo.one(
           from e in TurnExecution,
@@ -185,10 +192,36 @@ defmodule Fountain.Conversations.ExecutionGuard do
         {decision, changed, event} = complete(execution, "interrupted", DateTime.utc_now())
         {{:bounded, decision.execution.id}, changed, event}
       else
-        {:unbounded, nil, nil}
+        # Queued user intent can coexist with an autonomous turn. Preserve the
+        # ordinary actor interruption path while also cancelling the queued prompt.
+        running? =
+          Repo.exists?(
+            from t in Turn,
+              where: t.conversation_id == ^conversation_id and t.status == "running"
+          )
+
+        result =
+          if cancelled_receipt && not running?, do: {:queued, cancelled_receipt}, else: :unbounded
+
+        {result, nil, nil}
       end
     end)
   end
+
+  # A user interrupt cancels queued intent in the same parent transaction as
+  # execution retirement. Actor startup must leave that intent for delivery.
+  defp cancel_queued_prompt(parent, nil) do
+    delivery = Fountain.Conversations.PromptDelivery
+
+    if receipt = delivery.queued(parent.user_id, parent.id) do
+      case delivery.refuse(parent.user_id, parent.id, receipt.id, "cancelled") do
+        {:ok, _} -> receipt.id
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end
+  end
+
+  defp cancel_queued_prompt(_, _), do: nil
 
   @doc "Release only a durably idle parent; refusal never retires or interrupts execution."
   def _unsafe_release_parent(conversation_id, writer) do
@@ -200,7 +233,10 @@ defmodule Fountain.Conversations.ExecutionGuard do
           from t in Turn, where: t.conversation_id == ^conversation_id and t.status == "running"
         )
 
-      if running? or open_execution?(conversation_id), do: Repo.rollback(:busy)
+      queued? = Fountain.Conversations.PromptDelivery.queued(conv.user_id, conv.id)
+
+      if running? or not is_nil(queued?) or open_execution?(conversation_id),
+        do: Repo.rollback(:busy)
 
       case writer.(conv) do
         {:ok, updated} -> {%{applied: true, conversation: updated}, nil, nil}

@@ -182,6 +182,17 @@ transitions. The Conversations operations in the
 [generated reference](/api/docs) define prompt admission, permission answers,
 interruption, termination, history, images, and event streams.
 
+For `POST /api/conversations/:id/prompts`, send an `Idempotency-Key` of
+1–200 bytes. Reuse it only for retries of the same text and ordered images.
+The response includes `receipt_id`, `turn_id`, `delivery_deadline_at`, and
+`status` (`queued`, `claimed`, or `refused`). Acceptance saves the prompt
+before delivery. It does not mean the worker has started.
+
+A retry returns the saved receipt. Changing the payload under the same key
+returns HTTP 409. Refused receipts include `failure_reason`; follow the turn
+for its execution outcome. This key applies to prompt submission, not
+conversation creation.
+
 Use history for a durable transcript and SSE for live delivery. Persist the
 event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render runtime output; clients should not

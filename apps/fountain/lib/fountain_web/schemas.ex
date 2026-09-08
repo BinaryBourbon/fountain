@@ -640,8 +640,14 @@ defmodule FountainWeb.Schemas do
     OpenApiSpex.schema(%{
       title: "PromptResponse",
       type: :object,
-      properties: %{status: %Schema{type: :string, example: "queued"}},
-      required: [:status]
+      properties: %{
+        status: %Schema{type: :string, enum: Fountain.Conversations.PromptReceipt.states()},
+        receipt_id: %Schema{type: :string, format: :uuid},
+        turn_id: %Schema{type: :string, format: :uuid},
+        delivery_deadline_at: %Schema{type: :string, format: :"date-time"},
+        failure_reason: %Schema{type: :string, nullable: true}
+      },
+      required: [:status, :receipt_id, :turn_id, :delivery_deadline_at]
     })
   end
 

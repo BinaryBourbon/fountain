@@ -38,12 +38,15 @@ defmodule FountainWeb.ConversationCallTimeoutTest do
     {:ok, conn: authed_with_key(conn, raw_key), user: user, conv: conv}
   end
 
-  test "send_prompt during provisioning returns 503 provisioning, not a 500",
+  test "a prompt during provisioning returns a durable queued receipt",
        %{conn: conn, conv: conv} do
     conn = post_json(conn, "/api/conversations/#{conv.id}/prompts", %{prompt: "hi"})
 
-    assert %{"error" => "provisioning"} = json_response(conn, 503)
-    assert get_resp_header(conn, "retry-after") == ["30"]
+    body = json_response(conn, 200)
+    assert body["status"] == "queued"
+    assert Repo.get!(Fountain.Conversations.Turn, body["turn_id"]).status == "pending"
+    receipt = Repo.get!(Fountain.Conversations.PromptReceipt, body["receipt_id"])
+    assert receipt.turn_id == body["turn_id"]
   end
 
   test "interrupt during provisioning returns 503, not a 500", %{conn: conn, conv: conv} do
@@ -69,9 +72,15 @@ defmodule FountainWeb.ConversationCallTimeoutTest do
     assert Repo.get(Fountain.Conversations.Conversation, conv.id) == nil
   end
 
-  test "the public functions return error tuples rather than exiting", %{conv: conv} do
-    assert {:error, :provisioning} = ConversationServer.send_prompt(conv.id, "hi", [])
-    assert {:error, :provisioning} = ConversationServer.interrupt(conv.id)
+  test "accepted intent can be cancelled while the actor mailbox remains blocked", %{
+    conv: conv,
+    user: user
+  } do
+    assert :ok = ConversationServer.send_prompt(conv.id, "hi", [])
+    receipt = Fountain.Conversations.PromptDelivery.queued(user.id, conv.id)
+    assert :ok = ConversationServer.interrupt(conv.id)
+    assert Repo.reload!(receipt).failure_reason == "cancelled"
+    assert Repo.get!(Fountain.Conversations.Turn, receipt.turn_id).status == "failed"
     assert {:error, :provisioning} = ConversationServer.terminate_conversation(conv.id)
   end
 end

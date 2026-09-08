@@ -539,17 +539,27 @@ defmodule FountainWeb.ConversationController do
   operation(:prompt,
     summary: "Send another prompt",
     description:
-      "Queues a new turn. If the ConversationServer has been GC'd (e.g. across a " <>
-        "BEAM restart) a fresh sprite is provisioned and the runtime resumes via its " <>
-        "session id.",
-    parameters: [conversation_id: [in: :path, type: :string, required: true]],
+      "Persists a prompt and images before notifying or waking its worker. " <>
+        "Repeat Idempotency-Key with the same payload to retrieve the same receipt. " <>
+        "A claimed receipt is never replayed; delivery refusal is an explicit outcome.",
+    parameters: [
+      conversation_id: [in: :path, type: :string, required: true],
+      "Idempotency-Key": [
+        in: :header,
+        type: :string,
+        required: false,
+        description: "1–200 bytes; scoped to this conversation and complete prompt payload."
+      ]
+    ],
     request_body: {"Prompt", "application/json", Schemas.PromptRequest},
     responses: [
       payment_required: {"Insufficient credits", "application/json", Schemas.Error},
       gone: {"Conversation is terminal", "application/json", Schemas.Error},
       unprocessable_entity: {"Invalid request parameters", "application/json", Schemas.Error},
       service_unavailable: {"Sandbox or fleet unavailable", "application/json", Schemas.Error},
-      ok: {"Queued", "application/json", Schemas.PromptResponse},
+      conflict:
+        {"Idempotency key reused with another payload", "application/json", Schemas.Error},
+      ok: {"Accepted receipt", "application/json", Schemas.PromptResponse},
       not_found: {"Not found", "application/json", Schemas.Error},
       bad_request: {"Busy", "application/json", Schemas.Error}
     ]
@@ -558,20 +568,36 @@ defmodule FountainWeb.ConversationController do
   def prompt(conn, %{"conversation_id" => id, "prompt" => prompt} = params) do
     user = conn.assigns.current_user
 
-    with {:ok, images} <- decode_images(params["images"]) do
-      do_prompt(conn, id, prompt, user, images)
+    with {:ok, images} <- decode_images(params["images"]),
+         {:ok, key} <- prompt_key(conn) do
+      opts = Keyword.put(Audited.attribution(conn), :idempotency_key, key)
+      do_prompt(conn, id, prompt, user, images, opts)
     end
   end
 
-  defp do_prompt(conn, id, prompt, user, images) do
+  defp prompt_key(conn) do
+    case get_req_header(conn, "idempotency-key") do
+      [] -> {:ok, nil}
+      [key] -> {:ok, key}
+      _ -> {:error, :invalid_idempotency_key}
+    end
+  end
+
+  defp do_prompt(conn, id, prompt, user, images, opts) do
     case Conversations.get_conversation(id, user.id) do
       nil ->
         {:error, :not_found}
 
       _ ->
-        case ConversationServer.send_prompt(id, prompt, images, Audited.attribution(conn)) do
-          :ok ->
-            json(conn, %{status: "queued"})
+        case ConversationServer.submit_prompt(id, prompt, images, opts) do
+          {:ok, receipt} ->
+            json(conn, %{
+              status: receipt.state,
+              receipt_id: receipt.id,
+              turn_id: receipt.turn_id,
+              delivery_deadline_at: receipt.delivery_deadline_at,
+              failure_reason: receipt.failure_reason
+            })
 
           {:error, :not_running} ->
             {:error, :not_found}

@@ -51,6 +51,9 @@ config :fountain, Oban,
        # indexed query, usually empty — and a minute is the cron grain the
        # schedules are written in.
        {"* * * * *", Fountain.Workers.TeamScheduler},
+       # Saved prompt intent survives a crashed/discarded notification job.
+       # The sweep only redelivers receipt IDs; their claims prevent replay.
+       {"* * * * *", Fountain.Workers.PromptDispatchSweep},
        # Every 10 minutes: price closed turns and comms messages into the
        # credit ledger (ADR 0030) and sweep expired grants. Idempotent per
        # turn, per event and per grant, so the cadence only sets how stale a

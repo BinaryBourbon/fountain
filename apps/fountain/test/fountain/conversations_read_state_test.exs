@@ -152,7 +152,11 @@ defmodule Fountain.ConversationsReadStateTest do
     test "the loser terminates its own sandbox row instead of stranding it" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+      # Exercise fresh wake after a completed machine's explicit missing probe.
+      # A pending create with no registry entry remains unresolved.
+      stub(Managoat.Sandbox.Sprites, :get, fn _ -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
         {:error, {:already_started, self()}}
@@ -192,7 +196,11 @@ defmodule Fountain.ConversationsReadStateTest do
     test "the loser forwards its prompt to the winner" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+      # Exercise fresh wake after a completed machine's explicit missing probe.
+      # A pending create with no registry entry remains unresolved.
+      stub(Managoat.Sandbox.Sprites, :get, fn _ -> {:error, :not_found} end)
       test_pid = self()
 
       stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
@@ -211,7 +219,11 @@ defmodule Fountain.ConversationsReadStateTest do
     test "a genuine start failure still surfaces as an error" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+      # Exercise fresh wake after a completed machine's explicit missing probe.
+      # A pending create with no registry entry remains unresolved.
+      stub(Managoat.Sandbox.Sprites, :get, fn _ -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
         {:error, :max_children}
