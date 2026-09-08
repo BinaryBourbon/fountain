@@ -177,13 +177,15 @@ curl --fail-with-body \
 ```
 
 This starts real work and can consume credits and provider usage.
+Initial images require nonblank prompt text. Images without text return HTTP 422;
+Fountain creates no sandbox for that request.
 [Conversation states](reference/conversation-states.md) explains lifecycle
 transitions. The Conversations operations in the
 [generated reference](/api/docs) define prompt admission, permission answers,
 interruption, termination, history, images, and event streams.
 
 For `POST /api/conversations/:id/prompts`, send an `Idempotency-Key` of
-1–200 bytes. Reuse it only for retries of the same text and ordered images.
+1 to 200 bytes. Reuse it only for retries of the same text and ordered images.
 The response includes `receipt_id`, `turn_id`, `delivery_deadline_at`, and
 `status` (`queued`, `claimed`, or `refused`). Acceptance saves the prompt
 before delivery. It does not mean the worker has started.

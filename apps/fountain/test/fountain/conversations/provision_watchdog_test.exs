@@ -38,6 +38,30 @@ defmodule Fountain.Conversations.ProvisionWatchdogTest do
     assert Repo.aggregate(LogEvent, :count) == 1
   end
 
+  test "queued prompt failure commits with its provisioning deadline", c do
+    delivery = Fountain.Conversations.PromptDelivery
+    {:ok, receipt} = delivery.submit(c.user.id, c.conv.id, "Review", [])
+    assert {:ok, :expired} = ProvisionWatchdog._unsafe_expire(c.conv.id, c.sandbox.id)
+    assert Repo.reload!(receipt).failure_reason == "provisioning_failed"
+    assert Repo.get!(Fountain.Conversations.Turn, receipt.turn_id).status == "failed"
+    assert Repo.aggregate(LogEvent, :count) == 2
+  end
+
+  test "a failed notification enqueue cannot strand a refused opening prompt", c do
+    delivery = Fountain.Conversations.PromptDelivery
+    {:ok, receipt} = delivery.submit(c.user.id, c.conv.id, "Review", [])
+
+    expect(Fountain.Workers.WebhookDelivery, :enqueue, fn _, _ -> {:error, :queue_unavailable} end)
+
+    assert_raise MatchError, fn ->
+      ProvisionWatchdog._unsafe_fail_start(c.conv.id, c.sandbox.id)
+    end
+
+    assert Repo.reload!(receipt).state == "queued"
+    assert Repo.get!(Fountain.Conversations.Turn, receipt.turn_id).status == "pending"
+    assert Repo.reload!(c.conv).status == "pending"
+  end
+
   test "rollback leaves both rows and all notifications unchanged", c do
     Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{c.conv.id}")
 

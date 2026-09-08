@@ -59,7 +59,7 @@ A self-hosted instance uses the same request at its own base URL.
 ## Verify
 
 Check the turn's `model_selection` in `GET /api/conversations/:id/turns`.
-The same fields appear in the `model` stream stage:
+The `model` stream stage includes the same fields.
 
 - `requested_model`: the ID sent to the runtime.
 - `effective_model`: the runtime's selected ID, or `null` on selection failure.

@@ -1,0 +1,176 @@
+{
+  "recorded_at": "2026-09-08T16:20:11.805691+00:00",
+  "previous_published_checkpoint": "97270cab4738255ffaf8027272fe926052b4f304",
+  "previous_local_checkpoint": "c835c3feb130093affd42c4a91efe32d6852222b",
+  "scope": "Durable prompt submission, opening creation, attach and wake; receipt notification recovery, terminal outcomes, original-machine startup refusal and single-user-turn arbitration. Local tests only.",
+  "source_files": {
+    "apps/fountain/lib/fountain/conversations.ex": "sha256:714d8166f926dda3f8f93fff17c5b441d710cc22ac438b7daf890d343f83d71f",
+    "apps/fountain/lib/fountain/conversations/conversation_server.ex": "sha256:2d1cafa8d66c26d5125f1292f520db1e87561a39cc667abc38e35b42b4a0709f",
+    "apps/fountain/lib/fountain/conversations/execution_guard.ex": "sha256:891bfb6e625712c2573ae3f071cdf2a6370d20819f302793e40c51f96028f797",
+    "apps/fountain/lib/fountain/conversations/prompt_delivery.ex": "sha256:c8b499bd47bea1b1a361ebfad9003032bacaeb3f0a3347f979a480268ea54f52",
+    "apps/fountain/lib/fountain/conversations/prompt_delivery_actor.ex": "sha256:d64e97d6e55f54ab2859fc1799e75a5b2350aacde67f729e4d3d2f1f4c842493",
+    "apps/fountain/lib/fountain/conversations/prompt_receipt.ex": "sha256:37e50d5a47db127623ffb465b40476755548d5efd72b20ba969d7ddd51032bdb",
+    "apps/fountain/lib/fountain/conversations/provision_binding.ex": "sha256:2f9e02954a56c38e4a4c142189d7e568ef6400f60a302c3e0f6df847c00950db",
+    "apps/fountain/lib/fountain/conversations/provision_watchdog.ex": "sha256:e9ac37fa93b6babb26bc18815bdb502e239e5e7404f53ae8616227889fd57ccd",
+    "apps/fountain/lib/fountain/images.ex": "sha256:0a573b1887cfcd2b8649d753eff7f42f57963d67989fb4148a3680704ad3abcc",
+    "apps/fountain/lib/fountain/workers/prompt_dispatch.ex": "sha256:0c2c6d2917e51504d984bc567c8bb5ad4f94245f0d8c92dd0284b3037586a263",
+    "apps/fountain/lib/fountain/workers/prompt_dispatch_sweep.ex": "sha256:01a5388443105c8bfd84273af7b6df13a33ce255a9e5f4814159c5940abc89be",
+    "apps/fountain/lib/fountain_web/controllers/conversation_controller.ex": "sha256:03ace635a52e7f1f7dc75e9aa81eb0f3a8011a1941a8968a6721f5c5889544bd",
+    "apps/fountain/lib/fountain_web/controllers/fallback_controller.ex": "sha256:1111ca780f8ffdec36ca4bded58cb3e82cde766638678b2214490ebb48664b62",
+    "apps/fountain/lib/fountain_web/prompt_images.ex": "sha256:d9491f639f17f19579c748f79fa8d1d43a006b70f090c8891e2c367dd7641c02",
+    "apps/fountain/lib/fountain_web/schemas.ex": "sha256:90a83f60b26db2d63609f4a7349ccb590bfc51d7cfdaa9323e9fd558de4d45f1",
+    "apps/fountain/priv/repo/migrations/20260908150000_create_prompt_receipts.exs": "sha256:f7d397db9ca5511718f1ad9832846ebb74c703d8352bfbe8c228631c14e66675",
+    "apps/fountain/priv/repo/migrations/20260908151000_add_prompt_delivery_deadline.exs": "sha256:dfd40b317f1b7598dcd60535e0488503a40c93dee21b5ca4309f95bc71b772e2",
+    "apps/fountain/test/fountain/conversations/attach_test.exs": "sha256:95d4396d864fc1bb839ba61ed914a6c03a8b3aa44c5269750c861a3cf007a03c",
+    "apps/fountain/test/fountain/conversations/conversation_server_provision_deadline_test.exs": "sha256:80eba6919573e4d63c4e2e497e5a08fdd15c32f6ef6e42506ff20042e3e12abe",
+    "apps/fountain/test/fountain/conversations/execution_guard_test.exs": "sha256:89580813294b5036ea8d5f560f6c2e9472cf4bc035acf937d1d296d9eed40e36",
+    "apps/fountain/test/fountain/conversations/initial_prompt_receipt_test.exs": "sha256:933c602b347764653159b43fcd637bbf7e7cbe995e8e96ba6073a4460e618c0c",
+    "apps/fountain/test/fountain/conversations/prompt_delivery_actor_test.exs": "sha256:8099e4d94c8ab4dea4e5ae29e063c4dd54d7ac1f3e3c54e8e705bea390f1552a",
+    "apps/fountain/test/fountain/conversations/prompt_delivery_test.exs": "sha256:a44f87c1acf190c8d91feb4819aaf8478f134038d1a5bf1f8c678923c29b04b8",
+    "apps/fountain/test/fountain/conversations/prompt_replay_test.exs": "sha256:40464b159486fb3ffcebad4830f92d701d9ee90a27a1f7ed91d40266cc53c81d",
+    "apps/fountain/test/fountain/conversations/provision_binding_test.exs": "sha256:04b61b1027e50a95c8eee3246422bf93c507609b4def4a28bbe311748a64c1c1",
+    "apps/fountain/test/fountain/conversations/provision_watchdog_test.exs": "sha256:5b3afc17057bac1f9a866260e6fe18402adef33f3708d12bc0bdb5c257452784",
+    "apps/fountain/test/fountain/conversations/sandbox_transitions_test.exs": "sha256:ae21538122c81eee02b3182e61cde145b8770c62b788fd3a33850dd005166daf",
+    "apps/fountain/test/fountain/conversations/turn_machine_test.exs": "sha256:d201e5f7afc1438e491eadb96ce4a9b9c9d7c9fdafd2d518874136f2ed2419f8",
+    "apps/fountain/test/fountain/conversations/wake_race_test.exs": "sha256:8f23225a96f42c05a4a31f073a713b4da5ca601672c5485dd8408150f998c7f6",
+    "apps/fountain/test/fountain/conversations_read_state_test.exs": "sha256:23a7dfca2377e2c111114f92b9f0572049231930872c82eff5f1a02dc5d82571",
+    "apps/fountain/test/fountain/conversations_wake_test.exs": "sha256:f28fb2068af92a509c04aee68a1845069fcaae80201f1e489db391c2890590a4",
+    "apps/fountain/test/fountain/workers/prompt_dispatch_sweep_test.exs": "sha256:de4ff7e9937aade2435d798730597bd68c71acd67c722a3e1c04ba8c173bccce",
+    "apps/fountain/test/fountain/workers/prompt_dispatch_test.exs": "sha256:6c3ca373a51e46fb2bff72d1b13eb8dfce218edf6682d0fcacfca50d8cf98b1a",
+    "apps/fountain/test/fountain_web/controllers/conversation_call_timeout_test.exs": "sha256:dea5484a23ab7a15947d5b8beff7a19c347649cedf604757b25e1f2e4c0d468a",
+    "apps/fountain/test/fountain_web/controllers/conversation_controller_test.exs": "sha256:1e3378315a9007d7ba723a366f9afae9387f5c74f8975b29ef37666a9b621c0c",
+    "apps/fountain/test/fountain_web/controllers/prompt_receipt_controller_test.exs": "sha256:953a92752da23ca2ccec592e930ee279961ee0a5bf1e050fb53946a5d7f02c5d",
+    "apps/fountain/test/fountain_web/controllers/turn_image_ingest_test.exs": "sha256:941ced3642d42a7f4ca58196fa9aa341a23e6ce49cc39cf43529ac1b7b03bbfe",
+    "apps/fountain/test/fountain_web/schema_enum_guardrail_test.exs": "sha256:f7d3f12ca94b6d422f2c42e95e6f24fba0cb5ef8cbf4ee42096fb71a2c113f98",
+    "config/config.exs": "sha256:a5932b7df00f074f16a2c281388baf5fe94bdc2c80ff1297aed6ed135b53cf6c",
+    "scripts/verify-prompt-receipt-races.exs": "sha256:a3c0d1ac0573030fd5e43183047d8970d6fd33e1dd9fc1034216fc62ca42c541",
+    "scripts/verify-provision-ownership-races.exs": "sha256:84ab0962920c6aea29b261879adc6860c254e41343ee4b1494f1852f368be731"
+  },
+  "full_precommit": {
+    "tests": 4999,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:f64503876c01f4cf2405eb71e3d79b39c2ad58a55bec383f3c9d180252277d96"
+  },
+  "focused": [
+    {
+      "tests": 96,
+      "failures": 0,
+      "log_sha256": "sha256:947ef980d18b0b7e884282ff64a00c87077b6314315ec1c5e140640a6bb2e820"
+    },
+    {
+      "tests": 34,
+      "failures": 0,
+      "log_sha256": "sha256:83b62fad6d53be5ecb5e49e78e8f9dcbe343cf22fa5e8559a1aa977877eabd7e"
+    },
+    {
+      "tests": 49,
+      "failures": 0,
+      "log_sha256": "sha256:9704c1552b6259f2565aaf75d61edccf0f3c282aecb1c96796849f902311fb0a"
+    }
+  ],
+  "database_races": [
+    {
+      "results": {
+        "DEADLINE_RACE_RESULT": {
+          "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+          "outcomes": {
+            "completion_won": 16,
+            "expiry_won": 4
+          },
+          "separate_database_connections": true,
+          "provider_operations": 0,
+          "cases": 20,
+          "lock_wait_cannot_extend_deadline": true,
+          "delayed_lock_tables": [
+            "conversations",
+            "turns"
+          ],
+          "delayed_operations": [
+            "spawn",
+            "stdin_write"
+          ],
+          "completed_connections_require_cleanup": true,
+          "deadline_event_reuse_cases": 4
+        },
+        "PROMPT_RECEIPT_RACE_RESULT": {
+          "scope": "Local receipt, legacy admission and startup refusal arbitration only; provider delivery and end-to-end restart recovery require separate evidence",
+          "separate_database_connections": true,
+          "duplicate_submission_races": 10,
+          "duplicate_acceptance_races": 10,
+          "duplicate_activation_races": 10,
+          "distinct_submission_races": 10,
+          "user_interrupt_activation_races": 10,
+          "duplicate_expiry_activation_races": 10,
+          "legacy_admission_activation_races": 10,
+          "actor_start_watchdog_failure_races": 10,
+          "forced_activation_deadline_lock_waits": 3,
+          "cancellation_outcomes": {
+            "cancellation_won": 10
+          },
+          "provider_operations": 0
+        }
+      },
+      "log_sha256": "sha256:960cd5808c494297d9214d155f293b7864960cb265604dab4850e6bb528e8750"
+    },
+    {
+      "results": {
+        "DEADLINE_RACE_RESULT": {
+          "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+          "separate_database_connections": true,
+          "provider_operations": 0,
+          "cases": 20,
+          "outcomes": {
+            "completion_won": 10,
+            "expiry_won": 10
+          },
+          "lock_wait_cannot_extend_deadline": true,
+          "delayed_lock_tables": [
+            "conversations",
+            "turns"
+          ],
+          "delayed_operations": [
+            "spawn",
+            "stdin_write"
+          ],
+          "completed_connections_require_cleanup": true,
+          "deadline_event_reuse_cases": 10
+        },
+        "PROVISION_OWNERSHIP_RACE_RESULT": {
+          "scope": "Local transfer commits and replacement admission before a stale worker acquires its original machine lock; does not prove actor epochs or prompt delivery",
+          "separate_database_connections": true,
+          "forced_lock_waits": 2,
+          "operations": [
+            "startup_interrupt",
+            "provision_watchdog"
+          ],
+          "replacement_execution_preserved": true,
+          "stale_failure_events": 0,
+          "provider_operations": 0
+        }
+      },
+      "log_sha256": "sha256:9b13d723d4dcc3c280471f10cc778204493103da766cb69ce09763dc87d35add"
+    }
+  ],
+  "reproduced_regression": {
+    "defect": "Legacy admission could insert a second running user turn after receipt activation won the machine lock.",
+    "before_fix_log_sha256": "sha256:65d567c4f012848b005fb1f52cb49d1c5b2f55d9e591f5e0ea9268a2bfa7333c",
+    "fix": "Check both queued receipt and running user turn inside the original admission transaction."
+  },
+  "api_compatibility": "Opening images without nonblank text return 422 before reservation; the previous path returned 201 and discarded those images.",
+  "not_proven": [
+    "Live provider acceptance of the new prompt lifecycle",
+    "Safe actor recovery after submitter death before wake",
+    "Same-machine actor epochs and leases",
+    "Owned publication of ordinary provisioning-step failures",
+    "Complete restart and cancellation through all actual entry points",
+    "Uncertain transition recovery and ordinary creation identity coverage",
+    "Conditional provider identity"
+  ],
+  "activation": {
+    "lifecycle_pr": "draft",
+    "execution_controls_enabled": false,
+    "recovery_enabled": false,
+    "live_provider_operations": 0
+  }
+}

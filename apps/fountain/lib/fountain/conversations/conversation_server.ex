@@ -168,24 +168,9 @@ defmodule Fountain.Conversations.ConversationServer do
     :exit, {{:shutdown, _}, _} -> {:error, :not_running}
   end
 
-  @doc """
-  Deliver the prompt a conversation was started for, after the server exists.
-
-  Deliberately not a `start_link` argument. Horde restarts a redistributed
-  child from its *stored child spec*, so anything in there is replayed on every
-  cluster membership change — which every deploy causes. A prompt in the spec
-  therefore re-ran the user's last message on each rollout.
-
-  Takes the pid `start_child` returned, not the conversation id: Horde's
-  registry is a CRDT whose registrations propagate asynchronously, and a cast
-  to a via-name that hasn't resolved yet is a silent no-op — the server
-  provisions, the user's first prompt is simply gone (#367). The pid needs no
-  resolution, works across nodes, and is for exactly the server just started;
-  if that server already died, losing the cast is the right outcome.
-
-  A cast rather than a call: it queues behind `handle_continue(:provision)`,
-  which can take minutes, and no caller is waiting on the turn to finish.
-  """
+  @doc false
+  # Compatibility for legacy callers and the actor test harness. Current launch
+  # paths persist intent first and send receipt IDs through queue_prompt_receipt.
   def queue_initial_prompt(pid, prompt, images \\ []) when is_pid(pid) do
     GenServer.cast(pid, {:initial_prompt, prompt, images})
   end
@@ -917,9 +902,8 @@ defmodule Fountain.Conversations.ConversationServer do
               sandbox_started_at: Lifecycle.clock_start(sandbox)
           }
 
-          # Any prompt this conversation was started for arrives as a cast,
-          # already queued behind this handle_continue. See
-          # queue_initial_prompt/3.
+          # Startup rediscovers saved intent even if the submitter's notification
+          # was lost. A duplicate receipt notification grants no extra execution.
           Fountain.Conversations.PromptDeliveryActor.schedule(new_state)
           {:noreply, new_state}
         else

@@ -203,8 +203,8 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
       end
     end)
 
-    Mimic.stub(ConversationServer, :queue_initial_prompt, fn pid, prompt ->
-      send(owner, {:queued_after_binding, pid, prompt, Repo.reload!(conv).sandbox_id})
+    Mimic.stub(ConversationServer, :queue_prompt_receipt, fn pid, receipt_id ->
+      send(owner, {:queued_after_binding, pid, receipt_id, Repo.reload!(conv).sandbox_id})
       :ok
     end)
 
@@ -218,7 +218,10 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     assert {:ok, woken} = Task.await(wake, 5_000)
     destination = woken.sandbox_id
     refute destination == old.id
-    assert_receive {:queued_after_binding, ^pid, "hello", ^destination}
+    receipt = Fountain.Conversations.PromptDelivery.queued(user.id, conv.id)
+    assert Repo.get!(Fountain.Conversations.Turn, receipt.turn_id).prompt == "hello"
+    receipt_id = receipt.id
+    assert_receive {:queued_after_binding, ^pid, ^receipt_id, ^destination}
     assert_receive {:credentials_on, ^destination}, 5_000
     state = :sys.get_state(pid, 5_000)
     assert state.sandbox_id == destination

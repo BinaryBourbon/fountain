@@ -70,7 +70,7 @@ CLI's `${VAR}` substitution and secret-manager references resolve against.
 `packages` has two keys that install software, `apt` and `npm`. Other
 language toolchains go in `setup_script`.
 
-`setup_timeout_seconds` sets the setup exec timeout (1–900 seconds, default
+`setup_timeout_seconds` sets the setup exec timeout (1 to 900 seconds, default
 120). Use the API or an environment spec to give cold dependency/toolchain
 installation more time. Changing it invalidates the environment checkpoint.
 The overall 30-minute provisioning deadline still applies; a failed or timed-out

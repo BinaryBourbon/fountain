@@ -62,7 +62,7 @@ defmodule Fountain.ConversationsReadStateTest do
   describe "list_conversations/2 last_active_at" do
     test "defaults to inserted_at when there are no log events" do
       user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
+      _conv = insert_conversation(user_id: user.id)
 
       [result] = Conversations.list_conversations(user.id)
 
@@ -162,7 +162,7 @@ defmodule Fountain.ConversationsReadStateTest do
         {:error, {:already_started, self()}}
       end)
 
-      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn _conv_id,
+      stub(Fountain.Conversations.ConversationServer, :queue_prompt_receipt, fn _conv_id,
                                                                                 _prompt ->
         :ok
       end)
@@ -207,7 +207,10 @@ defmodule Fountain.ConversationsReadStateTest do
         {:error, {:already_started, self()}}
       end)
 
-      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn conv_id, prompt ->
+      stub(Fountain.Conversations.ConversationServer, :queue_prompt_receipt, fn conv_id,
+                                                                                receipt_id ->
+        receipt = Repo.get!(Conversations.PromptReceipt, receipt_id)
+        prompt = Repo.get!(Conversations.Turn, receipt.turn_id).prompt
         send(test_pid, {:forwarded, conv_id, prompt})
         :ok
       end)
@@ -229,7 +232,7 @@ defmodule Fountain.ConversationsReadStateTest do
         {:error, :max_children}
       end)
 
-      assert {:error, :max_children} = Conversations.wake_conversation(conv.id, "hi")
+      assert {:error, :max_children} = Conversations.wake_conversation(conv.id)
     end
   end
 end

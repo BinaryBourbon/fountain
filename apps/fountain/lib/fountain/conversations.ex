@@ -1180,7 +1180,21 @@ defmodule Fountain.Conversations do
     # persisted parent/sandbox and commits a bounded journal with the turn.
     result =
       ExecutionGuard._unsafe_admit_turn(attrs, sandbox_id, capacity, fn ->
-        %Turn{} |> Turn.changeset(attrs) |> Repo.insert()
+        parent = Repo.get!(Conversation, Map.fetch!(attrs, :conversation_id))
+
+        running_user? =
+          Repo.exists?(
+            from t in Turn,
+              where:
+                t.conversation_id == ^parent.id and t.status == "running" and t.origin == "user"
+          )
+
+        if running_user? or
+             not is_nil(Fountain.Conversations.PromptDelivery.queued(parent.user_id, parent.id)) do
+          {:error, :busy}
+        else
+          %Turn{} |> Turn.changeset(attrs) |> Repo.insert()
+        end
       end)
 
     record_started_turn(result)
@@ -2134,7 +2148,9 @@ defmodule Fountain.Conversations do
 
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
-    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+    with :ok <- require_provider_commit_boundary(),
+         :ok <- Fountain.Conversations.PromptDelivery.validate_initial(attrs),
+         %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
@@ -2218,27 +2234,28 @@ defmodule Fountain.Conversations do
         }
       })
 
-      # No prompt in the child spec — see start_conversation_server/4.
+      # Opening intent commits before the actor can provision. Its child spec
+      # contains no prompt or receipt; a restart discovers saved intent instead.
       start_result =
-        Horde.DynamicSupervisor.start_child(
-          Fountain.ConversationSupervisor,
-          {ConversationServer,
-           [
-             conversation_id: conv.id,
-             sandbox_id: sandbox.id,
-             runtime_module: runtime_module
-           ]}
-        )
+        with {:ok, _receipt} <-
+               Fountain.Conversations.PromptDelivery.save_initial(user_id, conv.id, attrs) do
+          case Horde.DynamicSupervisor.start_child(
+                 Fountain.ConversationSupervisor,
+                 {ConversationServer,
+                  [
+                    conversation_id: conv.id,
+                    sandbox_id: sandbox.id,
+                    runtime_module: runtime_module
+                  ]}
+               ) do
+            {:error, {:already_started, pid}} -> {:ok, pid}
+            result -> result
+          end
+        end
 
       case start_result do
         {:ok, pid} ->
-          if is_binary(attrs["prompt"]) and attrs["prompt"] != "" do
-            ConversationServer.queue_initial_prompt(
-              pid,
-              attrs["prompt"],
-              attrs["images"] || []
-            )
-          end
+          Fountain.Conversations.PromptDelivery.notify_pending(user_id, conv.id, pid)
 
           result = _unsafe_get_conversation!(conv.id)
 
@@ -2259,8 +2276,9 @@ defmodule Fountain.Conversations do
             "ConversationServer failed to start for conv #{conv.id}: #{inspect(reason)}"
           )
 
-          update_conversation(conv, %{status: "failed"})
-          update_sandbox(sandbox, %{status: "failed"})
+          # Ownership: this launch owns the original parent and sandbox. Failure
+          # rechecks their binding and commits queued prompt outcomes with its stage.
+          Fountain.Conversations.ProvisionWatchdog._unsafe_fail_start(conv.id, sandbox.id)
           result = _unsafe_get_conversation!(conv.id)
           broadcast_sidebar_update(user_id)
           {:ok, result}
@@ -2684,15 +2702,17 @@ defmodule Fountain.Conversations do
   # prompt as every wake does. The conversation is opened `idle` with no
   # server; a prompt supplied here is delivered through the ordinary wake
   # path, so a `ready` machine reattaches and a `suspended` one resumes, and
-  # if that delivery is refused the row is removed again so a refused request
-  # creates nothing.
+  # pre-acceptance refusal removes the unused row. Accepted intent retains its
+  # conversation and durable outcome even if subsequent delivery fails.
   defp attach_conversation(
          sandbox_id,
          %{"agent_id" => agent_id, "user_id" => user_id} = attrs,
          opts
        )
        when is_binary(user_id) do
-    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+    with :ok <- require_provider_commit_boundary(),
+         :ok <- Fountain.Conversations.PromptDelivery.validate_initial(attrs),
+         %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
@@ -2754,6 +2774,12 @@ defmodule Fountain.Conversations do
       nil -> {:error, :not_found}
       {:error, _} = err -> err
     end
+  end
+
+  # These public launch paths start actors. All accepted state must commit
+  # before another process can read it or begin provider work.
+  defp require_provider_commit_boundary do
+    if Repo.in_transaction?(), do: {:error, :provider_transaction_open}, else: :ok
   end
 
   defp deliver_attach_prompt(conv, attrs, opts) do
@@ -3202,10 +3228,26 @@ defmodule Fountain.Conversations do
      transcript and its title carry over; the agent's in-context memory
      does not.
 
-  Returns `{:error, :gone}` if the conversation is in a terminal status
-  (`terminated`, `failed`) — those don't auto-resume.
+  With prompt text, this accepts saved intent and returns the conversation;
+  delivery failure is recorded on its turn. Without text, this is the connection
+  operation and returns wake errors directly. A pending registry timeout retains
+  its original machine and returns `:provisioning`.
+
+  Returns `{:error, :gone}` for a terminal conversation (`terminated`, `failed`).
   """
-  def wake_conversation(conv_id, initial_prompt \\ nil) do
+  def wake_conversation(conv_id, initial_prompt \\ nil)
+
+  def wake_conversation(conv_id, prompt) when is_binary(prompt) and prompt != "" do
+    # Ownership: this legacy entry point is called for an already-authorized
+    # parent. Acceptance persists its text before initiating the prompt-free wake.
+    with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
+         {:ok, _receipt} <-
+           Fountain.Conversations.PromptDelivery.accept(conv.user_id, conv.id, prompt, []) do
+      {:ok, _unsafe_get_conversation!(conv.id)}
+    end
+  end
+
+  def wake_conversation(conv_id, initial_prompt) when initial_prompt in [nil, ""] do
     # Ownership: called from ConversationServer (which established ownership
     # before starting) and the boot-time rehydrator sweep. The agent fetched
     # below is the conversation's own agent_id, same tenant by construction.
@@ -3231,17 +3273,18 @@ defmodule Fountain.Conversations do
                # with no platform key configured runs no query here.
                :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
-            case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
+            case start_conversation_server(conv, sandbox_id, runtime_module) do
               {:error, {:already_started, winner_pid}} ->
                 # Lost a concurrent wake of the same conversation to another
                 # caller reusing the same sandbox. Mirrors the handoff in
-                # create_fresh_sandbox_and_start/4 (#330), but reuse provisions
+                # create_fresh_sandbox_and_start/3 (#330), but reuse provisions
                 # no row of its own, so there is nothing here to clean up —
-                # just hand the prompt to the winner, which drops it if a turn
-                # is already running.
-                if is_binary(initial_prompt) and initial_prompt != "" do
-                  ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
-                end
+                # notify the winner about saved intent; its receipt owns admission.
+                Fountain.Conversations.PromptDelivery.notify_pending(
+                  conv.user_id,
+                  conv.id,
+                  winner_pid
+                )
 
                 {:ok, _unsafe_get_conversation!(conv.id)}
 
@@ -3265,9 +3308,7 @@ defmodule Fountain.Conversations do
                   "appeared during the registry settle window; handing off the prompt"
               )
 
-              if is_binary(initial_prompt) and initial_prompt != "" do
-                ConversationServer.queue_initial_prompt(pid, initial_prompt)
-              end
+              Fountain.Conversations.PromptDelivery.notify_pending(conv.user_id, conv.id, pid)
 
               {:ok, _unsafe_get_conversation!(conv.id)}
 
@@ -3278,7 +3319,7 @@ defmodule Fountain.Conversations do
           end
 
         :create_new ->
-          create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
+          create_fresh_sandbox_and_start(conv, agent, runtime_module)
 
         {:error, _} = err ->
           err
@@ -3288,6 +3329,8 @@ defmodule Fountain.Conversations do
       {:error, _} = err -> err
     end
   end
+
+  def wake_conversation(_, _), do: {:error, :invalid_prompt}
 
   @doc """
   Reach a conversation whose `ConversationServer` is gone, so a caller can
@@ -3538,17 +3581,15 @@ defmodule Fountain.Conversations do
     )
   end
 
-  defp start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
+  defp start_conversation_server(conv, sandbox_id, runtime_module) do
     with {:ok, pid} <- start_conversation_process(conv, sandbox_id, runtime_module) do
-      if is_binary(initial_prompt) and initial_prompt != "" do
-        ConversationServer.queue_initial_prompt(pid, initial_prompt)
-      end
+      Fountain.Conversations.PromptDelivery.notify_pending(conv.user_id, conv.id, pid)
 
       {:ok, _unsafe_get_conversation!(conv.id)}
     end
   end
 
-  defp create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt) do
+  defp create_fresh_sandbox_and_start(conv, agent, runtime_module) do
     # The sandbox being replaced is excluded: it is retired immediately below,
     # so counting it would block a wake that leaves concurrency unchanged.
     # Waking a dormant conversation provisions a fresh sprite, so it is subject
@@ -3606,9 +3647,7 @@ defmodule Fountain.Conversations do
           # the same transaction, or leave every binding unchanged.
           with {:ok, conv} <-
                  Fountain.Conversations.SandboxHolders._unsafe_replace(conv, new_sandbox.id) do
-            if is_binary(initial_prompt) and initial_prompt != "" do
-              ConversationServer.queue_initial_prompt(pid, initial_prompt)
-            end
+            Fountain.Conversations.PromptDelivery.notify_pending(conv.user_id, conv.id, pid)
 
             {:ok, _unsafe_get_conversation!(conv.id)}
           end
@@ -3619,16 +3658,14 @@ defmodule Fountain.Conversations do
           # row would otherwise sit pending — holding a quota slot — until the
           # reaper's pass an hour later, so a user at their cap could lock
           # themselves out by double-clicking (#330). Clean up our own row and
-          # hand the prompt to the winner, which drops it if a turn is already
-          # running — exactly right for a double-click.
+          # notify the winner about saved intent. Duplicate notifications grant
+          # no additional execution.
           #
           # The conversation is left alone: the winner owns it, and it is the
           # winner's sandbox the row should name.
           _ = mark_old_sandbox_terminated(new_sandbox.id)
 
-          if is_binary(initial_prompt) and initial_prompt != "" do
-            ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
-          end
+          Fountain.Conversations.PromptDelivery.notify_pending(conv.user_id, conv.id, winner_pid)
 
           {:ok, _unsafe_get_conversation!(conv.id)}
 

@@ -1359,11 +1359,26 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "POST /api/conversations with images" do
-    test "returns 201 with conversation when images array is provided (decode_images non-empty branch)",
+    test "saves the opening text and image before starting a worker",
          %{conn: conn, user: user, raw_key: raw_key} do
       agent = insert_agent(user_id: user.id)
 
-      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, {_module, args} ->
+        receipt =
+          Fountain.Conversations.PromptDelivery.queued(user.id, args[:conversation_id])
+
+        assert receipt
+
+        {:ok, payload} =
+          Fountain.Conversations.PromptDelivery.payload(
+            user.id,
+            args[:conversation_id],
+            receipt.id
+          )
+
+        assert payload.turn.status == "pending"
+        assert payload.turn.prompt == "Describe this image"
+        assert payload.images == [%{media_type: "image/png", data: "fake-image-bytes"}]
         {:ok, spawn(fn -> :ok end)}
       end)
 
@@ -1374,10 +1389,32 @@ defmodule FountainWeb.ConversationControllerTest do
         |> authed_with_key(raw_key)
         |> post_json("/api/conversations", %{
           "agent_id" => agent.id,
+          "prompt" => "Describe this image",
           "images" => [%{"media_type" => "image/png", "data" => image_data}]
         })
 
       assert json_response(conn, 201)
+    end
+
+    test "images without opening text are refused before reserving a worker", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      reject(Horde.DynamicSupervisor, :start_child, 2)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "images" => [%{"media_type" => "image/png", "data" => Base.encode64("image")}]
+        })
+
+      assert json_response(conn, 422)["error"] == "invalid_prompt"
+      assert Fountain.Repo.aggregate(Fountain.Conversations.Sandbox, :count) == 0
+      assert Fountain.Repo.aggregate(Fountain.Conversations.PromptReceipt, :count) == 0
     end
 
     test "returns 201 with conversation when no images provided (decode_images [] branch)", %{

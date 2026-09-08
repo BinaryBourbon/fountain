@@ -53,7 +53,16 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
   end
 
   @doc "Commit a timeout only for the actor's still-owned, unfinished provisioning."
-  def _unsafe_expire(conversation_id, sandbox_id) do
+  def _unsafe_expire(conversation_id, sandbox_id),
+    do: fail_pending(conversation_id, sandbox_id, "provision deadline exceeded")
+
+  @doc "Record an actor-start failure only while its original machine is still pending."
+  def _unsafe_fail_start(conversation_id, sandbox_id) do
+    with {:ok, :expired} <- fail_pending(conversation_id, sandbox_id, "worker start failed"),
+         do: {:ok, :failed}
+  end
+
+  defp fail_pending(conversation_id, sandbox_id, reason) do
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(sandbox_id)])
 
@@ -80,7 +89,18 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
 
           if parent.status not in ~w(terminated failed) do
             parent |> Conversation.changeset(%{status: "failed"}) |> Repo.update!()
-            record_deadline(parent, sandbox.id)
+            record_failure(parent, sandbox.id, reason)
+          end
+
+          delivery = Fountain.Conversations.PromptDelivery
+
+          if receipt = delivery.queued(parent.user_id, parent.id) do
+            case delivery.refuse(parent.user_id, parent.id, receipt.id, "provisioning_failed",
+                   sandbox_id: sandbox.id
+                 ) do
+              {:ok, _} -> :ok
+              {:error, reason} -> Repo.rollback(reason)
+            end
           end
 
           :expired
@@ -90,14 +110,14 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
     _error in [Postgrex.Error, DBConnection.ConnectionError] -> {:error, :database_unavailable}
   end
 
-  defp record_deadline(parent, sandbox_id) do
+  defp record_failure(parent, sandbox_id, reason) do
     event =
       Conversations.log!(%{
         conversation_id: parent.id,
         kind: "stage",
         stage: "provision",
         state: "failed",
-        data: Jason.encode!(%{reason: "provision deadline exceeded", sandbox_id: sandbox_id})
+        data: Jason.encode!(%{reason: reason, sandbox_id: sandbox_id})
       })
 
     Fountain.Webhooks.dispatch_stage!(event)

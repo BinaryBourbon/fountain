@@ -3,6 +3,51 @@ defmodule Fountain.Conversations.PromptDeliveryActorTest do
 
   alias Fountain.Conversations.{PromptDelivery, PromptDeliveryActor, Turn, TurnImage}
 
+  test "creation delivers its saved opening turn once through the real actor" do
+    stub_happy_sprite()
+    owner = self()
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _, _, _, _ ->
+      send(owner, :opening_provider_attempt)
+      {:error, {:unavailable, :offline_test_stop}}
+    end)
+
+    Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _, {ConversationServer, args} ->
+      args = Keyword.put(args, :runtime_module, Managoat.Runtimes.Testing.FakeRuntime)
+      {:ok, pid} = GenServer.start(ConversationServer, args)
+      send(owner, {:opening_actor, pid})
+      {:ok, pid}
+    end)
+
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    image = %{media_type: "image/png", data: <<0, 1, 2>>}
+
+    assert {:ok, conv} =
+             Conversations.start_conversation(%{
+               "user_id" => user.id,
+               "agent_id" => agent.id,
+               "prompt" => "Review opening image",
+               "images" => [image]
+             })
+
+    assert_receive {:opening_actor, pid}
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+    assert_receive :opening_provider_attempt, 5_000
+    :sys.get_state(pid)
+
+    receipt = Repo.one!(Fountain.Conversations.PromptReceipt)
+    assert receipt.conversation_id == conv.id
+    assert receipt.state == "claimed"
+    assert Repo.get!(Turn, receipt.turn_id).prompt == "Review opening image"
+    assert Repo.one!(TurnImage).data == image.data
+    ConversationServer.queue_prompt_receipt(pid, receipt.id)
+    :sys.get_state(pid)
+    refute_receive :opening_provider_attempt
+    assert Repo.aggregate(Turn, :count) == 1
+    assert Repo.aggregate(TurnImage, :count) == 1
+  end
+
   test "startup delivers a durable receipt once even when its notification was lost" do
     stub_happy_sprite()
     owner = self()

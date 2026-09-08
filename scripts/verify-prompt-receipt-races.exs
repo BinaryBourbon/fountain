@@ -92,6 +92,34 @@ for _ <- 1..10 do
   1 = Repo.aggregate(from(e in LogEvent, where: e.turn_id == ^receipt.turn_id), :count)
 end
 
+# A legacy turn admission cannot overtake a durable opening prompt. Startup
+# refusal and notification duplicates must also produce one terminal outcome.
+for _ <- 1..10 do
+  {user, sandbox, conv} = fixture.()
+  {:ok, receipt} = PromptDelivery.submit(user.id, conv.id, "local opening proof", [])
+  [activation, legacy] = DeadlineRace.concurrently([
+    fn -> PromptDelivery._unsafe_activate(conv.id, receipt.id, sandbox.id) end,
+    fn -> Fountain.Conversations._unsafe_create_turn_on_sandbox(%{conversation_id: conv.id, turn_number: 2, prompt: "legacy", status: "running"}, sandbox.id, :unbounded) end
+  ])
+  {:ok, %Turn{}} = activation
+  {:error, :busy} = legacy
+  1 = Repo.aggregate(from(t in Turn, where: t.conversation_id == ^conv.id), :count)
+
+  {user, sandbox, conv} = fixture.()
+  {:ok, _} = Fountain.Conversations.update_sandbox(sandbox, %{status: "pending"})
+  {:ok, receipt} = PromptDelivery.submit(user.id, conv.id, "local start refusal", [])
+  results = DeadlineRace.concurrently([
+    fn -> Fountain.Conversations.ProvisionWatchdog._unsafe_fail_start(conv.id, sandbox.id) end,
+    fn -> Fountain.Conversations.ProvisionWatchdog._unsafe_expire(conv.id, sandbox.id) end
+  ])
+  true = Enum.all?(results, &match?({:ok, _}, &1))
+  "refused" = Repo.reload!(receipt).state
+  "failed" = Repo.get!(Turn, receipt.turn_id).status
+  "provisioning_failed" = Repo.reload!(receipt).failure_reason
+  1 = Repo.aggregate(from(e in LogEvent, where: e.conversation_id == ^conv.id and e.stage == "provision"), :count)
+  1 = Repo.aggregate(from(e in LogEvent, where: e.turn_id == ^receipt.turn_id), :count)
+end
+
 # Force the actor to arrive before expiry but obtain its final row lock afterward.
 for lock_table <- ["conversations", "prompt_receipts", "turns"] do
   {user, sandbox, conv} = fixture.()
@@ -156,8 +184,10 @@ IO.puts("PROMPT_RECEIPT_RACE_RESULT=" <> Jason.encode!(%{
   distinct_submission_races: 10,
   user_interrupt_activation_races: 10,
   duplicate_expiry_activation_races: 10,
+  legacy_admission_activation_races: 10,
+  actor_start_watchdog_failure_races: 10,
   forced_activation_deadline_lock_waits: 3,
   cancellation_outcomes: Enum.frequencies(outcomes),
   provider_operations: 0,
-  scope: "Local receipt arbitration only; Initial creation, legacy wake and end-to-end restart recovery remain integration work"
+  scope: "Local receipt, legacy admission and startup refusal arbitration only; provider delivery and end-to-end restart recovery require separate evidence"
 }))

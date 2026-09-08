@@ -92,7 +92,9 @@ defmodule Fountain.ConversationsWakeTest do
         {:error, {:already_started, winner}}
       end)
 
-      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn pid, prompt ->
+      stub(Fountain.Conversations.ConversationServer, :queue_prompt_receipt, fn pid, receipt_id ->
+        receipt = Repo.get!(Conversations.PromptReceipt, receipt_id)
+        prompt = Repo.get!(Conversations.Turn, receipt.turn_id).prompt
         send(test_pid, {:queued, pid, prompt})
         :ok
       end)
@@ -315,8 +317,8 @@ defmodule Fountain.ConversationsWakeTest do
       late_server =
         spawn_link(fn ->
           receive do
-            {:"$gen_cast", {:initial_prompt, prompt, images}} ->
-              send(test, {:handed_off, prompt, images})
+            {:"$gen_cast", {:prompt_receipt, receipt_id}} ->
+              send(test, {:handed_off, receipt_id})
           end
         end)
 
@@ -340,7 +342,9 @@ defmodule Fountain.ConversationsWakeTest do
       reject(&Horde.DynamicSupervisor.start_child/2)
 
       assert {:ok, woken} = Conversations.wake_conversation(conv.id, "hello")
-      assert_receive {:handed_off, "hello", []}, 500
+      assert_receive {:handed_off, receipt_id}, 500
+      receipt = Repo.get!(Conversations.PromptReceipt, receipt_id)
+      assert Repo.get!(Conversations.Turn, receipt.turn_id).prompt == "hello"
 
       # The first poll missed: the wake waited for the registry rather than
       # concluding the provision was dead on the strength of one lookup.

@@ -42,7 +42,11 @@ defmodule FountainWeb.TurnImageIngestTest do
   defp post_create(conn, raw_key, agent, images) do
     conn
     |> authed_with_key(raw_key)
-    |> post_json("/api/conversations", %{"agent_id" => agent.id, "images" => images})
+    |> post_json("/api/conversations", %{
+      "agent_id" => agent.id,
+      "prompt" => "Describe these images",
+      "images" => images
+    })
   end
 
   describe "media type" do

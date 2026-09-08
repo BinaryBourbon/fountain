@@ -234,6 +234,45 @@ defmodule Fountain.Conversations.PromptDeliveryTest do
     assert Repo.get!(Turn, receipt.turn_id).status == "pending"
   end
 
+  test "legacy turn admission cannot overtake a saved prompt", c do
+    {:ok, receipt} = submit(c)
+
+    assert {:error, :busy} =
+             Conversations._unsafe_create_turn_on_sandbox(
+               %{
+                 conversation_id: c.conv.id,
+                 turn_number: 2,
+                 prompt: "legacy",
+                 status: "running"
+               },
+               c.sandbox.id,
+               :unbounded
+             )
+
+    assert Repo.reload!(receipt).state == "queued"
+    assert Repo.aggregate(Turn, :count) == 1
+  end
+
+  test "legacy admission cannot overlap a claimed prompt", c do
+    {:ok, receipt} = submit(c)
+    assert {:ok, _} = PromptDelivery._unsafe_activate(c.conv.id, receipt.id, c.sandbox.id)
+
+    assert {:error, :busy} =
+             Conversations._unsafe_create_turn_on_sandbox(
+               %{
+                 conversation_id: c.conv.id,
+                 turn_number: 2,
+                 prompt: "legacy",
+                 status: "running"
+               },
+               c.sandbox.id,
+               :unbounded
+             )
+
+    assert Repo.reload!(receipt).state == "claimed"
+    assert Repo.aggregate(Turn, :count) == 1
+  end
+
   test "a running user turn admitted elsewhere prevents activation", c do
     {:ok, receipt} = submit(c)
     running = insert_turn(c.conv, turn_number: 2, status: "running")

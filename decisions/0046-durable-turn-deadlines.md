@@ -625,9 +625,9 @@ recovery stay disabled; the lifecycle stack stays draft.
 Fresh wake retains Horde's child arbitration, then commits the holder replacement.
 The winning actor waits up to five seconds for that binding before provisioning.
 A changed winner or owner stops it. A replayed child can use an already committed
-binding. The initiating prompt is queued only after replacement commits. A real
-actor test holds the caller before commit and verifies that credentials and the
-prompt remain untouched until the new binding is visible.
+binding. The initiating prompt is saved before wake; its receipt notification
+follows the replacement commit. A real actor test holds the caller before commit
+and verifies that credentials and delivery wait for the new binding.
 
 Actor startup now checks its original machine binding under the machine and
 parent locks before it can interrupt an orphan execution. A child stored by
@@ -648,20 +648,21 @@ notifications, ownership drift, settled machines, cotenant execution and uncerta
 creation. `scripts/verify-provision-ownership-races.exs` forces transfer and new
 execution admission to commit while startup and watchdog decisions wait on
 independent PostgreSQL connections. Validation is recorded in
-`decisions/evidence/provision-ownership.json`.
+`decisions/evidence/provision-ownership.json` for the earlier checkpoint and
+`decisions/evidence/prompt-delivery.json` for the receipt integration.
 
 This is a binding guard, not a durable actor lease. Same-machine actor epochs,
 normal provisioning failure publication, database-first wake ownership and
-accepted prompt delivery remain unfinished. It does not establish full wake
+complete accepted-prompt recovery remain unfinished. It does not establish full wake
 recovery or live provider acceptance. The lifecycle stack stays draft; execution
 controls and recovery stay disabled.
 
 ## Durable prompt delivery (integration in progress)
 
-The prompt API and shared `send_prompt` entry point now accept durable receipts.
-Attach uses that shared entry point. Initial creation and direct `wake_conversation`
-calls with prompt text still use legacy casts and remain integration work. These
-changes are local and have not passed the production acceptance gate.
+Prompt submission, initial creation, attach and wake-with-text now use durable
+receipts. Opening intent commits before Horde can start its worker. Initial and
+attach launches reject outer transactions, and invalid opening input is refused
+before any sandbox reservation. These changes have not passed production acceptance.
 
 A submission stores its pending turn, ordered images, receipt and dispatch job in
 one transaction.
@@ -683,6 +684,10 @@ carry only receipt IDs, and duplicate messages cannot create a second turn. Imag
 are loaded from the saved turn and are not inserted again. An admission refusal
 persists a failed turn and delivery jobs together. Actor refusals recheck the
 original machine binding, so an old busy actor cannot fail a replacement's request.
+Actor-start failure and provisioning deadlines also refuse queued receipts inside
+the transaction that records the original machine's failure. A changed binding
+suppresses that failure. Legacy turn admission cannot insert a new turn while a
+receipt is queued or a user turn is running. Receipt activation updates the saved turn.
 
 The dispatch job retries ID notifications every 15 seconds until the receipt is
 claimed or refused. A cast does not count as delivery. Acceptance snapshots a
@@ -718,11 +723,20 @@ retention, tenant scope, policy changes and transaction rollback.
 `scripts/verify-prompt-receipt-races.exs` exercises duplicate submissions, duplicate
 claims, distinct requests, user interruption and duplicate expiry against
 activation on independent PostgreSQL connections. It also forces activation to wait
-past its deadline on parent, receipt and turn locks. These tests use no live provider acceptance evidence.
+past its deadline on parent, receipt and turn locks. It also races legacy admission
+against receipt activation, and actor-start failure against watchdog expiry. These
+local database checks do not prove live provider behavior.
 
-Still required: replace initial creation and legacy wake producers, connect safe
-actor recovery and immediate provisioning-failure outcomes, and finish
-restart/cancellation coverage through the actual entry points. Attach reaches the
-receipt path but still needs complete integration coverage. Same-machine actor epochs and uncertain-provider
-recovery remain separate integration gates. No production activation is approved
-by this local implementation.
+Still required: safe actor recovery after a lost startup, owned publication of
+ordinary provisioning-step failures, and complete restart/cancellation coverage
+through the actual entry points. Legacy raw actor callbacks remain for compatibility;
+current launch paths send receipt IDs. Same-machine actor epochs and uncertain-provider
+recovery remain separate integration gates. Local validation does not authorize
+production activation.
+
+### Opening image validation
+
+Opening images require nonblank prompt text. The previous creation path returned
+201 without storing or delivering images when text was absent. Creation now
+returns 422 before reserving a sandbox. Media-type tests include prompt text;
+the HTTP regression checks both the refusal and persistence before actor start.

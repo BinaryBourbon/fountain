@@ -4,8 +4,8 @@ defmodule Fountain.Conversations.PromptDeliveryActor do
 
   Notifications contain only a receipt ID. Startup rediscovers queued work;
   duplicate notifications cannot create another turn or provider submission.
-  The prompt API uses receipts; initial creation and direct wake producers are pending.
-  Durable dispatch retries ID notifications.
+  Prompt submission, creation, attach and wake use receipts. Durable dispatch
+  retries ID notifications.
   """
   alias Fountain.{Agents, Conversations}
   alias Fountain.Conversations.{Connection, PromptDelivery}

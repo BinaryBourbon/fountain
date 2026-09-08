@@ -558,7 +558,8 @@ defmodule FountainWeb.Schemas do
         images: %Schema{
           type: :array,
           items: ImageInput,
-          description: "Optional images to attach to the initial prompt.",
+          description:
+            "Optional images attached to the initial prompt. Requires nonblank prompt text.",
           nullable: true
         },
         sprite_name: %Schema{

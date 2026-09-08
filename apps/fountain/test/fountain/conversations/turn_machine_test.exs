@@ -474,7 +474,13 @@ defmodule Fountain.Conversations.TurnMachineTest do
   end
 
   describe "starting a turn" do
-    test "open/3 creates the running row, numbered after the last", %{conv: conv} do
+    test "open/3 waits for the prior turn to end and numbers the next row", %{
+      conv: conv,
+      row: row
+    } do
+      assert {:error, :busy} = TurnMachine.open(conv.id, conv.sandbox_id, "hi")
+      row |> Conversations.Turn.changeset(%{status: "completed"}) |> Repo.update!()
+
       assert {:ok, %{id: conv_id}, %{turn_number: 2, status: "running", prompt: "hi"}} =
                TurnMachine.open(conv.id, conv.sandbox_id, "hi")
 

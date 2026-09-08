@@ -60,7 +60,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
         {:ok, spawn(fn -> Process.sleep(:infinity) end)}
       end)
 
-      stub(ConversationServer, :queue_initial_prompt, fn _pid, _prompt -> :ok end)
+      stub(ConversationServer, :queue_prompt_receipt, fn _pid, _prompt -> :ok end)
 
       {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
 
@@ -78,7 +78,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
         {:error, {:already_started, winner}}
       end)
 
-      stub(ConversationServer, :queue_initial_prompt, fn _pid, _prompt -> :ok end)
+      stub(ConversationServer, :queue_prompt_receipt, fn _pid, _prompt -> :ok end)
 
       {:ok, winner: winner}
     end
@@ -111,14 +111,16 @@ defmodule Fountain.Conversations.WakeRaceTest do
     test "the prompt is handed to the winner", %{conv: conv, winner: winner} do
       test_pid = self()
 
-      stub(ConversationServer, :queue_initial_prompt, fn pid, prompt ->
+      stub(ConversationServer, :queue_prompt_receipt, fn pid, prompt ->
         send(test_pid, {:queued, pid, prompt})
         :ok
       end)
 
       {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
 
-      assert_receive {:queued, ^winner, "hello"}
+      assert_receive {:queued, ^winner, receipt_id}
+      receipt = Repo.get!(Conversations.PromptReceipt, receipt_id)
+      assert Repo.get!(Conversations.Turn, receipt.turn_id).prompt == "hello"
     end
   end
 
@@ -128,7 +130,7 @@ defmodule Fountain.Conversations.WakeRaceTest do
 
       before = sandbox_ids()
 
-      assert {:error, :boom} = Conversations.wake_conversation(conv.id, "hello")
+      assert {:error, :boom} = Conversations.wake_conversation(conv.id)
 
       for sandbox <- sandboxes_created_since(before) do
         assert sandbox.status == "terminated",

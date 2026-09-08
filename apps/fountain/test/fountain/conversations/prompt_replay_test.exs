@@ -46,13 +46,13 @@ defmodule Fountain.Conversations.PromptReplayTest do
       {:ok, pid}
     end)
 
-    stub(Conversations.ConversationServer, :queue_initial_prompt, fn id, prompt, images ->
-      send(test, {:queued_prompt, id, prompt, images})
-      :ok
-    end)
+    stub(Conversations.ConversationServer, :queue_prompt_receipt, fn pid, receipt_id ->
+      receipt = Fountain.Repo.get!(Conversations.PromptReceipt, receipt_id)
 
-    stub(Conversations.ConversationServer, :queue_initial_prompt, fn id, prompt ->
-      send(test, {:queued_prompt, id, prompt, []})
+      {:ok, saved} =
+        Conversations.PromptDelivery.payload(receipt.user_id, receipt.conversation_id, receipt.id)
+
+      send(test, {:queued_prompt, pid, saved.turn.prompt, saved.images})
       :ok
     end)
 

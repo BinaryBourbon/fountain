@@ -4,9 +4,9 @@ defmodule Fountain.Conversations.PromptDelivery do
 
   The receipt survives transcript retention, so a repeated key cannot recreate
   deleted work. Claim and bounded execution admission commit together before the
-  caller may start provider work. The prompt API accepts receipts before wake;
-  initial creation and direct wake-with-text producers are not integrated yet. A committed dispatch job retries notification
-  until claim or expiry; it never starts or replaces a provider resource.
+  caller may start provider work. Prompt submission, creation, attach and wake
+  save intent before delivery. Committed dispatch jobs retry notifications until
+  claim or expiry; they never start or replace a provider resource.
   """
   import Ecto.Query
 
@@ -22,6 +22,32 @@ defmodule Fountain.Conversations.PromptDelivery do
   }
 
   @refusals ~w(cancelled provisioning_failed binding_changed admission_refused delivery_unavailable delivery_expired)
+
+  @doc "Validate an optional opening prompt before reserving a sandbox."
+  def validate_initial(attrs) do
+    case {attrs["prompt"], attrs["images"] || []} do
+      {prompt, []} when prompt in [nil, ""] -> :ok
+      {prompt, images} -> validate_payload(prompt, images)
+    end
+  end
+
+  @doc "Save opening intent before its actor can start; an absent prompt creates no receipt."
+  def save_initial(user_id, conversation_id, attrs) do
+    with :ok <- validate_initial(attrs) do
+      case attrs["prompt"] do
+        prompt when prompt in [nil, ""] -> {:ok, nil}
+        prompt -> submit(user_id, conversation_id, prompt, attrs["images"] || [])
+      end
+    end
+  end
+
+  @doc "Notify a known actor about its currently owned saved intent."
+  def notify_pending(user_id, conversation_id, pid) do
+    if receipt = queued(user_id, conversation_id),
+      do: Conversations.ConversationServer.queue_prompt_receipt(pid, receipt.id)
+
+    :ok
+  end
 
   def submit(user_id, conversation_id, prompt, images, opts \\ []) do
     with {:ok, {receipt, _new?}} <- submit_result(user_id, conversation_id, prompt, images, opts),
