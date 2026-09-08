@@ -1176,6 +1176,42 @@ defmodule Fountain.Conversations do
     end)
   end
 
+  @doc "Idle only the latest ended turn's still-running parent."
+  def _unsafe_idle_after_turn(%Turn{} = turn),
+    do: write_turn_parent(turn, :idle, %{status: "idle"})
+
+  @doc "Apply a runtime session report only for the current, unretired turn."
+  def _unsafe_set_turn_session(%Turn{} = turn, session_id),
+    do: write_turn_parent(turn, :session, %{runtime_session_id: session_id})
+
+  @doc "Clear an idle legacy peer's session only if its observed identity is still current."
+  def _unsafe_clear_idle_session(conv_id, expected) do
+    # ownership: this is the already-owned actor's conversation and session.
+    ExecutionGuard._unsafe_clear_idle_session(conv_id, expected, fn current ->
+      current |> Conversation.changeset(%{runtime_session_id: nil}) |> Repo.update()
+    end)
+    |> notify_parent_change()
+  end
+
+  defp write_turn_parent(turn, mode, attrs) do
+    # ownership: the calling actor/recovery path already owns this exact turn.
+    result =
+      ExecutionGuard._unsafe_write_parent(turn, mode, fn current ->
+        current |> Conversation.changeset(attrs) |> Repo.update()
+      end)
+
+    notify_parent_change(result)
+  end
+
+  defp notify_parent_change(result) do
+    case result do
+      {:ok, %{applied: true, conversation: conv}} -> broadcast_sidebar_update(conv.user_id)
+      _ -> :ok
+    end
+
+    result
+  end
+
   @doc """
   Re-resolve the Agent, Environment and Vault for an existing conversation,
   on the machine it is already running (#1565).
@@ -1726,6 +1762,15 @@ defmodule Fountain.Conversations do
 
         unless attached?, do: Repo.rollback(:sandbox_unavailable)
 
+        # A terminated or failed parent takes no more turns. `attached?` above
+        # checks the machine; this checks the conversation, which a retired
+        # actor can still reach with a queued prompt.
+        if Repo.exists?(
+             from c in Conversation,
+               where: c.id == ^conv_id and c.status in ["terminated", "failed"]
+           ),
+           do: Repo.rollback(:not_running)
+
         case _unsafe_check_saved_execution_allowance(conv_id) do
           :ok -> :ok
           {:error, reason} -> Repo.rollback(reason)
@@ -1762,11 +1807,21 @@ defmodule Fountain.Conversations do
         end
       end)
 
-    with {:ok, turn} <- result do
-      record_turn_usage(turn)
-      {:ok, turn}
-    end
+    record_started_turn(result)
   end
+
+  defp record_started_turn({:ok, turn}) do
+    record_turn_usage(turn)
+
+    case Repo.get(Conversation, turn.conversation_id) do
+      nil -> :ok
+      conv -> broadcast_sidebar_update(conv.user_id)
+    end
+
+    {:ok, turn}
+  end
+
+  defp record_started_turn(error), do: error
 
   @doc """
   Save an initial resolved allowance once, scoped to its conversation owner.
@@ -2117,53 +2172,56 @@ defmodule Fountain.Conversations do
   server and by the system reaper. Callers may supply audit attribution.
   """
   def _unsafe_orphan_turn(%Turn{} = turn, why, opts \\ []) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    reply_text = turn.reply_text || _unsafe_turn_reply_text(turn)
-
-    updates =
-      [status: "interrupted", ended_at: now, orphaned_at: now]
-      |> maybe_set_reply_text(reply_text)
-
+    # ownership: this is the existing actor's turn or a system recovery candidate.
     result =
-      Repo.transaction(fn ->
-        {count, _} =
-          from(t in Turn, where: t.id == ^turn.id and t.status == "running")
-          |> Repo.update_all(set: updates)
+      ExecutionGuard._unsafe_recover_turn(turn, fn current, conv, latest?, bounded? ->
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+        reply_text = current.reply_text || _unsafe_turn_reply_text(current)
 
-        if count == 0 do
-          :noop
-        else
-          {conversation_count, _} =
-            from(c in Conversation,
-              where: c.id == ^turn.conversation_id and c.status == "running"
-            )
-            |> Repo.update_all(set: [status: "idle", updated_at: now])
+        updates =
+          if current.status == "running",
+            do: [status: "interrupted", ended_at: now, orphaned_at: now],
+            else: [orphaned_at: now]
 
-          {
-            Repo.get!(Turn, turn.id),
-            Repo.get!(Conversation, turn.conversation_id),
-            conversation_count == 1
-          }
-        end
+        updated =
+          current
+          |> Turn.changeset(Map.new(maybe_set_reply_text(updates, reply_text)))
+          |> Repo.update!()
+
+        conversation_changed? = latest? and conv.status == "running"
+
+        conv =
+          if conversation_changed?,
+            do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+            else: conv
+
+        {updated, conv, conversation_changed?, bounded?}
       end)
 
     case result do
       {:ok, :noop} ->
         :noop
 
-      {:ok, {updated_turn, conv, conversation_changed?}} ->
+      {:ok, {updated_turn, conv, conversation_changed?, bounded?}} ->
         if is_nil(turn.reply_text) and is_binary(updated_turn.reply_text) do
           Fountain.Activation.turn_replied(updated_turn)
         end
 
         if conversation_changed?, do: broadcast_sidebar_update(conv.user_id)
 
-        publish_stage(turn.conversation_id, "reattach", "interrupted", %{
+        metadata = %{
           outcome: "turn_orphaned",
           turn_id: turn.id,
           turn_number: turn.turn_number,
           reason: why
-        })
+        }
+
+        if bounded? do
+          status = if updated_turn.status == "failed", do: "failed", else: "interrupted"
+          publish_stage(turn.conversation_id, "turn", status, metadata)
+        else
+          publish_stage(turn.conversation_id, "reattach", "interrupted", metadata)
+        end
 
         Audit.record(%{
           user_id: conv.user_id,

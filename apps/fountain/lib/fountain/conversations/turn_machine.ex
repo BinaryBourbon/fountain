@@ -654,8 +654,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
     emit_completed(turn, row.status)
 
-    conv = Conversations._unsafe_get_conversation!(turn.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+    {:ok, _} = Conversations._unsafe_idle_after_turn(row)
 
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
   end
@@ -707,8 +706,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
     emit_completed(turn, "interrupted")
 
-    conv = Conversations._unsafe_get_conversation!(turn.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+    {:ok, _} = Conversations._unsafe_idle_after_turn(turn.row)
 
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
   end
@@ -1142,35 +1140,19 @@ defmodule Fountain.Conversations.TurnMachine do
   `session/load` over `session/new`; with none, one is generated and
   persisted immediately so a server restart can resume.
   """
-  @spec session_plan(Conversation.t(), String.t() | nil) :: {:run | :continue, String.t()}
-  def session_plan(conv, runtime_session_id) do
-    mode =
-      cond do
-        is_nil(runtime_session_id) -> :run
-        true -> :continue
-      end
+  @spec session_plan(Conversations.Turn.t(), String.t() | nil) ::
+          {:ok, {:run | :continue, String.t()}} | {:error, term()}
+  def session_plan(turn, runtime_session_id) do
+    mode = if is_nil(runtime_session_id), do: :run, else: :continue
+    id = runtime_session_id || Ecto.UUID.generate()
 
-    runtime_session_id =
-      case runtime_session_id do
-        nil ->
-          # Generate one and persist immediately so a server restart can resume.
-          # Under ACP this value is a placeholder, not an identity: the spec
-          # makes the *agent* mint the session id, so `session/new` proposes
-          # nothing and the id that comes back overwrites this one (see the
-          # `{:acp, ref, {:session, id}}` handler). What the row still buys is
-          # the `mode` decision above — a persisted id means "a turn has
-          # happened", which is what picks `session/resume` or `session/load`
-          # over `session/new`. It used to buy gemini's legacy `--resume` the
-          # same signal; that argv is gone with #941.
-          new_id = Ecto.UUID.generate()
-          {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: new_id})
-          new_id
-
-        existing ->
-          existing
-      end
-
-    {mode, runtime_session_id}
+    # A placeholder chooses run/resume, not ACP identity. Preparing even that
+    # placeholder must remain tied to the admitted turn across cancellation.
+    case Conversations._unsafe_set_turn_session(turn, id) do
+      {:ok, %{applied: true}} -> {:ok, {mode, id}}
+      {:ok, %{applied: false}} -> {:error, :execution_fenced}
+      {:error, _} = error -> error
+    end
   end
 
   @doc """
@@ -1360,11 +1342,7 @@ defmodule Fountain.Conversations.TurnMachine do
     # without this it stays "running" in the API and UI until some later turn
     # completes, even though nothing is executing. The :exit and :interrupt
     # handlers both do the same reset.
-    failed_conv = Conversations._unsafe_get_conversation!(conversation_id)
-
-    if failed_conv.status == "running" do
-      {:ok, _} = Conversations.update_conversation(failed_conv, %{status: "idle"})
-    end
+    {:ok, _} = Conversations._unsafe_idle_after_turn(turn)
 
     # The turn never started; close the span we just opened so it doesn't leak.
     if exit_code, do: OpenTelemetry.Tracer.set_attribute("exit_code", exit_code)
@@ -1483,6 +1461,52 @@ defmodule Fountain.Conversations.TurnMachine do
     })
 
     :ok
+  end
+
+  @doc "Persist a worker session report only while its exact turn remains current."
+  def accept_runtime_session(%{current_turn: %{} = turn} = state, id) do
+    case Conversations._unsafe_set_turn_session(turn, id) do
+      {:ok, %{applied: true}} -> %{state | runtime_session_id: id}
+      _ -> state
+    end
+  end
+
+  def accept_runtime_session(state, _id), do: state
+
+  @doc "Clear a worker's lost session through the same generation fence as session reports."
+  def forget_turn_session(%{current_turn: %{} = turn} = state, reason, detail) do
+    case Conversations._unsafe_set_turn_session(turn, nil) do
+      {:ok, %{applied: true}} ->
+        publish_stage(state.conversation_id, "session", "done", %{
+          turn_id: turn.id,
+          event: "reset",
+          reason: reason,
+          detail: detail
+        })
+
+        %{state | runtime_session_id: nil}
+
+      _ ->
+        state
+    end
+  end
+
+  def forget_turn_session(%{runtime_session_id: nil} = state, _reason, _detail), do: state
+
+  def forget_turn_session(state, reason, detail) do
+    case Conversations._unsafe_clear_idle_session(state.conversation_id, state.runtime_session_id) do
+      {:ok, %{applied: true}} ->
+        publish_stage(state.conversation_id, "session", "done", %{
+          event: "reset",
+          reason: reason,
+          detail: detail
+        })
+
+        %{state | runtime_session_id: nil}
+
+      _ ->
+        state
+    end
   end
 
   @doc """
