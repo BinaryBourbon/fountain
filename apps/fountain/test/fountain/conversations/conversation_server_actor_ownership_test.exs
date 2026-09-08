@@ -127,4 +127,32 @@ defmodule Fountain.Conversations.ConversationServerActorOwnershipTest do
     assert Repo.reload!(execution).state == "active"
     assert Process.alive?(original)
   end
+
+  test "a ready transition after the initial read selects reattach instead of fresh creation" do
+    stub_happy_sprite()
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+    {:ok, first_read} = Agent.start_link(fn -> true end)
+    reject(Managoat.Sandbox.Sprites, :create, 2)
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+    stub(Conversations, :_unsafe_get_sandbox, fn id ->
+      observed = Mimic.call_original(Conversations, :_unsafe_get_sandbox, [id])
+
+      if id == conv.sandbox_id && Agent.get_and_update(first_read, &{&1, false}) do
+        assert observed.status == "pending"
+        # The actor already read pending, but readiness commits before its
+        # claim transaction. Only the locked snapshot may choose provisioning.
+        observed |> change(status: "ready") |> Repo.update!()
+      end
+
+      observed
+    end)
+
+    {pid, _, :alive} = start_server(conv)
+    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    assert :sys.get_state(pid).sandbox_id == conv.sandbox_id
+    assert Repo.get!(Conversations.Sandbox, conv.sandbox_id).status == "ready"
+  end
 end

@@ -5,8 +5,10 @@ defmodule Fountain.Conversations.ActorOwnership do
   A claim identifies one process incarnation. Registry absence and elapsed time
   never release it: an untrappable process or node loss requires recovery to
   account for its outstanding operations before another actor can take over.
-  Normal termination releases only this incarnation. A committed holder transfer
-  supersedes the old machine's claim; its scoped callbacks then lose authority.
+  Normal termination retires only this incarnation; it does not establish remote
+  completion. A new actor cannot claim a starting machine or a previously claimed
+  pending machine. A committed holder transfer supersedes the old claim; its
+  scoped callbacks then lose authority.
   """
   import Ecto.Query
   alias Fountain.Repo
@@ -15,7 +17,8 @@ defmodule Fountain.Conversations.ActorOwnership do
   def start(state, conversation, sandbox, provision_deadline_ms) do
     id = Map.get(state, :actor_claim) || Ecto.UUID.generate()
 
-    with {:ok, _} <- claim(conversation.user_id, conversation.id, sandbox.id, id) do
+    with {:ok, {_claim, current, machine}} <-
+           claim_binding(conversation.user_id, conversation.id, sandbox.id, id) do
       if is_nil(Map.get(state, :actor_claim)) do
         Fountain.Conversations.ProvisionWatchdog.start(
           conversation.id,
@@ -25,11 +28,18 @@ defmodule Fountain.Conversations.ActorOwnership do
         )
       end
 
-      {:ok, state |> Map.put(:actor_claim, id) |> Map.put(:user_id, conversation.user_id)}
+      {:ok, state |> Map.put(:actor_claim, id) |> Map.put(:user_id, current.user_id), current,
+       machine}
     end
   end
 
   def claim(user_id, conversation_id, sandbox_id, id) do
+    with {:ok, {claim, _parent, _sandbox}} <-
+           claim_binding(user_id, conversation_id, sandbox_id, id),
+         do: {:ok, claim}
+  end
+
+  defp claim_binding(user_id, conversation_id, sandbox_id, id) do
     Repo.transaction(fn ->
       lock_machine(sandbox_id)
 
@@ -50,32 +60,49 @@ defmodule Fountain.Conversations.ActorOwnership do
             lock: "FOR UPDATE"
         )
 
-      cond do
-        existing && existing.user_id != user_id ->
-          Repo.rollback(:ownership_changed)
+      claim =
+        cond do
+          existing && existing.user_id != user_id ->
+            Repo.rollback(:ownership_changed)
 
-        existing && existing.id == id && existing.sandbox_id == sandbox_id ->
-          existing
+          existing && existing.id == id && existing.sandbox_id == sandbox_id ->
+            existing
 
-        existing && existing.sandbox_id == sandbox_id ->
-          Repo.rollback(:actor_owned)
+          existing && existing.sandbox_id == sandbox_id ->
+            Repo.rollback(:actor_owned)
 
-        true ->
-          if existing do
-            existing |> Ecto.Changeset.change(state: "superseded") |> Repo.update!()
-          end
+          true ->
+            if Repo.get(ActorClaim, id), do: Repo.rollback(:actor_retired)
+            assert_new_start!(sandbox)
 
-          if Repo.get(ActorClaim, id), do: Repo.rollback(:actor_retired)
+            if existing do
+              existing |> Ecto.Changeset.change(state: "superseded") |> Repo.update!()
+            end
 
-          Repo.insert!(%ActorClaim{
-            id: id,
-            user_id: user_id,
-            conversation_id: conversation_id,
-            sandbox_id: sandbox_id
-          })
-      end
+            Repo.insert!(%ActorClaim{
+              id: id,
+              user_id: user_id,
+              conversation_id: conversation_id,
+              sandbox_id: sandbox_id
+            })
+        end
+
+      {claim, parent, sandbox}
     end)
   end
+
+  # Machine locking serializes claims across every conversation on this sandbox.
+  # A stopped/superseded process can have left a provider operation behind; its
+  # history cannot be discarded to authorize another fresh provisioning attempt.
+  defp assert_new_start!(%Sandbox{status: "starting"}),
+    do: Repo.rollback(:provisioning_unresolved)
+
+  defp assert_new_start!(%Sandbox{status: "pending", id: id}) do
+    if Repo.exists?(from a in ActorClaim, where: a.sandbox_id == ^id),
+      do: Repo.rollback(:provisioning_unresolved)
+  end
+
+  defp assert_new_start!(_sandbox), do: :ok
 
   @doc "Check while holding the original machine/parent locks; nil supports non-actor writers only."
   def current?(conversation_id, sandbox_id, id) do

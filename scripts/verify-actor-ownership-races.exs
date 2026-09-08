@@ -9,7 +9,6 @@ fixture = fn ->
   user = Repo.insert!(%Fountain.Accounts.User{email: "actor-owner-#{Ecto.UUID.generate()}@example.test"})
   sandbox = Repo.insert!(%Sandbox{user_id: user.id, sprite_name: "local-actor-#{Ecto.UUID.generate()}", status: "pending"})
   {:ok, parent} = Conversations.create_conversation(%{user_id: user.id, sandbox_id: sandbox.id, runtime: "claude", status: "pending"})
-  {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "starting"})
   {user, sandbox, parent}
 end
 
@@ -34,6 +33,8 @@ end
 
 for first_operation <- [:publication, :handoff] do
   {user, sandbox, parent} = fixture.()
+  # Reattach handoff is valid only after provisioning has completed.
+  {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
   original = Ecto.UUID.generate()
   replacement = Ecto.UUID.generate()
   {:ok, _} = ActorOwnership.claim(user.id, parent.id, sandbox.id, original)

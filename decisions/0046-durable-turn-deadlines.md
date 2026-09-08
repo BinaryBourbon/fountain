@@ -846,3 +846,29 @@ prompt-free creation/attach/wake. Those entry points still need a shared launch
 protocol linked to actor claims and the provider journal. A stopped actor claim
 on a still-starting machine also needs reconciliation before any new creation.
 These are remaining integration gates, not reasons to deploy the current draft.
+
+
+## Unresolved provisioning after shutdown
+
+A real actor regression confirmed that a failed provisioning decision could roll
+back while the provider machine survived. Shutdown then marked its actor claim
+`stopped`; a successor treated the still-`starting` row as permission to destroy
+and recreate that machine. Local teardown had established no remote outcome.
+
+New startup claims now refuse `starting` machines, including legacy rows without
+claim history. A `pending` machine with any previous actor claim also requires
+reconciliation, even if that claim stopped, was superseded, or belonged to another
+conversation. The original machine lock serializes this check across parents.
+Rejected target startup cannot supersede an existing claim. Retired IDs remain
+retired, and an existing incarnation may still read its own active claim.
+
+Startup returns the parent and machine read under its claim lock. It cannot
+choose fresh provisioning using an earlier `pending` snapshot after the locked
+row became ready. Ready machines retain the ordinary reattach path. The legacy
+interrupted-attempt helper now refuses instead of destroying and rebuilding.
+
+This prevents unproved recreation; it does not implement recovery. A new pending
+row's launch provenance, ordinary provider creation identity, stopped/abandoned
+claim reconciliation and prompt-free launch still need the shared durable launch
+protocol. Legacy in-flight machines require reconciliation at rollout. Keep this
+stack draft until that path and live acceptance are demonstrated.

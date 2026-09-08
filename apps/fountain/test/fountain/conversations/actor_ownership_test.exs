@@ -15,7 +15,7 @@ defmodule Fountain.Conversations.ActorOwnershipTest do
 
   setup do
     user = insert_verified_user()
-    sandbox = insert_sandbox(user_id: user.id, status: "starting")
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, sandbox: sandbox)
     id = Ecto.UUID.generate()
     state = %{user_id: user.id, conversation_id: conv.id, sandbox_id: sandbox.id, actor_claim: id}
@@ -90,7 +90,7 @@ defmodule Fountain.Conversations.ActorOwnershipTest do
 
     assert {:ok, :stale} = ProvisionWatchdog._unsafe_expire(c.conv.id, c.sandbox.id, c.id)
     assert Repo.reload!(receipt).state == "queued"
-    assert Repo.reload!(c.sandbox).status == "starting"
+    assert Repo.reload!(c.sandbox).status == "ready"
     assert Repo.aggregate(LogEvent, :count) == 0
     assert ActorOwnership.current?(c.conv.id, c.sandbox.id, successor)
   end
@@ -172,5 +172,72 @@ defmodule Fountain.Conversations.ActorOwnershipTest do
     forged = %{c.state | user_id: Ecto.UUID.generate()}
     assert :ok = ActorOwnership.finish(forged, fn -> flunk("foreign teardown") end)
     assert Repo.reload!(owner).state == "active"
+  end
+
+  test "an unclaimed starting machine requires reconciliation, including legacy rows", c do
+    c.sandbox |> change(status: "starting") |> Repo.update!()
+    assert {:error, :provisioning_unresolved} = claim(c, c.id)
+    assert Repo.aggregate(ActorClaim, :count) == 0
+  end
+
+  for status <- ~w(pending starting) do
+    test "a stopped claim cannot authorize another create on a #{status} machine", c do
+      c.sandbox |> change(status: "pending") |> Repo.update!()
+      {:ok, owner} = claim(c, c.id)
+      c.sandbox |> change(status: unquote(status)) |> Repo.update!()
+      assert :ok = ActorOwnership.finish(c.state, fn -> :ok end)
+      assert Repo.reload!(owner).state == "stopped"
+      assert {:error, :actor_retired} = claim(c, c.id)
+      assert {:error, :provisioning_unresolved} = claim(c, Ecto.UUID.generate())
+      assert Repo.aggregate(ActorClaim, :count) == 1
+    end
+  end
+
+  test "a different parent cannot bypass a pending machine's claim history", c do
+    c.sandbox |> change(status: "pending") |> Repo.update!()
+    {:ok, _} = claim(c, c.id)
+    other = insert_conversation(user_id: c.user.id, sandbox: Repo.reload!(c.sandbox))
+
+    assert {:error, :provisioning_unresolved} =
+             ActorOwnership.claim(c.user.id, other.id, c.sandbox.id, Ecto.UUID.generate())
+
+    assert :ok = ActorOwnership.finish(c.state, fn -> :ok end)
+
+    assert {:error, :provisioning_unresolved} =
+             ActorOwnership.claim(c.user.id, other.id, c.sandbox.id, Ecto.UUID.generate())
+  end
+
+  test "a refused target cannot supersede the old actor's claim", c do
+    {:ok, owner} = claim(c, c.id)
+    target = insert_sandbox(user_id: c.user.id, status: "pending")
+    {:ok, moved} = Conversations.update_conversation(c.conv, %{sandbox_id: target.id})
+    target |> change(status: "starting") |> Repo.update!()
+
+    assert {:error, :provisioning_unresolved} =
+             ActorOwnership.claim(c.user.id, moved.id, target.id, Ecto.UUID.generate())
+
+    assert Repo.reload!(owner).state == "active"
+  end
+
+  test "the existing incarnation can re-read its claim after provisioning starts", c do
+    c.sandbox |> change(status: "pending") |> Repo.update!()
+    {:ok, owner} = claim(c, c.id)
+    c.sandbox |> change(status: "starting") |> Repo.update!()
+    assert {:ok, replay} = claim(c, c.id)
+    assert replay.id == owner.id
+    assert {:error, :actor_owned} = claim(c, Ecto.UUID.generate())
+  end
+
+  test "startup returns the rows authorized under lock instead of stale pending snapshots", c do
+    stale = %{c.sandbox | status: "pending"}
+    c.conv |> change(title: "Current parent") |> Repo.update!()
+
+    assert {:ok, claimed, parent, sandbox} =
+             ActorOwnership.start(c.state, c.conv, stale, 30_000)
+
+    assert claimed.actor_claim == c.id
+    assert parent.title == "Current parent"
+    assert sandbox.status == "ready"
+    assert sandbox.id == stale.id
   end
 end

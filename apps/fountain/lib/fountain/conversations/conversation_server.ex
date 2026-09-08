@@ -610,8 +610,15 @@ defmodule Fountain.Conversations.ConversationServer do
              sandbox,
              @provision_deadline_ms
            ) do
-        {:ok, claimed} -> provision_claimed(claimed, conv, sandbox)
-        _ -> {:stop, :normal, state}
+        {:ok, claimed, current, machine} ->
+          provision_claimed(claimed, current, machine)
+
+        {:error, :provisioning_unresolved} ->
+          Logger.warning("conv #{conv.id}: startup requires provisioning reconciliation")
+          {:stop, :normal, state}
+
+        _ ->
+          {:stop, :normal, state}
       end
     end
   end
@@ -781,10 +788,8 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp do_fresh_provision_inner(state, conv, sandbox, agent, env, secrets) do
-    # The row only ever becomes `starting` right here, so finding it already
-    # `starting` means an earlier attempt was interrupted mid-provision — a
-    # deploy or a Horde rebalance killed the server while it was blocked in
-    # this function. The sprite it was building is most likely still there.
+    # Startup supplies the snapshot read under its claim lock. A restarted
+    # actor cannot treat an interrupted provision as permission to recreate it.
     context = ProvisionContext.new(conv, sandbox, state.actor_claim)
     interrupted? = sandbox.status == "starting"
 
@@ -795,7 +800,7 @@ defmodule Fountain.Conversations.ConversationServer do
       "provision",
       "started",
       if(interrupted?,
-        do: %{retry: "an earlier attempt was interrupted; rebuilding the sandbox"},
+        do: %{recovery_required: true},
         else: %{}
       )
     )
