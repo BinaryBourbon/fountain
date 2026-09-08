@@ -271,6 +271,48 @@ This layer still does not fence every conversation/session metadata mutation or
 untagged lifecycle event. Sandbox transfer, parking, replacement and incarnation
 safety remain separate activation gates. Public controls remain disabled.
 
+## Parent generations and recovery
+
+The next prepared layer fixes a reproduced stale callback: after cancellation
+and successor admission, the old `TurnMachine.finish` could still mark the parent
+idle while the successor's turn and journal remained running. Parent writes now
+lock the parent, journal and turn, check the latest turn, and read the deadline
+after the locks. Ended turns cannot revive failed or terminated parents.
+
+Session reports, session preparation, lost-session reports and pre-start failures
+use the same generation check. Actor session state changes only when persistence
+was accepted. A legacy idle peer may clear only its unchanged session with no
+running turn or bounded execution history. Explicit wake/provisioning session
+resets remain part of the pending sandbox lifecycle audit.
+
+Admission commits running parent status with the turn and optional journal;
+launch no longer writes through a stale parent snapshot. Autonomous admission
+also commits status before usage records and sidebar notifications. Failed
+admission rolls the change back, and terminated/failed parents refuse admission.
+
+Orphan recovery now takes parent/journal/turn locks in the same order as
+cancellation and usage. It retires execution before recovery writes, preserves
+unknown spawn intent and deadline outcomes, and cannot idle a successor. The
+unknown end is marked `orphaned_at`; it is not provider-exit or billing evidence.
+A changed original binding refuses recovery. Audits and sidebar notifications
+remain after commit.
+
+Two real-actor tests stop callbacks after dispatch but before persistence, then
+cancel and admit a successor. Completion and session callbacks cannot alter that
+successor. Provider cleanup acknowledgments in those tests are synthetic. Public
+controls remain disabled pending sandbox transfer/park/reset/incarnation safety,
+released provider identity support and live acceptance.
+
+Full precommit passes **4,755 tests and 6 doctests, zero failures**. The focused
+suite passes 138 tests, including 27 new regressions. Eighty new independent
+PostgreSQL races cover parent idling/admission, session/cancellation, recovery/usage
+and recovery/cancellation. Four delayed-lock cases exercise session and recovery
+writers; twenty earlier deadline races also pass. No provider operations occur.
+Observed race schedules, source/log hashes and corrected validation failures are
+recorded in `decisions/evidence/turn-parent-fences.json`. The final full gate also
+verifies the explicit legacy webhook call restored after the catalogue check
+caught its loss from the source scanner; event names and assertions are unchanged.
+
 ## Durable deadline events
 
 The prepared event layer passes full precommit: 4,682 tests and 6 doctests,

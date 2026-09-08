@@ -319,16 +319,14 @@ defmodule Fountain.Conversations.Connection do
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
 
     result =
-      Fountain.Conversations.ExecutionGuard._unsafe_autonomous_turn(conversation_id, fn ->
-        Conversations._unsafe_create_turn(%{
-          conversation_id: conv.id,
-          turn_number: turn_number,
-          prompt: "(background task follow-up)",
-          origin: "autonomous",
-          status: "running",
-          started_at: now()
-        })
-      end)
+      Conversations._unsafe_create_autonomous_turn(%{
+        conversation_id: conv.id,
+        turn_number: turn_number,
+        prompt: "(background task follow-up)",
+        origin: "autonomous",
+        status: "running",
+        started_at: now()
+      })
 
     case result do
       {:ok, turn} -> start_autonomous_turn(conv, turn, user_id)
@@ -347,8 +345,6 @@ defmodule Fountain.Conversations.Connection do
       turn_number: turn.turn_number,
       origin: "autonomous"
     })
-
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
     {turn, turn_span, Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")}
   end

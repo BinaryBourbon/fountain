@@ -31,6 +31,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
       lock_sandbox(sandbox_id)
       conv = lock_parent(conv_id) || Repo.rollback(:not_found)
       if conv.sandbox_id != sandbox_id, do: Repo.rollback(:ownership_changed)
+      if conv.status in ["terminated", "failed"], do: Repo.rollback(:not_running)
       if open_execution?(conv.id), do: Repo.rollback(:execution_fenced)
 
       user = Repo.get!(Fountain.Accounts.User, conv.user_id)
@@ -89,6 +90,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         end
       end
 
+      conv |> Conversation.changeset(%{status: "running"}) |> Repo.update!()
       {turn, nil, nil}
     end)
   end
@@ -97,6 +99,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
   def _unsafe_autonomous_turn(conversation_id, writer) do
     transaction(fn ->
       conv = lock_parent(conversation_id) || Repo.rollback(:not_found)
+      if conv.status in ["terminated", "failed"], do: Repo.rollback(:not_running)
       user = Repo.get!(Fountain.Accounts.User, conv.user_id)
 
       case ExecutionLimits.for_new_turn(
@@ -111,8 +114,12 @@ defmodule Fountain.Conversations.ExecutionGuard do
       if open_execution?(conversation_id), do: Repo.rollback(:execution_fenced)
 
       case writer.() do
-        {:ok, turn} -> {turn, nil, nil}
-        {:error, reason} -> Repo.rollback(reason)
+        {:ok, turn} ->
+          conv |> Conversation.changeset(%{status: "running"}) |> Repo.update!()
+          {turn, nil, nil}
+
+        {:error, reason} ->
+          Repo.rollback(reason)
       end
     end)
   end
@@ -335,6 +342,121 @@ defmodule Fountain.Conversations.ExecutionGuard do
     with_execution(id, fn execution ->
       complete(execution, status, Keyword.get(opts, :now, DateTime.utc_now()))
     end)
+  end
+
+  @doc "Serialize a turn's parent update with admission and retirement; callbacks only write rows."
+  def _unsafe_write_parent(%Turn{} = observed, mode, writer) when mode in [:idle, :session] do
+    transaction(fn ->
+      conv = lock_parent(observed.conversation_id) || Repo.rollback(:not_found)
+      execution = lock_execution_by_turn(observed.id)
+      turn = lock_turn(observed.id) || Repo.rollback(:turn_missing)
+      if turn.conversation_id != conv.id, do: Repo.rollback(:ownership_changed)
+
+      {execution, turn, changed, event} = parent_execution(execution, turn)
+
+      allowed =
+        latest_turn?(conv.id, turn.id) and parent_write_allowed?(conv, turn, execution, mode)
+
+      if allowed do
+        case writer.(conv) do
+          {:ok, updated} -> {%{applied: true, conversation: updated}, changed, event}
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      else
+        {%{applied: false, conversation: conv}, changed, event}
+      end
+    end)
+  end
+
+  @doc "Retire an orphan's execution before recovery writes, in parent/journal/turn lock order."
+  def _unsafe_recover_turn(%Turn{} = observed, writer) do
+    transaction(fn ->
+      conv = lock_parent(observed.conversation_id) || Repo.rollback(:not_found)
+      execution = lock_execution_by_turn(observed.id)
+      turn = lock_turn(observed.id) || Repo.rollback(:turn_missing)
+      if turn.conversation_id != conv.id, do: Repo.rollback(:ownership_changed)
+
+      if execution && not cleanup_binding?(execution), do: Repo.rollback(:ownership_changed)
+      running? = turn.status == "running"
+      {turn, changed, event} = retire_orphan(execution, turn)
+
+      if running? do
+        result = writer.(turn, conv, latest_turn?(conv.id, turn.id), not is_nil(execution))
+        {result, changed, event}
+      else
+        {:noop, changed, event}
+      end
+    end)
+  end
+
+  defp retire_orphan(nil, turn), do: {turn, nil, nil}
+
+  defp retire_orphan(execution, turn) do
+    status = if turn.status == "running", do: "interrupted", else: turn.status
+    {decision, changed, event} = complete(execution, status, DateTime.utc_now())
+    {decision.turn, changed, event}
+  end
+
+  defp latest_turn?(conv_id, turn_id) do
+    Repo.one(
+      from t in Turn,
+        where: t.conversation_id == ^conv_id,
+        order_by: [desc: t.turn_number],
+        limit: 1,
+        select: t.id
+    ) == turn_id
+  end
+
+  @doc "An idle legacy connection may clear only its unchanged session, before any successor starts."
+  def _unsafe_clear_idle_session(conv_id, expected, writer) do
+    transaction(fn ->
+      conv = lock_parent(conv_id) || Repo.rollback(:not_found)
+
+      running? =
+        Repo.exists?(
+          from t in Turn, where: t.conversation_id == ^conv_id and t.status == "running"
+        )
+
+      bounded? = Repo.exists?(from e in TurnExecution, where: e.conversation_id == ^conv_id)
+
+      if conv.status in ["running", "idle"] and conv.runtime_session_id == expected and
+           not running? and not bounded? do
+        case writer.(conv) do
+          {:ok, updated} -> {%{applied: true, conversation: updated}, nil, nil}
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      else
+        {%{applied: false, conversation: conv}, nil, nil}
+      end
+    end)
+  end
+
+  defp parent_execution(nil, turn), do: {nil, turn, nil, nil}
+
+  defp parent_execution(execution, turn) do
+    now = DateTime.utc_now()
+
+    if execution.state == "active" and current_binding?(execution) and
+         DateTime.compare(now, execution.deadline_at) != :lt do
+      {decision, changed, event} = expire(execution, now)
+      {decision.execution, decision.turn, changed, event}
+    else
+      {execution, turn, nil, nil}
+    end
+  end
+
+  defp parent_write_allowed?(conv, turn, execution, mode) do
+    bound? = is_nil(execution) or current_binding?(execution)
+
+    case mode do
+      :idle ->
+        bound? and conv.status == "running" and turn.status in @terminal_turns and
+          (is_nil(execution) or execution.state != "active")
+
+      :session ->
+        bound? and conv.status in ["running", "idle"] and turn.status == "running" and
+          (is_nil(execution) or execution.state == "active")
+    end
   end
 
   @doc "Serialize transcript writes with retirement; the callback must contain only database work."

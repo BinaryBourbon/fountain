@@ -432,6 +432,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
       row: row
     } do
       attach_telemetry([[:fountain, :turn, :completed]])
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
       marked = TurnMachine.mark_interrupted(m)
       assert marked.row == row
@@ -502,10 +503,11 @@ defmodule Fountain.Conversations.TurnMachineTest do
     end
 
     test "session_plan/2 runs fresh with a persisted placeholder, and continues an existing id",
-         %{conv: conv} do
-      assert {:run, id} = TurnMachine.session_plan(conv, nil)
+         %{conv: conv, row: row} do
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
+      assert {:ok, {:run, id}} = TurnMachine.session_plan(row, nil)
       assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == id
-      assert {:continue, "keep"} = TurnMachine.session_plan(conv, "keep")
+      assert {:ok, {:continue, "keep"}} = TurnMachine.session_plan(row, "keep")
     end
 
     test "command/7 is the ACP adapter with the sandbox's cwd, or the runtime's own argv",

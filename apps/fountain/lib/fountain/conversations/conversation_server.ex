@@ -1990,8 +1990,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     emit_turn_completed(state, turn.status)
 
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+    {:ok, _} = Conversations._unsafe_idle_after_turn(turn)
 
     {:noreply,
      %{
@@ -2535,19 +2534,14 @@ defmodule Fountain.Conversations.ConversationServer do
   defp apply_effect(state, :open_autonomous_turn), do: open_autonomous_turn(state)
   defp apply_effect(state, :arm_autonomous_quiet), do: arm_autonomous_quiet(state)
 
-  defp apply_effect(state, {:session_id, id}) do
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: id})
-    %{state | runtime_session_id: id}
-  end
+  defp apply_effect(state, {:session_id, id}),
+    do: TurnMachine.accept_runtime_session(state, id)
 
   # The row must stop naming a session that is not on the disk, or every later
   # turn resumes the same absent one. Re-read for the reason the clause above
   # re-reads it: what is written goes onto the row as it is now.
-  defp apply_effect(state, {:forget_runtime_session, reason, detail}) do
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    TurnMachine.forget_runtime_session(state, conv, reason, detail)
-  end
+  defp apply_effect(state, {:forget_runtime_session, reason, detail}),
+    do: TurnMachine.forget_turn_session(state, reason, detail)
 
   defp apply_effect(state, {:ask_permission, request_id, tool, options}),
     do: ask_permission(state, request_id, tool, options)

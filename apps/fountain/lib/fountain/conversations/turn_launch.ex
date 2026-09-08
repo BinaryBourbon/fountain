@@ -15,8 +15,38 @@ defmodule Fountain.Conversations.TurnLaunch do
   # Keep the legacy runtime fallback while it exists at this boundary. The
   # admission path proves conv.runtime is present; this is the same scoped
   # suppression carried by ConversationServer before extracting its launch.
-  @dialyzer {:nowarn_function, run: 8}
+  @dialyzer {:nowarn_function, launch: 8}
   def run(state, conv, turn, prompt, agent, images, acp?, output_writer) do
+    case TurnMachine.session_plan(turn, state.runtime_session_id) do
+      {:ok, plan} ->
+        launch(state, conv, turn, prompt, agent, images, output_writer, %{
+          acp?: acp?,
+          session_plan: plan
+        })
+
+      {:error, _} ->
+        session_plan_refused(state, turn)
+    end
+  end
+
+  defp session_plan_refused(state, turn) do
+    # ownership: the conversation actor supplied its already admitted turn.
+    Logger.warning("conv #{state.conversation_id}: runtime session preparation refused")
+    {:ok, _} = Conversations._unsafe_update_turn(turn, %{status: "failed"})
+    {:ok, _} = Conversations._unsafe_idle_after_turn(turn)
+    if state.turn_execution, do: Connection.close_bounded(state), else: state
+  end
+
+  defp launch(
+         state,
+         conv,
+         turn,
+         prompt,
+         agent,
+         images,
+         output_writer,
+         %{acp?: acp?, session_plan: {mode, runtime_session_id}}
+       ) do
     turn_number = turn.turn_number
 
     # Write image temp files to sprite. Only on the legacy path: ACP carries
@@ -24,10 +54,6 @@ defmodule Fountain.Conversations.TurnLaunch do
     # the sandbox first would be a round trip whose product nothing reads.
     image_paths =
       if acp?, do: [], else: Output.write_image_temp_files(state.handle, turn.id, images)
-
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
-
-    {mode, runtime_session_id} = TurnMachine.session_plan(conv, state.runtime_session_id)
 
     {cmd, args, build_opts} =
       TurnMachine.command(acp?, conv, agent, prompt, mode, runtime_session_id,
