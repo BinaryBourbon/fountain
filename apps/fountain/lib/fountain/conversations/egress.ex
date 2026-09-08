@@ -226,13 +226,24 @@ defmodule Fountain.Conversations.Egress do
   @spec prepare(String.t(), map(), Broker.bindings(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def prepare(conversation_id, brokered, bindings, opts) do
-    publish_stage(conversation_id, "broker", "started", %{
+    case Keyword.pop(opts, :provision_context) do
+      {%Fountain.Conversations.ProvisionContext{conversation_id: ^conversation_id} = context,
+       opts} ->
+        Fountain.Conversations.ProvisionContext.prepare_broker(context, brokered, bindings, opts)
+
+      {nil, opts} ->
+        prepare_unscoped(conversation_id, brokered, bindings, opts)
+    end
+  end
+
+  defp prepare_unscoped(context, brokered, bindings, opts) do
+    publish_stage(context, "broker", "started", %{
       keys: brokered |> Map.keys() |> Enum.sort()
     })
 
-    case Broker.prepare(conversation_id, brokered, bindings, opts) do
+    case Broker.prepare(context, brokered, bindings, opts) do
       {:ok, session} ->
-        publish_stage(conversation_id, "broker", "done", %{
+        publish_stage(context, "broker", "done", %{
           vault: session.vault,
           expires_at: session.expires_at
         })
@@ -240,7 +251,7 @@ defmodule Fountain.Conversations.Egress do
         {:ok, session}
 
       {:error, reason} ->
-        publish_stage(conversation_id, "broker", "failed", %{reason: inspect(reason)})
+        publish_stage(context, "broker", "failed", %{reason: inspect(reason)})
         {:error, reason}
     end
   end
@@ -427,11 +438,21 @@ defmodule Fountain.Conversations.Egress do
   end
 
   @doc "Install the broker's CA into the sandbox; nothing to install without a session."
-  @spec install_ca(session(), Managoat.Sandbox.Handle.t(), String.t()) :: :ok | {:error, term()}
+  @spec install_ca(
+          session(),
+          Managoat.Sandbox.Handle.t(),
+          Fountain.Conversations.ProvisionContext.target()
+        ) :: :ok | {:error, term()}
   def install_ca(nil, _handle, _conversation_id), do: :ok
 
   def install_ca(_session, handle, conversation_id),
     do: Provisioning.install_broker_ca(handle, conversation_id)
+
+  @doc "Revoke the native session minted by this worker; safe inside its outcome transaction."
+  def release_session(user_id, conversation_id, %{token: token}),
+    do: Broker.release_session(user_id, conversation_id, token)
+
+  def release_session(_user_id, _conversation_id, nil), do: :ok
 
   # Every session of the conversation goes when its sandbox does. Still off
   # the caller's path: deleting rows is local and cannot fail the way a call
@@ -449,7 +470,12 @@ defmodule Fountain.Conversations.Egress do
   end
 
   @doc "The network floor: the environment's policy, or the broker's when brokered."
-  @spec apply_policy(Managoat.Sandbox.Handle.t(), map() | nil, String.t(), boolean()) ::
+  @spec apply_policy(
+          Managoat.Sandbox.Handle.t(),
+          map() | nil,
+          Fountain.Conversations.ProvisionContext.target(),
+          boolean()
+        ) ::
           :ok | {:error, term()}
   def apply_policy(handle, env, conv_id, false),
     do: Provisioning.apply_network_policy(handle, env, conv_id)
@@ -465,7 +491,12 @@ defmodule Fountain.Conversations.Egress do
   restores a limited environment; unrestricted remains a no-op because the
   sandbox abstraction has no policy-reset operation.
   """
-  @spec reattach_policy(Managoat.Sandbox.Handle.t(), map() | nil, String.t(), String.t()) ::
+  @spec reattach_policy(
+          Managoat.Sandbox.Handle.t(),
+          map() | nil,
+          Fountain.Conversations.ProvisionContext.target(),
+          String.t()
+        ) ::
           :ok | {:error, term()}
   def reattach_policy(handle, env, conv_id, user_id) do
     brokered? = brokered?(user_id)
@@ -476,6 +507,6 @@ defmodule Fountain.Conversations.Egress do
   end
 
   defp publish_stage(conv_id, stage, status, meta) do
-    Fountain.Conversations.publish_stage(conv_id, stage, status, meta)
+    Fountain.Conversations.ProvisionContext.stage(conv_id, stage, status, meta)
   end
 end

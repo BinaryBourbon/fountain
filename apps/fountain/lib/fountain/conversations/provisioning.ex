@@ -194,7 +194,7 @@ defmodule Fountain.Conversations.Provisioning do
       cmds ->
         Fountain.Telemetry.span(
           [:packages],
-          %{conv_id: conv_id, commands: length(cmds)},
+          %{conv_id: Fountain.Conversations.ProvisionContext.id(conv_id), commands: length(cmds)},
           fn ->
             publish_stage(conv_id, "packages", "started", %{commands: length(cmds)})
 
@@ -308,7 +308,11 @@ defmodule Fountain.Conversations.Provisioning do
   this on its own — one environment is reachable from agents on different
   backends. Both facts are only known here, at launch (#935, #627).
   """
-  @spec check_network_policy_support(atom(), Environment.t() | nil, String.t()) ::
+  @spec check_network_policy_support(
+          atom(),
+          Environment.t() | nil,
+          Fountain.Conversations.ProvisionContext.target()
+        ) ::
           :ok | {:error, {:network_policy, :unsupported_by_backend}}
   def check_network_policy_support(_provider, nil, _conv_id), do: :ok
 
@@ -339,7 +343,12 @@ defmodule Fountain.Conversations.Provisioning do
   `limited` environment is not refused since gate 2: its `allowed_hosts` are
   enforced at the broker (`Fountain.Broker.network_for/1`).
   """
-  @spec check_broker_support(boolean(), atom(), Environment.t() | nil, String.t()) ::
+  @spec check_broker_support(
+          boolean(),
+          atom(),
+          Environment.t() | nil,
+          Fountain.Conversations.ProvisionContext.target()
+        ) ::
           :ok | {:error, {:broker, atom()} | {:broker, :unreachable, term()}}
   def check_broker_support(false, _provider, _env, _conv_id), do: :ok
 
@@ -375,14 +384,15 @@ defmodule Fountain.Conversations.Provisioning do
   (ADR 0019 §2). On a provider without `:network_policy` this is skipped,
   which `check_broker_support/4` only allows under `BROKER_ALLOW_UNENFORCED`.
   """
-  @spec apply_broker_floor(Handle.t(), String.t()) :: :ok | {:error, term()}
+  @spec apply_broker_floor(Handle.t(), Fountain.Conversations.ProvisionContext.target()) ::
+          :ok | {:error, term()}
   def apply_broker_floor(handle, conv_id) do
     host = Fountain.Broker.proxy_host()
 
     if Sandbox.supports?(handle, :network_policy) do
       Fountain.Telemetry.span(
         [:network_policy],
-        %{conv_id: conv_id, hosts: 1},
+        %{conv_id: Fountain.Conversations.ProvisionContext.id(conv_id), hosts: 1},
         fn ->
           publish_stage(conv_id, "network", "started", %{type: "broker", hosts: 1})
 
@@ -482,7 +492,8 @@ defmodule Fountain.Conversations.Provisioning do
   file is checked with `visudo -c` before it is installed, since a bad
   sudoers fragment disables sudo outright.
   """
-  @spec install_broker_ca(Handle.t(), String.t()) :: :ok | {:error, term()}
+  @spec install_broker_ca(Handle.t(), Fountain.Conversations.ProvisionContext.target()) ::
+          :ok | {:error, term()}
   def install_broker_ca(handle, conv_id) do
     path = Fountain.Broker.ca_path()
     staging = Fountain.Broker.ca_staging_path() <> "." <> Ecto.UUID.generate()
@@ -583,7 +594,7 @@ defmodule Fountain.Conversations.Provisioning do
 
     Fountain.Telemetry.span(
       [:network_policy],
-      %{conv_id: conv_id, hosts: length(hosts)},
+      %{conv_id: Fountain.Conversations.ProvisionContext.id(conv_id), hosts: length(hosts)},
       fn ->
         publish_stage(conv_id, "network", "started", %{type: "limited", hosts: length(hosts)})
 
@@ -627,7 +638,7 @@ defmodule Fountain.Conversations.Provisioning do
   def clone_repositories(handle, %Environment{repositories: repos}, secrets, sprite_env, conv_id) do
     Fountain.Telemetry.span(
       [:clone_repositories],
-      %{conv_id: conv_id, count: length(repos)},
+      %{conv_id: Fountain.Conversations.ProvisionContext.id(conv_id), count: length(repos)},
       fn ->
         publish_stage(conv_id, "clone", "started", %{count: length(repos)})
 
@@ -828,7 +839,10 @@ defmodule Fountain.Conversations.Provisioning do
   def run_setup_script(handle, %{setup_script: script} = environment, sprite_env, conv_id) do
     Fountain.Telemetry.span(
       [:setup_script],
-      %{conv_id: conv_id, script_size: byte_size(script)},
+      %{
+        conv_id: Fountain.Conversations.ProvisionContext.id(conv_id),
+        script_size: byte_size(script)
+      },
       fn ->
         publish_stage(conv_id, "setup", "started")
 
@@ -838,13 +852,7 @@ defmodule Fountain.Conversations.Provisioning do
                timeout: Map.get(environment, :setup_timeout_seconds, 120) * 1000
              ) do
           {:ok, output, code} ->
-            Conversations.log!(%{
-              conversation_id: conv_id,
-              kind: "output",
-              stream: "stdout",
-              stage: "setup",
-              data: output
-            })
+            log_output(conv_id, "setup", output)
 
             if code == 0 do
               publish_stage(conv_id, "setup", "done", %{exit_code: code})
@@ -957,24 +965,12 @@ defmodule Fountain.Conversations.Provisioning do
   end
 
   defp publish_stage(conv_id, stage, status, meta \\ %{}) do
-    Conversations.publish_stage(conv_id, stage, status, meta)
+    Fountain.Conversations.ProvisionContext.stage(conv_id, stage, status, meta)
   end
 
   # Stamp the output with the stage that was active when it was emitted
   # so the LiveView (and any API consumer) can group output under its
   # owning stage without inferring it from event interleaving.
-  defp log_output(conv_id, stage, output) when is_binary(output) and output != "" do
-    Conversations.log!(%{
-      conversation_id: conv_id,
-      kind: "output",
-      stream: "stdout",
-      stage: stage,
-      data: output
-    })
-    |> tap(fn ev ->
-      Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, ev})
-    end)
-  end
-
-  defp log_output(_conv_id, _stage, _), do: :ok
+  defp log_output(conv_id, stage, output),
+    do: Fountain.Conversations.ProvisionContext.output(conv_id, stage, output)
 end

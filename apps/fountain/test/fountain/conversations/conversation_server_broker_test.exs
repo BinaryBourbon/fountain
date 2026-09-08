@@ -198,7 +198,9 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       {pid, _ref, :alive} = start_server(conv)
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
       assert_receive {:environment_policy, %{"allowed_hosts" => ["example.com"]}, id}
-      assert id == conv.id
+      assert id.conversation_id == conv.id
+      assert id.sandbox_id == conv.sandbox_id
+      assert id.user_id == conv.user_id
     end
   end
 
@@ -399,7 +401,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       assert_receive {:spawned, _, _, _}, 2_000
     end
 
-    test "a failed session mint tears the sandbox down and releases the vault", %{
+    test "a failed session mint tears the sandbox down without revoking other sessions", %{
       user: user,
       agent: agent
     } do
@@ -426,8 +428,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       {_pid, _mon, :stopped} = start_server(conv)
 
       assert_receive :destroyed, 2_000
-      assert_receive {:released, conv_id}, 2_000
-      assert conv_id == conv.id
+      refute_received {:released, _}
       assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
     end
 

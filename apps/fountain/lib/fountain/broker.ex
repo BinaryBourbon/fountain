@@ -562,6 +562,11 @@ defmodule Fountain.Broker do
     end
   end
 
+  @doc "Revoke one owned session, including after brokerage has been disabled."
+  @spec release_session(String.t(), String.t(), String.t()) :: :ok
+  def release_session(user_id, conversation_id, token),
+    do: Native.release_session(user_id, conversation_id, token)
+
   @typedoc "One outbound request the broker handled for a conversation."
   @type egress_event :: %{
           id: integer(),

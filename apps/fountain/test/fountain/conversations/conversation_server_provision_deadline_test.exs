@@ -177,6 +177,234 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
   end
 
+  test "a late provisioning failure cannot fail or release a replacement worker" do
+    Application.put_env(:fountain, :provision_deadline_ms, 30_000)
+    stub_happy_sprite()
+    owner = self()
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :exec, fn _, command, args, _ ->
+      case {command, args} do
+        {"bash", ["-lc", "controlled-setup"]} ->
+          send(owner, {:old_setup_waiting, self()})
+
+          receive do
+            :fail_old_setup -> {:ok, "late setup output", 1}
+          after
+            5_000 -> raise "old setup barrier was not released"
+          end
+
+        _ ->
+          {:ok, "", 0}
+      end
+    end)
+
+    Mimic.stub(Fountain.Conversations.Egress, :release, fn _, id ->
+      send(owner, {:conversation_sessions_released, id})
+      :ok
+    end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
+      send(owner, {:machine_destroyed, handle.name})
+      :ok
+    end)
+
+    user = insert_verified_user()
+    env = insert_env(user_id: user.id, setup_script: "controlled-setup")
+    agent = insert_agent(user_id: user.id, runtime: "gemini", environment_id: env.id)
+
+    original =
+      insert_sandbox(user_id: user.id, agent_id: agent.id, environment_id: agent.environment_id)
+
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: original)
+
+    {:ok, pid} =
+      GenServer.start(ConversationServer,
+        conversation_id: conv.id,
+        sandbox_id: original.id,
+        runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+      )
+
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+    monitor = Process.monitor(pid)
+    assert_receive {:old_setup_waiting, ^pid}, 5_000
+    original = Repo.reload!(original)
+
+    replacement =
+      insert_sandbox(
+        user_id: user.id,
+        status: "ready",
+        agent_id: original.agent_id,
+        environment_id: original.environment_id,
+        vault_id: original.vault_id,
+        mode: original.mode
+      )
+
+    {:ok, moved} =
+      Conversations.update_conversation(conv, %{sandbox_id: replacement.id, status: "idle"})
+
+    {:ok, receipt} =
+      Fountain.Conversations.PromptDelivery.submit(user.id, moved.id, "replacement request", [])
+
+    {:ok, turn} =
+      Fountain.Conversations.PromptDelivery._unsafe_activate(moved.id, receipt.id, replacement.id)
+
+    send(pid, :fail_old_setup)
+    assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}, 5_000
+    assert Repo.reload!(moved).status == "running"
+    assert Repo.reload!(replacement).status == "ready"
+    assert Repo.reload!(turn).status == "running"
+    assert Repo.reload!(receipt).state == "claimed"
+    refute_received {:conversation_sessions_released, _}
+    refute_received {:machine_destroyed, _}
+
+    refute Repo.exists?(
+             from e in Fountain.Conversations.LogEvent,
+               where:
+                 e.conversation_id == ^conv.id and e.stage in ["setup", "provision"] and
+                   e.state == "failed"
+           )
+
+    refute Repo.exists?(
+             from e in Fountain.Conversations.LogEvent,
+               where: e.conversation_id == ^conv.id and e.kind == "output" and e.stage == "setup"
+           )
+  end
+
+  test "an unavailable failure decision retries without recreating or deleting the worker" do
+    Application.put_env(:fountain, :provision_deadline_ms, 30_000)
+    handle = stub_happy_sprite()
+    owner = self()
+    {:ok, available} = Agent.start_link(fn -> false end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _, _ ->
+      send(owner, :sprite_created)
+      {:ok, handle}
+    end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _ ->
+      send(owner, :sprite_destroyed)
+      :ok
+    end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _, _, _, _ ->
+      {:error, :offline_setup_failure}
+    end)
+
+    Mimic.stub(Fountain.Workers.WebhookDelivery, :enqueue, fn endpoint, payload ->
+      if payload["type"] == "conversation.provision.failed" and not Agent.get(available, & &1) do
+        send(owner, :failure_enqueue_unavailable)
+        {:error, :unavailable}
+      else
+        Mimic.call_original(Fountain.Workers.WebhookDelivery, :enqueue, [endpoint, payload])
+      end
+    end)
+
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+
+    {:ok, _} =
+      Fountain.Webhooks.create_endpoint(user.id, %{"url" => "https://example.test/hook"})
+
+    {:ok, receipt} =
+      Fountain.Conversations.PromptDelivery.submit(user.id, conv.id, "Review", [])
+
+    {:ok, pid} =
+      GenServer.start(ConversationServer,
+        conversation_id: conv.id,
+        sandbox_id: conv.sandbox_id,
+        runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+      )
+
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+    monitor = Process.monitor(pid)
+    assert_receive :sprite_created, 5_000
+    assert_receive :failure_enqueue_unavailable, 5_000
+    # Synchronize with the server after its failed transaction has rolled back.
+    assert :sys.get_state(pid).sandbox_id == conv.sandbox_id
+    assert Repo.reload!(conv).status == "pending"
+    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "starting"
+    assert Repo.reload!(receipt).state == "queued"
+    refute_received :sprite_created
+    refute_received :sprite_destroyed
+
+    Agent.update(available, fn _ -> true end)
+    assert_receive :sprite_destroyed, 5_000
+    assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}, 5_000
+    assert Repo.reload!(conv).status == "failed"
+    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "failed"
+    assert Repo.reload!(receipt).failure_reason == "provisioning_failed"
+    refute_received :sprite_created
+    refute_received :sprite_destroyed
+
+    assert Repo.aggregate(
+             from(e in Fountain.Conversations.LogEvent,
+               where:
+                 e.conversation_id == ^conv.id and e.stage == "provision" and e.state == "failed"
+             ),
+             :count
+           ) == 1
+  end
+
+  test "broker stage failure rolls back the token and retains the created machine for cleanup" do
+    Application.put_env(:fountain, :provision_deadline_ms, 30_000)
+    handle = stub_happy_sprite()
+    owner = self()
+    Mimic.stub(Fountain.Conversations.Egress, :brokered?, fn _ -> true end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :check_broker_support, fn _, _, _, _ ->
+      :ok
+    end)
+
+    Mimic.stub(Fountain.Broker, :prepare, fn id, brokered, bindings, opts ->
+      Fountain.Broker.Native.prepare(id, brokered, bindings, opts)
+    end)
+
+    Mimic.stub(Fountain.Workers.WebhookDelivery, :enqueue, fn _, _ -> {:error, :unavailable} end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _, _ ->
+      send(owner, :sprite_created)
+      {:ok, handle}
+    end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn destroyed ->
+      assert destroyed == handle
+      send(owner, :sprite_destroyed)
+      :ok
+    end)
+
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+
+    {:ok, _} =
+      Fountain.Webhooks.create_endpoint(user.id, %{
+        "url" => "https://example.test/hook",
+        "event_types" => ["conversation.broker.done"]
+      })
+
+    {:ok, receipt} =
+      Fountain.Conversations.PromptDelivery.submit(user.id, conv.id, "Review", [])
+
+    {:ok, pid} =
+      GenServer.start(ConversationServer,
+        conversation_id: conv.id,
+        sandbox_id: conv.sandbox_id,
+        runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+      )
+
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+    monitor = Process.monitor(pid)
+    assert_receive :sprite_created, 5_000
+    assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}, 5_000
+    assert_received :sprite_destroyed
+    refute_received :sprite_created
+    refute_received :sprite_destroyed
+    assert Repo.reload!(conv).status == "failed"
+    assert Repo.reload!(receipt).failure_reason == "provisioning_failed"
+    assert Repo.aggregate(Fountain.Broker.Native.Session, :count) == 0
+  end
+
   test "fresh wake waits for its binding before credentials and queues its prompt after commit" do
     Application.put_env(:fountain, :provision_deadline_ms, 30_000)
     stub_happy_sprite()

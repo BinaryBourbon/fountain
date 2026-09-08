@@ -24,6 +24,7 @@ defmodule Fountain.Webhooks.EventsTest do
     "lib/fountain/conversations/conversation_server.ex",
     "lib/fountain/conversations/reattachment.ex",
     "lib/fountain/conversations/provisioning.ex",
+    "lib/fountain/conversations/provision_context.ex",
     "lib/fountain/conversations/egress.ex",
     "lib/fountain/conversations/turn_machine.ex",
     "lib/fountain/conversations/pending.ex",
@@ -33,7 +34,7 @@ defmodule Fountain.Webhooks.EventsTest do
   ]
 
   # publish_stage(<anything>, "<stage>", "<status>"
-  @call_site ~r/publish_stage\(\s*[^,]+,\s*"([a-z_]+)",\s*"([a-z_]+)"/
+  @call_site ~r/(?:publish_stage|ProvisionContext.stage|record_stage!)\(\s*[^,]+,\s*(?:context,\s*)?"([a-z_]+)",\s*"([a-z_]+)"/
 
   defp app_dir do
     Application.app_dir(:fountain) |> Path.join("../../../../apps/fountain") |> Path.expand()

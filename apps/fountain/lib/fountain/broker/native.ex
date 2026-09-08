@@ -436,6 +436,10 @@ defmodule Fountain.Broker.Native do
   def release(conversation_id) when is_binary(conversation_id),
     do: Sessions.release(conversation_id)
 
+  @doc "Revoke one session matching tenant, conversation and token."
+  def release_session(user_id, conversation_id, token),
+    do: Sessions.release_session(user_id, conversation_id, token)
+
   @doc """
   The conversation's egress rows, newest first (gate 4, #1486). The same
   shape the Agent Vault backend answered with, `status`, `latency_ms` and

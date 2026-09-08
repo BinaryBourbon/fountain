@@ -651,9 +651,9 @@ independent PostgreSQL connections. Validation is recorded in
 `decisions/evidence/provision-ownership.json` for the earlier checkpoint and
 `decisions/evidence/prompt-delivery.json` for the receipt integration.
 
-This is a binding guard, not a durable actor lease. Same-machine actor epochs,
-normal provisioning failure publication, database-first wake ownership and
-complete accepted-prompt recovery remain unfinished. It does not establish full wake
+This is a binding guard, not a durable actor lease. Ordinary provisioning failures
+now use the scoped outcome transaction described below. Same-machine actor epochs,
+database-first wake ownership and complete accepted-prompt recovery remain unfinished. It does not establish full wake
 recovery or live provider acceptance. The lifecycle stack stays draft; execution
 controls and recovery stay disabled.
 
@@ -727,9 +727,8 @@ past its deadline on parent, receipt and turn locks. It also races legacy admiss
 against receipt activation, and actor-start failure against watchdog expiry. These
 local database checks do not prove live provider behavior.
 
-Still required: safe actor recovery after a lost startup, owned publication of
-ordinary provisioning-step failures, and complete restart/cancellation coverage
-through the actual entry points. Legacy raw actor callbacks remain for compatibility;
+Still required: safe actor recovery after a lost startup and complete
+restart/cancellation coverage through the actual entry points. Legacy raw actor callbacks remain for compatibility;
 current launch paths send receipt IDs. Same-machine actor epochs and uncertain-provider
 recovery remain separate integration gates. Local validation does not authorize
 production activation.
@@ -740,3 +739,42 @@ Opening images require nonblank prompt text. The previous creation path returned
 201 without storing or delivering images when text was absent. Creation now
 returns 422 before reserving a sandbox. Media-type tests include prompt text;
 the HTTP regression checks both the refusal and persistence before actor start.
+
+## Owned provisioning outcomes (integration in progress)
+
+A late setup callback previously released every broker session for its conversation,
+including a replacement worker's session. Helper stages also published through the
+conversation ID after its machine binding changed. A real actor regression reproduces
+the release bug; the existing parent update guard already rejected the stale row update.
+
+`ProvisionContext` snapshots the tenant, conversation, original machine and fresh or
+reattach phase. It locks the original machine and parent before saving setup output,
+stages or failure. Both tenant IDs and the current binding must still match.
+A transfer that commits first suppresses the old callback's output and outcome.
+
+An accepted failure commits the parent failure, queued-prompt refusal, stage events,
+notification jobs and revocation of only the worker's saved broker token together.
+Fresh provisioning fails its pending or starting machine before provider cleanup;
+a ready machine or active execution refuses that decision. Reattach failure leaves
+the machine and cotenant turns intact. An already retired original machine permits
+settling only its still-pending parent, without granting another cleanup operation.
+A reset idle conversation and its new prompt remain protected.
+
+A failed outcome transaction keeps the actor alive and retries the same decision.
+The actor test injects a failed webhook enqueue: the receipt stays queued, no second
+machine is created, and cleanup occurs once after persistence recovers. Native broker
+session minting and its stages now share the binding transaction too, so a failed
+notification enqueue cannot leave an unreturned live token. Stage notifications use
+the durable delivery job; saved output remains available through event reads.
+
+`scripts/verify-provision-context-races.exs` forces stage, output, failure and broker
+mint operations to wait behind a real transfer on separate PostgreSQL connections.
+The actor test also resumes the actual setup-script helper after replacement admission
+and checks that its output and failure cannot affect the running replacement.
+Validation is recorded in `decisions/evidence/provision-context.json`.
+
+This does not establish same-machine actor ownership, safe recovery of a lost actor,
+or conditional provider deletion. Cleanup still uses the existing sandbox-operation
+path after the failure commits; unmanaged provider identity and uncertain operation
+recovery remain integration gates. The lifecycle stack stays draft and disabled
+pending those checks and live acceptance.

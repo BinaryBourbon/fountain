@@ -146,6 +146,21 @@ defmodule Fountain.Broker.Native.Sessions do
     end
   end
 
+  @doc "Revoke one worker's token without touching a replacement's sessions."
+  def release_session(user_id, conversation_id, token)
+      when is_binary(user_id) and is_binary(conversation_id) and is_binary(token) do
+    token_hash = hash(token)
+
+    Repo.delete_all(
+      from s in Session,
+        where:
+          s.user_id == ^user_id and s.conversation_id == ^conversation_id and
+            s.token_hash == ^token_hash
+    )
+
+    :ok
+  end
+
   @doc "Delete every session of a conversation. Its tokens stop working at once."
   @spec release(String.t()) :: :ok
   def release(conversation_id) when is_binary(conversation_id) do
