@@ -1083,3 +1083,44 @@ or production readiness. Node-loss reconciliation, provider work before
 handoff, complete legacy park/resume serialization, provider identity links,
 conditional deletion and live acceptance remain rollout gates. The stack stays
 draft and undeployed; execution controls and provider recovery remain disabled.
+
+
+## Startup expiry after actor loss (integration in progress)
+
+The local provision watchdog ends when its actor dies. Previously, a saved
+startup could remain `starting` past its deadline after that loss. The supervised
+execution deadline coordinator now scans due startup records independently of
+actor mailboxes and local watchdogs. Restart recovers work from those records;
+no launch or provider operation is replayed.
+
+Startup expiry has a separate eight-task pool, independent of turn expiry and
+provider termination. Each task has the coordinator's existing hard timeout,
+which survives coordinator loss. Scanning resumes only with available capacity
+and advances past dispatched attempts. A repeatedly blocked row cannot keep the
+cursor at the front while later due startups wait. An empty page wraps the
+cursor; the cursor itself carries no authority and may reset on restart.
+
+The scan filters the original tenant, parent, machine and active actor binding.
+Expiry then rechecks those identities and the current time under the existing
+locks. Concurrent coordinators and the original watchdog commit one outcome and
+one failure event. Failed notification enqueue rolls the decision back; a later
+scan can retry without resetting the saved deadline. Completed or returned
+attempts are excluded, and a changed binding cannot authorize revocation of a
+successor's credentials.
+
+Local actor tests cover death during a blocked provider lookup, coordinator
+restart, duplicate expiry and progress with every provider-termination slot
+blocked. The PostgreSQL proof holds machine locks across eight expiry tasks,
+checks that a later startup still expires, kills the coordinator with tasks
+blocked, and restarts it after releasing the lock. The tasks time out without
+changing remote state; restarted expiry preserves the original deadlines and
+claims. See `decisions/evidence/startup-expiry-recovery.json`.
+
+This recovers the local expiry decision, not remote ownership resolution. The
+coordinator does not locate or kill actors by conversation registry entry. A
+surviving watchdog still stops its original PID after committed expiry. Machine
+claims and uncertain provider operations remain retained, including when the
+actor is gone. Distributed-node and live-provider recovery, provider work before
+handoff, full legacy park/resume serialization, provider identity links and
+conditional deletion remain integration gates. The stack remains draft and
+undeployed; execution controls and provider recovery remain disabled.

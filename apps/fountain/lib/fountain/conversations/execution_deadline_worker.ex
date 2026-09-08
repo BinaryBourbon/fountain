@@ -2,18 +2,20 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
   @moduledoc """
   Drives the execution journal independently of conversation mailboxes.
 
-  Expiration and termination have separate bounded task pools. A blocked provider
+  Turn expiry, startup expiry and termination have separate bounded task pools. A blocked provider
   call cannot occupy the slots that expire other turns. Every task has its own
   hard local timeout, including after this coordinator dies. Killing a local
   task says nothing about remote termination: the journal retains submitted
   intent, and recovery marks an abandoned attempt uncertain without replaying it.
+  Startup expiry scans saved outcomes after actor or coordinator loss; it revokes
+  only the original conversation's access and retains unresolved ownership.
 
   Public admission remains disabled until trusted identity and all lifecycle
   paths are integrated. This worker alone does not enable bounded execution.
   """
   use GenServer
 
-  alias Fountain.Conversations.ExecutionGuard
+  alias Fountain.Conversations.{ActorStartups, ExecutionGuard}
 
   @pool_size 8
   @batch_size 100
@@ -34,6 +36,7 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
     {:ok,
      %{
        jobs: %{},
+       startup_after: nil,
        interval: Keyword.get(opts, :interval_ms, 1_000),
        timeout: Keyword.get(opts, :job_timeout_ms, @job_timeout_ms),
        supervisor: Keyword.get(opts, :task_supervisor, Fountain.TaskSupervisor),
@@ -53,7 +56,7 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
         ExecutionGuard._unsafe_recover_submissions(cutoff)
       end)
 
-    {:noreply, state}
+    {:noreply, start_startup_scan(state)}
   end
 
   def handle_info({ref, result}, state) when is_reference(ref) do
@@ -66,6 +69,10 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
         state = %{state | jobs: jobs}
         state = start_candidates(state, :expiry, result.due)
         {:noreply, start_candidates(state, :termination, result.ready)}
+
+      {%{kind: :startup_scan}, jobs} ->
+        Process.demonitor(ref, [:flush])
+        {:noreply, start_startups(%{state | jobs: jobs}, result)}
 
       {_job, jobs} ->
         Process.demonitor(ref, [:flush])
@@ -103,6 +110,33 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
     }
   end
 
+  # Startup expiry has its own pool. Scan only when a slot is free, and advance
+  # past attempts actually dispatched so repeated lock failures cannot starve
+  # later rows. The cursor is scheduling state, never an ownership decision.
+  defp start_startup_scan(state) do
+    used = Enum.count(state.jobs, fn {_ref, job} -> job.kind == :startup_expiry end)
+
+    if used < @pool_size do
+      start_single(state, :startup_scan, fn ->
+        ActorStartups._unsafe_due(DateTime.utc_now(), @batch_size, state.startup_after)
+      end)
+    else
+      state
+    end
+  end
+
+  defp start_startups(state, ids) do
+    active = for {_ref, %{kind: :startup_expiry, id: id}} <- state.jobs, do: id
+    candidates = ids |> Enum.reject(&(&1 in active)) |> Enum.take(@pool_size - length(active))
+    cursor = List.last(candidates) || List.last(ids)
+
+    # ownership: the system scan selected saved startup IDs; recovery rechecks
+    # each immutable tenant/parent/machine/actor binding under its original locks.
+    Enum.reduce(candidates, %{state | startup_after: cursor}, fn id, state ->
+      start_job(state, :startup_expiry, id, fn -> ActorStartups._unsafe_recover(id) end)
+    end)
+  end
+
   defp start_single(state, kind, fun) do
     if Enum.any?(state.jobs, fn {_ref, job} -> job.kind == kind end),
       do: state,
@@ -110,7 +144,11 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
   end
 
   defp start_candidates(state, kind, ids) do
-    busy = MapSet.new(state.jobs, fn {_ref, job} -> job.id end)
+    busy =
+      MapSet.new(
+        for {_ref, %{kind: kind, id: id}} <- state.jobs, kind in [:expiry, :termination], do: id
+      )
+
     used = Enum.count(state.jobs, fn {_ref, job} -> job.kind == kind end)
 
     ids

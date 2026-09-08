@@ -75,6 +75,54 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorkerTest do
     Enum.each(rows, &await_state(&1.row.id, "stopped"))
   end
 
+  test "startup expiry progresses while every provider termination slot is blocked", c do
+    owner = self()
+    rows = for _ <- 1..8, do: execution(c.user, true)
+
+    worker(:startup_independent, fn _attempt ->
+      send(owner, {:blocked_provider, self()})
+      receive do: (:release -> :ok)
+    end)
+
+    processes =
+      for _ <- rows do
+        assert_receive {:blocked_provider, pid}, 2_000
+        pid
+      end
+
+    sandbox = insert_sandbox(user_id: c.user.id, status: "ready")
+    parent = insert_conversation(user_id: c.user.id, sandbox: sandbox, status: "idle")
+    id = Ecto.UUID.generate()
+
+    {:ok, claim} =
+      Fountain.Conversations.ActorOwnership.claim(c.user.id, parent.id, sandbox.id, id)
+
+    startup =
+      Repo.insert!(%Fountain.Conversations.ActorStartup{
+        id: id,
+        actor_claim_id: id,
+        user_id: c.user.id,
+        conversation_id: parent.id,
+        sandbox_id: sandbox.id,
+        deadline_at: DateTime.add(DateTime.utc_now(), -1)
+      })
+
+    assert Enum.reduce_while(1..100, false, fn _, _ ->
+             if Repo.reload!(startup).state == "expired",
+               do: {:halt, true},
+               else:
+                 (
+                   Process.sleep(20)
+                   {:cont, false}
+                 )
+           end)
+
+    assert Repo.reload!(claim).state == "active"
+    assert Enum.all?(processes, &Process.alive?/1)
+    Enum.each(processes, &send(&1, :release))
+    Enum.each(rows, &await_state(&1.row.id, "stopped"))
+  end
+
   test "two coordinators authorize one termination for the same execution", c do
     owner = self()
     fixture = execution(c.user, true)

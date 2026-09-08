@@ -86,6 +86,39 @@ defmodule Fountain.Conversations.ActorStartups do
           where: s.sandbox_id == ^sandbox_id and s.state in ["starting", "expired"]
       )
 
+  @doc "List due attempts for system recovery; this read grants no provider authority."
+  def _unsafe_due(now, limit, after_id \\ nil) do
+    query =
+      from s in ActorStartup,
+        join: a in ActorClaim,
+        on: a.id == s.actor_claim_id,
+        join: c in Conversation,
+        on: c.id == s.conversation_id,
+        join: m in Sandbox,
+        on: m.id == s.sandbox_id,
+        where:
+          s.state == "starting" and s.deadline_at <= ^now and a.state == "active" and
+            a.user_id == s.user_id and c.user_id == s.user_id and m.user_id == s.user_id and
+            a.conversation_id == c.id and a.sandbox_id == m.id and c.sandbox_id == m.id,
+        order_by: s.id,
+        limit: ^limit,
+        select: s.id
+
+    query = if after_id, do: where(query, [s], s.id > ^after_id), else: query
+    Repo.all(query)
+  end
+
+  @doc "Recover the saved attempt's expiry without locating, restarting or killing an actor."
+  def _unsafe_recover(id) do
+    case fetch(id) do
+      nil ->
+        {:ok, :stale}
+
+      startup ->
+        expire(startup.conversation_id, startup.sandbox_id, startup.actor_claim_id, startup.id)
+    end
+  end
+
   def complete(state), do: settle(state, "completed")
   def returned(state), do: settle(state, "returned")
 
