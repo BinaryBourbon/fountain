@@ -268,7 +268,16 @@ defmodule Fountain.Broker do
     "CLAUDE_CODE_OAUTH_TOKEN" => %{cred: :claude_code_oauth_token, hosts: ["api.anthropic.com"]},
     "ANTHROPIC_API_KEY" => %{cred: :anthropic_api_key, hosts: ["api.anthropic.com"]},
     "OPENAI_API_KEY" => %{cred: :openai_api_key, hosts: ["api.openai.com"]},
-    "GEMINI_API_KEY" => %{cred: :gemini_api_key, hosts: ["generativelanguage.googleapis.com"]}
+    "GEMINI_API_KEY" => %{cred: :gemini_api_key, hosts: ["generativelanguage.googleapis.com"]},
+    # The deployment's ChatGPT grant for the codex runtime (ADR 0047): the
+    # access token, which the sandbox holds only as this placeholder in its
+    # `auth.json`, substituted into the bearer on the Codex backend. No
+    # vendor prefix: codex never inspects the shape of an externally managed
+    # token.
+    "CODEX_CHATGPT_ACCESS_TOKEN" => %{
+      cred: :codex_chatgpt_access_token,
+      hosts: ["chatgpt.com"]
+    }
   }
 
   @doc "The env var names that carry inference credentials, and the credential each comes from."

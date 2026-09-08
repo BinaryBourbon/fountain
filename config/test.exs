@@ -143,6 +143,10 @@ config :fountain, :microsoft_oauth_client_secret, "microsoft-test-client-secret"
 config :fountain, :slack_oauth_client_id, "slack-test-client-id"
 config :fountain, :slack_oauth_client_secret, "slack-test-client-secret"
 config :fountain, :connections_req_options, plug: {Req.Test, Fountain.Connections.OAuth}
+# The ChatGPT grant for codex (ADR 0047): every call to auth.openai.com goes to
+# a Req.Test plug, so a test that forgets to stub it fails rather than dialling
+# out.
+config :fountain, :platform_chatgpt_req_options, plug: {Req.Test, Fountain.PlatformChatGPT.OAuth}
 # Discovery and the OAuth client refuse private hosts; the Req.Test stub
 # answers for any host, so the resolution check is off here (#1186).
 config :fountain, :connections_allow_private_hosts, true

@@ -110,7 +110,10 @@ defmodule FountainWeb.StartLive do
   defp needs_credential?(user_id, agent) do
     with {:ok, dek} <- Fountain.Crypto.load_tenant_key(user_id),
          {:ok, own} <- InferenceCredentials.decrypted_for_user(user_id, dek) do
-      match?({:error, :no_credential}, InferenceCredentials.select(agent.model, own))
+      match?(
+        {:error, :no_credential},
+        InferenceCredentials.select(agent.model, own, agent.runtime)
+      )
     else
       # A tenant key that will not load is a bigger problem than this banner,
       # and it is not this page's to report.

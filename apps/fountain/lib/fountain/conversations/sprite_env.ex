@@ -49,7 +49,7 @@ defmodule Fountain.Conversations.SpriteEnv do
   """
   @spec select_inference(map() | nil, map()) :: {:own | :platform, map()}
   def select_inference(agent, own_creds) do
-    case InferenceCredentials.select(agent && agent.model, own_creds) do
+    case InferenceCredentials.select(agent && agent.model, own_creds, agent && agent.runtime) do
       {:ok, source, creds} -> {source, creds}
       {:error, :no_credential} -> {:own, own_creds}
     end
@@ -95,8 +95,11 @@ defmodule Fountain.Conversations.SpriteEnv do
     conversation_id = Keyword.fetch!(opts, :conversation_id)
     {ca_defaults, proxy} = split_brokered(Keyword.get(opts, :brokered, []))
 
+    env_credentials = Keyword.fetch!(opts, :env_credentials)
+
     sprite_env =
-      (runtime_module.default_env(agent, Keyword.fetch!(opts, :env_credentials)) || []) ++
+      (runtime_module.default_env(agent, env_credentials) || []) ++
+        Fountain.Conversations.CodexChatGPT.env(runtime_module, env_credentials) ++
         CallbackKey.env(Keyword.fetch!(opts, :callback_token)) ++
         conversation_env(conversation_id) ++
         sandbox_id_env(Keyword.fetch!(opts, :sandbox_id)) ++

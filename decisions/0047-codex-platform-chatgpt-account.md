@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Run the codex runtime on the platform's ChatGPT account"
-description: "An admin signs the Fountain server in to ChatGPT once; the server keeps the rotating refresh token, the broker carries the access token to chatgpt.com, and a codex sandbox holds only a placeholder. Nothing here is built and none of the five G0 measurements has been taken."
+description: "An admin signs the Fountain server in to ChatGPT once; the server keeps the rotating refresh token, the broker carries the access token to chatgpt.com, and a codex sandbox holds only a placeholder. Built in #1755 (G1 to G3) with tests; none of the five G0 measurements has been taken and no live ChatGPT account has run a turn on it."
 tags: [inference, broker, codex, security, billing]
 status: draft
 adr: "0047"
@@ -13,12 +13,15 @@ stale_after: 2026-10-08
 
 # 0047 — Run the codex runtime on the platform's ChatGPT account
 
-**Status:** Proposed, 2026-09-08. **Nothing described here is built, and
-none of the measurements in [Measured](#measured) has been taken.** Every
-mechanism below is a plan until its gate lands; the gate that builds it
-removes its caveat here in the same PR. The PR that lands G0 fills the
-Measured block and, if measurement 2 fails, marks this ADR Superseded rather
-than proceeding to G1.
+**Status:** Proposed, 2026-09-08. **Built in #1755 with regression tests,
+out of the order the gates below prescribe: G1, G2 and G3 are in the code,
+and none of the measurements in [Measured](#measured) has been taken.** No
+ChatGPT account has signed the server in and no codex turn has run on the
+grant; every claim about what the auth server and the Codex backend accept
+rests on reading `openai/codex` on 2026-09-08, not on a request. The PR that
+runs G0 fills the Measured block, sets `verified`, and, if measurement 2
+fails, marks this ADR Superseded and reverts the grant path rather than
+leaving a door nothing can open.
 
 Amends [0038](0038-onboarding-first-reply.md) decision 3 (platform inference
 keys) with a second kind of platform credential, and
@@ -118,7 +121,8 @@ checked against `main` at `59c5ebc8` on 2026-09-08.
   `apps/fountain/mix.exs`) pipes `OPENAI_API_KEY` into
   `codex login --with-api-key`, because codex 0.118+ reads only
   `~/.codex/auth.json`. Changing it is a library release and a pin bump: two
-  PRs in two repositories.
+  PRs in two repositories, and the pin was mid-bump when this was built
+  (`~> 0.3.2` in `mix.exs`, 0.4.2 on hex). Decision 4 leaves it alone.
 - **Codex transport** (#1674). `Fountain.Conversations.CodexTransport`
   rewrites the spawn's `CODEX_CONFIG` to declare and select
   `fountain_openai_http` (`supports_websockets: false`,
@@ -190,11 +194,16 @@ A fifth credential atom, `:codex_chatgpt_access_token`, travels in the same
 map as the others. `Fountain.Broker`'s `@inference` table gains
 `"CODEX_CHATGPT_ACCESS_TOKEN" => %{cred: :codex_chatgpt_access_token, hosts: ["chatgpt.com"]}`,
 so `split_inference/2` brokers it exactly like the Claude OAuth token.
-`Managoat.Runtimes.Codex.default_env/2` exports
-`CODEX_CHATGPT_ACCESS_TOKEN` and the account id, and `prepare_sandbox/3`
-gains a branch: when that env var is present, write the file below instead
-of running `codex login --with-api-key`. The `id_token` is synthesised by
-Fountain from the stored claims with an empty signature segment, so the
+The library is not taught a second login. `Fountain.Conversations.CodexChatGPT`
+exports `CODEX_CHATGPT_ACCESS_TOKEN` beside the runtime's own `default_env/2`
+(`SpriteEnv.build/4`), and at provisioning
+`Provisioning.prepare_runtime_sprite/5` asks it first: a codex spawn carrying
+that variable gets the file below written by Fountain (`mkdir -p` and a
+`0600` write of `$CODEX_HOME/auth.json`) and the library's
+`prepare_sandbox/3` never runs; any other spawn takes the library path as
+today. The account id and the claims come from the stored row, so no second
+variable is needed. The `id_token` is synthesised by Fountain from the stored
+claims with an unsigned header and a placeholder signature segment, so the
 admin's real identity token and email never enter the sandbox. This
 credential is offered to brokered tenants only; a self-hosted runner refuses
 brokering, so a runner conversation on the codex runtime sees no ChatGPT
@@ -252,12 +261,15 @@ the transcript, the same failure shape a lapsed Connection has today.
 
 ### 6. Selection: tenant credential first, then the subscription for codex, then the platform API key
 
-`InferenceCredentials.select/2` keeps its rule that a tenant's own key
+`InferenceCredentials.select/3` keeps its rule that a tenant's own key
 always wins. For provider `openai` with no tenant credential, it takes the
-ChatGPT grant when the agent's runtime is `codex` and the grant is `active`,
-else the platform `OPENAI_API_KEY`. `select/2` currently takes only
-`(model, own_creds)`; the runtime is threaded in from its one caller. The
-origin stays `:platform`, so the ledger prices the turn and the daily
+ChatGPT grant when the agent's runtime is `codex` and the grant is `active`
+and refreshable, else the platform `OPENAI_API_KEY`. The runtime is the
+third argument, threaded from `SpriteEnv.select_inference/2` and the
+verified-landing banner; `credentials_for_provider/1` is untouched, because
+it names what a *tenant* may hold and no tenant holds this.
+`PlatformInference.gate/3` counts the grant as platform-served
+(`serves?/2`), so the daily ceiling applies. The origin stays `:platform`, so the ledger prices the turn and the daily
 ceiling counts it (0038 decision 3). The ceiling measures turn-hours, not
 the subscription's own five-hour and weekly windows; those are shared by
 every tenant on the grant, and when they trip codex reports it on the
@@ -266,8 +278,11 @@ transcript. No automatic fallback within a turn.
 ### 7. Audit records the grant's life, never a token
 
 `admin.platform_chatgpt.connected` (method, account id, email, plan),
-`admin.platform_chatgpt.disconnected`, and actor `system:platform_chatgpt`
-for `revoked` and `expired` with the server's reason code. Routine
+`admin.platform_chatgpt.disconnected`, `admin.platform_chatgpt.revoked`
+(the server's reason code) and `admin.platform_chatgpt.expired`. These are
+`admin_audit_events` rows, the privilege trail the platform keys use, which
+has no actor column: the two system events carry `"actor" =>
+"system:platform_chatgpt"` in their metadata and a nil `actor_user_id`. Routine
 refreshes are not audited, the same as Connections. Never a token, never a
 claim that is a secret, never inside a transaction (0013).
 
@@ -318,10 +333,19 @@ and a personal ChatGPT account, never `~/.codex`.
   the far side. The admin page, the audit trail and the docs all gain a
   stateful row, and `system:platform_chatgpt` joins the closed actor
   vocabulary in 0013.
-- **The `@inference` contract (0019 decision 4) grows by one entry**, and the
-  managoat_runtimes library learns a second way to provision codex. Both
-  sides ship separately, so the pin bump is the point at which the two
-  agree.
+- **The `@inference` contract (0019 decision 4) grows by one entry**, and
+  Fountain, not the library, now writes a codex `auth.json`. The library's
+  API-key login is untouched, so no release and no pin bump; the cost is
+  that `Fountain.Conversations.CodexChatGPT` and
+  `Managoat.Runtimes.Layout` must agree on where `$CODEX_HOME` is.
+- **A shared sandbox holds one `auth.json`.** Several conversations share a
+  persistent sandbox (0023). One on the API-key path rewrites the file with
+  `codex login --with-api-key`; one on the grant rewrites it with the
+  placeholder file. The API-key provider reads its key from the env
+  (`env_key`) and is unaffected either way; the grant's provider reads the
+  file, so a grant conversation provisioned before an API-key one on the
+  same sandbox fails at the backend until its next provision. Measurement 2
+  is where this is first seen live.
 - **Codex gives up its built-in-only routes** on this path: guardian
   endpoint, remote compaction, token budget, and the encrypted function-call
   args a non-openai provider strips. Measurement 2 is what tells us whether
@@ -341,15 +365,17 @@ and a personal ChatGPT account, never `~/.codex`.
 
 ## Build order
 
-One PR per gate, each green on `CI required`, each with its done-when
-evidence in the description.
+One PR per gate was the plan. #1755 landed the ADR with G1, G2 and G3 built
+and tested, and G0 not run; the done-when evidence for G2 (a real sandbox, a
+real egress log row, a real ledger row) is therefore still owed, and so is
+G0's.
 
 | Gate | Builds | Done when |
 |---|---|---|
 | **G0** | The five measurements above, in a throwaway `CODEX_HOME` and a dev broker. Fills the Measured block. | A codex turn completes with the placeholder in the sandbox and the bearer only at the proxy, and the lifetimes are written into this record. |
-| **G1** | Migration and schema, `Fountain.PlatformChatGPT` (`connect_from_auth_json/2`, `access_token/0`, `disconnect/1`, `status/0`), the keepalive worker, the paste-to-connect row on `/admin/inference`, the audit events, a section in `docs/configuration.md`. | A pasted grant survives a forced refresh and the keepalive, `admin_inference_live_test.exs` covers all four row states, and a deliberately reused refresh token flips the row to `revoked` with `refresh_token_reused`. |
-| **G2** | The `@inference` entry, the runtime-aware `select/2`, the extra source in `reread_secrets/1`, the second provider shape in `CodexTransport`, and the `default_env/2` + `prepare_sandbox/3` branch in managoat_runtimes (library release, pin bump). | A tenant with no OpenAI key runs a codex agent on the grant in a real sandbox, the transcript shows a reply to a tool-calling prompt, the egress log shows only `chatgpt.com` injected for that conversation, and the ledger row for the turn says `:platform`. |
-| **G3** | Device-code Connect in a supervised task (`Task.Supervisor.start_child(Fountain.TaskSupervisor, ...)`, never `Task.async`), workspace-token paste (decision 8), revocation UX on the row. | An admin connects with no laptop-side codex install. |
+| **G1** (built, #1755) | Migration and schema, `Fountain.PlatformChatGPT` (`connect_from_auth_json/2`, `access_token/0`, `disconnect/1`, `status/0`), the keepalive worker, the paste-to-connect row on `/admin/inference`, the audit events, a section in `docs/configuration.md`. | A pasted grant survives a forced refresh and the keepalive, `admin_inference_chatgpt_live_test.exs` covers all four row states, and a deliberately reused refresh token flips the row to `revoked` with `refresh_token_reused`. All three hold in the suite against a stubbed auth server. |
+| **G2** (built, #1755; live evidence owed) | The `@inference` entry, the runtime-aware `select/3`, the extra source in `reread_secrets/1`, the second provider shape in `CodexTransport`, and `Fountain.Conversations.CodexChatGPT` writing the sandbox file (no library change). | A tenant with no OpenAI key runs a codex agent on the grant in a real sandbox, the transcript shows a reply to a tool-calling prompt, the egress log shows only `chatgpt.com` injected for that conversation, and the ledger row for the turn says `:platform`. |
+| **G3** (built, #1755) | Device-code Connect in a supervised task (`Task.Supervisor.start_child(Fountain.TaskSupervisor, ...)`, never `Task.async`), workspace-token paste (decision 8), revocation UX on the row. | An admin connects with no laptop-side codex install. Holds in the suite against a stubbed device flow; measurement 4 is whether the real server accepts it. |
 
 ## Alternatives considered
 

@@ -330,16 +330,32 @@ defmodule Fountain.PlatformInference do
     3. has the deployment spent its day?
 
   Only a "yes" to all three refuses.
+
+  `runtime` is the agent's: a codex agent on an `openai` model may run on the
+  deployment's ChatGPT grant instead of a key (ADR 0047), which the ceiling
+  counts the same way.
   """
-  @spec gate(binary(), String.t() | nil) :: :ok | {:error, :platform_inference_unavailable}
-  def gate(user_id, model) when is_binary(user_id) do
+  @spec gate(binary(), String.t() | nil, String.t() | nil) ::
+          :ok | {:error, :platform_inference_unavailable}
+  def gate(user_id, model, runtime \\ nil) when is_binary(user_id) do
     provider = Managoat.Runtimes.Model.provider(model)
 
-    if key_for(provider) != :none and not Fountain.InferenceCredentials.has_own?(user_id, model) do
+    if serves?(provider, runtime) and not Fountain.InferenceCredentials.has_own?(user_id, model) do
       check_ceiling()
     else
       :ok
     end
+  end
+
+  @doc """
+  Whether this deployment would run a tenant with no credential of their own
+  on something of Fountain's for this provider and runtime: a platform key,
+  or the ChatGPT grant for codex.
+  """
+  @spec serves?(String.t() | nil, String.t() | nil) :: boolean()
+  def serves?(provider, runtime) do
+    key_for(provider) != :none or
+      (provider == "openai" and runtime == "codex" and Fountain.PlatformChatGPT.active?())
   end
 
   @doc """

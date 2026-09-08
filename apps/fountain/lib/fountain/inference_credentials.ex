@@ -244,15 +244,23 @@ defmodule Fountain.InferenceCredentials do
   agent with an `openai` model on an account that holds only an Anthropic key
   still exports that key for whatever else the sandbox does with it.
 
-  `own_creds` is the decrypted map `decrypted_for_user/2` returns, so this is
-  a pure function over it: no query, no decryption, and testable without a
-  tenant.
+  `own_creds` is the decrypted map `decrypted_for_user/2` returns; over it
+  this is a pure function, and testable without a tenant. The platform half
+  is one read.
+
+  `runtime` is the agent's (ADR 0047): for provider `openai` with no tenant
+  credential, a `codex` agent takes the deployment's ChatGPT grant
+  (`Fountain.PlatformChatGPT`) when it is active, under
+  `:codex_chatgpt_access_token`, before the platform `OPENAI_API_KEY`. The
+  grant is codex's own client speaking to its own backend; opencode against
+  an `openai/` model keeps needing a key. The origin is `:platform` either
+  way, so the ledger prices the turn and the daily ceiling counts it.
   """
-  @spec select(String.t() | nil, %{atom() => String.t()}) ::
+  @spec select(String.t() | nil, %{atom() => String.t()}, String.t() | nil) ::
           {:ok, :own, %{atom() => String.t()}}
           | {:ok, :platform, %{atom() => String.t()}}
           | {:error, :no_credential}
-  def select(model, own_creds) when is_map(own_creds) do
+  def select(model, own_creds, runtime \\ nil) when is_map(own_creds) do
     provider = Managoat.Runtimes.Model.provider(model)
     accepted = credentials_for_provider(provider)
 
@@ -264,12 +272,25 @@ defmodule Fountain.InferenceCredentials do
         {:ok, :own, own_creds}
 
       true ->
-        case Fountain.PlatformInference.key_for(provider) do
+        case platform_credential(provider, runtime) do
           {:ok, credential, key} -> {:ok, :platform, Map.put(own_creds, credential, key)}
           :none -> {:error, :no_credential}
         end
     end
   end
+
+  # The subscription first for codex, then the platform key (ADR 0047
+  # decision 6). A grant that is revoked, expired or fails to refresh is
+  # `:none` here and the key takes over — at the next conversation, not
+  # within a turn.
+  defp platform_credential("openai", "codex") do
+    case Fountain.PlatformChatGPT.credential() do
+      {:ok, token} -> {:ok, :codex_chatgpt_access_token, token}
+      :none -> Fountain.PlatformInference.key_for("openai")
+    end
+  end
+
+  defp platform_credential(provider, _runtime), do: Fountain.PlatformInference.key_for(provider)
 
   defp present?(creds, credential) do
     case Map.get(creds, credential) do

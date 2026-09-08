@@ -46,6 +46,10 @@ config :fountain, Oban,
        # credential; the notice window is days wide, so the hour is about
        # being read, not about precision.
        {"7 17 * * *", Fountain.Workers.SecretExpirySweeper},
+       # 04:29 UTC daily: renew the deployment's ChatGPT grant for codex if
+       # nobody has for PLATFORM_CHATGPT_KEEPALIVE_DAYS (ADR 0047), so it
+       # never idles past the auth server's window. No-op when not connected.
+       {"29 4 * * *", Fountain.Workers.PlatformChatGPTKeepalive},
        {"31 3 * * *", Fountain.Workers.BrokerReaper},
        # Every minute: the tick for user-defined team schedules. Cheap — one
        # indexed query, usually empty — and a minute is the cron grain the
