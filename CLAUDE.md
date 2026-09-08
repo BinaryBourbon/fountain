@@ -431,6 +431,14 @@ build** on a security advisory unless it is acknowledged in `mix.exs`, and
 only retirements stay non-blocking (an upstream maintainer can retire a
 package at any moment, and that should not break unrelated work).
 
+`config/hex_advisories.exs` additionally acknowledges the incorrect Decimal
+CVE-2026-32686 finding only for the reviewed 3.1.1 Hex artifact, matching both
+checksums. Remove that acknowledgment when the EEF feed is corrected; changing
+the locked artifact drops it automatically. The exponent rejection and artifact
+matching regressions live in `hex_advisories_test.exs`.
+Evidence is in `decisions/evidence/decimal-advisory.json`; reproduce the public
+registry controls with `python3 scripts/verify-decimal-audit.py`.
+
 On `main`, `already-tested` can reuse a successful PR run's `tested-tree`
 artifact. That artifact records the actual checkout tree (normally GitHub's
 synthetic PR merge), and is uploaded only after `CI required` passes. A missing,
