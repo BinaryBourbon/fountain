@@ -1,9 +1,10 @@
 defmodule Fountain.Conversations.ActorStartup do
-  @moduledoc "One reconnect incarnation's immutable deadline and local startup outcome."
+  @moduledoc "One reconnect attempt's immutable deadline and local startup outcome."
   use Ecto.Schema
 
   @primary_key {:id, :binary_id, autogenerate: false}
   schema "actor_startups" do
+    field :actor_claim_id, :binary_id
     field :user_id, :binary_id
     field :conversation_id, :binary_id
     field :sandbox_id, :binary_id

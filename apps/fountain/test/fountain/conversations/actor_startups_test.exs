@@ -40,6 +40,7 @@ defmodule Fountain.Conversations.ActorStartupsTest do
     startup =
       Repo.insert!(%ActorStartup{
         id: id,
+        actor_claim_id: id,
         user_id: c.user.id,
         conversation_id: c.parent.id,
         sandbox_id: c.sandbox.id,
@@ -290,5 +291,98 @@ defmodule Fountain.Conversations.ActorStartupsTest do
     stub(ConversationServer, :whereis, fn _ -> nil end)
     assert {0, 0} = Fountain.Workers.SandboxReaper.sweep_abandoned_sandboxes()
     assert Repo.reload!(c.sandbox).status == "ready"
+  end
+
+  test "later attempts preserve startup history and the original recovery window", c do
+    c = startup(c, 60)
+    assert :ok = ActorStartups.complete(c.state)
+    first = Repo.reload!(c.startup)
+
+    recovery = %{
+      deadline: System.monotonic_time(:millisecond) + 60_000,
+      deadline_at: DateTime.add(DateTime.utc_now(), 60),
+      token: make_ref()
+    }
+
+    state = Map.put(c.state, :runner_reconnect, recovery)
+
+    assert {:ok, second, _, _} = ActorOwnership.start(state, c.parent, c.sandbox, 120_000)
+    attempt = Repo.get!(ActorStartup, second.actor_startup_id)
+    assert attempt.id != first.id
+    assert attempt.actor_claim_id == first.actor_claim_id
+    assert DateTime.diff(attempt.deadline_at, DateTime.utc_now(), :millisecond) <= 60_000
+    assert Repo.reload!(first) == first
+    refute ActorStartups.releasable?(c.claim.id)
+
+    assert {:error, :startup_in_progress} =
+             ActorOwnership.start(second, c.parent, c.sandbox, 120_000)
+
+    # An old watchdog only observes its own completed attempt.
+    assert {:ok, :settled} =
+             ProvisionWatchdog._unsafe_expire(c.parent.id, c.sandbox.id, c.claim.id, first.id)
+
+    assert Repo.reload!(attempt).state == "starting"
+    assert :ok = ActorStartups.returned(second)
+    assert {:ok, third, _, _} = ActorOwnership.start(second, c.parent, c.sandbox, 120_000)
+    next_attempt = Repo.get!(ActorStartup, third.actor_startup_id)
+    assert next_attempt.id != attempt.id
+    assert next_attempt.deadline_at == attempt.deadline_at
+    assert next_attempt.deadline_at == recovery.deadline_at
+    assert Repo.reload!(attempt).state == "returned"
+    assert :ok = ActorStartups.complete(third)
+    assert ActorStartups.releasable?(c.claim.id)
+  end
+
+  test "a later expired attempt fences the whole incarnation without rewriting its first success",
+       c do
+    c = startup(c, 60)
+    assert :ok = ActorStartups.complete(c.state)
+    first = Repo.reload!(c.startup)
+
+    attempt =
+      Repo.insert!(%ActorStartup{
+        id: Ecto.UUID.generate(),
+        actor_claim_id: c.claim.id,
+        user_id: c.user.id,
+        conversation_id: c.parent.id,
+        sandbox_id: c.sandbox.id,
+        deadline_at: DateTime.add(DateTime.utc_now(), -1)
+      })
+
+    state = Map.put(c.state, :actor_startup_id, attempt.id)
+    assert {:error, :startup_expired} = ActorStartups.complete(state)
+    assert Repo.reload!(first) == first
+    assert Repo.reload!(attempt).state == "expired"
+    assert {:error, :startup_expired} = ActorStartups.complete(c.state)
+    refute ActorOwnership.current?(state)
+    assert :ok = ActorOwnership.finish(state, fn -> flunk("expired teardown") end)
+    assert Repo.reload!(c.claim).state == "active"
+    assert Repo.reload!(c.sandbox).status == "ready"
+    assert {:error, :actor_retired} = ActorOwnership.start(state, c.parent, c.sandbox, 120_000)
+    event = Repo.one!(LogEvent)
+    assert Jason.decode!(event.data)["actor_startup_id"] == attempt.id
+    assert Jason.decode!(event.data)["actor_claim_id"] == c.claim.id
+  end
+
+  test "a missing or foreign attempt cannot settle or expire another actor", c do
+    c = startup(c, 60)
+
+    assert {:error, :startup_missing} =
+             ActorStartups.complete(Map.put(c.state, :actor_startup_id, Ecto.UUID.generate()))
+
+    assert_raise ArgumentError, fn ->
+      ActorStartups.complete(
+        %{c.state | actor_claim: Ecto.UUID.generate()}
+        |> Map.put(:actor_startup_id, c.startup.id)
+      )
+    end
+
+    assert {:ok, :stale} =
+             ActorStartups.expire(c.parent.id, c.sandbox.id, Ecto.UUID.generate(), c.startup.id)
+
+    assert {:ok, :stale} =
+             ActorStartups.expire(c.parent.id, c.sandbox.id, c.claim.id, Ecto.UUID.generate())
+
+    assert Repo.reload!(c.startup).state == "starting"
   end
 end

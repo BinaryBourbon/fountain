@@ -13,8 +13,8 @@ defmodule Fountain.Conversations.ActorStartups do
   alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{ActorClaim, ActorStartup, Conversation, PromptDelivery, Sandbox}
 
-  @doc "Save with the new actor claim while its original binding is locked."
-  def save!(claim, sandbox, launch, default_ms) do
+  @doc "Save one attempt while its original machine, parent and actor claim are locked."
+  def save!(claim, sandbox, launch, {default_ms, recovery_deadline}) do
     if sandbox.status in ~w(ready suspended) do
       configured = Application.get_env(:fountain, :provision_deadline_ms, default_ms)
 
@@ -28,8 +28,20 @@ defmodule Fountain.Conversations.ActorStartups do
           DateTime.add(DateTime.utc_now(), configured, :millisecond)
         end
 
+      deadline =
+        if recovery_deadline && DateTime.compare(recovery_deadline, deadline) == :lt,
+          do: recovery_deadline,
+          else: deadline
+
+      if Repo.exists?(
+           from s in ActorStartup,
+             where: s.actor_claim_id == ^claim.id and s.state == "starting"
+         ),
+         do: Repo.rollback(:startup_in_progress)
+
       Repo.insert!(%ActorStartup{
-        id: claim.id,
+        id: if(fetch(claim.id), do: Ecto.UUID.generate(), else: claim.id),
+        actor_claim_id: claim.id,
         user_id: claim.user_id,
         conversation_id: claim.conversation_id,
         sandbox_id: claim.sandbox_id,
@@ -42,19 +54,23 @@ defmodule Fountain.Conversations.ActorStartups do
   def fetch(id), do: Repo.get(ActorStartup, id)
 
   @doc "An expired incarnation cannot publish callbacks even while its claim retains ownership."
+  def writable?(nil), do: true
+
   def writable?(id) do
-    case fetch(id) do
-      %ActorStartup{state: "expired"} -> false
-      _ -> true
-    end
+    not Repo.exists?(
+      from s in ActorStartup,
+        where: s.actor_claim_id == ^id and s.state == "expired"
+    )
   end
 
   @doc "Unfinished reconnect teardown cannot release its ownership as evidence of completion."
+  def releasable?(nil), do: true
+
   def releasable?(id) do
-    case fetch(id) do
-      %ActorStartup{state: state} when state in ~w(starting expired) -> false
-      _ -> true
-    end
+    not Repo.exists?(
+      from s in ActorStartup,
+        where: s.actor_claim_id == ^id and s.state in ["starting", "expired"]
+    )
   end
 
   def fenced?(sandbox_id),
@@ -81,12 +97,13 @@ defmodule Fountain.Conversations.ActorStartups do
   end
 
   defp settle(state, outcome) do
-    case fetch(Map.get(state, :actor_claim)) do
+    case fetch(Map.get(state, :actor_startup_id, Map.get(state, :actor_claim))) do
       nil ->
-        :ok
+        if Map.get(state, :actor_startup_id), do: {:error, :startup_missing}, else: :ok
 
       observed ->
-        unless observed.user_id == Map.get(state, :user_id) and
+        unless observed.actor_claim_id == Map.get(state, :actor_claim) and
+                 observed.user_id == Map.get(state, :user_id) and
                  observed.conversation_id == Map.get(state, :conversation_id) and
                  observed.sandbox_id == Map.get(state, :sandbox_id),
                do: raise(ArgumentError, "startup outcome requires its original actor binding")
@@ -98,7 +115,7 @@ defmodule Fountain.Conversations.ActorStartups do
                  not owned?(parent, sandbox, claim, startup) ->
                    {:error, :ownership_changed}
 
-                 startup.state == "expired" ->
+                 not writable?(startup.actor_claim_id) ->
                    {:error, :startup_expired}
 
                  startup.state != "starting" ->
@@ -120,12 +137,16 @@ defmodule Fountain.Conversations.ActorStartups do
   end
 
   @doc "Return :legacy only when no durable reconnect outcome belongs to this incarnation."
-  def expire(conversation_id, sandbox_id, actor_id) do
-    case fetch(actor_id) do
+  def expire(conversation_id, sandbox_id, actor_id, startup_id \\ nil) do
+    case fetch(startup_id || actor_id) do
       nil ->
-        :legacy
+        if startup_id, do: {:ok, :stale}, else: :legacy
 
-      %ActorStartup{conversation_id: ^conversation_id, sandbox_id: ^sandbox_id} = observed ->
+      %ActorStartup{
+        actor_claim_id: ^actor_id,
+        conversation_id: ^conversation_id,
+        sandbox_id: ^sandbox_id
+      } = observed ->
         Repo.transaction(fn ->
           {parent, sandbox, claim, startup} = lock(observed)
 
@@ -169,7 +190,10 @@ defmodule Fountain.Conversations.ActorStartups do
       )
 
     sandbox = Repo.one(from s in Sandbox, where: s.id == ^observed.sandbox_id, lock: "FOR UPDATE")
-    claim = Repo.one(from a in ActorClaim, where: a.id == ^observed.id, lock: "FOR UPDATE")
+
+    claim =
+      Repo.one(from a in ActorClaim, where: a.id == ^observed.actor_claim_id, lock: "FOR UPDATE")
+
     startup = Repo.one!(from s in ActorStartup, where: s.id == ^observed.id, lock: "FOR UPDATE")
     {parent, sandbox, claim, startup}
   end
@@ -223,7 +247,8 @@ defmodule Fountain.Conversations.ActorStartups do
           Jason.encode!(%{
             reason: "reconnect deadline exceeded",
             sandbox_id: startup.sandbox_id,
-            actor_claim_id: startup.id,
+            actor_claim_id: startup.actor_claim_id,
+            actor_startup_id: startup.id,
             recovery_required: true
           })
       })

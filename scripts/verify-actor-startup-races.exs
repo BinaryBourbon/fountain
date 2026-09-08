@@ -11,7 +11,7 @@ fixture = fn seconds ->
   {:ok, parent} = Conversations.create_conversation(%{user_id: user.id, sandbox_id: sandbox.id, runtime: "claude", status: "idle"})
   id = Ecto.UUID.generate()
   {:ok, claim} = ActorOwnership.claim(user.id, parent.id, sandbox.id, id)
-  startup = Repo.insert!(%ActorStartup{id: id, user_id: user.id, conversation_id: parent.id,
+  startup = Repo.insert!(%ActorStartup{id: id, actor_claim_id: id, user_id: user.id, conversation_id: parent.id,
     sandbox_id: sandbox.id, deadline_at: DateTime.add(DateTime.utc_now(), seconds)})
   state = %{user_id: user.id, conversation_id: parent.id, sandbox_id: sandbox.id, actor_claim: id}
   %{user: user, parent: parent, sandbox: sandbox, claim: claim, startup: startup, state: state}
@@ -111,4 +111,74 @@ IO.puts("ACTOR_STARTUP_RACE_RESULT=" <> Jason.encode!(%{
   forced_completion_deadline_waits: 1, sql_immutability_checks: 3,
   provider_operations: 0,
   scope: "First reconnect outcome and timeout ownership; not abandoned-worker reconciliation or provider-operation recovery"
+}))
+
+# Each later attempt has its own identity; old completed outcomes never select
+# or settle the new attempt when watchdogs race completion or teardown.
+repeat_fixture = fn seconds ->
+  c = fixture.(60)
+  :ok = ActorStartups.complete(c.state)
+  first = Repo.reload!(c.startup)
+  attempt = Repo.insert!(%ActorStartup{id: Ecto.UUID.generate(), actor_claim_id: c.claim.id,
+    user_id: c.user.id, conversation_id: c.parent.id, sandbox_id: c.sandbox.id,
+    deadline_at: DateTime.add(DateTime.utc_now(), seconds)})
+  %{c | startup: attempt, state: Map.put(c.state, :actor_startup_id, attempt.id)}
+  |> Map.put(:first, first)
+end
+for seconds <- [60, -1], _ <- 1..10 do
+  c = repeat_fixture.(seconds)
+  [completed, expired, old_watchdog] = LaunchRace.concurrently([
+    fn -> ActorStartups.complete(c.state) end,
+    fn -> ActorStartups.expire(c.parent.id, c.sandbox.id, c.claim.id, c.startup.id) end,
+    fn -> ActorStartups.expire(c.parent.id, c.sandbox.id, c.claim.id, c.first.id) end
+  ])
+  {:ok, :settled} = old_watchdog
+  true = Repo.reload!(c.first) == c.first
+  case Repo.reload!(c.startup).state do
+    "completed" ->
+      :ok = completed
+      true = expired in [{:ok, :settled}, {:error, :deadline_not_reached}]
+    "expired" ->
+      {:error, :startup_expired} = completed
+      {:ok, :expired} = expired
+      false = ActorOwnership.current?(c.state)
+  end
+end
+for _ <- 1..20 do
+  c = repeat_fixture.(-1)
+  [:ok, {:ok, :expired}] = LaunchRace.concurrently([
+    fn -> ActorOwnership.finish(c.state, fn -> :ok end) end,
+    fn -> ActorStartups.expire(c.parent.id, c.sandbox.id, c.claim.id, c.startup.id) end
+  ])
+  true = Repo.reload!(c.first) == c.first
+  "active" = Repo.reload!(c.claim).state
+  "expired" = Repo.reload!(c.startup).state
+  false = ActorOwnership.current?(c.state)
+end
+c = repeat_fixture.(60)
+try do
+  Repo.transaction(fn ->
+    Repo.query!("UPDATE actor_startups SET actor_claim_id = $1 WHERE id = $2",
+      [Ecto.UUID.dump!(Ecto.UUID.generate()), Ecto.UUID.dump!(c.startup.id)])
+  end)
+  raise "Attempt was reassigned to another actor"
+rescue
+  error in Postgrex.Error -> :raise_exception = error.postgres.code
+end
+try do
+  Repo.transaction(fn ->
+    Repo.insert!(%ActorStartup{id: Ecto.UUID.generate(), actor_claim_id: c.claim.id,
+      user_id: c.user.id, conversation_id: c.parent.id, sandbox_id: c.sandbox.id,
+      deadline_at: DateTime.add(DateTime.utc_now(), 60)})
+  end)
+  raise "Two pending attempts were accepted for one actor"
+rescue
+  _ in Ecto.ConstraintError -> :ok
+end
+IO.puts("REPEAT_RECONNECT_RACE_RESULT=" <> Jason.encode!(%{
+  separate_database_connections: true, completion_expiry_stale_watchdog_races: 20,
+  teardown_expiry_races: 20, completed_first_attempts_preserved: 40,
+  actor_identity_immutability_checks: 1, unique_pending_attempt_checks: 1,
+  provider_operations: 0,
+  scope: "Repeated reconnect outcome arbitration; transport is not exercised by this database proof"
 }))

@@ -84,7 +84,11 @@ defmodule Fountain.Conversations.Reattachment do
   def wait_for_runner(state, on_expired) do
     recovery =
       state.runner_reconnect ||
-        %{deadline: System.monotonic_time(:millisecond) + @runner_reconnect_ms, token: make_ref()}
+        %{
+          deadline: System.monotonic_time(:millisecond) + @runner_reconnect_ms,
+          deadline_at: DateTime.add(DateTime.utc_now(), @runner_reconnect_ms, :millisecond),
+          token: make_ref()
+        }
 
     if is_nil(state.runner_reconnect) do
       Output.publish_stage(state.conversation_id, "connection", "started", %{

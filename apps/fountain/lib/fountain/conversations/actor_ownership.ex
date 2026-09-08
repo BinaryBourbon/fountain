@@ -17,23 +17,22 @@ defmodule Fountain.Conversations.ActorOwnership do
   def start(state, conversation, sandbox, provision_deadline_ms) do
     id = Map.get(state, :actor_claim) || Ecto.UUID.generate()
 
-    with {:ok, {_claim, current, machine, launch}} <-
+    with {:ok, {_claim, current, machine, launch, startup}} <-
            claim_binding(
              conversation.user_id,
              conversation.id,
              sandbox.id,
              id,
              Map.get(state, :launch_id),
-             provision_deadline_ms
+             {provision_deadline_ms, recovery_deadline(state)}
            ) do
-      startup = Conversations.ActorStartups.fetch(id)
-
-      if is_nil(Map.get(state, :actor_claim)) do
+      if startup || is_nil(Map.get(state, :actor_claim)) do
         Fountain.Conversations.ProvisionWatchdog.start(
           conversation.id,
           sandbox.id,
           provision_deadline_ms,
           actor_claim: id,
+          startup_id: startup && startup.id,
           deadline_at:
             if(startup,
               do: startup.deadline_at,
@@ -42,13 +41,33 @@ defmodule Fountain.Conversations.ActorOwnership do
         )
       end
 
-      {:ok, state |> Map.put(:actor_claim, id) |> Map.put(:user_id, current.user_id), current,
-       machine}
+      claimed =
+        state
+        |> Map.put(:actor_claim, id)
+        |> Map.put(:user_id, current.user_id)
+        |> Map.put(:actor_startup_id, startup && startup.id)
+
+      {:ok, claimed, current, machine}
     end
   end
 
+  # Sample before acquiring locks: waiting for ownership must consume the same
+  # recovery window, rather than grant another interval after contention.
+  defp recovery_deadline(%{runner_reconnect: %{deadline_at: %DateTime{} = deadline}}),
+    do: deadline
+
+  defp recovery_deadline(%{runner_reconnect: %{deadline: deadline}}),
+    do:
+      DateTime.add(
+        DateTime.utc_now(),
+        deadline - System.monotonic_time(:millisecond),
+        :millisecond
+      )
+
+  defp recovery_deadline(_state), do: nil
+
   def claim(user_id, conversation_id, sandbox_id, id) do
-    with {:ok, {claim, _parent, _sandbox, _launch}} <-
+    with {:ok, {claim, _parent, _sandbox, _launch, _startup}} <-
            claim_binding(user_id, conversation_id, sandbox_id, id, nil),
          do: {:ok, claim}
   end
@@ -110,13 +129,14 @@ defmodule Fountain.Conversations.ActorOwnership do
                 launch_id: launch && launch.id
               })
 
-            if startup_ms,
-              do: Conversations.ActorStartups.save!(claim, sandbox, launch, startup_ms)
-
             {claim, launch}
         end
 
-      {claim, parent, sandbox, launch}
+      startup =
+        if startup_ms,
+          do: Conversations.ActorStartups.save!(claim, sandbox, launch, startup_ms)
+
+      {claim, parent, sandbox, launch, startup}
     end)
   end
 

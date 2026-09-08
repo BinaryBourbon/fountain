@@ -148,6 +148,57 @@ defmodule Fountain.Conversations.RunnerRecoveryTest do
     assert Repo.reload!(f.turn).status == "failed"
   end
 
+  test "a reconnect blocked after a runner disconnect expires its own attempt" do
+    f = fixture()
+    assert_receive {:attached, ref}
+    first = settle(f.pid)
+    startup = Repo.get!(Conversations.ActorStartup, first.actor_startup_id)
+    assert startup.state == "completed"
+    send(f.pid, {:error, %{ref: ref}, :runner_disconnected})
+    waiting = settle(f.pid)
+    assert waiting.runner_reconnect
+
+    # Keep the real disconnect path; shorten only its two-minute recovery clock.
+    :sys.replace_state(f.pid, fn state ->
+      %{
+        state
+        | runner_reconnect: %{
+            state.runner_reconnect
+            | deadline: System.monotonic_time(:millisecond) + 300,
+              deadline_at: DateTime.add(DateTime.utc_now(), 300, :millisecond)
+          }
+      }
+    end)
+
+    owner = self()
+
+    Mimic.stub(Managoat.Sandbox, :get, fn _ ->
+      send(owner, :blocked_reconnect)
+      Process.sleep(:infinity)
+    end)
+
+    Mimic.stub(Horde.DynamicSupervisor, :terminate_child, fn _, pid ->
+      Process.exit(pid, :kill)
+      :ok
+    end)
+
+    monitor = Process.monitor(f.pid)
+    send(f.pid, {:runner_reconnect, waiting.runner_reconnect.token})
+    assert_receive :blocked_reconnect, 1_000
+    assert_receive {:DOWN, ^monitor, :process, _, :killed}, 2_000
+    assert Repo.reload!(startup) == startup
+    assert Repo.reload!(f.turn).status == "running"
+    assert Repo.get!(Conversations.ActorClaim, first.actor_claim).state == "active"
+
+    assert Repo.one!(
+             from s in Conversations.ActorStartup,
+               where: s.actor_claim_id == ^first.actor_claim and s.id != ^startup.id
+           ).state == "expired"
+
+    refute Conversations.ActorStartups.writable?(first.actor_claim)
+    refute_receive :stopped_command
+  end
+
   test "interrupt cancels recovery and a late retry cannot resurrect its turn" do
     f = fixture()
     assert_receive {:attached, ref}

@@ -35,17 +35,32 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
 
     spawn(fn ->
       monitor = Process.monitor(actor)
-      wait(actor, monitor, conversation_id, sandbox_id, timeout, Keyword.get(opts, :actor_claim))
+
+      wait(
+        actor,
+        monitor,
+        conversation_id,
+        sandbox_id,
+        timeout,
+        {Keyword.get(opts, :actor_claim), Keyword.get(opts, :startup_id)}
+      )
     end)
   end
 
-  defp wait(actor, monitor, conversation_id, sandbox_id, timeout, actor_claim) do
+  defp wait(
+         actor,
+         monitor,
+         conversation_id,
+         sandbox_id,
+         timeout,
+         {actor_claim, startup_id} = identity
+       ) do
     receive do
       {:DOWN, ^monitor, :process, ^actor, _reason} -> :ok
     after
       timeout ->
         # Ownership: this watchdog was created by the actor for its original binding.
-        case _unsafe_expire(conversation_id, sandbox_id, actor_claim) do
+        case _unsafe_expire(conversation_id, sandbox_id, actor_claim, startup_id) do
           {:ok, :expired} ->
             stop(actor)
 
@@ -64,14 +79,14 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
             # against an unchanged pending row. Retry the same decision; do not
             # create another watchdog or restart the provisioning actor.
             Logger.warning("provision deadline decision unavailable; retrying")
-            wait(actor, monitor, conversation_id, sandbox_id, 1_000, actor_claim)
+            wait(actor, monitor, conversation_id, sandbox_id, 1_000, identity)
         end
     end
   end
 
   @doc "Commit a timeout only for the actor's still-owned, unfinished provisioning."
-  def _unsafe_expire(conversation_id, sandbox_id, actor_claim \\ nil) do
-    case Conversations.ActorStartups.expire(conversation_id, sandbox_id, actor_claim) do
+  def _unsafe_expire(conversation_id, sandbox_id, actor_claim \\ nil, startup_id \\ nil) do
+    case Conversations.ActorStartups.expire(conversation_id, sandbox_id, actor_claim, startup_id) do
       :legacy ->
         fail_pending(conversation_id, sandbox_id, "provision deadline exceeded", actor_claim)
 

@@ -1037,10 +1037,49 @@ PostgreSQL connections cover completion versus expiry, teardown versus expiry,
 and a completion lock held beyond its deadline.
 See `decisions/evidence/actor-startup-outcomes.json` for the checkpoint.
 
-This bounds the first reconnect for an incarnation. Repeated reattach within a
-running actor, outcome reconciliation after node loss, provider work before the
-launch handoff, and complete legacy park/resume serialization remain open.
+The checkpoint above bounded the first reconnect for an incarnation. The next
+section extends it to later attempts. Outcome reconciliation after node loss,
+provider work before the launch handoff, and complete legacy park/resume
+serialization remain open.
 Provider identity links, conditional deletion and live acceptance still gate
 rollout. The stack stays draft; execution controls and provider recovery remain
 disabled. Retained startup ownership must be reconciled before its machine can
 be reclaimed.
+
+
+## Repeated reconnect attempts (integration in progress)
+
+An existing actor could block in a later reconnect after its first startup had
+completed. The runner recovery timer checked its deadline before entering the
+synchronous reconnect; it could not interrupt a blocked provider lookup.
+
+Each reconnect now saves a separate attempt linked to the same actor claim.
+The first attempt keeps its original ID, deadline and outcome. Later attempts
+have distinct IDs, and the database permits only one pending attempt per actor.
+Completion and watchdog expiry select that exact attempt. A completed attempt's
+watchdog cannot expire a later one. Expiry of any attempt fences the incarnation
+and retains its claim, machine and provider history for reconciliation.
+
+Runner recovery records an absolute deadline when its existing two-minute
+window starts. Each attempt is capped by that same deadline and the configured
+setup interval; a transient return does not renew the recovery window. The
+monotonic clock still governs the runner's ordinary retry timer. Existing
+in-memory recovery state without an absolute deadline is converted before
+waiting for ownership locks.
+
+The migration backfills the actor link without rewriting earlier outcomes.
+Its database trigger rejects changing that link. Downgrade refuses repeated
+attempt history because the previous schema cannot represent it safely.
+
+Local tests exercise a real actor's runner-disconnect event and a blocked
+reconnect, using stubbed transport and a shortened recovery clock. They verify
+that expiry retains the accepted remote turn as unresolved and revokes this
+actor's authority. Separate PostgreSQL connections race the new attempt's
+completion, expiry and old watchdog, and race teardown against expiry.
+See `decisions/evidence/repeated-reconnect-outcomes.json` for the checkpoint.
+
+This does not establish remote command termination, abandoned-actor recovery,
+or production readiness. Node-loss reconciliation, provider work before
+handoff, complete legacy park/resume serialization, provider identity links,
+conditional deletion and live acceptance remain rollout gates. The stack stays
+draft and undeployed; execution controls and provider recovery remain disabled.
