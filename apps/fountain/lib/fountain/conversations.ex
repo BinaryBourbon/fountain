@@ -1520,7 +1520,15 @@ defmodule Fountain.Conversations do
   if alive), then delete the conversation row. Cascades to turns and log
   events via the FK.
   """
-  def delete_conversation(%Conversation{id: id, user_id: user_id} = conv, opts \\ []) do
+  def delete_conversation(%Conversation{} = conv, opts \\ []) do
+    # ownership: conv is the caller's tenant-scoped row. Persist cleanup before
+    # any potentially blocking termination and before deleting that parent.
+    with {:ok, _} <- ExecutionGuard._unsafe_interrupt(conv.id) do
+      delete_after_retirement(conv, opts)
+    end
+  end
+
+  defp delete_after_retirement(%Conversation{id: id, user_id: user_id} = conv, opts) do
     # `audit: false` on the cascade: this terminate is an implementation
     # detail of deleting, not a second thing the user asked for, and the
     # `conversation.deleted` below already accounts for the sandbox going
@@ -1727,10 +1735,27 @@ defmodule Fountain.Conversations do
              _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
           Repo.rollback(:sandbox_at_capacity)
         else
-          case %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
-            {:ok, turn} -> turn
-            {:error, changeset} -> Repo.rollback(changeset)
-          end
+          # An earlier bounded execution that is still unresolved fences this
+          # conversation: a stale deadline must not be able to terminate a
+          # process a successor has started using (ADR 0046). The parent is
+          # already locked above, so this is a plain read.
+          if ExecutionGuard._unsafe_open_execution?(conv_id),
+            do: Repo.rollback(:execution_fenced)
+
+          turn =
+            case %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
+              {:ok, turn} -> turn
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+
+          # Same transaction as the turn: a bounded turn that exists without a
+          # journal row is a turn nothing can expire. `conv` is the row this
+          # transaction locked.
+          # ownership: conv_id came from the caller's attrs and was verified
+          # attached to this tenant's sandbox above.
+          conv = Repo.get!(Conversation, conv_id)
+          ExecutionGuard._unsafe_register_bounded(turn, sandbox_id, conv)
+          turn
         end
       end)
 
@@ -4470,6 +4495,47 @@ defmodule Fountain.Conversations do
 
         :ok
     end
+  end
+
+  @doc """
+  Dispatch an already-authorized prompt, checking current execution policy first.
+
+  The authoritative check is inside `_unsafe_create_turn_on_sandbox/3`, under
+  its row locks. This is a preflight, and it exists so the API door renders a
+  refusal rather than accepting a prompt that then fails as a stage event —
+  a live server would otherwise bypass the check entirely on its way to
+  `handle_call(:send_prompt, ...)`.
+  """
+  def _unsafe_dispatch_prompt(conversation_id, prompt, send_to_server) do
+    with %Conversation{} = conv <-
+           _unsafe_get_conversation(conversation_id) || {:error, :not_running},
+         :ok <- _unsafe_execution_limits_gate(conv) do
+      case ConversationServer.whereis(conversation_id) do
+        nil ->
+          case wake_conversation(conversation_id, prompt) do
+            {:ok, _conv} -> :ok
+            {:error, :not_found} -> {:error, :not_running}
+            {:error, _} = error -> error
+          end
+
+        pid ->
+          send_to_server.(pid)
+      end
+    end
+  end
+
+  @doc """
+  Check current ceilings before an already-owned conversation starts another turn.
+
+  Reads the saved allowance from `execution_allowances` (#1790) rather than a
+  column on the parent: that row carries a revision, so a launch and a resume
+  cannot silently overwrite each other's policy.
+  """
+  def _unsafe_execution_limits_gate(%Conversation{} = conv) do
+    # ownership: the caller fetched this conversation for its actor or for an
+    # authorized API operation.
+    with :ok <- _unsafe_check_saved_execution_allowance(conv.id),
+         do: ExecutionGuard._unsafe_admission_gate(conv.id)
   end
 
   # A per-launch permission override (#939). Unlike the vault and environment

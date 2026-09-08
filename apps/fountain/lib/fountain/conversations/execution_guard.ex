@@ -24,6 +24,140 @@ defmodule Fountain.Conversations.ExecutionGuard do
   @fenced ~w(awaiting_identity ready submitted uncertain)
   @terminal_turns ~w(completed failed interrupted)
 
+  @doc "Atomically admit a turn and its execution journal before any preparation."
+  def _unsafe_admit_turn(attrs, sandbox_id, capacity, writer) do
+    transaction(fn ->
+      conv_id = Map.fetch!(attrs, :conversation_id)
+      lock_sandbox(sandbox_id)
+      conv = lock_parent(conv_id) || Repo.rollback(:not_found)
+      if conv.sandbox_id != sandbox_id, do: Repo.rollback(:ownership_changed)
+      if open_execution?(conv.id), do: Repo.rollback(:execution_fenced)
+
+      user = Repo.get!(Fountain.Accounts.User, conv.user_id)
+
+      limits =
+        case ExecutionLimits.for_new_turn(
+               ExecutionLimits.host_ceiling(),
+               user.execution_limits,
+               conv.execution_limits
+             ) do
+          {:ok, limits} -> limits
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
+      case ExecutionLimits.require_controls(
+             limits,
+             ExecutionLimits.enforced_controls(conv.runtime)
+           ) do
+        :ok -> :ok
+        {:error, reason} -> Repo.rollback(reason)
+      end
+
+      # ownership: conv is the locked parent for this actor and sandbox binding.
+      if is_integer(capacity) and
+           Fountain.Conversations._unsafe_running_turns_elsewhere(sandbox_id, conv.id) >= capacity,
+         do: Repo.rollback(:sandbox_at_capacity)
+
+      # The journal requires an absolute deadline. SDK-only requests cannot be
+      # admitted through this transport by inventing an undocumented allowance.
+      if map_size(limits) > 0 and not Map.has_key?(limits, "wall_time_seconds"),
+        do: Repo.rollback({:execution_limits_invalid, "wall_time_seconds_required"})
+
+      turn =
+        case writer.() do
+          {:ok, turn} -> turn
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
+      if map_size(limits) > 0 do
+        sandbox = Repo.get(Sandbox, sandbox_id) || Repo.rollback(:sandbox_not_found)
+        if sandbox.provider != "sprites", do: Repo.rollback(:provider_not_supported)
+
+        case Managoat.Runtimes.ACP.execution_limits(
+               conv.runtime,
+               ExecutionLimits.sdk_options(limits)
+             ) do
+          {:ok, _} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
+        deadline = DateTime.add(turn.started_at, limits["wall_time_seconds"], :second)
+
+        case _unsafe_register(turn.id, Ecto.UUID.generate(), deadline) do
+          {:ok, _} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end
+
+      {turn, nil, nil}
+    end)
+  end
+
+  @doc "An idle legacy connection cannot start background work after bounded policy is applied."
+  def _unsafe_autonomous_turn(conversation_id, writer) do
+    transaction(fn ->
+      conv = lock_parent(conversation_id) || Repo.rollback(:not_found)
+      user = Repo.get!(Fountain.Accounts.User, conv.user_id)
+
+      case ExecutionLimits.for_new_turn(
+             ExecutionLimits.host_ceiling(),
+             user.execution_limits,
+             conv.execution_limits
+           ) do
+        {:ok, limits} when map_size(limits) == 0 -> :ok
+        _ -> Repo.rollback(:execution_fenced)
+      end
+
+      if open_execution?(conversation_id), do: Repo.rollback(:execution_fenced)
+
+      case writer.() do
+        {:ok, turn} -> {turn, nil, nil}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  @doc "Refuse a new prompt or wake while an earlier bounded execution is unresolved."
+  def _unsafe_admission_gate(conversation_id) do
+    transaction(fn ->
+      lock_parent(conversation_id) || Repo.rollback(:not_found)
+      if open_execution?(conversation_id), do: Repo.rollback(:execution_fenced)
+      {:ok, nil, nil}
+    end)
+    |> case do
+      {:ok, :ok} -> :ok
+      error -> error
+    end
+  end
+
+  @doc "Persist cancellation without waiting for the conversation actor or provider."
+  def _unsafe_interrupt(conversation_id) do
+    transaction(fn ->
+      lock_parent(conversation_id) || Repo.rollback(:not_found)
+
+      execution =
+        Repo.one(
+          from e in TurnExecution,
+            where:
+              e.conversation_id == ^conversation_id and e.state not in ["completed", "stopped"],
+            order_by: [desc: e.inserted_at],
+            limit: 1,
+            lock: "FOR UPDATE"
+        )
+
+      if execution do
+        lock_turn(execution.turn_id)
+        {decision, changed, event} = complete(execution, "interrupted", DateTime.utc_now())
+        {{:bounded, decision.execution.id}, changed, event}
+      else
+        {:unbounded, nil, nil}
+      end
+    end)
+  end
+
+  @doc "Find the immutable journal for an already-owned actor's turn."
+  def _unsafe_for_turn(turn_id), do: Repo.get_by(TurnExecution, turn_id: turn_id)
+
   def _unsafe_register(turn_id, connection_id, %DateTime{} = deadline_at, opts \\ []) do
     transaction(fn ->
       turn = Repo.get(Turn, turn_id) || Repo.rollback(:not_found)
@@ -252,8 +386,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
     turn = lock_turn(execution.turn_id)
 
     cond do
-      is_nil(turn) ->
+      is_nil(turn) and execution.state == "active" ->
         missing_turn(execution)
+
+      is_nil(turn) ->
+        {%{execution: execution, turn: nil}, nil, nil}
 
       execution.state == "active" and DateTime.compare(now, execution.deadline_at) != :lt ->
         expire(execution, now)
@@ -338,7 +475,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         execution.state != "ready" ->
           Repo.rollback(:not_ready)
 
-        not current_binding?(execution) ->
+        not cleanup_binding?(execution) ->
           updated = update!(execution, %{state: "uncertain", last_error: "ownership_changed"})
           {%{permitted: false, execution: updated}, updated, "termination_uncertain"}
 
@@ -604,6 +741,28 @@ defmodule Fountain.Conversations.ExecutionGuard do
       _ ->
         :ok
     end
+  end
+
+  # A persisted retirement survives parent deletion. The original sandbox row
+  # must still prove its tenant/name/provider binding; a surviving conversation
+  # must also remain bound to it. Missing or changed sandbox identity stays
+  # uncertain. Reset cannot reuse this row while its journal remains open.
+  defp cleanup_binding?(execution) do
+    sandbox_matches =
+      Repo.exists?(
+        from s in Sandbox,
+          where:
+            s.id == ^execution.sandbox_id and s.user_id == ^execution.user_id and
+              s.sprite_name == ^execution.sandbox_name and s.provider == ^execution.provider
+      )
+
+    parent_matches =
+      case Repo.get(Conversation, execution.conversation_id) do
+        nil -> true
+        conv -> conv.user_id == execution.user_id and conv.sandbox_id == execution.sandbox_id
+      end
+
+    sandbox_matches and parent_matches
   end
 
   defp current_binding?(execution) do
