@@ -232,11 +232,14 @@ defmodule Fountain.Workers.SandboxReaper do
             case idle_sweep(sandbox) do
               :parked -> {p + 1, e}
               :expired -> {p, e + 1}
+              :held -> {p, e}
             end
 
           {sandbox, {:expired, :max_lifetime}}, {p, e} ->
-            expire(sandbox, "past max lifetime")
-            {p, e + 1}
+            case expire(sandbox, "past max lifetime") do
+              {:error, _} -> {p, e}
+              _ -> {p, e + 1}
+            end
 
           {_sandbox, :ok}, acc ->
             acc
@@ -276,6 +279,17 @@ defmodule Fountain.Workers.SandboxReaper do
   # ConversationServer applies, and the same degradation when the explicit
   # suspend call fails (an unparked sandbox keeps billing).
   defp idle_sweep(sandbox) do
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id) do
+      case Fountain.Conversations.SandboxTransitions._unsafe_park(sandbox, :idle) do
+        {:ok, _} -> :parked
+        {:error, _} -> :held
+      end
+    else
+      legacy_idle_sweep(sandbox)
+    end
+  end
+
+  defp legacy_idle_sweep(sandbox) do
     provider = Conversations.sandbox_provider_atom(sandbox)
 
     with :suspend <- Lifecycle.idle_action(provider),
@@ -318,6 +332,26 @@ defmodule Fountain.Workers.SandboxReaper do
   end
 
   defp expire(sandbox, reason) do
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id) do
+      case Fountain.Conversations.SandboxOperations._unsafe_destroy(sandbox) do
+        result
+        when result in [
+               :ok,
+               {:error, :provider_operation_uncertain},
+               {:error, :provider_already_destroyed}
+             ] ->
+          record_reap(sandbox, "sandbox.expired", %{"reason" => reason})
+          sandbox
+
+        {:error, _} = error ->
+          error
+      end
+    else
+      legacy_expire(sandbox, reason)
+    end
+  end
+
+  defp legacy_expire(sandbox, reason) do
     {:ok, _} =
       Conversations.update_sandbox(sandbox, %{
         status: "terminated",

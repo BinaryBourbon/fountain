@@ -1725,6 +1725,16 @@ defmodule Fountain.Conversations.ConversationServer do
   # stop_cotenants/4). Record that on this transcript, cut a turn that has
   # nothing left to run on, and stop: with no handle there is nothing this
   # server can do, and the wake path is what brings the machine back.
+  def handle_cast({:managed_park, sandbox_id, operation_id}, state) do
+    if state.sandbox_id == sandbox_id and
+         Fountain.Conversations.SandboxTransitions._unsafe_park_current?(sandbox_id, operation_id) do
+      state = drop_connection(state, "suspended")
+      {:stop, :normal, %{state | handle: nil}}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_cast({:machine_gone, event, reason, message}, state) do
     state = if state.current_turn, do: interrupt_turn(state), else: state
     state = drop_connection(state, event)
@@ -2185,39 +2195,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # The log line and the connection are the process's; the rest of a park is
   # `Lifecycle.park/4`.
-  defp park_sandbox(state, reason \\ :idle) do
-    Logger.info(
-      "suspending sandbox for conv #{state.conversation_id}: #{reason} " <>
-        "(sprite #{inspect(state.handle && state.handle.name)})"
-    )
-
-    # A parked sprite never keeps a live adapter (#817).
-    state = drop_connection(state, "suspended")
-    Lifecycle.park(state.conversation_id, state.sandbox_id, state.handle, reason)
-
-    # The conversation stays idle and resumable; the sprite stays parked.
-    {:stop, :normal, %{state | handle: nil}}
-  end
+  defp park_sandbox(state, reason \\ :idle),
+    do: Lifecycle.park_server(state, reason, &drop_connection/2)
 
   # The same shape for a destroy (`Lifecycle.destroy/5`).
-  defp destroy_sandbox(state, reason) do
-    Logger.info(
-      "reclaiming sandbox for conv #{state.conversation_id}: #{reason} " <>
-        "(sprite #{inspect(state.handle && state.handle.name)})"
-    )
-
-    state = drop_connection(state, "reclaimed")
-
-    Lifecycle.destroy(
-      state.conversation_id,
-      state.sandbox_id,
-      state.user_id,
-      state.handle,
-      reason
-    )
-
-    {:stop, :normal, %{state | handle: nil}}
-  end
+  defp destroy_sandbox(state, reason),
+    do: Lifecycle.destroy_server(state, reason, &drop_connection/2)
 
   # Best-effort revoke of the per-conversation API key when this server
   # exits — clean termination (`:terminate_conv`), crash paths that hit

@@ -968,6 +968,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
 
     if sandbox.user_id != conv.user_id, do: Repo.rollback(:ownership_changed)
     if sandbox.status != "ready", do: Repo.rollback(:sandbox_not_ready)
+
+    # ownership: the locked machine belongs to the locked conversation above.
+    if Fountain.Conversations.SandboxTransitions._unsafe_pending?(sandbox.id),
+      do: Repo.rollback(:provider_operation_fenced)
+
     sandbox
   end
 

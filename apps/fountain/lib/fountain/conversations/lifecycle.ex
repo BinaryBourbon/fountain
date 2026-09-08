@@ -311,6 +311,15 @@ defmodule Fountain.Conversations.Lifecycle do
   """
   @spec idle_machine_action(String.t(), Handle.t() | nil) :: :park | :destroy
   def idle_machine_action(conversation_id, handle) do
+    # Managed transitions acquire their durable grant before provider I/O.
+    conv = Conversations._unsafe_get_conversation(conversation_id)
+
+    if conv && managed?(conv.sandbox_id),
+      do: :park,
+      else: legacy_idle_machine_action(conversation_id, handle)
+  end
+
+  defp legacy_idle_machine_action(conversation_id, handle) do
     with :suspend <- idle_action(provider(handle)),
          :ok <- suspend(handle) do
       :park
@@ -345,6 +354,12 @@ defmodule Fountain.Conversations.Lifecycle do
   """
   @spec max_lifetime_action(String.t() | nil, Handle.t() | nil) :: :park | :destroy
   def max_lifetime_action(sandbox_id, handle) do
+    if managed?(sandbox_id),
+      do: if(home?(sandbox_id), do: :park, else: :destroy),
+      else: legacy_max_lifetime_action(sandbox_id, handle)
+  end
+
+  defp legacy_max_lifetime_action(sandbox_id, handle) do
     with true <- home?(sandbox_id),
          :suspend <- idle_action(provider(handle)),
          :ok <- suspend(handle) do
@@ -355,12 +370,38 @@ defmodule Fountain.Conversations.Lifecycle do
   end
 
   @doc """
-  Park the machine: the sandbox row to `suspended`, the conversation back to
-  `idle`, the stage event, the telemetry and the co-tenants. The suspend call
-  itself has already been made by whichever action decided on `:park`.
+  Park the machine and record its accepted transition. Managed machines commit
+  a durable grant before provider I/O and recheck ownership before publication.
+  Legacy callers have already made their suspend call. A refusal preserves the
+  actor connection and publishes no successful transition.
   """
-  @spec park(String.t(), String.t() | nil, Handle.t() | nil, :idle | :max_lifetime) :: :ok
+  @spec park(String.t(), String.t() | nil, Handle.t() | nil, :idle | :max_lifetime) ::
+          :ok | {:error, term()}
   def park(conversation_id, sandbox_id, handle, reason) do
+    if managed?(sandbox_id) do
+      sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+
+      with {:ok, parked} <-
+             Fountain.Conversations.SandboxTransitions._unsafe_park(sandbox, reason) do
+        operation_id = parked.provider_meta["lifecycle_operation_id"]
+
+        Conversations._unsafe_list_cotenant_ids(sandbox_id, conversation_id)
+        |> Enum.each(fn id ->
+          if pid = ConversationServer.whereis(id),
+            do: GenServer.cast(pid, {:managed_park, sandbox_id, operation_id})
+        end)
+
+        :ok
+      end
+    else
+      legacy_park(conversation_id, sandbox_id, handle, reason)
+    end
+  end
+
+  defp managed?(nil), do: false
+  defp managed?(id), do: Fountain.Conversations.SandboxOperations._unsafe_managed?(id)
+
+  defp legacy_park(conversation_id, sandbox_id, handle, reason) do
     if sandbox_id do
       # Ownership: as home?/1 above.
       sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
@@ -398,6 +439,18 @@ defmodule Fountain.Conversations.Lifecycle do
     )
   end
 
+  @doc false
+  def park_server(state, reason, drop_connection) do
+    case park(state.conversation_id, state.sandbox_id, state.handle, reason) do
+      :ok ->
+        state = drop_connection.(state, "suspended")
+        {:stop, :normal, %{state | handle: nil}}
+
+      {:error, _reason} ->
+        {:noreply, state}
+    end
+  end
+
   @doc "Retire a terminating conversation's machine unless another holder or execution needs it."
   def terminate_machine(sandbox_id, conversation_id, handle) do
     # Ownership: the terminating server loaded this parent and its sandbox at init.
@@ -429,13 +482,46 @@ defmodule Fountain.Conversations.Lifecycle do
           String.t(),
           Handle.t() | nil,
           :idle | :max_lifetime
-        ) :: :ok
+        ) :: :ok | {:error, term()}
   def destroy(conversation_id, sandbox_id, user_id, handle, reason) do
-    if sandbox_id do
+    if managed?(sandbox_id) do
       sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
-      _ = Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle)
-    end
 
+      case Fountain.Conversations.SandboxOperations._unsafe_destroy(sandbox) do
+        result
+        when result in [
+               :ok,
+               {:error, :provider_operation_uncertain},
+               {:error, :provider_already_destroyed}
+             ] ->
+          record_destroy(conversation_id, sandbox_id, user_id, handle, reason)
+
+        {:error, _} = error ->
+          error
+      end
+    else
+      if sandbox_id do
+        sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+        _ = Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle)
+      end
+
+      record_destroy(conversation_id, sandbox_id, user_id, handle, reason)
+    end
+  end
+
+  @doc false
+  def destroy_server(state, reason, drop_connection) do
+    case destroy(state.conversation_id, state.sandbox_id, state.user_id, state.handle, reason) do
+      :ok ->
+        state = drop_connection.(state, "reclaimed")
+        {:stop, :normal, %{state | handle: nil}}
+
+      {:error, _} ->
+        {:noreply, state}
+    end
+  end
+
+  defp record_destroy(conversation_id, sandbox_id, user_id, handle, reason) do
     Egress.release(user_id, conversation_id)
 
     if sandbox_id do

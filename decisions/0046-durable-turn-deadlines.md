@@ -433,9 +433,9 @@ confirms absence. HTTP acceptance alone retains uncertainty.
 The journal's permanent name claim prevents another managed create from adopting
 it; ordinary legacy creation is not yet covered by that registry. Recording a
 GET response does not authorize a later name-based DELETE or prove an uncertain
-create belongs to this row. Park/resume coordination, full holder arbitration
-and live provider acceptance remain required. The `park` and
-`resume` action names are schema vocabulary, not implemented operations.
+create belongs to this row. Full holder arbitration and live provider acceptance
+remain required. Managed park/resume now use the same durable operation journal,
+as described below; ordinary legacy creation still has a separate lifecycle.
 
 `SandboxOperationWorker` now scans up to 100 candidates per category, with
 separate four-task pools for cleanup and observation. Submissions older than
@@ -457,6 +457,44 @@ The recovery worker is **disabled by default** through
 `:sandbox_operation_worker_enabled`. Activation remains outstanding. Provider
 reads use the existing adapter under the task timeout; this does not establish
 aggregate inference limits or dollar-cost accounting. No live cleanup is claimed.
+
+## Managed park and resume
+
+`SandboxTransitions` commits a park or resume grant under the machine lock,
+then contacts the provider outside the transaction. The grant closes turn
+admission and retains physical capacity. Both user and autonomous turns check
+pending operations. Reset and managed cleanup refuse conflicting transitions.
+A stale ready write cannot bypass the operation fence.
+
+The actor and reaper use this path for managed machines. A refusal keeps the
+actor's connection and does not report successful retirement. Home checkpoints
+are requested once with an operation-specific comment. The returned checkpoint's
+ID and comment are checked through the typed provider API because the adapter
+can otherwise fall back to an older checkpoint. Metadata is written only after
+transition confirmation. A checkpoint failure remains best effort. Sprites suspend is a no-op: logical
+parking does not establish stopped compute or billing.
+
+Managed resume and ready reuse require the provider response to contain the
+recorded instance ID. Presence under the same name is insufficient. Resume
+retains the existing capacity reservation rather than acquiring a second slot;
+its provider request runs outside the quota transaction. The response is checked
+against current ownership, operation generation and retirement state before
+readiness is accepted. Provider tasks have a 35-second ceiling that survives
+caller death. Outer transactions are refused before provider work starts.
+The current checkpoint adapter still uses an unbounded synchronous HTTP request
+internally. The task ceiling does not prove cancellation of that transport or
+bound its response bytes; a bounded checkpoint adapter remains an activation gate.
+
+Park events, webhook jobs and local notification jobs commit with the transition.
+The existing persisted-stage notification worker delivers them after commit.
+Co-tenant park messages carry the operation generation; an old message cannot
+stop an actor on a resumed machine.
+
+Unknown transition outcomes remain fenced, without an automatic replay. Full
+holder attachment/transfer arbitration, actor shutdown versus concurrent wake,
+recovery of uncertain park/resume outcomes, ordinary creation name coverage and
+live provider acceptance remain unfinished. Execution controls and the recovery
+worker remain disabled. These source changes do not activate production cleanup.
 
 `scripts/verify-sandbox-admission-races.exs` exercises real reset and admission
 contexts through separate local PostgreSQL connections, with outbound deletion

@@ -47,6 +47,25 @@ defmodule Fountain.Conversations.HomeCheckpoint do
 
   def on_park(_sandbox), do: :skipped
 
+  @doc "Capture a managed home's checkpoint once; the transition owns metadata publication."
+  def capture_once(%Sandbox{mode: "persistent"}, handle, operation_id) do
+    comment = "managed park #{operation_id}"
+    # The adapter can fall back to an older checkpoint when its list has no
+    # matching comment. Validate the returned ID through the typed provider API.
+    with {:ok, id} when is_binary(id) <-
+           Managoat.Sandbox.create_checkpoint(handle, comment: comment),
+         client <- Managoat.Sandbox.Sprites.Client.get!(),
+         sprite <- Sprites.Sprite.new(client, handle.name),
+         {:ok, %Sprites.Checkpoint{id: ^id, comment: ^comment}} <-
+           Sprites.get_checkpoint(sprite, id) do
+      id
+    else
+      _ -> :skipped
+    end
+  end
+
+  def capture_once(_sandbox, _handle, _operation_id), do: :skipped
+
   @doc "The checkpoint recorded on `sandbox`, as `%{id, at}`, or nil."
   @spec recorded(Sandbox.t()) :: %{id: String.t(), at: String.t()} | nil
   def recorded(%Sandbox{provider_meta: %{"checkpoint_id" => id} = meta}) when is_binary(id) do

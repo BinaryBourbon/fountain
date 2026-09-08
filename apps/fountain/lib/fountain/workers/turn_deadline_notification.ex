@@ -1,6 +1,6 @@
 defmodule Fountain.Workers.TurnDeadlineNotification do
   @moduledoc """
-  Delivers a persisted deadline stage independently of the conversation actor.
+  Delivers a persisted stage independently of the conversation actor.
 
   Webhook jobs were already committed with the event. This job only notifies
   local subscribers and telemetry; retries reuse the same event id. Deleted

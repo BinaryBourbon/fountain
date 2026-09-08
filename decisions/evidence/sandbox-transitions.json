@@ -1,0 +1,113 @@
+{
+  "recorded_at": "2026-09-08T10:21:42.182893+00:00",
+  "previous_checkpoint": "e9f3b389f0a1fa0d262ae7fd3767d3e042a49e80",
+  "scope": "Managed park/resume integration and admission/retirement fences; no production activation.",
+  "source_files": {
+    "apps/fountain/lib/fountain/conversations.ex": "sha256:c2845a9de8e2989dbe4b4271f78f4ec2f7f692678bb371a0910389b67028f0f5",
+    "apps/fountain/lib/fountain/conversations/conversation_server.ex": "sha256:55825fd28b861c5ce6917d42305a30e5f2e5b023982e52ae8da91410c41ae99d",
+    "apps/fountain/lib/fountain/conversations/execution_guard.ex": "sha256:b39a427f5cfa655296431321155d72415cf213ab61e024064327d6e09a6ac7a4",
+    "apps/fountain/lib/fountain/conversations/home_checkpoint.ex": "sha256:0985bbea2eb18966b79da1771a14183198a68c214b1aa46f7386749e46a4ae8a",
+    "apps/fountain/lib/fountain/conversations/lifecycle.ex": "sha256:ca5a5a36330a324968485c1e1abb829c034b49f9f578086373c394940d0360a7",
+    "apps/fountain/lib/fountain/conversations/sandbox_transitions.ex": "sha256:896f054d28cba261a8ba3481c72756b4a39dba4002a7346b799dcd45eb72defc",
+    "apps/fountain/lib/fountain/workers/sandbox_reaper.ex": "sha256:07fbbef07f2747c1ac6205023ad48bbefeb02ad5602a16d4111c0c87cbd2fbfa",
+    "apps/fountain/lib/fountain/workers/turn_deadline_notification.ex": "sha256:34d580c84953433715b96ffefe149414cbf9618cb7c399f7502ec4c254dba1ea",
+    "apps/fountain/test/fountain/conversations/sandbox_transitions_test.exs": "sha256:cd4ee93ed2722199f7293f29d26bc68ffcc02a4755eb2f285bac768a6df5c12c",
+    "scripts/verify-sandbox-transition-races.exs": "sha256:2faddaca3b98cbf22520fb69913cb126cf48c67cd25fa538e5d5620d7e920773"
+  },
+  "full_precommit": {
+    "tests": 4871,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:f64f84ade13566083d0c1930116a3085e9811f016b2113ad2786eb0b0d5e7ad4"
+  },
+  "focused": {
+    "tests": 24,
+    "failures": 0,
+    "log_sha256": "sha256:18b3e008f1db6a8d448a90af1702c8bb0641053bdfdfb9a38176d68676ad4856"
+  },
+  "database_races": {
+    "results": {
+      "DEADLINE_RACE_RESULT": {
+        "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+        "outcomes": {
+          "completion_won": 11,
+          "expiry_won": 9
+        },
+        "separate_database_connections": true,
+        "cases": 20,
+        "provider_operations": 0,
+        "lock_wait_cannot_extend_deadline": true,
+        "delayed_lock_tables": [
+          "conversations",
+          "turns"
+        ],
+        "delayed_operations": [
+          "spawn",
+          "stdin_write"
+        ],
+        "completed_connections_require_cleanup": true,
+        "deadline_event_reuse_cases": 9
+      },
+      "SANDBOX_TRANSITION_RACE_RESULT": {
+        "outcomes": {
+          "autonomous:park_first": 20,
+          "user:admission_first": 7,
+          "user:park_first": 13
+        },
+        "park_admission_races": 40,
+        "deterministic_lock_orders": 4,
+        "duplicate_park_races": 20,
+        "resume_destroy_races": 20,
+        "separate_database_connections": true,
+        "live_provider_operations": 0
+      }
+    },
+    "log_sha256": "sha256:8d18bd67d995ef0b62e174cd1bafeab9f35726f2831de8ba5026be3e092c73c3",
+    "script": "scripts/verify-sandbox-transition-races.exs"
+  },
+  "verified_behavior": [
+    "Managed actor and actual reaper park paths commit a transition before provider requests.",
+    "User and autonomous admission serialize with park and reject pending operations even after a stale ready write.",
+    "Resume and ready reuse require the original provider instance ID and recheck current ownership and generation.",
+    "Managed resume retains existing physical capacity without provider I/O inside the quota transaction.",
+    "A refused park/destroy retains the actor connection and does not report successful retirement.",
+    "A managed home checkpoint is requested once and its metadata is applied only after successful transition confirmation.",
+    "Timeouts retain uncertainty and do not grant replay; task timeouts survive caller death.",
+    "Account deletion, owner drift, retirement and stale transition results cannot reopen the sandbox.",
+    "Park events and durable notification jobs commit together; a rollback emits no park success.",
+    "A delayed co-tenant park message cannot stop an actor after a newer resume generation."
+  ],
+  "failed_run_corrections": [
+    {
+      "log_sha256": "sha256:f3a89a407c4937e31da189737040843b3cb618047a3ce4b9160e3560aaf504a4",
+      "failures": 12,
+      "cause": "Test fixture tried to set trusted provider identity through the general changeset; corrected to use actual finish_provision."
+    },
+    {
+      "log_sha256": "sha256:d82b425d53b99b7aa7c78f13f12ee2c77fe4009eba5568f7508e647148c2c3fc",
+      "failures": 1,
+      "cause": "A stale Ecto fixture write was a no-op; reload before simulating an independent ready write."
+    },
+    {
+      "log_sha256": "sha256:d55c5b32d99a32f67e0152cdc204c659e87df84f02017d916127d7c3166223cf",
+      "cause": "Dialyzer found old lifecycle specs promised only :ok; updated them to include enforced refusals."
+    }
+  ],
+  "limits": {
+    "provider_task_timeout_ms": 35000,
+    "fountain_checkpoint_retries": 0,
+    "managed_capacity_released_by_park": false
+  },
+  "live_provider_operations": 0,
+  "public_execution_controls_enabled": false,
+  "recovery_worker_enabled_by_default": false,
+  "remaining": [
+    "Bounded checkpoint HTTP transport, response bytes and verified transport cancellation.",
+    "Full holder attachment/transfer arbitration and authoritative idle-bound rechecks.",
+    "Actor shutdown versus concurrent wake and queued-prompt preservation.",
+    "Recovery of uncertain park/resume outcomes without replaying provider writes.",
+    "Ordinary legacy creation physical-name registry coverage.",
+    "Provider conditional identity safety and full live acceptance before activation/stack merge.",
+    "Aggregate inference limits and actual dollar-cost reporting."
+  ]
+}

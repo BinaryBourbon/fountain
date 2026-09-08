@@ -2556,6 +2556,10 @@ defmodule Fountain.Conversations do
           :erlang.phash2(sandbox_id)
         ])
 
+        # ownership: caller supplied its tenant-scoped sandbox; reset holds the machine lock.
+        if Fountain.Conversations.SandboxTransitions._unsafe_pending?(sandbox_id),
+          do: Repo.rollback(:provider_operation_fenced)
+
         # ownership: reset_sandbox received the caller's tenant-scoped sandbox;
         # system retirement calls it only for the already-owned agent's homes.
         if _unsafe_running_turns_elsewhere(sandbox_id, nil) > 0 or
@@ -3341,7 +3345,23 @@ defmodule Fountain.Conversations do
 
       {:error, {:sandbox_provider_disabled, provider}}
     else
-      probe_sandbox(provider, name, status, sandbox_id)
+      # ownership: wake loaded this sandbox through the already-owned conversation.
+      if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox_id) do
+        cond do
+          Fountain.Conversations.SandboxTransitions._unsafe_pending?(sandbox_id) ->
+            {:error, :provider_operation_fenced}
+
+          status == "suspended" ->
+            {:reuse, sandbox_id}
+
+          true ->
+            # ownership: the same already-owned wake sandbox, with identity rechecked by the context.
+            with :ok <- Fountain.Conversations.SandboxTransitions._unsafe_verify_ready(sandbox),
+                 do: {:reuse, sandbox_id}
+        end
+      else
+        probe_sandbox(provider, name, status, sandbox_id)
+      end
     end
   end
 
@@ -3410,6 +3430,28 @@ defmodule Fountain.Conversations do
   # have capacity besides this sandbox"), so the loser is never spuriously
   # refused at the cap for a wake that added no concurrency.
   defp wake_suspended_sandbox(user_id, sandbox_id) do
+    # ownership: wake derived this machine from its conversation; each branch rechecks user_id.
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox_id) do
+      case _unsafe_get_sandbox(sandbox_id) do
+        %Sandbox{user_id: ^user_id, status: "suspended"} = sandbox ->
+          # Managed parking retains capacity; this wake consumes no new slot.
+          Fountain.Conversations.SandboxTransitions._unsafe_resume(sandbox)
+
+        %Sandbox{user_id: ^user_id, status: "ready"} = sandbox ->
+          # ownership: the loaded sandbox still belongs to the already-owned conversation's user.
+          if Fountain.Conversations.SandboxTransitions._unsafe_pending?(sandbox_id),
+            do: {:error, :provider_operation_fenced},
+            else: {:ok, sandbox}
+
+        _ ->
+          {:error, :sandbox_not_ready}
+      end
+    else
+      wake_legacy_sandbox(user_id, sandbox_id)
+    end
+  end
+
+  defp wake_legacy_sandbox(user_id, sandbox_id) do
     case _unsafe_get_sandbox(sandbox_id) do
       %Sandbox{status: "suspended"} ->
         Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
