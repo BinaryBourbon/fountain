@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- Prepare a supervised bounded-command transport that binds provider identity
+  before stdin, rechecks journal authority for each write, and retains uncertain
+  operations. Successful bounded replies now require connection retirement before
+  a fresh successor. Actor/spawn integration and public activation remain gated.
+
 - Commit deadline failure events and delivery jobs with the failed turn. Late
   completion and interruption reuse the original event, and notification retries
   retain its id. Public bounded execution remains disabled.

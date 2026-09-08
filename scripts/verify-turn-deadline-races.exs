@@ -103,9 +103,25 @@ results =
     turn = Repo.get!(Turn, turn.id)
 
     case {execution.state, turn.status} do
-      {"completed", "completed"} ->
+      {"ready", "completed"} ->
         nil = execution.deadline_event_id
-        {:error, :not_ready} = ExecutionGuard._unsafe_claim_termination(execution.id)
+
+        {:error, :execution_fenced} =
+          ExecutionGuard._unsafe_authorize_write(execution.id, connection)
+
+        claims =
+          DeadlineRace.concurrently([
+            fn -> ExecutionGuard._unsafe_claim_termination(execution.id) end,
+            fn -> ExecutionGuard._unsafe_claim_termination(execution.id) end
+          ])
+
+        [%{execution: claimed}] = for {:ok, %{permitted: true} = claim} <- claims, do: claim
+        [{:error, :not_ready}] = Enum.filter(claims, &match?({:error, _}, &1))
+
+        {:ok, %{state: "stopped"}} =
+          ExecutionGuard._unsafe_record_termination(claimed.id, claimed.attempt_id, :ok)
+
+        "completed" = Repo.get!(Turn, turn.id).status
         "completion_won"
 
       {"ready", "failed"} ->
@@ -165,13 +181,13 @@ results =
         "expiry_won"
 
       _ ->
-        raise "Completion and termination were not mutually exclusive"
+        raise "Completion/expiry failed to retain the required cleanup obligation"
     end
   end
 
 # A caller can reach the journal before its deadline, then wait behind a lock
 # until after it. Authorization must use the time after acquiring the lock.
-for lock_table <- ["conversations", "turns"] do
+for operation <- [:spawn, :write], lock_table <- ["conversations", "turns"] do
   sandbox =
     Repo.insert!(%Sandbox{
       user_id: user.id,
@@ -198,7 +214,13 @@ for lock_table <- ["conversations", "turns"] do
   owner = self()
   lock_id = if lock_table == "conversations", do: conv.id, else: turn.id
   deadline = DateTime.add(DateTime.utc_now(), 2, :second)
-  {:ok, execution} = ExecutionGuard._unsafe_register(turn.id, Ecto.UUID.generate(), deadline)
+  connection = Ecto.UUID.generate()
+  {:ok, execution} = ExecutionGuard._unsafe_register(turn.id, connection, deadline)
+
+  if operation == :write do
+    {:ok, _} = ExecutionGuard._unsafe_claim_spawn(execution.id)
+    {:ok, _} = ExecutionGuard._unsafe_bind_identity(execution.id, connection, "controlled-write")
+  end
 
   holder =
     Task.async(fn ->
@@ -228,7 +250,11 @@ for lock_table <- ["conversations", "turns"] do
       Repo.checkout(fn ->
         %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
         send(owner, {:claim_backend, backend})
-        ExecutionGuard._unsafe_claim_spawn(execution.id)
+
+        case operation do
+          :spawn -> ExecutionGuard._unsafe_claim_spawn(execution.id)
+          :write -> ExecutionGuard._unsafe_authorize_write(execution.id, connection)
+        end
       end)
     end)
 
@@ -256,8 +282,15 @@ for lock_table <- ["conversations", "turns"] do
   Process.sleep(max(DateTime.diff(deadline, DateTime.utc_now(), :millisecond), 0) + 50)
   send(holder.pid, :release)
   Task.await(holder)
-  {:error, :deadline_expired} = Task.await(claim)
-  true = is_nil(Repo.get!(TurnExecution, execution.id).spawn_submitted_at)
+
+  case operation do
+    :spawn ->
+      {:error, :deadline_expired} = Task.await(claim)
+      true = is_nil(Repo.get!(TurnExecution, execution.id).spawn_submitted_at)
+
+    :write ->
+      {:ok, %{permitted: false, turn: %{limit_reason: "wall_time_limit"}}} = Task.await(claim)
+  end
 end
 
 IO.puts(
@@ -269,6 +302,8 @@ IO.puts(
       provider_operations: 0,
       lock_wait_cannot_extend_deadline: true,
       delayed_lock_tables: ["conversations", "turns"],
+      delayed_operations: ["spawn", "stdin_write"],
+      completed_connections_require_cleanup: true,
       deadline_event_reuse_cases: Enum.count(results, &(&1 == "expiry_won")),
       scope: "Local PostgreSQL arbitration, event durability and write permissions only"
     })

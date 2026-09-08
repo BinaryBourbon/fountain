@@ -1022,7 +1022,7 @@ defmodule Fountain.Conversations.TurnMachine do
       Managoat.ACP.Peer.start(
         owner: self(),
         # See reattach_acp_peer/3 for the writer's contract.
-        writer: fn iodata -> Managoat.Sandbox.write_stdin(command, iodata) end,
+        writer: command_writer(command, opts),
         ref: command.ref,
         prompt: prompt,
         mode: mode,
@@ -1031,10 +1031,21 @@ defmodule Fountain.Conversations.TurnMachine do
         images: Keyword.get(opts, :images, []),
         mcp_servers: Keyword.get(opts, :mcp_servers, []),
         model: Keyword.get(opts, :model),
-        permission_policy: Keyword.get(opts, :permission_policy)
+        permission_policy: Keyword.get(opts, :permission_policy),
+        execution_limits: Keyword.get(opts, :execution_limits)
       )
 
     {peer, Process.monitor(peer)}
+  end
+
+  defp command_writer(command, opts) do
+    case Keyword.get(opts, :execution_transport) do
+      nil ->
+        fn data -> Managoat.Sandbox.write_stdin(command, data) end
+
+      pid when is_pid(pid) ->
+        fn data -> Fountain.Conversations.ExecutionTransport.write(pid, data) end
+    end
   end
 
   # The permission policy in force for this turn (#939): the agent's own,

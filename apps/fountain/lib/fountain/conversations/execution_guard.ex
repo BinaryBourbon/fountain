@@ -58,17 +58,9 @@ defmodule Fountain.Conversations.ExecutionGuard do
           if sandbox.user_id != conv.user_id, do: Repo.rollback(:ownership_changed)
           if sandbox.status != "ready", do: Repo.rollback(:sandbox_not_ready)
 
-          prior = prior_connection(connection_id)
-          if prior && prior.state != "completed", do: Repo.rollback(:connection_retired)
-
-          if prior &&
-               (prior.conversation_id != conv.id || prior.sandbox_id != sandbox.id ||
-                  prior.sandbox_name != sandbox.sprite_name || prior.provider != sandbox.provider ||
-                  prior.user_id != conv.user_id),
-             do: Repo.rollback(:connection_owned_elsewhere)
-
-          if prior && is_nil(prior.provider_session_id),
-            do: Repo.rollback(:connection_unidentified)
+          # Bounded turns never inherit a warm process: it may retain background
+          # work or SDK allowances from its previous prompt.
+          if prior_connection(connection_id), do: Repo.rollback(:connection_retired)
 
           user = Repo.get!(Fountain.Accounts.User, conv.user_id)
 
@@ -93,7 +85,6 @@ defmodule Fountain.Conversations.ExecutionGuard do
             sandbox_name: sandbox.sprite_name,
             provider: sandbox.provider,
             connection_id: connection_id,
-            provider_session_id: prior && prior.provider_session_id,
             deadline_at: deadline_at
           }
 
@@ -174,6 +165,37 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end
   end
 
+  @doc "Authorize an immediate write to the original identified execution."
+  def _unsafe_authorize_write(id, connection_id, opts \\ []) do
+    with_execution(id, fn execution ->
+      now = Keyword.get(opts, :now, DateTime.utc_now())
+
+      cond do
+        execution.connection_id != connection_id ->
+          Repo.rollback(:stale_connection)
+
+        execution.state != "active" ->
+          Repo.rollback(:execution_fenced)
+
+        DateTime.compare(now, execution.deadline_at) != :lt ->
+          {decision, changed, event} = expire(execution, now)
+          {Map.put(decision, :permitted, false), changed, event}
+
+        is_nil(execution.provider_session_id) ->
+          Repo.rollback(:identity_unconfirmed)
+
+        not match?(%Turn{status: "running"}, Repo.get(Turn, execution.turn_id)) ->
+          Repo.rollback(:turn_not_running)
+
+        not current_binding?(execution) ->
+          Repo.rollback(:ownership_changed)
+
+        true ->
+          {%{permitted: true, execution: execution}, nil, nil}
+      end
+    end)
+  end
+
   @doc "A completion after the absolute deadline becomes a failed, fenced turn."
   def _unsafe_complete(id, status, opts \\ []) when status in @terminal_turns do
     with_execution(id, fn execution ->
@@ -244,8 +266,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         stop(execution, turn, turn.status, now)
 
       execution.state == "active" and turn.status == "completed" ->
-        updated = update!(execution, %{state: "completed"})
-        {%{execution: updated, turn: turn}, updated, "completed"}
+        stop(execution, turn, "completed", now)
 
       execution.state == "active" and status in ["failed", "interrupted"] ->
         stop(execution, turn, status, now)
@@ -255,9 +276,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         Repo.rollback(:execution_not_started)
 
       execution.state == "active" and DateTime.compare(now, execution.deadline_at) == :lt ->
-        updated = update!(execution, %{state: "completed"})
-        turn = update!(turn, %{status: status, ended_at: DateTime.truncate(now, :second)})
-        {%{execution: updated, turn: turn, terminal_changed: true}, updated, "completed"}
+        stop(execution, turn, status, now)
 
       true ->
         {%{execution: execution, turn: Repo.get(Turn, execution.turn_id)}, nil, nil}
@@ -453,8 +472,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         stop(execution, turn, turn.status, now)
 
       turn.status == "completed" ->
-        updated = update!(execution, %{state: "completed"})
-        {%{execution: updated, turn: turn}, updated, "completed"}
+        stop(execution, turn, "completed", now)
 
       true ->
         state =
@@ -484,8 +502,8 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end
   end
 
-  # A local failure or interruption is not evidence that the command stopped.
-  # Retire this connection only after the same remote confirmation as a timeout.
+  # No local turn outcome proves the command stopped. Even a successful reply
+  # may leave background work; every bounded connection requires remote cleanup.
   defp stop(execution, turn, status, now) do
     state =
       cond do

@@ -56,6 +56,7 @@ defmodule Fountain.Application do
         # request process that started it, or the test that made the request
         # (#1040). Supervised and unlinked, a crash here is a log line.
         {Task.Supervisor, name: Fountain.TaskSupervisor},
+        {DynamicSupervisor, name: Fountain.ExecutionTransportSupervisor, strategy: :one_for_one},
         FountainWeb.Plugs.RateLimit.Sweeper,
         Fountain.Conversations.Redaction,
         Fountain.FeatureFlags.Cache,

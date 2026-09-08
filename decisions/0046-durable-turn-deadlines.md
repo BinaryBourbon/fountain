@@ -51,7 +51,8 @@ cannot interrupt its blocked callback. Closing a local command transport does
 not establish remote termination. A shared sandbox can host other conversations
 ([ADR 0023](0023-persistent-agent-sandbox.md)); deleting the machine is not a
 per-turn cancellation mechanism. An ACP connection can also outlive its turn:
-a stale timeout must not kill the process after a successor starts using it.
+a stale timeout must not affect a successor. Bounded turns use fresh connection
+identities; successful replies still retire possible background work.
 
 ## Decision
 
@@ -78,7 +79,7 @@ connection through the termination journal before another turn may use it.
 | `submitted` | One persisted attempt has been authorized; its result is outstanding. |
 | `uncertain` | Result or ownership cannot be established; retain the fence. |
 | `stopped` | That attempt was confirmed, or no spawn was ever submitted. |
-| `completed` | The turn ended; a positively identified connection may be reused. |
+| `completed` | Legacy journal state; new bounded connections are retired after every outcome. Reuse is refused. |
 
 The journal retains identifiers and operation state independently of transcript
 rows. Cascading deletion would erase uncertain provider intent. It stores no
@@ -127,9 +128,10 @@ Integration surfaces already inspected:
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
 | Deadline supervisor | Coordinator has passing draft CI; durable deadline-stage delivery passes local full validation. Public acceptance remains. |
 
-Bounded connections also need a shutdown policy after successful replies: the
-current warm connection can continue background work outside a turn. Completion
-must not silently discard that obligation. Register before title generation,
+The prepared transport branch retires every bounded connection after a reply,
+including success. The turn can stay completed while its journal waits for
+confirmed cleanup; a successor requires a fresh connection identity and a
+cleared fence. Register before title generation,
 adapter preparation, or any model prompt; keep cancellation intent ahead of
 blocking provider writes.
 
@@ -157,6 +159,44 @@ Tests start owned coordinators explicitly; normal test boot disables the child
 to avoid scanning other tests' sandboxed fixtures. No public capability was
 enabled by this change. All actor/lifecycle and trusted-identity requirements
 above remain activation gates.
+
+## Bounded command transport
+
+A further local branch implements a supervised transport and guarded ACP writer.
+The spawn intent is persisted before I/O. Provider control metadata must match
+the returned command reference before the original connection can receive stdin;
+stdout cannot supply identity. Every write rechecks the locked journal, ownership
+and deadline. An in-flight write may become uncertain; it is never replayed, and
+local task termination does not prove remote termination or stopped billing.
+
+Close acknowledges persisted retirement intent, not remote confirmation. Owner
+death also requests retirement. Failed local retirement writes retry; local tasks
+have hard timeouts that survive coordinator death. Early frames have a bounded
+buffer, and late identity can make an expired spawn cleanable. Local draining
+ends 30 seconds after retirement (or the original deadline); remaining remote
+uncertainty stays in the journal. Crash formatting redacts message and buffered
+payloads. A terminal command frame seals local writes while the actor interprets
+its outcome, so the transport cannot race a valid reply with an interruption.
+
+The real ACP peer test completes a handshake and prompt through this writer,
+observes Claude's typed SDK limit extension, then refuses a later prompt after
+completion. These are local protocol tests with a simulated sandbox adapter;
+there is no live provider or production enforcement proof yet. Focused validation
+passes 66 transport/journal/event/coordinator tests. Full precommit passes 4,699
+tests and 6 doctests with zero failures. Twenty independent-connection database
+races also pass, including delayed spawn and stdin authorization after locks on
+both parent and turn rows. See `decisions/evidence/execution-transport.json`.
+
+`ConversationServer.run_fresh_turn` does not yet select this transport. Before
+wiring it, move adapter installation into the identified command: the current
+`Connection.spawn_command` performs a separate untracked `Sandbox.exec` through
+`Runtimes.ACP.install`. That installer currently builds one script, so expose and
+reuse its preparation script through the library instead of copying its pin or
+shell logic into Fountain. Preserve stdin for the eventual ACP process. Register
+before preparation; bound or omit separate title inference. Then wire fresh,
+warm, autonomous, cancellation and recovery paths together. Public capability
+admission stays empty until these gates and released Sprites identity support
+are complete.
 
 ## Durable deadline events
 
