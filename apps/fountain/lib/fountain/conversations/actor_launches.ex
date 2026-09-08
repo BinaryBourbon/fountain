@@ -1,13 +1,13 @@
 defmodule Fountain.Conversations.ActorLaunches do
   @moduledoc """
-  Commit fresh creation and its launch outbox before starting a local actor.
+  Commit actor startup requests before calling Horde.
 
-  Retrying Horde startup does not acknowledge a launch or grant another provider
-  attempt. The first actor claim acknowledges under the same machine/parent locks;
-  later actors cannot recreate unfinished provisioning. Acknowledged launches are
-  never redelivered by the outbox. Ready-machine maintenance can retain ancestry.
-  Fresh replacement wake also commits its binding before startup. Ready attach
-  and abandoned-actor/provider reconciliation remain separate integration work; this module never adopts or deletes a provider resource.
+  Fresh creation and replacement reserve their machines atomically with launch.
+  Reconnect requests authorize only an existing ready machine. Each request is
+  acknowledged with its actor claim; redelivery cannot grant another provider
+  attempt. Original creation ancestry remains immutable across reconnects.
+  Suspended-provider wake and abandoned-actor reconciliation remain separate
+  integration work. This module never adopts or deletes a provider resource.
   """
   import Ecto.Query
   alias Fountain.{Conversations, Repo}
@@ -65,6 +65,49 @@ defmodule Fountain.Conversations.ActorLaunches do
     end
   end
 
+  @doc "Save a reconnect request for the observed ready machine, without reserving compute."
+  def reconnect(observed, machine, receipt_id \\ nil) do
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(machine.id)])
+
+      parent = Repo.one(from c in Conversation, where: c.id == ^observed.id, lock: "FOR UPDATE")
+      sandbox = Repo.one(from s in Sandbox, where: s.id == ^machine.id, lock: "FOR UPDATE")
+
+      unless parent && sandbox && parent.user_id == observed.user_id &&
+               parent.runtime == observed.runtime && parent.sandbox_id == observed.sandbox_id &&
+               parent.sandbox_id == sandbox.id && sandbox.user_id == parent.user_id &&
+               parent.status not in ~w(terminated failed) && sandbox.status == "ready" &&
+               sandbox.provider == machine.provider && sandbox.sprite_name == machine.sprite_name &&
+               sandbox.provider_instance_id == machine.provider_instance_id &&
+               sandbox.provider_meta == machine.provider_meta,
+             do: Repo.rollback(:ownership_changed)
+
+      # Ownership: the locked parent and machine belong to the observed tenant.
+      if Conversations.SandboxTransitions._unsafe_pending?(sandbox.id),
+        do: Repo.rollback(:provider_operation_fenced)
+
+      receipt = opening_receipt!(parent, receipt_id)
+
+      pending =
+        Repo.one(
+          from l in ActorLaunch,
+            where: l.conversation_id == ^parent.id and l.state == "requested",
+            lock: "FOR UPDATE"
+        )
+
+      launch =
+        if pending do
+          assert_binding!(pending, parent, sandbox)
+          unless pending.kind == "reconnect", do: Repo.rollback(:launch_unavailable)
+          pending
+        else
+          save!(parent, sandbox, receipt, nil, "reconnect")
+        end
+
+      {parent, launch}
+    end)
+  end
+
   # A losing caller may hit the quota gate after the winner consumes the last
   # slot. Reuse only a launch that explicitly names this same original binding.
   defp replacement_winner(observed) do
@@ -110,6 +153,14 @@ defmodule Fountain.Conversations.ActorLaunches do
   end
 
   defp save!(parent, sandbox, receipt, source_id \\ nil, kind \\ "create") do
+    # All callers hold the parent lock. A previous unresolved request needs its
+    # own outcome, not an exception from the unique index or a second launch.
+    if Repo.exists?(
+         from l in ActorLaunch,
+           where: l.conversation_id == ^parent.id and l.state == "requested"
+       ),
+       do: Repo.rollback(:launch_unavailable)
+
     deadline = DateTime.add(DateTime.utc_now(), launch_timeout_ms(), :millisecond)
 
     deadline =
@@ -127,6 +178,7 @@ defmodule Fountain.Conversations.ActorLaunches do
         sandbox_id: sandbox.id,
         source_sandbox_id: source_id,
         kind: kind,
+        reconnect_identity: if(kind == "reconnect", do: reconnect_identity(sandbox)),
         runtime: parent.runtime,
         opening_receipt_id: receipt && receipt.id,
         deadline_at: deadline
@@ -233,15 +285,34 @@ defmodule Fountain.Conversations.ActorLaunches do
 
   @doc "Acknowledge while ActorOwnership holds the original machine, parent and sandbox locks."
   def acknowledge!(parent, sandbox, actor_id, supplied_id) do
+    pending =
+      Repo.one(
+        from l in ActorLaunch,
+          where: l.conversation_id == ^parent.id and l.state == "requested",
+          lock: "FOR UPDATE"
+      )
+
+    # A stored child spec must not bypass a newer request's cancellation or
+    # deadline. Legacy actors may retain only the original creation ancestry.
+    if pending && pending.id != supplied_id, do: Repo.rollback(:launch_unavailable)
+
     launch =
-      Repo.one(from l in ActorLaunch, where: l.sandbox_id == ^sandbox.id, lock: "FOR UPDATE")
+      if supplied_id do
+        Repo.one(from l in ActorLaunch, where: l.id == ^supplied_id, lock: "FOR UPDATE")
+      else
+        Repo.one(
+          from l in ActorLaunch,
+            where: l.sandbox_id == ^sandbox.id and l.kind in ["create", "replace"],
+            lock: "FOR UPDATE"
+        )
+      end
 
     cond do
       is_nil(launch) and is_nil(supplied_id) ->
         nil
 
       is_nil(launch) ->
-        Repo.rollback(:ownership_changed)
+        Repo.rollback(:launch_unavailable)
 
       launch.state == "acknowledged" and sandbox.status in ~w(ready suspended) and
         launch.conversation_id != parent.id and is_nil(supplied_id) ->
@@ -283,6 +354,14 @@ defmodule Fountain.Conversations.ActorLaunches do
 
       launch.state == "acknowledged" and sandbox.status in ~w(ready suspended) and
           supplied_id in [nil, launch.id] ->
+        # A reconnect's old child specification is not permission to resume a
+        # parked machine or bypass provider work submitted after its first actor.
+        # Ownership: assert_binding! verified the saved physical identity above.
+        if launch.kind == "reconnect" and
+             (sandbox.status != "ready" or
+                Conversations.SandboxTransitions._unsafe_pending?(sandbox.id)),
+           do: Repo.rollback(:launch_unavailable)
+
         launch
 
       true ->
@@ -301,7 +380,7 @@ defmodule Fountain.Conversations.ActorLaunches do
 
       # Ownership: this launch retains its accepted parent and original machine.
       # The watchdog rechecks that binding and current actor before any failure.
-      if same_binding?(launch, parent, sandbox) do
+      if launch.kind != "reconnect" and same_binding?(launch, parent, sandbox) do
         Conversations.ProvisionWatchdog._unsafe_fail_launch(launch)
       end
 
@@ -348,14 +427,31 @@ defmodule Fountain.Conversations.ActorLaunches do
   defp same_binding?(launch, parent, sandbox) do
     parent && sandbox && parent.user_id == launch.user_id && sandbox.user_id == launch.user_id &&
       parent.id == launch.conversation_id && parent.sandbox_id == launch.sandbox_id &&
-      sandbox.id == launch.sandbox_id && parent.runtime == launch.runtime
+      sandbox.id == launch.sandbox_id && parent.runtime == launch.runtime &&
+      (launch.kind != "reconnect" or launch.reconnect_identity == reconnect_identity(sandbox))
+  end
+
+  defp reconnect_identity(sandbox) do
+    %{
+      "provider" => sandbox.provider,
+      "name" => sandbox.sprite_name,
+      "instance_id" => sandbox.provider_instance_id,
+      "lifecycle_operation_id" => (sandbox.provider_meta || %{})["lifecycle_operation_id"]
+    }
   end
 
   defp requested!(launch, parent, sandbox) do
     if launch.state != "requested", do: Repo.rollback(:launch_settled)
 
-    if parent.status in ~w(terminated failed) or sandbox.status != "pending",
+    expected_status = if launch.kind == "reconnect", do: "ready", else: "pending"
+
+    if parent.status in ~w(terminated failed) or sandbox.status != expected_status,
       do: Repo.rollback(:ownership_changed)
+
+    # Ownership: assert_binding! checked this launch's original tenant and machine.
+    if launch.kind == "reconnect" and
+         Conversations.SandboxTransitions._unsafe_pending?(sandbox.id),
+       do: Repo.rollback(:ownership_changed)
 
     if launch.opening_receipt_id do
       receipt =

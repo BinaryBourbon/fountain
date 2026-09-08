@@ -135,7 +135,23 @@ defmodule Fountain.Conversations.SandboxModeTest do
   test "a wake onto a fresh sandbox keeps the home a home", ctx do
     {:ok, conv} = launch(ctx)
     old = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    launch = Repo.get_by!(Conversations.ActorLaunch, sandbox_id: old.id)
+
+    {:ok, state, _, _} =
+      Conversations.ActorOwnership.start(
+        %{
+          conversation_id: conv.id,
+          sandbox_id: old.id,
+          actor_claim: Ecto.UUID.generate(),
+          launch_id: launch.id
+        },
+        conv,
+        old,
+        30_000
+      )
+
     {:ok, _} = Conversations.update_sandbox(old, %{status: "ready"})
+    Conversations.ActorOwnership.finish(state, fn -> :ok end)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
     stub(Managoat.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)

@@ -837,13 +837,14 @@ The existing account, inference, provider and actor-ownership gates still apply.
 Return records `returned`; this means the function returned, not that a provider
 operation succeeded. Missing-agent refusal commits with that return marker.
 An exception or process death leaves `started`, which also fences wakes from newer
-receipts on that conversation. Registry absence or age cannot release that fence.
+receipts on that conversation. A settled reconnect request can establish handoff
+as described below. Registry absence or age cannot release that fence.
 
 This closes the pre-invocation submitter gap. It does not recover a process lost
 after the invocation claim or establish a provider incarnation. Fresh creation
 and fresh replacement now have the durable launch protocol described below.
-Ready-machine wake and attach still need complete launch recovery and provider
-journal links. A stopped actor claim
+Ready-machine startup now uses the reconnect protocol below. Suspended-provider
+wake and abandoned-actor recovery still need integration and provider journal links. A stopped actor claim
 on a still-starting machine also needs reconciliation before any new creation.
 These are remaining integration gates, not reasons to deploy the current draft.
 
@@ -909,7 +910,7 @@ See `decisions/evidence/actor-launch.json` for validation and source hashes.
 
 This is fresh-creation integration, not complete lifecycle recovery. Fresh
 replacement now uses the same launch journal as described below. Ready-machine
-wake and attach still need complete launch recovery. Provider journal identity,
+startup uses a separate reconnect request as described below. Provider journal identity,
 abandoned actors, interrupted prompt wakes and legacy rollout remain open.
 Execution controls and provider recovery remain disabled pending live acceptance.
 
@@ -949,8 +950,50 @@ a source identity change while wake waits, and a receipt lock held past expiry.
 Real actor callbacks verify committed binding and acknowledgment before the
 stubbed provider create. See `decisions/evidence/fresh-wake-launch.json`.
 
-This proves local fresh-replacement handoff, not complete recovery. Ready-machine
-wake and attach, interrupted wake reconciliation, abandoned actors, provider
+This proves local fresh-replacement handoff, not complete recovery. The next
+section covers ready-machine startup. Suspended wake, abandoned actors, provider
 identity links, conditional deletion and legacy rollout remain integration work.
 The lifecycle stack stays draft; live acceptance still gates deployment and
 activation of execution controls or provider recovery.
+
+
+## Durable ready-machine reconnect (integration in progress)
+
+Ready-machine wake and attachment now commit a reconnect request and dispatch job
+before calling Horde. The request records the tenant, parent, runtime, machine,
+provider identity, lifecycle generation, opening receipt and absolute deadline.
+Acceptance checks the observed binding under the machine and parent locks. It
+reserves no compute and permits no provider creation or resume.
+
+Only one requested launch may exist per parent. Concurrent callers share that
+request; different parents on a shared machine retain separate requests. A
+partial unique index preserves one original creation or replacement per machine.
+Reconnect history does not overwrite that original ancestry. The database
+rejects changes to the saved reconnect identity. Migration rollback refuses to
+erase reconnect history once requests exist.
+
+The actor acknowledges its exact request atomically with its claim. Admission
+rechecks the ready state, provider identity, operation fence, cancellation and
+deadline. A stale stored child specification cannot bypass a newer request.
+Startup refusal leaves the existing machine and conversation retryable. An
+acknowledged request is never redelivered by the outbox.
+
+Caller death after request commit leaves the dispatch job able to retry local
+startup. A settled reconnect also proves that the original prompt wake handed
+off after its provider phase returned. That evidence permits a later receipt to
+request its own wake without replaying the old invocation. The old `started`
+record remains intact; unrelated or unsettled wakes still fence new invocations.
+
+Local tests kill the caller before Horde startup, recover through the committed
+job, and submit a later prompt after normal actor retirement. Real actor callbacks
+verify acknowledgment before provider access and reject creation on reattach.
+Separate PostgreSQL connections exercise duplicate requests, duplicate claims,
+claim/refusal races and admission locks held across identity changes or expiry.
+See `decisions/evidence/ready-wake-launch.json` for the validation checkpoint.
+
+This covers the local handoff after a ready machine has been selected. The
+suspended-provider resume still precedes that handoff. Crashes before handoff,
+abandoned acknowledged actors, bounded reattach completion, provider operation
+links and legacy rollout need further integration. No provider operation is
+replayed based on a missing process. The stack remains draft and undeployed;
+live acceptance still gates execution controls and provider recovery.

@@ -3249,7 +3249,7 @@ defmodule Fountain.Conversations do
          :ok <- _unsafe_execution_limits_gate(conv),
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
-         {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
+         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
       case maybe_reuse_sandbox(conv) do
         {:reuse, sandbox_id} ->
           # Reuse provisions nothing, so the fresh-path gates below never ran
@@ -3265,24 +3265,12 @@ defmodule Fountain.Conversations do
                # would be Fountain's and the deployment has spent its day. A door
                # with no platform key configured runs no query here.
                :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
-               {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
-            case start_conversation_server(conv, sandbox_id, runtime_module) do
-              {:error, {:already_started, winner_pid}} ->
-                # Lost a concurrent wake of the same conversation to another
-                # caller reusing the same sandbox. Mirrors the handoff in
-                # create_fresh_sandbox_and_start/3 (#330), but reuse provisions
-                # no row of its own, so there is nothing here to clean up —
-                # notify the winner about saved intent; its receipt owns admission.
-                Fountain.Conversations.PromptDelivery.notify_pending(
-                  conv.user_id,
-                  conv.id,
-                  winner_pid
-                )
-
-                {:ok, _unsafe_get_conversation!(conv.id)}
-
-              other ->
-                other
+               {:ok, sandbox} <- wake_suspended_sandbox(conv.user_id, sandbox_id),
+               {:ok, {parent, launch}} <-
+                 Fountain.Conversations.ActorLaunches.reconnect(conv, sandbox, receipt_id) do
+            case Fountain.Conversations.ActorLaunches.start(parent.user_id, parent.id, launch.id) do
+              {:error, _} = error -> error
+              _ -> {:ok, get_conversation(parent.id, parent.user_id)}
             end
           end
 
@@ -3550,36 +3538,6 @@ defmodule Fountain.Conversations do
         )
 
         {:error, :sandbox_resume_failed}
-    end
-  end
-
-  # The child spec deliberately carries no prompt.
-  #
-  # Horde redistributes children when cluster membership changes — which every
-  # deploy does — and restarts each one from its *stored child spec*. A prompt
-  # baked into that spec is therefore replayed on every rebalance, silently
-  # re-running the user's last message against the agent. Production
-  # accumulated 38 turns from 2 distinct prompts on one conversation this way,
-  # one duplicate per rollout, and the agent on the other end spent several
-  # turns pointing out it was being asked the same thing repeatedly.
-  #
-  # So the prompt is delivered out of band, after the server exists. A cast is
-  # queued behind handle_continue(:provision), so it is processed once
-  # provisioning finishes; if provisioning fails the server stops and the cast
-  # dies with it, which is the right outcome — no turn on a failed provision.
-  defp start_conversation_process(conv, sandbox_id, runtime_module, opts \\ []) do
-    Horde.DynamicSupervisor.start_child(
-      Fountain.ConversationSupervisor,
-      {ConversationServer,
-       [conversation_id: conv.id, sandbox_id: sandbox_id, runtime_module: runtime_module] ++ opts}
-    )
-  end
-
-  defp start_conversation_server(conv, sandbox_id, runtime_module) do
-    with {:ok, pid} <- start_conversation_process(conv, sandbox_id, runtime_module) do
-      Fountain.Conversations.PromptDelivery.notify_pending(conv.user_id, conv.id, pid)
-
-      {:ok, _unsafe_get_conversation!(conv.id)}
     end
   end
 

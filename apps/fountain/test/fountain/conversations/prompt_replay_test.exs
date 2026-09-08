@@ -101,7 +101,7 @@ defmodule Fountain.Conversations.PromptReplayTest do
       {:ok, _} = Conversations.wake_conversation(conv.id, "hello")
 
       assert Enum.sort(Keyword.keys(spec_args())) ==
-               [:conversation_id, :runtime_module, :sandbox_id]
+               [:conversation_id, :launch_id, :runtime_module, :sandbox_id]
     end
   end
 

@@ -14,7 +14,7 @@ defmodule Fountain.Conversations.PromptWake do
   import Ecto.Query
   alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{Conversation, ConversationServer, PromptDelivery, PromptReceipt}
-  alias Fountain.Conversations.PromptWakeRequest
+  alias Fountain.Conversations.{ActorLaunch, PromptWakeRequest}
 
   @doc "Save with a newly accepted receipt while its owned parent is locked."
   def save!(parent, receipt) do
@@ -100,10 +100,25 @@ defmodule Fountain.Conversations.PromptWake do
                current.state == "requested" && not PromptDelivery.expired?(saved),
              do: Repo.rollback(:wake_unavailable)
 
-      # A second receipt cannot authorize replay of an interrupted invocation.
+      # A settled reconnect proves that the original invocation handed startup
+      # to its durable request after the provider phase returned. This permits
+      # a new receipt's wake, never replay of the old invocation. Other started
+      # wakes (including suspended resume before handoff) remain fenced.
       if Repo.exists?(
            from w in PromptWakeRequest,
-             where: w.conversation_id == ^parent.id and w.state == "started"
+             as: :wake,
+             where: w.conversation_id == ^parent.id and w.state == "started",
+             where:
+               not exists(
+                 from l in ActorLaunch,
+                   where:
+                     l.opening_receipt_id == parent_as(:wake).id and
+                       l.user_id == parent_as(:wake).user_id and
+                       l.conversation_id == parent_as(:wake).conversation_id and
+                       l.sandbox_id == parent_as(:wake).sandbox_id and l.kind == "reconnect" and
+                       l.state in ["acknowledged", "refused"],
+                   select: 1
+               )
          ),
          do: Repo.rollback(:wake_unresolved)
 

@@ -1,5 +1,5 @@
 defmodule Fountain.Conversations.ActorLaunch do
-  @moduledoc "An explicit fresh-machine launch, acknowledged atomically by its first actor claim."
+  @moduledoc "An explicit actor launch, acknowledged atomically by its first actor claim."
   use Ecto.Schema
 
   @primary_key {:id, :binary_id, autogenerate: true}
@@ -9,6 +9,7 @@ defmodule Fountain.Conversations.ActorLaunch do
     field :sandbox_id, :binary_id
     field :source_sandbox_id, :binary_id
     field :kind, :string, default: "create"
+    field :reconnect_identity, :map
     field :runtime, :string
     field :opening_receipt_id, :binary_id
     field :deadline_at, :utc_datetime_usec
