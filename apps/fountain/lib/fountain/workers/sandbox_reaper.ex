@@ -249,9 +249,18 @@ defmodule Fountain.Workers.SandboxReaper do
     end
   end
 
+  # Ownership: this system sweep selected the sandbox and its current parents.
+  # This is a hint; a managed park rechecks activity and policy under its locks.
+  defp check_bounds(sandbox, now) do
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id),
+      do:
+        Fountain.Conversations.SandboxActivity._unsafe_check(sandbox, sandbox.conversations, now),
+      else: legacy_check_bounds(sandbox, now)
+  end
+
   # Same clock as ConversationServer.sandbox_clock_start/1: the max-lifetime
   # ceiling measures a continuous run, restarting on a wake from `suspended`.
-  defp check_bounds(sandbox, now) do
+  defp legacy_check_bounds(sandbox, now) do
     started_at = sandbox.last_resumed_at || sandbox.inserted_at
     Lifecycle.check(started_at, last_activity_at(sandbox), false, now)
   end

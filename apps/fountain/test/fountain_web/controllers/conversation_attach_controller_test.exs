@@ -40,7 +40,8 @@ defmodule FountainWeb.ConversationAttachControllerTest do
 
     {:ok, _} = SandboxOperations._unsafe_complete_create(creation.id, {:ok, handle})
     {:ok, ready} = SandboxOperations._unsafe_finish_provision(pending, ctx.first)
-    {:ok, _} = SandboxTransitions._unsafe_submit(ready, "park")
+    ready = age_sandbox_activity(ready)
+    {:ok, _} = SandboxTransitions._unsafe_submit(ready, {:park, :idle})
 
     assert %{"error" => "provider_operation_fenced"} =
              ctx |> create(%{"sandbox_id" => ready.id}) |> json_response(409)

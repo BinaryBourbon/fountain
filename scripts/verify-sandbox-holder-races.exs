@@ -15,6 +15,7 @@ fixture = fn user ->
   {:ok, creation} = SandboxOperations._unsafe_submit_create(sandbox, conv)
   {:ok, _} = SandboxOperations._unsafe_complete_create(creation.id, {:ok, %Handle{provider: :sprites, name: sandbox.sprite_name, instance_id: Ecto.UUID.generate()}})
   {:ok, sandbox} = SandboxOperations._unsafe_finish_provision(sandbox, conv)
+  sandbox = Fountain.Factory.age_sandbox_activity(sandbox)
   {user, sandbox, conv, attrs}
 end
 
@@ -88,12 +89,10 @@ park_results = for order <- orders do
   {_user, sandbox, _conv, attrs} = fixture.(nil)
   [attach, park] = race.(sandbox,
     fn -> Conversations.create_conversation(attrs) end,
-    fn -> SandboxTransitions._unsafe_submit(sandbox, "park") end, order)
+    fn -> SandboxTransitions._unsafe_submit(sandbox, {:park, :idle}) end, order)
   case {attach, park} do
-    {{:ok, holder}, {:ok, operation}} ->
-      {:ok, _} = SandboxTransitions._unsafe_complete(operation.id, {:ok, :skipped}, :idle)
-      true = Repo.exists?(Ecto.Query.from e in Fountain.Conversations.LogEvent, where: e.conversation_id == ^holder.id and e.stage == "sandbox")
-      :attachment_included
+    {{:ok, _holder}, {:error, :lifecycle_bound_not_reached}} ->
+      :attachment_kept_active
     {{:error, :provider_operation_fenced}, {:ok, _}} -> :park_won
     other -> raise "Invalid attachment/park outcome: #{inspect(other)}"
   end

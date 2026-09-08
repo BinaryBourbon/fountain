@@ -24,7 +24,9 @@ defmodule Fountain.Conversations.SandboxHolders do
       parents = lock_parents([candidate.sandbox_id])
       sandbox = lock_sandbox(candidate.sandbox_id)
       assert_destination!(sandbox, candidate, parents)
-      write!(Repo.insert(changeset))
+      inserted = write!(Repo.insert(changeset))
+      touch_attachment!(sandbox)
+      inserted
     end)
   end
 
@@ -55,6 +57,7 @@ defmodule Fountain.Conversations.SandboxHolders do
           sandbox = lock_sandbox(destination)
           peers = Enum.reject(parents, &(&1.id == current.id))
           assert_destination!(sandbox, candidate, peers)
+          touch_attachment!(sandbox)
         end
 
         updated = write!(Repo.update(changeset))
@@ -115,6 +118,7 @@ defmodule Fountain.Conversations.SandboxHolders do
           updated
         end)
 
+      touch_attachment!(destination)
       Enum.find(moved, &(&1.id == initiator.id))
     end)
   end
@@ -240,6 +244,12 @@ defmodule Fountain.Conversations.SandboxHolders do
 
   defp lock_sandbox(id),
     do: lock_optional_sandbox(id) || Repo.rollback(:sandbox_not_found)
+
+  defp touch_attachment!(sandbox) do
+    sandbox
+    |> Ecto.Changeset.change(last_attached_at: DateTime.utc_now())
+    |> Repo.update!()
+  end
 
   defp write!({:ok, row}), do: row
   defp write!({:error, error}), do: Repo.rollback(error)

@@ -501,7 +501,7 @@ PostgreSQL audit insert failures and verifies that park, resume, capacity and st
 intact.
 
 Unknown transition outcomes remain fenced, without an automatic replay.
-Authoritative idle-bound rechecks, actor startup/shutdown versus concurrent wake,
+Actor startup/shutdown versus concurrent wake, destructive lifecycle-bound rechecks,
 recovery of uncertain park/resume outcomes, ordinary creation name coverage and
 live provider acceptance remain unfinished. Execution controls and the recovery
 worker remain disabled. These source changes do not activate production cleanup.
@@ -561,3 +561,32 @@ The retirement regressions, release pins and preserved failed-run evidence are i
 - Local disconnects and signals alone do not confirm that remote work stopped.
 - Reconstructing success from writable markers cannot recover trusted exit evidence.
 - Replaying uncertain operations can create duplicate workers or affect a successor.
+
+## Managed park eligibility
+
+A managed park grant now rechecks its requested idle or lifetime reason after
+locking the machine, current parents, creation and sandbox row. It reads the
+current policy and clock there. A stale verdict creates no operation, sends no
+provider request and leaves the actor connection intact. Resume has no idle
+requirement. Busy turns and unresolved execution still refuse parking.
+
+`SandboxActivity` uses turn insertion, start and completion times across current
+holders, plus machine creation, last wake and holder attachment. Attachment,
+transfer, revival and replacement stamp `last_attached_at` in their transaction.
+This internal column is absent from the caller-controlled changeset. Parent
+creation times cover legacy rows without an attachment clock. Ordinary title,
+status and provider bookkeeping do not extend the idle grace period. The
+continuous-run ceiling still starts at creation or the last wake.
+
+The managed reaper uses the same activity calculation as a selection hint. The
+grant remains authoritative after waiting for locks. Legacy unjournaled paths
+retain their previous behavior. Destructive lifecycle grants still need their
+own bound recheck; this park change does not authorize their activation.
+
+`scripts/verify-sandbox-idle-races.exs` forces PostgreSQL lock waits while idle
+policy is disabled, extended or tightened, a long turn completes, a holder
+attaches, or the machine wakes. It also reruns the holder and transition proofs.
+A winning fresh attachment now prevents idle parking. Evidence is recorded in
+`decisions/evidence/sandbox-idle.json`. Actor wake coordination, uncertain
+transition recovery and live acceptance remain gates; the stack stays draft and
+execution controls and recovery stay disabled.

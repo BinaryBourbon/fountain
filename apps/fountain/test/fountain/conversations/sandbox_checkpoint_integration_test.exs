@@ -31,7 +31,7 @@ defmodule Fountain.Conversations.SandboxCheckpointIntegrationTest do
 
     {:ok, _} = SandboxOperations._unsafe_complete_create(creation.id, {:ok, handle})
     {:ok, sandbox} = SandboxOperations._unsafe_finish_provision(sandbox, parent)
-    %{sandbox: sandbox, creation: creation}
+    %{sandbox: age_sandbox_activity(sandbox), creation: creation}
   end
 
   test "the released adapter carries the committed operation through POST and confirmation", c do

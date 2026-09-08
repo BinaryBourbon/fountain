@@ -13,6 +13,7 @@ fixture = fn ->
   handle = %Handle{provider: :sprites, name: sandbox.sprite_name, instance_id: Ecto.UUID.generate()}
   {:ok, _} = SandboxOperations._unsafe_complete_create(creation.id, {:ok, handle})
   {:ok, sandbox} = SandboxOperations._unsafe_finish_provision(sandbox, conv)
+  sandbox = Fountain.Factory.age_sandbox_activity(sandbox)
   attrs = %{conversation_id: conv.id, turn_number: 1, prompt: "local transition race", status: "running", started_at: DateTime.utc_now()}
   {sandbox, conv, attrs}
 end
@@ -27,7 +28,7 @@ end
 outcomes = for source <- [:user, :autonomous], _ <- 1..20 do
   {sandbox, _conv, attrs} = fixture.()
   [park, admission] = DeadlineRace.concurrently([
-    fn -> SandboxTransitions._unsafe_submit(sandbox, "park") end,
+    fn -> SandboxTransitions._unsafe_submit(sandbox, {:park, :idle}) end,
     fn -> admit.(source, sandbox, attrs) end
   ])
   case {park, admission} do
@@ -44,7 +45,7 @@ for source <- [:user, :autonomous], first <- [:park, :admission] do
   holder = Task.async(fn ->
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(sandbox.id)])
-      result = if first == :park, do: SandboxTransitions._unsafe_submit(sandbox, "park"), else: admit.(source, sandbox, attrs)
+      result = if first == :park, do: SandboxTransitions._unsafe_submit(sandbox, {:park, :idle}), else: admit.(source, sandbox, attrs)
       send(owner, {:held, self()})
       receive do
         :release -> result
@@ -62,7 +63,7 @@ for source <- [:user, :autonomous], first <- [:park, :admission] do
     Repo.checkout(fn ->
       %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
       send(owner, {:backend, self(), backend})
-      if first == :park, do: admit.(source, sandbox, attrs), else: SandboxTransitions._unsafe_submit(sandbox, "park")
+      if first == :park, do: admit.(source, sandbox, attrs), else: SandboxTransitions._unsafe_submit(sandbox, {:park, :idle})
     end)
   end)
   backend = receive do
@@ -85,8 +86,8 @@ end
 for _ <- 1..20 do
   {sandbox, _conv, _attrs} = fixture.()
   results = DeadlineRace.concurrently([
-    fn -> SandboxTransitions._unsafe_submit(sandbox, "park") end,
-    fn -> SandboxTransitions._unsafe_submit(sandbox, "park") end
+    fn -> SandboxTransitions._unsafe_submit(sandbox, {:park, :idle}) end,
+    fn -> SandboxTransitions._unsafe_submit(sandbox, {:park, :idle}) end
   ])
   1 = Enum.count(results, &match?({:ok, _}, &1))
   1 = Enum.count(results, &match?({:error, :sandbox_not_ready}, &1))
@@ -94,7 +95,7 @@ end
 
 for _ <- 1..20 do
   {sandbox, _conv, _attrs} = fixture.()
-  {:ok, park} = SandboxTransitions._unsafe_submit(sandbox, "park")
+  {:ok, park} = SandboxTransitions._unsafe_submit(sandbox, {:park, :idle})
   {:ok, parked} = SandboxTransitions._unsafe_complete(park.id, {:ok, :skipped}, :idle)
   [resume, destroy] = DeadlineRace.concurrently([
     fn -> SandboxTransitions._unsafe_submit(parked, "resume") end,

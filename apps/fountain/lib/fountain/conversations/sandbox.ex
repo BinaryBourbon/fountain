@@ -43,6 +43,9 @@ defmodule Fountain.Conversations.Sandbox do
     field :mode, :string, default: "ephemeral"
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime
+    # Internal activity clock: holder creation, transfer or revival under machine locks.
+    # Not cast from caller attributes; ordinary bookkeeping cannot refresh it.
+    field :last_attached_at, :utc_datetime_usec
     belongs_to :environment, Environment
     # The identity the disk was materialized from, with the environment
     # (ADR 0023): env vars, packages, repos and setup scripts are written at

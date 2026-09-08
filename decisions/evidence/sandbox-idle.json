@@ -1,0 +1,167 @@
+{
+  "recorded_at": "2026-09-08T12:32:03.925589+00:00",
+  "previous_checkpoint": "bffdd0b1fffac977ee076ce1ac943b10ec10ae9b",
+  "scope": "Managed park eligibility under grant locks; durable attachment activity. No production activation.",
+  "source_files": {
+    "apps/fountain/lib/fountain/conversations/sandbox.ex": "sha256:9007b8700f29202a44811759f30a35bb83bb6402edede365b610b903ff224365",
+    "apps/fountain/lib/fountain/conversations/sandbox_activity.ex": "sha256:dc9c6cbc8a6b07aa9b03645eff715a62581c4ccf94f4c004a07bcbb18e87105e",
+    "apps/fountain/lib/fountain/conversations/sandbox_holders.ex": "sha256:0c4474cdd637c2e76b957e9ec1bb9552a662c2c7ebfdec5465fdc15ed824ef75",
+    "apps/fountain/lib/fountain/conversations/sandbox_transitions.ex": "sha256:a3b0624758934ba78deefaf068389a7ffaf5cb5c4035b00fdd387b2d6591b285",
+    "apps/fountain/lib/fountain/workers/sandbox_reaper.ex": "sha256:27f4e13fd104a943849112804dd21aec5875e4f8a64a9920f9076686d6f6cd19",
+    "apps/fountain/priv/repo/migrations/20260908120000_add_sandbox_attachment_clock.exs": "sha256:45ef7839529d71a48f9daac6ab4ff86bbe9b7f231a3a7b9ea636c2adf1a3c484",
+    "apps/fountain/test/fountain/conversations/sandbox_activity_test.exs": "sha256:1c3ea03c6325c19486464d473a4e38ce5500ffe32c9ac7cd066d8d2010ac08f6",
+    "apps/fountain/test/fountain/conversations/sandbox_checkpoint_integration_test.exs": "sha256:46fa412b8397b8f0cc97a91fedd64d7356931a5cb1f3beb156a711e9e0e838be",
+    "apps/fountain/test/fountain/conversations/sandbox_holders_test.exs": "sha256:92e6b7083e3d27aab78e85d36a875d6d4fa51e647a3a5f434b65d42661c79b33",
+    "apps/fountain/test/fountain/conversations/sandbox_transitions_test.exs": "sha256:f4fc422d8a49202252ef9428183b5072ee038da593ed3578acd2aef60feaf4e6",
+    "apps/fountain/test/fountain_web/controllers/conversation_attach_controller_test.exs": "sha256:f2652592302691e51d3635e44d2c65ee0e47c5727f4470d3825fcfff823521a5",
+    "apps/fountain/test/support/factory.ex": "sha256:611153d931c7367ef461c2c68721293c4547249915eb08aacc9df219e9a90f3e",
+    "scripts/verify-sandbox-holder-races.exs": "sha256:a92aa0de2008ffe46991708ad42a67009675ae46cf67969442d784acee9a9c38",
+    "scripts/verify-sandbox-idle-races.exs": "sha256:b9d08fb5986c3d11b8aab09b2907ed709f0b366f86d0c7ccc502cc759735fd23",
+    "scripts/verify-sandbox-transition-races.exs": "sha256:9c808055d241803be1a2aac8d385f2bb3e697dee028435edeecd9398fd164761"
+  },
+  "full_precommit": {
+    "tests": 4902,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:8929444eb46cd6b7556747ec8d4f1b562938993845c661fd1d55e122636b7764"
+  },
+  "focused": {
+    "tests": 85,
+    "failures": 0,
+    "log_sha256": "sha256:9c3384d6978ae611c7bad7cd7be062bcbfb676b69c8f40b00d3d2086747ddd9d"
+  },
+  "checkpoint_adapter_focused": {
+    "tests": 2,
+    "failures": 0,
+    "log_sha256": "sha256:a13c494221a52758ff7ea00d1b3705fd874f44bd402151a53803c0d1f5d1afed"
+  },
+  "database_races": {
+    "script": "scripts/verify-sandbox-idle-races.exs",
+    "results": {
+      "DEADLINE_RACE_RESULT": {
+        "scope": "Local PostgreSQL arbitration, event durability and write permissions only",
+        "cases": 20,
+        "separate_database_connections": true,
+        "outcomes": {
+          "completion_won": 15,
+          "expiry_won": 5
+        },
+        "provider_operations": 0,
+        "lock_wait_cannot_extend_deadline": true,
+        "delayed_lock_tables": [
+          "conversations",
+          "turns"
+        ],
+        "delayed_operations": [
+          "spawn",
+          "stdin_write"
+        ],
+        "completed_connections_require_cleanup": true,
+        "deadline_event_reuse_cases": 5
+      },
+      "SANDBOX_ADMISSION_RACE_RESULT": {
+        "scope": "Local reset/admission and identity arbitration; deletion acknowledgments are synthetic",
+        "separate_database_connections": true,
+        "admission_cases": 40,
+        "outcomes": {
+          "autonomous:admission_first": 8,
+          "autonomous:reset_first": 12,
+          "user:admission_first": 8,
+          "user:reset_first": 12
+        },
+        "conflicting_identity_cases": 20,
+        "retirement_ready_cases": 40,
+        "forced_retirement_before_ready_cases": 2,
+        "forced_reset_and_admission_orderings": 4,
+        "provider_operations": 0
+      },
+      "SANDBOX_TRANSITION_RACE_RESULT": {
+        "separate_database_connections": true,
+        "live_provider_operations": 0,
+        "outcomes": {
+          "autonomous:park_first": 20,
+          "user:admission_first": 2,
+          "user:park_first": 18
+        },
+        "park_admission_races": 40,
+        "deterministic_lock_orders": 4,
+        "duplicate_park_races": 20,
+        "resume_destroy_races": 20
+      },
+      "SANDBOX_HOLDER_RACE_RESULT": {
+        "separate_database_connections": true,
+        "live_provider_operations": 0,
+        "random_races": 120,
+        "forced_lock_orders": 10,
+        "reciprocal_transfers": 20,
+        "bulk_individual_transfer": {
+          "bulk_won": 19,
+          "individual_preserved": 3
+        },
+        "attachment_cleanup": {
+          "attachment_won": 19,
+          "cleanup_won": 3
+        },
+        "attachment_park": {
+          "attachment_kept_active": 20,
+          "park_won": 2
+        },
+        "transfer_admission": {
+          "autonomous:admission_won": 11,
+          "autonomous:transfer_won": 11,
+          "user:admission_won": 12,
+          "user:transfer_won": 10
+        }
+      },
+      "SANDBOX_IDLE_RACE_RESULT": {
+        "forced_lock_wait_cases": 6,
+        "cases": [
+          "disabled",
+          "extended",
+          "tightened",
+          "completion",
+          "attachment",
+          "wake"
+        ],
+        "separate_database_connections": true,
+        "observed_postgres_lock_waits": true,
+        "clock_sampled_after_lock": true,
+        "live_provider_operations": 0
+      }
+    },
+    "log_sha256": "sha256:5656042d16e9b43be446321572785acb63bb19f32074a064ad16a298a4c46388"
+  },
+  "verified_behavior": [
+    "Managed park checks the requested idle or lifetime reason with current policy and a clock sampled after all grant locks.",
+    "Recent turn completion, other current holders, creation, wake and holder attachment prevent stale idle grants.",
+    "Holder creation, transfer, revival and bulk replacement stamp an internal last_attached_at column atomically.",
+    "Bookkeeping does not refresh activity; callers cannot set the attachment column through Sandbox.changeset.",
+    "A refused bound creates no park operation or provider request, publishes no stage and leaves the machine ready.",
+    "Resume needs no idle verdict; maximum lifetime still measures the continuous run since creation or wake.",
+    "Managed reaper selection shares the activity calculation; its hint is rechecked under the grant locks.",
+    "Forced lock waits cover disabled, extended and tightened policy, completion, attachment and wake; no provider calls.",
+    "Prior holder races now verify that a newly attached holder prevents idle parking."
+  ],
+  "failed_runs": [
+    {
+      "scope": "First full precommit: 4,902 tests plus 6 doctests, two checkpoint integration failures. Their fresh machines were correctly refused by the idle guard. Aged the shared idle fixture; request, confirmation and uncertainty assertions unchanged.",
+      "log_sha256": "sha256:26b78e462176e0c9508973594006ab0963497b4cb2df031fee33c6ab99f0719c"
+    },
+    {
+      "scope": "Initial focused suite: 85 tests, one failure. New direct-update fixture supplied microseconds to a seconds-precision Turn. Corrected fixture precision; assertions unchanged.",
+      "log_sha256": "sha256:f7848a800d083a683e39c5798a58e7fa3346fa4af749c67a3cfdb3662e143b08"
+    },
+    {
+      "scope": "Initial independent idle proof stopped at the same completion fixture precision error after prior race suites passed. Corrected fixture and reran all five suites.",
+      "log_sha256": "sha256:baf2ce856b74a888065e105d88d8237a22f0308f691c6fde5ea9b38aaf7d1dfc"
+    }
+  ],
+  "remaining_activation_gates": [
+    "Destructive lifecycle eligibility must be rechecked under its own grant locks; legacy unjournaled paths retain prior behavior.",
+    "Durable wake ownership before actor startup, shutdown coordination and queued-prompt preservation.",
+    "Uncertain park/resume recovery, confirmed-create absence handling and ordinary creation permanent physical names.",
+    "Conditional provider identity and live provider acceptance; logical parking does not prove stopped compute or billing.",
+    "Execution controls and recovery remain disabled; lifecycle PR stack remains draft.",
+    "Unknown creates remain fenced and retain capacity. Off-cluster backups are deferred."
+  ]
+}

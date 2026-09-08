@@ -24,7 +24,8 @@ defmodule Fountain.Conversations.SandboxHoldersTest do
 
   test "a confirmed ready or suspended machine can accept another owned holder", c do
     assert {:ok, _} = Conversations.create_conversation(attrs(c.source, c.agent))
-    {:ok, parked} = SandboxTransitions._unsafe_park(c.source, :idle)
+    source = age_sandbox_activity(c.source)
+    {:ok, parked} = SandboxTransitions._unsafe_park(source, :idle)
     assert {:ok, holder} = Conversations.create_conversation(attrs(parked, c.agent))
     assert holder.sandbox_id == c.source.id
     assert Repo.reload!(c.creation).holds_slot
@@ -56,7 +57,7 @@ defmodule Fountain.Conversations.SandboxHoldersTest do
   end
 
   test "pending park rejects inserts and transfers before changing ownership", c do
-    {:ok, operation} = SandboxTransitions._unsafe_submit(c.source, "park")
+    {:ok, operation} = SandboxTransitions._unsafe_submit(c.source, {:park, :idle})
     {other, other_parent, _} = managed(c.user, c.agent)
 
     assert {:error, :provider_operation_fenced} =
@@ -70,7 +71,7 @@ defmodule Fountain.Conversations.SandboxHoldersTest do
   end
 
   test "uncertain source operations cannot be escaped by moving a holder", c do
-    {:ok, operation} = SandboxTransitions._unsafe_submit(c.source, "park")
+    {:ok, operation} = SandboxTransitions._unsafe_submit(c.source, {:park, :idle})
     {:ok, _} = SandboxOperations._unsafe_mark_uncertain(operation.id)
     {other, _, _} = managed(c.user, c.agent)
 
@@ -324,7 +325,7 @@ defmodule Fountain.Conversations.SandboxHoldersTest do
 
     {:ok, _} = SandboxOperations._unsafe_complete_create(creation.id, {:ok, handle})
     {:ok, sandbox} = SandboxOperations._unsafe_finish_provision(sandbox, parent)
-    {sandbox, parent, creation}
+    {age_sandbox_activity(sandbox), parent, creation}
   end
 
   defp attrs(sandbox, agent),

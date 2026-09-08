@@ -31,7 +31,7 @@ defmodule Fountain.Conversations.SandboxTransitions do
 
   def _unsafe_park(sandbox, reason, timeout \\ 35_000) when timeout in 1..35_000 do
     with :ok <- outside_transaction(),
-         {:ok, operation} <- _unsafe_submit(sandbox, "park") do
+         {:ok, operation} <- _unsafe_submit(sandbox, {:park, reason}) do
       audit(operation)
       result = provider_phase(fn -> park_provider(sandbox, operation) end, timeout)
       complete_and_audit(operation, result, reason)
@@ -83,7 +83,12 @@ defmodule Fountain.Conversations.SandboxTransitions do
   end
 
   @doc "Reserve a transition and close admission before any provider request."
-  def _unsafe_submit(%Sandbox{} = observed, action) when action in ~w(park resume) do
+  def _unsafe_submit(observed, {:park, reason}) when reason in [:idle, :max_lifetime],
+    do: submit(observed, "park", reason)
+
+  def _unsafe_submit(observed, "resume"), do: submit(observed, "resume", :wake)
+
+  defp submit(%Sandbox{} = observed, action, reason) do
     Repo.transaction(fn ->
       lock_machine(observed.id)
       parents = lock_parents(observed.id)
@@ -101,6 +106,16 @@ defmodule Fountain.Conversations.SandboxTransitions do
       assert_idle!(sandbox.id, parents, sandbox.user_id)
       if _unsafe_pending?(sandbox.id), do: Repo.rollback(:provider_operation_fenced)
 
+      # Ownership: current locked parents and confirmed creation bind the machine.
+      # The clock and current policy must be read after every grant lock, not
+      # when the actor or reaper first decided to try parking.
+      now = DateTime.utc_now()
+
+      if action == "park" and
+           Fountain.Conversations.SandboxActivity._unsafe_check(sandbox, parents, now) !=
+             {:expired, reason},
+         do: Repo.rollback(:lifecycle_bound_not_reached)
+
       attrs = %{
         sandbox_id: sandbox.id,
         user_id: sandbox.user_id,
@@ -110,7 +125,7 @@ defmodule Fountain.Conversations.SandboxTransitions do
         creation_id: creation.id,
         action: action,
         state: "submitted",
-        submitted_at: DateTime.utc_now()
+        submitted_at: now
       }
 
       operation =

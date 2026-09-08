@@ -29,11 +29,12 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
     {:ok, _} = SandboxOperations._unsafe_complete_create(creation.id, {:ok, handle})
 
     {:ok, sandbox} = SandboxOperations._unsafe_finish_provision(sandbox, conv)
+    sandbox = age_sandbox_activity(sandbox)
     %{sandbox: sandbox, conv: conv, creation: creation, user: user}
   end
 
   test "park closes both admission doors and retains physical capacity", c do
-    {:ok, operation} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, operation} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     assert Repo.reload!(c.sandbox).status == "suspended"
     attrs = turn_attrs(c.conv)
 
@@ -71,23 +72,25 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
         c.sandbox.id
       )
 
-    assert {:error, :sandbox_mid_turn} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    assert {:error, :sandbox_mid_turn} =
+             SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
+
     assert Repo.reload!(c.sandbox).status == "ready"
   end
 
   test "a pending transition still fences admission after an unrelated stale ready write", c do
-    {:ok, _} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, _} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     c.sandbox |> Repo.reload!() |> Ecto.Changeset.change(status: "ready") |> Repo.update!()
 
     assert {:error, :provider_operation_fenced} =
              Conversations._unsafe_create_autonomous_turn(turn_attrs(c.conv), c.sandbox.id)
 
     assert {:error, :provider_operation_fenced} =
-             SandboxTransitions._unsafe_submit(Repo.reload!(c.sandbox), "park")
+             SandboxTransitions._unsafe_submit(Repo.reload!(c.sandbox), {:park, :idle})
   end
 
   test "resume confirms the retained instance outside locks and readmits work", c do
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     {:ok, parked} = SandboxTransitions._unsafe_complete(park.id, {:ok, :skipped}, :idle)
 
     expect(Managoat.Sandbox, :get, fn handle ->
@@ -110,7 +113,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "presence for another incarnation cannot reopen a parked machine", c do
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     {:ok, parked} = SandboxTransitions._unsafe_complete(park.id, {:ok, :skipped}, :idle)
     {:ok, resume} = SandboxTransitions._unsafe_submit(parked, "resume")
 
@@ -127,7 +130,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "uncertainty and restart do not grant another park or resume", c do
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
 
     assert {:error, :provider_operation_uncertain} =
              SandboxTransitions._unsafe_complete(park.id, {:error, :timeout}, :idle)
@@ -144,7 +147,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "late completion cannot revive a retired sandbox or publish success", c do
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     {:ok, _} = Conversations.update_sandbox(c.sandbox, %{status: "terminated"})
 
     assert {:error, :provider_operation_fenced} =
@@ -155,7 +158,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "ownership change and account deletion refuse late completion", c do
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     c.sandbox |> Ecto.Changeset.change(user_id: insert_verified_user().id) |> Repo.update!()
 
     assert {:error, :ownership_changed} =
@@ -171,7 +174,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "park after parent deletion records no orphan transcript", c do
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     Repo.delete!(c.conv)
     assert {:ok, _} = SandboxTransitions._unsafe_complete(park.id, {:ok, :skipped}, :idle)
     assert Repo.aggregate(LogEvent, :count) == 0
@@ -210,7 +213,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
 
   test "reset refuses an outstanding transition", c do
     sandbox = c.sandbox |> Ecto.Changeset.change(mode: "persistent") |> Repo.update!()
-    {:ok, _} = SandboxTransitions._unsafe_submit(sandbox, "park")
+    {:ok, _} = SandboxTransitions._unsafe_submit(sandbox, {:park, :idle})
     assert {:error, :provider_operation_fenced} = Conversations.reset_sandbox(sandbox)
     assert Repo.reload!(sandbox).status == "suspended"
   end
@@ -268,7 +271,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "a delayed park notification cannot stop a resumed actor", c do
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
     {:ok, parked} = SandboxTransitions._unsafe_complete(park.id, {:ok, :skipped}, :idle)
     {:ok, resume} = SandboxTransitions._unsafe_submit(parked, "resume")
 
@@ -289,7 +292,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
   end
 
   test "a pending park refuses actor destruction without bookkeeping or connection loss", c do
-    {:ok, _} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, _} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
 
     state = %{
       conversation_id: c.conv.id,
@@ -339,7 +342,7 @@ defmodule Fountain.Conversations.SandboxTransitionsTest do
     # entry points audit, after their commits.
     reject(Fountain.Audit, :record, 1)
     Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{c.conv.id}")
-    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, "park")
+    {:ok, park} = SandboxTransitions._unsafe_submit(c.sandbox, {:park, :idle})
 
     assert {:error, :synthetic_rollback} =
              Repo.transaction(fn ->

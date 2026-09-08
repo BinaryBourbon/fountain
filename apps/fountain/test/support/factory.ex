@@ -12,6 +12,21 @@ defmodule Fountain.Factory do
   require Ecto.Query
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
 
+  @doc "Age an idle lifecycle fixture, including its holder and attachment clocks."
+  def age_sandbox_activity(sandbox, seconds \\ 7_200) do
+    old = DateTime.add(DateTime.utc_now(), -seconds) |> DateTime.truncate(:second)
+
+    Repo.update_all(Ecto.Query.from(c in Conversation, where: c.sandbox_id == ^sandbox.id),
+      set: [inserted_at: old]
+    )
+
+    Repo.update_all(Ecto.Query.from(s in Sandbox, where: s.id == ^sandbox.id),
+      set: [inserted_at: old, updated_at: old, last_resumed_at: nil, last_attached_at: old]
+    )
+
+    Repo.reload!(sandbox)
+  end
+
   defp uniq, do: System.unique_integer([:positive, :monotonic]) |> Integer.to_string()
 
   # ── users ─────────────────────────────────────────────────────────────────
