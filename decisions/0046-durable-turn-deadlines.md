@@ -696,8 +696,8 @@ notification time. Hosts can set a positive `:prompt_delivery_timeout_ms`; chang
 do not extend saved receipts. Expiry fails only an unclaimed turn and commits its
 failure event and notification jobs together. Activation checks the saved deadline
 after acquiring its row locks. Expiry does not retire a machine, clear an uncertain
-provider operation or authorize another attempt. Dispatch does not create actors or
-provider resources; complete actor recovery remains an integration gate.
+provider operation or authorize another attempt. Dispatch may now claim a saved, unstarted prompt wake; it cannot replay a started
+invocation. Complete actor recovery remains an integration gate.
 `PromptDispatchSweep` revisits queued receipts each minute through the same dispatch
 boundary, recovering notifications whose original jobs crashed, were discarded or
 were removed. It leaves existing jobs unchanged. Pages contain at most 100 receipts;
@@ -710,8 +710,8 @@ refuses outer transactions, saves intent, then notifies an existing actor or ini
 one wake for a new receipt. Replaying a key never repeats wake. A missing agent during
 wake records refusal; uncertain delivery retains queued intent until expiry. A
 pending sandbox's registry timeout now returns `:provisioning` and retains its
-binding and capacity instead of provisioning a replacement. Recovery after the
-submitter dies before initiating wake remains a separate actor-recovery gate.
+binding and capacity instead of provisioning a replacement. Durable prompt wake
+requests now cover submitter death before initiating wake, as described below.
 
 User interruption cancels queued receipts under the same parent lock as execution
 retirement. Startup retirement preserves them for delivery. A queued receipt also
@@ -815,3 +815,34 @@ The actor tests cover duplicate provisioning, preservation of a running bounded
 execution, clean shutdown/reattach, and redaction ownership. Independent PostgreSQL
 connections exercise competing claims and both orders of same-machine handoff
 versus predecessor publication in `scripts/verify-actor-ownership-races.exs`.
+
+
+## Durable prompt wake handoff (recovery integration in progress)
+
+A regression kills the accepting process after its receipt and dispatch job commit,
+before it reaches worker discovery. Previously the saved job only notified existing
+actors, so the prompt expired without a wake. Acceptance now commits a wake request
+with the receipt, turn, images and job. Low-level submission and opening-prompt
+storage do not implicitly authorize wake; their creation paths still own startup.
+
+The caller, dispatch job and minute sweep share the same handoff. An existing actor
+receives the receipt ID. Otherwise the handoff locks the original machine, parent,
+receipt and wake request, verifies tenant and binding, and checks cancellation and
+the original delivery deadline. Exactly one caller changes `requested` to `started`
+before entering the existing wake policy outside the transaction. Identity and
+invocation timestamps are immutable. Repeated keys and notifications cannot restart
+that invocation, including when its response is lost.
+
+Wake receives the saved parent binding and refuses a changed tenant or machine.
+The existing account, inference, provider and actor-ownership gates still apply.
+Return records `returned`; this means the function returned, not that a provider
+operation succeeded. Missing-agent refusal commits with that return marker.
+An exception or process death leaves `started`, which also fences wakes from newer
+receipts on that conversation. Registry absence or age cannot release that fence.
+
+This closes the pre-invocation submitter gap. It does not recover a process lost
+after the invocation claim, establish a provider incarnation, or durably launch
+prompt-free creation/attach/wake. Those entry points still need a shared launch
+protocol linked to actor claims and the provider journal. A stopped actor claim
+on a still-starting machine also needs reconciliation before any new creation.
+These are remaining integration gates, not reasons to deploy the current draft.

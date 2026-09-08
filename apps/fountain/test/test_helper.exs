@@ -77,6 +77,7 @@ Mimic.copy(Stripe.Checkout.Session)
 
 Mimic.copy(Fountain.Conversations)
 Mimic.copy(Fountain.Conversations.ExecutionLimits)
+Mimic.copy(Fountain.Conversations.PromptWake)
 Mimic.copy(Fountain.Conversations.Egress)
 Mimic.copy(Fountain.Conversations.Lifecycle)
 Mimic.copy(Fountain.Workers.WebhookDelivery)

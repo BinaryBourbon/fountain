@@ -5,8 +5,9 @@ defmodule Fountain.Conversations.PromptDelivery do
   The receipt survives transcript retention, so a repeated key cannot recreate
   deleted work. Claim and bounded execution admission commit together before the
   caller may start provider work. Prompt submission, creation, attach and wake
-  save intent before delivery. Committed dispatch jobs retry notifications until
-  claim or expiry; they never start or replace a provider resource.
+  save intent before delivery. Acceptance also saves a single wake invocation;
+  dispatch can claim an unstarted wake and retries notifications until claim or
+  expiry. Interrupted invocations require lifecycle reconciliation.
   """
   import Ecto.Query
 
@@ -50,7 +51,8 @@ defmodule Fountain.Conversations.PromptDelivery do
   end
 
   def submit(user_id, conversation_id, prompt, images, opts \\ []) do
-    with {:ok, {receipt, _new?}} <- submit_result(user_id, conversation_id, prompt, images, opts),
+    with {:ok, {receipt, _new?}} <-
+           submit_result(user_id, conversation_id, prompt, images, opts, false),
          do: {:ok, receipt}
   end
 
@@ -59,37 +61,15 @@ defmodule Fountain.Conversations.PromptDelivery do
     if Repo.in_transaction?() do
       {:error, :provider_transaction_open}
     else
-      with {:ok, {receipt, new?}} <- submit_result(user_id, conversation_id, prompt, images, opts) do
-        begin_delivery(receipt, new?)
+      with {:ok, {receipt, _new?}} <-
+             submit_result(user_id, conversation_id, prompt, images, opts, true) do
+        Fountain.Conversations.PromptWake.deliver(receipt)
         {:ok, fetch(user_id, conversation_id, receipt.id) || receipt}
       end
     end
   end
 
-  defp begin_delivery(%PromptReceipt{state: "queued"} = receipt, new?) do
-    case Conversations.ConversationServer.whereis(receipt.conversation_id) do
-      nil when new? ->
-        # Ownership: submit locked this parent for the receipt's saved tenant.
-        # Prompt data is already durable; wake never receives replayable text.
-        case Conversations.wake_conversation(receipt.conversation_id) do
-          {:error, :no_agent} ->
-            refuse(receipt.user_id, receipt.conversation_id, receipt.id, "admission_refused")
-
-          _ ->
-            :ok
-        end
-
-      pid when is_pid(pid) ->
-        Conversations.ConversationServer.queue_prompt_receipt(pid, receipt.id)
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp begin_delivery(_, _), do: :ok
-
-  defp submit_result(user_id, conversation_id, prompt, images, opts) do
+  defp submit_result(user_id, conversation_id, prompt, images, opts, wake?) do
     with :ok <- validate_payload(prompt, images),
          {:ok, key_hash} <- key_hash(Keyword.get(opts, :idempotency_key)) do
       payload_hash = payload_hash(prompt, images)
@@ -100,7 +80,9 @@ defmodule Fountain.Conversations.PromptDelivery do
         case Repo.get_by(PromptReceipt, conversation_id: parent.id, key_hash: key_hash) do
           nil ->
             admit_submission!(parent)
-            {insert!(parent, prompt, images, key_hash, payload_hash), true}
+            receipt = insert!(parent, prompt, images, key_hash, payload_hash)
+            if wake?, do: Fountain.Conversations.PromptWake.save!(parent, receipt)
+            {receipt, true}
 
           receipt ->
             if receipt.user_id != parent.user_id, do: Repo.rollback(:ownership_changed)

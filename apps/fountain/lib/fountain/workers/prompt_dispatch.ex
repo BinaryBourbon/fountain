@@ -3,13 +3,14 @@ defmodule Fountain.Workers.PromptDispatch do
   Retry receipt notifications independently of the submitting process.
 
   A cast is not an acknowledgement. Keep the job until the receipt is claimed,
-  refused or past its saved deadline. Never infer provider absence from a
-  registry miss, provision a replacement, or replay a claimed turn. Existing
-  lifecycle recovery owns actor startup; API producer integration is pending.
+  refused or past its saved deadline. An accepted prompt also has a durable
+  wake request: caller and job compete for its one invocation. Never infer
+  provider absence from a registry miss or replay an interrupted wake or a
+  claimed turn. Existing lifecycle policy owns provider decisions.
   """
   use Oban.Worker, queue: :schedules, max_attempts: 20
 
-  alias Fountain.Conversations.{ConversationServer, PromptDelivery, PromptReceipt}
+  alias Fountain.Conversations.{PromptDelivery, PromptReceipt, PromptWake}
 
   @impl Oban.Worker
   def perform(%Oban.Job{
@@ -35,8 +36,7 @@ defmodule Fountain.Workers.PromptDispatch do
         {:error, _} = error -> error
       end
     else
-      if pid = ConversationServer.whereis(receipt.conversation_id),
-        do: ConversationServer.queue_prompt_receipt(pid, receipt.id)
+      PromptWake.deliver(receipt)
 
       {:snooze, 15}
     end

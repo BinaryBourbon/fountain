@@ -3269,7 +3269,22 @@ defmodule Fountain.Conversations do
     # Ownership: called from ConversationServer (which established ownership
     # before starting) and the boot-time rehydrator sweep. The agent fetched
     # below is the conversation's own agent_id, same tenant by construction.
-    with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
+    with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found} do
+      _unsafe_wake_bound_conversation(conv)
+    end
+  end
+
+  def wake_conversation(_, _), do: {:error, :invalid_prompt}
+
+  @doc "Wake only the saved tenant/machine binding; a changed binding grants no replacement."
+  def _unsafe_wake_bound_conversation(%Conversation{} = original) do
+    # Ownership: the API or durable request established the original parent.
+    # Keep that exact binding through provider selection and replacement checks.
+    with :ok <- require_provider_commit_boundary(),
+         %Conversation{} = conv <- _unsafe_get_conversation(original.id) || {:error, :not_found},
+         true <-
+           (conv.user_id == original.user_id && conv.sandbox_id == original.sandbox_id) ||
+             {:error, :ownership_changed},
          :ok <- assert_resumable(conv),
          :ok <- _unsafe_execution_limits_gate(conv),
          %Agents.Agent{} = agent <-
@@ -3347,8 +3362,6 @@ defmodule Fountain.Conversations do
       {:error, _} = err -> err
     end
   end
-
-  def wake_conversation(_, _), do: {:error, :invalid_prompt}
 
   @doc """
   Reach a conversation whose `ConversationServer` is gone, so a caller can

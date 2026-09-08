@@ -28,7 +28,8 @@ defmodule Fountain.Conversations.PromptDeliveryTest do
   test "acceptance commits before wake and a lost response cannot repeat it", c do
     stub(Conversations.ConversationServer, :whereis, fn _ -> nil end)
 
-    expect(Conversations, :wake_conversation, fn id ->
+    expect(Conversations, :_unsafe_wake_bound_conversation, fn saved ->
+      id = saved.id
       assert id == c.conv.id
       assert PromptDelivery.queued(c.user.id, id)
       assert length(all_enqueued(worker: Fountain.Workers.PromptDispatch)) == 1

@@ -59,8 +59,9 @@ defmodule Fountain.Conversations.AttachTest do
   test "an uncertain wake retains the accepted attach and saved prompt", ctx do
     stub(Conversations.ConversationServer, :whereis, fn _ -> nil end)
 
-    expect(Conversations, :wake_conversation, fn id ->
-      assert Conversations.PromptDelivery.queued(ctx.user.id, id)
+    expect(Conversations, :_unsafe_wake_bound_conversation, fn saved ->
+      assert saved.sandbox_id == ctx.sandbox.id
+      assert Conversations.PromptDelivery.queued(ctx.user.id, saved.id)
       {:error, :provider_operation_fenced}
     end)
 
