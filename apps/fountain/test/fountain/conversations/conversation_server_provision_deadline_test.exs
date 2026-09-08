@@ -139,6 +139,44 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     refute_received :sprite_created
   end
 
+  test "late provisioning cannot revive a sandbox retired while setup was running" do
+    Application.put_env(:fountain, :provision_deadline_ms, 30_000)
+    stub_happy_sprite()
+    owner = self()
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
+      send(owner, {:setup_waiting, self()})
+
+      receive do
+        :finish_setup -> :ok
+      after
+        5_000 -> raise "setup barrier was not released"
+      end
+    end)
+
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+
+    {:ok, pid} =
+      GenServer.start(ConversationServer,
+        conversation_id: conv.id,
+        sandbox_id: conv.sandbox_id,
+        runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+      )
+
+    on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+    ref = Process.monitor(pid)
+    assert_receive {:setup_waiting, ^pid}, 5_000
+    sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    assert {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "terminated"})
+    send(pid, :finish_setup)
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 5_000
+    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status in ["terminated", "failed"]
+    assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
+  end
+
   test "a provision that completes in time is left alone" do
     stub_happy_sprite()
     user = insert_verified_user()

@@ -1,0 +1,87 @@
+{
+  "recorded_at": "2026-09-08T07:15:46.554027+00:00",
+  "previous_checkpoint": "2461a7c86e5932148e2c44cbbb3eed19d1e0a80a",
+  "scope": "Persisted terminal sandbox states refuse revival by stale callbacks; consume published Sandbox 0.4 dependencies. Lifecycle integration remains incomplete.",
+  "full_precommit": {
+    "tests": 4808,
+    "doctests": 6,
+    "failures": 0,
+    "log_sha256": "sha256:00d4052b6ceb3d7772162ec53a22c93c8fe7312137a27d2e4956e54f813af717"
+  },
+  "database_races": {
+    "scope": "Local reset/admission and identity arbitration; deletion acknowledgments are synthetic",
+    "outcomes": {
+      "autonomous:reset_first": 20,
+      "user:admission_first": 9,
+      "user:reset_first": 11
+    },
+    "admission_cases": 40,
+    "conflicting_identity_cases": 20,
+    "retirement_ready_cases": 40,
+    "forced_retirement_before_ready_cases": 2,
+    "forced_reset_and_admission_orderings": 4,
+    "separate_database_connections": true,
+    "provider_operations": 0,
+    "log_sha256": "sha256:92f2ca57053e56808b4b8ca7209129c134c3459f8bcf7ef44f28762ec2b4ca79"
+  },
+  "focused": {
+    "tests": 60,
+    "failures": 0,
+    "note": "Before the dependency upgrade; the final full gate uses the published versions below.",
+    "log_sha256": "sha256:435f5ebe31e761ff8c56cfbee9d5367d1d38470af886f73011214fddb7eb2e49"
+  },
+  "prior_runs": [
+    {
+      "result": "Five schema failures in the default local database, before reaching the regression; used a dedicated migrated database afterward.",
+      "log_sha256": "sha256:543f552e56fbff93fec72d66ced6b81989eb647ea61f04edd13ee2f59e890035"
+    },
+    {
+      "result": "Before the fix: one failed regression among five tests. Late provisioning kept the actor alive after sandbox retirement.",
+      "log_sha256": "sha256:6a038f200f879a6306f28254ada9b872ba9996a815c8e47da03ee37e8252b11a"
+    },
+    {
+      "result": "First precommit intentionally interrupted during static checks to separate the gate database from committed race fixtures.",
+      "log_sha256": "sha256:26e1ae6b3e0ad479d3c592051c4240958d22d8b81f61041bedd9bc575cdf5265"
+    },
+    {
+      "result": "First complete precommit: one attach fixture failure; its sequential cases revived a retired row. Split into independent fixtures, retaining every assertion.",
+      "log_sha256": "sha256:e233335ff72707112fe5f9561403377ca6d10647c0f5605e4c61fe9d4a1e0759"
+    }
+  ],
+  "released_dependencies": [
+    {
+      "package": "managoat_sandbox",
+      "version": "0.4.0",
+      "pr": "https://github.com/managoat/managoat_sandbox/pull/10",
+      "publish_run": 34195690220
+    },
+    {
+      "package": "managoat_runner",
+      "version": "0.2.3",
+      "pr": "https://github.com/managoat/managoat_runner/pull/6",
+      "publish_run": 34196793245
+    },
+    {
+      "package": "managoat_runtimes",
+      "version": "0.4.3",
+      "pr": "https://github.com/managoat/managoat_runtimes/pull/16",
+      "publish_run": 34196795144
+    }
+  ],
+  "source_sha256": {
+    "apps/fountain/lib/fountain/conversations.ex": "sha256:dce6e211522adfe73dbf87051d4fab2578fa61fcad90778a2e19e35f038c92c0",
+    "apps/fountain/mix.exs": "sha256:9fa650bd2514da14c7e4b4e327c2410d5e41f291952fc17bc570a83133e3383f",
+    "mix.lock": "sha256:7c205d923dd5f21eb056a3f67df90e8cebf8ef6fca6d0910859fa14a059492ea",
+    "apps/fountain/test/fountain/conversations/sandbox_test.exs": "sha256:f84880230d35a037aeb1d70b2077292a4a2c0ce57f6030b0600438ea86777255",
+    "apps/fountain/test/fountain/conversations/attach_test.exs": "sha256:4b106d023a1d1579193ba9022c8cac4f9e3d4a66ca579796750f92e38ff1c93b",
+    "apps/fountain/test/fountain/conversations/conversation_server_provision_deadline_test.exs": "sha256:fe6d3f4ae0521ad349038d687cd1813b110706ec982e1e357b76a0a90b2e2b93",
+    "scripts/verify-sandbox-admission-races.exs": "sha256:ee39224dbd4a07983885e33e13bb7fdc70063f3aaab91834eadd62f992a442fa"
+  },
+  "limits": [
+    "No real provider creation, deletion, suspension or production deployment occurred.",
+    "Local row retirement does not prove remote work or billing stopped.",
+    "Fountain provisioning still uses ordinary create; create_new requires durable intent and uncertainty handling before integration.",
+    "Execution controls remain disabled; durable create/park/destroy coordination and live acceptance remain required.",
+    "Historical sandbox-admission.json describes its earlier source checkpoint; this record covers the later retirement changes."
+  ]
+}

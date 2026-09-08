@@ -199,12 +199,69 @@ for _ <- 1..20 do
   true = Repo.get!(Sandbox, sandbox.id).provider_instance_id == bound.provider_instance_id
 end
 
+# Late status writers and retirement race on independent connections. Once
+# retirement commits, a stale ready callback must lose, whichever started first.
+for retired <- ["terminated", "failed"], _ <- 1..20 do
+  {sandbox, _, _} = fixture.()
+
+  [retirement, late_ready] =
+    DeadlineRace.concurrently([
+      fn -> Conversations.update_sandbox(sandbox, %{status: retired}) end,
+      fn -> Conversations.update_sandbox(sandbox, %{status: "ready"}) end
+    ])
+
+  {:ok, _} = retirement
+  true = Repo.get!(Sandbox, sandbox.id).status == retired
+
+  case late_ready do
+    {:ok, _} -> :ok
+    {:error, %Ecto.Changeset{errors: [status: {"sandbox is retired", []}]}} -> :ok
+    other -> raise "Unexpected late ready result: #{inspect(other)}"
+  end
+end
+
+# Force the stale callback to wait on the retirement writer's row lock.
+for retired <- ["terminated", "failed"] do
+  {sandbox, _, _} = fixture.()
+
+  holder =
+    Task.async(fn ->
+      Repo.transaction(fn ->
+        {:ok, _} = Conversations.update_sandbox(sandbox, %{status: retired})
+        send(owner, {:retirement_held, self()})
+
+        receive do
+          :release -> :ok
+        after
+          5_000 -> raise "Retirement lock release timed out"
+        end
+      end)
+    end)
+
+  receive do
+    {:retirement_held, pid} when pid == holder.pid -> :ok
+  after
+    5_000 -> raise "Retirement lock acquisition timed out"
+  end
+
+  {late_ready, backend} =
+    start_on_connection.(fn -> Conversations.update_sandbox(sandbox, %{status: "ready"}) end)
+
+  wait_for_lock.(backend)
+  send(holder.pid, :release)
+  {:ok, :ok} = Task.await(holder)
+  {:error, %Ecto.Changeset{}} = Task.await(late_ready)
+  true = Repo.get!(Sandbox, sandbox.id).status == retired
+end
+
 IO.puts(
   "SANDBOX_ADMISSION_RACE_RESULT=" <>
     Jason.encode!(%{
       admission_cases: length(admissions),
       outcomes: admissions |> Enum.map(fn {a, b} -> "#{a}:#{b}" end) |> Enum.frequencies(),
       conflicting_identity_cases: 20,
+      retirement_ready_cases: 40,
+      forced_retirement_before_ready_cases: 2,
       forced_reset_and_admission_orderings: 4,
       separate_database_connections: true,
       provider_operations: 0,

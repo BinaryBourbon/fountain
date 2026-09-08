@@ -402,6 +402,21 @@ one audit event. General sandbox attributes cannot set it. Provider lookup runs
 before the binding transaction, which rechecks the observed owner, provider and
 name. Conflicting identities and stale or retired rows are refused.
 
+Sandbox status writes now lock and re-read the persisted row. A callback holding
+an old `starting` or `ready` struct cannot revive a `failed` or `terminated`
+sandbox. Usage transitions use the persisted previous status. A real actor test
+pauses setup, retires the sandbox, then releases setup and verifies the actor
+stops without publishing a ready row. This does not establish remote cleanup or
+correct retention of uncertain provider spend; those still need the operation
+journal below.
+
+Sandbox 0.4.0, Runner 0.2.3 and Runtimes 0.4.3 are released and locked here.
+Sandbox's optional `create_new` refuses conflicts and returns provider identity
+on confirmed creation; ordinary `create` retains its adoption behavior. The
+Fountain provisioning path still uses ordinary `create`. Switching it requires
+durable intent before the request, retained uncertainty and coordinated cleanup;
+the dependency upgrade alone does not provide those properties.
+
 **Integration is incomplete.** Provisioning and cleanup do not yet call this
 identity interface. Recording a GET response does not authorize a later
 name-based DELETE or prove an uncertain create belongs to this row. Durable
@@ -411,8 +426,12 @@ provisioning, parking and destruction remain required before activation.
 `scripts/verify-sandbox-admission-races.exs` exercises real reset and admission
 contexts through separate local PostgreSQL connections, with outbound deletion
 stubbed. It covers both turn sources, forces both lock orderings and races two
-identity bindings. This proves database arbitration only; no provider operation
+identity bindings. It also races retirement against late ready callbacks and
+forces the callback to wait for the retirement transaction. This proves database
+arbitration only; no provider operation
 or production deployment is claimed.
+The retirement regressions, release pins and preserved failed-run evidence are in
+`decisions/evidence/sandbox-retirement.json`.
 
 ## Alternatives considered
 
