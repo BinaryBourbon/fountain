@@ -2302,6 +2302,7 @@ defmodule Fountain.Conversations.ConversationServer do
     case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt) do
       {:ok, conv, turn} -> run_turn(state, conv, turn, prompt, agent, images)
       :at_capacity -> state
+      {:error, _} -> drop_connection(state, "admission_refused")
     end
   end
 
@@ -2597,13 +2598,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # One peer report through the turn state machine (#1374): the turn the
   # server holds goes in, the next one comes back with the effects to apply,
   # in order. `ctx` is what the machine needs that is not the turn's own.
-  defp drive_turn(state, payload, extra \\ []) do
-    ctx = TurnMachine.ctx(state, extra)
-    {turn, effects} = TurnMachine.handle(TurnMachine.from_state(state), payload, ctx)
-    state = TurnMachine.into_state(state, turn)
-
-    Enum.reduce(effects, state, &apply_effect(&2, &1))
-  end
+  defp drive_turn(state, payload, extra \\ []),
+    do: TurnMachine.drive(state, payload, extra, &apply_effect/2)
 
   # What the machine hands back: the server's state, processes, timers,
   # output persistence and pending registries, one clause each.
@@ -2717,19 +2713,22 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   # An out-of-turn protocol line opened a background cycle
-  # (`Connection.open_autonomous_turn/2`). The row, its span and its tracer are
+  # (`Connection.open_autonomous_turn/3`). The row, its span and its tracer are
   # the server's to hold; the quiet timer is armed in this process.
   defp open_autonomous_turn(state) do
-    {turn, turn_span, tracer} =
-      Connection.open_autonomous_turn(state.conversation_id, state.user_id)
+    case Connection.open_autonomous_turn(state.conversation_id, state.user_id, state.sandbox_id) do
+      {:error, _} ->
+        drop_connection(state, "admission_refused")
 
-    arm_autonomous_quiet(%{
-      touch_activity(state)
-      | current_turn: turn,
-        current_turn_span: turn_span,
-        turn_metrics: nil,
-        stream_tracer: tracer
-    })
+      {turn, turn_span, tracer} ->
+        arm_autonomous_quiet(%{
+          touch_activity(state)
+          | current_turn: turn,
+            current_turn_span: turn_span,
+            turn_metrics: nil,
+            stream_tracer: tracer
+        })
+    end
   end
 
   defp close_autonomous_turn(state, why) do

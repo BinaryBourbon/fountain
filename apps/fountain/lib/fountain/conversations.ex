@@ -1052,19 +1052,15 @@ defmodule Fountain.Conversations do
   Create a turn on a sandbox that may be shared, refusing when the runtime's
   capacity is used up by another conversation's running turn.
 
-  `capacity` is `Managoat.Runtimes.ACP.concurrency/1`: `:unbounded` (claude,
-  codex — several processes on one disk is the laptop shape) inserts exactly
-  as `_unsafe_create_turn/1` does; an integer is checked and inserted under
-  a per-sandbox advisory lock, so two conversations prompting the same
-  opencode or gemini machine at the same moment cannot both win. Answers
-  `{:error, :sandbox_at_capacity}` rather than queueing (ADR 0023 step 4).
+  `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
+  per-sandbox advisory lock and verify that the conversation still belongs
+  to this nonterminal sandbox. An integer capacity also limits concurrent
+  turns; `:unbounded` skips only that capacity check. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
   """
-  def _unsafe_create_turn_on_sandbox(attrs, _sandbox_id, :unbounded),
-    do: _unsafe_create_turn(attrs)
-
   def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
-      when is_binary(sandbox_id) and is_integer(capacity) and capacity > 0 do
+      when is_binary(sandbox_id) and
+             (capacity == :unbounded or (is_integer(capacity) and capacity > 0)) do
     conv_id = Map.fetch!(attrs, :conversation_id)
 
     result =
@@ -1074,7 +1070,20 @@ defmodule Fountain.Conversations do
           :erlang.phash2(sandbox_id)
         ])
 
-        if _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
+        attached? =
+          Repo.exists?(
+            from c in Conversation,
+              join: s in Sandbox,
+              on: s.id == c.sandbox_id,
+              where:
+                c.id == ^conv_id and s.id == ^sandbox_id and c.user_id == s.user_id and
+                  s.status not in ["terminated", "failed"]
+          )
+
+        unless attached?, do: Repo.rollback(:sandbox_unavailable)
+
+        if capacity != :unbounded and
+             _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
           Repo.rollback(:sandbox_at_capacity)
         else
           case %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
