@@ -257,34 +257,43 @@ defmodule Fountain.Conversations.Connection do
   Returns the row, the span opened over it and the tracer reading it; the
   caller holds them and arms the quiet timer.
   """
-  @spec open_autonomous_turn(String.t(), String.t()) :: {map(), term(), term()}
-  def open_autonomous_turn(conversation_id, user_id) do
-    # ownership: a server's own conversation, established at init.
+  @spec open_autonomous_turn(String.t(), String.t(), String.t() | nil) ::
+          {map(), term(), term()} | {:error, term()}
+  def open_autonomous_turn(conversation_id, user_id, sandbox_id \\ nil) do
+    # Ownership: a server's own conversation, established at init. The server
+    # passes its sandbox so an old connection cannot follow a moved row.
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
+    capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 
-    {:ok, turn} =
-      Conversations._unsafe_create_turn(%{
-        conversation_id: conv.id,
+    attrs = %{
+      conversation_id: conv.id,
+      turn_number: turn_number,
+      prompt: "(background task follow-up)",
+      origin: "autonomous",
+      status: "running",
+      started_at: now()
+    }
+
+    with {:ok, turn} <-
+           Conversations._unsafe_create_turn_on_sandbox(
+             attrs,
+             sandbox_id || conv.sandbox_id,
+             capacity
+           ) do
+      turn_span =
+        TurnMachine.open_span(user_id, conv, turn, :autonomous, TurnMachine.agent_for(conv))
+
+      Output.publish_stage(conversation_id, "turn", "started", %{
+        turn_id: turn.id,
         turn_number: turn_number,
-        prompt: "(background task follow-up)",
-        origin: "autonomous",
-        status: "running",
-        started_at: now()
+        origin: "autonomous"
       })
 
-    turn_span =
-      TurnMachine.open_span(user_id, conv, turn, :autonomous, TurnMachine.agent_for(conv))
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
-    Output.publish_stage(conversation_id, "turn", "started", %{
-      turn_id: turn.id,
-      turn_number: turn_number,
-      origin: "autonomous"
-    })
-
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
-
-    {turn, turn_span, Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")}
+      {turn, turn_span, Managoat.ACP.Tracer.new(turn_span, prefix: "fountain")}
+    end
   end
 
   @doc """

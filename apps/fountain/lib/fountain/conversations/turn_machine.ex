@@ -150,6 +150,22 @@ defmodule Fountain.Conversations.TurnMachine do
   def autonomous_turn?(%{current_turn: %{origin: "autonomous"}}), do: true
   def autonomous_turn?(_state), do: false
 
+  @doc "Apply one peer report, stopping its effects if background admission is refused."
+  @spec drive(map(), payload(), keyword(), (map(), effect() -> map())) :: map()
+  def drive(state, payload, extra, apply_effect) do
+    {turn, effects} = handle(from_state(state), payload, ctx(state, extra))
+    state = into_state(state, turn)
+
+    Enum.reduce_while(effects, state, fn effect, state ->
+      state = apply_effect.(state, effect)
+
+      # A refused background turn must not persist its output or ask permission.
+      if effect == :open_autonomous_turn and is_nil(state.current_turn),
+        do: {:halt, state},
+        else: {:cont, state}
+    end)
+  end
+
   @doc "One peer report: the next turn and the effects the server applies."
   @spec handle(t(), payload(), ctx()) :: {t(), [effect()]}
   def handle(turn, payload, ctx \\ %{})
@@ -817,7 +833,7 @@ defmodule Fountain.Conversations.TurnMachine do
   ends.
   """
   @spec open(String.t(), String.t(), String.t()) ::
-          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity
+          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity | {:error, term()}
   def open(conversation_id, sandbox_id, prompt) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
@@ -847,6 +863,15 @@ defmodule Fountain.Conversations.TurnMachine do
         })
 
         :at_capacity
+
+      {:error, reason} = error ->
+        publish_stage(conversation_id, "sandbox", "done", %{
+          event: "admission_refused",
+          reason: if(is_atom(reason), do: Atom.to_string(reason), else: "invalid_turn"),
+          message: "This connection could not start another turn."
+        })
+
+        error
     end
   end
 
