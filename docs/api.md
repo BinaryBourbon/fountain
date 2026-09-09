@@ -168,6 +168,13 @@ Create a conversation with an agent and a first prompt, follow its events,
 and send later prompts to that same conversation. Keep the returned ID.
 A new conversation creates another thread.
 
+Launch requests with nonempty `execution_limits` return
+`422 execution_limits_unsupported`; Fountain cannot yet enforce these controls.
+Malformed limits return `422 execution_limits_invalid`. These checks apply to
+fresh launches, sandbox attachments and channel resumes before starting a worker
+or changing a channel binding. Omitted, null or empty limits preserve ordinary
+admission.
+
 ```bash
 curl --fail-with-body \
   -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
