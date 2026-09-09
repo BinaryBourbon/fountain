@@ -1648,7 +1648,7 @@ export interface paths {
         post?: never;
         /**
          * Reset a sandbox
-         * @description Destroy a persistent sandbox — the agent's home — so the next launch on the same agent, environment and vault builds a clean machine. The conversations on it are kept, idle; each one's next prompt lands on the fresh home. Only a `persistent` sandbox that is not `terminated` or `failed` resets (`422 sandbox_not_resettable`), and not while any conversation on it is mid-turn (`409 sandbox_mid_turn`).
+         * @description Retire a persistent sandbox — the agent's home — so the next launch on the same agent, environment and vault builds a clean machine. The conversations on it are kept, idle; each one's next prompt lands on the fresh home. Only a `persistent` sandbox that is not `terminated` or `failed` resets (`422 sandbox_not_resettable`), and not while any conversation on it is mid-turn (`409 sandbox_mid_turn`). Reset confirms logical retirement; physical cleanup can remain pending. A provider without confirmed deletion support cannot reset (`422 sandbox_not_resettable`, reason `provider_deletion_unavailable`).
          */
         delete: operations["FountainWeb.SandboxController.delete"];
         options?: never;
