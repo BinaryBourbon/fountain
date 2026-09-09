@@ -5,7 +5,8 @@ defmodule Fountain.Repo.Migrations.IndexLogEventsOutputByConversation do
   # still appending to log_events, and a plain CREATE INDEX would hold every
   # one of those writes for the duration.
   @disable_ddl_transaction true
-  @disable_migration_lock true
+  # Keep the configured Postgres advisory migration lock so simultaneous
+  # boots serialize this index build (#1770). It works without a DDL transaction.
 
   @moduledoc """
   The conversation list's `last_active_at` is the newest `output` log event
