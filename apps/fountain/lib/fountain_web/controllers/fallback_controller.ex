@@ -302,6 +302,34 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, :provider_operation_uncertain}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "provider_operation_uncertain",
+      message:
+        "The provider outcome is unknown. Further sandbox work is blocked pending reconciliation."
+    })
+  end
+
+  def call(conn, {:error, reason}) when reason in [:wake_expired, :launch_expired] do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: Atom.to_string(reason),
+      message: "The startup deadline passed; reload the conversation's current state."
+    })
+  end
+
+  def call(conn, {:error, reason}) when reason in [:wake_unavailable, :opening_cancelled] do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: Atom.to_string(reason),
+      message: "This wake is no longer authorized; reload the conversation's current state."
+    })
+  end
+
   def call(conn, {:error, :ownership_changed}) do
     conn
     |> put_status(:conflict)

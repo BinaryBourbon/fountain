@@ -13,6 +13,9 @@ defmodule Fountain.Conversations.SandboxOperation do
     field :sandbox_name, :string
     field :provider_instance_id, :string
     field :creation_id, :binary_id
+    field :wake_receipt_id, :binary_id
+    field :wake_request_id, :binary_id
+    field :wake_deadline_at, :utc_datetime_usec
     field :action, :string
     field :state, :string
     field :holds_slot, :boolean, default: false
@@ -33,6 +36,9 @@ defmodule Fountain.Conversations.SandboxOperation do
       :sandbox_name,
       :provider_instance_id,
       :creation_id,
+      :wake_receipt_id,
+      :wake_request_id,
+      :wake_deadline_at,
       :action,
       :state,
       :holds_slot,
@@ -53,7 +59,7 @@ defmodule Fountain.Conversations.SandboxOperation do
 
   defp immutable_binding(%{data: %{__meta__: %{state: :loaded}}} = changeset) do
     fields =
-      ~w(sandbox_id conversation_id user_id provider sandbox_name creation_id action submitted_at sandbox_started_at)a
+      ~w(sandbox_id conversation_id user_id provider sandbox_name creation_id action submitted_at sandbox_started_at wake_receipt_id wake_request_id wake_deadline_at)a
 
     fields =
       if changeset.data.provider_instance_id, do: [:provider_instance_id | fields], else: fields

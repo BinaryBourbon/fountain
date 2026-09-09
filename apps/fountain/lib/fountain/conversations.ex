@@ -3249,8 +3249,9 @@ defmodule Fountain.Conversations do
          :ok <- _unsafe_execution_limits_gate(conv),
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
-         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
-      case maybe_reuse_sandbox(conv) do
+         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv),
+         {:ok, wake_context} <- Fountain.Conversations.WakeContext.new(conv, receipt_id) do
+      case maybe_reuse_sandbox(conv, wake_context) do
         {:reuse, sandbox_id} ->
           # Reuse provisions nothing, so the fresh-path gates below never ran
           # here — a canceled or suspended user could restart a server against
@@ -3265,9 +3266,14 @@ defmodule Fountain.Conversations do
                # would be Fountain's and the deployment has spent its day. A door
                # with no platform key configured runs no query here.
                :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
-               {:ok, sandbox} <- wake_suspended_sandbox(conv.user_id, sandbox_id),
+               {:ok, sandbox} <- wake_suspended_sandbox(wake_context, sandbox_id),
                {:ok, {parent, launch}} <-
-                 Fountain.Conversations.ActorLaunches.reconnect(conv, sandbox, receipt_id) do
+                 Fountain.Conversations.ActorLaunches.reconnect(
+                   conv,
+                   sandbox,
+                   wake_context.receipt_id,
+                   wake_context.deadline_at
+                 ) do
             case Fountain.Conversations.ActorLaunches.start(parent.user_id, parent.id, launch.id) do
               {:error, _} = error -> error
               _ -> {:ok, get_conversation(parent.id, parent.user_id)}
@@ -3300,7 +3306,7 @@ defmodule Fountain.Conversations do
           end
 
         {:create_new, source} ->
-          create_fresh_sandbox_and_start(conv, agent, source, receipt_id)
+          create_fresh_sandbox_and_start(conv, agent, source, wake_context)
 
         {:error, _} = err ->
           err
@@ -3352,13 +3358,13 @@ defmodule Fountain.Conversations do
   # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
   # confirms the sprite still exists, we can reattach without provisioning a
   # new one. Otherwise, fall through to creating a fresh sandbox.
-  defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: {:create_new, nil}
+  defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}, _context), do: {:create_new, nil}
 
-  defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
+  defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}, context) do
     case _unsafe_get_sandbox(sandbox_id) do
       %{status: status, sprite_name: name} = sandbox
       when status in ["ready", "suspended"] and is_binary(name) ->
-        probe_reusable_sandbox(sandbox, sandbox_id)
+        probe_reusable_sandbox(sandbox, sandbox_id, context)
 
       # A provision is in flight — or was, in a BEAM that is gone. The
       # caller waits for the registry before deciding which (#800).
@@ -3376,7 +3382,7 @@ defmodule Fountain.Conversations do
   # same protect-the-parked-disk reasoning as :sprite_probe_failed below;
   # falling through to :create_new would retire the row and orphan (or lose)
   # the parked sandbox. Re-adding the credentials restores wakes.
-  defp probe_reusable_sandbox(%{status: status, sprite_name: name} = sandbox, sandbox_id) do
+  defp probe_reusable_sandbox(%{status: status, sprite_name: name} = sandbox, sandbox_id, context) do
     provider = sandbox_provider_atom(sandbox)
 
     if provider != Fountain.SandboxProviders.default_provider() and
@@ -3398,11 +3404,15 @@ defmodule Fountain.Conversations do
 
           true ->
             # ownership: the same already-owned wake sandbox, with identity rechecked by the context.
-            with :ok <- Fountain.Conversations.SandboxTransitions._unsafe_verify_ready(sandbox),
+            with :ok <-
+                   Fountain.Conversations.SandboxTransitions._unsafe_verify_ready(
+                     sandbox,
+                     context
+                   ),
                  do: {:reuse, sandbox_id}
         end
       else
-        case probe_sandbox(provider, name, status, sandbox_id) do
+        case probe_sandbox(provider, name, status, sandbox_id, sandbox, context) do
           :create_new -> {:create_new, sandbox}
           other -> other
         end
@@ -3410,10 +3420,27 @@ defmodule Fountain.Conversations do
     end
   end
 
-  defp probe_sandbox(provider, name, status, sandbox_id) do
-    case Managoat.Sandbox.get(Managoat.Sandbox.build_handle(provider, name)) do
+  defp probe_sandbox(provider, name, status, sandbox_id, sandbox, context) do
+    result =
+      Fountain.Conversations.WakeContext.probe(context, sandbox, fn ->
+        Managoat.Sandbox.get(Managoat.Sandbox.build_handle(provider, name))
+      end)
+
+    case result do
       {:ok, _info} ->
         {:reuse, sandbox_id}
+
+      {:error, reason}
+      when reason in [
+             :wake_expired,
+             :wake_unavailable,
+             :ownership_changed,
+             :opening_cancelled,
+             :startup_unresolved,
+             :provider_operation_fenced,
+             :provider_transaction_open
+           ] ->
+        {:error, reason}
 
       {:error, :not_found} ->
         :create_new
@@ -3474,13 +3501,14 @@ defmodule Fountain.Conversations do
   # `exclude: sandbox_id` makes the check identical for both ("does the user
   # have capacity besides this sandbox"), so the loser is never spuriously
   # refused at the cap for a wake that added no concurrency.
-  defp wake_suspended_sandbox(user_id, sandbox_id) do
+  defp wake_suspended_sandbox(context, sandbox_id) do
+    user_id = context.user_id
     # ownership: wake derived this machine from its conversation; each branch rechecks user_id.
     if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox_id) do
       case _unsafe_get_sandbox(sandbox_id) do
         %Sandbox{user_id: ^user_id, status: "suspended"} = sandbox ->
           # Managed parking retains capacity; this wake consumes no new slot.
-          Fountain.Conversations.SandboxTransitions._unsafe_resume(sandbox)
+          Fountain.Conversations.SandboxTransitions._unsafe_resume(sandbox, context)
 
         %Sandbox{user_id: ^user_id, status: "ready"} = sandbox ->
           # ownership: the loaded sandbox still belongs to the already-owned conversation's user.
@@ -3492,56 +3520,24 @@ defmodule Fountain.Conversations do
           {:error, :sandbox_not_ready}
       end
     else
-      wake_legacy_sandbox(user_id, sandbox_id)
+      wake_legacy_sandbox(context, sandbox_id)
     end
   end
 
-  defp wake_legacy_sandbox(user_id, sandbox_id) do
+  defp wake_legacy_sandbox(context, sandbox_id) do
     case _unsafe_get_sandbox(sandbox_id) do
-      %Sandbox{status: "suspended"} ->
-        Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
-          case _unsafe_get_sandbox(sandbox_id) do
-            %Sandbox{status: "suspended"} = sandbox ->
-              resume_and_wake(sandbox)
+      %Sandbox{user_id: user_id, status: "suspended"} = sandbox when user_id == context.user_id ->
+        Fountain.Conversations.LegacyResume.resume(context, sandbox)
 
-            sandbox ->
-              {:ok, sandbox}
-          end
-        end)
-
-      sandbox ->
+      %Sandbox{user_id: user_id, status: "ready"} = sandbox when user_id == context.user_id ->
         {:ok, sandbox}
+
+      _ ->
+        {:error, :sandbox_not_ready}
     end
   end
 
-  # Resume BEFORE the row flips: if the provider's wake call fails, the row
-  # stays `suspended` and the wake fails retryably — the parked disk is the
-  # agent's memory, and a row marked ready over a still-parked backend would
-  # strand it. For Sprites resume is a probe (waking is a side effect of the
-  # next exec); for pause/stop providers it is the call that restarts the
-  # sandbox.
-  defp resume_and_wake(sandbox) do
-    handle =
-      Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
-
-    case Managoat.Sandbox.resume(handle) do
-      {:ok, _handle} ->
-        update_sandbox(sandbox, %{
-          status: "ready",
-          last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-
-      {:error, reason} ->
-        Logger.warning(
-          "resume failed for suspended sandbox #{sandbox.id} (#{inspect(reason)}); " <>
-            "leaving it parked"
-        )
-
-        {:error, :sandbox_resume_failed}
-    end
-  end
-
-  defp create_fresh_sandbox_and_start(conv, agent, source, receipt_id) do
+  defp create_fresh_sandbox_and_start(conv, agent, source, wake_context) do
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_spend(conv.user_id),
          :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
@@ -3561,7 +3557,8 @@ defmodule Fountain.Conversations do
                provider: Atom.to_string(provider),
                user_id: conv.user_id
              },
-             receipt_id
+             wake_context.receipt_id,
+             wake_context.deadline_at
            ) do
       case Fountain.Conversations.ActorLaunches.start(parent.user_id, parent.id, launch.id) do
         {:error, _} = error -> error

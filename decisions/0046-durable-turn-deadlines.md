@@ -1124,3 +1124,36 @@ actor is gone. Distributed-node and live-provider recovery, provider work before
 handoff, full legacy park/resume serialization, provider identity links and
 conditional deletion remain integration gates. The stack remains draft and
 undeployed; execution controls and provider recovery remain disabled.
+
+
+## Provider wake authority (integration in progress)
+
+A blocked probe could outlive an accepted prompt and still resume its sandbox
+before actor launch refused the expired receipt. Wake now captures the original
+tenant, conversation, machine, runtime, agent and absolute deadline before the
+probe. Resume authorization rechecks that binding and any accepted receipt and
+wake request under database locks. Time spent waiting for a lock cannot renew
+the request. Provider tasks use the remaining deadline and a hard timer that
+survives caller loss. Actor launch inherits the same deadline.
+
+Legacy resume now commits a provider operation before calling the provider,
+outside the quota transaction. The operation reserves capacity while the row
+remains suspended. A causal success moves that capacity to the ready row;
+an uncertain result retains the reservation and prevents another resume.
+Uncertain outcomes and expired wakes return HTTP 409 without a retry header.
+Managed resume records the wake authority on its existing operation and retains
+its creation reservation. A call known never to have started can be refused;
+a provider-returned error cannot assert that guarantee.
+
+The saved receipt, wake request and deadline are immutable in both Ecto and
+PostgreSQL. Downgrade refuses to discard wake history. A late physical success
+cannot extend actor startup authority. Missing or changed ownership leaves an
+uncertain resume retained.
+
+The local tests exercise accepted-prompt expiry, ownership changes, timeout,
+capacity and handoff refusal. `scripts/verify-provider-wake-races.exs` exercises
+independent PostgreSQL connections and caller loss with simulated transport.
+See `decisions/evidence/provider-wake-authority.json` for the verified checkpoint.
+Full legacy cleanup serialization, reconciliation of uncertain resumes, and
+live-provider acceptance remain open. This change does not activate execution
+controls or provider recovery.

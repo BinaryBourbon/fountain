@@ -59,6 +59,24 @@ defmodule FountainWeb.FallbackControllerTest do
     end
   end
 
+  test "uncertain or expired wakes are conflicts without automatic retry", %{conn: conn} do
+    for reason <- [
+          :provider_operation_uncertain,
+          :provider_operation_fenced,
+          :wake_expired,
+          :launch_expired,
+          :wake_unavailable,
+          :opening_cancelled
+        ] do
+      response = FountainWeb.FallbackController.call(conn, {:error, reason})
+      assert response.status == 409
+      assert get_resp_header(response, "retry-after") == []
+      assert %{"error" => error, "message" => message} = Jason.decode!(response.resp_body)
+      assert error == Atom.to_string(reason)
+      assert is_binary(message)
+    end
+  end
+
   describe "{:error, :not_found} → 404" do
     test "GET /api/agents/:id with a nonexistent UUID returns 404 with error body", %{conn: conn} do
       user = insert_verified_user()

@@ -249,10 +249,10 @@ defmodule Fountain.Conversations.SandboxOperations do
     end
   end
 
-  @doc "Query retained create reservations, including ones whose parents were deleted."
+  @doc "Query retained create and legacy-resume reservations, including deleted parents."
   def _unsafe_reserved_slots do
     from operation in SandboxOperation,
-      where: operation.action == "create" and operation.holds_slot,
+      where: operation.holds_slot,
       select: %{id: operation.sandbox_id, user_id: operation.user_id}
   end
 
@@ -268,9 +268,7 @@ defmodule Fountain.Conversations.SandboxOperations do
   def _unsafe_holds_slot?(sandbox_id) do
     Repo.exists?(
       from operation in SandboxOperation,
-        where:
-          operation.sandbox_id == ^sandbox_id and operation.action == "create" and
-            operation.holds_slot
+        where: operation.sandbox_id == ^sandbox_id and operation.holds_slot
     )
   end
 
@@ -302,6 +300,10 @@ defmodule Fountain.Conversations.SandboxOperations do
 
       _unsafe_managed?(sandbox.id) ->
         _unsafe_destroy(sandbox, opts)
+
+      # ownership: the cleanup caller supplies its owned sandbox; an unresolved operation blocks it.
+      Fountain.Conversations.SandboxTransitions._unsafe_pending?(sandbox.id) ->
+        {:error, :provider_operation_fenced}
 
       handle ->
         Managoat.Sandbox.destroy(handle)

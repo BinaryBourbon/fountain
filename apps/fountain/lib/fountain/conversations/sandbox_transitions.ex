@@ -10,7 +10,7 @@ defmodule Fountain.Conversations.SandboxTransitions do
 
   alias Fountain.{Audit, Conversations, Repo}
   alias Fountain.Conversations.{Conversation, ExecutionGuard, Sandbox, SandboxOperation}
-  alias Fountain.Conversations.{HomeCheckpoint, SandboxOperations}
+  alias Fountain.Conversations.{HomeCheckpoint, SandboxOperations, WakeContext}
 
   @terminal ~w(terminated failed)
   @generation "lifecycle_operation_id"
@@ -39,16 +39,16 @@ defmodule Fountain.Conversations.SandboxTransitions do
   end
 
   @doc "A managed ready row must still name the same physical instance before reuse."
-  def _unsafe_verify_ready(sandbox) do
+  def _unsafe_verify_ready(sandbox, context \\ nil) do
     with :ok <- outside_transaction(),
-         {:ok, creation} <- verify_ready_binding(sandbox),
-         result <- provider_phase(fn -> resume_provider(creation) end),
+         {:ok, creation} <- verify_ready_binding(sandbox, context),
+         result <- WakeContext.provider_result(context, fn -> resume_provider(creation) end),
          true <-
            successful?(
              %{action: "resume", provider_instance_id: creation.provider_instance_id},
              result
            ),
-         {:ok, _} <- verify_ready_binding(sandbox) do
+         {:ok, _} <- verify_ready_binding(sandbox, context) do
       :ok
     else
       {:error, _} = error -> error
@@ -56,12 +56,15 @@ defmodule Fountain.Conversations.SandboxTransitions do
     end
   end
 
-  defp verify_ready_binding(observed) do
+  defp verify_ready_binding(observed, context) do
     Repo.transaction(fn ->
       lock_machine(observed.id)
+      lock_parents(observed.id)
       creation = lock_creation(observed.id) || Repo.rollback(:provider_identity_missing)
       sandbox = lock_sandbox(observed.id) || Repo.rollback(:not_found)
       assert_binding!(creation, sandbox)
+      WakeContext.assert_locked!(context)
+      if context, do: WakeContext.assert_machine!(context, observed, sandbox)
 
       if sandbox.status != "ready" or sandbox.user_id != observed.user_id or
            sandbox.provider_instance_id != observed.provider_instance_id or
@@ -73,22 +76,46 @@ defmodule Fountain.Conversations.SandboxTransitions do
     end)
   end
 
-  def _unsafe_resume(sandbox) do
+  def _unsafe_resume(sandbox, context \\ nil) do
     with :ok <- outside_transaction(),
-         {:ok, operation} <- _unsafe_submit(sandbox, "resume") do
+         {:ok, operation} <- _unsafe_submit(sandbox, "resume", context) do
       audit(operation)
-      result = provider_phase(fn -> resume_provider(operation) end)
-      complete_and_audit(operation, result, :wake)
+
+      case WakeContext.run(context, fn -> resume_provider(operation) end) do
+        {:returned, result} -> complete_and_audit(operation, result, :wake)
+        {:not_started, reason} -> refuse_unsent(operation, reason)
+        {:uncertain, reason} -> complete_and_audit(operation, {:error, reason}, :wake)
+      end
+    end
+  end
+
+  defp refuse_unsent(observed, reason) do
+    Repo.transaction(fn ->
+      lock_machine(observed.sandbox_id)
+
+      operation =
+        Repo.one!(from o in SandboxOperation, where: o.id == ^observed.id, lock: "FOR UPDATE")
+
+      unless operation.state == "submitted", do: Repo.rollback(:provider_operation_fenced)
+      operation |> SandboxOperation.changeset(%{state: "refused"}) |> Repo.update!()
+      # The managed creation still holds capacity. No physical result is inferred.
+      reason
+    end)
+    |> case do
+      {:ok, reason} -> {:error, reason}
+      {:error, _} = error -> error
     end
   end
 
   @doc "Reserve a transition and close admission before any provider request."
-  def _unsafe_submit(observed, {:park, reason}) when reason in [:idle, :max_lifetime],
-    do: submit(observed, "park", reason)
+  def _unsafe_submit(observed, action, context \\ nil)
 
-  def _unsafe_submit(observed, "resume"), do: submit(observed, "resume", :wake)
+  def _unsafe_submit(observed, {:park, reason}, nil) when reason in [:idle, :max_lifetime],
+    do: submit(observed, "park", reason, nil)
 
-  defp submit(%Sandbox{} = observed, action, reason) do
+  def _unsafe_submit(observed, "resume", context), do: submit(observed, "resume", :wake, context)
+
+  defp submit(%Sandbox{} = observed, action, reason, context) do
     Repo.transaction(fn ->
       lock_machine(observed.id)
       parents = lock_parents(observed.id)
@@ -109,6 +136,8 @@ defmodule Fountain.Conversations.SandboxTransitions do
       # Ownership: current locked parents and confirmed creation bind the machine.
       # The clock and current policy must be read after every grant lock, not
       # when the actor or reaper first decided to try parking.
+      WakeContext.assert_locked!(context)
+      if context, do: WakeContext.assert_machine!(context, observed, sandbox)
       now = DateTime.utc_now()
 
       if action == "park" and
@@ -134,7 +163,12 @@ defmodule Fountain.Conversations.SandboxTransitions do
       }
 
       operation =
-        case Repo.insert(SandboxOperation.changeset(%SandboxOperation{}, attrs)) do
+        case Repo.insert(
+               SandboxOperation.changeset(
+                 %SandboxOperation{},
+                 Map.merge(attrs, WakeContext.operation_attrs(context))
+               )
+             ) do
           {:ok, operation} -> operation
           {:error, _} -> Repo.rollback(:provider_operation_fenced)
         end
@@ -262,7 +296,7 @@ defmodule Fountain.Conversations.SandboxTransitions do
     if Repo.in_transaction?(), do: {:error, :provider_transaction_open}, else: :ok
   end
 
-  defp provider_phase(fun, timeout \\ 35_000) do
+  defp provider_phase(fun, timeout) do
     task =
       Task.Supervisor.async_nolink(Fountain.TaskSupervisor, fn ->
         {:ok, timer} = :timer.kill_after(timeout)

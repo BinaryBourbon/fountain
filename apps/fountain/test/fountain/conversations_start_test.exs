@@ -13,7 +13,7 @@ defmodule Fountain.ConversationsStartTest do
   # ────────────────────────────────────────────────────────────────────────────
 
   describe "wake_conversation/2 — provider resume" do
-    test "a failed resume leaves the row suspended and fails retryably" do
+    test "an uncertain resume retains the suspended row and blocks another attempt" do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-wont-wake")
@@ -28,7 +28,12 @@ defmodule Fountain.ConversationsStartTest do
         {:error, {:unavailable, :timeout}}
       end)
 
-      assert {:error, :sandbox_resume_failed} = Conversations.wake_conversation(conv.id)
+      assert {:error, :provider_operation_uncertain} = Conversations.wake_conversation(conv.id)
+      operation = Repo.one!(Fountain.Conversations.SandboxOperation)
+      assert operation.state == "uncertain"
+      assert operation.holds_slot
+      reject(Managoat.Sandbox.Sprites, :resume, 1)
+      assert {:error, :provider_operation_fenced} = Conversations.wake_conversation(conv.id)
       assert Repo.reload(sandbox).status == "suspended"
     end
   end

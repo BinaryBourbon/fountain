@@ -38,7 +38,7 @@ defmodule Fountain.Conversations.ActorLaunches do
   end
 
   @doc "Commit replacement binding and launch before any actor can observe the new machine."
-  def replace(observed, source_snapshot, sandbox_attrs, receipt_id \\ nil) do
+  def replace(observed, source_snapshot, sandbox_attrs, receipt_id \\ nil, wake_deadline \\ nil) do
     result =
       Fountain.Quotas.with_sandbox_reservation(
         observed.user_id,
@@ -53,20 +53,23 @@ defmodule Fountain.Conversations.ActorLaunches do
                    sandbox_attrs
                  ) do
             receipt = opening_receipt!(parent, receipt_id)
-            launch = save!(parent, sandbox, receipt, observed.sandbox_id, "replace")
+
+            launch =
+              save!(parent, sandbox, receipt, observed.sandbox_id, "replace", wake_deadline)
+
             {:ok, {sandbox, parent, launch}}
           end
         end
       )
 
     case result do
-      {:error, _} = error -> replacement_winner(observed) || error
+      {:error, _} = error -> replacement_winner(observed, wake_deadline) || error
       success -> success
     end
   end
 
   @doc "Save a reconnect request for the observed ready machine, without reserving compute."
-  def reconnect(observed, machine, receipt_id \\ nil) do
+  def reconnect(observed, machine, receipt_id \\ nil, wake_deadline \\ nil) do
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [4316, :erlang.phash2(machine.id)])
 
@@ -97,13 +100,20 @@ defmodule Fountain.Conversations.ActorLaunches do
             lock: "FOR UPDATE"
         )
 
+      if wake_deadline && DateTime.compare(DateTime.utc_now(), wake_deadline) != :lt,
+        do: Repo.rollback(:launch_expired)
+
       launch =
         if pending do
           assert_binding!(pending, parent, sandbox)
           unless pending.kind == "reconnect", do: Repo.rollback(:launch_unavailable)
+
+          if wake_deadline && DateTime.compare(pending.deadline_at, wake_deadline) == :gt,
+            do: Repo.rollback(:launch_unavailable)
+
           pending
         else
-          save!(parent, sandbox, receipt, nil, "reconnect")
+          save!(parent, sandbox, receipt, nil, "reconnect", wake_deadline)
         end
 
       {parent, launch}
@@ -112,7 +122,7 @@ defmodule Fountain.Conversations.ActorLaunches do
 
   # A losing caller may hit the quota gate after the winner consumes the last
   # slot. Reuse only a launch that explicitly names this same original binding.
-  defp replacement_winner(observed) do
+  defp replacement_winner(observed, wake_deadline) do
     from(l in ActorLaunch,
       join: c in Conversation,
       on: c.id == l.conversation_id and c.sandbox_id == l.sandbox_id,
@@ -133,8 +143,15 @@ defmodule Fountain.Conversations.ActorLaunches do
     )
     |> Repo.one()
     |> case do
-      nil -> nil
-      winner -> {:ok, winner}
+      nil ->
+        nil
+
+      {_sandbox, _parent, launch} = winner ->
+        if is_nil(wake_deadline) ||
+             (DateTime.compare(DateTime.utc_now(), wake_deadline) == :lt &&
+                DateTime.compare(launch.deadline_at, wake_deadline) != :gt),
+           do: {:ok, winner},
+           else: nil
     end
   end
 
@@ -154,7 +171,7 @@ defmodule Fountain.Conversations.ActorLaunches do
     receipt
   end
 
-  defp save!(parent, sandbox, receipt, source_id \\ nil, kind \\ "create") do
+  defp save!(parent, sandbox, receipt, source_id \\ nil, kind \\ "create", wake_deadline \\ nil) do
     # All callers hold the parent lock. A previous unresolved request needs its
     # own outcome, not an exception from the unique index or a second launch.
     if Repo.exists?(
@@ -164,6 +181,11 @@ defmodule Fountain.Conversations.ActorLaunches do
        do: Repo.rollback(:launch_unavailable)
 
     deadline = DateTime.add(DateTime.utc_now(), launch_timeout_ms(), :millisecond)
+
+    deadline =
+      if wake_deadline && DateTime.compare(wake_deadline, deadline) == :lt,
+        do: wake_deadline,
+        else: deadline
 
     deadline =
       if receipt && DateTime.compare(receipt.delivery_deadline_at, deadline) == :lt,
