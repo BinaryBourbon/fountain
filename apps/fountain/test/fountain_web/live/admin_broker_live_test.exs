@@ -55,6 +55,52 @@ defmodule FountainWeb.AdminBrokerLiveTest do
     end
   end
 
+  describe "authorization after mount" do
+    for change <- [:demotion, :session, :verification], action <- [:timer, :window, :refresh] do
+      test "#{change} prevents fresh data on #{action}", %{conn: conn} do
+        admin = insert_admin()
+        {:ok, lv, _html} = conn |> login_user(admin) |> live(~p"/admin/broker")
+
+        attrs =
+          case unquote(change) do
+            :demotion -> [role: "user"]
+            :session -> [session_version: admin.session_version + 1]
+            :verification -> [email_verified_at: nil]
+          end
+
+        admin |> Ecto.Changeset.change(attrs) |> Fountain.Repo.update!()
+        tenant = insert_active_user()
+        conv = insert_conversation(user_id: tenant.id)
+        log!(tenant, conv, outcome: "denied", host: "after-revocation.example")
+
+        test_pid = self()
+        handler = {__MODULE__, make_ref()}
+
+        :telemetry.attach(
+          handler,
+          [:fountain, :repo, :query],
+          fn _, _, meta, _ ->
+            if self() == lv.pid and String.contains?(meta.query, "broker_") do
+              send(test_pid, :unauthorized_broker_query)
+            end
+          end,
+          nil
+        )
+
+        on_exit(fn -> :telemetry.detach(handler) end)
+
+        case unquote(action) do
+          :timer -> send(lv.pid, :refresh)
+          :window -> render_patch(lv, ~p"/admin/broker?window=168")
+          :refresh -> lv |> element("button[phx-click=refresh]") |> render_click()
+        end
+
+        assert_redirect(lv, ~p"/auth/login")
+        refute_received :unauthorized_broker_query
+      end
+    end
+  end
+
   describe "content" do
     test "says so when this deployment does not broker", %{conn: conn} do
       # The test environment sets no BROKER_LISTEN_PORT.
@@ -91,6 +137,40 @@ defmodule FountainWeb.AdminBrokerLiveTest do
       assert html =~ tenant.email
       assert html =~ ~s(href="/admin/conversations/#{conv.id}")
       assert html =~ ~s(href="/admin/users/#{tenant.id}")
+    end
+
+    test "timer refreshes health without querying traffic; explicit refresh loads new rows", %{
+      conn: conn
+    } do
+      admin = insert_admin()
+      {:ok, lv, _html} = conn |> login_user(admin) |> live(~p"/admin/broker")
+      tenant = insert_active_user()
+      conv = insert_conversation(user_id: tenant.id)
+      log!(tenant, conv, outcome: "denied", host: "new-traffic.example")
+
+      test_pid = self()
+      handler = {__MODULE__, make_ref()}
+
+      :telemetry.attach(
+        handler,
+        [:fountain, :repo, :query],
+        fn _, _, meta, _ ->
+          if self() == lv.pid and String.contains?(meta.query, "broker_requests") do
+            send(test_pid, :traffic_query)
+          end
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      send(lv.pid, :refresh)
+      refute render(lv) =~ "new-traffic.example"
+      refute_received :traffic_query
+
+      html = lv |> element("button[phx-click=refresh]") |> render_click()
+      assert html =~ "new-traffic.example"
+      assert_received :traffic_query
     end
 
     test "the window comes from the URL and only the chosen one is current", %{conn: conn} do

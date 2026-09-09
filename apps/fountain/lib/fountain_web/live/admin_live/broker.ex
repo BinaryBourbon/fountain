@@ -51,12 +51,35 @@ defmodule FountainWeb.AdminLive.Broker do
 
   @impl true
   def handle_info(:refresh, socket) do
-    Process.send_after(self(), :refresh, @refresh_ms)
+    socket = refresh_overview(socket, :health)
+    unless socket.redirected, do: Process.send_after(self(), :refresh, @refresh_ms)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("refresh", _params, socket) do
     {:noreply, assign_overview(socket)}
   end
 
-  defp assign_overview(socket) do
-    assign(socket, :overview, Insights._unsafe_overview_admin(socket.assigns.window))
+  defp assign_overview(socket), do: refresh_overview(socket, :all)
+
+  defp refresh_overview(socket, scope) do
+    mounted = socket.assigns.current_user
+
+    case Fountain.Accounts.get_user(mounted.id) do
+      %{role: "admin", email_verified_at: verified, session_version: version}
+      when not is_nil(verified) and version == mounted.session_version ->
+        overview =
+          case scope do
+            :all -> Insights._unsafe_overview_admin(socket.assigns.window)
+            :health -> Map.merge(socket.assigns.overview, Insights._unsafe_health_admin())
+          end
+
+        assign(socket, :overview, overview)
+
+      _ ->
+        redirect(socket, to: ~p"/auth/login")
+    end
   end
 
   @impl true
@@ -65,9 +88,12 @@ defmodule FountainWeb.AdminLive.Broker do
     <div class="space-y-6">
       <.admin_header title="Broker" current={:broker} credits_enabled={@credits_enabled}>
         <:subtitle>
-          The egress credential proxy every brokered sandbox dials. Refreshes every 30s.
+          Health refreshes every 30s. Traffic and session details refresh on request.
         </:subtitle>
         <:actions>
+          <button type="button" phx-click="refresh" class="px-2 py-1 rounded border text-xs">
+            Refresh data
+          </button>
           <nav class="flex items-center gap-1 text-xs" aria-label="Window">
             <.link
               :for={hours <- Insights.windows()}
@@ -86,6 +112,11 @@ defmodule FountainWeb.AdminLive.Broker do
           </nav>
         </:actions>
       </.admin_header>
+
+      <p class="text-xs text-zinc-500">
+        Counts describe recorded requests. Dropped log rows are absent; check
+        <code>FountainBrokerLogDropping</code> in Grafana before treating counts as complete.
+      </p>
 
       <div
         :if={!@overview.configured}
@@ -235,9 +266,10 @@ defmodule FountainWeb.AdminLive.Broker do
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Denied</h2>
         <p class="text-xs text-zinc-500">
-          A refusal is the policy working: a host outside a limited environment's list, or a
-          sandbox that dialled with a token the broker does not hold. Many from one conversation
-          means an agent that keeps trying.
+          These are host-policy denials: hosts outside a limited environment's allowed list.
+          Unresolved proxy tokens are refused before a request row exists and do not appear here.
+          Check <code>fountain.broker.session_lookup</code> and the
+          <code>FountainBrokerSessionsUnresolvable</code> alert for those failures.
         </p>
         <.request_table rows={@overview.denied} empty="Nothing was denied in this window." />
       </section>

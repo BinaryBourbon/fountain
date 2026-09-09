@@ -13,11 +13,10 @@ defmodule Fountain.Broker.Native.Insights do
   Every function here is `_unsafe_`: the queries span every tenant by
   design, and the one caller is the admin page behind `require_admin`.
 
-  The numbers are bounded by a window (default the last 24 hours, never
-  beyond `BROKER_LOG_RETENTION_HOURS`) and read the `inserted_at` index, so
-  the page costs a handful of range scans, not a table scan — the lesson of
-  the 2026-09-04 outage that an unscoped admin aggregate on a busy log table
-  caused (broker OOM misattribution).
+  The numbers are bounded by a window (default the last 24 hours, selected
+  from 1, 24 or 168 hours) and filter on `inserted_at`. A wide window can
+  still read the full retained log, so traffic aggregates refresh only on
+  operator action.
   """
 
   import Ecto.Query, only: [from: 2]
@@ -59,15 +58,8 @@ defmodule Fountain.Broker.Native.Insights do
     hours = if window_hours in @windows, do: window_hours, else: @default_window_hours
     since = DateTime.add(DateTime.utc_now(), -hours, :hour)
 
-    %{
-      backend: Broker.backend(),
-      configured: Broker.configured?(),
-      listener_up: listener_up?(),
-      tenants: Application.get_env(:fountain, :broker_tenants, []),
-      retention_hours: Broker.log_retention_hours(),
-      ca_expires_at: ca_expires_at(),
+    Map.merge(_unsafe_health_admin(), %{
       window_hours: hours,
-      sessions: session_counts(),
       window: window_counts(since),
       hosts: top_hosts(since, 10),
       services: top_services(since, 10),
@@ -75,6 +67,19 @@ defmodule Fountain.Broker.Native.Insights do
       errors: error_counts(since),
       failed: recent(since, :failed, 10),
       live_sessions: live_sessions(50)
+    })
+  end
+
+  @doc "Health information without request-log aggregates, for the automatic refresh."
+  def _unsafe_health_admin do
+    %{
+      backend: Broker.backend(),
+      configured: Broker.configured?(),
+      listener_up: listener_up?(),
+      tenants: Application.get_env(:fountain, :broker_tenants, []),
+      retention_hours: Broker.log_retention_hours(),
+      ca_expires_at: ca_expires_at(),
+      sessions: session_counts()
     }
   end
 

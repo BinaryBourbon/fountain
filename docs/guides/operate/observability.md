@@ -109,7 +109,7 @@ check the shipped expressions and their failure fixtures.
 | `FountainBrokerLogDropping` | The broker drops request-log rows. |
 | `FountainBrokerCaExpiring` | The broker root CA expires within 14 days. |
 
-The admin page at `/admin/broker` shows the same picture without Grafana. It lists the listener state, the live sessions, the request counts by outcome for a window, the busiest hosts, the bindings the proxy attached a credential for, and the requests it denied or that failed.
+The admin page at `/admin/broker` shows recorded request traffic and current health. Health refreshes every 30 seconds; traffic and session details refresh when you choose a window or click Refresh data. Unresolved-token failures and dropped log rows remain visible in Grafana through `FountainBrokerSessionsUnresolvable` and `FountainBrokerLogDropping`; the page does not include those failures in its request tables. It lists the listener state, the live sessions, the request counts by outcome for a window, the busiest hosts, the bindings the proxy attached a credential for, and the requests it denied or that failed.
 
 ### If you run CNPG
 
