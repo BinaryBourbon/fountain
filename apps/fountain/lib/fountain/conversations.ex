@@ -12,6 +12,7 @@ defmodule Fountain.Conversations do
 
   alias Fountain.Audit
   alias Fountain.Conversations.{Blocks, Conversation, LogEvent, Sandbox, Turn, TurnImage}
+  alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
   alias Fountain.Repo
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
@@ -1089,7 +1090,9 @@ defmodule Fountain.Conversations do
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
   per-sandbox advisory lock and verify that the conversation still belongs
   to this nonterminal sandbox. An integer capacity also limits concurrent
-  turns; `:unbounded` skips only that capacity check. Refusal writes no turn.
+  turns; `:unbounded` skips only that capacity check. Saved execution allowances
+  are checked under row locks; no runtime control is supported yet, so any
+  nonempty allowance refuses the turn. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
   """
   def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
@@ -1104,6 +1107,16 @@ defmodule Fountain.Conversations do
           :erlang.phash2(sandbox_id)
         ])
 
+        # The allowance's FK takes KEY SHARE on this row when first inserted.
+        # UPDATE also fences that first insert when there is no allowance row
+        # to lock yet. Keep both locks through the turn insert.
+        Repo.one(
+          from c in Conversation,
+            where: c.id == ^conv_id,
+            select: c.id,
+            lock: "FOR UPDATE"
+        ) || Repo.rollback(:sandbox_unavailable)
+
         attached? =
           Repo.exists?(
             from c in Conversation,
@@ -1115,6 +1128,11 @@ defmodule Fountain.Conversations do
           )
 
         unless attached?, do: Repo.rollback(:sandbox_unavailable)
+
+        case check_saved_execution_allowance(conv_id) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
 
         if capacity != :unbounded and
              _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
@@ -1130,6 +1148,25 @@ defmodule Fountain.Conversations do
     with {:ok, turn} <- result do
       record_turn_usage(turn)
       {:ok, turn}
+    end
+  end
+
+  defp check_saved_execution_allowance(conversation_id) do
+    case Repo.one(
+           from a in ExecutionAllowance,
+             where: a.conversation_id == ^conversation_id,
+             lock: "FOR SHARE"
+         ) do
+      nil ->
+        :ok
+
+      %ExecutionAllowance{limits: limits} when is_map(limits) ->
+        with {:ok, normalized} <- ExecutionLimits.normalize(limits) do
+          ExecutionLimits.require_controls(normalized, [])
+        end
+
+      _ ->
+        {:error, {:execution_limits_invalid, "object_required"}}
     end
   end
 
