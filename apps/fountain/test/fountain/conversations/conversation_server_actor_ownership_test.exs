@@ -17,7 +17,7 @@ defmodule Fountain.Conversations.ConversationServerActorOwnershipTest do
       {:ok, handle}
     end)
 
-    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _ ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn _, _opts ->
       send(owner, {:destroyed, self()})
       :ok
     end)
@@ -136,6 +136,7 @@ defmodule Fountain.Conversations.ConversationServerActorOwnershipTest do
     {:ok, first_read} = Agent.start_link(fn -> true end)
     reject(Managoat.Sandbox.Sprites, :create, 2)
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
+    reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
 
     stub(Conversations, :_unsafe_get_sandbox, fn id ->
       observed = Mimic.call_original(Conversations, :_unsafe_get_sandbox, [id])

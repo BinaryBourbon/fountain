@@ -170,7 +170,10 @@ defmodule Fountain.Conversations.SandboxModeTest do
     home = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
     {:ok, _} = Conversations.update_sandbox(home, %{status: "ready"})
     test = self()
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+    stub(Managoat.Sandbox.Sprites, :destroy_once, fn _h, _opts ->
+      send(test, :destroyed) && :ok
+    end)
 
     assert {:ok, _} = Agents.delete_agent(ctx.agent)
     assert_received :destroyed

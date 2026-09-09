@@ -203,7 +203,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
       :ok
     end)
 
-    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn handle, _opts ->
       send(owner, {:machine_destroyed, handle.name})
       :ok
     end)
@@ -281,7 +281,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
       {:ok, handle}
     end)
 
-    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _ ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn _, _opts ->
       send(owner, :sprite_destroyed)
       :ok
     end)
@@ -301,7 +301,9 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
 
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")
-    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+    # The provider fixture must return the name requested for this machine.
+    sandbox = insert_sandbox(user_id: user.id, sprite_name: handle.name)
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
 
     {:ok, _} =
       Fountain.Webhooks.create_endpoint(user.id, %{"url" => "https://example.test/hook"})
@@ -367,7 +369,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
       {:ok, handle}
     end)
 
-    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn destroyed ->
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn destroyed, _opts ->
       assert destroyed == handle
       send(owner, :sprite_destroyed)
       :ok
@@ -375,7 +377,9 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
 
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")
-    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+    # The provider fixture must return the name requested for this machine.
+    sandbox = insert_sandbox(user_id: user.id, sprite_name: handle.name)
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
 
     {:ok, _} =
       Fountain.Webhooks.create_endpoint(user.id, %{

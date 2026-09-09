@@ -73,6 +73,7 @@ defmodule Fountain.Conversations.PromptWakeTest do
     stub_happy_sprite(c.sandbox.sprite_name)
     reject(Managoat.Sandbox.Sprites, :create, 2)
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
+    reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
     owner = self()
 
     expect(Horde.DynamicSupervisor, :start_child, fn _, {ConversationServer, args} ->

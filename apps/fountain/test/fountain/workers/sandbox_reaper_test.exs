@@ -39,7 +39,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
 
     stub(Sprites, :sprite, fn :client, name -> {:handle, name} end)
 
-    stub(Sprites, :destroy, fn {:handle, name} ->
+    stub(Managoat.Sandbox.Sprites, :destroy_once, fn %{name: name}, _opts ->
       send(test, {:destroyed, name})
       :ok
     end)
@@ -441,7 +441,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       test = self()
       stub(Sprites, :sprite, fn :client, name -> {:handle, name} end)
 
-      stub(Sprites, :destroy, fn {:handle, name} ->
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn %{name: name}, _opts ->
         if name == doomed.sprite_name do
           {:error, :boom}
         else

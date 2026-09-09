@@ -16,6 +16,8 @@ defmodule Fountain.Conversations.SandboxOperation do
     field :wake_receipt_id, :binary_id
     field :wake_request_id, :binary_id
     field :wake_deadline_at, :utc_datetime_usec
+    field :delete_deadline_at, :utc_datetime_usec
+    field :delete_started_at, :utc_datetime_usec
     field :action, :string
     field :state, :string
     field :holds_slot, :boolean, default: false
@@ -39,6 +41,8 @@ defmodule Fountain.Conversations.SandboxOperation do
       :wake_receipt_id,
       :wake_request_id,
       :wake_deadline_at,
+      :delete_deadline_at,
+      :delete_started_at,
       :action,
       :state,
       :holds_slot,
@@ -54,15 +58,19 @@ defmodule Fountain.Conversations.SandboxOperation do
     |> unique_constraint(:sandbox_id, name: :sandbox_operations_creation_index)
     |> unique_constraint(:sandbox_id, name: :sandbox_operations_pending_index)
     |> unique_constraint(:provider_instance_id, name: :sandbox_operations_provider_instance_index)
+    |> unique_constraint(:sandbox_id, name: :sandbox_operations_legacy_delete_index)
+    |> unique_constraint(:sandbox_name, name: :sandbox_operations_pending_name_index)
     |> immutable_binding()
   end
 
   defp immutable_binding(%{data: %{__meta__: %{state: :loaded}}} = changeset) do
     fields =
-      ~w(sandbox_id conversation_id user_id provider sandbox_name creation_id action submitted_at sandbox_started_at wake_receipt_id wake_request_id wake_deadline_at)a
+      ~w(sandbox_id conversation_id user_id provider sandbox_name creation_id action submitted_at sandbox_started_at wake_receipt_id wake_request_id wake_deadline_at delete_deadline_at)a
 
     fields =
       if changeset.data.provider_instance_id, do: [:provider_instance_id | fields], else: fields
+
+    fields = if changeset.data.delete_started_at, do: [:delete_started_at | fields], else: fields
 
     Enum.reduce(fields, changeset, fn field, acc ->
       if Map.has_key?(acc.changes, field), do: add_error(acc, field, "is immutable"), else: acc

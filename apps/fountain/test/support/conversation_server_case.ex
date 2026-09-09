@@ -52,7 +52,7 @@ defmodule Fountain.ConversationServerCase do
     handle = Managoat.Sandbox.Sprites.build_handle(name)
 
     Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _name, _opts -> {:ok, handle} end)
-    Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
+    Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn _handle, _opts -> :ok end)
 
     Mimic.stub(Managoat.Sandbox.Sprites, :get, fn _handle ->
       {:ok, %{status: :running, raw: %{}}}

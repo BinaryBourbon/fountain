@@ -406,27 +406,26 @@ defmodule Fountain.Workers.SandboxReaper do
   defp destroy_dead_sprites(live_by_provider) do
     Sandbox
     |> where([s], s.status in ^@terminal_statuses)
-    |> select([s], {s.id, s.sprite_name, s.provider})
     |> Repo.all()
-    |> Enum.filter(fn {_id, name, provider} ->
-      case Map.fetch(live_by_provider, provider_atom(provider)) do
+    |> Enum.filter(fn sandbox ->
+      case Map.fetch(live_by_provider, provider_atom(sandbox.provider)) do
         # Rows on a provider whose listing failed (or that is disabled) are
         # skipped, not destroyed — the next run with credentials converges.
-        {:ok, live_names} -> MapSet.member?(live_names, name)
+        {:ok, live_names} -> MapSet.member?(live_names, sandbox.sprite_name)
         :error -> false
       end
     end)
     |> Enum.take(@destroy_limit)
-    |> Enum.count(fn {id, name, provider} -> destroy(id, name, provider_atom(provider)) end)
+    |> Enum.count(&destroy/1)
   end
 
   defp provider_atom(provider), do: Conversations.sandbox_provider_atom(%{provider: provider})
 
-  defp destroy(sandbox_id, sprite_name, provider) do
-    # build_handle/2 is pure — we already know the sandbox exists (it came
-    # out of the listing), so there is nothing to look up first.
-    sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
-    handle = Managoat.Sandbox.build_handle(provider, sprite_name)
+  defp destroy(%Sandbox{id: sandbox_id, sprite_name: sprite_name} = sandbox) do
+    # Keep the selected database snapshot. The provider listing supplies no
+    # incarnation authority; the grant rechecks this original binding under locks.
+    handle = Managoat.Sandbox.build_handle(provider_atom(sandbox.provider), sprite_name)
+    handle = %{handle | instance_id: sandbox.provider_instance_id}
 
     case Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle) do
       :ok ->
@@ -434,8 +433,8 @@ defmodule Fountain.Workers.SandboxReaper do
         true
 
       {:error, reason} ->
-        # Left for the next run rather than retried here; the row stays terminal
-        # either way, so nothing is lost by being slow about it.
+        # The operation remains retained. A later sweep cannot replay an
+        # uncertain delete or release capacity merely because a lookup is absent.
         Logger.warning("reaper: destroy failed for #{sprite_name}: #{inspect(reason)}")
         false
     end

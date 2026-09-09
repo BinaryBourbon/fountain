@@ -222,11 +222,18 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
       ref = listen([:fountain, :sandbox, :reclaimed])
       test = self()
 
-      expect(Managoat.Sandbox, :destroy, fn %Handle{name: "s"} ->
+      expect(Managoat.Sandbox, :destroy_once, fn %Handle{name: name}, _opts ->
+        assert name == ctx.sandbox.sprite_name
         send(test, :destroyed) && :ok
       end)
 
-      assert Lifecycle.destroy(ctx.conv.id, ctx.sandbox.id, ctx.user.id, handle(), :max_lifetime) ==
+      assert Lifecycle.destroy(
+               ctx.conv.id,
+               ctx.sandbox.id,
+               ctx.user.id,
+               handle(ctx.sandbox.sprite_name),
+               :max_lifetime
+             ) ==
                :ok
 
       assert_received :destroyed
@@ -244,16 +251,16 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
       assert_received {^ref, %{count: 1}, %{reason: :max_lifetime, provider: :sprites}}
     end
 
-    test "no handle is nothing to tear down, and the rows still move", ctx do
+    test "a missing handle cannot assert deletion or publish reclaimed capacity", ctx do
       reject(&Managoat.Sandbox.destroy/1)
+      reject(Managoat.Sandbox, :destroy_once, 2)
 
-      assert Lifecycle.destroy(ctx.conv.id, ctx.sandbox.id, ctx.user.id, nil, :idle) == :ok
+      assert {:error, :provider_identity_missing} =
+               Lifecycle.destroy(ctx.conv.id, ctx.sandbox.id, ctx.user.id, nil, :idle)
 
-      assert Repo.reload(ctx.sandbox).status == "terminated"
-      assert [{"done", meta}] = stages(ctx.conv.id, "sandbox")
-      assert meta["message"] == Lifecycle.reclaim_message(:idle)
-      # The provider tag falls back with the handle.
-      assert meta["reason"] == "idle"
+      assert Repo.reload(ctx.sandbox).status == "ready"
+      refute Repo.reload(ctx.sandbox).terminated_at
+      assert [] == stages(ctx.conv.id, "sandbox")
     end
   end
 

@@ -15,8 +15,8 @@ defmodule Fountain.Accounts.Deletion do
   1. **Destroy the tenant's sprites.** Before the row deletion, because the
      cascade takes `conversations` with it, and after that nothing links a
      sandbox to the user who was paying for it. Failures here are logged rather
-     than fatal: `SandboxReaper` reconciles anything missed on its next run,
-     which is exactly the case it exists for.
+     than fatal. Retained cleanup operations preserve their original identity
+     and capacity; an uncertain operation cannot be replayed by the next sweep.
 
   2. **Record the audit event.** Before the delete, and carrying the email and
      user id in `metadata` — `audit_events.user_id` is `SET NULL` on delete, so
@@ -189,26 +189,18 @@ defmodule Fountain.Accounts.Deletion do
     # wrong adapter.
     provider = Fountain.Conversations.sandbox_provider_atom(sandbox)
     handle = Managoat.Sandbox.build_handle(provider, name)
+    handle = %{handle | instance_id: sandbox.provider_instance_id}
 
     # Ownership: the deletion query selected this user's sandboxes.
-    result =
-      case Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle) do
-        :ok ->
-          true
+    case Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle) do
+      :ok ->
+        true
 
-        {:error, reason} ->
-          # Not fatal. SandboxReaper reconciles terminal rows whose sprite still
-          # exists, which is precisely this leftover.
-          Logger.warning("account deletion: destroy #{name} failed: #{inspect(reason)}")
-          false
-      end
-
-    Conversations.update_sandbox(sandbox, %{
-      status: "terminated",
-      terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-    })
-
-    result
+      {:error, reason} ->
+        # The journal retains uncertain capacity; refusal cannot assert absence.
+        Logger.warning("account deletion: destroy #{name} failed: #{inspect(reason)}")
+        false
+    end
   rescue
     e ->
       Logger.warning("account deletion: destroy raised for #{name}: #{inspect(e)}")

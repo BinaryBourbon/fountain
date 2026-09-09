@@ -94,3 +94,18 @@ regardless of who triggered the deletion (#450).
   artifact the most dangerous file the product produces, sitting in a
   download directory. Secrets are reproducible by their owner; conversations
   are not. Rejected, and stated in the UI.
+
+
+## Cleanup confirmation (local integration in progress)
+
+Account deletion keeps its existing ordering and crypto-shred scope. Provider
+cleanup now owns the sandbox's retirement and confirmation timestamp through
+its operation journal. The account caller must not mark a refused cleanup as
+deleted or overwrite an uncertain outcome with `terminated_at`. A retained
+operation preserves its original owner and physical capacity after user removal;
+that is operational cleanup history, not permission to restore the account.
+
+This does not complete account-deletion recovery. An uncertain operation cannot
+be replayed by the next sweep. Admission during account deletion, adapters
+without bounded deletion, and preexisting orphan rows without retained ownership
+still require integration before this draft lifecycle stack can be activated.

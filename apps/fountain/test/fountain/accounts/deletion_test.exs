@@ -14,13 +14,14 @@ defmodule Fountain.Accounts.DeletionTest do
   import ExUnit.CaptureLog
 
   alias Fountain.Accounts.{Deletion, User}
+  alias Fountain.Conversations
   alias Fountain.Conversations.Sandbox
   alias Fountain.Repo
 
   setup :set_mimic_global
 
   setup do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy_once, fn _handle, _opts -> :ok end)
     stub(Fountain.Conversations.ConversationServer, :whereis, fn _ -> nil end)
     :ok
   end
@@ -117,7 +118,7 @@ defmodule Fountain.Accounts.DeletionTest do
 
       test = self()
 
-      stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn handle, _opts ->
         send(test, {:destroyed, handle.name}) && :ok
       end)
 
@@ -136,7 +137,7 @@ defmodule Fountain.Accounts.DeletionTest do
 
       test = self()
 
-      stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn handle, _opts ->
         send(test, {:destroyed, handle.name}) && :ok
       end)
 
@@ -160,21 +161,58 @@ defmodule Fountain.Accounts.DeletionTest do
       # leave the person unable to leave.
       user = insert_verified_user()
       insert_sandbox(user_id: user.id, status: "ready")
-      stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn _, _opts -> {:error, :boom} end)
 
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 
       refute Repo.get(User, user.id)
     end
 
-    test "the sandbox row is marked terminated so the reaper can finish the job" do
+    test "uncertain cleanup retains its owner and capacity after account deletion" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn _, _opts -> {:error, :boom} end)
 
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 
       assert Repo.get(Sandbox, sandbox.id).status == "terminated"
+      refute Repo.get(Sandbox, sandbox.id).terminated_at
+      operation = Repo.one!(Conversations.SandboxOperation)
+      assert operation.state == "uncertain"
+      assert operation.user_id == user.id
+      assert operation.holds_slot
+      assert Fountain.Quotas.fleet_count() == 1
+    end
+
+    test "an unresolved resume refuses cleanup without changing the sandbox" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "suspended")
+      parent = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      {:ok, context} = Conversations.WakeContext.new(parent, nil)
+      {:ok, operation} = Conversations.LegacyResume.submit(context, sandbox)
+      reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
+      capture_log(fn -> assert 0 == Deletion.destroy_sprites(user) end)
+      assert Repo.reload!(sandbox).status == "suspended"
+      refute Repo.reload!(sandbox).terminated_at
+      assert Repo.reload!(operation).holds_slot
+    end
+
+    test "cleanup keeps the selected provider instance" do
+      user = insert_verified_user()
+
+      sandbox =
+        insert_sandbox(user_id: user.id, status: "ready")
+        |> change(provider_instance_id: "original")
+        |> Repo.update!()
+
+      expect(Managoat.Sandbox.Sprites, :destroy_once, fn handle, _ ->
+        assert handle.instance_id == "original"
+        assert handle.name == sandbox.sprite_name
+        :ok
+      end)
+
+      assert 1 == Deletion.destroy_sprites(user)
+      assert Repo.reload!(sandbox).terminated_at
     end
   end
 

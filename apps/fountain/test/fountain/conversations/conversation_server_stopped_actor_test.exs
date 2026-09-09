@@ -12,7 +12,7 @@ defmodule Fountain.Conversations.ConversationServerStoppedActorTest do
       {:ok, handle}
     end)
 
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _ ->
+    stub(Managoat.Sandbox.Sprites, :destroy_once, fn _, _opts ->
       send(owner, {:destroyed, self()})
       :ok
     end)

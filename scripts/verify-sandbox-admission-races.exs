@@ -7,7 +7,7 @@ alias Fountain.Conversations.{Conversation, Sandbox, SandboxIdentity, Turn}
 :ok = Mimic.copy(Managoat.Sandbox)
 :ok = Mimic.set_mimic_global()
 # Exercise the real reset context; only its outbound deletion is synthetic.
-Mimic.stub(Managoat.Sandbox, :destroy, fn _ -> :ok end)
+Mimic.stub(Managoat.Sandbox, :destroy_once, fn _, _ -> :ok end)
 
 fixture = fn ->
   user =

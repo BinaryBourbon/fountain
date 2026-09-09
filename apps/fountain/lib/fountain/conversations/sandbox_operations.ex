@@ -264,6 +264,23 @@ defmodule Fountain.Conversations.SandboxOperations do
     )
   end
 
+  @doc "Reject ambiguous logical aliases or another machine's permanent physical name claim."
+  def _unsafe_name_conflict?(sandbox) do
+    Repo.exists?(
+      from s in Sandbox,
+        where:
+          s.id != ^sandbox.id and
+            s.provider == ^sandbox.provider and s.sprite_name == ^sandbox.sprite_name
+    ) ||
+      Repo.exists?(
+        from o in SandboxOperation,
+          where:
+            o.sandbox_id != ^sandbox.id and
+              o.provider == ^sandbox.provider and o.sandbox_name == ^sandbox.sprite_name and
+              (o.action == "create" or not is_nil(o.delete_deadline_at))
+      )
+  end
+
   @doc "Logical retirement cannot release a retained provider reservation."
   def _unsafe_holds_slot?(sandbox_id) do
     Repo.exists?(
@@ -305,11 +322,8 @@ defmodule Fountain.Conversations.SandboxOperations do
       Fountain.Conversations.SandboxTransitions._unsafe_pending?(sandbox.id) ->
         {:error, :provider_operation_fenced}
 
-      handle ->
-        Managoat.Sandbox.destroy(handle)
-
       true ->
-        :ok
+        Fountain.Conversations.LegacyDeletion.destroy(sandbox, handle, opts)
     end
   end
 

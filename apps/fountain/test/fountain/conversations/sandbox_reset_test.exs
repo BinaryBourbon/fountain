@@ -39,10 +39,14 @@ defmodule Fountain.Conversations.SandboxResetTest do
 
   test "destroys the sprite, retires the row, keeps the conversations", ctx do
     test = self()
-    stub(Managoat.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
+
+    stub(Managoat.Sandbox, :destroy_once, fn h, _opts ->
+      send(test, {:destroyed, h.name}) && :ok
+    end)
 
     assert {:ok, sandbox} = Conversations.reset_sandbox(ctx.home, actor: "api")
     assert sandbox.status == "terminated"
+    assert sandbox.terminated_at
     assert_received {:destroyed, name}
     assert name == ctx.home.sprite_name
 
@@ -55,7 +59,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "every conversation's transcript says the machine was reset", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> :ok end)
     assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
 
     for conv <- [ctx.a, ctx.b] do
@@ -68,7 +72,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "a live server on the home is told the machine is gone, and nothing else", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> :ok end)
     test = self()
 
     # Stand in for conversation A's ConversationServer: registered under its
@@ -119,7 +123,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
     {:ok, %{execution: attempt}} = ExecutionGuard._unsafe_claim_termination(execution.id)
     {:ok, _} = ExecutionGuard._unsafe_record_termination(execution.id, attempt.attempt_id, :lost)
     test = self()
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> send(test, :destroyed) && :ok end)
 
     assert {:error, :sandbox_mid_turn} = Conversations.reset_sandbox(ctx.home)
     refute_received :destroyed
@@ -132,8 +136,14 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "reset retires the binding before the provider call", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h ->
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts ->
+      refute Repo.in_transaction?()
       assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "terminated"
+      refute Repo.reload!(ctx.home).terminated_at
+      operation = Repo.one!(Conversations.SandboxOperation)
+      assert operation.delete_started_at
+      assert operation.holds_slot
+      assert Repo.reload!(ctx.a).runtime_session_id == nil
       :ok
     end)
 
@@ -149,21 +159,56 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert {:error, {:sandbox_not_resettable, "ephemeral"}} =
              Conversations.reset_sandbox(ephemeral)
 
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> :ok end)
     {:ok, gone} = Conversations.reset_sandbox(ctx.home)
 
     assert {:error, {:sandbox_not_resettable, "terminated"}} =
              Conversations.reset_sandbox(gone)
   end
 
-  test "the row retires even when the provider refuses the destroy", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> {:error, :boom} end)
+  test "uncertain deletion retires the home but retains its physical capacity", ctx do
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> {:error, :boom} end)
     assert {:ok, sandbox} = Conversations.reset_sandbox(ctx.home)
     assert sandbox.status == "terminated"
+    refute sandbox.terminated_at
+    operation = Repo.one!(Conversations.SandboxOperation)
+    assert operation.state == "uncertain"
+    assert operation.holds_slot
+    assert Fountain.Quotas.fleet_count() == 1
+
+    assert [%{metadata: %{"cleanup" => "pending"}}] =
+             Fountain.Audit.list_for_user(ctx.user.id)
+             |> Enum.filter(&(&1.action == "sandbox.reset"))
+  end
+
+  test "an unsupported deletion grant leaves sessions, row and transcripts intact", ctx do
+    stub(Managoat.Sandbox, :supports?, fn _, :destroy_once -> false end)
+    reject(Managoat.Sandbox, :destroy_once, 2)
+    assert {:error, :not_supported} = Conversations.reset_sandbox(ctx.home)
+    assert Repo.reload!(ctx.home).status == "ready"
+    assert Repo.reload!(ctx.a).runtime_session_id == "sess-a"
+    assert [] == Repo.all(Conversations.SandboxOperation)
+    assert [] == Conversations._unsafe_list_log_events(ctx.a.id)
+  end
+
+  test "reset refuses an enclosing transaction before writing anything", ctx do
+    assert {:ok, {:error, :provider_transaction_open}} =
+             Repo.transaction(fn -> Conversations.reset_sandbox(ctx.home) end)
+
+    assert Repo.reload!(ctx.home).status == "ready"
+    assert [] == Repo.all(Conversations.SandboxOperation)
+  end
+
+  test "a changed physical snapshot cannot reset a replacement machine", ctx do
+    ctx.home |> change(provider_instance_id: "replacement") |> Repo.update!()
+    reject(Managoat.Sandbox, :destroy_once, 2)
+    assert {:error, :ownership_changed} = Conversations.reset_sandbox(ctx.home)
+    assert Repo.reload!(ctx.home).status == "ready"
+    assert Repo.reload!(ctx.a).runtime_session_id == "sess-a"
   end
 
   test "the next prompt builds a fresh home on the same identity", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(ctx.home)
 
     assert {:ok, woken} = Conversations.wake_conversation(ctx.a.id)
@@ -179,7 +224,7 @@ defmodule Fountain.Conversations.SandboxResetTest do
   end
 
   test "records sandbox.reset with the actor", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(ctx.home, actor: "api", request_ip: "10.0.0.1")
 
     assert [event] =

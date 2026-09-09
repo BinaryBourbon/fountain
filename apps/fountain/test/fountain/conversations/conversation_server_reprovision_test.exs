@@ -9,6 +9,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
     stub_happy_sprite()
     reject(Fountain.Crypto, :load_tenant_key, 1)
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
+    reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
     reject(Managoat.Sandbox.Sprites, :create, 2)
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")
@@ -25,6 +26,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
   test "a new pending row provisions without destroying anything" do
     stub_happy_sprite()
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
+    reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
@@ -38,6 +40,7 @@ defmodule Fountain.Conversations.ConversationServerReprovisionTest do
   test "the interrupted provision helper cannot delete or recreate an unmanaged machine" do
     stub_happy_sprite()
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
+    reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
     reject(Managoat.Sandbox.Sprites, :create, 2)
     user = insert_verified_user()
     conv = insert_conversation(user_id: user.id)

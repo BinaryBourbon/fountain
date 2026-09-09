@@ -2472,10 +2472,9 @@ defmodule Fountain.Conversations do
   Tear down every home of `agent_id` — what deleting the agent does, since
   the identity the homes were built for is gone (ADR 0023 step 5). Each live
   conversation on a home is terminated (a home survives that on its own), then
-  the sprite is destroyed and the row terminated. Best-effort per machine; a
-  provider error is logged and the row still retires, so the reaper's sweep
-  sees a terminal row rather than a live one nobody can find. Returns the
-  number of homes torn down. `_unsafe_`: the caller owns the agent.
+  cleanup requests deletion through the machine's journal. A refused grant
+  leaves the row unchanged; uncertainty retains capacity. Returns the number
+  of homes whose deletion was confirmed. `_unsafe_`: the caller owns the agent.
   """
   def _unsafe_destroy_homes_for_agent(agent_id) when is_binary(agent_id) do
     from(s in Sandbox,
@@ -2484,8 +2483,7 @@ defmodule Fountain.Conversations do
           s.status not in ["terminated", "failed"]
     )
     |> Repo.all()
-    |> Enum.map(&_unsafe_destroy_home/1)
-    |> length()
+    |> Enum.count(&(_unsafe_destroy_home(&1) == :ok))
   end
 
   @doc false
@@ -2499,31 +2497,29 @@ defmodule Fountain.Conversations do
     _unsafe_retire_home(sandbox)
   end
 
-  # Destroy the sprite behind a home and retire its row. Best-effort on the
-  # provider side: a destroy error is logged and the row still goes
-  # `terminated`, so the reaper's sweep sees a terminal row rather than a
-  # live one nobody can find. What happens to the conversations on the home
-  # is the caller's decision — agent delete terminates them, a reset keeps
-  # them.
+  # The operation journal owns retirement and confirmed absence. A refused
+  # grant must not write a terminal timestamp or count as reclaimed capacity.
   defp _unsafe_retire_home(%Sandbox{} = sandbox) do
-    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+    handle = home_cleanup_handle(sandbox)
 
     # Ownership: home reset/deletion supplied the scoped agent home.
     case Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle) do
       :ok ->
         :ok
 
-      {:error, reason} ->
+      {:error, reason} = error ->
         Logger.warning("home #{sandbox.sprite_name} destroy failed: #{inspect(reason)}")
+        error
     end
+  end
 
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
-    :ok
+  defp home_cleanup_handle(sandbox) do
+    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+    %{handle | instance_id: sandbox.provider_instance_id}
   end
 
   @doc """
-  Reset a home: destroy the agent's machine so the next launch on its
+  Reset a home: retire the agent's machine so the next launch on its
   identity builds a clean one (ADR 0023 step 5, #1071). The conversations on
   it stay — idle and resumable — because the disk was the problem, not the
   transcripts; each is told the machine is gone, so its next prompt takes the
@@ -2536,6 +2532,9 @@ defmodule Fountain.Conversations do
   with `:sandbox_mid_turn` while a turn runs or its bounded remote execution
   remains unresolved. User and autonomous admission share reset's machine lock;
   reset retires the row before releasing that lock and contacting the provider.
+  Legacy cleanup records its deletion intent in that transaction. A successful
+  reset means logical retirement; provider uncertainty retains capacity and leaves
+  `terminated_at` unset until absence is confirmed.
 
   `opts[:reason]` says *why*, and reaches every transcript on the machine and
   the audit row: `"home_reset"` (the owner asked — the default),
@@ -2546,6 +2545,9 @@ defmodule Fountain.Conversations do
   """
   def reset_sandbox(%Sandbox{} = sandbox, opts \\ []) do
     cond do
+      Repo.in_transaction?() ->
+        {:error, :provider_transaction_open}
+
       sandbox.mode != "persistent" ->
         {:error, {:sandbox_not_resettable, "ephemeral"}}
 
@@ -2577,14 +2579,18 @@ defmodule Fountain.Conversations do
              Fountain.Conversations.ExecutionGuard._unsafe_sandbox_open?(sandbox_id) do
           Repo.rollback(:sandbox_mid_turn)
         else
-          # Retire before releasing the machine lock. A bounded registration
-          # after this point must refuse, even while provider destruction waits.
           current = Repo.get!(Sandbox, sandbox_id)
 
           if current.status in ["terminated", "failed"],
             do: Repo.rollback({:sandbox_not_resettable, current.status})
 
-          {:ok, _} = update_sandbox(current, %{status: "terminated", terminated_at: now})
+          fields =
+            ~w(user_id provider sprite_name provider_instance_id provider_meta mode agent_id environment_id vault_id status)a
+
+          unless Map.take(current, fields) == Map.take(sandbox, fields),
+            do: Repo.rollback(:ownership_changed)
+
+          cleanup = prepare_home_reset(current)
 
           ids =
             Repo.all(
@@ -2598,11 +2604,11 @@ defmodule Fountain.Conversations do
             set: [runtime_session_id: nil, updated_at: now]
           )
 
-          ids
+          {ids, cleanup}
         end
       end)
 
-    with {:ok, ids} <- result do
+    with {:ok, {ids, cleanup}} <- result do
       reason = Keyword.get(opts, :reason, "home_reset")
       message = reset_message(reason)
 
@@ -2625,7 +2631,7 @@ defmodule Fountain.Conversations do
         end
       end)
 
-      _unsafe_retire_home(sandbox)
+      cleanup_result = dispatch_home_reset(cleanup)
 
       Audit.record(%{
         user_id: sandbox.user_id,
@@ -2638,13 +2644,34 @@ defmodule Fountain.Conversations do
           "agent_id" => sandbox.agent_id,
           "provider" => sandbox.provider,
           "conversations" => length(ids),
-          "reason" => reason
+          "reason" => reason,
+          "cleanup" => if(cleanup_result == :ok, do: "confirmed", else: "pending")
         }
       })
 
       {:ok, _unsafe_get_sandbox!(sandbox.id)}
     end
   end
+
+  defp prepare_home_reset(sandbox) do
+    # ownership: reset checked the caller's original snapshot under the machine lock.
+    if Fountain.Conversations.SandboxOperations._unsafe_managed?(sandbox.id) do
+      # The existing creation claim retains physical capacity across this commit;
+      # managed cleanup continues through its original journal after commit.
+      {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: nil})
+      {:managed, sandbox}
+    else
+      case Fountain.Conversations.LegacyDeletion.submit(sandbox, home_cleanup_handle(sandbox)) do
+        {:ok, operation} -> {:legacy, operation.id}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end
+  end
+
+  defp dispatch_home_reset({:legacy, id}),
+    do: Fountain.Conversations.LegacyDeletion.dispatch(id)
+
+  defp dispatch_home_reset({:managed, sandbox}), do: _unsafe_retire_home(sandbox)
 
   # What each transcript on a reset home is told. The tail is the same every
   # time — the transcript survives, the next prompt builds a machine — because

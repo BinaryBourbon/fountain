@@ -417,7 +417,7 @@ defmodule Fountain.AuditGuardrailTest do
         provider: "sprites"
       )
 
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox, :destroy_once, fn _h, _opts -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(home)
   end
 

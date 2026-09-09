@@ -256,6 +256,7 @@ defmodule Fountain.Conversations.ActorStartupsTest do
     c = startup(%{c | sandbox: sandbox})
     assert {:ok, :expired} = ActorStartups.expire(c.parent.id, c.sandbox.id, c.claim.id)
     reject(Managoat.Sandbox.Sprites, :destroy, 1)
+    reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
     reject(Managoat.Sandbox.Sprites, :suspend, 1)
     assert {:error, :sandbox_mid_turn} = Conversations.reset_sandbox(c.sandbox)
 

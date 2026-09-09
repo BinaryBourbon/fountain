@@ -22,7 +22,7 @@ defmodule FountainWeb.SandboxResetControllerTest do
       )
 
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox: home, status: "idle")
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    stub(Managoat.Sandbox.Sprites, :destroy_once, fn _h, _opts -> :ok end)
     {:ok, user: user, raw_key: raw_key, agent: agent, home: home, conv: conv}
   end
 
@@ -64,6 +64,16 @@ defmodule FountainWeb.SandboxResetControllerTest do
     insert_turn(ctx.conv, status: "running")
     assert %{"error" => "sandbox_mid_turn"} = ctx |> reset(ctx.home.id) |> json_response(409)
     assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "ready"
+  end
+
+  test "422 when the provider cannot confirm deletion, without retiring the home", ctx do
+    stub(Managoat.Sandbox, :supports?, fn _, :destroy_once -> false end)
+    reject(Managoat.Sandbox, :destroy_once, 2)
+
+    assert %{"error" => "sandbox_not_resettable", "reason" => "provider_deletion_unavailable"} =
+             ctx |> reset(ctx.home.id) |> json_response(422)
+
+    assert Fountain.Repo.reload!(ctx.home).status == "ready"
   end
 
   test "the reset is audited as api", ctx do

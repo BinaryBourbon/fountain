@@ -130,6 +130,10 @@ defmodule Fountain.Conversations.WakeContext do
              sandbox.provider_meta == observed.provider_meta && sandbox.status == observed.status,
            do: Repo.rollback(:ownership_changed)
 
+    # ownership: the locked wake snapshot names this tenant's original physical machine.
+    if Conversations.SandboxOperations._unsafe_name_conflict?(sandbox),
+      do: Repo.rollback(:ownership_changed)
+
     if Conversations.ActorStartups.fenced?(sandbox.id), do: Repo.rollback(:startup_unresolved)
   end
 

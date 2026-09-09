@@ -167,10 +167,12 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       # A provider without the :suspend capability cannot park with the disk
       # preserved; the idle bound degrades to the destroy arm.
       stub(Managoat.Sandbox.Sprites, :capabilities, fn ->
-        MapSet.new([:network_policy, :attach])
+        MapSet.new([:network_policy, :attach, :destroy_once])
       end)
 
-      stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn _handle, _opts ->
+        send(test, :destroyed) && :ok
+      end)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -197,7 +199,9 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
         {:error, {:unavailable, :timeout}}
       end)
 
-      stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn _handle, _opts ->
+        send(test, :destroyed) && :ok
+      end)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -224,7 +228,10 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       stub_reattach()
 
       test = self()
-      stub(Managoat.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+
+      stub(Managoat.Sandbox.Sprites, :destroy_once, fn _handle, _opts ->
+        send(test, :destroyed) && :ok
+      end)
 
       with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)

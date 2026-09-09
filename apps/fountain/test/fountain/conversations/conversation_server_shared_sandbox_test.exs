@@ -115,7 +115,10 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       %{a: a, b: b, sandbox: sandbox} = shared_machine("claude")
       stub_happy_sprite()
       test = self()
-      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn _h, _opts ->
+        send(test, :destroyed) && :ok
+      end)
 
       {pid_a, ref_a} = start(a)
       assert :ok = GenServer.call(pid_a, :terminate_conv)

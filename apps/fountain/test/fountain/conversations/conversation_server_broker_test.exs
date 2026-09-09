@@ -167,6 +167,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         reject(Fountain.Conversations.Provisioning, :write_env_file, 2)
         reject(Managoat.Sandbox.Sprites, :list_sessions, 1)
         reject(Managoat.Sandbox.Sprites, :destroy, 1)
+        reject(Managoat.Sandbox.Sprites, :destroy_once, 2)
 
         {_pid, ref, :stopped} = start_server(conv)
         assert assert_stopped(ref) == :normal
@@ -408,7 +409,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       conv = insert_conversation(user_id: user.id, agent: agent)
       test = self()
 
-      stub_happy_sprite()
+      stub_happy_sprite(Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name)
       stub(Fountain.Broker, :preflight, fn -> :ok end)
 
       stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, _opts ->
@@ -420,7 +421,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         :ok
       end)
 
-      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn _h, _opts ->
         send(test, :destroyed)
         :ok
       end)

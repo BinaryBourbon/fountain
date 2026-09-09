@@ -72,11 +72,14 @@ defmodule FountainWeb.SandboxController do
   operation(:delete,
     summary: "Reset a sandbox",
     description:
-      "Destroy a persistent sandbox — the agent's home — so the next launch on the same " <>
+      "Retire a persistent sandbox — the agent's home — so the next launch on the same " <>
         "agent, environment and vault builds a clean machine. The conversations on it are " <>
         "kept, idle; each one's next prompt lands on the fresh home. Only a `persistent` " <>
         "sandbox that is not `terminated` or `failed` resets (`422 sandbox_not_resettable`), " <>
-        "and not while any conversation on it is mid-turn (`409 sandbox_mid_turn`).",
+        "and not while any conversation on it is mid-turn (`409 sandbox_mid_turn`). " <>
+        "Reset confirms logical retirement; physical cleanup can remain pending. " <>
+        "A provider without confirmed deletion support cannot reset " <>
+        "(`422 sandbox_not_resettable`, reason `provider_deletion_unavailable`).",
     parameters: [id: [in: :path, type: :string, required: true]],
     responses: [
       no_content: "Reset",
@@ -94,6 +97,12 @@ defmodule FountainWeb.SandboxController do
     with %Sandbox{} = sandbox <- Conversations.get_sandbox(id, user.id) || {:error, :not_found},
          {:ok, _} <- Conversations.reset_sandbox(sandbox, Audited.attribution(conn)) do
       send_resp(conn, :no_content, "")
+    else
+      {:error, :not_supported} ->
+        {:error, {:sandbox_not_resettable, "provider_deletion_unavailable"}}
+
+      {:error, _} = error ->
+        error
     end
   end
 

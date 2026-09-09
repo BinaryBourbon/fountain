@@ -543,14 +543,14 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
 
     test "a failing provisioning step destroys the sprite rather than leaking it", %{conv: conv} do
-      stub_happy_sprite()
+      handle = stub_happy_sprite(Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name)
       test_pid = self()
 
       Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
         {:error, :apt_failed}
       end)
 
-      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn handle ->
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn handle, _opts ->
         send(test_pid, {:destroyed, handle.name})
         :ok
       end)
@@ -560,7 +560,8 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
       # The sprite is billed until it is destroyed, so a failed provision that
       # leaves it running costs money indefinitely.
-      assert_received {:destroyed, "test-sprite"}
+      assert_received {:destroyed, name}
+      assert name == handle.name
     end
 
     test "a runtime that fails to prepare marks the sandbox failed", %{
@@ -1225,7 +1226,10 @@ defmodule Fountain.Conversations.ConversationServerTest do
          %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()
       test = self()
-      Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :destroy_once, fn _h, _opts ->
+        send(test, :destroyed) && :ok
+      end)
 
       {pid, ref, :alive} = start_server(conv)
       key_id = Conversations._unsafe_get_conversation!(conv.id).callback_api_key_id

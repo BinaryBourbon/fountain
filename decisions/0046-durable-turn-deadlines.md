@@ -1157,3 +1157,40 @@ See `decisions/evidence/provider-wake-authority.json` for the verified checkpoin
 Full legacy cleanup serialization, reconciliation of uncertain resumes, and
 live-provider acceptance remain open. This change does not activate execution
 controls or provider recovery.
+
+
+## Legacy deletion journal and home reset (local integration in progress)
+
+Legacy cleanup now records a deletion intent under the same machine and parent
+locks as resume and admission. The original tenant, provider name and instance,
+absolute deadline and one dispatch claim survive caller loss. The intent retires
+the logical row and reserves physical capacity before provider I/O; only this
+attempt's confirmed absence releases that reservation or sets `terminated_at`.
+A timeout, lost caller or uncertain response cannot authorize a second delete.
+An expired intent keeps capacity because its machine still exists.
+
+The provider name remains reserved after deletion or removal of the logical row.
+Pending physical writes are unique by provider/name as well as logical machine.
+An ambiguous alias cannot grant deletion, resume or a fresh managed creation.
+PostgreSQL protects the deadline and dispatch marker, and downgrade refuses to
+discard deletion history. This reserves names within Fountain; it does not make
+provider deletion conditional on an instance ID or prevent external name reuse.
+
+Home reset saves its legacy deletion intent in the same transaction that clears
+old runtime sessions. Refused grants leave sessions and transcripts unchanged.
+Notifications follow logical retirement; reset's audit distinguishes confirmed
+cleanup from pending cleanup. Managed reset keeps its existing creation journal
+and cleanup path. A successful reset means logical retirement, not necessarily
+confirmed provider absence. An adapter without `destroy_once` support is refused
+without falling back to generic deletion; the reset API reports this as 422.
+Only the Sprites adapter currently implements that deletion contract.
+
+Local proofs in `scripts/verify-legacy-deletion-races.exs` and
+`scripts/verify-legacy-home-reset-races.exs` exercise independent PostgreSQL
+connections, duplicate dispatch, expiry behind a lock, caller loss, and real
+reset/admission/resume APIs with in-memory adapters. The verified checkpoint is
+recorded in `decisions/evidence/legacy-deletion.json`. These are not live-provider
+acceptance. Account deletion, reaper and legacy park integration, preexisting
+orphan ownership, unsupported providers and full gate validation remain open.
+The draft stack remains undeployed; execution controls and provider recovery
+remain disabled.

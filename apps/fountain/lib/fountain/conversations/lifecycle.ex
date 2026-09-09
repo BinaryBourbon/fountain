@@ -463,14 +463,7 @@ defmodule Fountain.Conversations.Lifecycle do
         holder: conversation_id
       )
 
-    # A holder admitted after the server's earlier kept? check retains its machine.
-    unless cleanup in [{:error, :sandbox_held}, {:error, :sandbox_mid_turn}] do
-      {:ok, _} =
-        Conversations.update_sandbox(sandbox, %{
-          status: "terminated",
-          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-    end
+    # The deletion journal owns retirement and its confirmation timestamp.
 
     cleanup
   end
@@ -500,12 +493,16 @@ defmodule Fountain.Conversations.Lifecycle do
           error
       end
     else
-      if sandbox_id do
-        sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
-        _ = Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle)
-      end
+      cleanup =
+        if sandbox_id do
+          sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+          Fountain.Conversations.SandboxOperations._unsafe_destroy_or_legacy(sandbox, handle)
+        else
+          :ok
+        end
 
-      record_destroy(conversation_id, sandbox_id, user_id, handle, reason)
+      with :ok <- cleanup,
+           do: record_destroy(conversation_id, sandbox_id, user_id, handle, reason)
     end
   end
 
