@@ -49,6 +49,14 @@ now. Fountain refuses each change with `409 sandbox_mid_turn` while a
 conversation on that machine runs a turn. Let the turn end, or stop it, then
 send the request again.
 
+A reset blocks new turns before it calls the provider. It releases capacity
+only after the provider confirms deletion. A timeout or lost request keeps
+the reset fence and quota reservation. Another reset returns
+`409 sandbox_reset_pending`; it does not send another delete. The operator
+must reconcile the provider outcome. Do not clear the fence or repeat the
+operation based only on a missing provider response. Automatic reconciliation
+is not implemented.
+
 When a home parks, Fountain can take a checkpoint of its disk. The operator
 turns this on with `CHECKPOINT_CREATION_ENABLED`, and only a provider with
 checkpoints (Sprites) does it. The checkpoint belongs to that one machine.

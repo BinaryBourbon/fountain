@@ -5,6 +5,11 @@ defmodule FountainWeb.FallbackControllerTest do
   """
   use FountainWeb.ConnCase, async: true
 
+  test "an uncertain reset reports an explicit conflict", %{conn: conn} do
+    conn = FountainWeb.FallbackController.call(conn, {:error, :sandbox_reset_pending})
+    assert %{"error" => "sandbox_reset_pending"} = json_response(conn, 409)
+  end
+
   describe "{:error, %Ecto.Changeset{}} → 422" do
     test "POST /api/agents with missing required fields returns 422 with errors body", %{
       conn: conn

@@ -351,12 +351,16 @@ defmodule Fountain.Conversations.OrphanedHomeTest do
   end
 
   describe "a provider that cannot destroy" do
-    test "the row still retires, so the reaper sees a terminal row", ctx do
+    test "an uncertain reset stays fenced and counted after the identity changes", ctx do
       stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> {:error, :boom} end)
       old = home(ctx)
 
       assert {:ok, _} = Agents.update_agent(ctx.agent, %{"environment_id" => ctx.other_env.id})
-      assert Conversations._unsafe_get_sandbox!(old.id).status == "terminated"
+      held = Conversations._unsafe_get_sandbox!(old.id)
+      assert held.status == "ready"
+      refute is_nil(held.reset_requested_at)
+      assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
+      assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(old)
     end
   end
 end

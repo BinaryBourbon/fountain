@@ -40,6 +40,8 @@ defmodule Fountain.Conversations.Sandbox do
     field :mode, :string, default: "ephemeral"
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime
+    # Internal reset fence; retained after completion as operation evidence.
+    field :reset_requested_at, :utc_datetime_usec
     belongs_to :environment, Environment
     # The identity the disk was materialized from, with the environment
     # (ADR 0023): env vars, packages, repos and setup scripts are written at

@@ -338,6 +338,15 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, :sandbox_reset_pending}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "sandbox_reset_pending",
+      message: "reset is pending confirmation; contact the operator before retrying"
+    })
+  end
+
   # Sandbox files (ADR 0039). A read never wakes a parked sandbox: 409 with
   # the status, and the caller decides whether a prompt is worth the wake.
   def call(conn, {:error, {:sandbox_not_ready, status}}) do

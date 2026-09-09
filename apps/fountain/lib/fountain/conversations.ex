@@ -231,6 +231,8 @@ defmodule Fountain.Conversations do
           Repo.one(from s in Sandbox, where: s.id == ^sandbox.id, lock: "FOR UPDATE") ||
             Repo.rollback(:not_found)
 
+        if current.reset_requested_at, do: Repo.rollback(:sandbox_reset_pending)
+
         changeset =
           current
           |> Sandbox.changeset(attrs)
@@ -1305,7 +1307,7 @@ defmodule Fountain.Conversations do
               on: s.id == c.sandbox_id,
               where:
                 c.id == ^conv_id and s.id == ^sandbox_id and c.user_id == s.user_id and
-                  s.status not in ["terminated", "failed"]
+                  s.status not in ["terminated", "failed"] and is_nil(s.reset_requested_at)
           )
 
         unless attached?, do: Repo.rollback(:sandbox_unavailable)
@@ -2967,8 +2969,9 @@ defmodule Fountain.Conversations do
   ends with it (`{:sandbox_not_resettable, "ephemeral"}`), a terminated or
   failed one is already gone (`{:sandbox_not_resettable, status}`). Refused
   with `:sandbox_mid_turn` while any conversation on it runs a turn — the
-  check and the row flip share the per-sandbox advisory lock that turn
-  creation takes, so a turn cannot slip in between them.
+  check and the durable reset fence share turn admission's advisory lock.
+  A provider error or lost caller leaves the fence and capacity in place;
+  repeated resets return `:sandbox_reset_pending` without another delete.
 
   `opts[:reason]` says *why*, and reaches every transcript on the machine and
   the audit row: `"home_reset"` (the owner asked — the default),
@@ -2979,48 +2982,58 @@ defmodule Fountain.Conversations do
   See `create_agent/2` for the rest of `opts` (`:actor`, `:request_ip`).
   """
   def reset_sandbox(%Sandbox{} = sandbox, opts \\ []) do
-    cond do
-      sandbox.mode != "persistent" ->
-        {:error, {:sandbox_not_resettable, "ephemeral"}}
-
-      sandbox.status in ["terminated", "failed"] ->
-        {:error, {:sandbox_not_resettable, sandbox.status}}
-
-      true ->
-        do_reset_sandbox(sandbox, opts)
-    end
-  end
-
-  defp do_reset_sandbox(%Sandbox{id: sandbox_id} = sandbox, opts) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    now = DateTime.utc_now()
 
     result =
       Repo.transaction(fn ->
         Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
           @sandbox_lock_namespace,
-          :erlang.phash2(sandbox_id)
+          :erlang.phash2(sandbox.id)
         ])
 
-        if _unsafe_running_turns_elsewhere(sandbox_id, nil) > 0 do
-          Repo.rollback(:sandbox_mid_turn)
-        else
-          ids =
-            Repo.all(
-              from c in Conversation,
-                where: c.sandbox_id == ^sandbox_id and c.status not in ["terminated", "failed"],
-                select: c.id
-            )
+        current =
+          Repo.one(
+            from s in Sandbox,
+              where: s.id == ^sandbox.id and s.user_id == ^sandbox.user_id,
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:not_found)
 
-          # A fresh disk has no session to resume (#778).
-          Repo.update_all(from(c in Conversation, where: c.id in ^ids),
-            set: [runtime_session_id: nil, updated_at: now]
+        cond do
+          current.mode != "persistent" ->
+            Repo.rollback({:sandbox_not_resettable, "ephemeral"})
+
+          current.status not in ["ready", "suspended"] ->
+            Repo.rollback({:sandbox_not_resettable, current.status})
+
+          current.reset_requested_at ->
+            Repo.rollback(:sandbox_reset_pending)
+
+          _unsafe_running_turns_elsewhere(current.id, nil) > 0 ->
+            Repo.rollback(:sandbox_mid_turn)
+
+          true ->
+            :ok
+        end
+
+        fenced = current |> Ecto.Changeset.change(reset_requested_at: now) |> Repo.update!()
+
+        ids =
+          Repo.all(
+            from c in Conversation,
+              where: c.sandbox_id == ^current.id and c.status not in ["terminated", "failed"],
+              select: c.id
           )
 
-          ids
-        end
+        # Admission is fenced before these sessions become unusable.
+        Repo.update_all(from(c in Conversation, where: c.id in ^ids),
+          set: [runtime_session_id: nil, updated_at: DateTime.truncate(now, :second)]
+        )
+
+        {fenced, ids}
       end)
 
-    with {:ok, ids} <- result do
+    with {:ok, {fenced, ids}} <- result,
+         {:ok, completed} <- finish_sandbox_reset(fenced) do
       reason = Keyword.get(opts, :reason, "home_reset")
       message = reset_message(reason)
 
@@ -3043,24 +3056,41 @@ defmodule Fountain.Conversations do
         end
       end)
 
-      _unsafe_retire_home(sandbox)
-
       Audit.record(%{
-        user_id: sandbox.user_id,
+        user_id: completed.user_id,
         action: "sandbox.reset",
         resource_type: "sandbox",
-        resource_id: sandbox.id,
+        resource_id: completed.id,
         actor: Keyword.get(opts, :actor, "self"),
         request_ip: Keyword.get(opts, :request_ip),
         metadata: %{
-          "agent_id" => sandbox.agent_id,
-          "provider" => sandbox.provider,
+          "agent_id" => completed.agent_id,
+          "provider" => completed.provider,
           "conversations" => length(ids),
           "reason" => reason
         }
       })
 
-      {:ok, _unsafe_get_sandbox!(sandbox.id)}
+      {:ok, completed}
+    end
+  end
+
+  # Only a confirmed destroy releases capacity. Errors or caller loss leave
+  # the committed fence intact; neither a repeat reset nor the reaper retries it.
+  defp finish_sandbox_reset(sandbox) do
+    handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+
+    case Managoat.Sandbox.destroy(handle) do
+      :ok ->
+        changeset = sandbox |> Sandbox.changeset(%{status: "terminated"}) |> stamp_terminated_at()
+
+        with {:ok, completed} <- Repo.update(changeset) do
+          record_sandbox_usage(sandbox.status, completed)
+          {:ok, completed}
+        end
+
+      {:error, _} ->
+        {:error, :sandbox_reset_pending}
     end
   end
 
@@ -3249,6 +3279,9 @@ defmodule Fountain.Conversations do
       {:ok, _unsafe_get_conversation!(conv.id)}
     end
   end
+
+  defp check_attachable(%Sandbox{reset_requested_at: at}, _agent, _vault_id, _env_id)
+       when not is_nil(at), do: {:error, :sandbox_reset_pending}
 
   defp check_attachable(%Sandbox{status: status}, _agent, _vault_id, _env_id)
        when status not in ["ready", "suspended"],
@@ -3802,6 +3835,10 @@ defmodule Fountain.Conversations do
 
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
     case _unsafe_get_sandbox(sandbox_id) do
+      %Sandbox{reset_requested_at: at, status: status}
+      when not is_nil(at) and status not in ["terminated", "failed"] ->
+        {:error, :sandbox_reset_pending}
+
       %{status: status, sprite_name: name} = sandbox
       when status in ["ready", "suspended"] and is_binary(name) ->
         probe_reusable_sandbox(sandbox, sandbox_id)
