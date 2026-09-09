@@ -2993,11 +2993,19 @@ defmodule Fountain.Conversations do
   (`terminated`, `failed`) — those don't auto-resume.
   """
   def wake_conversation(conv_id, initial_prompt \\ nil) do
-    # Ownership: called from ConversationServer (which established ownership
-    # before starting) and the boot-time rehydrator sweep. The agent fetched
-    # below is the conversation's own agent_id, same tenant by construction.
+    wake_conversation_for(conv_id, initial_prompt, :work)
+  end
+
+  defp wake_conversation_for(conv_id, initial_prompt, purpose) do
+    # Ownership is established by callers before reaching this internal wake
+    # path. The agent fetched below is the conversation's own agent_id,
+    # same tenant by construction.
     with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
          :ok <- assert_resumable(conv),
+         # Preflight only: no database lock spans provider I/O. Turn admission
+         # checks again under its transaction. Cancellation must remain reachable.
+         :ok <-
+           if(purpose == :interrupt, do: :ok, else: check_saved_execution_allowance(conv.id)),
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
@@ -3104,7 +3112,7 @@ defmodule Fountain.Conversations do
         {:error, :not_found}
 
       %Conversation{status: "running"} ->
-        with {:ok, conv} <- wake_conversation(conv_id),
+        with {:ok, conv} <- wake_conversation_for(conv_id, nil, :interrupt),
              pid when is_pid(pid) <- ConversationServer.whereis(conv.id) do
           {:ok, pid}
         else
