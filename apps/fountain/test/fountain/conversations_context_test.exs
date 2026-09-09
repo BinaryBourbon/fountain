@@ -298,6 +298,14 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   describe "get_conversation/2" do
+    test "a malformed id reads as nil rather than raising (#1679)" do
+      user = insert_verified_user()
+
+      assert Conversations.get_conversation("prod-steward", user.id) == nil
+      # Sixteen characters is what a cast-based guard would have let through.
+      assert Conversations.get_conversation("warehouse worker", user.id) == nil
+    end
+
     test "returns the conversation when id and user_id match" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)

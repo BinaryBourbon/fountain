@@ -61,9 +61,12 @@ defmodule Fountain.Vaults do
     end)
   end
 
-  @doc "Get vault scoped to user. Returns nil on wrong owner or missing id."
+  @doc "Get vault scoped to user. A foreign, missing or malformed id reads as nil."
   def get_vault(id, user_id) when is_binary(user_id) do
-    Repo.get_by(Vault, id: id, user_id: user_id)
+    case Ecto.UUID.dump(id) do
+      {:ok, _} -> Repo.get_by(Vault, id: id, user_id: user_id)
+      :error -> nil
+    end
   end
 
   @doc """

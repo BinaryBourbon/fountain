@@ -41,7 +41,5 @@ defmodule FountainWeb.CallerMcpController do
       nil ->
         {:error, 404, "conversation not found"}
     end
-  rescue
-    Ecto.Query.CastError -> {:error, 404, "conversation not found"}
   end
 end

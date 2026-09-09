@@ -630,7 +630,10 @@ defmodule Fountain.Connections do
     end
   end
 
-  defp valid_uuid?(id), do: match?({:ok, _}, Ecto.UUID.cast(id))
+  # `dump/1`, not `cast/1`: cast reads any 16-byte binary as a uuid, so a
+  # sixteen-character name passed this guard and raised at the query anyway
+  # (#1679).
+  defp valid_uuid?(id), do: match?({:ok, _}, Ecto.UUID.dump(id))
 
   defp present?(v), do: is_binary(v) and v != ""
 

@@ -130,6 +130,7 @@ upgrade, is in
 
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
+- A scoped fetch reads a malformed id as nil rather than raising out of the query, so a path segment or header that is not an id answers 404 where it used to answer 500 with a dropped connection. An id field that a caller fills with something other than a uuid is refused by the changeset, naming the field and the value. A vault name in an agent's `allowed_vault_ids` through `POST /api/apply`, where the document spec is free-form, reached the database layer and answered with a 500 and a dropped connection. A parent conversation header that is not an id is now the same 404 an unknown parent already gets.
 
 ### Changed
 

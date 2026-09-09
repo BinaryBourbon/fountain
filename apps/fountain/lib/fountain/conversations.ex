@@ -573,11 +573,24 @@ defmodule Fountain.Conversations do
     |> Repo.preload([:sandbox, :agent, :vault, :agent_version])
   end
 
-  @doc "Get conversation scoped to user. Returns nil on wrong owner or missing id."
+  @doc """
+  Get conversation scoped to user. A foreign, missing or malformed id reads
+  as nil.
+
+  Malformed is part of that promise rather than a caller's problem (#1679):
+  the id reaches here from a path segment or a header, and an id that is not
+  a uuid raises `Ecto.Query.CastError` out of the query, which leaves the
+  request as a 500 with a dropped connection instead of the 404 every caller
+  of this function already handles. `dump/1` rather than `cast/1` because
+  `cast/1` takes any 16-byte binary, so a sixteen-character name would pass
+  the guard and raise at the same place.
+  """
   def get_conversation(id, user_id) when is_binary(user_id) do
-    case Repo.get_by(Conversation, id: id, user_id: user_id) do
-      nil -> nil
-      conv -> Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version])
+    with {:ok, _} <- Ecto.UUID.dump(id),
+         conv when not is_nil(conv) <- Repo.get_by(Conversation, id: id, user_id: user_id) do
+      Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version])
+    else
+      _ -> nil
     end
   end
 
@@ -2640,7 +2653,7 @@ defmodule Fountain.Conversations do
 
   @doc "One of the caller's sandboxes, or nil. A foreign or malformed id reads as nil."
   def get_sandbox(id, user_id) when is_binary(id) and is_binary(user_id) do
-    case Ecto.UUID.cast(id) do
+    case Ecto.UUID.dump(id) do
       {:ok, _} -> Repo.get_by(Sandbox, id: id, user_id: user_id)
       :error -> nil
     end
@@ -2749,6 +2762,9 @@ defmodule Fountain.Conversations do
   defp resolve_parent_id("", _user_id), do: {:ok, nil}
 
   defp resolve_parent_id(id, user_id) when is_binary(id) and is_binary(user_id) do
+    # A header that is not a uuid is not a conversation anyone owns.
+    # `get_conversation/2` reads it as nil rather than raising (#1679), so this
+    # stays the plain lookup it was.
     case get_conversation(id, user_id) do
       nil -> {:error, :parent_not_found}
       conv -> {:ok, conv.id}

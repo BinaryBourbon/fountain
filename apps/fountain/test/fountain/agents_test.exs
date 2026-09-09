@@ -47,6 +47,13 @@ defmodule Fountain.AgentsTest do
   end
 
   describe "get_agent/2" do
+    test "a malformed id reads as nil rather than raising (#1679)" do
+      user = insert_verified_user()
+
+      assert Agents.get_agent("prod-steward", user.id) == nil
+      assert Agents.get_agent("warehouse worker", user.id) == nil
+    end
+
     test "returns agent scoped to user" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
@@ -127,6 +134,15 @@ defmodule Fountain.AgentsTest do
   end
 
   describe "update_agent/2" do
+    test "a name where an environment id belongs is a changeset error, not a raise (#1679)" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      assert {:error, changeset} = Agents.update_agent(agent, %{"environment_id" => "toolchain"})
+      assert %{environment_id: [message]} = errors_on(changeset)
+      assert message == ~s(must be an id, but "toolchain" is not one)
+    end
+
     test "updates agent fields" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
