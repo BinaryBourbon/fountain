@@ -1129,7 +1129,7 @@ defmodule Fountain.Conversations do
 
         unless attached?, do: Repo.rollback(:sandbox_unavailable)
 
-        case check_saved_execution_allowance(conv_id) do
+        case _unsafe_check_saved_execution_allowance(conv_id) do
           :ok -> :ok
           {:error, reason} -> Repo.rollback(reason)
         end
@@ -1151,7 +1151,12 @@ defmodule Fountain.Conversations do
     end
   end
 
-  defp check_saved_execution_allowance(conversation_id) do
+  @doc """
+  Refuse saved allowances that this deployment cannot enforce. Internal callers
+  must establish conversation ownership first. Outside turn admission this is
+  only a preflight; the turn transaction rechecks under its row locks.
+  """
+  def _unsafe_check_saved_execution_allowance(conversation_id) do
     case Repo.one(
            from a in ExecutionAllowance,
              where: a.conversation_id == ^conversation_id,
@@ -3005,7 +3010,11 @@ defmodule Fountain.Conversations do
          # Preflight only: no database lock spans provider I/O. Turn admission
          # checks again under its transaction. Cancellation must remain reachable.
          :ok <-
-           if(purpose == :interrupt, do: :ok, else: check_saved_execution_allowance(conv.id)),
+           if(purpose == :interrupt,
+             do: :ok,
+             else: _unsafe_check_saved_execution_allowance(conv.id)
+           ),
+         # Ownership: conv.agent_id belongs to this established-owner conversation.
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
