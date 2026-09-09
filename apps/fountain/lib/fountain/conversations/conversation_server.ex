@@ -21,24 +21,14 @@ defmodule Fountain.Conversations.ConversationServer do
     Vaults
   }
 
-  alias Fountain.Conversations.{
-    CallbackKey,
-    Connection,
-    Conversation,
-    Egress,
-    Lifecycle,
-    McpServers,
-    Output,
-    Pending,
-    Provisioning,
-    Reattachment,
-    SpriteEnv,
-    TurnMachine
-  }
+  alias Fountain.Conversations.{CallbackKey, CodexChatGPT, Connection, Conversation, Egress}
+  alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning}
+  alias Fountain.Conversations.{Reattachment, SpriteEnv, TurnMachine}
 
   # Absolute ceiling on provisioning (#329). Generous against the summed
-  # per-step timeouts (packages 300s + clone 600s + setup 120s + slack), so
-  # it only ever fires when a step stalls without raising — the case where
+  # default step timeouts (packages 300s + clone 600s + setup 120s). Setup
+  # may opt into up to 900s, but this overall ceiling still applies. It also
+  # catches a step that stalls without raising — the case where
   # the row sat in `starting` holding a quota slot until the next deploy:
   # the reaper exempts rows whose server is alive, and the server's own
   # timers queue behind the stuck handle_continue. Overridable in tests.
@@ -450,8 +440,13 @@ defmodule Fountain.Conversations.ConversationServer do
       broker_bindings: %{},
       # The env var names of the tenant's connections brokered into this
       # conversation (#1178): their access tokens rotate hourly, so each turn
-      # kick re-reads them and re-prepares the vault when one has changed.
+      # kick re-reads them and rewrites the session's rules when one has
+      # changed.
       connection_keys: [],
+      # Where the tenant's own brokered secrets came from and which keys they
+      # were (#1736); `Egress.refresh_before_turn/1` reads the rows again.
+      secret_sources: nil,
+      tenant_keys: [],
       # This conversation's one resolved MCP configuration (#1404). See
       # `McpServers.resolve_for_session/2`.
       resolved_mcp_servers: nil,
@@ -682,7 +677,9 @@ defmodule Fountain.Conversations.ConversationServer do
 
     case SpriteEnv.load_tenant_state(conv.user_id) do
       {:ok, dek, own_creds} ->
-        {inference_source, inference_creds} = SpriteEnv.select_inference(agent, own_creds)
+        {inference_source, inference_creds} =
+          SpriteEnv.select_inference(agent, own_creds, conv.runtime)
+
         bindings = Egress.bindings(conv.user_id)
 
         {merged, bindings, connection_keys} =
@@ -694,6 +691,11 @@ defmodule Fountain.Conversations.ConversationServer do
           )
 
         {secrets, brokered} = Egress.split_brokered(conv.user_id, merged, bindings)
+
+        # The tenant's own brokered keys: what the environment and vault
+        # rows contributed, less the connection tokens (#1736). Read again
+        # before each turn by `broker_refresh/1`.
+        tenant_keys = (brokered |> Map.keys() |> Enum.sort()) -- connection_keys
 
         {env_creds, brokered, bindings} =
           Egress.split_inference(conv.user_id, inference_creds, brokered, bindings)
@@ -711,6 +713,8 @@ defmodule Fountain.Conversations.ConversationServer do
               brokered: brokered,
               broker_bindings: bindings,
               connection_keys: connection_keys,
+              secret_sources: %{environment_id: env && env.id, vault_id: vault && vault.id},
+              tenant_keys: tenant_keys,
               broker_network: Fountain.Broker.network_for(env)
           }
 
@@ -1159,11 +1163,23 @@ defmodule Fountain.Conversations.ConversationServer do
 
       # Same for the agent's system prompt: an edit reaches the existing
       # computer on its next wake (#848).
-      Provisioning.write_instructions(
-        handle,
-        conv.runtime || (agent && agent.runtime) || "claude",
-        agent
-      )
+      runtime = conv.runtime || (agent && agent.runtime) || "claude"
+      Provisioning.write_instructions(handle, runtime, agent)
+
+      # The credential path can change between provision and wake (ADR 0047:
+      # a grant connected, revoked or disconnected in between), and codex's
+      # auth.json is written at provisioning. Re-prepare so the file matches
+      # this spawn; best effort, like the rest of the wake.
+      case Provisioning.prepare_runtime_sprite(
+             handle,
+             runtime,
+             state.runtime_module,
+             agent,
+             sprite_env
+           ) do
+        :ok -> :ok
+        {:error, reason} -> Logger.warning("runtime prepare on wake: #{inspect(reason)}")
+      end
 
       # Normally the wake path already flipped suspended → ready under the
       # quota reservation; this covers the reaper parking the row mid-wake.
@@ -1482,42 +1498,6 @@ defmodule Fountain.Conversations.ConversationServer do
         )
 
         state
-    end
-  end
-
-  # A session near its end is replaced before the turn that would outlive it.
-  # The env is rebuilt with the new token; everything else in it is unchanged.
-  defp broker_refresh(%{broker: nil} = state), do: state
-
-  defp broker_refresh(%{broker: session} = state) do
-    {brokered, rotated?} =
-      Egress.refresh_connection_secrets(state.connection_keys, state.user_id, state.brokered)
-
-    state = %{state | brokered: brokered}
-
-    if rotated? or Fountain.Broker.expiring?(session) do
-      case Egress.reprepare(
-             state.conversation_id,
-             state.brokered,
-             state.broker_bindings,
-             state.sprite_env,
-             network: state.broker_network,
-             user_id: state.user_id
-           ) do
-        {:ok, fresh, sprite_env} ->
-          %{state | broker: fresh, sprite_env: sprite_env}
-
-        {:error, reason} ->
-          # The turn runs on the old token, and fails at the proxy if it has
-          # expired. Fail loud there rather than silently here.
-          Logger.warning(
-            "conv #{state.conversation_id}: broker session refresh failed: #{inspect(reason)}"
-          )
-
-          state
-      end
-    else
-      state
     end
   end
 
@@ -2322,11 +2302,18 @@ defmodule Fountain.Conversations.ConversationServer do
     case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt) do
       {:ok, conv, turn} -> run_turn(state, conv, turn, prompt, agent, images)
       :at_capacity -> state
+      {:error, _} -> drop_connection(state, "admission_refused")
     end
   end
 
   defp run_turn(state, conv, turn, prompt, agent, images) do
     state = %{state | inference_model: agent && agent.model}
+
+    # Before either path (#1736): a fresh spawn takes the env this rebuilds, an
+    # idle peer holds its token, and one whose token was replaced is closed.
+    {state, replaced?} = Egress.refresh_before_turn(state)
+    state = if replaced?, do: drop_connection(state, "broker_session_replaced"), else: state
+
     TurnMachine.store_images(turn, images)
     TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)
 
@@ -2416,8 +2403,6 @@ defmodule Fountain.Conversations.ConversationServer do
     # next turn.
     turn_started_mono = System.monotonic_time(:millisecond)
 
-    state = broker_refresh(state)
-
     try do
       spawn_opts =
         [
@@ -2468,13 +2453,10 @@ defmodule Fountain.Conversations.ConversationServer do
                         callback_token: state.callback_token,
                         resolved: state.resolved_mcp_servers
                       ),
-                    model:
-                      agent &&
-                        Managoat.Runtimes.Model.acp_model(
-                          conv.runtime || agent.runtime,
-                          agent.model
-                        ),
-                    permission_policy: TurnMachine.effective_permission_policy(conv, agent)
+                    model: TurnMachine.acp_model(conv, agent),
+                    permission_policy: TurnMachine.effective_permission_policy(conv, agent),
+                    auth:
+                      CodexChatGPT.peer_auth(state.runtime_module, state.inference_credentials)
                   )
                 else
                   {nil, nil}
@@ -2616,13 +2598,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # One peer report through the turn state machine (#1374): the turn the
   # server holds goes in, the next one comes back with the effects to apply,
   # in order. `ctx` is what the machine needs that is not the turn's own.
-  defp drive_turn(state, payload, extra \\ []) do
-    ctx = TurnMachine.ctx(state, extra)
-    {turn, effects} = TurnMachine.handle(TurnMachine.from_state(state), payload, ctx)
-    state = TurnMachine.into_state(state, turn)
-
-    Enum.reduce(effects, state, &apply_effect(&2, &1))
-  end
+  defp drive_turn(state, payload, extra \\ []),
+    do: TurnMachine.drive(state, payload, extra, &apply_effect/2)
 
   # What the machine hands back: the server's state, processes, timers,
   # output persistence and pending registries, one clause each.
@@ -2736,19 +2713,22 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   # An out-of-turn protocol line opened a background cycle
-  # (`Connection.open_autonomous_turn/2`). The row, its span and its tracer are
+  # (`Connection.open_autonomous_turn/3`). The row, its span and its tracer are
   # the server's to hold; the quiet timer is armed in this process.
   defp open_autonomous_turn(state) do
-    {turn, turn_span, tracer} =
-      Connection.open_autonomous_turn(state.conversation_id, state.user_id)
+    case Connection.open_autonomous_turn(state.conversation_id, state.user_id, state.sandbox_id) do
+      {:error, _} ->
+        drop_connection(state, "admission_refused")
 
-    arm_autonomous_quiet(%{
-      touch_activity(state)
-      | current_turn: turn,
-        current_turn_span: turn_span,
-        turn_metrics: nil,
-        stream_tracer: tracer
-    })
+      {turn, turn_span, tracer} ->
+        arm_autonomous_quiet(%{
+          touch_activity(state)
+          | current_turn: turn,
+            current_turn_span: turn_span,
+            turn_metrics: nil,
+            stream_tracer: tracer
+        })
+    end
   end
 
   defp close_autonomous_turn(state, why) do

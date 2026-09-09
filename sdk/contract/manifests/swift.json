@@ -76,6 +76,8 @@
     "POST /api/vaults/{vault_id}/secrets"
   ],
   "schemas": {
+    "TurnUsage": { "optional": ["input", "output", "cache_read", "cache_write", "accounting"] },
+    "UsageAccounting": { "required": ["version", "source", "scope", "completeness"] },
     "Agent": { "required": ["id", "name"] },
     "AgentListResponse": { "required": ["data"] },
     "AgentResponse": { "required": ["data"] },
@@ -95,7 +97,7 @@
     "ConversationListResponse": { "required": ["data"] },
     "ConversationResponse": { "required": ["data"] },
     "ConversationTreeResponse": { "required": ["data"] },
-    "Environment": { "required": ["id", "name"] },
+    "Environment": { "required": ["id", "name"], "optional": ["setup_timeout_seconds"] },
     "EnvironmentListResponse": { "required": ["data"] },
     "EnvironmentResponse": { "required": ["data"] },
     "Error": { "required": ["error"] },

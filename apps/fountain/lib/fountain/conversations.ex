@@ -213,19 +213,53 @@ defmodule Fountain.Conversations do
   path in `ConversationServer.terminate_conversation/2`. Metering at this choke point means a
   new caller cannot forget to record usage, which is how `Billing.emit/5` ended
   up with no call sites at all despite being documented, schema'd and tested.
+
+  The persisted previous status decides the transition. Terminal rows reject
+  attempts to become active again, including callbacks holding an older struct.
   """
   def update_sandbox(%Sandbox{} = sandbox, attrs) do
-    was = sandbox.status
+    # A provider callback may still hold a starting/ready struct after reset,
+    # cancellation or the provision watchdog retired the persisted row. Read
+    # and validate under the row lock; checking the caller's struct would let
+    # that delayed callback revive the machine. No provider I/O under this lock.
+    result =
+      Repo.transaction(fn ->
+        current =
+          Repo.one(from s in Sandbox, where: s.id == ^sandbox.id, lock: "FOR UPDATE") ||
+            Repo.rollback(:not_found)
 
-    changeset = sandbox |> Sandbox.changeset(attrs) |> stamp_terminated_at()
+        changeset =
+          current
+          |> Sandbox.changeset(attrs)
+          |> prevent_sandbox_revival()
+          |> stamp_terminated_at()
 
-    with {:ok, updated} <- Repo.update(changeset) do
-      record_sandbox_usage(was, updated)
-      {:ok, updated}
+        case Repo.update(changeset) do
+          {:ok, updated} -> {current.status, updated}
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+
+    case result do
+      {:ok, {was, updated}} ->
+        record_sandbox_usage(was, updated)
+        {:ok, updated}
+
+      {:error, _} = error ->
+        error
     end
   end
 
   @billable_terminal ~w(terminated failed)
+
+  defp prevent_sandbox_revival(changeset) do
+    if changeset.data.status in @billable_terminal and
+         Ecto.Changeset.get_field(changeset, :status) not in @billable_terminal do
+      Ecto.Changeset.add_error(changeset, :status, "sandbox is retired")
+    else
+      changeset
+    end
+  end
 
   # `terminated_at` is when a sandbox stopped costing money, so spend
   # attribution reads it as the end of the billed interval
@@ -381,31 +415,19 @@ defmodule Fountain.Conversations do
   that reconnects don't artificially bump a conversation to the top.
   """
   def list_conversations_by_activity(user_id) when is_binary(user_id) do
-    turn_counts =
-      from t in Turn,
-        group_by: t.conversation_id,
-        select: %{conversation_id: t.conversation_id, count: count(t.id)}
-
-    last_turn_at =
-      from t in Turn,
-        group_by: t.conversation_id,
-        select: %{conversation_id: t.conversation_id, last_at: max(t.inserted_at)}
-
-    last_log_at =
-      from le in LogEvent,
-        where: le.kind == "output",
-        group_by: le.conversation_id,
-        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
-
+    # Lateral per conversation for the same reason as `annotated_query/1`:
+    # the grouped shape read every turn and every output log event in the
+    # deployment to rank one tenant's list.
     Repo.all(
       from c in Conversation,
+        as: :conv,
         where: c.user_id == ^user_id and c.status != "terminated",
-        left_join: tc in subquery(turn_counts),
-        on: tc.conversation_id == c.id,
-        left_join: lt in subquery(last_turn_at),
-        on: lt.conversation_id == c.id,
-        left_join: ll in subquery(last_log_at),
-        on: ll.conversation_id == c.id,
+        left_lateral_join: tc in subquery(turn_count_of_conv()),
+        on: true,
+        left_lateral_join: lt in subquery(last_turn_at_of_conv()),
+        on: true,
+        left_lateral_join: ll in subquery(last_output_at_of_conv()),
+        on: true,
         order_by: [
           desc:
             fragment(
@@ -796,31 +818,30 @@ defmodule Fountain.Conversations do
   end
 
   # The conversation list read-model: turn counts and last activity, both as
-  # LEFT JOINed subqueries so the result stays a plain list of structs and no
-  # caller N+1s.
+  # LEFT JOIN LATERAL subqueries so the result stays a plain list of structs
+  # and no caller N+1s.
+  #
+  # Lateral, per conversation, rather than one GROUP BY over the whole table
+  # joined back (2026-09-07). The grouped shape aggregated every output log
+  # event in the deployment on every call — a full scan of log_events, the
+  # largest table, for a list of one tenant's conversations — and a client
+  # polling this list 14 times a second turned that into 6.4M sequential
+  # scans and a pool exhausted for everyone. Per conversation, the newest
+  # output event is one backward probe of the partial index
+  # `log_events_output_conversation_id_inserted_at_index`, and the cost
+  # scales with the tenant's conversation count instead of the table.
   #
   # Only `kind: "output"` log events count toward `last_active_at` — stage
   # events (reconnects, sandbox lifecycle) would otherwise produce false
   # unread indicators.
   defp annotated_query(user_id) do
-    turn_counts =
-      from t in Turn,
-        group_by: t.conversation_id,
-        select: %{conversation_id: t.conversation_id, count: count(t.id)}
-
-    last_log_at =
-      from le in LogEvent,
-        where: le.kind == "output",
-        group_by: le.conversation_id,
-        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
-
     from c in Conversation,
       as: :conv,
       where: c.user_id == ^user_id,
-      left_join: tc in subquery(turn_counts),
-      on: tc.conversation_id == c.id,
-      left_join: ll in subquery(last_log_at),
-      on: ll.conversation_id == c.id,
+      left_lateral_join: tc in subquery(turn_count_of_conv()),
+      on: true,
+      left_lateral_join: ll in subquery(last_output_at_of_conv()),
+      on: true,
       select: %{
         c
         | turn_count: fragment("COALESCE(?, 0)", tc.count),
@@ -831,6 +852,27 @@ defmodule Fountain.Conversations do
               c.inserted_at
             )
       }
+  end
+
+  # The lateral halves of the read-model. Each answers for the conversation
+  # bound as `:conv` in the outer query, so they compose only under a `from`
+  # that names that binding.
+  defp turn_count_of_conv do
+    from t in Turn,
+      where: t.conversation_id == parent_as(:conv).id,
+      select: %{count: count(t.id)}
+  end
+
+  defp last_turn_at_of_conv do
+    from t in Turn,
+      where: t.conversation_id == parent_as(:conv).id,
+      select: %{last_at: max(t.inserted_at)}
+  end
+
+  defp last_output_at_of_conv do
+    from le in LogEvent,
+      where: le.conversation_id == parent_as(:conv).id and le.kind == "output",
+      select: %{last_at: max(le.inserted_at)}
   end
 
   @doc """
@@ -1065,19 +1107,15 @@ defmodule Fountain.Conversations do
   Create a turn on a sandbox that may be shared, refusing when the runtime's
   capacity is used up by another conversation's running turn.
 
-  `capacity` is `Managoat.Runtimes.ACP.concurrency/1`: `:unbounded` (claude,
-  codex — several processes on one disk is the laptop shape) inserts exactly
-  as `_unsafe_create_turn/1` does; an integer is checked and inserted under
-  a per-sandbox advisory lock, so two conversations prompting the same
-  opencode or gemini machine at the same moment cannot both win. Answers
-  `{:error, :sandbox_at_capacity}` rather than queueing (ADR 0023 step 4).
+  `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
+  per-sandbox advisory lock and verify that the conversation still belongs
+  to this nonterminal sandbox. An integer capacity also limits concurrent
+  turns; `:unbounded` skips only that capacity check. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
   """
-  def _unsafe_create_turn_on_sandbox(attrs, _sandbox_id, :unbounded),
-    do: _unsafe_create_turn(attrs)
-
   def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
-      when is_binary(sandbox_id) and is_integer(capacity) and capacity > 0 do
+      when is_binary(sandbox_id) and
+             (capacity == :unbounded or (is_integer(capacity) and capacity > 0)) do
     conv_id = Map.fetch!(attrs, :conversation_id)
 
     result =
@@ -1087,7 +1125,20 @@ defmodule Fountain.Conversations do
           :erlang.phash2(sandbox_id)
         ])
 
-        if _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
+        attached? =
+          Repo.exists?(
+            from c in Conversation,
+              join: s in Sandbox,
+              on: s.id == c.sandbox_id,
+              where:
+                c.id == ^conv_id and s.id == ^sandbox_id and c.user_id == s.user_id and
+                  s.status not in ["terminated", "failed"]
+          )
+
+        unless attached?, do: Repo.rollback(:sandbox_unavailable)
+
+        if capacity != :unbounded and
+             _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
           Repo.rollback(:sandbox_at_capacity)
         else
           case %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
@@ -1944,7 +1995,7 @@ defmodule Fountain.Conversations do
          # Whose inference key would run this (#1388): refused only when it
          # would be Fountain's and the deployment has spent its day. A door
          # with no platform key configured runs no query here.
-         :ok <- Fountain.PlatformInference.gate(user_id, agent.model),
+         :ok <- Fountain.PlatformInference.gate(user_id, agent.model, agent.runtime),
          # A persistent launch lands on the identity's home when there is one
          # (ADR 0023 gate 6): `{:home, sandbox}` leaves the `with` and attaches
          # below. Only when there is none does a machine get provisioned, and
@@ -2480,7 +2531,7 @@ defmodule Fountain.Conversations do
          # Whose inference key would run this (#1388): refused only when it
          # would be Fountain's and the deployment has spent its day. A door
          # with no platform key configured runs no query here.
-         :ok <- Fountain.PlatformInference.gate(user_id, agent.model),
+         :ok <- Fountain.PlatformInference.gate(user_id, agent.model, agent.runtime),
          %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
          :ok <- check_sandbox_api_attach(sandbox, attrs["sandbox_api_access"]),
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
@@ -2951,7 +3002,12 @@ defmodule Fountain.Conversations do
                # Whose inference key would run this (#1388): refused only when it
                # would be Fountain's and the deployment has spent its day. A door
                # with no platform key configured runs no query here.
-               :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
+               :ok <-
+                 Fountain.PlatformInference.gate(
+                   conv.user_id,
+                   agent.model,
+                   conv.runtime
+                 ),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
             case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
               {:error, {:already_started, winner_pid}} ->
@@ -3251,7 +3307,12 @@ defmodule Fountain.Conversations do
          # Whose inference key would run this (#1388): refused only when it
          # would be Fountain's and the deployment has spent its day. A door
          # with no platform key configured runs no query here.
-         :ok <- Fountain.PlatformInference.gate(conv.user_id, agent.model),
+         :ok <-
+           Fountain.PlatformInference.gate(
+             conv.user_id,
+             agent.model,
+             conv.runtime
+           ),
          # A fresh sandbox is a fresh placement decision — re-resolve from
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.

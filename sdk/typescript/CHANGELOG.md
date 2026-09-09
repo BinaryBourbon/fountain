@@ -10,6 +10,22 @@ server releases.
 
 ---
 
+## [1.23.0] - 2026-09-07
+
+### Added
+
+- Environment creation, update and response types expose `setup_timeout_seconds`
+  (1–900, default 120) for bounded cold setup.
+
+## [1.22.0] — 2026-09-07
+
+### Changed
+
+- Turn usage exposes adapter accounting source, version, scope and completeness.
+  Metadata-only reports omit unmeasured input/output counters, so those fields
+  are now optional. Check for missing counts before arithmetic; missing means
+  unknown, not zero. Historical reports gain no invented accounting metadata.
+
 ## [1.21.1] — 2026-09-06
 
 ### Fixed

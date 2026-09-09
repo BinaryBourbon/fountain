@@ -241,14 +241,42 @@ defmodule Fountain.Broker.Native do
         user_id: user_id,
         rules: rules_for(brokered, bindings, network),
         unmatched_host_policy: policy_for(network),
-        meta: %{
-          "conversation_id" => conversation_id,
-          "user_id" => user_id,
-          "credential_keys" => credential_keys(brokered, bindings)
-        },
+        meta: meta_for(conversation_id, user_id, brokered, bindings),
         ttl_seconds: Application.get_env(:fountain, :broker_session_ttl_seconds, 21_600)
       })
     end
+  end
+
+  @doc """
+  Rewrite the rules of the conversation's live sessions in place
+  (`Sessions.update_rules/4`), so a token a running process already holds
+  resolves to the new credentials (#1736). Same inputs as `prepare/4`; a
+  secret edit leaves the network shape alone, so only the rules and the
+  `credential_keys` in `meta` move. `{:ok, 0}` means no live session was
+  there to update.
+  """
+  @spec refresh(String.t(), %{String.t() => String.t()}, Broker.bindings(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def refresh(conversation_id, brokered, bindings, opts)
+      when is_binary(conversation_id) and is_map(brokered) and is_map(bindings) do
+    network = Keyword.get(opts, :network, :unrestricted)
+
+    with {:ok, user_id} <- user_id(conversation_id, opts) do
+      Sessions.update_rules(
+        conversation_id,
+        user_id,
+        rules_for(brokered, bindings, network),
+        meta_for(conversation_id, user_id, brokered, bindings)
+      )
+    end
+  end
+
+  defp meta_for(conversation_id, user_id, brokered, bindings) do
+    %{
+      "conversation_id" => conversation_id,
+      "user_id" => user_id,
+      "credential_keys" => credential_keys(brokered, bindings)
+    }
   end
 
   defp user_id(conversation_id, opts) do

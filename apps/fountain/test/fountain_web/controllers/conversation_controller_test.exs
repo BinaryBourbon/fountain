@@ -280,6 +280,65 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body["data"]["usage_total"] == %{"input" => 120, "output" => 30}
     end
 
+    test "exposes partial accounting, metadata-only reports and unqualified history", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+
+      accounting = %{
+        "version" => 1,
+        "source" => "codex/thread-token-usage-delta",
+        "scope" => "root_thread_prompt",
+        "completeness" => "partial"
+      }
+
+      partial =
+        Managoat.ACP.Usage.from_prompt_result(%{
+          "usage" => %{"inputTokens" => 12, "outputTokens" => 3, "cachedReadTokens" => 40},
+          "_meta" => %{"usageAccounting" => accounting}
+        })
+
+      unknown =
+        Managoat.ACP.Usage.from_prompt_result(%{
+          "usage" => nil,
+          "_meta" => %{"usageAccounting" => accounting}
+        })
+
+      legacy = %{"input" => 2, "output" => 1}
+
+      for usage <- [partial, unknown, legacy] do
+        turn = insert_turn(conv, status: "completed")
+        assert {:ok, _} = Fountain.Conversations._unsafe_record_turn_usage(turn, usage)
+      end
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/turns")
+        |> json_response(200)
+
+      assert Enum.map(body["data"], & &1["usage"]) == [partial, unknown, legacy]
+      assert unknown == %{"accounting" => accounting}
+      refute Map.has_key?(List.last(body["data"])["usage"], "accounting")
+
+      total =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}")
+        |> json_response(200)
+
+      assert total["data"]["usage_total"] == %{"input" => 14, "output" => 4}
+
+      {_key, other_key} = insert_api_key(insert_verified_user())
+      # This endpoint still authorizes the parent conversation before reading usage.
+      assert conn
+             |> authed_with_key(other_key)
+             |> get("/api/conversations/#{conv.id}/turns")
+             |> response(404)
+    end
+
     test "returns 200 with an empty list when there are no turns", %{
       conn: conn,
       user: user,
@@ -1380,6 +1439,50 @@ defmodule FountainWeb.ConversationControllerTest do
         })
 
       assert json_response(conn, 201)
+    end
+  end
+
+  describe "GET /api/conversations?limit=" do
+    test "caps the page at the most recently updated conversations", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      older = insert_conversation(user_id: user.id)
+      newer = insert_conversation(user_id: user.id)
+
+      # updated_at is the sort key; make the order unambiguous.
+      later =
+        DateTime.utc_now()
+        |> DateTime.add(60, :second)
+        |> DateTime.truncate(:second)
+
+      newer |> Ecto.Changeset.change(updated_at: later) |> Fountain.Repo.update!()
+
+      conn = conn |> authed_with_key(raw_key) |> get("/api/conversations?limit=1")
+
+      body = json_response(conn, 200)
+      assert [%{"id" => id}] = body["data"]
+      assert id == newer.id
+      refute id == older.id
+    end
+
+    test "without a limit the whole list comes back, as before", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      for _ <- 1..3, do: insert_conversation(user_id: user.id)
+
+      conn = conn |> authed_with_key(raw_key) |> get("/api/conversations")
+      assert length(json_response(conn, 200)["data"]) == 3
+    end
+
+    test "a limit outside 1..500 is refused, not clamped", %{conn: conn, raw_key: raw_key} do
+      for bad <- ["0", "501", "ten"] do
+        conn = conn |> authed_with_key(raw_key) |> get("/api/conversations?limit=#{bad}")
+        assert conn.status in [400, 422], "limit=#{bad} answered #{conn.status}"
+      end
     end
   end
 end

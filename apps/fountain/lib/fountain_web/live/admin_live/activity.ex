@@ -93,7 +93,9 @@ defmodule FountainWeb.AdminLive.Activity do
                 >
                   {e.metadata["email"]}
                 </.link>
-                <span :if={is_nil(e.target_user_id)}>{e.metadata["email"]}</span>
+                <span :if={is_nil(e.target_user_id)}>
+                  {e.metadata["email"] || e.metadata["provider"]}
+                </span>
               </td>
               <td class="px-4 py-2 text-xs text-zinc-500">
                 <span :if={e.metadata["from"] != nil}>

@@ -5,8 +5,8 @@ defmodule Fountain.Conversations.SpriteEnv do
 
   One precedence rule, stated here and nowhere else: **a vault wins over an
   environment on key collision** (`merge_secrets/3`). In the assembled list
-  (`build/4`) the runtime's own defaults come first and the brokered
-  placeholders last, and the list is registered with
+  (`build/4`) the runtime's own defaults come first and the broker's proxy
+  variables last, and the list is registered with
   `Fountain.Conversations.Redaction` before it is returned, so what the
   agent sees is exactly what is scrubbed from its output.
 
@@ -46,10 +46,19 @@ defmodule Fountain.Conversations.SpriteEnv do
   `:no_credential` keeps the behaviour that predates platform keys: the
   conversation provisions anyway, and the provider's own auth failure lands
   on the transcript rather than a refusal invented here.
+
+  `runtime` is the conversation's own (`conv.runtime`), which is what the
+  sandbox is dispatched on and can differ from the agent's after an edit;
+  nil falls back to the agent's.
   """
-  @spec select_inference(map() | nil, map()) :: {:own | :platform, map()}
-  def select_inference(agent, own_creds) do
-    case InferenceCredentials.select(agent && agent.model, own_creds) do
+  @spec select_inference(map() | nil, map(), String.t() | nil) :: {:own | :platform, map()}
+  def select_inference(agent, own_creds, runtime \\ nil) do
+    brokered? = (agent && Fountain.Broker.enabled_for?(agent.user_id)) || false
+    runtime = runtime || (agent && agent.runtime)
+
+    case InferenceCredentials.select(agent && agent.model, own_creds, runtime,
+           brokered: brokered?
+         ) do
       {:ok, source, creds} -> {source, creds}
       {:error, :no_credential} -> {:own, own_creds}
     end
@@ -70,40 +79,63 @@ defmodule Fountain.Conversations.SpriteEnv do
   The sandbox's environment, assembled in the order the pieces have always
   come in: the runtime's own defaults, the callback pair, the conversation
   and sandbox ids, the sandbox URL, the trace context, the git author, the
-  environment's plain variables, the decrypted secrets and, last, the
-  brokered placeholders.
+  broker's CA defaults, the environment's plain variables, the decrypted
+  secrets and, last, the broker's proxy variables.
+
+  The broker's pairs sit on either side of the tenant's own values on
+  purpose. Its CA variables are hints — "here is a trust store holding the
+  MITM root" — so an `env_vars` entry naming a different bundle wins, and
+  costs that tenant its own egress and nobody else's. Its proxy variables
+  are the chokepoint (ADR 0019), so nothing overrides them. Before #1674 the
+  whole list came last, so an `env_vars` entry for one of those names was
+  written and then overwritten one line later. `docs/concepts/secrets.md`
+  publishes both halves of the rule.
 
   `opts` carries what `ConversationServer` holds: `:runtime_module`,
   `:env_credentials`, `:callback_token`, `:conversation_id` and
   `:sandbox_id`, plus `:sandbox_url` (nil before the sandbox has one) and
-  `:brokered` (the placeholder pairs from the broker session, `[]` when the
-  conversation is not brokered; the broker half is #1373's).
+  `:brokered` (the pairs from the broker session, `[]` when the conversation
+  is not brokered; the broker half is #1373's).
   """
   @spec build(map() | nil, Environment.t() | nil, map(), keyword()) ::
           [{String.t(), String.t()}]
   def build(agent, env, secrets, opts) do
     runtime_module = Keyword.fetch!(opts, :runtime_module)
     conversation_id = Keyword.fetch!(opts, :conversation_id)
+    {ca_defaults, proxy} = split_brokered(Keyword.get(opts, :brokered, []))
+
+    env_credentials = Keyword.fetch!(opts, :env_credentials)
 
     sprite_env =
-      (runtime_module.default_env(agent, Keyword.fetch!(opts, :env_credentials)) || []) ++
+      (runtime_module.default_env(agent, env_credentials) || []) ++
+        Fountain.Conversations.CodexChatGPT.env(runtime_module, env_credentials) ++
         CallbackKey.env(Keyword.fetch!(opts, :callback_token)) ++
         conversation_env(conversation_id) ++
         sandbox_id_env(Keyword.fetch!(opts, :sandbox_id)) ++
         sandbox_url_env(Keyword.get(opts, :sandbox_url)) ++
         otel_propagation_env() ++
         git_author_env() ++
+        ca_defaults ++
         if(env,
           do: Enum.map(env.env_vars, fn {k, v} -> {to_string(k), to_string(v)} end),
           else: []
         ) ++
         Enum.map(secrets, fn {k, v} -> {k, v} end) ++
-        Keyword.get(opts, :brokered, [])
+        proxy
 
     # Register before anything can log. Provisioning writes output from its
     # very first step, and the secrets are already in the sprite by then.
     Fountain.Conversations.Redaction.put(conversation_id, sprite_env)
     sprite_env
+  end
+
+  # The overridable half of the broker's pairs, and the half that is not.
+  # Split by key rather than by position: `:brokered` is whatever
+  # `Egress.sandbox_env/1` handed over, and a pair belonging to neither half
+  # keeps the old behaviour of coming last.
+  defp split_brokered(brokered) do
+    ca_keys = Fountain.Broker.ca_keys()
+    Enum.split_with(brokered, fn {k, _v} -> to_string(k) in ca_keys end)
   end
 
   # The sandbox's own HTTP endpoint, so an agent asked "what's the URL?" can

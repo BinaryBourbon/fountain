@@ -56,6 +56,45 @@ defmodule Fountain.Conversations.SpriteEnvTest do
                  ]
     end
 
+    # #1674. The broker used to be appended whole, so `env_vars` naming a CA
+    # bundle was written into `.env` and then overwritten one line later by the
+    # broker's own value — the documented setting did nothing, and pointing
+    # codex at a stable bundle was impossible from the outside.
+    test "the broker's CA defaults yield to env_vars; its proxy variables do not" do
+      conv_id = "conv-#{System.unique_integer([:positive])}"
+      on_exit(fn -> Redaction.delete(conv_id) end)
+
+      mine = "/home/sprite/.switchyard/ca/ca-bundle.crt"
+      proxy = "http://av_sess_1:c-1@broker.example:443"
+
+      env = %Environment{
+        env_vars: %{"SSL_CERT_FILE" => mine, "HTTPS_PROXY" => "http://elsewhere:3128"}
+      }
+
+      # The pairs `Egress.sandbox_env/1` hands over, without needing a
+      # configured proxy to mint a session for.
+      brokered = [{"HTTPS_PROXY", proxy}, {"NO_PROXY", "localhost"}] ++ Fountain.Broker.ca_env()
+
+      sprite_env =
+        SpriteEnv.build(nil, env, %{},
+          runtime_module: SilentRuntime,
+          env_credentials: %{},
+          callback_token: nil,
+          conversation_id: conv_id,
+          sandbox_id: nil,
+          brokered: brokered
+        )
+
+      # `.env` is written top to bottom and a shell keeps the last assignment.
+      last = fn key -> sprite_env |> Enum.filter(&(elem(&1, 0) == key)) |> List.last() end
+
+      assert last.("SSL_CERT_FILE") == {"SSL_CERT_FILE", mine}
+      assert last.("HTTPS_PROXY") == List.keyfind(brokered, "HTTPS_PROXY", 0)
+
+      # The defaults are still there for every conversation that names none.
+      assert last.("REQUESTS_CA_BUNDLE") == List.keyfind(brokered, "REQUESTS_CA_BUNDLE", 0)
+    end
+
     test "a runtime with no defaults, no environment, no token and no URL contributes nothing" do
       conv_id = "conv-#{System.unique_integer([:positive])}"
       on_exit(fn -> Redaction.delete(conv_id) end)

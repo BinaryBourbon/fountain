@@ -107,6 +107,14 @@ defmodule Fountain.Broker do
   # rejects every non-brokered host (pypi, crates.io) it also has to reach.
   @system_ca_bundle "/etc/ssl/certs/ca-certificates.crt"
 
+  @doc """
+  The OS trust bundle the CA variables point at, and the artifact
+  `install_broker_ca/2` is protecting: `update-ca-certificates` derives it
+  from `ca_path/0` and the real roots.
+  """
+  @spec system_ca_bundle() :: String.t()
+  def system_ca_bundle, do: @system_ca_bundle
+
   @typedoc "A minted proxy session for one conversation."
   @type session :: %{
           vault: String.t(),
@@ -260,7 +268,16 @@ defmodule Fountain.Broker do
     "CLAUDE_CODE_OAUTH_TOKEN" => %{cred: :claude_code_oauth_token, hosts: ["api.anthropic.com"]},
     "ANTHROPIC_API_KEY" => %{cred: :anthropic_api_key, hosts: ["api.anthropic.com"]},
     "OPENAI_API_KEY" => %{cred: :openai_api_key, hosts: ["api.openai.com"]},
-    "GEMINI_API_KEY" => %{cred: :gemini_api_key, hosts: ["generativelanguage.googleapis.com"]}
+    "GEMINI_API_KEY" => %{cred: :gemini_api_key, hosts: ["generativelanguage.googleapis.com"]},
+    # The deployment's ChatGPT grant for the codex runtime (ADR 0047): the
+    # access token, which the sandbox holds only as this placeholder in its
+    # `auth.json`, substituted into the bearer on the Codex backend. No
+    # vendor prefix: codex never inspects the shape of an externally managed
+    # token.
+    "CODEX_CHATGPT_ACCESS_TOKEN" => %{
+      cred: :codex_chatgpt_access_token,
+      hosts: ["chatgpt.com"]
+    }
   }
 
   @doc "The env var names that carry inference credentials, and the credential each comes from."
@@ -363,10 +380,15 @@ defmodule Fountain.Broker do
   end
 
   @doc """
-  The environment pairs a brokered sandbox gets. `HTTPS_PROXY` carries the
-  session token (as `http://<token>:<vault>@host:port`), so it is process-only
-  (`Identity.@process_only`); the lower case twins are for apt and the tools
-  that only read those.
+  The environment pairs a brokered sandbox gets: `proxy_env/1` and then
+  `ca_env/0`, in the order this has always returned them.
+
+  The two halves are not equal, and `Fountain.Conversations.SpriteEnv.build/4`
+  puts them on either side of the tenant's own values rather than taking this
+  list whole. `HTTPS_PROXY` carries
+  the session token (as `http://<token>:<vault>@host:port`), so it is
+  process-only (`Identity.@process_only`); the lower case twins are for apt
+  and the tools that only read those.
 
   The CA variables make each toolchain trust the broker's MITM certificate.
   `install_broker_ca` puts the CA in the OS trust store, which curl, git and
@@ -379,15 +401,20 @@ defmodule Fountain.Broker do
   `invalid peer certificate: UnknownIssuer` the moment it reaches a MITM'd host.
   """
   @spec sandbox_env(session()) :: [{String.t(), String.t()}]
-  def sandbox_env(%{token: token, vault: vault}) do
-    url = proxy_url_with(token, vault)
+  def sandbox_env(%{token: _, vault: _} = session), do: proxy_env(session) ++ ca_env()
 
+  @doc """
+  The half that points a toolchain at a trust store holding the broker's CA.
+
+  These are **defaults**: `SpriteEnv.build/4` emits them before the
+  environment's `env_vars` and the decrypted secrets, so a tenant that has a
+  reason to name its own bundle can (#1674). Naming a bundle without the
+  broker CA costs that tenant its own egress and nobody else's — the values
+  are hints to a client, not the chokepoint.
+  """
+  @spec ca_env() :: [{String.t(), String.t()}]
+  def ca_env do
     [
-      {"HTTPS_PROXY", url},
-      {"HTTP_PROXY", url},
-      {"https_proxy", url},
-      {"http_proxy", url},
-      {"NO_PROXY", "localhost,127.0.0.1"},
       {"NODE_EXTRA_CA_CERTS", @ca_path},
       {"SSL_CERT_FILE", @system_ca_bundle},
       {"REQUESTS_CA_BUNDLE", @system_ca_bundle},
@@ -396,11 +423,43 @@ defmodule Fountain.Broker do
     ]
   end
 
-  @doc "Every variable `sandbox_env/1` sets, for a refresh to replace."
+  @doc """
+  The half that names the proxy, and the one thing a tenant may not have back.
+
+  `SpriteEnv.build/4` emits these last. The broker is where an agent's egress
+  is credentialed and logged (ADR 0019); an `env_vars` entry that could
+  replace `HTTPS_PROXY` would be an opt-out of it.
+  """
+  @spec proxy_env(session()) :: [{String.t(), String.t()}]
+  def proxy_env(%{token: token, vault: vault}) do
+    url = proxy_url_with(token, vault)
+
+    [
+      {"HTTPS_PROXY", url},
+      {"HTTP_PROXY", url},
+      {"https_proxy", url},
+      {"http_proxy", url},
+      {"NO_PROXY", "localhost,127.0.0.1"}
+    ]
+  end
+
+  @doc """
+  Every variable `sandbox_env/1` sets. `Egress.reprepare/5` replaces the two
+  halves separately (#1674), so the one caller left is the sudoers `env_keep`
+  line — a different constraint: dropping a key there breaks apt inside a
+  setup script rather than a token rotation.
+  """
   @spec env_keys() :: [String.t()]
-  def env_keys,
-    do:
-      ~w(HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO UV_NATIVE_TLS)
+  def env_keys, do: proxy_keys() ++ ca_keys()
+
+  @doc "The keys `proxy_env/1` sets."
+  @spec proxy_keys() :: [String.t()]
+  def proxy_keys, do: ~w(HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY)
+
+  @doc "The keys `ca_env/0` sets."
+  @spec ca_keys() :: [String.t()]
+  def ca_keys,
+    do: ~w(NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO UV_NATIVE_TLS)
 
   @doc "The variables that carry the session token, which `Identity` keeps off the shared `.env`."
   @spec process_only_keys() :: [String.t()]
@@ -463,9 +522,11 @@ defmodule Fountain.Broker do
 
   Idempotent, and run on every provision and reattach, so an edited secret
   or binding reaches the broker on the next wake, the same way the `.env`
-  file is refreshed. `opts`: `network:` (`network_for/1`), and `user_id:`,
-  which the native backend needs to reach the tenant's key and looks up
-  from the conversation when the caller has not got it to hand.
+  file is refreshed. Between wakes the conversation process holds the
+  session, and `refresh/4` is how an edit reaches it before the next turn
+  (#1736). `opts`: `network:` (`network_for/1`), and `user_id:`, which the
+  native backend needs to reach the tenant's key and looks up from the
+  conversation when the caller has not got it to hand.
   """
   @spec prepare(String.t(), %{String.t() => String.t()}, bindings(), keyword()) ::
           {:ok, session()} | {:error, term()}
@@ -474,6 +535,25 @@ defmodule Fountain.Broker do
     case backend() do
       nil -> {:error, {:broker, :session, :not_configured}}
       backend -> impl(backend).prepare(conversation_id, brokered, bindings, opts)
+    end
+  end
+
+  @doc """
+  Replace the rules of the conversation's live sessions with what `brokered`
+  and `bindings` say now, keeping every token (#1736). `prepare/4` mints a
+  new token, and a new token reaches only the next process spawned with it:
+  a sandbox process, and the idle ACP peer that carries the next turn, hold
+  the token they started with. A secret edited or rotated during a live
+  conversation goes through here. Same `opts` as `prepare/4`; returns how
+  many sessions changed.
+  """
+  @spec refresh(String.t(), %{String.t() => String.t()}, bindings(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def refresh(conversation_id, brokered, bindings \\ %{}, opts \\ [])
+      when is_binary(conversation_id) and is_map(brokered) and is_map(bindings) do
+    case backend() do
+      nil -> {:error, {:broker, :session, :not_configured}}
+      backend -> impl(backend).refresh(conversation_id, brokered, bindings, opts)
     end
   end
 

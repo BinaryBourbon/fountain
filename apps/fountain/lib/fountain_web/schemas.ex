@@ -247,6 +247,26 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule UsageAccounting do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "UsageAccounting",
+      description:
+        "The adapter's accounting claim, not independently verified billing. " <>
+          "Interpret source, version and scope together. Reported does not imply whole-conversation coverage.",
+      type: :object,
+      properties: %{
+        version: %Schema{type: :integer, minimum: 1},
+        source: %Schema{type: :string, minLength: 1, maxLength: 256},
+        scope: %Schema{type: :string, minLength: 1, maxLength: 256},
+        completeness: %Schema{type: :string, enum: ["reported", "partial"]}
+      },
+      required: [:version, :source, :scope, :completeness]
+    })
+  end
+
   defmodule TurnUsage do
     @moduledoc false
     require OpenApiSpex
@@ -256,15 +276,17 @@ defmodule FountainWeb.Schemas do
       description:
         "The turn's token usage as the runtime reported it when the turn ended " <>
           "(the ACP `session/prompt` response's `usage`). The cache fields appear " <>
-          "only when the runtime reports them.",
+          "only when the runtime reports them. Accounting is absent for unqualified or historical reports. " <>
+          "A metadata-only report has no measured token counts; missing counts are not zero.",
       type: :object,
       properties: %{
+        accounting: UsageAccounting,
         input: %Schema{type: :integer, minimum: 0},
         output: %Schema{type: :integer, minimum: 0},
         cache_read: %Schema{type: :integer, minimum: 0, nullable: true},
         cache_write: %Schema{type: :integer, minimum: 0, nullable: true}
       },
-      required: [:input, :output]
+      required: []
     })
   end
 
@@ -1148,6 +1170,13 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
+        setup_timeout_seconds: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: 900,
+          description:
+            "Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies."
+        },
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,
@@ -1206,6 +1235,13 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
+        setup_timeout_seconds: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: 900,
+          description:
+            "Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies."
+        },
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,
@@ -1242,6 +1278,13 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
+        setup_timeout_seconds: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: 900,
+          description:
+            "Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies."
+        },
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,

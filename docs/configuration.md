@@ -205,8 +205,59 @@ behaves as it always did, and each tenant supplies a credential of their own.
 | `PLATFORM_ANTHROPIC_API_KEY` | — | No. | The Anthropic key Fountain runs a tenant on when that tenant has none. This is the first key to set. The default agent uses the claude runtime. |
 | `PLATFORM_OPENAI_API_KEY` | — | No. | The same, for an agent on an `openai/` model. |
 | `PLATFORM_GEMINI_API_KEY` | — | No. | The same, for an agent on a `google/` model. |
+
+### Set a key from the admin panel
+
+An admin can also set each key at `/admin/inference`. Fountain stores that
+key in the database, encrypted under `MASTER_SECRETS_KEY`, and uses it from
+the next conversation on. No restart is necessary.
+
+A key set in the panel wins over the variable. Clear the key in the panel to
+go back to the variable. The page shows the source of each provider's live
+key, the last four characters of that key, and who set it. Each save and each
+clear leaves an `admin.platform_inference_key` event on the admin activity
+page.
+
+Use the variable to seed a new deployment. Use the panel to rotate a key on a
+deployment that already runs.
 | `PLATFORM_INFERENCE_DAILY_CENTS` | `5000` | No. | The most the keys above may cost in one UTC day, across every tenant. A conversation beyond it gets `503 platform_inference_unavailable`. It works only with `CREDITS_ENABLED=true`. |
 | `PLATFORM_INFERENCE_RATES` | — | No. | Per-model prices, in cents per million tokens. See below. |
+
+### The ChatGPT account for the codex runtime
+
+Fountain can also hold one ChatGPT account for the `codex` runtime. A codex
+agent whose tenant has no OpenAI key then runs on that account, before the
+`PLATFORM_OPENAI_API_KEY` key. Opencode on an `openai/` model still needs a
+key. The tenant's own key always wins.
+
+Connect the account at `/admin/inference`. There are three ways in.
+
+- **A device code.** Fountain requests a code, shows the code and a link, and
+  waits for your approval on the ChatGPT page. The account must permit
+  device-code login in its ChatGPT security settings.
+- **A pasted `auth.json`.** Run `CODEX_HOME=$(mktemp -d) codex login` on a
+  laptop and paste the file it writes. This is the recipe OpenAI documents
+  for CI. After the paste, the file belongs to Fountain. Do not use it
+  anywhere else, or both copies stop.
+- **A workspace access token.** A ChatGPT Business or Enterprise workspace
+  can mint a static token in its admin console. Paste the token and its
+  expiry date. This is the credential OpenAI sanctions for servers, so use it
+  where you have one.
+
+Fountain keeps the refresh token, encrypted under `MASTER_SECRETS_KEY`, and
+renews the access token itself. A sandbox never sees either token. The
+sandbox holds a placeholder, and the egress broker puts the real token into
+the request to `chatgpt.com`. Each connect and disconnect leaves an
+`admin.platform_chatgpt` event on the admin activity page.
+
+A personal subscription is one account for every tenant on the deployment.
+That pattern is behind reported account bans, and it is an operator's own
+risk. The page says so.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS` | `900` | No. | How many seconds before its expiry Fountain renews the access token. Set it longer than your longest turn, because codex cannot renew the token itself. |
+| `PLATFORM_CHATGPT_KEEPALIVE_DAYS` | `6` | No. | How many days an idle account may go without a renewal. A daily job renews it after that, so the account does not lapse while nobody runs codex. |
 
 ### What a tenant pays
 

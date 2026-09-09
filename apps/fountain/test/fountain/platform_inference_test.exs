@@ -9,6 +9,8 @@ defmodule Fountain.PlatformInferenceTest do
 
   use Fountain.DataCase, async: false
 
+  import Ecto.Query, only: [from: 2]
+
   alias Fountain.Credits
   alias Fountain.InferenceCredentials
   alias Fountain.PlatformInference
@@ -60,6 +62,130 @@ defmodule Fountain.PlatformInferenceTest do
       with_platform_key()
       assert PlatformInference.key_for("ollama") == :none
       assert PlatformInference.key_for(nil) == :none
+    end
+  end
+
+  describe "keys set from the admin panel (put_key/3, clear_key/2, status/0)" do
+    setup do
+      %{admin: insert_verified_user()}
+    end
+
+    test "a stored key wins over the variable, and clearing it falls back", %{admin: admin} do
+      with_platform_key(:platform_openai_api_key, "sk-from-env")
+
+      assert {:ok, %PlatformInference.Key{provider: "openai"}} =
+               PlatformInference.put_key("openai", "sk-from-admin", actor_user_id: admin.id)
+
+      assert PlatformInference.key_for("openai") == {:ok, :openai_api_key, "sk-from-admin"}
+      assert PlatformInference.configured_providers() == ["openai"]
+
+      assert :ok = PlatformInference.clear_key("openai", actor_user_id: admin.id)
+      assert PlatformInference.key_for("openai") == {:ok, :openai_api_key, "sk-from-env"}
+    end
+
+    test "a stored key turns a provider on with no variable at all", %{admin: admin} do
+      refute PlatformInference.enabled?()
+
+      {:ok, _} = PlatformInference.put_key("google", "AIza-stored", actor_user_id: admin.id)
+
+      assert PlatformInference.enabled?()
+      assert PlatformInference.key_for("google") == {:ok, :gemini_api_key, "AIza-stored"}
+
+      assert InferenceCredentials.select("google/gemini-3.1-pro-preview", %{}) ==
+               {:ok, :platform, %{gemini_api_key: "AIza-stored"}}
+
+      :ok = PlatformInference.clear_key("google")
+      refute PlatformInference.enabled?()
+    end
+
+    test "the value is trimmed, and a value that is not one key is refused", %{admin: admin} do
+      {:ok, _} = PlatformInference.put_key("anthropic", "  sk-trimmed\n", actor_user_id: admin.id)
+      assert PlatformInference.key_for("anthropic") == {:ok, :anthropic_api_key, "sk-trimmed"}
+
+      assert PlatformInference.put_key("anthropic", "") == {:error, :invalid_key}
+      assert PlatformInference.put_key("anthropic", "   ") == {:error, :invalid_key}
+      assert PlatformInference.put_key("anthropic", "sk-two words") == {:error, :invalid_key}
+      assert PlatformInference.put_key("anthropic", "sk-a\tb") == {:error, :invalid_key}
+
+      assert PlatformInference.put_key("anthropic", String.duplicate("k", 1_025)) ==
+               {:error, :invalid_key}
+
+      assert PlatformInference.put_key("ollama", "anything") == {:error, :invalid_key}
+      # None of the refusals touched the stored key.
+      assert PlatformInference.key_for("anthropic") == {:ok, :anthropic_api_key, "sk-trimmed"}
+    end
+
+    test "the value is encrypted at rest and never in the trail", %{admin: admin} do
+      {:ok, row} = PlatformInference.put_key("openai", "sk-secret-value", actor_user_id: admin.id)
+
+      refute row.ciphertext =~ "sk-secret-value"
+      assert {:ok, "sk-secret-value"} = Fountain.Crypto.decrypt_platform(row.ciphertext)
+
+      [event] = admin_events("admin.platform_inference_key.set")
+      assert event.actor_user_id == admin.id
+      assert event.metadata == %{"provider" => "openai", "replaced" => "none"}
+      refute inspect(event) =~ "sk-secret"
+    end
+
+    test "the trail says what a key replaced, and a clear with nothing stored records nothing",
+         %{admin: admin} do
+      with_platform_key(:platform_anthropic_api_key, "sk-env")
+      {:ok, _} = PlatformInference.put_key("anthropic", "sk-one", actor_user_id: admin.id)
+      {:ok, _} = PlatformInference.put_key("anthropic", "sk-two", actor_user_id: admin.id)
+
+      assert ["environment", "stored"] =
+               "admin.platform_inference_key.set"
+               |> admin_events()
+               |> Enum.map(& &1.metadata["replaced"])
+               |> Enum.sort()
+
+      :ok = PlatformInference.clear_key("anthropic", actor_user_id: admin.id)
+      :ok = PlatformInference.clear_key("anthropic", actor_user_id: admin.id)
+      :ok = PlatformInference.clear_key("openai", actor_user_id: admin.id)
+
+      assert [%{metadata: %{"provider" => "anthropic"}}] =
+               admin_events("admin.platform_inference_key.cleared")
+    end
+
+    test "status/0 names the source, the operator and the key's tail", %{admin: admin} do
+      with_platform_key(:platform_anthropic_api_key, "env-1234")
+
+      {:ok, _} =
+        PlatformInference.put_key("openai", "admin-5678", actor_user_id: admin.id)
+
+      assert [anthropic, openai, google] = PlatformInference.status()
+
+      assert %{provider: "anthropic", source: :environment, hint: "1234", updated_by: nil} =
+               anthropic
+
+      assert anthropic.env_var == "PLATFORM_ANTHROPIC_API_KEY"
+
+      assert %{provider: "openai", source: :stored, hint: "5678"} = openai
+      assert openai.updated_by == admin.email
+      assert %DateTime{} = openai.updated_at
+
+      assert %{provider: "google", source: :none, hint: nil, updated_at: nil} = google
+    end
+
+    test "a stored key the master key no longer decrypts falls back to the variable",
+         %{admin: admin} do
+      with_platform_key(:platform_openai_api_key, "sk-env")
+      {:ok, row} = PlatformInference.put_key("openai", "sk-stored", actor_user_id: admin.id)
+
+      # Corrupt the blob the way a rotated MASTER_SECRETS_KEY would: the row
+      # is there, the bytes no longer authenticate.
+      row
+      |> Ecto.Changeset.change(ciphertext: :crypto.strong_rand_bytes(byte_size(row.ciphertext)))
+      |> Repo.update!()
+
+      assert PlatformInference.key_for("openai") == {:ok, :openai_api_key, "sk-env"}
+
+      assert [%{provider: "openai", source: :undecryptable, hint: nil}] =
+               Enum.filter(PlatformInference.status(), &(&1.provider == "openai"))
+
+      # And with no variable either the provider is simply off, not broken.
+      Application.put_env(:fountain, :platform_openai_api_key, "")
+      assert PlatformInference.key_for("openai") == :none
     end
   end
 
@@ -179,6 +305,14 @@ defmodule Fountain.PlatformInferenceTest do
       Application.delete_env(:fountain, :platform_inference_daily_cents)
       assert PlatformInference.daily_ceiling_cents() == 5_000
     end
+  end
+
+  defp admin_events(event_type) do
+    Repo.all(
+      from e in Fountain.Audit.AdminEvent,
+        where: e.event_type == ^event_type,
+        order_by: [asc: e.id]
+    )
   end
 
   defp burn_inference(user, cents) do

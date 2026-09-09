@@ -81,7 +81,12 @@ environment secrets  --merge-->  vault secrets  -->  the sandbox
 ```
 
 The merge happens once, at spawn. Edit either one afterwards and the edit does
-not reach a sandbox that already runs.
+not reach a sandbox that already runs. A brokered secret is the exception.
+Before each turn, Fountain reads the environment and the vault again and
+gives the broker the new value. A rotated `GITHUB_TOKEN` in a vault works on
+the next turn of a conversation that already runs. The section
+[Bindings, when the broker is on](#bindings-when-the-broker-is-on) says which
+secrets the broker holds.
 
 A conversation can name a different environment from its agent's default, and
 it can attach a vault. The agent's `allowed_environment_ids` and
@@ -91,6 +96,28 @@ Fountain merges the non-secret `env_vars` from the environment in as well. It
 stores those in the clear and returns them in the clear. So the difference
 between `env_vars` and `secrets` is about who can read a value back. It is not
 about who can use one.
+
+On a deployment with the egress broker on, the sandbox also gets a small set
+of variables from the broker. These divide into two halves with opposite
+precedence.
+
+The certificate variables (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`,
+`CARGO_HTTP_CAINFO`, `NODE_EXTRA_CA_CERTS` and `UV_NATIVE_TLS`) are defaults.
+An `env_vars` entry or a secret with the same name replaces them. You can
+point a tool at a different trust store. That store must hold the broker
+root, or the agent cannot reach a brokered host.
+
+The proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, their lower case twins and
+`NO_PROXY`) always win in the environment an agent runs in. The broker is
+where Fountain attaches credentials to egress and makes a record of it.
+
+The four proxy URL names have one exception, and it is in `/home/sprite/.env`
+only. The broker's value for those four carries the conversation's session
+token, so Fountain keeps it out of that shared file. Your `env_vars` entry is
+then the only assignment left in the file. A `setup_script` that does
+`source .env` picks it up for the rest of that script. This does not open a
+path out. A brokered sandbox can reach the broker host and no other, so a
+different proxy name there costs you your own egress.
 
 ## Hop 4: substitution, then the process
 

@@ -52,6 +52,16 @@ selection rule, a `burn_inference` debit per closed platform turn from
 `PLATFORM_INFERENCE_DAILY_CENTS` (default 5000) as a deployment-wide daily
 circuit breaker answering 503.
 
+*Amended 2026-09-07:* the keys are also settable from `/admin/inference`
+(`Fountain.PlatformInference.put_key/3`), one `platform_inference_keys` row
+per provider encrypted under the master key, recorded as
+`admin.platform_inference_key.*` on the privilege trail. A stored key wins
+over the variable and takes effect at the next conversation with no rollout;
+clearing it falls back to the variable. The variable stays as the seed for a
+deployment configured from its environment. Rotating the production OpenAI
+key on 2026-09-07 took a secret-store edit and a rollout of every pod, which
+is what this removes.
+
 **The price is pass-through at provider list, a 1.0x margin, no markup**
 (decided with Jake on 2026-09-02). Fountain's margin is sandbox time
 (`CREDIT_TURN_HOUR_CENTS`, [0031](0031-credits-are-the-product.md)). Marking

@@ -29,6 +29,14 @@ defmodule FountainWeb.Router do
     # POST /api/auth/token all have one.
     plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 600
     plug FountainWeb.Plugs.TenantAPIAuth
+    # And AFTER it, per key (2026-09-07): the address bucket above cannot see
+    # one client's runaway loop when every app beside the server arrives
+    # through the same ingress address, and cannot stop it without stopping
+    # them all. 600 a minute per key per replica is ten a second — a
+    # transcript viewer polling `/events` once a second and holding a stream
+    # is well inside it; a client listing the account fourteen times a
+    # second (the 09-04 incident) is not.
+    plug FountainWeb.Plugs.RateLimit, bucket: "api-key", max: 600, key: :api_key
     plug FountainWeb.Plugs.Audit
   end
 
@@ -771,6 +779,7 @@ defmodule FountainWeb.Router do
       live "/admin", AdminLive.Index, :index
       live "/admin/users", AdminLive.Users, :index
       live "/admin/sandboxes", AdminLive.Sandboxes, :index
+      live "/admin/inference", AdminLive.Inference, :index
       live "/admin/activity", AdminLive.Activity, :index
       # Lives in ee/ with the rest of billing (#472): it is a revenue page.
       live "/admin/finance", Live.AdminFinanceLive, :index

@@ -433,6 +433,51 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Enum.any?(turns, &(&1.origin == "autonomous" and &1.status == "completed"))
     end
 
+    for change <- [:retire, :move], input <- [:prompt, :background, :permission] do
+      test "a stale actor cannot start #{input} work after #{change}", ctx do
+        prompt_id = drive_to_prompt(ctx.pid, ctx.ref)
+        reply(ctx.pid, ctx.ref, prompt_id, %{"stopReason" => "end_turn"})
+        conv = Conversations._unsafe_get_conversation!(ctx.conv.id)
+
+        case unquote(change) do
+          :retire ->
+            sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+            {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "terminated"})
+
+          :move ->
+            fresh = insert_sandbox(user_id: conv.user_id, status: "ready")
+            {:ok, _} = Conversations.update_conversation(conv, %{sandbox_id: fresh.id})
+        end
+
+        case unquote(input) do
+          :prompt ->
+            assert :ok = GenServer.call(ctx.pid, {:send_prompt, "late prompt", []})
+
+          :permission ->
+            send(ctx.pid, {:acp, ctx.ref, {:permission_ask, "late-request", "Bash", []}})
+
+          :background ->
+            notify(ctx.pid, ctx.ref, %{
+              "sessionUpdate" => "agent_message_chunk",
+              "text" => "late output"
+            })
+        end
+
+        state = :sys.get_state(ctx.pid)
+        assert is_nil(state.current_turn)
+        assert is_nil(state.acp_peer)
+        assert is_nil(state.permission_timer)
+        assert state.caller_calls == %{}
+        assert [%{status: "completed"}] = Conversations._unsafe_list_turns(conv.id)
+        assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+        refute Enum.any?(
+                 Conversations._unsafe_list_log_events(conv.id),
+                 &String.contains?(&1.data || "", "late output")
+               )
+      end
+    end
+
     test "an out-of-turn session_info_update opens no autonomous turn (#1300)", %{
       conv: conv,
       pid: pid,
@@ -541,6 +586,36 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.status == "failed"
+    end
+
+    for reason <- ["max_tokens", "max_turn_requests", "unknown_future_reason"] do
+      test "#{reason} fails the turn and retains its reported usage", %{
+        conv: conv,
+        pid: pid,
+        ref: ref
+      } do
+        prompt_id = drive_to_prompt(pid, ref)
+
+        reply(pid, ref, prompt_id, %{
+          "stopReason" => unquote(reason),
+          "usage" => %{"inputTokens" => 100, "outputTokens" => 25, "totalTokens" => 125}
+        })
+
+        assert [turn] = Conversations._unsafe_list_turns(conv.id)
+        assert turn.status == "failed"
+        assert turn.usage == %{"input" => 100, "output" => 25}
+        assert turn.ended_at
+
+        # A subsequent adapter exit cannot convert the incomplete turn to success
+        # or count its partial work twice.
+        send(pid, {:exit, %{ref: ref}, 0})
+        _ = :sys.get_state(pid)
+        assert [persisted] = Conversations._unsafe_list_turns(conv.id)
+        assert persisted.status == "failed"
+        conv = Conversations._unsafe_get_conversation!(conv.id)
+        assert conv.usage_input_tokens == 100
+        assert conv.usage_output_tokens == 25
+      end
     end
 
     test "the conversation accepts another prompt afterwards", %{conv: conv, pid: pid, ref: ref} do

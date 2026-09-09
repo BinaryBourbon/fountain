@@ -3723,6 +3723,8 @@ export interface components {
             /** @description Secrets stored on this environment. */
             secret_count?: number;
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
             /** Format: date-time */
             updated_at?: string;
         };
@@ -3753,6 +3755,8 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
         };
         /** EnvironmentResponse */
         EnvironmentResponse: {
@@ -3781,6 +3785,8 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
         };
         /** Error */
         Error: {
@@ -4746,13 +4752,14 @@ export interface components {
         };
         /**
          * TurnUsage
-         * @description The turn's token usage as the runtime reported it when the turn ended (the ACP `session/prompt` response's `usage`). The cache fields appear only when the runtime reports them.
+         * @description The turn's token usage as the runtime reported it when the turn ended (the ACP `session/prompt` response's `usage`). The cache fields appear only when the runtime reports them. Accounting is absent for unqualified or historical reports. A metadata-only report has no measured token counts; missing counts are not zero.
          */
         TurnUsage: {
+            accounting?: components["schemas"]["UsageAccounting"];
             cache_read?: number | null;
             cache_write?: number | null;
-            input: number;
-            output: number;
+            input?: number;
+            output?: number;
         };
         /**
          * UnprocessableEntityError
@@ -4764,6 +4771,17 @@ export interface components {
                 [key: string]: string[];
             };
             message?: string;
+        };
+        /**
+         * UsageAccounting
+         * @description The adapter's accounting claim, not independently verified billing. Interpret source, version and scope together. Reported does not imply whole-conversation coverage.
+         */
+        UsageAccounting: {
+            /** @enum {string} */
+            completeness: "reported" | "partial";
+            scope: string;
+            source: string;
+            version: number;
         };
         /**
          * UsageTotal
@@ -10052,6 +10070,8 @@ export interface operations {
                 channel_id?: string;
                 /** @description Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary. */
                 status?: string;
+                /** @description Return at most this many conversations, most recently updated first (1 to 500; 400 outside that range). Without it the whole list is returned, which on a busy account is hundreds of rows per call — a client that needs one conversation should filter (`agent_id`, `sandbox_id`, `channel_id`) and cap. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -10068,7 +10088,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationListResponse"];
                 };
             };
-            /** @description Unknown status */
+            /** @description Unknown status or limit out of range */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -63,6 +63,61 @@ defmodule Fountain.Conversations.SharedSandboxTest do
       assert Conversations._unsafe_list_turns(a.id) == []
     end
 
+    for capacity <- [1, :unbounded], status <- ["terminated", "failed"] do
+      test "#{inspect(capacity)} admission refuses a persisted #{status} sandbox", ctx do
+        ctx.sandbox |> Ecto.Changeset.change(status: unquote(status)) |> Repo.update!()
+
+        assert {:error, :sandbox_unavailable} =
+                 Conversations._unsafe_create_turn_on_sandbox(
+                   %{
+                     conversation_id: ctx.a.id,
+                     turn_number: 1,
+                     status: "running",
+                     prompt: "late"
+                   },
+                   ctx.sandbox.id,
+                   unquote(capacity)
+                 )
+
+        assert Conversations._unsafe_list_turns(ctx.a.id) == []
+      end
+    end
+
+    for capacity <- [1, :unbounded] do
+      test "#{inspect(capacity)} admission refuses the previous sandbox after a move", ctx do
+        fresh = insert_sandbox(user_id: ctx.user.id, status: "ready")
+        ctx.a |> Ecto.Changeset.change(sandbox_id: fresh.id) |> Repo.update!()
+
+        assert {:error, :sandbox_unavailable} =
+                 Conversations._unsafe_create_turn_on_sandbox(
+                   %{
+                     conversation_id: ctx.a.id,
+                     turn_number: 1,
+                     status: "running",
+                     prompt: "late"
+                   },
+                   ctx.sandbox.id,
+                   unquote(capacity)
+                 )
+
+        assert Conversations._unsafe_list_turns(ctx.a.id) == []
+      end
+    end
+
+    test "autonomous admission honors the runtime capacity too", ctx do
+      running_turn(ctx.b)
+
+      assert {:error, :sandbox_at_capacity} =
+               Fountain.Conversations.Connection.open_autonomous_turn(
+                 ctx.a.id,
+                 ctx.user.id,
+                 ctx.sandbox.id
+               )
+
+      assert Conversations._unsafe_list_turns(ctx.a.id) == []
+      assert Conversations._unsafe_get_conversation!(ctx.a.id).status == "idle"
+    end
+
     test "inserts below capacity", %{a: a, sandbox: sandbox} do
       attrs = %{
         conversation_id: a.id,

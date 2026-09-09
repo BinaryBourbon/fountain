@@ -122,7 +122,9 @@ Use a schedule when the run must happen without you. Read the
 
 Use `GET /api/conversations?sandbox_id=<uuid>` to list conversations on a
 machine you own. Combine it with `agent_id`, `channel_id`, `status` or
-`roots_only`. The TypeScript SDK accepts
+`roots_only`, and add `limit` (1 to 500) to cap the page. A client that polls
+the list must filter and cap it. The whole account is the default, and on a
+busy account that is hundreds of rows per call. The TypeScript SDK accepts
 `fountain.conversations({sandboxId: id, rootsOnly: false})`.
 
 `GET /api/events/stream` includes new events from conversations that finish
@@ -130,3 +132,17 @@ before the stream discovers them. A `Last-Event-ID` cursor also replays
 finished conversations. Without a cursor, the stream starts with events
 recorded after connection. The `streams` and `blocks` options apply to replay
 and live output.
+
+## Usage accounting
+
+A turn's `usage` contains the token counts that its runtime reports.
+Optional `usage.accounting` identifies the adapter's source, version, scope and completeness.
+These fields describe the adapter's claim, not a verified bill.
+`reported` does not guarantee coverage beyond the stated scope.
+`partial` indicates incomplete accounting; known counts remain available.
+
+A metadata-only report has no token counts. Missing counts do not mean zero usage.
+Older reports lack accounting metadata and remain unqualified.
+Fountain does not reconstruct their missing requests.
+Conversation `usage_total` sums reported input and output; it is not a complete cost total.
+Metadata is present only when the installed runtime adapter emits it.

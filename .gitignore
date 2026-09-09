@@ -28,6 +28,10 @@ erl_crash.dump
 # Temporary files, for example, from tests.
 /tmp/
 
+# ExUnit's `@tag :tmp_dir` writes under the app that runs the test, not the
+# umbrella root, and the behavioural CA install test uses one.
+apps/*/tmp/
+
 # Database files
 *.db
 *.db-*

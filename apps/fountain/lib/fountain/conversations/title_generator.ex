@@ -36,8 +36,22 @@ defmodule Fountain.Conversations.TitleGenerator do
       key = Map.get(credentials, :gemini_api_key) ->
         call_gemini(prompt, key)
 
+      # A conversation on the deployment's ChatGPT grant (ADR 0047) holds a
+      # credential this generator cannot spend — it is codex's, not the
+      # API's — so the platform's own OpenAI key titles it when there is
+      # one, as it titles any other platform-served conversation.
+      Map.get(credentials, :codex_chatgpt_access_token) && platform_openai_key() ->
+        call_openai(prompt, platform_openai_key())
+
       true ->
         {:error, :no_credentials}
+    end
+  end
+
+  defp platform_openai_key do
+    case Fountain.PlatformInference.key_for("openai") do
+      {:ok, _credential, key} -> key
+      :none -> nil
     end
   end
 

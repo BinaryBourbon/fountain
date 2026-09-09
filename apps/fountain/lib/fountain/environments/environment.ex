@@ -18,6 +18,7 @@ defmodule Fountain.Environments.Environment do
     :packages,
     :env_vars,
     :setup_script,
+    :setup_timeout_seconds,
     :networking_type,
     :networking_config,
     :repositories
@@ -28,6 +29,7 @@ defmodule Fountain.Environments.Environment do
     field :packages, :map, default: %{}
     field :env_vars, :map, default: %{}
     field :setup_script, :string, default: ""
+    field :setup_timeout_seconds, :integer, default: 120
     field :networking_type, :string, default: "unrestricted"
     field :networking_config, :map, default: %{}
     field :repositories, {:array, :map}, default: []
@@ -56,6 +58,7 @@ defmodule Fountain.Environments.Environment do
       :packages,
       :env_vars,
       :setup_script,
+      :setup_timeout_seconds,
       :networking_type,
       :networking_config,
       :repositories,
@@ -67,7 +70,11 @@ defmodule Fountain.Environments.Environment do
   def changeset(env, attrs) do
     env
     |> cast(attrs, cast_fields())
-    |> validate_required([:name])
+    |> validate_required([:name, :setup_timeout_seconds])
+    |> validate_number(:setup_timeout_seconds,
+      greater_than_or_equal_to: 1,
+      less_than_or_equal_to: 900
+    )
     |> validate_inclusion(:networking_type, @networking)
     |> validate_length(:name, min: 1, max: 200)
     |> validate_change(:networking_config, &validate_networking_config/2)
