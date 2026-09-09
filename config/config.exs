@@ -174,7 +174,7 @@ config :fountain, FountainWeb.Endpoint,
 
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id, :remote_ip]
+  metadata: [:request_id, :remote_ip, :api_key]
 
 config :phoenix, :json_library, Jason
 

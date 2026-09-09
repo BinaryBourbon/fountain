@@ -415,31 +415,19 @@ defmodule Fountain.Conversations do
   that reconnects don't artificially bump a conversation to the top.
   """
   def list_conversations_by_activity(user_id) when is_binary(user_id) do
-    turn_counts =
-      from t in Turn,
-        group_by: t.conversation_id,
-        select: %{conversation_id: t.conversation_id, count: count(t.id)}
-
-    last_turn_at =
-      from t in Turn,
-        group_by: t.conversation_id,
-        select: %{conversation_id: t.conversation_id, last_at: max(t.inserted_at)}
-
-    last_log_at =
-      from le in LogEvent,
-        where: le.kind == "output",
-        group_by: le.conversation_id,
-        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
-
+    # Lateral per conversation for the same reason as `annotated_query/1`:
+    # the grouped shape read every turn and every output log event in the
+    # deployment to rank one tenant's list.
     Repo.all(
       from c in Conversation,
+        as: :conv,
         where: c.user_id == ^user_id and c.status != "terminated",
-        left_join: tc in subquery(turn_counts),
-        on: tc.conversation_id == c.id,
-        left_join: lt in subquery(last_turn_at),
-        on: lt.conversation_id == c.id,
-        left_join: ll in subquery(last_log_at),
-        on: ll.conversation_id == c.id,
+        left_lateral_join: tc in subquery(turn_count_of_conv()),
+        on: true,
+        left_lateral_join: lt in subquery(last_turn_at_of_conv()),
+        on: true,
+        left_lateral_join: ll in subquery(last_output_at_of_conv()),
+        on: true,
         order_by: [
           desc:
             fragment(
@@ -817,31 +805,30 @@ defmodule Fountain.Conversations do
   end
 
   # The conversation list read-model: turn counts and last activity, both as
-  # LEFT JOINed subqueries so the result stays a plain list of structs and no
-  # caller N+1s.
+  # LEFT JOIN LATERAL subqueries so the result stays a plain list of structs
+  # and no caller N+1s.
+  #
+  # Lateral, per conversation, rather than one GROUP BY over the whole table
+  # joined back (2026-09-07). The grouped shape aggregated every output log
+  # event in the deployment on every call — a full scan of log_events, the
+  # largest table, for a list of one tenant's conversations — and a client
+  # polling this list 14 times a second turned that into 6.4M sequential
+  # scans and a pool exhausted for everyone. Per conversation, the newest
+  # output event is one backward probe of the partial index
+  # `log_events_output_conversation_id_inserted_at_index`, and the cost
+  # scales with the tenant's conversation count instead of the table.
   #
   # Only `kind: "output"` log events count toward `last_active_at` — stage
   # events (reconnects, sandbox lifecycle) would otherwise produce false
   # unread indicators.
   defp annotated_query(user_id) do
-    turn_counts =
-      from t in Turn,
-        group_by: t.conversation_id,
-        select: %{conversation_id: t.conversation_id, count: count(t.id)}
-
-    last_log_at =
-      from le in LogEvent,
-        where: le.kind == "output",
-        group_by: le.conversation_id,
-        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
-
     from c in Conversation,
       as: :conv,
       where: c.user_id == ^user_id,
-      left_join: tc in subquery(turn_counts),
-      on: tc.conversation_id == c.id,
-      left_join: ll in subquery(last_log_at),
-      on: ll.conversation_id == c.id,
+      left_lateral_join: tc in subquery(turn_count_of_conv()),
+      on: true,
+      left_lateral_join: ll in subquery(last_output_at_of_conv()),
+      on: true,
       select: %{
         c
         | turn_count: fragment("COALESCE(?, 0)", tc.count),
@@ -852,6 +839,27 @@ defmodule Fountain.Conversations do
               c.inserted_at
             )
       }
+  end
+
+  # The lateral halves of the read-model. Each answers for the conversation
+  # bound as `:conv` in the outer query, so they compose only under a `from`
+  # that names that binding.
+  defp turn_count_of_conv do
+    from t in Turn,
+      where: t.conversation_id == parent_as(:conv).id,
+      select: %{count: count(t.id)}
+  end
+
+  defp last_turn_at_of_conv do
+    from t in Turn,
+      where: t.conversation_id == parent_as(:conv).id,
+      select: %{last_at: max(t.inserted_at)}
+  end
+
+  defp last_output_at_of_conv do
+    from le in LogEvent,
+      where: le.conversation_id == parent_as(:conv).id and le.kind == "output",
+      select: %{last_at: max(le.inserted_at)}
   end
 
   @doc """

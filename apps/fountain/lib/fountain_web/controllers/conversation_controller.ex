@@ -57,11 +57,21 @@ defmodule FountainWeb.ConversationController do
         required: false,
         description:
           "Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary."
+      ],
+      limit: [
+        in: :query,
+        schema: %OpenApiSpex.Schema{type: :integer, minimum: 1, maximum: 500},
+        required: false,
+        description:
+          "Return at most this many conversations, most recently updated first (1 to 500; " <>
+            "400 outside that range). Without it the whole list is returned, which on a " <>
+            "busy account is hundreds of rows per call — a client that needs one " <>
+            "conversation should filter (`agent_id`, `sandbox_id`, `channel_id`) and cap."
       ]
     ],
     responses: [
       ok: {"Conversations", "application/json", Schemas.ConversationListResponse},
-      bad_request: {"Unknown status", "application/json", Schemas.Error},
+      bad_request: {"Unknown status or limit out of range", "application/json", Schemas.Error},
       unprocessable_entity: {"Invalid filter", "application/json", Schemas.ChangesetError}
     ]
   )
@@ -70,7 +80,8 @@ defmodule FountainWeb.ConversationController do
     user = conn.assigns.current_user
     roots_only = parse_bool_param(params["roots_only"], false)
 
-    with {:ok, statuses} <- parse_statuses(params["status"]) do
+    with {:ok, statuses} <- parse_statuses(params["status"]),
+         {:ok, limit} <- parse_list_limit(params["limit"]) do
       render(conn, :index,
         conversations:
           Conversations.list_conversations(user.id,
@@ -78,9 +89,25 @@ defmodule FountainWeb.ConversationController do
             agent_id: params["agent_id"],
             channel_id: params["channel_id"],
             sandbox_id: params["sandbox_id"],
-            status: statuses
+            status: statuses,
+            limit: limit
           )
       )
+    end
+  end
+
+  @max_list_limit 500
+
+  # Absent means the whole list, as it always has; a value outside 1..500 is
+  # a 400 rather than a silent clamp, for the same reason as a bad status —
+  # a client that asked for 0 or 10,000 should find out.
+  defp parse_list_limit(nil), do: {:ok, nil}
+  defp parse_list_limit(""), do: {:ok, nil}
+
+  defp parse_list_limit(raw) do
+    case Integer.parse(to_string(raw)) do
+      {n, ""} when n in 1..@max_list_limit -> {:ok, n}
+      _ -> {:error, "invalid_limit"}
     end
   end
 

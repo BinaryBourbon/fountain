@@ -22,6 +22,8 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
 
+  require Logger
+
   alias Fountain.Accounts
 
   def init(opts), do: opts
@@ -37,6 +39,13 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
       Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
         Accounts.touch_api_key(raw_key)
       end)
+
+      # The key's display prefix on every log line of the request. Never the
+      # key: the prefix is what the console shows next to the key's name, so
+      # a request log can be traced to a key without holding one. Four days
+      # of a client polling the API fourteen times a second could be traced
+      # only as far as an ingress address without this (2026-09-04).
+      Logger.metadata(api_key: api_key.key_prefix)
 
       conn
       |> assign(:current_user, user)
