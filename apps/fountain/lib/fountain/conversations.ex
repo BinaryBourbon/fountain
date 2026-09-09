@@ -213,19 +213,53 @@ defmodule Fountain.Conversations do
   path in `ConversationServer.terminate_conversation/2`. Metering at this choke point means a
   new caller cannot forget to record usage, which is how `Billing.emit/5` ended
   up with no call sites at all despite being documented, schema'd and tested.
+
+  The persisted previous status decides the transition. Terminal rows reject
+  attempts to become active again, including callbacks holding an older struct.
   """
   def update_sandbox(%Sandbox{} = sandbox, attrs) do
-    was = sandbox.status
+    # A provider callback may still hold a starting/ready struct after reset,
+    # cancellation or the provision watchdog retired the persisted row. Read
+    # and validate under the row lock; checking the caller's struct would let
+    # that delayed callback revive the machine. No provider I/O under this lock.
+    result =
+      Repo.transaction(fn ->
+        current =
+          Repo.one(from s in Sandbox, where: s.id == ^sandbox.id, lock: "FOR UPDATE") ||
+            Repo.rollback(:not_found)
 
-    changeset = sandbox |> Sandbox.changeset(attrs) |> stamp_terminated_at()
+        changeset =
+          current
+          |> Sandbox.changeset(attrs)
+          |> prevent_sandbox_revival()
+          |> stamp_terminated_at()
 
-    with {:ok, updated} <- Repo.update(changeset) do
-      record_sandbox_usage(was, updated)
-      {:ok, updated}
+        case Repo.update(changeset) do
+          {:ok, updated} -> {current.status, updated}
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+
+    case result do
+      {:ok, {was, updated}} ->
+        record_sandbox_usage(was, updated)
+        {:ok, updated}
+
+      {:error, _} = error ->
+        error
     end
   end
 
   @billable_terminal ~w(terminated failed)
+
+  defp prevent_sandbox_revival(changeset) do
+    if changeset.data.status in @billable_terminal and
+         Ecto.Changeset.get_field(changeset, :status) not in @billable_terminal do
+      Ecto.Changeset.add_error(changeset, :status, "sandbox is retired")
+    else
+      changeset
+    end
+  end
 
   # `terminated_at` is when a sandbox stopped costing money, so spend
   # attribution reads it as the end of the billed interval
