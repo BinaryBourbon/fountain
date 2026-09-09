@@ -275,6 +275,38 @@ defmodule Fountain.Workers.SandboxReaperTest do
       assert Repo.reload(sandbox).status == "ready"
     end
 
+    for field <- [:started_at, :ended_at] do
+      test "recent turn #{field} keeps an old machine out of the idle sweep" do
+        user = insert_verified_user()
+        sandbox = insert_sandbox(user_id: user.id, status: "ready")
+        conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+        turn = insert_turn(conv, %{status: "completed"})
+        sandbox = age_rows(sandbox, conv, 300)
+        turn |> change([{unquote(field), minutes_ago(20)}]) |> Repo.update!()
+
+        with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+          assert {0, 0} = SandboxReaper.sweep_abandoned_sandboxes()
+        end)
+
+        assert Repo.reload(sandbox).status == "ready"
+      end
+    end
+
+    test "a recent wake restarts the idle clock even without a new turn" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      sandbox = age_rows(sandbox, nil, 48 * 60)
+      # Outside the 15-minute grace window, but inside the 60-minute idle limit.
+      sandbox |> change(last_resumed_at: minutes_ago(20)) |> Repo.update!()
+      sandbox = age_sandbox(sandbox, 20)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        assert {0, 0} = SandboxReaper.sweep_abandoned_sandboxes()
+      end)
+
+      assert Repo.reload(sandbox).status == "ready"
+    end
+
     test "recent turn activity keeps a sandbox alive" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
