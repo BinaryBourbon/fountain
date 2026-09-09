@@ -510,6 +510,90 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert :sys.get_state(ctx.pid) == before
     end
 
+    for active <- [false, true], malformed <- [false, true] do
+      test "queued policy refusal preserves active=#{active}, malformed=#{malformed}", ctx do
+        prompt_id = drive_to_prompt(ctx.pid, ctx.ref)
+        reply(ctx.pid, ctx.ref, prompt_id, %{"stopReason" => "end_turn"})
+
+        if unquote(active) do
+          notify(ctx.pid, ctx.ref, %{
+            "sessionUpdate" => "agent_message_chunk",
+            "text" => "working"
+          })
+
+          assert :sys.get_state(ctx.pid).current_turn.origin == "autonomous"
+        end
+
+        allowance =
+          ctx.conv.id
+          |> Fountain.Conversations.ExecutionAllowance.new_changeset(%{max_model_turns: 2})
+          |> Fountain.Repo.insert!()
+
+        if unquote(malformed) do
+          allowance
+          |> Ecto.Changeset.change(limits: %{"private-field" => "do not echo"})
+          |> Fountain.Repo.update!()
+        end
+
+        before = :sys.get_state(ctx.pid)
+        turns = Conversations._unsafe_list_turns(ctx.conv.id)
+        conv = Fountain.Repo.reload!(ctx.conv)
+        usage_count = Fountain.Repo.aggregate(Fountain.Billing.UsageEvent, :count)
+
+        ConversationServer.queue_initial_prompt(ctx.pid, "queued")
+
+        # Same-sender mailbox ordering waits for the queued cast to finish.
+        assert :sys.get_state(ctx.pid) == before
+        assert Conversations._unsafe_list_turns(ctx.conv.id) == turns
+        assert Fountain.Repo.reload!(ctx.conv) == conv
+        assert Fountain.Repo.aggregate(Fountain.Billing.UsageEvent, :count) == usage_count
+        refute_received :stdin_closed
+        refute_received {:wrote, _}
+
+        if unquote(active) do
+          assert :ok = GenServer.call(ctx.pid, :interrupt)
+          assert is_nil(:sys.get_state(ctx.pid).current_turn)
+          assert List.last(Conversations._unsafe_list_turns(ctx.conv.id)).status == "interrupted"
+        end
+      end
+    end
+
+    test "an empty saved allowance permits queued handoff on the same connection", ctx do
+      prompt_id = drive_to_prompt(ctx.pid, ctx.ref)
+      reply(ctx.pid, ctx.ref, prompt_id, %{"stopReason" => "end_turn"})
+      notify(ctx.pid, ctx.ref, %{"sessionUpdate" => "agent_message_chunk", "text" => "working"})
+      peer = :sys.get_state(ctx.pid).acp_peer
+
+      ctx.conv.id
+      |> Fountain.Conversations.ExecutionAllowance.new_changeset(%{})
+      |> Fountain.Repo.insert!()
+
+      ConversationServer.queue_initial_prompt(ctx.pid, "queued")
+      assert :sys.get_state(ctx.pid).acp_peer == peer
+
+      assert [
+               %{status: "completed"},
+               %{origin: "autonomous", status: "completed"},
+               %{origin: "user", status: "running", prompt: "queued"}
+             ] = Conversations._unsafe_list_turns(ctx.conv.id)
+
+      %{"method" => "session/set_model", "id" => set_id} = next_write()
+      reply(ctx.pid, ctx.ref, set_id, %{})
+      assert %{"method" => "session/prompt"} = next_write()
+    end
+
+    test "a queued prompt leaves a running user turn alone under saved limits", ctx do
+      drive_to_prompt(ctx.pid, ctx.ref)
+
+      ctx.conv.id
+      |> Fountain.Conversations.ExecutionAllowance.new_changeset(%{max_model_turns: 2})
+      |> Fountain.Repo.insert!()
+
+      before = :sys.get_state(ctx.pid)
+      ConversationServer.queue_initial_prompt(ctx.pid, "queued")
+      assert :sys.get_state(ctx.pid) == before
+    end
+
     test "an out-of-turn update opens an autonomous turn; cycle_end closes it (#817)", %{
       conv: conv,
       pid: pid,
