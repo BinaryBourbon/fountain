@@ -304,7 +304,7 @@ defmodule Fountain.Conversations.Egress do
   hour into the conversation rather than at provisioning.
 
   There is no arm here for a list that carries no CA defaults:
-  `broker_prepare/1` runs before `build_sprite_env/5` on both entry paths
+  `prepare_state/1` runs before `build_sprite_env/5` on both entry paths
   (`ConversationServer` lines 863 and 1114), so a brokered conversation's env
   has always been assembled with them.
   """
@@ -459,6 +459,27 @@ defmodule Fountain.Conversations.Egress do
         :error
     end
   end
+
+  @doc "Keep the minted proxy session in server state; unbrokered state is unchanged."
+  def prepare_state(state) do
+    if brokered?(state.user_id) do
+      case prepare(state.conversation_id, state.brokered, state.broker_bindings,
+             network: state.broker_network,
+             user_id: state.user_id
+           ) do
+        {:ok, session} -> {:ok, %{state | broker: session}}
+        {:error, _} = error -> error
+      end
+    else
+      {:ok, state}
+    end
+  end
+
+  @doc "Revoke only the session this preparation returned; a failed mint owns no token."
+  def release_prepared({:ok, %{broker: %{token: token}} = state}),
+    do: Broker.release_session(state.user_id, state.conversation_id, token)
+
+  def release_prepared(_result), do: :ok
 
   @doc "Install the broker's CA into the sandbox; nothing to install without a session."
   @spec install_ca(session(), Managoat.Sandbox.Handle.t(), String.t()) :: :ok | {:error, term()}

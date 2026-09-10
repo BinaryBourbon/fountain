@@ -399,7 +399,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       assert_receive {:spawned, _, _, _}, 2_000
     end
 
-    test "a failed session mint tears the sandbox down and releases the vault", %{
+    test "a failed session mint tears the sandbox down without revoking other sessions", %{
       user: user,
       agent: agent
     } do
@@ -413,10 +413,8 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
         {:error, {:broker, :session, :timeout}}
       end)
 
-      stub(Fountain.Broker, :release, fn conv_id ->
-        send(test, {:released, conv_id})
-        :ok
-      end)
+      reject(Fountain.Broker, :release, 1)
+      reject(Fountain.Broker, :release_session, 3)
 
       Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h ->
         send(test, :destroyed)
@@ -426,9 +424,46 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       {_pid, _mon, :stopped} = start_server(conv)
 
       assert_receive :destroyed, 2_000
-      assert_receive {:released, conv_id}, 2_000
-      assert conv_id == conv.id
       assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
+    end
+
+    for broker_disabled? <- [false, true] do
+      @tag broker_disabled?: broker_disabled?
+      test "failed provisioning preserves a replacement token (disabled=#{broker_disabled?})", %{
+        user: user,
+        agent: agent,
+        broker_disabled?: broker_disabled?
+      } do
+        conv = insert_conversation(user_id: user.id, agent: agent)
+        test = self()
+        stub_happy_sprite()
+        stub(Fountain.Broker, :preflight, fn -> :ok end)
+        stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+
+        # Use real session rows and deletion; only the provider boundary is fake.
+        stub(Fountain.Broker, :prepare, fn id, secrets, bindings, opts ->
+          {:ok, session} = Fountain.Broker.Native.prepare(id, secrets, bindings, opts)
+          send(test, {:original_token, session.token})
+          {:ok, session}
+        end)
+
+        stub(Fountain.Conversations.Provisioning, :install_packages, fn _h, _e, _se, _id ->
+          {:ok, replacement} =
+            Fountain.Broker.Native.prepare(conv.id, %{}, %{}, user_id: user.id)
+
+          send(test, {:replacement_token, replacement.token})
+          if broker_disabled?, do: Application.delete_env(:fountain, :broker_listen_port)
+          {:error, :apt_failed}
+        end)
+
+        {_pid, ref, :stopped} = start_server(conv)
+        assert :normal = assert_stopped(ref)
+        assert_receive {:original_token, original}
+        assert_receive {:replacement_token, replacement}
+        assert :error = Fountain.Broker.Native.Sessions.lookup(original)
+        assert {:ok, _} = Fountain.Broker.Native.Sessions.lookup(replacement)
+        assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
+      end
     end
 
     test "terminating the conversation releases the vault", %{user: user, agent: agent} do
