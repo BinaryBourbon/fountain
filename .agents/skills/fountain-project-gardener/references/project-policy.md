@@ -3,10 +3,11 @@
 ## Scope and identity
 
 - Repository: `managoat/fountain`
-- Account-owned Project: `BinaryBourbon` Project `1`
-- Project URL: `https://github.com/users/BinaryBourbon/projects/1`
+- Organization-owned Project: `managoat` Project `1`
+- Project URL: `https://github.com/orgs/managoat/projects/1`
 - The Project is private. Repository collaborators should normally have Write access unless the caller specifies a narrower policy.
-- The browser may be signed in as `jhgaylor` while `gh` is signed in as `BinaryBourbon`. Verify identity at the point of mutation.
+- A superseded copy of the same board survives at `https://github.com/users/BinaryBourbon/projects/1` from before the move to the `managoat` organization. It is still private, still holds its items, and its auto-add still captures new `managoat/fountain` issues, so the two boards drift. Read it if you need history. Do not mutate it, and do not treat its contents as current.
+- Several GitHub identities can reach both boards, and the `project` scope is not on every token. Verify the active identity and the target owner at the point of mutation.
 
 Treat this as an expected configuration, not proof of current state. Query GitHub every time.
 
