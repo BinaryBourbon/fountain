@@ -571,6 +571,15 @@ defmodule Fountain.Broker do
     end
   end
 
+  @doc """
+  Delete the session matching tenant, conversation and token, even after the
+  broker is disabled. Repeated cleanup succeeds without touching other tokens.
+  Subsequent lookups refuse the token; existing proxy tunnels are not closed.
+  """
+  @spec release_session(String.t(), String.t(), String.t()) :: :ok
+  def release_session(user_id, conversation_id, token),
+    do: Native.release_session(user_id, conversation_id, token)
+
   @typedoc "One outbound request the broker handled for a conversation."
   @type egress_event :: %{
           id: integer(),

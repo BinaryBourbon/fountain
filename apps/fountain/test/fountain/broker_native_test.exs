@@ -362,6 +362,61 @@ defmodule Fountain.BrokerNativeTest do
       assert {:ok, _} = Sessions.lookup(b.token)
     end
 
+    test "session release preserves a replacement token, including on a repeated cleanup", %{
+      user: user,
+      conv: conv
+    } do
+      {:ok, old} = Broker.prepare(conv.id, %{"GH_TOKEN" => "old"}, %{}, user_id: user.id)
+      {:ok, replacement} = Broker.prepare(conv.id, %{"GH_TOKEN" => "new"}, %{}, user_id: user.id)
+
+      assert :ok = Broker.release_session(user.id, conv.id, old.token)
+      assert :error = Sessions.lookup(old.token)
+      assert {:ok, %{rules: [%Rule{credential: "new"} | _]}} = Sessions.lookup(replacement.token)
+
+      assert :ok = Broker.release_session(user.id, conv.id, old.token)
+      assert {:ok, _} = Sessions.lookup(replacement.token)
+    end
+
+    test "session release requires matching tenant, conversation and token", %{
+      user: user,
+      conv: conv
+    } do
+      other_user = insert_verified_user()
+      other = insert_conversation(user_id: user.id, agent: insert_agent(user_id: user.id))
+      {:ok, session} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
+
+      for {user_id, conversation_id, token} <- [
+            {other_user.id, conv.id, session.token},
+            {user.id, other.id, session.token},
+            {user.id, conv.id, "fb_unknown"}
+          ] do
+        assert :ok = Broker.release_session(user_id, conversation_id, token)
+        assert {:ok, _} = Sessions.lookup(session.token)
+      end
+
+      assert :ok = Broker.release_session(user.id, conv.id, session.token)
+      assert :error = Sessions.lookup(session.token)
+    end
+
+    test "session release works after tenant unenrollment or broker shutdown", %{
+      user: user,
+      conv: conv
+    } do
+      {:ok, first} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
+      {:ok, second} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
+
+      Application.put_env(:fountain, :broker_tenants, [])
+      refute Broker.enabled_for?(user.id)
+      assert :ok = Broker.release_session(user.id, conv.id, first.token)
+      assert :error = Sessions.lookup(first.token)
+      assert {:ok, _} = Sessions.lookup(second.token)
+
+      Application.delete_env(:fountain, :broker_listen_port)
+      assert Broker.backend() == nil
+      assert :ok = Broker.release_session(user.id, conv.id, second.token)
+      assert :error = Sessions.lookup(second.token)
+    end
+
     test "an expired session is refused, and the sweep deletes it", %{user: user, conv: conv} do
       {:ok, live} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
       {:ok, stale} = Broker.prepare(conv.id, %{"GH_TOKEN" => "g"}, %{}, user_id: user.id)
