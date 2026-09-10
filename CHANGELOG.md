@@ -35,6 +35,12 @@ upgrade, is in
 
 ### Fixed
 
+- A teammate can be moved to a different environment or vault. Fountain retires
+  the computer the old binding named, so the teammate's next message builds one
+  from the new pair, and it refuses the move while a turn is running on that
+  computer. A move onto an environment and vault the agent already has a
+  computer for is refused rather than merged onto it (#1636).
+
 - A conversation that shares a sandbox follows the replacement machine only
   when it declares the same environment and vault. The replacement is built
   from the waking conversation's pair, so a co-tenant that named a different

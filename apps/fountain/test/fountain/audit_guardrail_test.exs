@@ -87,6 +87,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"team member add", &__MODULE__.do_team_add/1, "team.member.added"},
     {"team member remove", &__MODULE__.do_team_remove/1, "team.member.removed"},
     {"team member rename", &__MODULE__.do_team_rename/1, "team.renamed"},
+    {"team member rebind", &__MODULE__.do_team_update/1, "team.updated"},
     {"team conversation rotate", &__MODULE__.do_team_rotate/1, "team.conversation.rotated"},
     # Team schedules: a cron that runs a teammate with a prompt. A run leaves
     # conversation events underneath; `.fired` is the schedule-side record.
@@ -454,6 +455,21 @@ defmodule Fountain.AuditGuardrailTest do
     )
 
     {:ok, _} = Fountain.Team.rename_teammate(user.id, agent.id, "Renamed")
+  end
+
+  def do_team_update(user) do
+    agent = insert_agent(user_id: user.id)
+    vault = insert_vault(user_id: user.id)
+
+    insert_conversation(
+      user_id: user.id,
+      agent: agent,
+      status: "idle",
+      channel_id: Fountain.Team.channel()
+    )
+
+    {:ok, _, :updated} =
+      Fountain.Team.update_teammate(user.id, agent.id, %{"vault_id" => vault.id})
   end
 
   def do_team_rotate(user) do

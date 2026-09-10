@@ -41,7 +41,7 @@ defmodule Fountain.Team do
   require Logger
 
   alias Fountain.{Agents, Audit, Conversations, Repo}
-  alias Fountain.Conversations.{Conversation, ConversationServer, Turn}
+  alias Fountain.Conversations.{Conversation, ConversationServer, Sandbox, Turn}
 
   @channel "fountain:team"
 
@@ -445,6 +445,194 @@ defmodule Fountain.Team do
           {:error, _} = err ->
             err
         end
+    end
+  end
+
+  # What a teammate is, in one map: the public attribute name, and the
+  # conversation column it lands on.
+  @bindings [{"name", :title}, {"environment_id", :environment_id}, {"vault_id", :vault_id}]
+
+  @doc """
+  Reconcile the teammate for `agent_id` against `attrs` (#1636).
+
+  `attrs` is string-keyed and takes the same three keys `add_teammate/4`
+  does: `"name"`, `"environment_id"` and `"vault_id"`. A key that is absent
+  leaves that binding alone; a blank value clears it, which for the two ids
+  means the agent's own environment and no vault. Bulk apply
+  (`Fountain.Manifest`) always sends all three, so a Teammate document that
+  names no environment clears the override rather than keeping the last one.
+  Both ids go through the agent's allowlists, as an add does, so a teammate
+  cannot be bound to an environment or vault its agent refuses.
+
+  The three live on the teammate's current conversation, where they already
+  are, so `open_fresh_conversation/3` and `start_fresh/6` build the next
+  computer from them.
+
+  A home is keyed on `(user, agent, environment, vault)`, so moving either id
+  moves the teammate's computer out from under it: the next launch looks
+  under the new key, finds nothing and provisions a fresh machine, while the
+  old one stays `ready` holding a concurrency slot and a disk carrying the
+  old environment's secrets (#1084). This is the hazard
+  `Fountain.Agents.update_agent/3` refuses, and it is refused the same way —
+  `{:error, :sandbox_mid_turn}` while a turn is running on that machine, and
+  the orphan retired through `reset_sandbox/2` once the new binding is the
+  committed one. An ephemeral computer is a conversation's own and is left
+  alone.
+
+  A rebinding onto an identity the agent already has a live home for is
+  refused with `{:error, :destination_home_occupied}`, and nothing is written.
+  There is one home per `(user, agent, environment, vault)`, and the wake path
+  builds a home rather than attaching to one, so writing the binding anyway
+  would leave a teammate that cannot wake at all. Merging the teammate onto
+  the machine that is already there is deliberately not done here; it needs
+  the readiness, runtime and quota checks `attach_conversation/3` makes.
+
+  Returns `{:ok, conv, :updated}`, or `{:ok, conv, :unchanged}` when `attrs`
+  matched the teammate already. `{:error, :not_found}` when the agent is not
+  on the team, `{:error, :environment_not_allowed}` / `{:error,
+  :vault_not_allowed}` when an id is not the caller's own or not on the
+  agent's allowlist, `{:error, :sandbox_mid_turn}` and `{:error,
+  :destination_home_occupied}` as above. Audited as `team.updated` with the
+  changed field names, and nothing is recorded when nothing changed.
+
+  The second argument is the agent's id, or the teammate map a caller already
+  holds from `get_teammate/2` or `list_teammates/1` for the same `user_id` —
+  listing the roster is several queries, and bulk apply has just done it.
+  """
+  def update_teammate(user_id, agent_or_teammate, attrs, opts \\ [])
+
+  def update_teammate(user_id, agent_id, attrs, opts)
+      when is_binary(user_id) and is_binary(agent_id) and is_map(attrs) do
+    case get_teammate(user_id, agent_id) do
+      nil -> {:error, :not_found}
+      teammate -> update_teammate(user_id, teammate, attrs, opts)
+    end
+  end
+
+  def update_teammate(user_id, %{agent: agent, conversation: conv}, attrs, opts)
+      when is_binary(user_id) and is_map(attrs) and is_list(opts) do
+    changes = binding_changes(attrs, conv)
+    identity = effective_identity(conv, agent, changes)
+    # Ownership: `conv` and `agent` came from the scoped get_teammate.
+    orphans = homes_orphaned_by_rebinding(conv, identity)
+
+    with :ok <- bindings_allowed(user_id, agent, changes),
+         :ok <- destination_free(user_id, agent, conv, identity),
+         :ok <- no_home_mid_turn(orphans) do
+      write_bindings(user_id, conv, changes, orphans, opts)
+    end
+  end
+
+  # Only what actually moves: a value the conversation already holds is not a
+  # change, which is what lets a re-apply say it wrote nothing.
+  defp binding_changes(attrs, %Conversation{} = conv) do
+    @bindings
+    |> Enum.filter(fn {key, _field} -> Map.has_key?(attrs, key) end)
+    |> Enum.map(fn {key, field} -> {field, blank_to_nil(attrs[key])} end)
+    |> Enum.reject(fn {field, value} -> Map.get(conv, field) == value end)
+    |> Map.new()
+  end
+
+  # The pair a machine for this teammate would be built from once `changes`
+  # land. A cleared override falls back to the agent's own environment, which
+  # is what a sandbox row carries and what `_unsafe_find_home/4` looks up by.
+  defp effective_identity(%Conversation{} = conv, %Agents.Agent{} = agent, changes) do
+    {Map.get(changes, :environment_id, conv.environment_id) || agent.environment_id,
+     Map.get(changes, :vault_id, conv.vault_id)}
+  end
+
+  # The teammate's computer, when the new binding no longer names it. Nothing
+  # moves for a name-only change, and nothing is orphaned by a rebinding that
+  # keeps the same pair.
+  defp homes_orphaned_by_rebinding(%Conversation{sandbox: %Sandbox{} = home}, identity) do
+    if home.mode == "persistent" and home.status not in ["terminated", "failed"] and
+         {home.environment_id, home.vault_id} != identity do
+      [home]
+    else
+      []
+    end
+  end
+
+  defp homes_orphaned_by_rebinding(_conv, _identity), do: []
+
+  # One live home per identity, enforced by `sandboxes_home_identity_index`.
+  # If the agent already has a home for the pair this rebinding moves to, the
+  # teammate would be written onto an identity it cannot wake into: the wake
+  # path provisions a *new* home rather than attaching to an existing one, and
+  # the index rejects the insert, so the teammate is stranded and re-applying
+  # the same manifest reports `unchanged` and does not recover it.
+  #
+  # Refused rather than merged. Attaching to the machine that is already there
+  # is the other half of this and needs its own change — readiness, the
+  # runtime the disk was shaped for, and the quota a second tenant of that
+  # machine implies are all checks `attach_conversation/3` makes and this
+  # function does not. Refusing cannot strand anybody; attaching wrongly can.
+  #
+  # Ownership: `agent` and `conv` came from the scoped get_teammate, and a
+  # home carries the same `user_id` as the identity it is keyed on.
+  defp destination_free(user_id, %Agents.Agent{} = agent, %Conversation{} = conv, identity) do
+    {env_id, vault_id} = identity
+
+    if identity == effective_identity(conv, agent, %{}) do
+      :ok
+    else
+      case Conversations._unsafe_find_home(user_id, agent.id, env_id, vault_id) do
+        nil -> :ok
+        %Sandbox{id: id} when id == conv.sandbox_id -> :ok
+        %Sandbox{} -> {:error, :destination_home_occupied}
+      end
+    end
+  end
+
+  # Asked before anything is written, so a mid-turn refusal costs the caller
+  # nothing. Ownership: the homes came from the scoped get_teammate's
+  # conversation.
+  defp no_home_mid_turn(homes) do
+    if Conversations._unsafe_any_home_mid_turn?(homes),
+      do: {:error, :sandbox_mid_turn},
+      else: :ok
+  end
+
+  defp bindings_allowed(user_id, %Agents.Agent{} = agent, changes) do
+    options = addable_options(user_id, agent)
+
+    with :ok <-
+           binding_allowed(
+             changes,
+             :environment_id,
+             options.environments,
+             :environment_not_allowed
+           ) do
+      binding_allowed(changes, :vault_id, options.vaults, :vault_not_allowed)
+    end
+  end
+
+  defp binding_allowed(changes, field, allowed, refusal) do
+    case Map.get(changes, field) do
+      nil -> :ok
+      id -> if Enum.any?(allowed, &(&1.id == id)), do: :ok, else: {:error, refusal}
+    end
+  end
+
+  defp write_bindings(_user_id, conv, changes, _orphans, _opts) when map_size(changes) == 0,
+    do: {:ok, conv, :unchanged}
+
+  defp write_bindings(user_id, conv, changes, orphans, opts) do
+    case Conversations.update_conversation(conv, changes) do
+      {:ok, updated} ->
+        fields = for {key, field} <- @bindings, Map.has_key?(changes, field), do: key
+        record(user_id, "team.updated", updated, opts, %{"fields" => fields})
+
+        # Only once the new binding is the committed one: a machine torn down
+        # against a write that then failed would be rebuilt for nothing.
+        # Ownership: established above, by the scoped get_teammate.
+        _ = Conversations._unsafe_retire_orphaned_homes(orphans, "teammate_rebound", opts)
+
+        broadcast_changed(user_id)
+        {:ok, updated, :updated}
+
+      {:error, _} = err ->
+        err
     end
   end
 
