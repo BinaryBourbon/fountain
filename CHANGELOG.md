@@ -35,6 +35,11 @@ upgrade, is in
 
 ### Fixed
 
+- A resource in a `fountain apply` manifest that raises unexpectedly now fails
+  its own result row instead of the whole request. Before, the exception
+  abandoned a call that had already written the resources above it, so the
+  caller got a 500 and no result rows for writes that had landed (#1636).
+
 - Updating an environment, vault, agent or webhook endpoint with the values it
   already holds no longer records an `*.updated` audit event naming no changed
   fields, and `fountain apply` reports those rows as `unchanged` rather than

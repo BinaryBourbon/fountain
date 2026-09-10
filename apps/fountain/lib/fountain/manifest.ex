@@ -10,12 +10,16 @@ defmodule Fountain.Manifest do
   references resolve against environments in this manifest first, then
   against the tenant's existing environments.
 
-  Application is best-effort per resource, mirroring the CLI's previous
-  one-call-per-resource behavior: a resource that fails validation is
-  reported in its result entry and does not stop the rest of the manifest.
+  Application is best-effort per resource: a document that fails validation,
+  that a context refuses, or that raises is reported in its own result entry
+  and does not stop the rest of the manifest.
   """
 
+  require Logger
+
   alias Fountain.{Agents, Crypto, Environments, Vaults}
+
+  @unexpected "apply failed unexpectedly; see the server log"
 
   @kinds ~w(Environment Vault Agent)
 
@@ -51,21 +55,64 @@ defmodule Fountain.Manifest do
 
     dek = if Enum.any?(envs ++ vaults, &has_secrets?/1), do: load_dek!(user_id)
 
-    {env_results, env_id_by_name} =
-      Enum.map_reduce(envs, %{}, fn res, acc ->
-        case apply_environment(user_id, res, dek, opts) do
-          {result, nil} -> {result, acc}
-          {result, env} -> {result, Map.put(acc, env.name, env.id)}
-        end
-      end)
+    {env_results, env_ids} =
+      reconcile("Environment", envs, fn res -> apply_environment(user_id, res, dek, opts) end)
+
+    {vault_results, _} =
+      reconcile("Vault", vaults, fn res -> apply_vault(user_id, res, dek, opts) end)
+
+    {agent_results, _} =
+      reconcile("Agent", agents, fn res -> apply_agent(user_id, res, env_ids, opts) end)
 
     results =
       env_results ++
-        Enum.map(vaults, &apply_vault(user_id, &1, dek, opts)) ++
-        Enum.map(agents, &apply_agent(user_id, &1, env_id_by_name, opts)) ++
+        vault_results ++
+        agent_results ++
         Enum.map(invalid, &invalid_result/1)
 
     {:ok, results}
+  end
+
+  # One pass over one kind. Every `apply_*` returns `{result, id}`, so the
+  # pass leaves behind the name -> id map the next pass resolves references
+  # against.
+  defp reconcile(kind, resources, fun) do
+    Enum.map_reduce(resources, %{}, fn res, acc ->
+      case guarded(kind, res["name"], fn -> fun.(res) end) do
+        {result, nil} -> {result, acc}
+        {result, id} -> {result, Map.put(acc, res["name"], id)}
+      end
+    end)
+  end
+
+  # Best-effort per resource means per resource. A raise or an exit in one
+  # document's reconcile would abandon a call that has already committed the
+  # documents above it, leaving the caller a 500 and no rows at all, against a
+  # moduledoc promising best effort per resource. Reported as this document's
+  # error instead, and logged, because a crash in a context is still a defect
+  # worth a stacktrace.
+  #
+  # The row says only that the pass failed. The exception text goes to the log
+  # above and no further: this module promises that secret values are never
+  # echoed back, and the environment and vault passes hold plaintext inside
+  # this rescue, where Elixir's own MatchError, CaseClauseError, BadMapError
+  # and ArgumentError messages embed the value they choked on. A caller who
+  # needs the detail has an operator who can read the log.
+  defp guarded(kind, name, fun) do
+    fun.()
+  rescue
+    error ->
+      Logger.error(
+        "apply: #{kind} #{inspect(name)} raised: " <>
+          Exception.format(:error, error, __STACKTRACE__)
+      )
+
+      {result(kind, str(name), :error, %{"base" => [@unexpected]}, []), nil}
+  catch
+    thrown, reason ->
+      Logger.error("apply: #{kind} #{inspect(name)} #{thrown}: #{inspect(reason)}")
+
+      {result(kind, str(name), :error, %{"base" => [@unexpected]}, []), nil}
   end
 
   # Keeps the `via: apply` marker the ApplyController used to attach when it
@@ -93,7 +140,8 @@ defmodule Fountain.Manifest do
           secret_results =
             upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek, secret_opts(opts)))
 
-          {result("Environment", name, verdict(existing, env), nil, secret_results, env.id), env}
+          {result("Environment", name, verdict(existing, env), nil, secret_results, env.id),
+           env.id}
 
         {:error, changeset} ->
           {result("Environment", name, :error, changeset_errors(changeset), []), nil}
@@ -118,13 +166,14 @@ defmodule Fountain.Manifest do
           secret_results =
             upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek, secret_opts(opts)))
 
-          result("Vault", name, verdict(existing, vault), nil, secret_results, vault.id)
+          {result("Vault", name, verdict(existing, vault), nil, secret_results, vault.id),
+           vault.id}
 
         {:error, changeset} ->
-          result("Vault", name, :error, changeset_errors(changeset), [])
+          {result("Vault", name, :error, changeset_errors(changeset), []), nil}
       end
     else
-      {:error, errors} -> result("Vault", name, :error, errors, [])
+      {:error, errors} -> {result("Vault", name, :error, errors, []), nil}
     end
   end
 
@@ -146,7 +195,7 @@ defmodule Fountain.Manifest do
 
           case outcome do
             {:ok, agent} ->
-              result("Agent", name, verdict(existing, agent), nil, [])
+              {result("Agent", name, verdict(existing, agent), nil, [], agent.id), agent.id}
 
             # Moving the agent's environment rebuilds its machine, which a
             # running turn blocks (#1084). Reported against the field that
@@ -159,18 +208,18 @@ defmodule Fountain.Manifest do
                 ]
               }
 
-              result("Agent", name, :error, errors, [])
+              {result("Agent", name, :error, errors, []), nil}
 
             {:error, cs} ->
-              result("Agent", name, :error, changeset_errors(cs), [])
+              {result("Agent", name, :error, changeset_errors(cs), []), nil}
           end
 
         {:error, ref} ->
           errors = %{"environment" => ["environment not found: #{ref}"]}
-          result("Agent", name, :error, errors, [])
+          {result("Agent", name, :error, errors, []), nil}
       end
     else
-      {:error, errors} -> result("Agent", name, :error, errors, [])
+      {:error, errors} -> {result("Agent", name, :error, errors, []), nil}
     end
   end
 
