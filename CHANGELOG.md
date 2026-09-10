@@ -2380,8 +2380,8 @@ upgrade, is in
   `/conversations/:id/logs`), the team page (`/team`) and the onboarding
   wizard (`/onboarding`) are gone from the server. Conversations and the team
   are their own apps on the API —
-  [fountain-conversations](https://github.com/jhgaylor/fountain-conversations)
-  and [fountain-team](https://github.com/jhgaylor/fountain-team) — and what
+  [fountain-conversations](https://github.com/managoat/demos/tree/main/apps/fountain-conversations)
+  and [fountain-team](https://github.com/managoat/demos/tree/main/apps/fountain-team) — and what
   stays here is the operator console: dashboard, agents, environments,
   vaults, audit, API keys, account, admin.
   - The old paths **redirect** (302) to the app that replaced them, or to the

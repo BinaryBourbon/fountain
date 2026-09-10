@@ -88,11 +88,11 @@ Two apps sit on this API today. Both are open source, and neither has a
 backend of its own. They are static files that talk to Fountain, with a key
 the person pasted in, or with a "Sign in with Fountain" token.
 
-- **[fountain-team](https://github.com/jhgaylor/fountain-team)** is the one
+- **[fountain-team](https://github.com/managoat/demos/tree/main/apps/fountain-team)** is the one
   this section walks through. It has the roster, threads, a queue of messages
   for a teammate that is busy, images, notifications, routines, ⌘K search,
   connectors, and a live activity feed. It is a few thousand lines of React.
-- **[fountain-conversations](https://github.com/jhgaylor/fountain-conversations)**
+- **[fountain-conversations](https://github.com/managoat/demos/tree/main/apps/fountain-conversations)**
   takes the same API from the other end, and shows one conversation in detail.
 
 Fountain's own console holds no chat. It manages agents, secrets and audit.

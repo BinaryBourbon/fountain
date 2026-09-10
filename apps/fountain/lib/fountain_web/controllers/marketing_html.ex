@@ -1190,7 +1190,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Briefing Room",
             host: "briefing-room.demo.managoat.com",
             url: "https://briefing-room.demo.managoat.com",
-            source: "https://github.com/managoat/briefing-room",
+            source: "https://github.com/managoat/demos/tree/main/apps/briefing-room",
             blurb:
               "Describe what you need to understand and why. A research agent reads sources on the web and returns a cited brief instead of a chat transcript.",
             shows: "web research that returns a document instead of a chat interface"
@@ -1201,7 +1201,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Table Talk",
             host: "table-talk.demo.managoat.com",
             url: "https://table-talk.demo.managoat.com",
-            source: "https://github.com/managoat/table-talk",
+            source: "https://github.com/managoat/demos/tree/main/apps/table-talk",
             blurb:
               "Drop in a CSV. An analyst runs Python in its sandbox and returns charts with plain-language findings. Keep asking questions of the same data.",
             shows: "sandboxed Python analysis behind a file-upload interface"
@@ -1220,7 +1220,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Repo Sage",
             host: "repo-sage.demo.managoat.com",
             url: "https://repo-sage.demo.managoat.com",
-            source: "https://github.com/managoat/repo-sage",
+            source: "https://github.com/managoat/demos/tree/main/apps/repo-sage",
             blurb:
               "Name any public GitHub repository. An agent clones it in a sandbox and answers with file-and-line citations that link back to the source.",
             shows: "repository checkout, search and file-and-line citations"
@@ -1231,7 +1231,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Mission Control",
             host: "mission-control.demo.managoat.com",
             url: "https://mission-control.demo.managoat.com",
-            source: "https://github.com/managoat/mission-control",
+            source: "https://github.com/managoat/demos/tree/main/apps/mission-control",
             blurb:
               "Describe a goal. A coordinator drafts a plan for your approval, then starts one sandboxed agent per task. Watch them work and receive one combined report.",
             shows: "approval gates, parallel runs, combined event streams and a final report"
@@ -1242,7 +1242,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "DNS Desk",
             host: "dns-desk.demo.managoat.com",
             url: "https://dns-desk.demo.managoat.com/",
-            source: "https://github.com/managoat/dns-desk",
+            source: "https://github.com/managoat/demos/tree/main/apps/dns-desk",
             blurb:
               "A DNS operator for your Cloudflare zones. Ask in plain words, read the plan as a diff, approve. The zone tables stay on screen while the agent does the work.",
             shows: "a reviewable plan and explicit approval before changing a live system"
@@ -1261,7 +1261,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Watchtower",
             host: "watchtower.demo.managoat.com",
             url: "https://watchtower.demo.managoat.com",
-            source: "https://github.com/managoat/watchtower",
+            source: "https://github.com/managoat/demos/tree/main/apps/watchtower",
             blurb:
               "A scheduled SRE agent monitors uptime, latency, TLS expiry and DNS for every site you name. When a tile turns red, ask it to investigate with its tools.",
             shows:
@@ -1273,7 +1273,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Mend",
             host: "mend.demo.managoat.com",
             url: "https://mend.demo.managoat.com",
-            source: "https://github.com/managoat/mend",
+            source: "https://github.com/managoat/demos/tree/main/apps/mend",
             blurb:
               "Mend audits CI, manifests, Dockerfiles and cloud templates. It applies mechanical fixes, explains judgment calls and returns one patch.",
             shows: "a real CLI in the sandbox and ambiguous findings left for review"
@@ -1284,7 +1284,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Rounds",
             host: "rounds.demo.managoat.com",
             url: "https://rounds.demo.managoat.com",
-            source: "https://github.com/managoat/rounds",
+            source: "https://github.com/managoat/demos/tree/main/apps/rounds",
             blurb:
               "Dependabot for infrastructure config. Rounds audits an enrolled repository on a schedule, fixes what it can verify and opens a pull request without repeating closed findings.",
             shows: "an unattended workflow and an agent that knows when to do nothing"
@@ -1302,7 +1302,7 @@ defmodule FountainWeb.MarketingHTML do
             name: "Arena",
             host: "arena.demo.managoat.com",
             url: "https://arena.demo.managoat.com",
-            source: "https://github.com/managoat/arena",
+            source: "https://github.com/managoat/demos/tree/main/apps/arena",
             blurb:
               "Send one prompt to several agents in blind columns. Compare their live responses, latency and token counts, then vote on the result.",
             shows: "parallel conversations, model selection and per-turn usage"

@@ -2,7 +2,7 @@
 
 Everything below is the [TypeScript SDK](../sdk.md) against a live instance,
 in the order you would write it. It follows the sequence that
-[fountain-team](https://github.com/jhgaylor/fountain-team) uses.
+[fountain-team](https://github.com/managoat/demos/tree/main/apps/fountain-team) uses.
 
 That app is older than the SDK, and it calls `fetch` directly. Its
 hand-written API client is roughly what the SDK now wraps.
