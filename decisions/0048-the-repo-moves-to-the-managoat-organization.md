@@ -7,7 +7,7 @@ status: stable
 adr: "0048"
 adr_status: "Accepted"
 date: 2026-09-10
-generated: { by: human:jhgaylor, at: 2026-09-10T05:44:52-04:00 }
+generated: { by: human:jhgaylor, at: 2026-09-10T06:02:22-04:00 }
 stale_after: 2026-10-10
 ---
 
@@ -137,6 +137,22 @@ tag or digest keeps pulling. We stop writing to them; we do not delete them,
 and we do not delete the old repo name's redirect by creating anything at
 `BinaryBourbon/fountain`.
 
+The released tags are **copied** into the new namespace rather than left
+behind, before the path sweep merges. `ci.yml`'s quick-start job fails when
+`.env.compose.example`'s pin has no image, with one exemption — a pin equal to
+`mix.exs`'s version is read as a release bump in flight and skipped — so
+without the copy the documented self-host pin resolves nowhere and the compose
+boot check silently stops running instead of failing.
+
+### 5. 0043's Buzz graduation target becomes `managoat/fountain_buzz`
+
+0043 decision 4 has `fountain_buzz` graduating to `BinaryBourbon/fountain_buzz`
+— **not** `managoat/` — to mark that an extension is not a general-purpose
+library. After this move that contrast names the account the project just left.
+The distinction survives, carried by the name instead of the owner: both live
+in the org, `managoat_*` is a library anyone can depend on, `fountain_*` is
+Fountain's own. Nothing else in 0043 changes, and nothing graduates here.
+
 ## Cutover order
 
 The one sequence that can break production. Steps 2 through 5 are a single
@@ -144,39 +160,49 @@ merge freeze: between the transfer and the home-cloud change, `main` must not
 merge anything, because a build in that gap either fails (before the path
 sweep) or publishes to a path Flux is not watching (after it).
 
-0. **Prepare, before anything moves.** This ADR merged. The path-sweep PR
-   reviewed and ready but unmerged. The home-cloud PR (OCIRepository `url`,
-   `platform/fountain-site`, the Flux webhook receiver) ready but unmerged.
-   Record prod's currently running image digest, and confirm `deploy/k8s`'s pin
-   is a released tag, so nothing *needs* to deploy during the window.
+0. **Prepare, before anything moves.** This ADR merged. The path sweep
+   (#1795) reviewed, green and held as a draft — it carries the whole prose
+   sweep with it, including the runtime strings users read and `CLAUDE.md`'s
+   `gh api /repos/...` recipes. The home-cloud PR
+   (jhgaylor/home-cloud#221: the OCIRepository `url`, the release-asset URLs
+   the runner role and openclaw read, the Flux webhook receiver's note)
+   reviewed and held the same way. Record prod's currently running image
+   digest, and confirm `deploy/k8s`'s pin is a released tag, so nothing
+   *needs* to deploy during the window.
 1. **Freeze `main`.**
 2. **Transfer** `BinaryBourbon/fountain` to `managoat`, and
    `BinaryBourbon/homebrew-tap` to `managoat/homebrew-tap`.
 3. **Verify what survived, before merging anything.** The five repository
-   secrets, the `github-pages` and `pypi` environments, the `Main Protection`
-   ruleset and its bypass actor, the required check names (`CI required`),
-   Actions being enabled at all, and Dependabot. Recreate whatever did not
-   transfer. GitHub's transfer documentation does not promise secrets, so treat
-   every one of them as absent until seen.
-4. **Merge the path sweep.** The first build publishes
+   secrets, the two Actions variables, the `github-pages` and `pypi`
+   environments, the `Main Protection` ruleset — both its bypass actor and its
+   numeric id, which `scripts/ci/require-checks.py` passes as a default — the
+   required check names (`CI required`), Actions being enabled at all, and
+   Dependabot. Recreate whatever did not transfer. GitHub's transfer
+   documentation does not promise secrets, so treat every one of them as
+   absent until seen. Separately: the `BinaryBourbon` **account** is the
+   estate-medic bot identity, and it held Write on this repo by owning it.
+   Grant it Write explicitly, or the bot's fix-PR flow stops working — and
+   keep it non-admin, because "cannot approve its own PR" is what makes that
+   flow safe.
+4. **Copy the released tags into the new namespace.** `v0.16.0` and `latest`
+   from `ghcr.io/binarybourbon/fountain`, so the documented self-host pin
+   resolves and `ci.yml`'s compose boot check keeps running against a real
+   image rather than taking its release-bump exemption.
+5. **Merge the path sweep.** The first build publishes
    `ghcr.io/managoat/fountain:sha-<sha>` and the artifact at the new path. Make
-   both new packages public and link them to the repo, or a self-hoster's pull
-   and Flux's fetch both 401.
-5. **Merge the home-cloud PR** and confirm Flux reconciles the new artifact and
+   both new packages public and link them to the repo: the `OCIRepository`
+   carries no `secretRef`, so Flux's fetch and a self-hoster's pull are both
+   anonymous.
+6. **Merge the home-cloud PR** and confirm Flux reconciles the new artifact and
    the pod pulls the new digest. Until this lands, prod runs the last old
    digest: safe, and not a deploy path.
-6. **Re-point what lives outside both repos.** PyPI trusted publishing names
+7. **Re-point what lives outside both repos.** PyPI trusted publishing names
    the owner, the repo and the workflow filename
    (`python-sdk-publish.yml:5-6`) — update it or the next publish fails, and a
    failed publish is invisible to every gate here. npm provenance verifies
    `package.json`'s repository URL (`sdk-publish.yml:131`). Hex package links.
-   The OIDC allow-claim in `managoat/review-loop-action`. The `--repo` default
-   in `scripts/ci/require-checks.py:43`.
-7. **Unfreeze**, then sweep the prose: 286 references in 126 files, the runtime
-   strings users see (`api_spec.ex`, `llms_controller.ex`, `marketing_html.ex`,
-   `priv/help/*.md`, `priv/external_skills/fountain/SKILL.md`), `CLAUDE.md`'s
-   `gh api /repos/...` recipes, and `scripts/graduate-library.sh`'s commit
-   prose.
+   The OIDC allow-claim in `managoat/review-loop-action`.
+8. **Unfreeze.**
 
 ## Consequences
 
@@ -196,6 +222,13 @@ sweep) or publishes to a path Flux is not watching (after it).
   `apps/fountain/test/fountain_web/live/environments_form_live_test.exs`,
   `sdk/typescript/test/resources.test.ts`, the `cli/` suites). A sweep that
   misses a file fails CI rather than shipping a dead URL.
+- **Two things stay behind with the user account.** The GitHub **Project**
+  (`users/BinaryBourbon/projects/1`, which `.agents/skills/fountain-project-gardener`
+  drives) is owned by the account, not the repo, and no transfer moves it: it
+  has to be rebuilt or copied under the org, and what a copy brings with it is
+  worth checking before assuming the board survives. And the `BinaryBourbon`
+  account keeps its second job as the estate-medic bot identity, which is why
+  it needs Write granted back explicitly (cutover step 3).
 - **Bus factor improves** in the one place it was worst: the repo can have a
   second admin without handing over a personal account.
 - **This ADR amends 0034, it does not contradict it.** The project is still
