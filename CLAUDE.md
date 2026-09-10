@@ -339,7 +339,10 @@ There is no router-level billing gate. The gate that protects spend is
 
 ## Rate limiter
 
-`FountainWeb.Plugs.RateLimit` — ETS-backed, keyed by IP in prod. In tests:
+`FountainWeb.Plugs.RateLimit` — ETS-backed, per node. The `:api` pipeline
+runs it twice: keyed by IP before auth (600/min) and keyed by API key after
+it (`key: :api_key`, 600/min), because every app deployed beside the server
+arrives through one ingress address. In tests:
 
 ```elixir
 # config/test.exs

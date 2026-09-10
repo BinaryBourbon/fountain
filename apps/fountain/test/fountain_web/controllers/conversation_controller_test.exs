@@ -1147,6 +1147,48 @@ defmodule FountainWeb.ConversationControllerTest do
 
       assert json_response(conn, 201)
     end
+
+    test "returns 404 when the header is not a conversation id (#1679)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("x-fountain-parent-conversation-id", "my-other-conversation")
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 404) == %{"error" => "parent_conversation_not_found"}
+    end
+
+    test "returns 404 when the header is a sixteen-character name (#1679)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      # Sixteen bytes is the length `Ecto.UUID.cast/1` reads as a raw uuid, so
+      # this is the value a cast-based guard would have let through.
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("x-fountain-parent-conversation-id", "warehouse worker")
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 404) == %{"error" => "parent_conversation_not_found"}
+    end
   end
 
   describe "POST /api/conversations with environment_id (#783)" do
@@ -1397,6 +1439,50 @@ defmodule FountainWeb.ConversationControllerTest do
         })
 
       assert json_response(conn, 201)
+    end
+  end
+
+  describe "GET /api/conversations?limit=" do
+    test "caps the page at the most recently updated conversations", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      older = insert_conversation(user_id: user.id)
+      newer = insert_conversation(user_id: user.id)
+
+      # updated_at is the sort key; make the order unambiguous.
+      later =
+        DateTime.utc_now()
+        |> DateTime.add(60, :second)
+        |> DateTime.truncate(:second)
+
+      newer |> Ecto.Changeset.change(updated_at: later) |> Fountain.Repo.update!()
+
+      conn = conn |> authed_with_key(raw_key) |> get("/api/conversations?limit=1")
+
+      body = json_response(conn, 200)
+      assert [%{"id" => id}] = body["data"]
+      assert id == newer.id
+      refute id == older.id
+    end
+
+    test "without a limit the whole list comes back, as before", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      for _ <- 1..3, do: insert_conversation(user_id: user.id)
+
+      conn = conn |> authed_with_key(raw_key) |> get("/api/conversations")
+      assert length(json_response(conn, 200)["data"]) == 3
+    end
+
+    test "a limit outside 1..500 is refused, not clamped", %{conn: conn, raw_key: raw_key} do
+      for bad <- ["0", "501", "ten"] do
+        conn = conn |> authed_with_key(raw_key) |> get("/api/conversations?limit=#{bad}")
+        assert conn.status in [400, 422], "limit=#{bad} answered #{conn.status}"
+      end
     end
   end
 end

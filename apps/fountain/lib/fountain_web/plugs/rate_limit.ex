@@ -1,12 +1,21 @@
 defmodule FountainWeb.Plugs.RateLimit do
   @moduledoc """
   Lightweight ETS-based fixed-window rate limiter. Fountain is multi-tenant;
-  per-IP limiting is a coarse abuse control, not a per-tenant quota — the
-  goal is to stop a buggy or hostile client from spamming sprite spawns or
-  saturating the BEAM, not to meter individual tenants.
+  this is a coarse abuse control, not a per-tenant quota — the goal is to
+  stop a buggy or hostile client from spamming sprite spawns or saturating
+  the BEAM, not to meter individual tenants.
 
-  Buckets are per-IP. The ETS table is created in `Fountain.Application`
-  startup. Returns 429 + `Retry-After` (seconds) when the bucket is full.
+  Buckets are per-IP by default, or per API key with `key: :api_key` on a
+  plug that runs after `TenantAPIAuth`. The per-key shape exists because an
+  address is not a client: every app deployed beside the server reaches it
+  through the same ingress, so one address is several clients sharing a
+  bucket (and hiding behind each other), while one client's runaway loop
+  (2026-09-04: 14 list calls a second, for four days) is invisible to a
+  limit that only counts addresses.
+
+  The ETS table is created in `Fountain.Application` startup. Returns 429 +
+  `Retry-After` (seconds) when the bucket is full. The table is per node,
+  so a limit is per replica.
 
   ## Options
 
@@ -14,6 +23,10 @@ defmodule FountainWeb.Plugs.RateLimit do
       counter (e.g. an "api" bucket and a "conversations" bucket).
     * `:max` — maximum requests per window.
     * `:window_ms` — window length in ms (default 60_000).
+    * `:key` — `:ip` (default) or `:api_key`. With `:api_key`, the bucket is
+      the id of `conn.assigns.current_api_key`; a request that reaches the
+      plug without one (the plug runs before auth) falls back to the
+      address, so a misordered pipeline still limits something.
 
   ## Example
 
@@ -67,16 +80,23 @@ defmodule FountainWeb.Plugs.RateLimit do
   end
 
   def init(opts) do
+    key = Keyword.get(opts, :key, :ip)
+
+    if key not in [:ip, :api_key] do
+      raise ArgumentError, "RateLimit key must be :ip or :api_key, got: #{inspect(key)}"
+    end
+
     %{
       bucket: Keyword.fetch!(opts, :bucket),
       max: Keyword.fetch!(opts, :max),
-      window_ms: Keyword.get(opts, :window_ms, 60_000)
+      window_ms: Keyword.get(opts, :window_ms, 60_000),
+      key: key
     }
   end
 
   def call(conn, opts) do
     ensure_table()
-    key = key_for(conn, opts.bucket)
+    key = key_for(conn, opts)
 
     case bump(key, opts) do
       :ok ->
@@ -119,15 +139,38 @@ defmodule FountainWeb.Plugs.RateLimit do
     end
   end
 
-  defp key_for(conn, bucket) do
-    # In test isolation mode, key by the calling process PID rather than IP.
-    # This prevents async ExUnit tests from sharing rate limit counters while
-    # still allowing dedicated rate-limit tests to accumulate counts naturally
-    # (all requests in a test run in the same process).
+  # Exposed for tests: the bucket key a request lands in.
+  @doc false
+  def key_for(conn, %{bucket: bucket, key: :api_key}) do
+    case conn.assigns[:current_api_key] do
+      %{id: id} when is_binary(id) -> isolate_key({bucket, id})
+      _ -> isolate({bucket, format_ip(conn.remote_ip)})
+    end
+  end
+
+  def key_for(conn, %{bucket: bucket}) do
+    isolate({bucket, format_ip(conn.remote_ip)})
+  end
+
+  # In test isolation mode, key by the calling process PID as well. This
+  # prevents async ExUnit tests from sharing rate limit counters while still
+  # allowing dedicated rate-limit tests to accumulate counts naturally (all
+  # requests in a test run in the same process). The PID replaces the
+  # address — every test's conn has the same loopback address — and joins
+  # the key id, so a per-key test still sees two keys as two buckets.
+  defp isolate({bucket, _ip} = key) do
     if Application.get_env(:fountain, :rate_limit_test_isolation, false) do
       {bucket, self()}
     else
-      {bucket, format_ip(conn.remote_ip)}
+      key
+    end
+  end
+
+  defp isolate_key({bucket, id}) do
+    if Application.get_env(:fountain, :rate_limit_test_isolation, false) do
+      {bucket, id, self()}
+    else
+      {bucket, id}
     end
   end
 
