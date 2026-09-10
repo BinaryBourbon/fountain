@@ -3175,7 +3175,15 @@ defmodule FountainWeb.Schemas do
       properties: %{
         kind: %Schema{type: :string},
         name: %Schema{type: :string},
-        action: %Schema{type: :string, enum: ["created", "updated", "error"]},
+        action: %Schema{
+          type: :string,
+          enum: ["created", "updated", "unchanged", "error"],
+          description:
+            "`unchanged` means the record already matched the document, so nothing " <>
+              "was written to it and no audit event was recorded. Inline " <>
+              "`spec.secrets` are re-encrypted on every apply and still report " <>
+              "`upserted` under `secrets`."
+        },
         errors: %Schema{type: :object, additionalProperties: true, nullable: true},
         secrets: %Schema{type: :array, items: ApplySecretResult}
       },

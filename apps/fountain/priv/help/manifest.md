@@ -71,14 +71,14 @@ fountain apply -f ./fountain-specs/     # directory: walks **/*.{yml,yaml}
 
 Directory mode walks recursively. Any YAML document carrying both `apiVersion` and `kind` is treated as a resource; anything else (a doc without front-matter, an unrelated `.yaml` config) is silently ignored. So `fountain-specs/agents/*.yml`, `fountain-specs/environments/*.yml`, plus an unrelated `.github/workflows/ci.yml` in the same tree all coexist cleanly. Files are processed in alphabetical order; if you want strict ordering for any reason, prefix names like `10-envs.yml` / `20-agents.yml` (though reconciliation order is fixed internally — envs first, then vaults, then agents — regardless).
 
-Output uses `+` for create, `~` for update, one line per resource:
+Output uses `+` for create, `~` for update, `=` for a resource that already matched, one line per resource:
 
 ```
 env    +  my-project
 vault  +  alice
   secret  ~  alice/GITHUB_TOKEN
   secret  ~  alice/NPM_TOKEN
-agent  ~  researcher
+agent  =  researcher
 ```
 
 Errors per-resource go to stderr but don't stop the run; other resources still apply.
@@ -87,7 +87,7 @@ Under the hood the CLI compiles the whole manifest into one document and sends i
 
 ## Idempotency
 
-Re-applying the same file is a no-op (every resource shows `~` because existing resources are always re-written, but the spec doesn't change). Useful for CI: keep `fountain.yml` in source control, run `fountain apply -f fountain.yml` from your deploy pipeline.
+Re-applying the same file is a no-op, and says so: every resource shows `=` (`unchanged`) because nothing was written to it. Inline `spec.secrets` are the exception — they are re-encrypted on every apply, so they keep showing `~` under a resource that shows `=`. Useful for CI: keep `fountain.yml` in source control, run `fountain apply -f fountain.yml` from your deploy pipeline.
 
 ## Apply-time secret resolution (so you can commit `fountain.yml`)
 

@@ -1,7 +1,7 @@
 defmodule Fountain.ManifestTest do
   use Fountain.DataCase, async: true
 
-  alias Fountain.{Agents, Crypto, Environments, Manifest, Vaults}
+  alias Fountain.{Agents, Audit, Crypto, Environments, Manifest, Vaults}
 
   setup do
     # No starter agent (ADR 0038): every assertion here counts what the
@@ -158,7 +158,7 @@ defmodule Fountain.ManifestTest do
   end
 
   describe "apply_manifest/2 updates" do
-    test "re-applying the same manifest is an idempotent update", %{user: user} do
+    test "re-applying the same manifest writes nothing and says so", %{user: user} do
       resources = [
         env_resource("proj", %{"secrets" => %{"TOKEN" => "t0"}}),
         agent_resource("researcher", %{"environment" => "proj"})
@@ -167,14 +167,44 @@ defmodule Fountain.ManifestTest do
       {:ok, _} = Manifest.apply_manifest(user.id, resources)
       {:ok, results} = Manifest.apply_manifest(user.id, resources)
 
+      # The secret is re-encrypted on every apply, so it keeps reporting
+      # `upserted` while the row it belongs to reports `unchanged`.
       assert [
-               %{kind: "Environment", action: :updated, secrets: [%{action: :upserted}]},
-               %{kind: "Agent", action: :updated}
+               %{kind: "Environment", action: :unchanged, secrets: [%{action: :upserted}]},
+               %{kind: "Agent", action: :unchanged}
              ] = results
 
       assert length(Environments.list_environments(user.id)) == 1
       assert length(Agents.list_agents(user.id, [])) == 1
     end
+
+    test "a changed spec still reports updated", %{user: user} do
+      {:ok, _} = Manifest.apply_manifest(user.id, [env_resource("proj")])
+
+      {:ok, [%{kind: "Environment", action: :updated}]} =
+        Manifest.apply_manifest(user.id, [env_resource("proj", %{"setup_script" => "echo hi"})])
+
+      assert Environments.get_environment_by_name("proj", user.id).setup_script == "echo hi"
+    end
+
+    # CLAUDE.md: "Only record what happened. ... a no-op sync records nothing."
+    # An apply that writes nothing must leave the trail exactly as it found it,
+    # or every CI run adds a row per resource saying a record nobody touched
+    # was updated.
+    test "an identical re-apply writes no audit rows at all", %{user: user} do
+      resources = [env_resource("proj"), agent_resource("researcher", %{"environment" => "proj"})]
+
+      {:ok, first} = Manifest.apply_manifest(user.id, resources)
+      assert Enum.all?(first, &(&1.action == :created))
+      before = actions_for(user)
+
+      {:ok, second} = Manifest.apply_manifest(user.id, resources)
+      assert Enum.all?(second, &(&1.action == :unchanged))
+      assert actions_for(user) == before
+    end
+
+    defp actions_for(user),
+      do: user.id |> Audit.list_recent_for_user(500) |> Enum.map(& &1.action)
 
     test "agent can reference a pre-existing environment not in the manifest", %{user: user} do
       env = insert_env(user_id: user.id, name: "existing-env")

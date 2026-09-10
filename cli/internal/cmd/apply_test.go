@@ -75,6 +75,7 @@ func TestRenderApplyResultsFailureDetection(t *testing.T) {
 		{"all ok", []applyResult{
 			{Kind: "Environment", Name: "e", Action: "created"},
 			{Kind: "Agent", Name: "a", Action: "updated"},
+			{Kind: "Vault", Name: "v", Action: "unchanged"},
 		}, false},
 		{"resource error", []applyResult{
 			{Kind: "Agent", Name: "a", Action: "error", Errors: map[string]any{"model": []any{"can't be blank"}}},

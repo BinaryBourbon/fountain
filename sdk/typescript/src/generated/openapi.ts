@@ -2799,8 +2799,11 @@ export interface components {
         };
         /** ApplyResult */
         ApplyResult: {
-            /** @enum {string} */
-            action: "created" | "updated" | "error";
+            /**
+             * @description `unchanged` means the record already matched the document, so nothing was written to it and no audit event was recorded. Inline `spec.secrets` are re-encrypted on every apply and still report `upserted` under `secrets`.
+             * @enum {string}
+             */
+            action: "created" | "updated" | "unchanged" | "error";
             errors?: {
                 [key: string]: unknown;
             } | null;
