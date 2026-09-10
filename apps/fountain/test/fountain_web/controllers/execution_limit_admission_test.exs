@@ -2,9 +2,11 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
   use FountainWeb.ConnCase, async: false
   use Mimic
 
+  import Ecto.Query, only: [from: 2]
+
   alias Fountain.{Conversations, Repo}
   alias Fountain.Accounts.User
-  alias Fountain.Conversations.{Conversation, Sandbox}
+  alias Fountain.Conversations.{Conversation, ExecutionAllowance, Sandbox}
 
   setup do
     previous = Application.fetch_env(:fountain, :execution_limit_ceiling)
@@ -272,6 +274,103 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
     end
 
     refute_received :worker_started
+  end
+
+  test "fresh allowance is committed before worker startup and its initial prompt", ctx do
+    owner = self()
+
+    stub(Horde.DynamicSupervisor, :start_child, fn _, {_, opts} ->
+      id = Keyword.fetch!(opts, :conversation_id)
+      assert Repo.get!(ExecutionAllowance, id).limits == %{}
+      refute Repo.in_transaction?()
+      send(owner, {:admitted, id})
+      {:ok, owner}
+    end)
+
+    stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn pid,
+                                                                              prompt,
+                                                                              images ->
+      assert pid == owner
+      assert prompt == "check the branch"
+      assert images == []
+      assert_received {:admitted, id}
+      assert Repo.get!(ExecutionAllowance, id).limits == %{}
+      send(owner, {:prompt_queued, id})
+      :ok
+    end)
+
+    params = Map.put(attrs(ctx, :fresh), "prompt", "check the branch")
+    assert %{"data" => %{"id" => id}} = request(ctx, params) |> json_response(201)
+    assert_received {:prompt_queued, ^id}
+    assert creation_audits(ctx.user.id) == 2
+  end
+
+  test "failed fresh allowance insert rolls back the sandbox and conversation", ctx do
+    before_counts = counts()
+
+    stub(ExecutionAllowance, :new_changeset, fn id, limits ->
+      Mimic.call_original(ExecutionAllowance, :new_changeset, [id, limits])
+      |> Ecto.Changeset.add_error(:limits, "fixture rejection")
+    end)
+
+    assert request(ctx, attrs(ctx, :fresh)) |> json_response(422)
+    assert counts() == before_counts
+    assert Repo.aggregate(ExecutionAllowance, :count) == 0
+    assert creation_audits(ctx.user.id) == 0
+    refute_received :worker_started
+  end
+
+  test "failed fresh conversation validation rolls back its sandbox reservation", ctx do
+    before_counts = counts()
+
+    params =
+      attrs(ctx, :fresh)
+      |> Map.put("user_id", ctx.user.id)
+      |> Map.put("title", %{})
+
+    assert {:error, %Ecto.Changeset{}} = Conversations.start_conversation(params)
+    assert counts() == before_counts
+    assert creation_audits(ctx.user.id) == 0
+    refute_received :worker_started
+  end
+
+  test "fresh admission rechecks a ceiling changed after early preflight", ctx do
+    before_counts = counts()
+
+    stub(Fountain.RuntimeDispatch, :for_agent, fn agent ->
+      save_ceiling(ctx.user, %{max_model_turns: 2})
+      Mimic.call_original(Fountain.RuntimeDispatch, :for_agent, [agent])
+    end)
+
+    assert %{"error" => "execution_limits_unsupported"} =
+             request(ctx, attrs(ctx, :fresh)) |> json_response(422)
+
+    assert counts() == before_counts
+    assert creation_audits(ctx.user.id) == 0
+    refute_received :worker_started
+  end
+
+  test "worker startup failure retains the admitted allowance with its failed rows", ctx do
+    stub(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:error, :fixture_rejection} end)
+
+    assert %{"data" => %{"id" => id, "status" => "failed"}} =
+             request(ctx, attrs(ctx, :fresh)) |> json_response(201)
+
+    conv = Repo.get!(Conversation, id)
+    assert Repo.get!(Sandbox, conv.sandbox_id).status == "failed"
+    assert Repo.get!(ExecutionAllowance, id).limits == %{}
+    assert creation_audits(ctx.user.id) == 2
+  end
+
+  defp creation_audits(user_id) do
+    Repo.aggregate(
+      from(e in Fountain.Audit.Event,
+        where:
+          e.user_id == ^user_id and
+            e.action in ["conversation.created", "conversation.execution_allowance_created"]
+      ),
+      :count
+    )
   end
 
   defp save_ceiling(user, limits),

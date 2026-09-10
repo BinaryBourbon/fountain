@@ -2202,12 +2202,9 @@ defmodule Fountain.Conversations do
          :new <- home_or_new(mode, user_id, agent, env_id || agent.environment_id, vault_id),
          {:ok, provider} <- resolve_sandbox_provider(agent),
          {:ok, sprite_name} <- mint_sprite_name(provider, user_id, attrs["sprite_name"]),
-         # Quota check + row insert under one per-user advisory lock: checked
-         # separately they are check-then-insert, and N concurrent requests at
-         # the cap could each pass and provision N-1 sprites over it (#330).
-         {:ok, sandbox} <-
-           Fountain.Quotas.with_sandbox_reservation(user_id, fn ->
-             create_sandbox(%{
+         {:ok, {sandbox, conv, allowance}} <-
+           reserve_initial_conversation(
+             %{
                environment_id: env_id || agent.environment_id,
                # The identity the disk is built from (ADR 0023); an attach
                # later must name the same three.
@@ -2218,27 +2215,29 @@ defmodule Fountain.Conversations do
                status: "pending",
                provider: Atom.to_string(provider),
                user_id: user_id
-             })
-           end),
-         {:ok, conv} <-
-           create_conversation(%{
-             sandbox_id: sandbox.id,
-             agent_id: agent.id,
-             # Ownership: agent came from the scoped get_agent above.
-             agent_version_id: Agents._unsafe_current_version_id(agent.id),
-             vault_id: vault_id,
-             environment_id: env_id,
-             user_id: user_id,
-             runtime: agent.runtime,
-             status: "pending",
-             source: attrs["source"] || "api",
-             parent_conversation_id: parent_id,
-             channel_id: attrs["channel_id"],
-             title: attrs["title"],
-             sandbox_api_access: api_access,
-             permission_policy: perm_policy,
-             caller_tools: attrs["caller_tools"] || []
-           }) do
+             },
+             %{
+               agent_id: agent.id,
+               # Ownership: agent came from the scoped get_agent above.
+               agent_version_id: Agents._unsafe_current_version_id(agent.id),
+               vault_id: vault_id,
+               environment_id: env_id,
+               user_id: user_id,
+               runtime: agent.runtime,
+               status: "pending",
+               source: attrs["source"] || "api",
+               parent_conversation_id: parent_id,
+               channel_id: attrs["channel_id"],
+               title: attrs["title"],
+               sandbox_api_access: api_access,
+               permission_policy: perm_policy,
+               caller_tools: attrs["caller_tools"] || []
+             },
+             attrs["execution_limits"]
+           ) do
+      Fountain.Activation.conversation_created(conv)
+      record_execution_allowance_created(allowance, user_id, opts)
+
       # Recorded here rather than in either branch below: both of them return
       # {:ok, conv}. The row exists and the sandbox reservation is spent even
       # when the server fails to start, so "a conversation was created" is
@@ -2338,6 +2337,39 @@ defmodule Fountain.Conversations do
       {:error, _} = err ->
         err
     end
+  end
+
+  # Keep fleet -> user advisory lock order, then stabilize ownership and
+  # recheck policy. A failed conversation or allowance must release the entire
+  # reservation. Analytics, audit, worker startup and prompts run after commit.
+  defp reserve_initial_conversation(sandbox_attrs, conversation_attrs, request) do
+    Fountain.Quotas.with_sandbox_reservation(conversation_attrs.user_id, fn ->
+      Repo.one(
+        from u in Fountain.Accounts.User,
+          where: u.id == ^conversation_attrs.user_id,
+          select: u.id,
+          lock: "FOR SHARE"
+      ) || Repo.rollback(:not_found)
+
+      Repo.one(
+        from a in Agents.Agent,
+          where:
+            a.id == ^conversation_attrs.agent_id and a.user_id == ^conversation_attrs.user_id,
+          select: a.id,
+          lock: "FOR SHARE"
+      ) || Repo.rollback(:not_found)
+
+      with {:ok, limits} <- resolve_admission_limits(conversation_attrs.user_id, request),
+           {:ok, sandbox} <- create_sandbox(sandbox_attrs),
+           {:ok, conv} <-
+             %Conversation{}
+             |> Conversation.changeset(Map.put(conversation_attrs, :sandbox_id, sandbox.id))
+             |> Repo.insert(),
+           {:ok, allowance} <-
+             conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
+        {:ok, {sandbox, conv, allowance}}
+      end
+    end)
   end
 
   defp resolve_sandbox_api_access(access, _mode) when access in [nil, "owner"],

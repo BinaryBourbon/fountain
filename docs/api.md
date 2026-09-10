@@ -176,9 +176,10 @@ empty `execution_limits` do not remove it. Wider requests return
 These preflight checks cover fresh launches, sandbox attachments and channel
 resumes before worker start or channel changes. This is not an atomic reservation
 against later policy changes. Keep host and account ceilings empty until later-turn and
-recovery checks and runtime enforcement are integrated. Attachments save their
-initial allowance before prompt delivery. Fresh worker launches still do not
-save an allowance.
+recovery checks and runtime enforcement are integrated. Fresh launches and
+attachments save their initial allowance with the conversation before worker
+startup or prompt delivery. Fresh launches also reserve the sandbox in that
+transaction; a failed insert leaves no sandbox or conversation.
 
 ```bash
 curl --fail-with-body \

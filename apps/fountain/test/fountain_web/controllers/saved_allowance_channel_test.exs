@@ -133,7 +133,8 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
 
     refute fresh.id == conv.id
     assert Repo.reload!(conv).channel_id == nil
-    assert Repo.get_by(ExecutionAllowance, conversation_id: fresh.id) == nil
+    assert Repo.get!(ExecutionAllowance, fresh.id).limits == %{}
+    assert Repo.get!(ExecutionAllowance, conv.id).limits == %{"max_model_turns" => 2}
     assert_received :worker_started
   end
 

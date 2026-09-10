@@ -506,10 +506,17 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
 
   # The account ceiling is re-resolved inside the admission transaction, so a
   # change another connection commits after the early preflight still refuses.
-  # The `users` row is read unlocked on purpose (locking it would park
-  # admission behind a credit posting), so this asserts the recheck reads
-  # current committed state — not a lock ordering.
-  test "attachment honours a ceiling committed after its preflight" do
+  # Both `users` and `agents` are read unlocked on purpose — inside
+  # `with_sandbox_reservation/3` a row lock would be held under the global
+  # fleet lock — so this asserts the recheck reads current committed state,
+  # not a lock ordering.
+  for path <- [:attach, :fresh] do
+    test "#{path} honours a ceiling committed after its preflight" do
+      admission_race(unquote(path))
+    end
+  end
+
+  defp admission_race(path) do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
       user =
         Repo.insert!(%Fountain.Accounts.User{
@@ -535,6 +542,11 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
       try do
         admitting =
           independent_writer(fn ->
+            Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _, _ ->
+              send(owner, :unexpected_worker_started)
+              {:error, :fixture_rejection}
+            end)
+
             # Runs immediately after the early preflight read the ceiling and
             # allowed the launch. Hold here until the new ceiling is committed.
             Mimic.stub(Fountain.RuntimeDispatch, :for_agent, fn agent ->
@@ -549,11 +561,15 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
               Mimic.call_original(Fountain.RuntimeDispatch, :for_agent, [agent])
             end)
 
-            Conversations.start_conversation(%{
-              "user_id" => user.id,
-              "agent_id" => agent.id,
-              "sandbox_id" => sandbox.id
-            })
+            params = %{"user_id" => user.id, "agent_id" => agent.id}
+
+            params =
+              case path do
+                :attach -> Map.put(params, "sandbox_id", sandbox.id)
+                :fresh -> Map.put(params, "sandbox_mode", "ephemeral")
+              end
+
+            Conversations.start_conversation(params)
           end)
 
         try do
@@ -586,14 +602,16 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
                          ]
                  )
 
-          assert Repo.reload!(sandbox) == sandbox
+          assert Repo.all(from s in Sandbox, where: s.user_id == ^user.id) == [sandbox]
+          refute_received :unexpected_worker_started
         after
           Task.shutdown(admitting, :brutal_kill)
         end
       after
         Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
+        sandboxes = Repo.all(from s in Sandbox, where: s.user_id == ^user.id)
         Repo.delete!(user)
-        Repo.get!(Sandbox, sandbox.id) |> Repo.delete!()
+        for saved <- sandboxes, do: Repo.delete!(saved)
       end
     end)
   end
