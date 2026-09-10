@@ -402,7 +402,7 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
 
   alias Fountain.Repo
   alias Fountain.Conversations
-  alias Fountain.Conversations.Sandbox
+  alias Fountain.Conversations.{Conversation, Sandbox}
   alias Fountain.Conversations.ExecutionAllowance, as: Allowance
   import Fountain.DataCase, only: [errors_on: 1]
   import Fountain.Factory, only: [insert_conversation: 1]
@@ -620,6 +620,115 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
     test "concurrent #{path} rotations retain only the winner after a PostgreSQL lock wait" do
       rotation_race(unquote(path))
     end
+  end
+
+  # The fresh rotation unbinds the old conversation inside
+  # `with_sandbox_reservation/3`, which holds the global fleet advisory lock.
+  # The row it needs is the one turn admission takes `FOR UPDATE`, so the wait
+  # is bounded: a rotation that cannot have it is refused promptly rather than
+  # holding every other tenant's provisioning behind it.
+  test "a rotation that cannot take the old binding is refused, not left waiting" do
+    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
+      user =
+        Repo.insert!(%Fountain.Accounts.User{
+          email: "rotation-busy-#{Ecto.UUID.generate()}@example.test",
+          credit_balance_cents: 500,
+          sandbox_limit_override: 20
+        })
+
+      env = Fountain.Factory.insert_env(user_id: user.id)
+
+      agent =
+        Fountain.Factory.insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
+
+      sandbox =
+        Fountain.Factory.insert_sandbox(
+          user_id: user.id,
+          agent_id: agent.id,
+          environment_id: env.id,
+          status: "ready"
+        )
+
+      previous =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox: sandbox,
+          status: "idle",
+          channel_id: "rotation"
+        )
+
+      owner = self()
+
+      params = %{
+        "user_id" => user.id,
+        "agent_id" => agent.id,
+        "channel_id" => "rotation",
+        "fresh" => true,
+        "sandbox_mode" => "ephemeral"
+      }
+
+      try do
+        # Stands in for a turn being admitted on the conversation being rotated.
+        holder =
+          independent_writer(fn ->
+            Repo.transaction(fn ->
+              Repo.one(
+                from c in Conversation, where: c.id == ^previous.id, lock: "FOR NO KEY UPDATE"
+              )
+
+              send(owner, :held)
+
+              receive do
+                :release -> :ok
+              after
+                15_000 -> raise "hold barrier timed out"
+              end
+            end)
+          end)
+
+        try do
+          assert_receive :held, 5_000
+
+          rotating =
+            independent_writer(fn ->
+              Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _, _ ->
+                send(owner, :unexpected_worker_started)
+                {:error, :fixture_rejection}
+              end)
+
+              started = System.monotonic_time(:millisecond)
+              result = Conversations.start_or_resume_conversation(params)
+              {result, System.monotonic_time(:millisecond) - started}
+            end)
+
+          assert {{:error, changeset}, elapsed} = Task.await(rotating, 10_000)
+
+          assert errors_on(changeset).channel_id == [
+                   "the previous conversation is busy; retry the rotation"
+                 ]
+
+          # The point of the bound: it gave up while the holder was still
+          # holding, rather than waiting the lock out under the fleet lock.
+          assert elapsed < 5_000
+
+          assert Repo.reload!(previous).channel_id == "rotation"
+          assert Conversations.channel_conversation(params).id == previous.id
+          refute_received :unexpected_worker_started
+        after
+          # Let it commit and drop the row lock before cleanup runs: a
+          # brutal_kill here leaves the backend holding `previous` long enough
+          # for the cascading delete below to fail, and the fixtures leak.
+          send(holder.pid, :release)
+          Task.yield(holder, 5_000) || Task.shutdown(holder, :brutal_kill)
+        end
+      after
+        Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
+        sandboxes = Repo.all(from s in Sandbox, where: s.user_id == ^user.id)
+        Repo.delete!(user)
+        for saved <- sandboxes, do: Repo.delete!(saved)
+      end
+    end)
   end
 
   defp rotation_race(path) do

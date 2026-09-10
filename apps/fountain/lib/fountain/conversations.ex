@@ -2108,11 +2108,11 @@ defmodule Fountain.Conversations do
           %Conversation{channel_id: channel} = conv when channel == attrs.channel_id ->
             with {:ok, _} <- unbind_channel(conv), do: :ok
 
+          :busy ->
+            {:error, rotation_conflict("the previous conversation is busy; retry the rotation")}
+
           _ ->
-            {:error,
-             %Conversation{}
-             |> Ecto.Changeset.change()
-             |> Ecto.Changeset.add_error(:channel_id, "binding changed; retry the rotation")}
+            {:error, rotation_conflict("binding changed; retry the rotation")}
         end
     end
   end
@@ -2121,34 +2121,90 @@ defmodule Fountain.Conversations do
   # Restore only while this replacement still owns the binding; a later
   # rotation must win over this failure. Keep the old -> new row lock order.
   defp restore_rotated_channel(conv, opts) do
-    if id = Keyword.get(opts, :rotate_from) do
-      Repo.transaction(fn ->
-        previous = lock_rotation_conversation(id, conv)
-        replacement = lock_rotation_conversation(conv.id, conv)
-
-        case {previous, replacement} do
-          {%Conversation{channel_id: nil} = previous,
-           %Conversation{channel_id: channel} = replacement}
-          when channel == conv.channel_id ->
-            replacement |> Ecto.Changeset.change(channel_id: nil) |> Repo.update!()
-            previous |> Ecto.Changeset.change(channel_id: channel) |> Repo.update!()
-
-          _ ->
-            :ok
-        end
-      end)
+    case Keyword.get(opts, :rotate_from) do
+      nil -> :ok
+      id -> report_restore(conv, id, attempt_restore(conv, id))
     end
   end
 
+  defp attempt_restore(conv, id) do
+    Repo.transaction(fn ->
+      with %Conversation{channel_id: nil} = previous <- lock_rotation_conversation(id, conv),
+           %Conversation{channel_id: channel} = replacement
+           when channel == conv.channel_id <- lock_rotation_conversation(conv.id, conv) do
+        replacement |> Ecto.Changeset.change(channel_id: nil) |> Repo.update!()
+        previous |> Ecto.Changeset.change(channel_id: channel) |> Repo.update!()
+        :restored
+      else
+        # Contention on a row this compensation cannot wait for.
+        :busy -> Repo.rollback(:busy)
+        # A newer rotation already owns the binding, or the rows moved. That
+        # rotation must win over this failure, so leaving them alone is right.
+        _ -> :superseded
+      end
+    end)
+  rescue
+    e -> {:error, e}
+  end
+
+  defp report_restore(_conv, _id, {:ok, _outcome}), do: :ok
+
+  # A compensation, not a rollback: nothing retries it and no caller can act on
+  # it. Failing silently leaves a channel bound to nothing, which is the bug
+  # this path exists to prevent wearing a different hat, so say so.
+  defp report_restore(conv, id, other) do
+    Logger.warning(
+      "conv #{conv.id}: could not restore channel #{inspect(conv.channel_id)} to conv #{id} " <>
+        "after a failed rotation: #{inspect(other)}"
+    )
+
+    :ok
+  end
+
+  defp rotation_conflict(message) do
+    %Conversation{}
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.add_error(:channel_id, message)
+  end
+
+  # How long a rotation may wait for the row it is replacing. On the fresh path
+  # this runs inside `with_sandbox_reservation/3`, which holds the global fleet
+  # advisory lock, and the row it wants is the one `_unsafe_create_turn_on_sandbox/3`
+  # takes `FOR UPDATE` — so an unbounded wait would let one busy channel stall
+  # provisioning for every tenant. Turn admission holds that row for a handful
+  # of local queries, so this is orders of magnitude more than it ever
+  # legitimately needs, and exceeding it means contention worth reporting
+  # rather than waiting out.
+  @rotation_lock_timeout_ms 250
+
   defp lock_rotation_conversation(id, attrs) do
     # Channel/ownership writes must serialize, but FK references may proceed.
-    from(c in Conversation,
-      where: c.id == ^id and c.user_id == ^attrs.user_id and c.agent_id == ^attrs.agent_id,
-      lock: "FOR NO KEY UPDATE"
-    )
-    |> where_vault(attrs.vault_id)
-    |> where_environment(attrs.environment_id)
-    |> Repo.one()
+    #
+    # The bound is scoped to this read and handed straight back: `SET LOCAL`
+    # lasts for the whole transaction, and admission goes on to insert rows
+    # whose foreign keys take `KEY SHARE` on `users` — which a credit posting's
+    # `FOR UPDATE` conflicts with. Leaving 250ms in force over those would turn
+    # a slow billing write into an unrescued error on a path that has none.
+    Repo.query!("SET LOCAL lock_timeout = '#{@rotation_lock_timeout_ms}ms'")
+
+    conversation =
+      from(c in Conversation,
+        where: c.id == ^id and c.user_id == ^attrs.user_id and c.agent_id == ^attrs.agent_id,
+        lock: "FOR NO KEY UPDATE"
+      )
+      |> where_vault(attrs.vault_id)
+      |> where_environment(attrs.environment_id)
+      |> Repo.one()
+
+    Repo.query!("SET LOCAL lock_timeout = DEFAULT")
+    conversation
+  rescue
+    e in Postgrex.Error ->
+      if e.postgres[:code] == :lock_not_available do
+        :busy
+      else
+        reraise(e, __STACKTRACE__)
+      end
   end
 
   # The newest conversation still worth resuming for this binding. `vault_id`
