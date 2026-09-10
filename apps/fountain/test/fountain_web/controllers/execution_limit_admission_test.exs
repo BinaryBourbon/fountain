@@ -1,5 +1,5 @@
 defmodule FountainWeb.ExecutionLimitAdmissionTest do
-  use FountainWeb.ConnCase, async: true
+  use FountainWeb.ConnCase, async: false
   use Mimic
 
   alias Fountain.{Conversations, Repo}
@@ -7,6 +7,16 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
   alias Fountain.Conversations.{Conversation, Sandbox}
 
   setup do
+    previous = Application.fetch_env(:fountain, :execution_limit_ceiling)
+    Application.put_env(:fountain, :execution_limit_ceiling, %{})
+
+    on_exit(fn ->
+      case previous do
+        {:ok, value} -> Application.put_env(:fountain, :execution_limit_ceiling, value)
+        :error -> Application.delete_env(:fountain, :execution_limit_ceiling)
+      end
+    end)
+
     user = insert_active_user()
     {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, 20)
     {_key, raw_key} = insert_api_key(user)
@@ -204,6 +214,63 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
     foreign = insert_agent(user_id: other.id)
     params = %{"agent_id" => foreign.id}
     assert %{"error" => "not_found"} = request(ctx, params) |> json_response(404)
+    refute_received :worker_started
+  end
+
+  for path <- [:fresh, :attach, :resume, :rotate] do
+    test "#{path} inherits host controls before any launch effects", ctx do
+      Application.put_env(:fountain, :execution_limit_ceiling, %{"wall_time_seconds" => 30})
+      before_counts = counts()
+
+      for limit <- [:omitted, nil, %{}] do
+        params = Map.put(attrs(ctx, unquote(path)), "execution_limit_ceiling", %{})
+
+        params =
+          if limit == :omitted, do: params, else: Map.put(params, "execution_limits", limit)
+
+        assert %{"error" => "execution_limits_unsupported", "message" => message} =
+                 request(ctx, params) |> json_response(422)
+
+        assert message =~ "wall_time_seconds"
+        assert counts() == before_counts
+        assert Repo.reload!(ctx.conv).channel_id == "limits"
+        refute_received :worker_started
+      end
+    end
+  end
+
+  test "launch requests cannot widen the stricter host or account ceiling", ctx do
+    for {host, account} <- [{2, 10}, {10, 2}] do
+      Application.put_env(:fountain, :execution_limit_ceiling, %{"max_model_turns" => host})
+      save_ceiling(ctx.user, %{max_model_turns: account})
+      params = Map.put(attrs(ctx, :fresh), "execution_limits", %{"max_model_turns" => 3})
+      assert %{"error" => "execution_limits_widen"} = request(ctx, params) |> json_response(422)
+    end
+
+    refute_received :worker_started
+  end
+
+  test "host and account controls are both inherited", ctx do
+    Application.put_env(:fountain, :execution_limit_ceiling, %{"max_estimated_cost_usd" => 0.25})
+    save_ceiling(ctx.user, %{max_model_turns: 2})
+
+    assert %{"error" => "execution_limits_unsupported", "message" => message} =
+             request(ctx, attrs(ctx, :resume)) |> json_response(422)
+
+    assert message =~ "max_model_turns"
+    assert message =~ "max_estimated_cost_usd"
+    refute_received :worker_started
+  end
+
+  test "invalid host config fails without revealing its contents", ctx do
+    for policy <- [nil, [], %{"private-field" => "private-value"}] do
+      Application.put_env(:fountain, :execution_limit_ceiling, policy)
+      response = request(ctx, attrs(ctx, :fresh)) |> json_response(422)
+      assert response["error"] == "execution_limits_invalid"
+      refute Jason.encode!(response) =~ "private-value"
+      refute Jason.encode!(response) =~ "private-field"
+    end
+
     refute_received :worker_started
   end
 
