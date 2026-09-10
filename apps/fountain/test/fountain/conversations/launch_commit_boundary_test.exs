@@ -1,0 +1,58 @@
+defmodule Fountain.Conversations.LaunchCommitBoundaryTest do
+  use Fountain.DataCase, async: true
+  use Mimic
+
+  alias Fountain.Conversations
+  alias Fountain.Conversations.{Conversation, Sandbox}
+
+  setup do
+    user = insert_active_user()
+    env = insert_env(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
+
+    sandbox =
+      insert_sandbox(
+        user_id: user.id,
+        status: "ready",
+        agent_id: agent.id,
+        environment_id: env.id
+      )
+
+    conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+    {:ok, user: user, agent: agent, sandbox: sandbox, conv: conv}
+  end
+
+  for path <- [:create, :attach, :wake] do
+    @tag path: path
+    test "#{path} refuses an enclosing transaction before external work or row changes", ctx do
+      reject(Horde.DynamicSupervisor, :start_child, 2)
+      reject(Managoat.Sandbox.Sprites, :get, 1)
+      reject(Managoat.Sandbox.Sprites, :create, 2)
+      reject(Managoat.Sandbox.Sprites, :resume, 1)
+      counts = {Repo.aggregate(Conversation, :count), Repo.aggregate(Sandbox, :count)}
+      attrs = %{"user_id" => ctx.user.id, "agent_id" => ctx.agent.id, "prompt" => "hello"}
+
+      # The caller deliberately commits. Refusal must leave no pending rows,
+      # even when the caller does not turn the returned error into a rollback.
+      assert {:ok, {:error, :provider_transaction_open}} =
+               Repo.transaction(fn ->
+                 case ctx.path do
+                   :create ->
+                     Conversations.start_conversation(attrs)
+
+                   :attach ->
+                     Conversations.start_conversation(
+                       Map.put(attrs, "sandbox_id", ctx.sandbox.id)
+                     )
+
+                   :wake ->
+                     Conversations.wake_conversation(ctx.conv.id, "hello")
+                 end
+               end)
+
+      assert counts == {Repo.aggregate(Conversation, :count), Repo.aggregate(Sandbox, :count)}
+      assert Repo.reload!(ctx.sandbox).status == "ready"
+      assert Repo.reload!(ctx.conv).status == "idle"
+    end
+  end
+end
