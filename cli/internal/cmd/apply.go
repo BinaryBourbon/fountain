@@ -42,7 +42,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 		Fatal(err.Error())
 	}
 
-	envs, vaults, agents, unknown := groupDocs(docs)
+	grouped, unknown := groupDocs(docs)
 	if len(unknown) > 0 {
 		names := make([]string, len(unknown))
 		for i, d := range unknown {
@@ -51,15 +51,15 @@ func runApply(cmd *cobra.Command, args []string) error {
 		Fatalf("unsupported kinds in %s: %s", path, strings.Join(names, ", "))
 	}
 
-	envs, vaults = expandApplySecrets(envs, vaults, applyVars)
+	grouped["Environment"], grouped["Vault"] = expandApplySecrets(grouped["Environment"], grouped["Vault"], applyVars)
 
 	c := activeClient()
 
-	results, err := postApply(c, buildApplyPayload(envs, vaults, agents))
+	results, err := postApply(c, buildApplyPayload(grouped))
 	if err != nil {
 		if api.StatusCode(err) == 404 {
 			// Server predates POST /api/apply — reconcile resource-by-resource.
-			legacyApply(c, envs, vaults, agents)
+			legacyApply(c, grouped)
 			return nil
 		}
 		Fatalf("apply failed: %v", err)
@@ -73,11 +73,15 @@ func runApply(cmd *cobra.Command, args []string) error {
 
 // ── bulk apply ─────────────────────────────────────────────────────────
 
+// applyKindOrder is the order the server reconciles in, and the order the
+// payload is built in so the printed output reads the same way. A document
+// may name another whatever the file's order — an agent's `spec.environment`
+// — and the server resolves it by name, including against records that
+// already exist and are not part of this manifest.
+var applyKindOrder = []string{"Environment", "Vault", "Agent"}
+
 // applyResource is one compiled manifest document. The whole manifest is
-// sent to POST /api/apply in a single request; the server reconciles by
-// name (environments first, then vaults, then agents) and resolves agent
-// `spec.environment` references server-side — including environments that
-// already exist but aren't part of this manifest.
+// sent to POST /api/apply in a single request.
 type applyResource struct {
 	Kind string         `json:"kind"`
 	Name string         `json:"name"`
@@ -98,10 +102,10 @@ type applyResult struct {
 	Secrets []applySecretResult `json:"secrets"`
 }
 
-func buildApplyPayload(envs, vaults, agents []*manifest.Doc) []applyResource {
+func buildApplyPayload(grouped map[string][]*manifest.Doc) []applyResource {
 	var out []applyResource
-	for _, group := range [][]*manifest.Doc{envs, vaults, agents} {
-		for _, d := range group {
+	for _, kind := range applyKindOrder {
+		for _, d := range grouped[kind] {
 			name := requireName(d)
 			spec := cloneMap(d.Spec)
 			// Ownership fields are server-assigned; don't transmit fields the
@@ -179,7 +183,8 @@ func formatResultErrors(errs map[string]any) string {
 
 // legacyApply is the pre-bulk reconciliation path: one GET+write per
 // resource and one POST per secret. Kept for servers without /api/apply.
-func legacyApply(c *api.Client, envs, vaults, agents []*manifest.Doc) {
+func legacyApply(c *api.Client, grouped map[string][]*manifest.Doc) {
+	envs, vaults, agents := grouped["Environment"], grouped["Vault"], grouped["Agent"]
 	envIDByName := map[string]string{}
 	anyFailed := false
 
@@ -210,20 +215,23 @@ func legacyApply(c *api.Client, envs, vaults, agents []*manifest.Doc) {
 
 // ── grouping ───────────────────────────────────────────────────────────
 
-func groupDocs(docs []*manifest.Doc) (envs, vaults, agents, unknown []*manifest.Doc) {
+// groupDocs buckets the parsed documents by kind. The returned map is keyed
+// by the kind name, so a caller reads it in applyKindOrder; anything outside
+// that list comes back in `unknown` and stops the run.
+func groupDocs(docs []*manifest.Doc) (grouped map[string][]*manifest.Doc, unknown []*manifest.Doc) {
+	grouped = map[string][]*manifest.Doc{}
+	known := map[string]bool{}
+	for _, kind := range applyKindOrder {
+		known[kind] = true
+	}
 	for _, d := range docs {
-		switch d.Kind {
-		case "Environment":
-			envs = append(envs, d)
-		case "Vault":
-			vaults = append(vaults, d)
-		case "Agent":
-			agents = append(agents, d)
-		default:
+		if known[d.Kind] {
+			grouped[d.Kind] = append(grouped[d.Kind], d)
+		} else {
 			unknown = append(unknown, d)
 		}
 	}
-	return
+	return grouped, unknown
 }
 
 // ── apply-time secret resolution ───────────────────────────────────────
