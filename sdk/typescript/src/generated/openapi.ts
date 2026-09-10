@@ -7569,6 +7569,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Saved execution policy refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Too Many Requests */
             429: {
                 headers: {
@@ -16421,6 +16430,22 @@ export interface operations {
             };
             /** @description The thread is running a turn; retry */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error?: {
+                            code?: string | null;
+                            message?: string;
+                            param?: string | null;
+                            type?: string;
+                        };
+                    };
+                };
+            };
+            /** @description Saved execution policy refused */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

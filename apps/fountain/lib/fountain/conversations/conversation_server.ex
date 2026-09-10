@@ -1506,15 +1506,14 @@ defmodule Fountain.Conversations.ConversationServer do
     if Connection.user_turn_running?(state.current_turn) do
       {:reply, {:error, :busy}, state}
     else
-      # A background cycle the agent was still narrating is closed by the
-      # human's prompt, not queued behind it (#817): its updates are already
-      # on the transcript, and the agent will fold whatever it was doing into
-      # the answer to this prompt.
-      state = close_autonomous_turn(state, "superseded_by_prompt")
+      # This server already owns the conversation. Refuse before superseding
+      # autonomous work or touching its connection; turn admission rechecks.
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      with :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
+      with :ok <- Conversations._unsafe_check_saved_execution_allowance(conv.id),
+           :ok <- TurnMachine.gate(conv.user_id, state.inference_source),
            :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
+        state = close_autonomous_turn(state, "superseded_by_prompt")
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
         {:reply, :ok, kick_turn(state, prompt, agent, images)}
       else
@@ -1672,15 +1671,16 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      case TurnMachine.gate(conv.user_id, state.inference_source) do
-        :ok ->
-          state = close_autonomous_turn(state, "superseded_by_prompt")
-          agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-          {:noreply, kick_turn(state, prompt, agent, images)}
-
+      # Ownership: this server owns conv. Policy may have changed since wake.
+      with :ok <- Conversations._unsafe_check_saved_execution_allowance(conv.id),
+           :ok <- TurnMachine.gate(conv.user_id, state.inference_source) do
+        state = close_autonomous_turn(state, "superseded_by_prompt")
+        agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
+        {:noreply, kick_turn(state, prompt, agent, images)}
+      else
         {:error, reason} ->
-          # No caller to reply to — the wake door reports the same refusal
-          # synchronously; this backstop only has to not run the turn.
+          # A cast has no caller to reply to. Preserve existing work and its
+          # connection when this queued prompt cannot be admitted.
           Logger.info(
             "conv #{state.conversation_id}: dropping initial prompt (#{inspect(reason)})"
           )

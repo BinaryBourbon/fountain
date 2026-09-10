@@ -15,6 +15,33 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "not_found"})
   end
 
+  def call(conn, {:error, {:execution_limits_invalid, field}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "execution_limits_invalid",
+      errors: %{execution_limits: ["invalid #{field}"]}
+    })
+  end
+
+  def call(conn, {:error, {:execution_limits_widen, field}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "execution_limits_widen",
+      errors: %{execution_limits: ["cannot widen #{field}"]}
+    })
+  end
+
+  def call(conn, {:error, {:execution_limits_unsupported, controls}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "execution_limits_unsupported",
+      message: "Execution-limit enforcement is unavailable: #{Enum.join(controls, ", ")}."
+    })
+  end
+
   # start_conversation rejects an unknown / cross-tenant vault by returning
   # {:error, :vault_not_found}. Surface as 404 so callers can't tell the
   # difference between "no such vault" and "vault belongs to someone else".

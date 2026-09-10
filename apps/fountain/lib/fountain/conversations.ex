@@ -12,6 +12,7 @@ defmodule Fountain.Conversations do
 
   alias Fountain.Audit
   alias Fountain.Conversations.{Blocks, Conversation, LogEvent, Sandbox, Turn, TurnImage}
+  alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
   alias Fountain.Repo
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
@@ -1110,7 +1111,9 @@ defmodule Fountain.Conversations do
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
   per-sandbox advisory lock and verify that the conversation still belongs
   to this nonterminal sandbox. An integer capacity also limits concurrent
-  turns; `:unbounded` skips only that capacity check. Refusal writes no turn.
+  turns; `:unbounded` skips only that capacity check. Saved execution allowances
+  are checked under row locks; no runtime control is supported yet, so any
+  nonempty allowance refuses the turn. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
   """
   def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
@@ -1125,6 +1128,16 @@ defmodule Fountain.Conversations do
           :erlang.phash2(sandbox_id)
         ])
 
+        # The allowance's FK takes KEY SHARE on this row when first inserted.
+        # UPDATE also fences that first insert when there is no allowance row
+        # to lock yet. Keep both locks through the turn insert.
+        Repo.one(
+          from c in Conversation,
+            where: c.id == ^conv_id,
+            select: c.id,
+            lock: "FOR UPDATE"
+        ) || Repo.rollback(:sandbox_unavailable)
+
         attached? =
           Repo.exists?(
             from c in Conversation,
@@ -1136,6 +1149,11 @@ defmodule Fountain.Conversations do
           )
 
         unless attached?, do: Repo.rollback(:sandbox_unavailable)
+
+        case _unsafe_check_saved_execution_allowance(conv_id) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
 
         if capacity != :unbounded and
              _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
@@ -1151,6 +1169,140 @@ defmodule Fountain.Conversations do
     with {:ok, turn} <- result do
       record_turn_usage(turn)
       {:ok, turn}
+    end
+  end
+
+  @doc """
+  Save an initial resolved allowance once, scoped to its conversation owner.
+
+  Internal persistence only: the caller must resolve trusted current ceilings
+  and prove runtime support before admission. This function does not admit work
+  or reset an active turn. No launch or HTTP path calls it yet. A duplicate
+  fails without replacing the saved policy; use `narrow_execution_allowance/3`
+  for subsequent changes. Ownership stays locked through insertion.
+  """
+  def create_execution_allowance(conversation_id, user_id, resolved_limits, opts \\ []) do
+    result =
+      Repo.transaction(fn ->
+        Repo.one(
+          from c in Conversation,
+            where: c.id == ^conversation_id and c.user_id == ^user_id,
+            select: c.id,
+            lock: "FOR SHARE"
+        ) || Repo.rollback(:not_found)
+
+        case conversation_id
+             |> ExecutionAllowance.new_changeset(resolved_limits)
+             |> Repo.insert() do
+          {:ok, allowance} -> allowance
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+
+    with {:ok, allowance} <- result do
+      Audit.record(%{
+        user_id: user_id,
+        action: "conversation.execution_allowance_created",
+        resource_type: "conversation",
+        resource_id: conversation_id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{
+          "controls" => Enum.filter(ExecutionLimits.keys(), &Map.has_key?(allowance.limits, &1))
+        }
+      })
+
+      {:ok, allowance}
+    end
+  end
+
+  @doc """
+  Narrow an existing allowance owned by `user_id`, retaining omitted controls.
+
+  This edits future policy only: it neither admits work nor resets an active
+  turn's usage/deadline. Initial allowance creation and current-ceiling checks
+  remain admission responsibilities. Missing and foreign records return the
+  same error. Concurrent writers revalidate against the latest locked value.
+  """
+  def narrow_execution_allowance(conversation_id, user_id, request, opts \\ []) do
+    result =
+      Repo.transaction(fn ->
+        # Keep ownership stable through the write; turn admission locks this
+        # conversation before its allowance too. No sandbox/provider work here.
+        Repo.one(
+          from c in Conversation,
+            where: c.id == ^conversation_id and c.user_id == ^user_id,
+            select: c.id,
+            lock: "FOR SHARE"
+        ) || Repo.rollback(:not_found)
+
+        allowance =
+          Repo.one(
+            from a in ExecutionAllowance,
+              where: a.conversation_id == ^conversation_id,
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:not_found)
+
+        unless is_map(allowance.limits),
+          do: Repo.rollback({:execution_limits_invalid, "object_required"})
+
+        changeset = ExecutionAllowance.narrow_changeset(allowance, request)
+
+        write =
+          if changeset.valid? and not Map.has_key?(changeset.changes, :limits),
+            do: {:ok, allowance},
+            else: Repo.update(changeset)
+
+        case write do
+          {:ok, updated} ->
+            changed =
+              Enum.filter(ExecutionLimits.keys(), &(updated.limits[&1] != allowance.limits[&1]))
+
+            {updated, changed}
+
+          {:error, changeset} ->
+            Repo.rollback(changeset)
+        end
+      end)
+
+    with {:ok, {updated, changed}} <- result do
+      if changed != [] do
+        Audit.record(%{
+          user_id: user_id,
+          action: "conversation.execution_allowance_narrowed",
+          resource_type: "conversation",
+          resource_id: conversation_id,
+          actor: Keyword.get(opts, :actor, "self"),
+          request_ip: Keyword.get(opts, :request_ip),
+          metadata: %{"changed" => changed}
+        })
+      end
+
+      {:ok, updated}
+    end
+  end
+
+  @doc """
+  Refuse saved allowances that this deployment cannot enforce. Internal callers
+  must establish conversation ownership first. Outside turn admission this is
+  only a preflight; the turn transaction rechecks under its row locks.
+  """
+  def _unsafe_check_saved_execution_allowance(conversation_id) do
+    case Repo.one(
+           from a in ExecutionAllowance,
+             where: a.conversation_id == ^conversation_id,
+             lock: "FOR SHARE"
+         ) do
+      nil ->
+        :ok
+
+      %ExecutionAllowance{limits: limits} when is_map(limits) ->
+        with {:ok, normalized} <- ExecutionLimits.normalize(limits) do
+          ExecutionLimits.require_controls(normalized, [])
+        end
+
+      _ ->
+        {:error, {:execution_limits_invalid, "object_required"}}
     end
   end
 
@@ -1855,6 +2007,7 @@ defmodule Fountain.Conversations do
       )
       when is_binary(channel_id) and channel_id != "" do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id) do
@@ -1864,7 +2017,8 @@ defmodule Fountain.Conversations do
                  {:ok, fresh} <- start_conversation(attrs, opts),
                  do: {:ok, fresh, :created}
           else
-            with :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+            with :ok <- _unsafe_check_saved_execution_allowance(conv.id),
+                 :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
                  do: {:ok, conv, :resumed}
           end
 
@@ -1876,6 +2030,26 @@ defmodule Fountain.Conversations do
 
   def start_or_resume_conversation(attrs, opts) do
     with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
+  end
+
+  # No runtime has integrated end-to-end enforcement yet. Refuse a requested
+  # control before reserving capacity, attaching or unbinding a channel; an
+  # SDK option alone must not make admission promise a bounded execution.
+  defp check_execution_limits(user_id, request) do
+    # Ownership: each caller just fetched the agent by this authenticated user.
+    # Read the current account policy, never a request-supplied or cached map.
+    case Fountain.Accounts.get_user(user_id) do
+      %Fountain.Accounts.User{execution_limits: ceiling} when is_map(ceiling) ->
+        with {:ok, limits} <- ExecutionLimits.resolve(nil, ceiling, request) do
+          ExecutionLimits.require_controls(limits, [])
+        end
+
+      nil ->
+        {:error, :not_found}
+
+      _ ->
+        {:error, {:execution_limits_invalid, "object_required"}}
+    end
   end
 
   # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
@@ -1983,6 +2157,7 @@ defmodule Fountain.Conversations do
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
@@ -2521,6 +2696,7 @@ defmodule Fountain.Conversations do
        )
        when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
@@ -2980,11 +3156,23 @@ defmodule Fountain.Conversations do
   (`terminated`, `failed`) — those don't auto-resume.
   """
   def wake_conversation(conv_id, initial_prompt \\ nil) do
-    # Ownership: called from ConversationServer (which established ownership
-    # before starting) and the boot-time rehydrator sweep. The agent fetched
-    # below is the conversation's own agent_id, same tenant by construction.
+    wake_conversation_for(conv_id, initial_prompt, :work)
+  end
+
+  defp wake_conversation_for(conv_id, initial_prompt, purpose) do
+    # Ownership is established by callers before reaching this internal wake
+    # path. The agent fetched below is the conversation's own agent_id,
+    # same tenant by construction.
     with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
          :ok <- assert_resumable(conv),
+         # Preflight only: no database lock spans provider I/O. Turn admission
+         # checks again under its transaction. Cancellation must remain reachable.
+         :ok <-
+           if(purpose == :interrupt,
+             do: :ok,
+             else: _unsafe_check_saved_execution_allowance(conv.id)
+           ),
+         # Ownership: conv.agent_id belongs to this established-owner conversation.
          %Agents.Agent{} = agent <-
            (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(conv) do
@@ -3091,7 +3279,7 @@ defmodule Fountain.Conversations do
         {:error, :not_found}
 
       %Conversation{status: "running"} ->
-        with {:ok, conv} <- wake_conversation(conv_id),
+        with {:ok, conv} <- wake_conversation_for(conv_id, nil, :interrupt),
              pid when is_pid(pid) <- ConversationServer.whereis(conv.id) do
           {:ok, pid}
         else
