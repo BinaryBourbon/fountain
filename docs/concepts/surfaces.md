@@ -27,9 +27,9 @@ OAuth client.
 
 | App | What it does |
 |---|---|
-| [Conversations](https://github.com/managoat/fountain-conversations) | Start a run, watch it, steer it, read the raw log. |
-| [Team](https://github.com/managoat/fountain-team) | Agents as teammates, one thread for each. |
-| [Workbench](https://github.com/managoat/fountain-workbench) | Projects over an environment and a vault, work items in them, teammates on the work items. |
+| [Conversations](https://github.com/managoat/demos/tree/main/apps/fountain-conversations) | Start a run, watch it, steer it, read the raw log. |
+| [Team](https://github.com/managoat/demos/tree/main/apps/fountain-team) | Agents as teammates, one thread for each. |
+| [Workbench](https://github.com/managoat/demos/tree/main/apps/fountain-workbench) | Projects over an environment and a vault, work items in them, teammates on the work items. |
 
 The first two replaced in-app LiveViews, and the console links to them.
 Workbench replaced no page, so the console does not link it. All three take

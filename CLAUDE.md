@@ -304,8 +304,8 @@ on `/api`, on their own origins with their own OAuth clients:
 
 | App | Repo | Replaced |
 |---|---|---|
-| Conversations | [jhgaylor/fountain-conversations](https://github.com/jhgaylor/fountain-conversations) | `/conversations`, `/conversations/new`, `/conversations/:id`, `/conversations/:id/logs` |
-| Team | [jhgaylor/fountain-team](https://github.com/jhgaylor/fountain-team) | `/team`, `/team/:agent_id` |
+| Conversations | [managoat/demos `apps/fountain-conversations`](https://github.com/managoat/demos/tree/main/apps/fountain-conversations) | `/conversations`, `/conversations/new`, `/conversations/:id`, `/conversations/:id/logs` |
+| Team | [managoat/demos `apps/fountain-team`](https://github.com/managoat/demos/tree/main/apps/fountain-team) | `/team`, `/team/:agent_id` |
 
 `Fountain.Apps` is the only place that knows where they live
 (`CONVERSATIONS_APP_URL` / `TEAM_APP_URL`, defaulting to the hosted builds;

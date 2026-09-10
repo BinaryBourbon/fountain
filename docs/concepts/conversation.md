@@ -92,7 +92,7 @@ outlives the sandbox. The Conversation is the run.
 
 **Not a chat session in a UI.** Fountain's own console renders no
 conversations. You watch one work in the
-[conversations app](https://github.com/jhgaylor/fountain-conversations),
+[conversations app](https://github.com/managoat/demos/tree/main/apps/fountain-conversations),
 a separate application on `/api`.
 
 **Not a sandbox you create.** Fountain provisions the sandbox when the

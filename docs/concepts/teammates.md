@@ -14,7 +14,7 @@ That is the whole mechanism. There is no team table and no teammate record.
 Fountain binds it the way a Buzz channel binds through `channel_id`, and
 points it at a reserved name.
 
-The [team app](https://github.com/jhgaylor/fountain-team) lays those
+The [team app](https://github.com/managoat/demos/tree/main/apps/fountain-team) lays those
 conversations out the way a chat client does. The roster is on the left and
 one thread is on the right, on `/api/team`.
 
@@ -45,7 +45,7 @@ the live conversation and unbinds the Agent's conversations from the channel.
 The rows stay in the usual conversation list.
 
 "Details" on a thread opens the full transcript in the
-[conversations app](https://github.com/jhgaylor/fountain-conversations), with
+[conversations app](https://github.com/managoat/demos/tree/main/apps/fountain-conversations), with
 stages, tool calls and raw output.
 
 ## Three fields that look new and are not

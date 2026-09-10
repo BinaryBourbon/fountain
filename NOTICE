@@ -30,11 +30,11 @@ when you redistribute a client. Running a modified Fountain server and
 offering it over a network does: AGPL section 13 requires that you offer your
 users the source of your modified version.
 
-The first-party single-page apps live in their own repositories and are
-licensed under the Apache License 2.0 there.
+The first-party single-page apps live in the managoat/demos repository and
+are licensed under the MIT License there.
 
-  https://github.com/jhgaylor/fountain-conversations
-  https://github.com/jhgaylor/fountain-team
+  https://github.com/managoat/demos/tree/main/apps/fountain-conversations
+  https://github.com/managoat/demos/tree/main/apps/fountain-team
 
 ================================================================================
 Relicensing history

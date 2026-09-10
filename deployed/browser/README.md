@@ -116,7 +116,7 @@ live provider credential save/clear and successful OAuth authorization remain
 unverified. The isolated bootstrap case is described below.
 
 The app source is maintained separately in
-`jhgaylor/fountain-conversations`; report app rendering, routing and client
+`managoat/demos`, under `apps/fountain-conversations`; report app rendering, routing and client
 authentication defects there with the exact source and served asset hashes.
 Report server cookies, OAuth registration, CORS and console failures in Fountain.
 Broad app UI permutations belong in that app's own suite.
