@@ -17,27 +17,32 @@ func doc(kind, name string, spec map[string]any) *manifest.Doc {
 }
 
 func TestBuildApplyPayloadOrdersAndStrips(t *testing.T) {
-	envs := []*manifest.Doc{doc("Environment", "proj", map[string]any{
-		"setup_script": "echo hi",
-		"secrets":      map[string]any{"TOKEN": "t0"},
-		"user_id":      "someone-else",
-		"created_by":   "mallory",
-		"id":           "forced-id",
-	})}
-	vaults := []*manifest.Doc{doc("Vault", "alice", nil)}
-	agents := []*manifest.Doc{doc("Agent", "researcher", map[string]any{
-		"runtime":     "claude",
-		"environment": "proj",
-	})}
-
-	// Payload order is envs, vaults, agents regardless of manifest order.
-	got := buildApplyPayload(envs, vaults, agents)
-
-	if len(got) != 3 {
-		t.Fatalf("want 3 resources, got %d", len(got))
+	grouped := map[string][]*manifest.Doc{
+		"Environment": {doc("Environment", "proj", map[string]any{
+			"setup_script": "echo hi",
+			"secrets":      map[string]any{"TOKEN": "t0"},
+			"user_id":      "someone-else",
+			"created_by":   "mallory",
+			"id":           "forced-id",
+		})},
+		"Vault": {doc("Vault", "alice", nil)},
+		"Agent": {doc("Agent", "researcher", map[string]any{
+			"runtime":     "claude",
+			"environment": "proj",
+		})},
 	}
-	if got[0].Kind != "Environment" || got[1].Kind != "Vault" || got[2].Kind != "Agent" {
-		t.Fatalf("wrong kind order: %v, %v, %v", got[0].Kind, got[1].Kind, got[2].Kind)
+
+	// Payload order is the reconciliation order, whatever order the manifest
+	// listed the documents in.
+	got := buildApplyPayload(grouped)
+
+	if len(got) != len(applyKindOrder) {
+		t.Fatalf("want %d resources, got %d", len(applyKindOrder), len(got))
+	}
+	for i, want := range applyKindOrder {
+		if got[i].Kind != want {
+			t.Fatalf("resource %d: want kind %q, got %q", i, want, got[i].Kind)
+		}
 	}
 
 	env := got[0]
@@ -63,6 +68,26 @@ func TestBuildApplyPayloadOrdersAndStrips(t *testing.T) {
 	// A nil spec still yields a non-nil map so the JSON encodes as {}.
 	if got[1].Spec == nil {
 		t.Errorf("nil spec must be sent as an empty object")
+	}
+}
+
+func TestGroupDocsBucketsEveryKind(t *testing.T) {
+	docs := []*manifest.Doc{
+		doc("Agent", "a", nil),
+		doc("Cluster", "nope", nil),
+		doc("Environment", "e", nil),
+		doc("Vault", "v", nil),
+	}
+
+	grouped, unknown := groupDocs(docs)
+
+	for _, kind := range applyKindOrder {
+		if len(grouped[kind]) != 1 {
+			t.Errorf("%s: want 1 doc, got %d", kind, len(grouped[kind]))
+		}
+	}
+	if len(unknown) != 1 || unknown[0].Kind != "Cluster" {
+		t.Errorf("an unsupported kind must come back as unknown, got %v", unknown)
 	}
 }
 
