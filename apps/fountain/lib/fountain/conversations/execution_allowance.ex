@@ -14,6 +14,7 @@ defmodule Fountain.Conversations.ExecutionAllowance do
   Reload and revalidate the request after a conflict; never retry the old map as
   a replacement. An opaque revision avoids counter rollover accepting old writes.
   This record does not reset or replace an in-flight turn's deadline or usage.
+  A null saved policy is corrupt, not an unrestricted allowance to narrow.
   """
 
   use Ecto.Schema
@@ -41,11 +42,17 @@ defmodule Fountain.Conversations.ExecutionAllowance do
   end
 
   @doc "Narrow the saved allowance, retaining omitted fields and checking its revision."
-  def narrow_changeset(%__MODULE__{} = allowance, request) do
+  def narrow_changeset(%__MODULE__{limits: limits} = allowance, request) when is_map(limits) do
     allowance
     |> change()
     |> put_limits(ExecutionLimits.for_resume(nil, nil, allowance.limits, request))
     |> optimistic_lock(:revision, fn _ -> Ecto.UUID.generate() end)
+  end
+
+  def narrow_changeset(%__MODULE__{} = allowance, _request) do
+    allowance
+    |> change()
+    |> put_limits({:error, {:execution_limits_invalid, "object_required"}})
   end
 
   defp put_limits(changeset, {:ok, limits}), do: put_change(changeset, :limits, limits)

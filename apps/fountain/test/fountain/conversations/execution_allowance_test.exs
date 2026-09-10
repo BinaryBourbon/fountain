@@ -72,6 +72,49 @@ defmodule Fountain.Conversations.ExecutionAllowanceTest do
     end
   end
 
+  test "narrowing cannot replace a saved JSON null with an unrestricted or fresh allowance", %{
+    conversation: conversation
+  } do
+    allowance = insert_allowance(conversation.id)
+
+    Repo.query!(
+      "UPDATE execution_allowances SET limits = 'null'::jsonb WHERE conversation_id = $1",
+      [Ecto.UUID.dump!(conversation.id)]
+    )
+
+    corrupt = Repo.reload!(allowance)
+    assert corrupt.limits == nil
+
+    for request <- [nil, %{}, %{max_model_turns: 2}] do
+      assert {:error, changeset} = corrupt |> Allowance.narrow_changeset(request) |> Repo.update()
+      assert errors_on(changeset).limits == ["execution_limits_invalid: object_required"]
+      assert Repo.reload!(corrupt) == corrupt
+    end
+  end
+
+  test "narrowing preserves malformed saved maps and does not expose their contents", %{
+    conversation: conversation
+  } do
+    corrupt =
+      insert_allowance(conversation.id)
+      |> Ecto.Changeset.change(limits: %{"private-field" => "private-value"})
+      |> Repo.update!()
+
+    for request <- [nil, %{}, %{max_model_turns: 2}] do
+      assert {:error, changeset} = corrupt |> Allowance.narrow_changeset(request) |> Repo.update()
+      assert errors_on(changeset).limits == ["execution_limits_invalid: unknown_field"]
+      assert Repo.reload!(corrupt) == corrupt
+    end
+  end
+
+  test "an explicitly empty saved allowance can still be narrowed", %{conversation: conversation} do
+    allowance = conversation.id |> Allowance.new_changeset(%{}) |> Repo.insert!()
+    updated = allowance |> Allowance.narrow_changeset(%{max_model_turns: 2}) |> Repo.update!()
+
+    assert updated.limits == %{"max_model_turns" => 2}
+    refute updated.revision == allowance.revision
+  end
+
   test "stale narrowing cannot overwrite a tighter stored value", %{conversation: conversation} do
     stale = insert_allowance(conversation.id)
     winner = stale |> Allowance.narrow_changeset(%{max_model_turns: 2}) |> Repo.update!()
