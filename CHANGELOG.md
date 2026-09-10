@@ -35,6 +35,14 @@ upgrade, is in
 
 ### Fixed
 
+- A conversation that shares a sandbox follows the replacement machine only
+  when it declares the same environment and vault. The replacement is built
+  from the waking conversation's pair, so a co-tenant that named a different
+  one was run on another conversation's environment files and vault material,
+  and which pair won depended on which conversation woke first. One that names
+  something else now keeps its own pair and builds a machine from it on its
+  next prompt (#1636).
+
 - A resource in a `fountain apply` manifest that raises unexpectedly now fails
   its own result row instead of the whole request. Before, the exception
   abandoned a call that had already written the resources above it, so the
