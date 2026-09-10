@@ -504,7 +504,12 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
     end)
   end
 
-  test "attachment rechecks an account ceiling after a PostgreSQL lock wait" do
+  # The account ceiling is re-resolved inside the admission transaction, so a
+  # change another connection commits after the early preflight still refuses.
+  # The `users` row is read unlocked on purpose (locking it would park
+  # admission behind a credit posting), so this asserts the recheck reads
+  # current committed state — not a lock ordering.
+  test "attachment honours a ceiling committed after its preflight" do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
       user =
         Repo.insert!(%Fountain.Accounts.User{
@@ -527,29 +532,23 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
 
       owner = self()
 
-      winner =
-        independent_writer(fn ->
-          Repo.transaction(fn ->
-            updated =
-              user
-              |> Fountain.Accounts.User.execution_limits_changeset(%{max_model_turns: 2})
-              |> Repo.update!()
-
-            send(owner, :ceiling_changed)
-
-            receive do
-              :commit -> updated
-            after
-              5_000 -> raise "commit barrier timed out"
-            end
-          end)
-        end)
-
       try do
-        assert_receive :ceiling_changed, 5_000
-
-        loser =
+        admitting =
           independent_writer(fn ->
+            # Runs immediately after the early preflight read the ceiling and
+            # allowed the launch. Hold here until the new ceiling is committed.
+            Mimic.stub(Fountain.RuntimeDispatch, :for_agent, fn agent ->
+              send(owner, :preflight_passed)
+
+              receive do
+                :ceiling_committed -> :ok
+              after
+                5_000 -> raise "ceiling barrier timed out"
+              end
+
+              Mimic.call_original(Fountain.RuntimeDispatch, :for_agent, [agent])
+            end)
+
             Conversations.start_conversation(%{
               "user_id" => user.id,
               "agent_id" => agent.id,
@@ -558,18 +557,23 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
           end)
 
         try do
-          assert_receive {:backend, winner_pid, winner_backend}, 5_000
-          assert winner_pid == winner.pid
-          assert_receive {:backend, loser_pid, loser_backend}, 5_000
-          assert loser_pid == loser.pid
-          refute winner_backend == loser_backend
-          await_blocked(loser_backend, System.monotonic_time(:millisecond) + 5_000)
-          send(winner.pid, :commit)
-          assert {:ok, _} = Task.await(winner)
+          assert_receive :preflight_passed, 5_000
+
+          tightening =
+            independent_writer(fn ->
+              user
+              |> Fountain.Accounts.User.execution_limits_changeset(%{max_model_turns: 2})
+              |> Repo.update!()
+            end)
+
+          assert %Fountain.Accounts.User{} = Task.await(tightening)
+          refute tightening.pid == admitting.pid
+          send(admitting.pid, :ceiling_committed)
 
           assert {:error, {:execution_limits_unsupported, ["max_model_turns"]}} =
-                   Task.await(loser)
+                   Task.await(admitting)
 
+          # No conversation means no allowance: the row is keyed by it.
           assert Conversations.list_conversations(user.id) == []
 
           refute Repo.exists?(
@@ -584,10 +588,9 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
 
           assert Repo.reload!(sandbox) == sandbox
         after
-          Task.shutdown(loser, :brutal_kill)
+          Task.shutdown(admitting, :brutal_kill)
         end
       after
-        Task.shutdown(winner, :brutal_kill)
         Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
         Repo.delete!(user)
         Repo.get!(Sandbox, sandbox.id) |> Repo.delete!()

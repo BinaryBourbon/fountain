@@ -892,17 +892,30 @@ defmodule Fountain.Conversations do
   def unread?(_), do: false
 
   def create_conversation(attrs) do
-    %Conversation{}
-    |> Conversation.changeset(attrs)
-    |> Repo.insert()
-    |> tap(fn
-      # The account's first conversation is the request the verified landing
-      # handed over (ADR 0038). Both create paths go through this write, so
-      # the funnel's third step cannot be missed by a new door — and it does
-      # not depend on the landing page still being open.
-      {:ok, conv} -> Fountain.Activation.conversation_created(conv)
-      _ -> :ok
-    end)
+    with {:ok, conv} <- insert_conversation_row(attrs) do
+      after_conversation_created(conv)
+      {:ok, conv}
+    end
+  end
+
+  # The one place a conversation row is written. Admission writes it inside a
+  # transaction with the sandbox and the execution allowance, so it cannot
+  # share `create_conversation/1` outright; keeping the insert itself in one
+  # function is what stops the two shapes drifting.
+  defp insert_conversation_row(attrs) do
+    %Conversation{} |> Conversation.changeset(attrs) |> Repo.insert()
+  end
+
+  # The account's first conversation is the request the verified landing handed
+  # over (ADR 0038), and this is the funnel's third step. It is deliberately
+  # *not* inside `insert_conversation_row/1`: a caller in a transaction must
+  # fire it after that transaction commits, so a rolled-back write reports no
+  # request. Every door that inserts a conversation calls it exactly once —
+  # `create_conversation/1`, `create_attached_conversation/3` — and
+  # `conversation_creation_seam_test.exs` drives each of them and fails if one
+  # stops firing.
+  defp after_conversation_created(%Conversation{} = conv) do
+    Fountain.Activation.conversation_created(conv)
   end
 
   @doc """
@@ -2777,11 +2790,16 @@ defmodule Fountain.Conversations do
   defp create_attached_conversation(attrs, request, opts) do
     result =
       Repo.transaction(fn ->
+        # Deliberately unlocked. `users` is the row every credit posting takes
+        # `FOR UPDATE` (`Credits.insert_and_move/3` holds it across a ledger
+        # insert, lot consumption and the balance move), so locking it here
+        # would park admission behind an unrelated billing transaction. This
+        # read is an ownership recheck; the ceiling below is read the same way,
+        # and the insert's foreign keys are what actually enforce integrity.
         Repo.one(
           from u in Fountain.Accounts.User,
             where: u.id == ^attrs.user_id,
-            select: u.id,
-            lock: "FOR SHARE"
+            select: u.id
         ) || Repo.rollback(:not_found)
 
         agent =
@@ -2800,7 +2818,7 @@ defmodule Fountain.Conversations do
 
         with :ok <- check_attachable(sandbox, agent, attrs.vault_id, attrs.environment_id),
              {:ok, limits} <- resolve_admission_limits(attrs.user_id, request),
-             {:ok, conv} <- %Conversation{} |> Conversation.changeset(attrs) |> Repo.insert(),
+             {:ok, conv} <- insert_conversation_row(attrs),
              {:ok, allowance} <-
                conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
           {conv, allowance}
@@ -2810,7 +2828,7 @@ defmodule Fountain.Conversations do
       end)
 
     with {:ok, {conv, allowance}} <- result do
-      Fountain.Activation.conversation_created(conv)
+      after_conversation_created(conv)
       record_execution_allowance_created(allowance, conv.user_id, opts)
       {:ok, conv}
     end
