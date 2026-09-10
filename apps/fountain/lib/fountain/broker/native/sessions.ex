@@ -117,6 +117,35 @@ defmodule Fountain.Broker.Native.Sessions do
     reply
   end
 
+  @doc """
+  Rewrite the rules of every live session of a conversation, keeping each
+  token (#1736). A sandbox process holds its token in its environment for as
+  long as it runs, and an idle ACP peer runs across turns, so a new session
+  (a new token) reaches nothing already running. An edited or rotated secret
+  reaches the proxy this way instead: the next `lookup/1` on any of the
+  conversation's tokens decrypts the new rules. Returns how many rows
+  changed; zero means every session had expired, and the caller mints one.
+  """
+  @spec update_rules(String.t(), String.t(), [Rule.t()], map()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
+  def update_rules(conversation_id, user_id, rules, meta)
+      when is_binary(conversation_id) and is_binary(user_id) and is_list(rules) do
+    with {:ok, dek} <- Crypto.load_tenant_key(user_id) do
+      now = DateTime.utc_now()
+      ciphertext = Crypto.encrypt(encode_rules(rules), dek, @aad)
+
+      {n, _} =
+        Repo.update_all(
+          from(s in Session,
+            where: s.conversation_id == ^conversation_id and s.expires_at >= ^now
+          ),
+          set: [rules_ciphertext: ciphertext, meta: meta, updated_at: now]
+        )
+
+      {:ok, n}
+    end
+  end
+
   @doc "Delete every session of a conversation. Its tokens stop working at once."
   @spec release(String.t()) :: :ok
   def release(conversation_id) when is_binary(conversation_id) do

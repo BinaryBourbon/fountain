@@ -1865,6 +1865,10 @@
           "required": false,
           "type": "string"
         },
+        "limit": {
+          "required": false,
+          "type": "integer"
+        },
         "roots_only": {
           "required": false,
           "type": "boolean"
@@ -4893,6 +4897,11 @@
             "ref": "Error"
           }
         },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "429": {
           "application/json": {
             "ref": "Error"
@@ -7071,6 +7080,37 @@
           }
         },
         "409": {
+          "application/json": {
+            "properties": {
+              "error": {
+                "properties": {
+                  "code": {
+                    "nullable": true,
+                    "required": false,
+                    "type": "string"
+                  },
+                  "message": {
+                    "required": false,
+                    "type": "string"
+                  },
+                  "param": {
+                    "nullable": true,
+                    "required": false,
+                    "type": "string"
+                  },
+                  "type": {
+                    "required": false,
+                    "type": "string"
+                  }
+                },
+                "required": false,
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "422": {
           "application/json": {
             "properties": {
               "error": {
@@ -10495,6 +10535,10 @@
           "required": false,
           "type": "string"
         },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
+        },
         "updated_at": {
           "format": "date-time",
           "required": false,
@@ -10570,6 +10614,10 @@
         "setup_script": {
           "required": false,
           "type": "string"
+        },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -10638,6 +10686,10 @@
         "setup_script": {
           "required": false,
           "type": "string"
+        },
+        "setup_timeout_seconds": {
+          "required": false,
+          "type": "integer"
         }
       },
       "type": "object"

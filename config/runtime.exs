@@ -975,6 +975,25 @@ credit_packs =
       |> Enum.sort()
   end
 
+# Per-turn host ceiling. Empty until runtime enforcement and later-turn/recovery
+# ceiling checks are integrated. Never inherit an operator's shell policy in tests.
+execution_limit_ceiling =
+  if env == :test do
+    %{}
+  else
+    case Fountain.Conversations.ExecutionLimits.from_json_env(
+           System.get_env("FOUNTAIN_EXECUTION_LIMITS")
+         ) do
+      {:ok, limits} ->
+        limits
+
+      {:error, {:execution_limits_invalid, field}} ->
+        raise "FOUNTAIN_EXECUTION_LIMITS is invalid: #{field}"
+    end
+  end
+
+config :fountain, :execution_limit_ceiling, execution_limit_ceiling
+
 # Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
 # the per-account floor and ceiling the balance rule is clamped to, and the
 # fleet ceiling — the most live sandboxes the deployment will run in total,
@@ -1053,6 +1072,17 @@ config :fountain,
 config :fountain,
        :platform_inference_daily_cents,
        whole_number.("PLATFORM_INFERENCE_DAILY_CENTS", 5_000)
+
+# The deployment's ChatGPT grant for the codex runtime (ADR 0047), connected
+# from /admin/inference. Fountain refreshes the access token this many seconds
+# ahead of its expiry — it must exceed the longest turn the deployment expects,
+# because codex cannot refresh in this mode and a turn that outlives the token
+# fails at the proxy — and renews a grant nobody has used for this many days,
+# so it never idles past the auth server's eight-day window.
+config :fountain,
+  platform_chatgpt_refresh_margin_seconds:
+    whole_number.("PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS", 900),
+  platform_chatgpt_keepalive_days: whole_number.("PLATFORM_CHATGPT_KEEPALIVE_DAYS", 6)
 
 # Per-model inference rates, overriding the compiled card in
 # `Fountain.Credits.InferenceRates`. One entry per comma:

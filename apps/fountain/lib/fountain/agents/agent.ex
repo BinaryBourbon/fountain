@@ -103,6 +103,12 @@ defmodule Fountain.Agents.Agent do
     |> validate_model_provider()
     |> validate_sandbox_provider()
     |> validate_length(:name, min: 1, max: 200)
+    |> Fountain.Changeset.validate_ids([
+      :user_id,
+      :environment_id,
+      :allowed_vault_ids,
+      :allowed_environment_ids
+    ])
     |> validate_skills()
     |> validate_mcp_servers()
     |> validate_permission_policy()
@@ -272,7 +278,7 @@ defmodule Fountain.Agents.Agent do
           is_map(entry) and Map.has_key?(entry, "connection")
         end)
         |> Enum.reject(fn {_name, %{"connection" => id}} ->
-          is_binary(id) and match?({:ok, _}, Ecto.UUID.cast(id))
+          is_binary(id) and match?({:ok, _}, Ecto.UUID.dump(id))
         end)
         |> Enum.map(fn {name, _} ->
           {:mcp_servers, "#{name}: connection must be a connection id"}

@@ -8,6 +8,7 @@ public struct Environment: Sendable, Decodable, Identifiable, Hashable {
   public var packages: JSONValue?
   public var envVars: [String: String]?
   public var setupScript: String?
+  public var setupTimeoutSeconds: Int?
   public var networkingType: NetworkingType?
   public var networkingConfig: JSONValue?
   public var repositories: [JSONValue]?
@@ -21,6 +22,7 @@ public struct Environment: Sendable, Decodable, Identifiable, Hashable {
     case id, name, packages, repositories, metadata
     case envVars = "env_vars"
     case setupScript = "setup_script"
+    case setupTimeoutSeconds = "setup_timeout_seconds"
     case networkingType = "networking_type"
     case networkingConfig = "networking_config"
     case secretCount = "secret_count"
@@ -35,6 +37,7 @@ public struct EnvironmentInput: Sendable, Encodable {
   public var packages: JSONValue?
   public var envVars: [String: String]?
   public var setupScript: String?
+  public var setupTimeoutSeconds: Int?
   public var networkingType: NetworkingType?
   public var networkingConfig: JSONValue?
   public var repositories: [JSONValue]?
@@ -45,6 +48,7 @@ public struct EnvironmentInput: Sendable, Encodable {
     packages: JSONValue? = nil,
     envVars: [String: String]? = nil,
     setupScript: String? = nil,
+    setupTimeoutSeconds: Int? = nil,
     networkingType: NetworkingType? = nil,
     networkingConfig: JSONValue? = nil,
     repositories: [JSONValue]? = nil,
@@ -54,6 +58,7 @@ public struct EnvironmentInput: Sendable, Encodable {
     self.packages = packages
     self.envVars = envVars
     self.setupScript = setupScript
+    self.setupTimeoutSeconds = setupTimeoutSeconds
     self.networkingType = networkingType
     self.networkingConfig = networkingConfig
     self.repositories = repositories
@@ -64,6 +69,7 @@ public struct EnvironmentInput: Sendable, Encodable {
     case name, packages, repositories, metadata
     case envVars = "env_vars"
     case setupScript = "setup_script"
+    case setupTimeoutSeconds = "setup_timeout_seconds"
     case networkingType = "networking_type"
     case networkingConfig = "networking_config"
   }

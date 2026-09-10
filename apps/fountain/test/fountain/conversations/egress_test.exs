@@ -170,6 +170,93 @@ defmodule Fountain.Conversations.EgressTest do
                {current, true}
     end
 
+    # #1736: the tenant's own secrets, read again before a turn. Pure over
+    # the merged map, so no rows are needed.
+    test "refresh_tenant_secrets/5 swaps in an edited value and says so" do
+      brokered = %{"GITHUB_TOKEN" => "ghp_old", "ANTHROPIC_API_KEY" => "sk-ant-api03-inference"}
+      keys = ["GITHUB_TOKEN"]
+
+      # Unchanged: the same map, and nothing moved.
+      assert Egress.refresh_tenant_secrets(
+               keys,
+               %{"GITHUB_TOKEN" => "ghp_old", "DATABASE_URL" => "postgres://x"},
+               brokered,
+               %{},
+               %{}
+             ) == {brokered, keys, false}
+
+      # Edited: the new value, and the unbrokered key stays out.
+      assert Egress.refresh_tenant_secrets(
+               keys,
+               %{"GITHUB_TOKEN" => "ghp_new", "DATABASE_URL" => "postgres://y"},
+               brokered,
+               %{},
+               %{}
+             ) == {%{brokered | "GITHUB_TOKEN" => "ghp_new"}, keys, true}
+
+      # Added: a bound key that was not there before joins the broker.
+      bindings = %{"STRIPE_KEY" => [%Binding{key: "STRIPE_KEY", host: "api.stripe.com"}]}
+
+      assert {%{"STRIPE_KEY" => "sk_live"} = next, ["GITHUB_TOKEN", "STRIPE_KEY"], true} =
+               Egress.refresh_tenant_secrets(
+                 keys,
+                 %{"GITHUB_TOKEN" => "ghp_old", "STRIPE_KEY" => "sk_live"},
+                 brokered,
+                 bindings,
+                 %{}
+               )
+
+      assert next["GITHUB_TOKEN"] == "ghp_old"
+    end
+
+    test "refresh_tenant_secrets/5 drops a deleted key, and what it masked takes the name back" do
+      # The tenant's own ANTHROPIC_API_KEY won at init; deleting it hands the
+      # name back to the runtime's credential, as init would. Same for a
+      # vault override of a connection's key (the review's row 1): the
+      # connection token is in the underlay, and comes back.
+      underlay = %{"ANTHROPIC_API_KEY" => "sk-ant-api03-inference", "GOOGLE_TOKEN" => "ya29.live"}
+
+      brokered = %{
+        "GITHUB_TOKEN" => "ghp",
+        "ANTHROPIC_API_KEY" => "sk-ant-api03-own",
+        "GOOGLE_TOKEN" => "ya29.override"
+      }
+
+      assert Egress.refresh_tenant_secrets(
+               ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "GOOGLE_TOKEN"],
+               %{"GITHUB_TOKEN" => "ghp"},
+               brokered,
+               %{},
+               underlay
+             ) ==
+               {%{
+                  "GITHUB_TOKEN" => "ghp",
+                  "ANTHROPIC_API_KEY" => "sk-ant-api03-inference",
+                  "GOOGLE_TOKEN" => "ya29.live"
+                }, ["GITHUB_TOKEN"], true}
+
+      # A deleted key nothing else supplies leaves the broker.
+      assert Egress.refresh_tenant_secrets(
+               ["GITHUB_TOKEN"],
+               %{},
+               %{"GITHUB_TOKEN" => "ghp"},
+               %{},
+               %{}
+             ) ==
+               {%{}, [], true}
+    end
+
+    test "refresh_rules/4 is :ok only when a live session was rewritten" do
+      stub(Broker, :refresh, fn "conv-1", %{"K" => "v"}, %{}, [user_id: "u"] -> {:ok, 2} end)
+      assert Egress.refresh_rules("conv-1", %{"K" => "v"}, %{}, user_id: "u") == :ok
+
+      stub(Broker, :refresh, fn _, _, _, _ -> {:ok, 0} end)
+      assert Egress.refresh_rules("conv-1", %{}, %{}, []) == {:error, :no_live_session}
+
+      stub(Broker, :refresh, fn _, _, _, _ -> {:error, :down} end)
+      assert Egress.refresh_rules("conv-1", %{}, %{}, []) == {:error, :down}
+    end
+
     test "with_connection_servers/4 resolves a remote entry only for a brokered tenant",
          %{user: user} do
       conn = insert_connection(user)

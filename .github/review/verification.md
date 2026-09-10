@@ -49,3 +49,21 @@ or raise a deadline merely to report success.
 Deploy a Review Loop version supporting `verification.command_timeout_minutes`
 before merging this policy. The measured standalone recipe is not evidence of
 a production candidate check or PR approval at this configuration.
+
+## Measured reviewer preparation
+
+A cold, isolated Ubuntu worker on September 7, 2026 completed the reviewer
+bootstrap, locked dependency installation, database migration, and the additional
+environment-controller diagnostic in **6m30s**. The diagnostic returned **18 tests,
+0 failures**, including the second-tenant setup-timeout denial case. The configured
+15-minute setup bound provides over eight minutes of headroom over this sample;
+it is not a worst-case guarantee. This excludes Credo, Dialyzer, full test suites,
+and the independent verifier's broader recipe above.
+
+The subsequent model review stalled; cancellation and physical worker deletion
+succeeded. A second cold probe completed preparation, the same 18-test diagnostic,
+and delivery of a correctly identified result artifact within **8m25s total**;
+physical worker deletion also passed. That artifact deliberately marked full PR
+coverage incomplete. These samples prove preparation and diagnostic delivery,
+not full PR approval or enrolled-policy acceptance. The bootstrap now also runs
+outside the PR checkout, with a local regression for PR module shadowing.

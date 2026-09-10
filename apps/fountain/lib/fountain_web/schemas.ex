@@ -1237,6 +1237,13 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
+        setup_timeout_seconds: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: 900,
+          description:
+            "Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies."
+        },
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,
@@ -1296,6 +1303,13 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
+        setup_timeout_seconds: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: 900,
+          description:
+            "Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies."
+        },
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,
@@ -1332,6 +1346,13 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
+        setup_timeout_seconds: %Schema{
+          type: :integer,
+          minimum: 1,
+          maximum: 900,
+          description:
+            "Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies."
+        },
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,

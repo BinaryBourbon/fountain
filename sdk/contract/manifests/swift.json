@@ -97,7 +97,7 @@
     "ConversationListResponse": { "required": ["data"] },
     "ConversationResponse": { "required": ["data"] },
     "ConversationTreeResponse": { "required": ["data"] },
-    "Environment": { "required": ["id", "name"] },
+    "Environment": { "required": ["id", "name"], "optional": ["setup_timeout_seconds"] },
     "EnvironmentListResponse": { "required": ["data"] },
     "EnvironmentResponse": { "required": ["data"] },
     "Error": { "required": ["error"] },

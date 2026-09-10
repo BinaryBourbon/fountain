@@ -45,12 +45,26 @@ defmodule Fountain.Conversations.CodexTransport do
   # no `model_provider` of its own into that file; `env_vars` is the supported
   # way to point codex somewhere else, and `OPENAI_BASE_URL` set there is
   # carried across.
+  #
+  # **The ChatGPT grant** (ADR 0047 decision 4) is the second shape. When the
+  # spawn carries `CODEX_CHATGPT_ACCESS_TOKEN` and no `OPENAI_API_KEY`, the
+  # sandbox's `auth.json` is in `chatgptAuthTokens` mode with the placeholder
+  # as its access token, and the provider must *read* it: `requires_openai_auth`
+  # with no `env_key` resolves the ambient auth (bearer plus
+  # `chatgpt-account-id`) whatever the provider's id
+  # (`codex-rs/model-provider/src/auth.rs`, `resolve_provider_auth`). The
+  # endpoint is the Codex backend, not the API, and `OPENAI_BASE_URL` is not
+  # consulted: it points at OpenAI-compatible gateways, which this is not.
+  # What the id costs is the built-in-only routes (guardian, remote
+  # compaction, the token budget), none of which a turn depends on.
   @provider_id "fountain_openai_http"
   @openai_base_url "https://api.openai.com/v1"
+  @chatgpt_base_url "https://chatgpt.com/backend-api/codex"
+  @chatgpt_key "CODEX_CHATGPT_ACCESS_TOKEN"
 
   # The names this module reads and acts on. `CODEX_CONFIG` is already
   # collapsed by the rewrite, which rejects every entry and appends one.
-  @resolved_names ["OPENAI_API_KEY", "OPENAI_BASE_URL"]
+  @resolved_names ["OPENAI_API_KEY", "OPENAI_BASE_URL", @chatgpt_key]
 
   def spawn_opts(%{broker: broker}, "codex", opts) when not is_nil(broker) do
     env = Keyword.get(opts, :env, [])
@@ -115,17 +129,47 @@ defmodule Fountain.Conversations.CodexTransport do
         |> Map.put("model_provider", @provider_id)
         |> Map.put("model_providers", Map.put(providers, @provider_id, provider(env)))
 
+      chatgpt?(config, env) ->
+        config
+        |> Map.put("model_provider", @provider_id)
+        |> Map.put("model_providers", Map.put(providers, @provider_id, chatgpt_provider()))
+
       true ->
         config
     end
   end
 
   defp substitute?(config, env) do
-    Map.get(config, "model_provider", "openai") == "openai" and
-      match?(
-        value when is_binary(value) and value != "",
-        Map.get(env, "OPENAI_API_KEY")
-      )
+    Map.get(config, "model_provider", "openai") == "openai" and present?(env, "OPENAI_API_KEY")
+  end
+
+  # The grant shape: the built-in would be selected, the spawn carries the
+  # grant and no API key. A key beside the grant is the tenant's own or the
+  # platform's, and `select/3` never hands both out — but if both were
+  # present the key would win above, as it does everywhere else.
+  defp chatgpt?(config, env) do
+    Map.get(config, "model_provider", "openai") == "openai" and present?(env, @chatgpt_key) and
+      not present?(env, "OPENAI_API_KEY")
+  end
+
+  defp present?(env, name) do
+    match?(value when is_binary(value) and value != "", Map.get(env, name))
+  end
+
+  # Audited against the same lib.rs as `provider/1`: with a ChatGPT auth mode
+  # the built-in's base URL is the Codex backend and its auth is the ambient
+  # `auth.json`. `requires_openai_auth` without `env_key` is what selects
+  # that auth on a custom id; `supports_websockets` is deliberately false.
+  # No `env_http_headers`: the organization and project headers belong to
+  # the API, and the backend ignores them.
+  defp chatgpt_provider do
+    %{
+      "name" => "OpenAI",
+      "base_url" => @chatgpt_base_url,
+      "wire_api" => "responses",
+      "requires_openai_auth" => true,
+      "supports_websockets" => false
+    }
   end
 
   # Field audit: Codex rust-v0.147.0 (installed in the review image) and

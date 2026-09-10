@@ -123,6 +123,16 @@ defmodule Fountain.Conversations.Conversation do
       :caller_tools
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
+    |> Fountain.Changeset.validate_ids([
+      :parent_conversation_id,
+      :callback_api_key_id,
+      :user_id,
+      :sandbox_id,
+      :agent_id,
+      :agent_version_id,
+      :vault_id,
+      :environment_id
+    ])
     |> validate_length(:channel_id, max: 255)
     |> validate_length(:title, max: 120)
     |> validate_inclusion(:status, @statuses)

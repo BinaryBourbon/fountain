@@ -69,9 +69,12 @@ defmodule Fountain.Environments do
     end)
   end
 
-  @doc "Get environment scoped to user. Returns nil on wrong owner or missing id."
+  @doc "Get environment scoped to user. A foreign, missing or malformed id reads as nil."
   def get_environment(id, user_id) when is_binary(user_id) do
-    Repo.get_by(Environment, id: id, user_id: user_id)
+    case Ecto.UUID.dump(id) do
+      {:ok, _} -> Repo.get_by(Environment, id: id, user_id: user_id)
+      :error -> nil
+    end
   end
 
   @doc """

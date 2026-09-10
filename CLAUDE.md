@@ -339,7 +339,10 @@ There is no router-level billing gate. The gate that protects spend is
 
 ## Rate limiter
 
-`FountainWeb.Plugs.RateLimit` — ETS-backed, keyed by IP in prod. In tests:
+`FountainWeb.Plugs.RateLimit` — ETS-backed, per node. The `:api` pipeline
+runs it twice: keyed by IP before auth (600/min) and keyed by API key after
+it (`key: :api_key`, 600/min), because every app deployed beside the server
+arrives through one ingress address. In tests:
 
 ```elixir
 # config/test.exs
@@ -430,6 +433,14 @@ required-check activation.
 build** on a security advisory unless it is acknowledged in `mix.exs`, and
 only retirements stay non-blocking (an upstream maintainer can retire a
 package at any moment, and that should not break unrelated work).
+
+`config/hex_advisories.exs` additionally acknowledges the incorrect Decimal
+CVE-2026-32686 finding only for the reviewed 3.1.1 Hex artifact, matching both
+checksums. Remove that acknowledgment when the EEF feed is corrected; changing
+the locked artifact drops it automatically. The exponent rejection and artifact
+matching regressions live in `hex_advisories_test.exs`.
+Evidence is in `decisions/evidence/decimal-advisory.json`; reproduce the public
+registry controls with `python3 scripts/verify-decimal-audit.py`.
 
 On `main`, `already-tested` can reuse a successful PR run's `tested-tree`
 artifact. That artifact records the actual checkout tree (normally GitHub's

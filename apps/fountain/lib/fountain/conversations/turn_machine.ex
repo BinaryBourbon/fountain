@@ -150,6 +150,22 @@ defmodule Fountain.Conversations.TurnMachine do
   def autonomous_turn?(%{current_turn: %{origin: "autonomous"}}), do: true
   def autonomous_turn?(_state), do: false
 
+  @doc "Apply one peer report, stopping its effects if background admission is refused."
+  @spec drive(map(), payload(), keyword(), (map(), effect() -> map())) :: map()
+  def drive(state, payload, extra, apply_effect) do
+    {turn, effects} = handle(from_state(state), payload, ctx(state, extra))
+    state = into_state(state, turn)
+
+    Enum.reduce_while(effects, state, fn effect, state ->
+      state = apply_effect.(state, effect)
+
+      # A refused background turn must not persist its output or ask permission.
+      if effect == :open_autonomous_turn and is_nil(state.current_turn),
+        do: {:halt, state},
+        else: {:cont, state}
+    end)
+  end
+
   @doc "One peer report: the next turn and the effects the server applies."
   @spec handle(t(), payload(), ctx()) :: {t(), [effect()]}
   def handle(turn, payload, ctx \\ %{})
@@ -332,7 +348,9 @@ defmodule Fountain.Conversations.TurnMachine do
   # — the response is the only place the runtime reports it — before the turn
   # row is closed. nil records nothing.
   def handle(%__MODULE__{} = turn, {:done, stop_reason, usage}, ctx) do
-    status = if stop_reason in ["refusal", "cancelled"], do: "failed", else: "completed"
+    # An answered prompt is not necessarily finished work. Token/request limits
+    # and unknown future stop reasons must not become success for API consumers.
+    status = if stop_reason == "end_turn", do: "completed", else: "failed"
     record_usage(turn, with_inference(usage, ctx))
 
     {turn,
@@ -815,7 +833,7 @@ defmodule Fountain.Conversations.TurnMachine do
   ends.
   """
   @spec open(String.t(), String.t(), String.t()) ::
-          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity
+          {:ok, Conversation.t(), Conversations.Turn.t()} | :at_capacity | {:error, term()}
   def open(conversation_id, sandbox_id, prompt) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
@@ -845,6 +863,15 @@ defmodule Fountain.Conversations.TurnMachine do
         })
 
         :at_capacity
+
+      {:error, reason} = error ->
+        publish_stage(conversation_id, "sandbox", "done", %{
+          event: "admission_refused",
+          reason: if(is_atom(reason), do: Atom.to_string(reason), else: "invalid_turn"),
+          message: "This connection could not start another turn."
+        })
+
+        error
     end
   end
 
@@ -1011,11 +1038,22 @@ defmodule Fountain.Conversations.TurnMachine do
         images: Keyword.get(opts, :images, []),
         mcp_servers: Keyword.get(opts, :mcp_servers, []),
         model: Keyword.get(opts, :model),
-        permission_policy: Keyword.get(opts, :permission_policy)
+        permission_policy: Keyword.get(opts, :permission_policy),
+        # A codex spawn on the deployment's ChatGPT grant must not be
+        # authenticated with codex-acp's api-key method (ADR 0047); see
+        # `Fountain.Conversations.CodexChatGPT.peer_auth/2`.
+        auth: Keyword.get(opts, :auth, :api_key)
       )
 
     {peer, Process.monitor(peer)}
   end
+
+  @doc "The ACP model id to pin for this turn: the agent's model in the runtime's dialect, or nil without an agent."
+  @spec acp_model(Conversation.t(), map() | nil) :: String.t() | nil
+  def acp_model(_conv, nil), do: nil
+
+  def acp_model(conv, agent),
+    do: Managoat.Runtimes.Model.acp_model(conv.runtime || agent.runtime, agent.model)
 
   # The permission policy in force for this turn (#939): the agent's own,
   # clamped by whatever narrowing the launch asked for. Resolved per turn from

@@ -200,8 +200,8 @@ defmodule Fountain.Workers.SandboxReaper do
   `suspended` rows deliberately match no pass: that is the durable resting
   state, aged out by nothing (decisions/0017).
 
-  Activity is read from the conversation's most recent turn rather than from
-  `sandboxes.updated_at` or `conversations.updated_at`, both of which get
+  Activity includes turn insertion, start, completion and the last wake rather
+  than `sandboxes.updated_at` or `conversations.updated_at`, both of which get
   touched by bookkeeping the user had nothing to do with — the rehydrator moves
   `conversations.updated_at` on every boot, which would make an abandoned
   conversation look freshly active after each deploy.
@@ -253,22 +253,21 @@ defmodule Fountain.Workers.SandboxReaper do
     Lifecycle.check(started_at, last_activity_at(sandbox), false, now)
   end
 
-  # Newest turn across the sandbox's conversations, falling back to when the
-  # sandbox itself was created for one that never took a turn.
-  defp last_activity_at(%Sandbox{inserted_at: inserted_at, conversations: convs}) do
+  # A queued or long-running turn can finish long after insertion. Waking
+  # without a new turn is also activity; bookkeeping updates are not.
+  defp last_activity_at(%Sandbox{} = sandbox) do
+    %{inserted_at: inserted_at, last_resumed_at: resumed_at, conversations: convs} = sandbox
     conv_ids = Enum.map(convs, & &1.id)
 
-    latest =
-      if conv_ids == [] do
-        nil
-      else
-        Turn
-        |> where([t], t.conversation_id in ^conv_ids)
-        |> select([t], max(t.inserted_at))
-        |> Repo.one()
-      end
+    {inserted, started, ended} =
+      Turn
+      |> where([t], t.conversation_id in ^conv_ids)
+      |> select([t], {max(t.inserted_at), max(t.started_at), max(t.ended_at)})
+      |> Repo.one()
 
-    latest || inserted_at
+    [inserted_at, resumed_at, inserted, started, ended]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.max(DateTime)
   end
 
   # Idle with no server: park where the provider can preserve the disk,

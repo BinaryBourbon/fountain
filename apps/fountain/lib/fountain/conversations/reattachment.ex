@@ -38,6 +38,11 @@ defmodule Fountain.Conversations.Reattachment do
         # deploy.
         permission_policy:
           TurnMachine.effective_permission_policy(conv, TurnMachine.agent_for(conv)),
+        auth:
+          Fountain.Conversations.CodexChatGPT.peer_auth(
+            state.runtime_module,
+            state.inference_credentials
+          ),
         # Hand back the request the previous peer was holding, if any (#940).
         # The agent minted the JSON-RPC id and is still blocked on it, so the
         # id outlives our process — but only if we wrote it down. This is the

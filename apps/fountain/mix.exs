@@ -54,7 +54,7 @@ defmodule Fountain.MixProject do
       # reaches Fountain only when someone bumps the pin here, on purpose.
       # A future library starts as {:managoat_<name>, in_umbrella: true}
       # again; umbrella_layout_test.exs checks it is listed here.
-      {:managoat_acp, "~> 0.3.0"},
+      {:managoat_acp, "~> 0.3.1"},
       {:managoat_broker, "~> 0.11.0"},
       {:managoat_docs, "~> 0.1.0"},
       {:managoat_mcp_auth, "~> 0.1.0"},

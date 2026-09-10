@@ -158,6 +158,7 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `SANDBOX_CAP_FLOOR` | `2` | No. | The fewest sandboxes a tenant with a positive balance may run at once. |
 | `SANDBOX_CAP_CEILING` | `20` | No. | The most sandboxes one tenant may run at once, unless an admin override raises it. |
 | `SANDBOX_FLEET_CEILING` | `20` | No. | The most live sandboxes across every tenant. Set it to what your sandbox provider plan allows. A start beyond it gets `503 fleet_full`. |
+| `FOUNTAIN_EXECUTION_LIMITS` | `{}` | No. | JSON per-turn host ceiling: `wall_time_seconds`, `max_model_turns`, `max_estimated_cost_usd`. Each configured value must be positive; time and turns must be integers. Read at boot; invalid input refuses startup. Requests inherit the stricter host/account ceiling. Keep unset until runtime enforcement and later-turn/recovery checks are integrated: nonempty effective limits currently refuse launch with `422 execution_limits_unsupported`. This is not an aggregate spend cap. |
 | `CREDIT_OPENING_CENTS` | `500` | No. | The credit a new account starts with, in cents. |
 | `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |
 | `TEAM_CONTACT_CEILING` | `10` | No. | The most teammate contacts one account may hold at once. |
@@ -222,6 +223,42 @@ Use the variable to seed a new deployment. Use the panel to rotate a key on a
 deployment that already runs.
 | `PLATFORM_INFERENCE_DAILY_CENTS` | `5000` | No. | The most the keys above may cost in one UTC day, across every tenant. A conversation beyond it gets `503 platform_inference_unavailable`. It works only with `CREDITS_ENABLED=true`. |
 | `PLATFORM_INFERENCE_RATES` | — | No. | Per-model prices, in cents per million tokens. See below. |
+
+### The ChatGPT account for the codex runtime
+
+Fountain can also hold one ChatGPT account for the `codex` runtime. A codex
+agent whose tenant has no OpenAI key then runs on that account, before the
+`PLATFORM_OPENAI_API_KEY` key. Opencode on an `openai/` model still needs a
+key. The tenant's own key always wins.
+
+Connect the account at `/admin/inference`. There are three ways in.
+
+- **A device code.** Fountain requests a code, shows the code and a link, and
+  waits for your approval on the ChatGPT page. The account must permit
+  device-code login in its ChatGPT security settings.
+- **A pasted `auth.json`.** Run `CODEX_HOME=$(mktemp -d) codex login` on a
+  laptop and paste the file it writes. This is the recipe OpenAI documents
+  for CI. After the paste, the file belongs to Fountain. Do not use it
+  anywhere else, or both copies stop.
+- **A workspace access token.** A ChatGPT Business or Enterprise workspace
+  can mint a static token in its admin console. Paste the token and its
+  expiry date. This is the credential OpenAI sanctions for servers, so use it
+  where you have one.
+
+Fountain keeps the refresh token, encrypted under `MASTER_SECRETS_KEY`, and
+renews the access token itself. A sandbox never sees either token. The
+sandbox holds a placeholder, and the egress broker puts the real token into
+the request to `chatgpt.com`. Each connect and disconnect leaves an
+`admin.platform_chatgpt` event on the admin activity page.
+
+A personal subscription is one account for every tenant on the deployment.
+That pattern is behind reported account bans, and it is an operator's own
+risk. The page says so.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `PLATFORM_CHATGPT_REFRESH_MARGIN_SECONDS` | `900` | No. | How many seconds before its expiry Fountain renews the access token. Set it longer than your longest turn, because codex cannot renew the token itself. |
+| `PLATFORM_CHATGPT_KEEPALIVE_DAYS` | `6` | No. | How many days an idle account may go without a renewal. A daily job renews it after that, so the account does not lapse while nobody runs codex. |
 
 ### What a tenant pays
 

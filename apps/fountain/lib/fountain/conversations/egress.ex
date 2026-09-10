@@ -8,10 +8,11 @@ defmodule Fountain.Conversations.Egress do
   never a backend) and `Fountain.Connections`. Functions over rows and
   values, not over server state (#1369): `ConversationServer` keeps the
   fields the session, its placeholders and its bindings live in, unpacks
-  them for each call and applies what comes back. The three places that
-  change more than one field at once (mint, the OAuth switch, the refresh
-  before a turn) are the server's short wrappers over `prepare/4`,
-  `drop_oauth_token/3` and `reprepare/5`.
+  them for each call and applies what comes back. Two places that change
+  more than one field at once (mint, the OAuth switch) are the server's
+  short wrappers over `prepare/4` and `drop_oauth_token/3`. The third, the
+  refresh before a turn, reads seven fields and writes four since #1736, so
+  `refresh_before_turn/1` takes the state and names them.
 
   The split rules, in order, as the server applies them at provision:
   `bindings/1`, `add_connection_secrets/4`, `split_brokered/3`,
@@ -20,6 +21,11 @@ defmodule Fountain.Conversations.Egress do
 
   alias Fountain.Broker
   alias Fountain.Conversations.Provisioning
+  alias Fountain.Conversations.SpriteEnv
+  alias Fountain.Environments
+  alias Fountain.Vaults
+
+  require Logger
 
   @typedoc "A proxy session as `Fountain.Broker.prepare/4` returns it, or nil when the conversation has none."
   @type session :: map() | nil
@@ -104,6 +110,30 @@ defmodule Fountain.Conversations.Egress do
 
   defp remote_connection_hosts(_agent, _connections), do: %{}
 
+  @doc """
+  Re-read the deployment's ChatGPT access token for a conversation that runs
+  on it (ADR 0047 decision 5). Only when the credentials carry the grant and
+  the broker still holds that same value — a tenant's own secret of the
+  name, or a grant already dropped, is left alone. A rotated token replaces
+  both copies and the caller rewrites the live session's rules; a refresh
+  that fails, or a grant gone revoked, leaves the old token in place to
+  fail at the proxy with the provider's reason rather than silently here.
+  """
+  @spec refresh_platform_chatgpt(map(), map()) :: {map(), map(), boolean()}
+  def refresh_platform_chatgpt(inference_credentials, brokered) do
+    key = Fountain.Conversations.CodexChatGPT.env_key()
+    credential = Fountain.Conversations.CodexChatGPT.credential()
+    old = Map.get(inference_credentials, credential)
+
+    with true <- is_binary(old) and old != "",
+         true <- Map.get(brokered, key) == old,
+         {:ok, fresh} when fresh != old <- Fountain.PlatformChatGPT.access_token() do
+      {Map.put(inference_credentials, credential, fresh), Map.put(brokered, key, fresh), true}
+    else
+      _ -> {inference_credentials, brokered, false}
+    end
+  end
+
   # Re-read the brokered connection tokens; a rotated one is swapped into
   # `brokered` and the caller re-prepares the vault. A refresh that fails
   # leaves the old token in place: the turn runs on it and, if it has
@@ -122,6 +152,33 @@ defmodule Fountain.Conversations.Egress do
     else
       {Map.merge(brokered, Map.new(rotated)), true}
     end
+  end
+
+  # Re-read the tenant's own brokered secrets before a turn (#1736), the
+  # way `refresh_connection_secrets/3` re-reads the connection tokens.
+  # `merged` is the environment + vault merge as `SpriteEnv.merge_secrets/3`
+  # returns it now, `tenant_keys` the keys the previous read brokered. An
+  # edited value replaces the broker's; a deleted key is dropped, and what
+  # it was masking takes the name back, as at provisioning: `underlay` is
+  # the map of those values, the runtime's inference credentials and the
+  # connection tokens under their env var names. Returns the brokered map,
+  # the tenant's brokered keys now, and whether anything moved. Runs after
+  # the connection refresh so a tenant's own secret of a connection's name
+  # wins, as it does at init.
+  @spec refresh_tenant_secrets([String.t()], map(), map(), Broker.bindings(), map()) ::
+          {map(), [String.t()], boolean()}
+  def refresh_tenant_secrets(tenant_keys, merged, brokered, bindings, underlay) do
+    {_sandbox, fresh} = Broker.split(merged, bindings)
+    fresh_keys = fresh |> Map.keys() |> Enum.sort()
+    removed = tenant_keys -- fresh_keys
+
+    next =
+      brokered
+      |> Map.drop(removed)
+      |> Map.merge(Map.take(underlay, removed))
+      |> Map.merge(fresh)
+
+    {next, fresh_keys, next != brokered}
   end
 
   # An agent whose `mcp_servers` names a connection gets the entry rewritten
@@ -262,6 +319,144 @@ defmodule Fountain.Conversations.Egress do
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  @doc """
+  Rewrite the rules of the conversation's live sessions in place
+  (`Fountain.Broker.refresh/4`), keeping the token the sandbox and the idle
+  ACP peer already hold (#1736). The refresh before a turn calls this when
+  a secret has moved; `reprepare/5` is for a session that is expiring, and
+  the new token it mints reaches only the next spawn. `{:ok, 0}` (no live
+  session to rewrite) is an error to the caller: the rules went nowhere,
+  and a fresh session is the way to carry them.
+  """
+  @spec refresh_rules(String.t(), map(), Broker.bindings(), keyword()) :: :ok | {:error, term()}
+  def refresh_rules(conversation_id, brokered, bindings, opts) do
+    case Broker.refresh(conversation_id, brokered, bindings, opts) do
+      {:ok, n} when n > 0 -> :ok
+      {:ok, 0} -> {:error, :no_live_session}
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  The refresh before a turn, over the server's state (#1736): the secrets
+  the broker holds are read again, a change is written into the live
+  session's rules with the token kept, and a session near its end is
+  replaced before the turn that would outlive it, the env rebuilt with the
+  new token for the next spawn. Reads `broker`, `brokered`, `tenant_keys`,
+  `connection_keys`, `secret_sources`, `broker_bindings` and
+  `inference_credentials` (plus the ids and the DEK); writes `brokered`,
+  `tenant_keys`, `broker` and `sprite_env`. Returns the state and whether
+  the session token was replaced. The state of an unbrokered conversation
+  comes back unchanged.
+
+  The token is in the env of every process the sandbox already runs — the
+  idle ACP peer that carries the next turn included — so a new session
+  would reach none of them; only the rules can move. A rewrite that fails
+  falls through to a fresh session, and the caller closes the idle peer on
+  the `true` that comes back, so the next spawn carries the new token. A
+  re-mint that fails leaves the turn on the old token, to fail at the
+  proxy, which names the cause, rather than silently here.
+  """
+  @spec refresh_before_turn(map()) :: {map(), boolean()}
+  def refresh_before_turn(%{broker: nil} = state), do: {state, false}
+
+  def refresh_before_turn(%{broker: session} = state) do
+    {state, changed?} = reread_secrets(state)
+    rewritten? = changed? and rewrite_rules(state) == :ok
+
+    if (changed? and not rewritten?) or Broker.expiring?(session) do
+      case reprepare(
+             state.conversation_id,
+             state.brokered,
+             state.broker_bindings,
+             state.sprite_env,
+             network: state.broker_network,
+             user_id: state.user_id
+           ) do
+        {:ok, fresh, sprite_env} ->
+          {%{state | broker: fresh, sprite_env: sprite_env}, fresh.token != session.token}
+
+        {:error, reason} ->
+          Logger.warning(
+            "conv #{state.conversation_id}: broker session refresh failed: #{inspect(reason)}"
+          )
+
+          {state, false}
+      end
+    else
+      {state, false}
+    end
+  end
+
+  # The connection tokens first, then the tenant's own secrets, in the order
+  # init merged them: a tenant's secret of a connection's name wins. Two
+  # decrypts of two rows per turn; a turn is a sandbox spawn or an ACP
+  # prompt, so the read is not what a turn waits on.
+  defp reread_secrets(state) do
+    # The deployment's ChatGPT grant first (ADR 0047 decision 5): it rotates
+    # on the server's own schedule, and the conversation's copy of the
+    # credential is what the underlay below is built from.
+    {inference_credentials, brokered, grant_rotated?} =
+      refresh_platform_chatgpt(state.inference_credentials, state.brokered)
+
+    state = %{state | inference_credentials: inference_credentials}
+
+    {brokered, rotated?} =
+      refresh_connection_secrets(state.connection_keys, state.user_id, brokered)
+
+    rotated? = rotated? or grant_rotated?
+
+    # What a deleted tenant secret hands its name back to: the inference
+    # credential of that name, or the connection token it had overridden
+    # (the connection refresh above has just put the current one in place).
+    {_creds, inference, _implicit} =
+      Broker.split_inference(state.inference_credentials, state.broker_bindings)
+
+    underlay = Map.merge(inference, Map.take(brokered, state.connection_keys))
+
+    {brokered, tenant_keys, edited?} =
+      refresh_tenant_secrets(
+        state.tenant_keys,
+        tenant_secrets(state),
+        brokered,
+        state.broker_bindings,
+        underlay
+      )
+
+    {%{state | brokered: brokered, tenant_keys: tenant_keys}, rotated? or edited?}
+  end
+
+  # The environment + vault merge as it stands now. Both fetches are
+  # tenant-scoped on the user the server established at init; a row that is
+  # gone contributes nothing, so its secrets leave the broker too.
+  defp tenant_secrets(%{secret_sources: nil}), do: %{}
+
+  defp tenant_secrets(%{secret_sources: sources} = state) do
+    env =
+      sources.environment_id &&
+        Environments.get_environment(sources.environment_id, state.user_id)
+
+    vault = sources.vault_id && Vaults.get_vault(sources.vault_id, state.user_id)
+    SpriteEnv.merge_secrets(env, vault, state.tenant_key)
+  end
+
+  defp rewrite_rules(state) do
+    case refresh_rules(state.conversation_id, state.brokered, state.broker_bindings,
+           network: state.broker_network,
+           user_id: state.user_id
+         ) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "conv #{state.conversation_id}: broker rules rewrite failed: #{inspect(reason)}"
+        )
+
+        :error
     end
   end
 

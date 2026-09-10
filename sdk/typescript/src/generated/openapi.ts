@@ -3743,6 +3743,8 @@ export interface components {
             /** @description Secrets stored on this environment. */
             secret_count?: number;
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
             /** Format: date-time */
             updated_at?: string;
         };
@@ -3773,6 +3775,8 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
         };
         /** EnvironmentResponse */
         EnvironmentResponse: {
@@ -3801,6 +3805,8 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+            /** @description Setup exec timeout in seconds; defaults to 120. The overall provisioning deadline still applies. */
+            setup_timeout_seconds?: number;
         };
         /** Error */
         Error: {
@@ -7627,6 +7633,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Saved execution policy refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Too Many Requests */
             429: {
                 headers: {
@@ -10128,6 +10143,8 @@ export interface operations {
                 channel_id?: string;
                 /** @description Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary. */
                 status?: string;
+                /** @description Return at most this many conversations, most recently updated first (1 to 500; 400 outside that range). Without it the whole list is returned, which on a busy account is hundreds of rows per call — a client that needs one conversation should filter (`agent_id`, `sandbox_id`, `channel_id`) and cap. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -10144,7 +10161,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationListResponse"];
                 };
             };
-            /** @description Unknown status */
+            /** @description Unknown status or limit out of range */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -16576,6 +16593,22 @@ export interface operations {
             };
             /** @description The thread is running a turn; retry */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error?: {
+                            code?: string | null;
+                            message?: string;
+                            param?: string | null;
+                            type?: string;
+                        };
+                    };
+                };
+            };
+            /** @description Saved execution policy refused */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

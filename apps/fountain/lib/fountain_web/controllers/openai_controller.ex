@@ -287,6 +287,7 @@ defmodule FountainWeb.OpenAIController do
     ],
     request_body: {"Chat-completions request", "application/json", @chat_request},
     responses: [
+      unprocessable_entity: {"Saved execution policy refused", "application/json", @openai_error},
       internal_server_error: {"Internal error", "application/json", @openai_error},
       ok:
         {"The completion (or, with `stream: true`, its SSE stream)", "application/json",
@@ -660,6 +661,26 @@ defmodule FountainWeb.OpenAIController do
   # OpenAI's envelope for what this dialect owns; the rest of the context's
   # refusal vocabulary keeps FallbackController's status codes, which are
   # what a client acts on, wrapped in the same envelope so an SDK parses them.
+  defp respond_error(conn, {:error, {:execution_limits_invalid, field}}),
+    do:
+      openai_error(
+        conn,
+        422,
+        "Invalid execution limits: #{field}.",
+        "invalid_request_error",
+        "execution_limits_invalid"
+      )
+
+  defp respond_error(conn, {:error, {:execution_limits_unsupported, controls}}),
+    do:
+      openai_error(
+        conn,
+        422,
+        "Execution-limit enforcement is unavailable: #{Enum.join(controls, ", ")}.",
+        "invalid_request_error",
+        "execution_limits_unsupported"
+      )
+
   defp respond_error(conn, {:error, {:invalid_request, message}}),
     do: openai_error(conn, 400, message, "invalid_request_error", nil)
 

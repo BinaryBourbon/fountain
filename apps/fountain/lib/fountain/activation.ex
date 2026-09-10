@@ -158,10 +158,13 @@ defmodule Fountain.Activation do
   A conversation row was just written: if it is the account's first, the
   developer has sent the request the landing handed them.
 
-  Emits `onboarding.request_sent`, the funnel's third step. Called from
-  `Conversations.create_conversation/1`, which is the one write both create
-  paths share, so a new door onto conversation creation is instrumented by
-  construction. Returns `:ok` in every case.
+  Emits `onboarding.request_sent`, the funnel's third step. Reached through
+  `Conversations.after_conversation_created/1`, which every door that inserts a
+  conversation calls once its write has committed — admission writes the row in
+  a transaction with the sandbox and the execution allowance, so it cannot
+  share `create_conversation/1` itself.
+  `conversation_creation_seam_test.exs` drives every door and fails if one
+  stops firing. Returns `:ok` in every case.
   """
   @spec conversation_created(Conversation.t()) :: :ok
   def conversation_created(%Conversation{user_id: user_id, id: id} = conv)

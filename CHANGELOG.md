@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
+  toolchain setup run within an explicit bound. It persists through API/spec
+  round trips and invalidates checkpoints when changed. The overall provisioning
+  deadline and failed-setup handling remain in force.
+
 - Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
 - Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
 
@@ -29,6 +34,22 @@ upgrade, is in
   untrusted work can keep all Fountain API authority on their service host.
 
 ### Fixed
+
+- A secret edited or rotated in an environment or vault during a brokered
+  conversation reaches the broker before the next turn. The broker's copy was
+  split once, at provisioning, and only the tenant's connection tokens were
+  read again; a change also minted a new session, whose token reaches only the
+  next spawned process, while the idle agent that carries the next turn kept
+  the old one. Now the environment and vault are read before every turn and
+  the live session's rules are rewritten in place, token kept; when a token
+  does have to be replaced, the idle agent is closed so the next turn spawns
+  with it. A client that writes a fresh one-hour GitHub App token into a
+  vault before each prompt no longer sees `401 Bad credentials` an hour in
+  (#1736).
+
+- ACP token/request limits and unknown stop reasons now fail the turn instead
+  of reporting completion. Reported usage and the original stop reason remain
+  available; only `end_turn` establishes normal completion (#1732).
 
 - The broker's root CA is installed under a lock, and the operating-system
   trust store is rebuilt only when the bundle on the machine is not the one
@@ -109,6 +130,7 @@ upgrade, is in
 
 - The account event stream replays rapid failures missed before discovery and includes finished conversations on reconnect.
 - Registration and conversation creation declare both shapes of 422 refusal without schema-guard exceptions.
+- A scoped fetch reads a malformed id as nil rather than raising out of the query, so a path segment or header that is not an id answers 404 where it used to answer 500 with a dropped connection. An id field that a caller fills with something other than a uuid is refused by the changeset, naming the field and the value. A vault name in an agent's `allowed_vault_ids` through `POST /api/apply`, where the document spec is free-form, reached the database layer and answered with a 500 and a dropped connection. A parent conversation header that is not an id is now the same 404 an unknown parent already gets.
 
 ### Changed
 

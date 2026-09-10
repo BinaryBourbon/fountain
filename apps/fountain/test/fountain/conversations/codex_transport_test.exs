@@ -290,6 +290,52 @@ defmodule Fountain.Conversations.CodexTransportTest do
     end
   end
 
+  # ADR 0047 decision 4. On the deployment's ChatGPT grant the sandbox holds
+  # `auth.json` in chatgptAuthTokens mode with the placeholder as its access
+  # token, and the provider must read it: `requires_openai_auth` with no
+  # `env_key` resolves the ambient auth whatever the provider id. The
+  # endpoint is the Codex backend, not the API.
+  test "a codex spawn on the ChatGPT grant gets the backend provider that reads auth.json" do
+    env = [{"CODEX_CHATGPT_ACCESS_TOKEN", "__codex_chatgpt_access_token__"}]
+    assert {:ok, result} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env)
+    config = config(result)
+
+    assert config["model_provider"] == "fountain_openai_http"
+
+    assert config["model_providers"] == %{
+             "fountain_openai_http" => %{
+               "name" => "OpenAI",
+               "base_url" => "https://chatgpt.com/backend-api/codex",
+               "wire_api" => "responses",
+               "requires_openai_auth" => true,
+               "supports_websockets" => false
+             }
+           }
+
+    assert config["features"]["respect_system_proxy"] == true
+    assert List.keyfind(result[:env], "CODEX_CHATGPT_ACCESS_TOKEN", 0) == hd(env)
+
+    # An API key beside the grant takes the key shape, as everywhere else;
+    # and a gateway the environment names is left to its own provider.
+    assert {:ok, keyed} =
+             CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: env ++ [key("sk-x")])
+
+    assert config(keyed)["model_providers"]["fountain_openai_http"]["env_key"] == "OPENAI_API_KEY"
+
+    gateway = [{"CODEX_CONFIG", ~s({"model_provider":"gw"})} | env]
+    assert {:ok, other} = CodexTransport.spawn_opts(%{broker: %{}}, "codex", env: gateway)
+    assert config(other)["model_provider"] == "gw"
+    refute Map.has_key?(config(other), "model_providers")
+
+    # An emptied grant is no grant.
+    assert {:ok, none} =
+             CodexTransport.spawn_opts(%{broker: %{}}, "codex",
+               env: env ++ [{"CODEX_CHATGPT_ACCESS_TOKEN", ""}]
+             )
+
+    refute Map.has_key?(config(none), "model_provider")
+  end
+
   defp key(value), do: {"OPENAI_API_KEY", value}
 
   defp config(opts) do

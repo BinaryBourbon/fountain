@@ -59,12 +59,15 @@ defmodule Fountain.Conversations.AttachTest do
     assert {:error, :sandbox_not_found} = attach(ctx, %{"sandbox_id" => Ecto.UUID.generate()})
   end
 
-  test "only a ready or suspended machine takes a conversation", ctx do
-    for status <- ["pending", "starting", "terminated", "failed"] do
+  for status <- ["pending", "starting", "terminated", "failed"] do
+    test "a #{status} machine refuses a conversation", ctx do
+      status = unquote(status)
       {:ok, _} = Conversations.update_sandbox(ctx.sandbox, %{status: status})
       assert {:error, {:sandbox_not_attachable, ^status}} = attach(ctx)
     end
+  end
 
+  test "a suspended machine takes a conversation", ctx do
     {:ok, _} = Conversations.update_sandbox(ctx.sandbox, %{status: "suspended"})
     assert {:ok, _} = attach(ctx)
   end

@@ -802,7 +802,7 @@ defmodule Fountain.Conversations.Provisioning do
   def run_setup_script(_handle, nil, _sprite_env, _conv_id), do: :ok
   def run_setup_script(_handle, %{setup_script: ""}, _sprite_env, _conv_id), do: :ok
 
-  def run_setup_script(handle, %{setup_script: script}, sprite_env, conv_id) do
+  def run_setup_script(handle, %{setup_script: script} = environment, sprite_env, conv_id) do
     Fountain.Telemetry.span(
       [:setup_script],
       %{conv_id: conv_id, script_size: byte_size(script)},
@@ -812,7 +812,7 @@ defmodule Fountain.Conversations.Provisioning do
         case Managoat.Sandbox.exec(handle, "bash", ["-lc", script],
                env: sprite_env,
                stderr_to_stdout: true,
-               timeout: 120_000
+               timeout: Map.get(environment, :setup_timeout_seconds, 120) * 1000
              ) do
           {:ok, output, code} ->
             Conversations.log!(%{
@@ -870,10 +870,18 @@ defmodule Fountain.Conversations.Provisioning do
     Code.ensure_loaded(runtime_module)
 
     with :ok <- prepare_acp_adapter(handle, runtime, sprite_env) do
-      if function_exported?(runtime_module, :prepare_sandbox, 3) do
-        runtime_module.prepare_sandbox(handle, agent, sprite_env)
-      else
-        :ok
+      # A codex spawn on the deployment's ChatGPT grant (ADR 0047) gets its
+      # `auth.json` from Fountain, not from the library's `codex login`.
+      case Fountain.Conversations.CodexChatGPT.prepare_sandbox(handle, runtime, sprite_env) do
+        :skip ->
+          if function_exported?(runtime_module, :prepare_sandbox, 3) do
+            runtime_module.prepare_sandbox(handle, agent, sprite_env)
+          else
+            :ok
+          end
+
+        result ->
+          result
       end
     end
   end

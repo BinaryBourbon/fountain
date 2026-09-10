@@ -17,11 +17,20 @@ defmodule Fountain.Agents do
   @doc "WARNING: lookup by id without owner check. Admin/internal use only."
   def _unsafe_get_agent!(id), do: Repo.get!(Agent, id) |> Repo.preload(:environment)
 
-  @doc "Get agent scoped to user. Returns nil on wrong owner or missing id."
+  @doc """
+  Get agent scoped to user. A foreign, missing or malformed id reads as nil.
+
+  Malformed is part of that promise for the same reason it is on
+  `Fountain.Conversations.get_conversation/2` (#1679): `/api/agui/:agent_id`
+  hands this function a raw path segment, so an id that is not a uuid would
+  raise out of the query instead of producing the 404 that route declares.
+  """
   def get_agent(id, user_id) when is_binary(user_id) do
-    case Repo.get_by(Agent, id: id, user_id: user_id) do
-      nil -> nil
-      agent -> Repo.preload(agent, :environment)
+    with {:ok, _} <- Ecto.UUID.dump(id),
+         agent when not is_nil(agent) <- Repo.get_by(Agent, id: id, user_id: user_id) do
+      Repo.preload(agent, :environment)
+    else
+      _ -> nil
     end
   end
 
@@ -229,6 +238,14 @@ defmodule Fountain.Agents do
   # the environment's secrets and checkpoints materialise inside the
   # agent's sprite. The error mirrors a nonexistent id so a foreign
   # environment UUID can't be confirmed by probing.
+  # A changeset that has already failed is not worth a database round trip, and
+  # the id it carries may be a value the query cannot dump: a name where an id
+  # belongs raises `Ecto.Query.CastError` out of `Repo`, which reaches the
+  # caller as a 500 rather than the 422 the changeset was about to return
+  # (#1679). The ownership rule below still runs on every changeset that could
+  # otherwise succeed, which is the only one whose answer changes anything.
+  defp validate_environment_owner(%Ecto.Changeset{valid?: false} = changeset), do: changeset
+
   defp validate_environment_owner(changeset) do
     env_id = Ecto.Changeset.get_change(changeset, :environment_id)
     user_id = Ecto.Changeset.get_field(changeset, :user_id)
