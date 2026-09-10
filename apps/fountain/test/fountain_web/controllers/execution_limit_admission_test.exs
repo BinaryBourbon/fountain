@@ -362,6 +362,158 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
     assert creation_audits(ctx.user.id) == 2
   end
 
+  for path <- [:fresh, :attach], failure <- [:conversation, :allowance, :ceiling] do
+    test "#{path} rotation keeps the old binding on #{failure} refusal", ctx do
+      before_counts = counts()
+      params = rotation_attrs(ctx, unquote(path))
+
+      params =
+        case unquote(failure) do
+          :conversation ->
+            Map.put(params, "title", %{})
+
+          :allowance ->
+            stub(ExecutionAllowance, :new_changeset, fn id, limits ->
+              Mimic.call_original(ExecutionAllowance, :new_changeset, [id, limits])
+              |> Ecto.Changeset.add_error(:limits, "fixture rejection")
+            end)
+
+            params
+
+          :ceiling ->
+            stub(Fountain.RuntimeDispatch, :for_agent, fn agent ->
+              save_ceiling(ctx.user, %{max_model_turns: 2})
+              Mimic.call_original(Fountain.RuntimeDispatch, :for_agent, [agent])
+            end)
+
+            params
+        end
+
+      assert {:error, _} = Conversations.start_or_resume_conversation(params)
+      assert Repo.reload!(ctx.conv).channel_id == "limits"
+      assert counts() == before_counts
+      assert creation_audits(ctx.user.id) == 0
+      refute_received :worker_started
+    end
+  end
+
+  test "quota refusal keeps the channel bound", ctx do
+    {:ok, _} = Fountain.Accounts.update_sandbox_limit(ctx.user, 1)
+    assert {:error, _} = Conversations.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
+    assert Repo.reload!(ctx.conv).channel_id == "limits"
+    refute_received :worker_started
+  end
+
+  for path <- [:fresh, :attach] do
+    test "#{path} rotation commits the replacement before worker or prompt delivery", ctx do
+      owner = self()
+
+      check_binding = fn id ->
+        refute Repo.in_transaction?()
+        assert Repo.reload!(ctx.conv).channel_id == nil
+        assert Conversations.channel_conversation(rotation_attrs(ctx, unquote(path))).id == id
+        send(owner, :binding_checked)
+      end
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _, {_, opts} ->
+        check_binding.(Keyword.fetch!(opts, :conversation_id))
+        {:ok, owner}
+      end)
+
+      stub(Fountain.Conversations.ConversationServer, :send_prompt, fn id, _, _, _ ->
+        check_binding.(id)
+        :ok
+      end)
+
+      params = rotation_attrs(ctx, unquote(path))
+
+      params =
+        if unquote(path) == :attach, do: Map.put(params, "prompt", "continue"), else: params
+
+      assert {:ok, _, :created} = Conversations.start_or_resume_conversation(params)
+      assert_received :binding_checked
+    end
+  end
+
+  test "worker startup failure restores the old binding", ctx do
+    stub(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:error, :fixture_rejection} end)
+
+    assert {:ok, failed, :created} =
+             Conversations.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
+
+    assert failed.status == "failed"
+    assert failed.channel_id == nil
+    assert Conversations.channel_conversation(rotation_attrs(ctx, :fresh)).id == ctx.conv.id
+    assert Repo.get!(ExecutionAllowance, failed.id).limits == %{}
+  end
+
+  test "attachment prompt refusal restores the old binding", ctx do
+    before_counts = counts()
+
+    stub(Fountain.Conversations.ConversationServer, :send_prompt, fn _, _, _, _ ->
+      {:error, :busy}
+    end)
+
+    params = Map.put(rotation_attrs(ctx, :attach), "prompt", "continue")
+    assert {:error, :busy} = Conversations.start_or_resume_conversation(params)
+    assert Conversations.channel_conversation(params).id == ctx.conv.id
+    assert counts() == before_counts
+  end
+
+  test "failed startup cannot restore the old binding over a newer rotation", ctx do
+    owner = self()
+
+    stub(Horde.DynamicSupervisor, :start_child, fn _, {_, opts} ->
+      replacement = Repo.get!(Conversation, Keyword.fetch!(opts, :conversation_id))
+      replacement |> Ecto.Changeset.change(channel_id: nil) |> Repo.update!()
+
+      winner =
+        insert_conversation(
+          user_id: ctx.user.id,
+          agent: ctx.agent,
+          sandbox: ctx.sandbox,
+          status: "idle",
+          channel_id: "limits"
+        )
+
+      send(owner, {:winner, winner.id})
+      {:error, :fixture_rejection}
+    end)
+
+    assert {:ok, _, :created} =
+             Conversations.start_or_resume_conversation(rotation_attrs(ctx, :fresh))
+
+    assert_received {:winner, id}
+    assert Conversations.channel_conversation(rotation_attrs(ctx, :fresh)).id == id
+    assert Repo.reload!(ctx.conv).channel_id == nil
+  end
+
+  test "rotation cannot unbind a conversation reassigned after lookup", ctx do
+    other = insert_active_user()
+    before_counts = counts()
+
+    stub(Fountain.RuntimeDispatch, :for_agent, fn agent ->
+      ctx.conv |> Ecto.Changeset.change(user_id: other.id) |> Repo.update!()
+      Mimic.call_original(Fountain.RuntimeDispatch, :for_agent, [agent])
+    end)
+
+    params = rotation_attrs(ctx, :fresh) |> Map.delete("user_id")
+
+    assert %{"errors" => %{"channel_id" => ["binding changed; retry the rotation"]}} =
+             request(ctx, params) |> json_response(422)
+
+    assert Repo.reload!(ctx.conv).user_id == other.id
+    assert Repo.reload!(ctx.conv).channel_id == "limits"
+    assert counts() == before_counts
+    assert creation_audits(ctx.user.id) == 0
+    refute_received :worker_started
+  end
+
+  defp rotation_attrs(ctx, path),
+    do:
+      attrs(ctx, path)
+      |> Map.merge(%{"user_id" => ctx.user.id, "channel_id" => "limits", "fresh" => true})
+
   defp creation_audits(user_id) do
     Repo.aggregate(
       from(e in Fountain.Audit.Event,

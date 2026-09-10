@@ -2011,7 +2011,11 @@ defmodule Fountain.Conversations do
   owner's `!rotate` — ACP `session/new` `_meta.freshSession` — through a
   binding that would otherwise hand the old conversation straight back.
   Unbinding, rather than relying on "newest wins", keeps the outcome
-  independent of `inserted_at`'s one-second precision.
+  independent of `inserted_at`'s one-second precision. Admission commits the
+  old unbinding and the replacement together. A refused replacement preserves
+  the old binding; a later startup/prompt failure restores it unless another
+  rotation has already moved the binding. Concurrent rotations of the same
+  binding return a channel validation error to the loser.
 
   Two concurrent first calls for one channel can both create; the next call
   resumes whichever is newer. Nothing is audited on the resume path — nothing
@@ -2031,8 +2035,8 @@ defmodule Fountain.Conversations do
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id) do
         %Conversation{} = conv ->
           if fresh_requested?(attrs) do
-            with {:ok, _} <- unbind_channel(conv),
-                 {:ok, fresh} <- start_conversation(attrs, opts),
+            with {:ok, fresh} <-
+                   start_conversation(attrs, Keyword.put(opts, :rotate_from, conv.id)),
                  do: {:ok, fresh, :created}
           else
             with :ok <- _unsafe_check_saved_execution_allowance(conv.id),
@@ -2089,6 +2093,118 @@ defmodule Fountain.Conversations do
     conv
     |> Ecto.Changeset.change(channel_id: nil)
     |> Repo.update()
+  end
+
+  # Inside admission's transaction, before the attachment's sandbox row lock.
+  # Keep the selected conversation stable while replacing its binding; reject
+  # a competing rotation that has already moved it.
+  defp unbind_rotated_channel(attrs, opts) do
+    case Keyword.get(opts, :rotate_from) do
+      nil ->
+        :ok
+
+      id ->
+        case lock_rotation_conversation(id, attrs) do
+          %Conversation{channel_id: channel} = conv when channel == attrs.channel_id ->
+            with {:ok, _} <- unbind_channel(conv), do: :ok
+
+          :busy ->
+            {:error, rotation_conflict("the previous conversation is busy; retry the rotation")}
+
+          _ ->
+            {:error, rotation_conflict("binding changed; retry the rotation")}
+        end
+    end
+  end
+
+  # Worker startup and attachment prompt delivery run after admission commits.
+  # Restore only while this replacement still owns the binding; a later
+  # rotation must win over this failure. Keep the old -> new row lock order.
+  defp restore_rotated_channel(conv, opts) do
+    case Keyword.get(opts, :rotate_from) do
+      nil -> :ok
+      id -> report_restore(conv, id, attempt_restore(conv, id))
+    end
+  end
+
+  defp attempt_restore(conv, id) do
+    Repo.transaction(fn ->
+      with %Conversation{channel_id: nil} = previous <- lock_rotation_conversation(id, conv),
+           %Conversation{channel_id: channel} = replacement
+           when channel == conv.channel_id <- lock_rotation_conversation(conv.id, conv) do
+        replacement |> Ecto.Changeset.change(channel_id: nil) |> Repo.update!()
+        previous |> Ecto.Changeset.change(channel_id: channel) |> Repo.update!()
+        :restored
+      else
+        # Contention on a row this compensation cannot wait for.
+        :busy -> Repo.rollback(:busy)
+        # A newer rotation already owns the binding, or the rows moved. That
+        # rotation must win over this failure, so leaving them alone is right.
+        _ -> :superseded
+      end
+    end)
+  rescue
+    e -> {:error, e}
+  end
+
+  defp report_restore(_conv, _id, {:ok, _outcome}), do: :ok
+
+  # A compensation, not a rollback: nothing retries it and no caller can act on
+  # it. Failing silently leaves a channel bound to nothing, which is the bug
+  # this path exists to prevent wearing a different hat, so say so.
+  defp report_restore(conv, id, other) do
+    Logger.warning(
+      "conv #{conv.id}: could not restore channel #{inspect(conv.channel_id)} to conv #{id} " <>
+        "after a failed rotation: #{inspect(other)}"
+    )
+
+    :ok
+  end
+
+  defp rotation_conflict(message) do
+    %Conversation{}
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.add_error(:channel_id, message)
+  end
+
+  # How long a rotation may wait for the row it is replacing. On the fresh path
+  # this runs inside `with_sandbox_reservation/3`, which holds the global fleet
+  # advisory lock, and the row it wants is the one `_unsafe_create_turn_on_sandbox/3`
+  # takes `FOR UPDATE` — so an unbounded wait would let one busy channel stall
+  # provisioning for every tenant. Turn admission holds that row for a handful
+  # of local queries, so this is orders of magnitude more than it ever
+  # legitimately needs, and exceeding it means contention worth reporting
+  # rather than waiting out.
+  @rotation_lock_timeout_ms 250
+
+  defp lock_rotation_conversation(id, attrs) do
+    # Channel/ownership writes must serialize, but FK references may proceed.
+    #
+    # The bound is scoped to this read and handed straight back: `SET LOCAL`
+    # lasts for the whole transaction, and admission goes on to insert rows
+    # whose foreign keys take `KEY SHARE` on `users` — which a credit posting's
+    # `FOR UPDATE` conflicts with. Leaving 250ms in force over those would turn
+    # a slow billing write into an unrescued error on a path that has none.
+    Repo.query!("SET LOCAL lock_timeout = '#{@rotation_lock_timeout_ms}ms'")
+
+    conversation =
+      from(c in Conversation,
+        where: c.id == ^id and c.user_id == ^attrs.user_id and c.agent_id == ^attrs.agent_id,
+        lock: "FOR NO KEY UPDATE"
+      )
+      |> where_vault(attrs.vault_id)
+      |> where_environment(attrs.environment_id)
+      |> Repo.one()
+
+    Repo.query!("SET LOCAL lock_timeout = DEFAULT")
+    conversation
+  rescue
+    e in Postgrex.Error ->
+      if e.postgres[:code] == :lock_not_available do
+        :busy
+      else
+        reraise(e, __STACKTRACE__)
+      end
   end
 
   # The newest conversation still worth resuming for this binding. `vault_id`
@@ -2234,7 +2350,8 @@ defmodule Fountain.Conversations do
                permission_policy: perm_policy,
                caller_tools: attrs["caller_tools"] || []
              },
-             attrs["execution_limits"]
+             attrs["execution_limits"],
+             opts
            ) do
       after_conversation_created(conv)
       record_execution_allowance_created(allowance, user_id, opts)
@@ -2305,6 +2422,7 @@ defmodule Fountain.Conversations do
 
           update_conversation(conv, %{status: "failed"})
           update_sandbox(sandbox, %{status: "failed"})
+          restore_rotated_channel(conv, opts)
           result = _unsafe_get_conversation!(conv.id)
           broadcast_sidebar_update(user_id)
           {:ok, result}
@@ -2343,7 +2461,7 @@ defmodule Fountain.Conversations do
   # Keep fleet -> user advisory lock order, then stabilize ownership and
   # recheck policy. A failed conversation or allowance must release the entire
   # reservation. Analytics, audit, worker startup and prompts run after commit.
-  defp reserve_initial_conversation(sandbox_attrs, conversation_attrs, request) do
+  defp reserve_initial_conversation(sandbox_attrs, conversation_attrs, request, opts) do
     Fountain.Quotas.with_sandbox_reservation(conversation_attrs.user_id, fn ->
       # Nothing in here may take a row lock. `with_sandbox_reservation/3` holds
       # `pg_advisory_xact_lock(@fleet_lock_key)` — one lock shared by every
@@ -2368,7 +2486,8 @@ defmodule Fountain.Conversations do
           select: a.id
       ) || Repo.rollback(:not_found)
 
-      with {:ok, limits} <- resolve_admission_limits(conversation_attrs.user_id, request),
+      with :ok <- unbind_rotated_channel(conversation_attrs, opts),
+           {:ok, limits} <- resolve_admission_limits(conversation_attrs.user_id, request),
            {:ok, sandbox} <- create_sandbox(sandbox_attrs),
            {:ok, conv} <-
              insert_conversation_row(Map.put(conversation_attrs, :sandbox_id, sandbox.id)),
@@ -2848,6 +2967,11 @@ defmodule Fountain.Conversations do
               lock: "FOR SHARE"
           ) || Repo.rollback(:not_found)
 
+        case unbind_rotated_channel(attrs, opts) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
         sandbox =
           Repo.one(
             from s in Sandbox,
@@ -2884,6 +3008,7 @@ defmodule Fountain.Conversations do
         {:error, _} = err ->
           # Nothing ran. Take the row back so a refused request created
           # nothing, exactly like a refused fresh launch.
+          restore_rotated_channel(conv, opts)
           _ = Repo.delete(conv)
           broadcast_sidebar_update(conv.user_id)
           err
