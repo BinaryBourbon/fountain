@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "The repo moves to the managoat organization, and every coordinate that names its owner moves with it"
-description: "Done on 2026-09-10: BinaryBourbon/fountain — a personal user account — transferred to managoat/fountain, keeping the repo name and the project name (0034). The owner-scoped coordinates moved with it: ghcr.io/managoat/fountain and ghcr.io/managoat/fountain-manifests, github.com/managoat/fountain/cli and the Buzz provider module beside it, managoat/homebrew-tap. Production reconciles the new artifact and serves the new image. The registry names that carry no owner (npm @agentshit, PyPI fountain-agent-sdk, hex fountain_sdk) are decided here and move separately. Two things are still owed and named in the status block: the v0.16.0 image tag at the new path, and PyPI's trusted publisher."
+description: "Done on 2026-09-10: BinaryBourbon/fountain — a personal user account — transferred to managoat/fountain, keeping the repo name and the project name (0034). The owner-scoped coordinates moved with it: ghcr.io/managoat/fountain and ghcr.io/managoat/fountain-manifests, github.com/managoat/fountain/cli and the Buzz provider module beside it, managoat/homebrew-tap. Production reconciles the new artifact and serves the new image. The registry names that carry no owner (npm @agentshit, PyPI fountain-agent-sdk, hex fountain_sdk) are decided here and move separately. Nothing is outstanding: the v0.16.0 and v0.16 tags were copied to the new path and the quick-start boot check verified against them, and PyPI trusted publishing now names the new owner."
 tags: [infra, open-source, release, deploy]
 status: stable
 adr: "0048"
 adr_status: "Accepted"
 date: 2026-09-10
-generated: { by: human:jhgaylor, at: 2026-09-10T06:44:48-04:00 }
-verified: { by: human:jhgaylor, at: 2026-09-10T06:44:48-04:00 }
+generated: { by: human:jhgaylor, at: 2026-09-10T07:18:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-09-10T07:18:00-04:00 }
 ---
 
 # 0048 — The repo moves to the managoat organization, and every coordinate that names its owner moves with it
@@ -21,18 +21,19 @@ artifact publish to `ghcr.io/managoat/*`, home-cloud#221 flipped the
 `github.com/managoat/fountain`. What the cutover found, including three things
 this file did not predict, is in *After the move* below.
 
-**Two things are still owed**, neither of them blocking:
+**Nothing is outstanding.** The two items this file listed as owed on the day
+were both closed before the session ended:
 
-- **`ghcr.io/managoat/fountain:v0.16.0` does not exist.** The quick-start pin
-  names it, and `ci.yml` takes its release-bump exemption rather than failing,
-  so the compose boot check is **skipped on every run** — a green check that
-  currently boots nothing. Either copy the tag
-  (`docker buildx imagetools create -t ghcr.io/managoat/fountain:v0.16.0 ghcr.io/binarybourbon/fountain:v0.16.0`,
-  which needs a token with `write:packages`) or accept it until the next
-  release publishes a version tag at the new path.
-- **PyPI's trusted publisher still names the old owner.** Web-only to change;
-  until it does, the next Python SDK release fails, and a failed publish is
-  invisible to every gate here.
+- **The released tags exist at the new path.** `v0.16.0` and the moving `v0.16`
+  were copied with `docker buildx imagetools create`, which preserves the
+  two-platform index rather than flattening it; both carry the source digest
+  `sha256:c94fb66d…`. `latest` was deliberately **not** copied — `build.yml`
+  already points it at the newest main image, and overwriting it would move it
+  backwards. `scripts/compose-boot-check.sh` then ran against the copy and
+  answered `/health` and `/health/ready` with 200, so `ci.yml`'s quick-start job
+  boots a real image again instead of taking its release-bump exemption.
+- **PyPI's trusted publisher names the new owner.** Done by hand, web-only as
+  expected.
 
 ## Context
 
