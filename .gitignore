@@ -71,8 +71,6 @@ __pycache__/
 /sdk/python/dist/
 /sdk/python/src/*.egg-info/
 
-# Build output of scripts/build-pages-tombstone.py.
-/_pages_tombstone/
 
 # Swift Package Manager build state.
 /.build/

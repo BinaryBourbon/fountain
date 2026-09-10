@@ -636,12 +636,13 @@ retired in #1008, so there is no `mkdocs.yml`, no `docs.yml` workflow and no
 `mkdocs build` step to keep green. A page reaches a reader through `/docs` or
 not at all.
 
-The one thing left on GitHub Pages is a **tombstone** (#1011): one redirect per
-old URL into `/docs`, built by `scripts/build-pages-tombstone.py` from the nav
-and published by hand from `.github/workflows/pages-tombstone.yml`. It is
-`workflow_dispatch` only and reads no page content. **Do not turn it into a
-docs publishing path**, and do not treat a docs edit as needing a re-run —
-the redirects only go stale if a page's *slug* changes.
+**Nothing publishes to GitHub Pages any more.** A tombstone used to answer
+the retired MkDocs URLs with one redirect each into `/docs` (#1011). The move
+to the `managoat` organization killed it: GitHub Pages does not follow a
+transfer redirect, so `binarybourbon.github.io/fountain/` 404s and the host
+those URLs name can never answer again. Its generator and workflow were
+deleted with #1814. Do not build a second publisher for the manual; `/docs`
+is the only one, and 0034 is the standing decision that says so.
 
 Guardrails that trip people who only edit markdown:
 
