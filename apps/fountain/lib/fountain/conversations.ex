@@ -911,7 +911,8 @@ defmodule Fountain.Conversations do
   # *not* inside `insert_conversation_row/1`: a caller in a transaction must
   # fire it after that transaction commits, so a rolled-back write reports no
   # request. Every door that inserts a conversation calls it exactly once —
-  # `create_conversation/1`, `create_attached_conversation/3` — and
+  # `create_conversation/1`, `create_attached_conversation/3`,
+  # `reserve_initial_conversation/3` — and
   # `conversation_creation_seam_test.exs` drives each of them and fails if one
   # stops firing.
   defp after_conversation_created(%Conversation{} = conv) do
@@ -2235,7 +2236,7 @@ defmodule Fountain.Conversations do
              },
              attrs["execution_limits"]
            ) do
-      Fountain.Activation.conversation_created(conv)
+      after_conversation_created(conv)
       record_execution_allowance_created(allowance, user_id, opts)
 
       # Recorded here rather than in either branch below: both of them return
@@ -2344,27 +2345,33 @@ defmodule Fountain.Conversations do
   # reservation. Analytics, audit, worker startup and prompts run after commit.
   defp reserve_initial_conversation(sandbox_attrs, conversation_attrs, request) do
     Fountain.Quotas.with_sandbox_reservation(conversation_attrs.user_id, fn ->
+      # Nothing in here may take a row lock. `with_sandbox_reservation/3` holds
+      # `pg_advisory_xact_lock(@fleet_lock_key)` — one lock shared by every
+      # tenant, the thing that enforces SANDBOX_FLEET_CEILING — for the whole
+      # of this function. A `SELECT ... FOR SHARE` on `users` conflicts with
+      # the `FOR UPDATE` that `Credits.insert_and_move/3` holds across a ledger
+      # insert, lot consumption and the balance move, so one tenant's credit
+      # posting would stall provisioning for every other tenant. `agents` is
+      # the same story against a `last_used_at` stamp. These stay plain
+      # ownership rechecks: MVCC reads never block, the ceiling below is read
+      # the same way, and the inserts' foreign keys enforce integrity.
       Repo.one(
         from u in Fountain.Accounts.User,
           where: u.id == ^conversation_attrs.user_id,
-          select: u.id,
-          lock: "FOR SHARE"
+          select: u.id
       ) || Repo.rollback(:not_found)
 
       Repo.one(
         from a in Agents.Agent,
           where:
             a.id == ^conversation_attrs.agent_id and a.user_id == ^conversation_attrs.user_id,
-          select: a.id,
-          lock: "FOR SHARE"
+          select: a.id
       ) || Repo.rollback(:not_found)
 
       with {:ok, limits} <- resolve_admission_limits(conversation_attrs.user_id, request),
            {:ok, sandbox} <- create_sandbox(sandbox_attrs),
            {:ok, conv} <-
-             %Conversation{}
-             |> Conversation.changeset(Map.put(conversation_attrs, :sandbox_id, sandbox.id))
-             |> Repo.insert(),
+             insert_conversation_row(Map.put(conversation_attrs, :sandbox_id, sandbox.id)),
            {:ok, allowance} <-
              conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
         {:ok, {sandbox, conv, allowance}}

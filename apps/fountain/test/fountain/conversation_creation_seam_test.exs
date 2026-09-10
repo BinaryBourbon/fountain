@@ -33,7 +33,7 @@ defmodule Fountain.ConversationCreationSeamTest do
     %{user: user, agent: agent, env: env, sandbox: sandbox}
   end
 
-  @doors [:attach, :team]
+  @doors [:fresh, :attach, :team]
 
   for door <- @doors do
     test "the #{door} door reports the conversation it created", ctx do
@@ -49,16 +49,28 @@ defmodule Fountain.ConversationCreationSeamTest do
     end
   end
 
-  test "a rolled-back write reports nothing", ctx do
-    reject(&Fountain.Activation.conversation_created/1)
+  for door <- [:fresh, :attach] do
+    test "a rolled-back #{door} write reports nothing", ctx do
+      reject(&Fountain.Activation.conversation_created/1)
 
-    stub(Fountain.Conversations.ExecutionAllowance, :new_changeset, fn _, _ ->
-      %Fountain.Conversations.ExecutionAllowance{}
-      |> Ecto.Changeset.change()
-      |> Ecto.Changeset.add_error(:limits, "fixture rejection")
-    end)
+      stub(Fountain.Conversations.ExecutionAllowance, :new_changeset, fn _, _ ->
+        %Fountain.Conversations.ExecutionAllowance{}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.add_error(:limits, "fixture rejection")
+      end)
 
-    assert {:error, %Ecto.Changeset{}} = open(:attach, ctx)
+      assert {:error, %Ecto.Changeset{}} = open(unquote(door), ctx)
+    end
+  end
+
+  defp open(:fresh, ctx) do
+    with {:ok, conv} <-
+           Conversations.start_conversation(%{
+             "user_id" => ctx.user.id,
+             "agent_id" => ctx.agent.id,
+             "sandbox_mode" => "ephemeral"
+           }),
+         do: {:ok, conv.id}
   end
 
   defp open(:attach, ctx) do
