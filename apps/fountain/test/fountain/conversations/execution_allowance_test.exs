@@ -504,6 +504,100 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
     end)
   end
 
+  # The account ceiling is re-resolved inside the admission transaction, so a
+  # change another connection commits after the early preflight still refuses.
+  # The `users` row is read unlocked on purpose (locking it would park
+  # admission behind a credit posting), so this asserts the recheck reads
+  # current committed state — not a lock ordering.
+  test "attachment honours a ceiling committed after its preflight" do
+    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
+      user =
+        Repo.insert!(%Fountain.Accounts.User{
+          email: "attach-policy-race-#{Ecto.UUID.generate()}@example.test",
+          credit_balance_cents: 500
+        })
+
+      env = Fountain.Factory.insert_env(user_id: user.id)
+
+      agent =
+        Fountain.Factory.insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
+
+      sandbox =
+        Fountain.Factory.insert_sandbox(
+          user_id: user.id,
+          agent_id: agent.id,
+          environment_id: env.id,
+          status: "ready"
+        )
+
+      owner = self()
+
+      try do
+        admitting =
+          independent_writer(fn ->
+            # Runs immediately after the early preflight read the ceiling and
+            # allowed the launch. Hold here until the new ceiling is committed.
+            Mimic.stub(Fountain.RuntimeDispatch, :for_agent, fn agent ->
+              send(owner, :preflight_passed)
+
+              receive do
+                :ceiling_committed -> :ok
+              after
+                5_000 -> raise "ceiling barrier timed out"
+              end
+
+              Mimic.call_original(Fountain.RuntimeDispatch, :for_agent, [agent])
+            end)
+
+            Conversations.start_conversation(%{
+              "user_id" => user.id,
+              "agent_id" => agent.id,
+              "sandbox_id" => sandbox.id
+            })
+          end)
+
+        try do
+          assert_receive :preflight_passed, 5_000
+
+          tightening =
+            independent_writer(fn ->
+              user
+              |> Fountain.Accounts.User.execution_limits_changeset(%{max_model_turns: 2})
+              |> Repo.update!()
+            end)
+
+          assert %Fountain.Accounts.User{} = Task.await(tightening)
+          refute tightening.pid == admitting.pid
+          send(admitting.pid, :ceiling_committed)
+
+          assert {:error, {:execution_limits_unsupported, ["max_model_turns"]}} =
+                   Task.await(admitting)
+
+          # No conversation means no allowance: the row is keyed by it.
+          assert Conversations.list_conversations(user.id) == []
+
+          refute Repo.exists?(
+                   from e in Fountain.Audit.Event,
+                     where:
+                       e.user_id == ^user.id and
+                         e.action in [
+                           "conversation.created",
+                           "conversation.execution_allowance_created"
+                         ]
+                 )
+
+          assert Repo.reload!(sandbox) == sandbox
+        after
+          Task.shutdown(admitting, :brutal_kill)
+        end
+      after
+        Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
+        Repo.delete!(user)
+        Repo.get!(Sandbox, sandbox.id) |> Repo.delete!()
+      end
+    end)
+  end
+
   defp race(mode) do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
       # These rows must be committed: sharing the test's sandbox connection would
