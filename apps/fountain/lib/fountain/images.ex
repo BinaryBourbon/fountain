@@ -12,6 +12,8 @@ defmodule Fountain.Images do
 
   @valid_media_types ~w(image/png image/jpeg image/gif image/webp)
 
+  def max_prompt_image_bytes, do: 10 * 1024 * 1024
+
   def valid_media_types, do: @valid_media_types
 
   def valid_media_type?(media_type), do: media_type in @valid_media_types
