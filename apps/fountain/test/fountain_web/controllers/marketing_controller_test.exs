@@ -183,7 +183,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "obra/superpowers"
       assert body =~ "https://mcp.deepwiki.com/mcp"
       assert body =~ "vault: &quot;ci-bot&quot;"
-      assert body =~ "@agentshit/fountain-sdk"
+      assert body =~ "@managoat/fountain-sdk"
       assert length(Regex.scan(~r/data-role="sdk-walkthrough-step"/, body)) == 4
       refute body =~ "kind: Environment"
       refute body =~ "fountain apply -f fountain.yml"
@@ -382,7 +382,7 @@ defmodule FountainWeb.MarketingControllerTest do
       assert body =~ "@ag-ui/client"
       assert body =~ "fountain acp"
       assert body =~ "/v1/chat/completions"
-      assert body =~ "@agentshit/fountain-sdk"
+      assert body =~ "@managoat/fountain-sdk"
     end
 
     test "carries its own card", %{conn: conn} do

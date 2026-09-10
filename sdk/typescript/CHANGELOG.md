@@ -1,6 +1,7 @@
 # Changelog
 
-Notable changes to `@agentshit/fountain-sdk`. Format:
+Notable changes to `@managoat/fountain-sdk`, published as
+`@agentshit/fountain-sdk` up to 1.23.0. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/).
 
@@ -9,6 +10,25 @@ API, which is additive, so a given SDK release keeps working against later
 server releases.
 
 ---
+
+## [1.24.0] - 2026-09-10
+
+### Changed
+
+- **The package is now `@managoat/fountain-sdk`.** Same library, same API, same
+  version line: 1.24.0 follows 1.23.0. Update the dependency and the import
+  specifier; nothing else about your code changes.
+
+  ```
+  npm remove @agentshit/fountain-sdk
+  npm install @managoat/fountain-sdk
+  ```
+
+  `@agentshit/fountain-sdk` keeps every version it has ever published, so
+  existing installs and lockfiles go on resolving. It will receive no new
+  ones. The move follows the repository into the managoat organization
+  (`decisions/0048`), which is also where the scope that publishes this
+  package now lives.
 
 ## [1.23.0] - 2026-09-07
 

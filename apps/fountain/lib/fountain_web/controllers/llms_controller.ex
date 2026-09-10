@@ -208,7 +208,7 @@ defmodule FountainWeb.LlmsController do
 
       - [OpenAPI 3 spec](#{base}/api/openapi.json): machine-readable, the authority on request and response shapes
       - [Swagger UI](#{base}/api/docs): interactive try-it, click "Authorize" to set your bearer token
-      - [TypeScript SDK](https://www.npmjs.com/package/@agentshit/fountain-sdk): `npm install @agentshit/fountain-sdk`
+      - [TypeScript SDK](https://www.npmjs.com/package/@managoat/fountain-sdk): `npm install @managoat/fountain-sdk`
       - [Python SDK](#{base}/docs/python-sdk): `pip install fountain-agent-sdk`
       - [CLI (Homebrew)](https://github.com/managoat/homebrew-tap): `brew install managoat/tap/fountain`
       - [Example agent specs](https://github.com/jhgaylor/agent-specs): public manifest tree you can `fountain apply`

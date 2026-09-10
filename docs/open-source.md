@@ -43,7 +43,7 @@ holds the third-party attribution.
 | The reasons behind the design | `decisions/` in the repo. The ADRs are not on this site. |
 | The hosted instance | [managoat.com](https://managoat.com) |
 | The CLI | `brew install managoat/tap/fountain`, or the [CLI reference](cli.md). |
-| The TypeScript SDK | `@agentshit/fountain-sdk` on npm, or the [TypeScript reference](sdk.md). |
+| The TypeScript SDK | `@managoat/fountain-sdk` on npm, or the [TypeScript reference](sdk.md). |
 | The Python SDK | `fountain-agent-sdk` on PyPI, or the [Python reference](python-sdk.md). |
 | The Elixir SDK | [`fountain_sdk`](https://hex.pm/packages/fountain_sdk) on Hex, the [`sdk/elixir`](https://github.com/managoat/fountain/tree/main/sdk/elixir) source, or the [Elixir reference](elixir-sdk.md). |
 | The Swift SDK | The [`sdk/swift`](https://github.com/managoat/fountain/tree/main/sdk/swift) source, or the [Swift reference](swift-sdk.md). SwiftPM reads the `Package.swift` at the repository root. |

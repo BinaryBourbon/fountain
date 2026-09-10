@@ -22,11 +22,11 @@ has answered on your account yet.
   the smallest one that works.
 
 ```bash
-npm install @agentshit/fountain-sdk
+npm install @managoat/fountain-sdk
 ```
 
 ```ts
-import { Fountain } from "@agentshit/fountain-sdk";
+import { Fountain } from "@managoat/fountain-sdk";
 
 const fountain = new Fountain();          // FOUNTAIN_API_KEY
 const REPO = "https://github.com/you/your-app";

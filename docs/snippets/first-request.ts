@@ -1,4 +1,4 @@
-import { Fountain } from "@agentshit/fountain-sdk";
+import { Fountain } from "@managoat/fountain-sdk";
 
 const fountain = new Fountain();
 const run = await fountain.run(

@@ -1,6 +1,6 @@
 name: Publish SDK
 
-# Publishes `@agentshit/fountain-sdk` to npm. **CI is the only publisher** —
+# Publishes `@managoat/fountain-sdk` to npm. **CI is the only publisher** —
 # nothing is ever released from a laptop.
 #
 # The trigger is the version itself: merge a PR that bumps
@@ -149,7 +149,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "@agentshit/fountain-sdk ${TAG#sdk-v}" "$GITHUB_SHA"
+          git tag -a "$TAG" -m "@managoat/fountain-sdk ${TAG#sdk-v}" "$GITHUB_SHA"
           git push origin "$TAG"
 
       - name: Say what happened
@@ -159,9 +159,9 @@ jobs:
         run: |
           if [ "$NEEDED" = "yes" ]; then
             {
-              echo "### Published \`@agentshit/fountain-sdk@$VERSION\`"
+              echo "### Published \`@managoat/fountain-sdk@$VERSION\`"
               echo
-              echo "https://www.npmjs.com/package/@agentshit/fountain-sdk/v/$VERSION"
+              echo "https://www.npmjs.com/package/@managoat/fountain-sdk/v/$VERSION"
               echo
               echo "Tagged \`sdk-v$VERSION\` at \`$GITHUB_SHA\`. Verify the provenance with"
               echo '`npm audit signatures` after installing.'
@@ -173,7 +173,7 @@ jobs:
             {
               echo "### Nothing to publish"
               echo
-              echo "\`@agentshit/fountain-sdk@$VERSION\` is already on npm. This push"
+              echo "\`@managoat/fountain-sdk@$VERSION\` is already on npm. This push"
               echo "changed the SDK without changing its version, which is fine for"
               echo "tests, examples and the changelog."
             } >> "$GITHUB_STEP_SUMMARY"

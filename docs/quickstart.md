@@ -49,7 +49,7 @@ request.
 ## The same request from the SDK
 
 ```bash
-npm install @agentshit/fountain-sdk
+npm install @managoat/fountain-sdk
 ```
 
 ```ts

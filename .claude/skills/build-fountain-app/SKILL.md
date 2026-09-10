@@ -1,6 +1,6 @@
 ---
 name: build-fountain-app
-description: Build an application on top of the Fountain API — a browser app, a bot, an internal tool, anything that hires agents, sends them prompts and renders what they do. Use whenever the user says "build an app on Fountain", "a client for Fountain", "another fountain-team / workbench / demo app", "Sign in with Fountain", or wants to ship something that talks to /api from its own origin. Covers the published TypeScript SDK (@agentshit/fountain-sdk), the shape (static SPA on the SDK, or a small server in front), auth (OAuth code + PKCE, tokens are API keys), streaming, the server-side registration an app needs (API_CORS_ORIGINS, OAUTH_CLIENTS), a hosting recipe for any static host or container, and the traps every previous app hit.
+description: Build an application on top of the Fountain API — a browser app, a bot, an internal tool, anything that hires agents, sends them prompts and renders what they do. Use whenever the user says "build an app on Fountain", "a client for Fountain", "another fountain-team / workbench / demo app", "Sign in with Fountain", or wants to ship something that talks to /api from its own origin. Covers the published TypeScript SDK (@managoat/fountain-sdk), the shape (static SPA on the SDK, or a small server in front), auth (OAuth code + PKCE, tokens are API keys), streaming, the server-side registration an app needs (API_CORS_ORIGINS, OAUTH_CLIENTS), a hosting recipe for any static host or container, and the traps every previous app hit.
 ---
 
 # Build an app on Fountain
@@ -30,7 +30,7 @@ code, do not re-derive it**:
 
 ## The SDK is the client
 
-[`@agentshit/fountain-sdk`](https://www.npmjs.com/package/@agentshit/fountain-sdk)
+[`@managoat/fountain-sdk`](https://www.npmjs.com/package/@managoat/fountain-sdk)
 is published on npm (1.0.0, Apache-2.0, no runtime dependencies, Node ≥ 20.19,
 browser-safe by default). Its source is `sdk/typescript/` in this repo;
 `docs/sdk.md` is the manual and `sdk/typescript/examples/*.ts` are compiled
@@ -39,11 +39,11 @@ parser — the SDK is those, done once, and its types are generated from the
 server's OpenAPI document so they cannot drift.
 
 ```bash
-npm install @agentshit/fountain-sdk
+npm install @managoat/fountain-sdk
 ```
 
 ```ts
-import { Fountain, ConversationBusyError } from "@agentshit/fountain-sdk";
+import { Fountain, ConversationBusyError } from "@managoat/fountain-sdk";
 
 const fountain = new Fountain({ baseUrl, apiKey });   // in a browser: what the person gave you
 const me = await fountain.me();                        // the cheapest check that a key works
@@ -87,7 +87,7 @@ Ask one question: **does anyone besides the key's owner need to see the
 data?**
 
 - **No** → a static SPA. No backend. Key in `localStorage`, OAuth for
-  sign-in, `@agentshit/fountain-sdk` in the browser. This is fountain-team,
+  sign-in, `@managoat/fountain-sdk` in the browser. This is fountain-team,
   fountain-conversations, dns-desk and all six demo apps. Default here.
 - **Yes** (sharing, cross-user rooms, a credential the browser must not
   hold, your own data model) → the workbench shape: a small server that
@@ -105,7 +105,7 @@ channel must not *resume* an existing conversation.
 
 ## 2. Stack
 
-bun + vite + react + TypeScript, `@agentshit/fountain-sdk` (current
+bun + vite + react + TypeScript, `@managoat/fountain-sdk` (current
 `1.0.0`; the `browser` export condition works under Vite, no runtime deps).
 Use the SDK. fountain-team and the demo apps predate it and vendor a
 hand-rolled `src/api/client.ts` + `lib/sse.ts` + `lib/acp.ts` from dns-desk;

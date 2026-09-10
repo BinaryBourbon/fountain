@@ -96,7 +96,7 @@ code actually reaches for.
 The CLI and the SDKs are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
 
 ```bash
-npm install @agentshit/fountain-sdk
+npm install @managoat/fountain-sdk
 # or
 pip install fountain-agent-sdk
 # or add {:fountain_sdk, "~> 0.1.0"} to mix.exs
@@ -112,7 +112,7 @@ Add Fountain with Swift Package Manager:
 ```
 
 ```ts
-import { Fountain } from "@agentshit/fountain-sdk";
+import { Fountain } from "@managoat/fountain-sdk";
 
 const run = await new Fountain().run("Upgrade us to Phoenix 1.8 and open a PR", {
   agent: "reposage",

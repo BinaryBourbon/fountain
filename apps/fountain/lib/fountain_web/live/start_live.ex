@@ -315,7 +315,7 @@ defmodule FountainWeb.StartLive do
           </div>
           <pre class="bg-[var(--color-bg-2)] rounded border border-[var(--color-border)] px-3 py-2 text-xs font-mono overflow-x-auto"><code id="start-ts">{typescript(assigns)}</code></pre>
           <p class="text-xs text-[var(--color-text-muted)]">
-            <code class="font-mono">npm install @agentshit/fountain-sdk</code>
+            <code class="font-mono">npm install @managoat/fountain-sdk</code>
           </p>
         </div>
       </section>
