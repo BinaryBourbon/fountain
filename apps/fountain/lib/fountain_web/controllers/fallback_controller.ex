@@ -24,6 +24,15 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, {:execution_limits_widen, field}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "execution_limits_widen",
+      errors: %{execution_limits: ["cannot widen #{field}"]}
+    })
+  end
+
   def call(conn, {:error, {:execution_limits_unsupported, controls}}) do
     conn
     |> put_status(:unprocessable_entity)
