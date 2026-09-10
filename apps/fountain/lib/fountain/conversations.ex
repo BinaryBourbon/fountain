@@ -1864,13 +1864,15 @@ defmodule Fountain.Conversations do
   defp check_execution_limits(user_id, request) do
     # Ownership: each caller just fetched the agent by this authenticated user.
     # Read the current account policy, never a request-supplied or cached map.
-    case Fountain.Accounts.get_user(user_id) do
-      %Fountain.Accounts.User{execution_limits: ceiling} when is_map(ceiling) ->
-        with {:ok, limits} <- ExecutionLimits.resolve(nil, ceiling, request) do
+    case {Fountain.Accounts.get_user(user_id),
+          Application.get_env(:fountain, :execution_limit_ceiling, %{})} do
+      {%Fountain.Accounts.User{execution_limits: ceiling}, host}
+      when is_map(ceiling) and is_map(host) ->
+        with {:ok, limits} <- ExecutionLimits.resolve(host, ceiling, request) do
           ExecutionLimits.require_controls(limits, [])
         end
 
-      nil ->
+      {nil, _} ->
         {:error, :not_found}
 
       _ ->

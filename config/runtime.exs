@@ -975,6 +975,25 @@ credit_packs =
       |> Enum.sort()
   end
 
+# Per-turn host ceiling. Empty until runtime enforcement and later-turn/recovery
+# ceiling checks are integrated. Never inherit an operator's shell policy in tests.
+execution_limit_ceiling =
+  if env == :test do
+    %{}
+  else
+    case Fountain.Conversations.ExecutionLimits.from_json_env(
+           System.get_env("FOUNTAIN_EXECUTION_LIMITS")
+         ) do
+      {:ok, limits} ->
+        limits
+
+      {:error, {:execution_limits_invalid, field}} ->
+        raise "FOUNTAIN_EXECUTION_LIMITS is invalid: #{field}"
+    end
+  end
+
+config :fountain, :execution_limit_ceiling, execution_limit_ceiling
+
 # Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
 # the per-account floor and ceiling the balance rule is clamped to, and the
 # fleet ceiling — the most live sandboxes the deployment will run in total,
