@@ -3877,6 +3877,57 @@
         }
       }
     },
+    "PATCH /api/conversations/{conversation_id}/labels": {
+      "operation_id": "FountainWeb.ConversationController.labels",
+      "path_params": [
+        "conversation_id"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "ConversationLabelsRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "ConversationResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "UnprocessableEntityError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "PATCH /api/environments/{id}": {
       "operation_id": "FountainWeb.EnvironmentController.update (2)",
       "path_params": [
@@ -9971,6 +10022,13 @@
           "required": false,
           "type": "string"
         },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "required": false,
+          "type": "object"
+        },
         "last_active_at": {
           "format": "date-time",
           "nullable": true,
@@ -10124,6 +10182,14 @@
           "required": false,
           "type": "array"
         },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "nullable": true,
+          "required": false,
+          "type": "object"
+        },
         "permission_policy": {
           "additionalProperties": {
             "enum": [
@@ -10178,6 +10244,19 @@
           "nullable": true,
           "required": false,
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ConversationLabelsRequest": {
+      "properties": {
+        "labels": {
+          "additionalProperties": {
+            "nullable": true,
+            "type": "string"
+          },
+          "required": true,
+          "type": "object"
         }
       },
       "type": "object"

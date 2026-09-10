@@ -48,6 +48,21 @@ export class Conversation {
     return this.http.list<Turn>(`/api/conversations/${this.id}/turns`);
   }
 
+  /**
+   * Merge labels into this conversation, and return the updated record.
+   *
+   * A key you do not name is left alone; `null` removes one. At most 32
+   * labels, a key at most 64 bytes and a value at most 256 bytes — a write
+   * over any of those is a 422 naming the offending key.
+   */
+  async setLabels(labels: Record<string, string | null>): Promise<ConversationRecord> {
+    return this.http.data<ConversationRecord>(
+      "PATCH",
+      `/api/conversations/${this.id}/labels`,
+      { body: { labels } },
+    );
+  }
+
   /** Send the next turn. Returns a `Run` — await it, or stream it. */
   send(prompt: string, options: SendOptions = {}): Run {
     const body: Record<string, unknown> = { prompt };

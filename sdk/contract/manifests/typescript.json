@@ -53,6 +53,7 @@
     "GET /api/vaults/{vault_id}/secrets",
     "PATCH /api/agents/{id}",
     "PATCH /api/connection-providers/{id}",
+    "PATCH /api/conversations/{conversation_id}/labels",
     "PATCH /api/environments/{id}",
     "PATCH /api/team/{agent_id}",
     "PATCH /api/team/{agent_id}/schedules/{id}",

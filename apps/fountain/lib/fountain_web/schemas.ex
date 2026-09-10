@@ -390,6 +390,15 @@ defmodule FountainWeb.Schemas do
           description:
             "The external channel key this conversation is bound to, if it was created with one."
         },
+        labels: %Schema{
+          type: :object,
+          additionalProperties: %Schema{type: :string},
+          description:
+            "Free-form key/value strings on the conversation. A program stamps its own " <>
+              "run with them (`env=prod`, `drift=true`) and `GET /api/conversations?label=env:prod` " <>
+              "filters on them. At most 32 entries; a key is at most 64 bytes and a value " <>
+              "at most 256 bytes. Always an object, empty when nothing set one."
+        },
         turn_count: %Schema{type: :integer},
         first_prompt: %Schema{
           type: :string,
@@ -582,9 +591,43 @@ defmodule FountainWeb.Schemas do
             "With channel_id: skip the resume and open a new conversation (201), which then " <>
               "becomes the channel's binding. Sent by a chat harness relaying its owner's " <>
               "rotate command. Ignored without channel_id."
+        },
+        labels: %Schema{
+          type: :object,
+          nullable: true,
+          additionalProperties: %Schema{type: :string},
+          description:
+            "Key/value strings to stamp on the conversation. At most 32 entries; a key is " <>
+              "at most 64 bytes and a value at most 256 bytes, and a 422 names the offending " <>
+              "key under `errors.labels`. With channel_id, a resume merges these into the " <>
+              "conversation it hands back rather than dropping them."
         }
       },
       required: [:agent_id]
+    })
+  end
+
+  defmodule ConversationLabelsRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConversationLabelsRequest",
+      description:
+        "Labels to merge into a conversation. A key not named is left alone; a key whose " <>
+          "value is null is removed.",
+      type: :object,
+      properties: %{
+        labels: %Schema{
+          type: :object,
+          additionalProperties: %Schema{type: :string, nullable: true},
+          description:
+            "The pairs to merge. null removes a key. At most 32 entries survive the merge; " <>
+              "a key is at most 64 bytes and a value at most 256 bytes. A 422 names the " <>
+              "offending key under `errors.labels`."
+        }
+      },
+      required: [:labels]
     })
   end
 

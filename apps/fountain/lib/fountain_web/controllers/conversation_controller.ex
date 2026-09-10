@@ -9,6 +9,7 @@ defmodule FountainWeb.ConversationController do
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, LogEvent}
   alias FountainWeb.Audited
+  alias FountainWeb.SandboxKey
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -147,6 +148,43 @@ defmodule FountainWeb.ConversationController do
       _conv ->
         :ok = Conversations.mark_read(id, user.id)
         send_resp(conn, :no_content, "")
+    end
+  end
+
+  operation(:labels,
+    summary: "Set a conversation's labels",
+    description:
+      "Merges `labels` into the conversation's own (#1637). A key the body does not name " <>
+        "is left alone, and a key whose value is `null` is removed, so a run can stamp one " <>
+        "outcome without reading the rest first.\n\n" <>
+        "At most 32 labels survive the merge; a key is at most 64 bytes and a value at most " <>
+        "256 bytes. A 422 names the offending key.\n\n" <>
+        "The account's own key may label any of its conversations. A sandbox callback token " <>
+        "may label **only the conversation it was minted for**; another id is refused with " <>
+        "403 `sprite_may_not_label_another_conversation`.",
+    parameters: [conversation_id: [in: :path, type: :string, required: true]],
+    request_body: {"Labels", "application/json", Schemas.ConversationLabelsRequest},
+    responses: [
+      ok: {"Conversation", "application/json", Schemas.ConversationResponse},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      forbidden:
+        {"A sandbox token labelling another conversation", "application/json", Schemas.Error},
+      unprocessable_entity:
+        {"Invalid labels", "application/json", Schemas.UnprocessableEntityError}
+    ]
+  )
+
+  def labels(conn, %{"conversation_id" => id} = params) do
+    user = conn.assigns.current_user
+    opts = SandboxKey.opts(conn) ++ Audited.attribution(conn)
+
+    with {:ok, conv} <-
+           Conversations.set_conversation_labels(id, user.id, params["labels"], opts) do
+      # Re-read annotated, so this renders the same conversation object every
+      # other conversation route does rather than one with a null turn_count.
+      render(conn, :show,
+        conversation: Conversations.get_conversation_with_activity(conv.id, user.id)
+      )
     end
   end
 
@@ -419,6 +457,9 @@ defmodule FountainWeb.ConversationController do
         "With `channel_id`, resumes the latest live conversation already bound to that " <>
         "channel for the same agent and vault (200, `meta.resumed: true`) instead of " <>
         "opening a new one (201). " <>
+        "`labels` (#1637) are stamped on the new conversation; with `channel_id`, a resume " <>
+        "merges them into the conversation it hands back, and a sandbox callback token " <>
+        "resuming a conversation it was not minted for is refused with 403. " <>
         "Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. " <>
         "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
@@ -429,6 +470,9 @@ defmodule FountainWeb.ConversationController do
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
+      forbidden:
+        {"A sandbox token labelling the conversation a resume landed on", "application/json",
+         Schemas.Error},
       not_found: {"Agent not found", "application/json", Schemas.Error},
       unprocessable_entity:
         {"Validation error", "application/json", Schemas.UnprocessableEntityError},
@@ -466,9 +510,14 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("parent_conversation_id", parent_id)
       |> Map.put("user_id", user.id)
 
+    # `SandboxKey.opts/1` rides along because a `channel_id` resume lands on an
+    # *existing* conversation and merges this request's labels into it (#1637);
+    # without it a sandbox token could relabel any conversation of the tenant
+    # by resuming its channel.
+    opts = SandboxKey.opts(conn) ++ Audited.attribution(conn)
+
     with :ok <- Billing.check_spend(user),
-         {:ok, conv, outcome} <-
-           Conversations.start_or_resume_conversation(params, Audited.attribution(conn)) do
+         {:ok, conv, outcome} <- Conversations.start_or_resume_conversation(params, opts) do
       # 201 when a conversation was opened; 200 when `channel_id` resumed an
       # existing one (#774). Same body either way, so a client that ignores
       # the status still gets the id it needs.
