@@ -35,6 +35,37 @@ upgrade, is in
 
 ### Added
 
+- **An `acp` runtime launches a named command, so a deterministic program can
+  run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
+  `runtime_command` field carries the command it runs. The field is required
+  for that runtime and a 422 naming the field on every other one, which
+  resolves its own executable from a pinned table. `model` is optional there:
+  no inference credential is resolved, no model is pinned on the session, and
+  a turn succeeds on an account that holds no API key. Fountain installs no
+  adapter for it, and the command owns its own configuration; skills still
+  mount, and their path arrives as `FOUNTAIN_SKILLS_DIR`. Everything the
+  protocol carries is unchanged, including tool-call blocks on the transcript
+  and the SSE feed, `session/cancel` on interrupt, and the agent's permission
+  policy. With `CREDITS_ENABLED` the turn is priced by sandbox time alone and
+  `turn.usage` is null.
+
+  `runtime_command` is a **free string** rather than an entry in a catalog of
+  blessed commands. It is resolved inside the sandbox, under the same
+  isolation an environment's `setup_script` already runs under, so a catalog
+  would restrict a self-hoster and protect nobody. On a self-hosted runner
+  with the default backend that isolation is a directory and the daemon's own
+  user, which is what trusted mode already means for a setup script; the
+  runtime docs say so beside the field.
+
+  **Client note.** `Agent.model` is now nullable, in the response and in the
+  create and update bodies, so an agent converted to `acp` can clear the
+  model it no longer uses with `{"model": null}`. In the TypeScript SDK
+  `Agent["model"]` is `string | null`, and `AgentRequest["model"]` and
+  `AgentUpdate["model"]` are `string | null` and optional. A client that
+  assumed a string needs a null check. Nothing else on the wire changed
+  shape.
+>>>>>>> theirs
+
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
   toolchain setup run within an explicit bound. It persists through API/spec
   round trips and invalidates checkpoints when changed. The overall provisioning

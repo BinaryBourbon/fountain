@@ -182,7 +182,7 @@ terminal.
 | Message | Meaning |
 |---|---|
 | `no Fountain agent configured` | The entry has no `--agent`. |
-| `agent "x" runs the … runtime, which does not speak ACP` | All four runtimes speak ACP. This names a conversation whose runtime column holds a name that no adapter covers. Use that agent from the conversations app, or with `fountain run`. |
+| `agent "x" runs the … runtime, which does not speak ACP` | Every runtime Fountain ships speaks ACP. This names a conversation whose runtime column holds a name that no adapter covers. Use that agent from the conversations app, or with `fountain run`. |
 | `credentials for … were rejected` | Run `fountain auth login`. The message names the instance it tried, and that is usually the surprise. |
 | `could not resolve agent "x" on …` | The wrong name, or the right name on a different instance. |
 | `the sandbox never started: …` | The provision failed, and the reason belongs to the sandbox provider. |
