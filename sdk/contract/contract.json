@@ -8400,6 +8400,11 @@
           "required": true,
           "type": "string"
         },
+        "secret": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "secrets": {
           "items": {
             "ref": "ApplySecretResult"
@@ -10891,7 +10896,8 @@
             "Environment",
             "Schedule",
             "Teammate",
-            "Vault"
+            "Vault",
+            "Webhook"
           ],
           "required": true,
           "type": "string"

@@ -559,7 +559,7 @@ export interface paths {
         put?: never;
         /**
          * Apply a compiled manifest (bulk upsert)
-         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled in a fixed order — environments, vaults, agents, teammates, schedules — so a spec may name another document whatever the file's order: an agent's `environment`, a teammate's `agent`, `environment` and `vault`, and a schedule's `teammate`. Every kind is keyed by the document's `name`. A `Teammate` is read as a whole declaration, so an absent `environment` or `vault` clears that binding, and moving either retires the computer the old binding named (refused with an error on that row while a turn is running on it). Two Teammate documents may not name the same agent. Apply is additive: a document dropped from the manifest leaves its record in place. Application is best-effort per resource: the response is 200 even when an individual resource fails validation, is refused by its context or raises, with per-resource errors in the result entries.
+         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled in a fixed order — environments, vaults, agents, teammates, schedules, webhooks — so a spec may name another document whatever the file's order: an agent's `environment`, a teammate's `agent`, `environment` and `vault`, and a schedule's `teammate`. Every kind is keyed by the document's `name`, except `Webhook`, which is keyed by `spec.url`. A `Webhook` created here returns its signing secret once, on that result row, and a manifest that holds one needs a full-scope credential. A `Teammate` is read as a whole declaration, so an absent `environment` or `vault` clears that binding, and moving either retires the computer the old binding named (refused with an error on that row while a turn is running on it). Two Teammate documents may not name the same agent. Apply is additive: a document dropped from the manifest leaves its record in place. Application is best-effort per resource: the response is 200 even when an individual resource fails validation, is refused by its context or raises, with per-resource errors in the result entries.
          */
         post: operations["FountainWeb.ApplyController.create"];
         delete?: never;
@@ -2809,6 +2809,11 @@ export interface components {
             } | null;
             kind: string;
             name: string;
+            /**
+             * @description A Webhook endpoint's HMAC-SHA256 signing secret, on the apply that created it. Store it; it is not shown again, and an update never returns it. Null on every other row.
+             * @example whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU
+             */
+            secret?: string | null;
             secrets?: components["schemas"]["ApplySecretResult"][];
         };
         /**
@@ -3909,11 +3914,11 @@ export interface components {
         };
         /**
          * ManifestResource
-         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Specs reference other documents by name, and the server resolves each to an id: an Agent's `environment`, a Teammate's `agent`, `environment` and `vault`, and a Schedule's `teammate`. Teammate specs take `agent`, `environment` and `vault`, and a Teammate document is read as a whole declaration, so an absent `environment` or `vault` clears that binding. Schedule specs take `teammate` plus the TeamScheduleCreateRequest fields `cron`, `prompt`, `one_off` and `enabled`.
+         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Specs reference other documents by name, and the server resolves each to an id: an Agent's `environment`, a Teammate's `agent`, `environment` and `vault`, and a Schedule's `teammate`. Teammate specs take `agent`, `environment` and `vault`, and a Teammate document is read as a whole declaration, so an absent `environment` or `vault` clears that binding. Schedule specs take `teammate` plus the TeamScheduleCreateRequest fields `cron`, `prompt`, `one_off` and `enabled`; Webhook specs take the WebhookEndpointCreateRequest fields `url`, `description` and `event_types`, and are keyed by `url` rather than by `name`.
          */
         ManifestResource: {
             /** @enum {string} */
-            kind: "Environment" | "Vault" | "Agent" | "Teammate" | "Schedule";
+            kind: "Environment" | "Vault" | "Agent" | "Teammate" | "Schedule" | "Webhook";
             name: string;
             spec?: {
                 [key: string]: unknown;

@@ -10,6 +10,12 @@ server releases.
 
 ---
 
+## [1.24.0] — 2026-09-10
+
+### Added
+
+- Generated types cover the `Teammate`, `Schedule` and `Webhook` documents bulk apply now reconciles, the `unchanged` result action, and a webhook row's one-time `secret`.
+
 ## [1.23.0] - 2026-09-07
 
 ### Added
