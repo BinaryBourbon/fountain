@@ -231,6 +231,114 @@ defmodule Fountain.Conversations.ExecutionAllowanceTest do
     refute Repo.exists?(from e in Fountain.Billing.UsageEvent, where: e.user_id == ^conv.user_id)
   end
 
+  test "scoped creation hides foreign and missing conversations before validation", %{
+    conversation: conv
+  } do
+    other = insert_conversation()
+
+    for limits <- [%{}, %{"private-field" => "private-value"}],
+        {id, user_id} <- [{conv.id, other.user_id}, {Ecto.UUID.generate(), conv.user_id}] do
+      assert Conversations.create_execution_allowance(id, user_id, limits) == {:error, :not_found}
+    end
+
+    assert Repo.get(Allowance, conv.id) == nil
+    assert Repo.get(Allowance, other.id) == nil
+    assert creation_events(conv) == []
+  end
+
+  test "scoped creation records only control names and leaves active work unchanged", %{
+    conversation: conv
+  } do
+    before = Repo.reload!(conv)
+    turn = insert_turn(conv, status: "running")
+    sandbox = Repo.reload!(conv.sandbox)
+    other = insert_conversation() |> Map.fetch!(:id) |> insert_allowance()
+
+    assert {:ok, allowance} =
+             Conversations.create_execution_allowance(
+               conv.id,
+               conv.user_id,
+               %{max_model_turns: 2, wall_time_seconds: 30, max_estimated_cost_usd: 0.25},
+               actor: "api",
+               request_ip: "192.0.2.1"
+             )
+
+    assert allowance.limits == %{
+             "max_model_turns" => 2,
+             "wall_time_seconds" => 30,
+             "max_estimated_cost_usd" => 0.25
+           }
+
+    assert Repo.reload!(allowance) == allowance
+    assert Repo.reload!(conv) == before
+    assert Repo.reload!(turn) == turn
+    assert Repo.reload!(sandbox) == sandbox
+    assert Repo.reload!(other) == other
+    assert [event] = creation_events(conv)
+    assert event.user_id == conv.user_id
+    assert event.actor == "api"
+    assert event.request_ip == "192.0.2.1"
+
+    assert event.metadata == %{
+             "controls" => ["wall_time_seconds", "max_model_turns", "max_estimated_cost_usd"]
+           }
+  end
+
+  test "scoped creation cannot replace an existing policy even with omission", %{
+    conversation: conv
+  } do
+    allowance = insert_allowance(conv.id)
+
+    for limits <- [nil, %{}, %{max_model_turns: 1}, %{max_model_turns: 20}] do
+      assert {:error, changeset} =
+               Conversations.create_execution_allowance(conv.id, conv.user_id, limits)
+
+      assert errors_on(changeset).conversation_id == ["has already been taken"]
+      assert Repo.reload!(allowance) == allowance
+    end
+
+    assert creation_events(conv) == []
+  end
+
+  test "scoped creation refuses invalid controls without a row or audit", %{conversation: conv} do
+    for limits <- [
+          %{"private-field" => "private-value"},
+          %{max_model_turns: 0},
+          %{wall_time_seconds: nil}
+        ] do
+      assert {:error, changeset} =
+               Conversations.create_execution_allowance(conv.id, conv.user_id, limits)
+
+      errors = Jason.encode!(errors_on(changeset))
+      refute errors =~ "private-field"
+      refute errors =~ "private-value"
+      assert errors_on(changeset).limits != []
+    end
+
+    assert Repo.get(Allowance, conv.id) == nil
+    assert creation_events(conv) == []
+  end
+
+  test "a saved initial allowance does not grant unsupported execution", %{conversation: conv} do
+    assert {:ok, allowance} =
+             Conversations.create_execution_allowance(conv.id, conv.user_id, %{max_model_turns: 2})
+
+    assert {:error, {:execution_limits_unsupported, ["max_model_turns"]}} =
+             Fountain.Conversations.TurnMachine.open(conv.id, conv.sandbox_id, "refused")
+
+    assert Repo.reload!(allowance).limits == %{"max_model_turns" => 2}
+    assert Conversations._unsafe_list_turns(conv.id) == []
+    refute Repo.exists?(from e in Fountain.Billing.UsageEvent, where: e.user_id == ^conv.user_id)
+  end
+
+  defp creation_events(conv),
+    do:
+      Repo.all(
+        from e in Fountain.Audit.Event,
+          where:
+            e.resource_id == ^conv.id and e.action == "conversation.execution_allowance_created"
+      )
+
   defp allowance_events(conv),
     do:
       Repo.all(
@@ -267,6 +375,90 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
 
   test "concurrent scoped writers retain each other's tighter fields" do
     race(:disjoint)
+  end
+
+  for mode <- [:duplicate, :ownership] do
+    test "initial creation rechecks #{mode} after a PostgreSQL lock wait" do
+      creation_race(unquote(mode))
+    end
+  end
+
+  defp creation_race(mode) do
+    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
+      users =
+        for _ <- 1..2,
+            do:
+              Repo.insert!(%Fountain.Accounts.User{
+                email: "initial-allowance-race-#{Ecto.UUID.generate()}@example.test"
+              })
+
+      [user, other] = users
+      conv = insert_conversation(user_id: user.id)
+      owner = self()
+
+      winner =
+        independent_writer(fn ->
+          Repo.transaction(fn ->
+            value =
+              case mode do
+                :duplicate -> insert_allowance(conv.id)
+                :ownership -> conv |> Ecto.Changeset.change(user_id: other.id) |> Repo.update!()
+              end
+
+            send(owner, :changed)
+
+            receive do
+              :commit -> value
+            after
+              5_000 -> raise "commit barrier timed out"
+            end
+          end)
+        end)
+
+      try do
+        assert_receive :changed, 5_000
+
+        loser =
+          independent_writer(fn ->
+            Conversations.create_execution_allowance(conv.id, user.id, %{})
+          end)
+
+        try do
+          assert_receive {:backend, winner_pid, winner_backend}, 5_000
+          assert winner_pid == winner.pid
+          assert_receive {:backend, loser_pid, loser_backend}, 5_000
+          assert loser_pid == loser.pid
+          refute winner_backend == loser_backend
+          await_blocked(loser_backend, System.monotonic_time(:millisecond) + 5_000)
+          send(winner.pid, :commit)
+          assert {:ok, saved} = Task.await(winner)
+
+          case {mode, Task.await(loser)} do
+            {:duplicate, {:error, changeset}} ->
+              assert errors_on(changeset).conversation_id == ["has already been taken"]
+              assert Repo.get!(Allowance, conv.id) == saved
+
+            {:ownership, {:error, :not_found}} ->
+              assert Repo.reload!(conv).user_id == other.id
+              assert Repo.get(Allowance, conv.id) == nil
+          end
+
+          refute Repo.exists?(
+                   from e in Fountain.Audit.Event,
+                     where:
+                       e.resource_id == ^conv.id and
+                         e.action == "conversation.execution_allowance_created"
+                 )
+        after
+          Task.shutdown(loser, :brutal_kill)
+        end
+      after
+        Task.shutdown(winner, :brutal_kill)
+        for user <- users, do: Repo.delete!(user)
+        Repo.get!(Sandbox, conv.sandbox_id) |> Repo.delete!()
+        assert Repo.get(Allowance, conv.id) == nil
+      end
+    end)
   end
 
   defp race(mode) do

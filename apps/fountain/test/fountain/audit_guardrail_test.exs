@@ -57,6 +57,8 @@ defmodule Fountain.AuditGuardrailTest do
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
     {"conversation caller tools", &__MODULE__.do_caller_tools/1, "conversation.caller_tools_set"},
+    {"allowance creation", &__MODULE__.do_allowance_creation/1,
+     "conversation.execution_allowance_created"},
     {"allowance narrowing", &__MODULE__.do_allowance_narrowing/1,
      "conversation.execution_allowance_narrowed"},
     {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
@@ -388,6 +390,11 @@ defmodule Fountain.AuditGuardrailTest do
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id)
     {:ok, _} = Conversations.delete_conversation(conv)
+  end
+
+  def do_allowance_creation(user) do
+    conv = insert_conversation(user_id: user.id)
+    {:ok, _} = Conversations.create_execution_allowance(conv.id, user.id, %{})
   end
 
   def do_allowance_narrowing(user) do

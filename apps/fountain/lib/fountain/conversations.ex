@@ -1152,6 +1152,50 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Save an initial resolved allowance once, scoped to its conversation owner.
+
+  Internal persistence only: the caller must resolve trusted current ceilings
+  and prove runtime support before admission. This function does not admit work
+  or reset an active turn. No launch or HTTP path calls it yet. A duplicate
+  fails without replacing the saved policy; use `narrow_execution_allowance/3`
+  for subsequent changes. Ownership stays locked through insertion.
+  """
+  def create_execution_allowance(conversation_id, user_id, resolved_limits, opts \\ []) do
+    result =
+      Repo.transaction(fn ->
+        Repo.one(
+          from c in Conversation,
+            where: c.id == ^conversation_id and c.user_id == ^user_id,
+            select: c.id,
+            lock: "FOR SHARE"
+        ) || Repo.rollback(:not_found)
+
+        case conversation_id
+             |> ExecutionAllowance.new_changeset(resolved_limits)
+             |> Repo.insert() do
+          {:ok, allowance} -> allowance
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+
+    with {:ok, allowance} <- result do
+      Audit.record(%{
+        user_id: user_id,
+        action: "conversation.execution_allowance_created",
+        resource_type: "conversation",
+        resource_id: conversation_id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{
+          "controls" => Enum.filter(ExecutionLimits.keys(), &Map.has_key?(allowance.limits, &1))
+        }
+      })
+
+      {:ok, allowance}
+    end
+  end
+
+  @doc """
   Narrow an existing allowance owned by `user_id`, retaining omitted controls.
 
   This edits future policy only: it neither admits work nor resets an active

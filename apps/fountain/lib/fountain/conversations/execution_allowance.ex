@@ -3,7 +3,8 @@ defmodule Fountain.Conversations.ExecutionAllowance do
   Versioned storage for a conversation's resolved execution allowance.
 
   This is a storage primitive, not an admission or enforcement API. Use the
-  owner-scoped `Conversations.narrow_execution_allowance/3` for existing records.
+  owner-scoped `Conversations.create_execution_allowance/3` for initial records
+  and `Conversations.narrow_execution_allowance/3` for subsequent changes.
   Initial admission must establish conversation ownership,
   resolve current ceilings and prove runtime support before saving an allowance.
   Later turns and recovery must consult it before this becomes a usable setting.
