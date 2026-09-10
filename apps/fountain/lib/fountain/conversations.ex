@@ -2458,42 +2458,73 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # Keep fleet -> user advisory lock order, then stabilize ownership and
-  # recheck policy. A failed conversation or allowance must release the entire
-  # reservation. Analytics, audit, worker startup and prompts run after commit.
+  # Tenant row waits happen here, before the fleet lock, and the reservation
+  # runs inside them. `with_sandbox_reservation/3` holds
+  # `pg_advisory_xact_lock(@fleet_lock_key)` — one lock shared by every tenant —
+  # so anything that can wait on another transaction must be settled before it
+  # is taken, or one account stalls provisioning for all of them.
+  #
+  # An unlocked read was not enough: `create_sandbox/1` and the conversation
+  # insert take `KEY SHARE` on `users` through their foreign keys, and
+  # `Credits.insert_and_move/3` holds that row `FOR UPDATE` across a ledger
+  # insert, lot consumption and the balance move. Taking `FOR SHARE` out here
+  # both settles the wait outside the fleet lock and satisfies those foreign
+  # keys, so the inserts below cannot block on it. The rotation unbind is the
+  # same category of wait and joins them.
+  #
+  # This is one transaction: the nested `Repo.transaction` inside
+  # `with_sandbox_reservation/3` joins it rather than opening another, so the
+  # sandbox, conversation and allowance still commit or roll back together.
+  # That is also why the `case` below re-raises the inner rollback with its
+  # reason: a nested rollback the outer transaction does not re-raise reaches
+  # the caller as `{:error, :rollback}`, which would turn every credits, quota
+  # and fleet refusal into a 500 instead of a 402, 422 or 503.
+  #
+  # The wait does not disappear, it changes hands. This transaction holds
+  # `users FOR SHARE` for its whole life, the fleet-lock wait included, and
+  # `FOR SHARE` conflicts with `FOR UPDATE` — so this tenant's credit postings
+  # now queue behind its own in-flight launch, which may itself be queued
+  # behind every other tenant's. Turn burns, purchases, grants, expiry and
+  # refund clawbacks all post through `Credits.insert_and_move/3`. A
+  # tenant-scoped wait beats a fleet-wide one, which is why it is the right
+  # trade, but a slow credit posting starts here.
   defp reserve_initial_conversation(sandbox_attrs, conversation_attrs, request, opts) do
-    Fountain.Quotas.with_sandbox_reservation(conversation_attrs.user_id, fn ->
-      # Nothing in here may take a row lock. `with_sandbox_reservation/3` holds
-      # `pg_advisory_xact_lock(@fleet_lock_key)` — one lock shared by every
-      # tenant, the thing that enforces SANDBOX_FLEET_CEILING — for the whole
-      # of this function. A `SELECT ... FOR SHARE` on `users` conflicts with
-      # the `FOR UPDATE` that `Credits.insert_and_move/3` holds across a ledger
-      # insert, lot consumption and the balance move, so one tenant's credit
-      # posting would stall provisioning for every other tenant. `agents` is
-      # the same story against a `last_used_at` stamp. These stay plain
-      # ownership rechecks: MVCC reads never block, the ceiling below is read
-      # the same way, and the inserts' foreign keys enforce integrity.
+    Repo.transaction(fn ->
       Repo.one(
         from u in Fountain.Accounts.User,
           where: u.id == ^conversation_attrs.user_id,
-          select: u.id
+          select: u.id,
+          lock: "FOR SHARE"
       ) || Repo.rollback(:not_found)
 
       Repo.one(
         from a in Agents.Agent,
           where:
             a.id == ^conversation_attrs.agent_id and a.user_id == ^conversation_attrs.user_id,
-          select: a.id
+          select: a.id,
+          lock: "FOR SHARE"
       ) || Repo.rollback(:not_found)
 
-      with :ok <- unbind_rotated_channel(conversation_attrs, opts),
-           {:ok, limits} <- resolve_admission_limits(conversation_attrs.user_id, request),
-           {:ok, sandbox} <- create_sandbox(sandbox_attrs),
-           {:ok, conv} <-
-             insert_conversation_row(Map.put(conversation_attrs, :sandbox_id, sandbox.id)),
-           {:ok, allowance} <-
-             conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
-        {:ok, {sandbox, conv, allowance}}
+      case unbind_rotated_channel(conversation_attrs, opts) do
+        :ok -> :ok
+        {:error, reason} -> Repo.rollback(reason)
+      end
+
+      result =
+        Fountain.Quotas.with_sandbox_reservation(conversation_attrs.user_id, fn ->
+          with {:ok, limits} <- resolve_admission_limits(conversation_attrs.user_id, request),
+               {:ok, sandbox} <- create_sandbox(sandbox_attrs),
+               {:ok, conv} <-
+                 insert_conversation_row(Map.put(conversation_attrs, :sandbox_id, sandbox.id)),
+               {:ok, allowance} <-
+                 conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
+            {:ok, {sandbox, conv, allowance}}
+          end
+        end)
+
+      case result do
+        {:ok, reserved} -> reserved
+        {:error, reason} -> Repo.rollback(reason)
       end
     end)
   end
