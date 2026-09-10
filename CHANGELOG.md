@@ -16,6 +16,23 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **The project moved to `github.com/managoat/fountain`** and every coordinate
+  that named the old owner moved with it (`decisions/0048`). The container
+  image is `ghcr.io/managoat/fountain`, the Homebrew tap is
+  `brew install managoat/tap/fountain`, and the Go module paths are
+  `github.com/managoat/fountain/cli` and `.../apps/fountain_buzz/cli`. Old
+  URLs redirect, so a clone, a `git remote`, an issue link or a release-asset
+  download keeps working; the published image tags `v0.16.0` and `v0.16` exist
+  at both paths. Two things do not follow a redirect and need an edit:
+  `go install` of the old module path now refuses with a module-path mismatch,
+  and the retired GitHub Pages doc URLs under the old account are gone.
+
+- **The TypeScript SDK is published as `@managoat/fountain-sdk`.** Same library
+  and version line; `@agentshit/fountain-sdk` keeps its published versions and
+  receives no new ones. See `sdk/typescript/CHANGELOG.md`.
+
 ### Added
 
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository

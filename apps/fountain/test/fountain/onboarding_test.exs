@@ -29,7 +29,7 @@ defmodule Fountain.OnboardingTest do
     test "the curl posts a conversation and the TypeScript runs the SDK" do
       assert Onboarding.curl_template() =~ "/api/conversations"
       assert Onboarding.curl_template() =~ "Authorization: Bearer"
-      assert Onboarding.typescript_template() =~ "@agentshit/fountain-sdk"
+      assert Onboarding.typescript_template() =~ "@managoat/fountain-sdk"
       assert Onboarding.typescript_template() =~ "fountain.run("
     end
 

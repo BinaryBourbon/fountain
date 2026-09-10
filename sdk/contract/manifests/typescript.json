@@ -1,6 +1,6 @@
 {
   "sdk": "typescript",
-  "package": "@agentshit/fountain-sdk",
+  "package": "@managoat/fountain-sdk",
   "directory": "sdk/typescript",
   "verify": "npm run verify-contract",
   "note": "Wire types for the whole document are generated into src/generated/openapi.ts and `npm run generate` proves they are current. What this manifest adds is the hand-written layer above them: the fields run(), the turn follower and the resources reach for by name, which no type check can pin to the wire.",

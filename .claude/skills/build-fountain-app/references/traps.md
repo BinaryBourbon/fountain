@@ -44,6 +44,6 @@ noted.
 
 ## SDK
 
-- `@agentshit/fountain-sdk` 1.0.0 (2026-08-25): credits vocabulary; `402 insufficient_credits` maps to `SubscriptionRequiredError` (name kept); `fleet_full` → `NotReadyError`.
+- `@managoat/fountain-sdk` 1.0.0 (2026-08-25): credits vocabulary; `402 insufficient_credits` maps to `SubscriptionRequiredError` (name kept); `fleet_full` → `NotReadyError`.
 - Anything the SDK does not wrap: `fountain.request(method, path, { query, body })` or `fountain.api.raw(...)` for bytes.
 - An OpenAPI property with a `default:` generates as **required** in the SDK types; if a call won't typecheck for a field the server defaults, that is why (fix in `schemas.ex` → regenerate, not in the app).

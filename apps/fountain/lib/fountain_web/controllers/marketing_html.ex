@@ -167,7 +167,7 @@ defmodule FountainWeb.MarketingHTML do
   """
   def sdk_example do
     """
-    import { Fountain } from "@agentshit/fountain-sdk";
+    import { Fountain } from "@managoat/fountain-sdk";
 
     const fountain = new Fountain(); // FOUNTAIN_API_KEY
 
@@ -203,7 +203,7 @@ defmodule FountainWeb.MarketingHTML do
         body:
           "Repositories, packages, env vars and setup scripts. The Environment is reusable across agents and runs.",
         code: """
-        import { Fountain } from "@agentshit/fountain-sdk";
+        import { Fountain } from "@managoat/fountain-sdk";
 
         const fountain = new Fountain(); // FOUNTAIN_API_KEY
 
@@ -274,7 +274,7 @@ defmodule FountainWeb.MarketingHTML do
   @doc "The two-turn launch example, kept out of the template so its braces are not HEEx."
   def launch_example do
     """
-    import { Fountain } from "@agentshit/fountain-sdk";
+    import { Fountain } from "@managoat/fountain-sdk";
 
     const fountain = new Fountain(); // FOUNTAIN_API_KEY
 
@@ -853,7 +853,7 @@ defmodule FountainWeb.MarketingHTML do
           },
           %{name: "Team", slug: nil, note: "the team messenger, on the same public API"},
           %{name: "Workbench", slug: nil, note: "the shared engineering workbench"},
-          %{name: "TypeScript", slug: "typescript", note: "@agentshit/fountain-sdk on npm"},
+          %{name: "TypeScript", slug: "typescript", note: "@managoat/fountain-sdk on npm"},
           %{name: "Python", slug: "python", note: "fountain-agent-sdk on PyPI"},
           %{name: "Go", slug: "go", note: "the fountain CLI, and its source"},
           %{
@@ -1078,7 +1078,7 @@ defmodule FountainWeb.MarketingHTML do
         lang: "ts",
         docs: "/docs/build",
         code: """
-        import { Fountain } from "@agentshit/fountain-sdk";
+        import { Fountain } from "@managoat/fountain-sdk";
 
         const fountain = new Fountain({ apiKey: token }); // from the OAuth flow
         const conv = await fountain.conversations.create({ agent: "reviewer" });
@@ -2183,7 +2183,7 @@ defmodule FountainWeb.MarketingHTML do
   def review_bot_webhook do
     """
     // api/github/webhook.ts
-    import { Fountain } from "@agentshit/fountain-sdk";
+    import { Fountain } from "@managoat/fountain-sdk";
     import { verify } from "@octokit/webhooks-methods";
 
     export async function POST(req: Request) {
