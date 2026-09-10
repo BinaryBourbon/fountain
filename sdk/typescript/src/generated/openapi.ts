@@ -10137,6 +10137,8 @@ export interface operations {
                 status?: string;
                 /** @description Return at most this many conversations, most recently updated first (1 to 500; 400 outside that range). Without it the whole list is returned, which on a busy account is hundreds of rows per call — a client that needs one conversation should filter (`agent_id`, `sandbox_id`, `channel_id`) and cap. */
                 limit?: number;
+                /** @description Only conversations carrying these `key:value` labels (#1637). Repeat the parameter to combine them with AND: `?label=env:prod&label=drift:true` keeps the conversations that carry both. `label[]=` is accepted as well. Each value splits on its first colon only, so `label=path:a:b` matches the label `path` with the value `a:b`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
+                label?: string[];
             };
             header?: never;
             path?: never;

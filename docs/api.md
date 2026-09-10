@@ -272,6 +272,24 @@ curl --fail-with-body \
   "$FOUNTAIN_URL/api/conversations"
 ```
 
+Filter a list with a repeatable `label` parameter. Fountain combines the
+values with AND. The example keeps the conversations that carry both pairs.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  "$FOUNTAIN_URL/api/conversations?label=env:prod&label=drift:true"
+```
+
+Each value splits on its first colon. The key is the part before it, and the
+value is all of the rest. `label=path:apps/fountain:lib` therefore filters the
+key `path` for the value `apps/fountain:lib`. A value with no colon, or with
+an empty key, returns 400 `invalid_label_filter`.
+
+The parameter is an array in the OpenAPI document, with `style: form` and
+`explode: true`. A client that builds arrays as `label[]=env:prod` is
+accepted too.
+
 `PATCH /api/conversations/{id}/labels` merges labels into a conversation. A
 key the body does not name stays as it is. A key with a `null` value is
 removed.

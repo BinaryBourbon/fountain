@@ -1,6 +1,6 @@
 defmodule Fountain.Conversations.LabelsTest do
   @moduledoc """
-  Labels on a conversation (#1637): the rule and the merge.
+  Labels on a conversation (#1637): the rule, the merge, the filter.
 
   The doors are covered where they live, so what is here is the behaviour
   every one of them inherits.
@@ -413,6 +413,109 @@ defmodule Fountain.Conversations.LabelsTest do
 
       assert Conversations.get_conversation(context.bound.id, context.user.id).labels ==
                %{"env" => "prod"}
+    end
+  end
+
+  describe "the filter vocabulary" do
+    test "splits on the first colon only" do
+      assert {:ok, %{"path" => "a:b"}} = Labels.parse_filter(["path:a:b"])
+    end
+
+    test "combines repeated values" do
+      assert {:ok, %{"env" => "prod", "drift" => "true"}} =
+               Labels.parse_filter(["env:prod", "drift:true"])
+    end
+
+    test "an empty value is a legal filter" do
+      assert {:ok, %{"env" => ""}} = Labels.parse_filter(["env:"])
+    end
+
+    test "a value with no colon is refused rather than guessed at" do
+      assert {:error, :invalid_label_filter} = Labels.parse_filter(["prod"])
+    end
+
+    test "an empty key is refused" do
+      assert {:error, :invalid_label_filter} = Labels.parse_filter([":prod"])
+    end
+
+    test "reads every repetition out of a raw query string" do
+      assert ["env:prod", "drift:true"] =
+               Labels.from_query_string("roots_only=true&label=env:prod&label=drift:true")
+    end
+
+    test "accepts the bracketed array form too" do
+      assert ["env:prod"] = Labels.from_query_string("label%5B%5D=env%3Aprod")
+    end
+  end
+
+  describe "the list filter" do
+    setup do
+      user = insert_active_user()
+
+      prod_drift =
+        insert_conversation(user_id: user.id, labels: %{"env" => "prod", "drift" => "true"})
+
+      prod_clean =
+        insert_conversation(user_id: user.id, labels: %{"env" => "prod", "drift" => "false"})
+
+      staging = insert_conversation(user_id: user.id, labels: %{"env" => "staging"})
+      unlabelled = insert_conversation(user_id: user.id)
+
+      {:ok,
+       user: user,
+       prod_drift: prod_drift,
+       prod_clean: prod_clean,
+       staging: staging,
+       unlabelled: unlabelled}
+    end
+
+    defp ids(convs), do: convs |> Enum.map(& &1.id) |> MapSet.new()
+
+    test "one pair keeps every conversation carrying it", context do
+      found = Conversations.list_conversations(context.user.id, labels: %{"env" => "prod"})
+
+      assert ids(found) == MapSet.new([context.prod_drift.id, context.prod_clean.id])
+    end
+
+    test "two pairs are combined with AND", context do
+      found =
+        Conversations.list_conversations(context.user.id,
+          labels: %{"env" => "prod", "drift" => "true"}
+        )
+
+      assert ids(found) == MapSet.new([context.prod_drift.id])
+    end
+
+    test "a pair nothing carries matches nothing", context do
+      assert [] = Conversations.list_conversations(context.user.id, labels: %{"env" => "qa"})
+    end
+
+    test "no filter leaves the list alone", context do
+      assert MapSet.size(ids(Conversations.list_conversations(context.user.id))) == 4
+      assert MapSet.size(ids(Conversations.list_conversations(context.user.id, labels: %{}))) == 4
+    end
+
+    test "the filter is tenant-scoped like every other", context do
+      stranger = insert_active_user()
+      insert_conversation(user_id: stranger.id, labels: %{"env" => "prod"})
+
+      found = Conversations.list_conversations(context.user.id, labels: %{"env" => "prod"})
+      assert ids(found) == MapSet.new([context.prod_drift.id, context.prod_clean.id])
+    end
+
+    test "combines with the other filters", context do
+      agent = insert_agent(user_id: context.user.id)
+
+      mine =
+        insert_conversation(user_id: context.user.id, agent: agent, labels: %{"env" => "prod"})
+
+      found =
+        Conversations.list_conversations(context.user.id,
+          agent_id: agent.id,
+          labels: %{"env" => "prod"}
+        )
+
+      assert ids(found) == MapSet.new([mine.id])
     end
   end
 end

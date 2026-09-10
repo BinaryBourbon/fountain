@@ -27,6 +27,13 @@ defmodule Fountain.Conversations.Labels do
   whose value is `null` is removed. That is what lets a run add one label
   without reading the others first, and what makes a channel resume keep the
   labels the binding already carried.
+
+  ## The list filter
+
+  `GET /api/conversations?label=env:prod&label=drift:true` is repeatable and
+  AND-combined. Each value splits on its **first** colon only, so
+  `label=path:a:b` filters `path` for `a:b`. The query is jsonb containment,
+  which the GIN index on the column serves.
   """
 
   import Ecto.Changeset, only: [get_change: 2, add_error: 3]
@@ -253,5 +260,42 @@ defmodule Fountain.Conversations.Labels do
      |> Enum.map(&to_string(elem(&1, 0)))
      |> Enum.filter(&Map.has_key?(current, &1))
      |> Enum.sort()}
+  end
+
+  @doc """
+  Every `label` value in a raw query string, in the order they were sent.
+
+  Read from the query string rather than from the parsed params because Plug
+  collapses a repeated key to its last value, and the filter is repeatable by
+  design. `label[]=` is accepted as well, for a client whose HTTP layer only
+  builds arrays that way.
+  """
+  @spec from_query_string(String.t() | nil) :: [String.t()]
+  def from_query_string(nil), do: []
+
+  def from_query_string(query) when is_binary(query) do
+    for {key, value} <- URI.query_decoder(query), key in ["label", "label[]"], do: value
+  end
+
+  @doc """
+  Turn repeated `key:value` filter values into the map the list query
+  contains against. Splits on the first colon only, so a value may contain
+  colons of its own.
+
+  `{:error, :invalid_label_filter}` for a value with no colon or an empty
+  key: a caller who typed `?label=prod` meant something, and matching
+  everything would be the wrong guess.
+  """
+  @spec parse_filter([String.t()] | nil) :: {:ok, map()} | {:error, :invalid_label_filter}
+  def parse_filter(nil), do: {:ok, %{}}
+
+  def parse_filter(values) when is_list(values) do
+    Enum.reduce_while(values, {:ok, %{}}, fn value, {:ok, acc} ->
+      case value |> to_string() |> String.trim() |> String.split(":", parts: 2) do
+        ["" | _] -> {:halt, {:error, :invalid_label_filter}}
+        [key, filter_value] -> {:cont, {:ok, Map.put(acc, key, filter_value)}}
+        [_no_colon] -> {:halt, {:error, :invalid_label_filter}}
+      end
+    end)
   end
 end

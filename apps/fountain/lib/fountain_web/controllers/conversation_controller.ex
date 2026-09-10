@@ -9,10 +9,16 @@ defmodule FountainWeb.ConversationController do
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, LogEvent}
   alias FountainWeb.Audited
+  alias FountainWeb.LabelFilter
   alias FountainWeb.SandboxKey
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
+
+  # Before the cast, and only where the parameter exists: `label` is a
+  # repeated key, and the cast reads query parameters out of Plug, which
+  # keeps only the last of them. See the plug's moduledoc.
+  plug FountainWeb.Plugs.RepeatedQueryParam, "label" when action in [:index]
 
   plug OpenApiSpex.Plug.CastAndValidate,
     replace_params: false,
@@ -68,6 +74,20 @@ defmodule FountainWeb.ConversationController do
             "400 outside that range). Without it the whole list is returned, which on a " <>
             "busy account is hundreds of rows per call — a client that needs one " <>
             "conversation should filter (`agent_id`, `sandbox_id`, `channel_id`) and cap."
+      ],
+      label: [
+        in: :query,
+        schema: %OpenApiSpex.Schema{type: :array, items: %OpenApiSpex.Schema{type: :string}},
+        style: :form,
+        explode: true,
+        required: false,
+        description:
+          "Only conversations carrying these `key:value` labels (#1637). Repeat the " <>
+            "parameter to combine them with AND: `?label=env:prod&label=drift:true` keeps " <>
+            "the conversations that carry both. `label[]=` is accepted as well. Each value " <>
+            "splits on its first colon only, so `label=path:a:b` matches the label `path` " <>
+            "with the value `a:b`. 400 `invalid_label_filter` on a value with no colon or " <>
+            "an empty key."
       ]
     ],
     responses: [
@@ -82,7 +102,8 @@ defmodule FountainWeb.ConversationController do
     roots_only = parse_bool_param(params["roots_only"], false)
 
     with {:ok, statuses} <- parse_statuses(params["status"]),
-         {:ok, limit} <- parse_list_limit(params["limit"]) do
+         {:ok, limit} <- parse_list_limit(params["limit"]),
+         {:ok, labels} <- LabelFilter.from(conn) do
       render(conn, :index,
         conversations:
           Conversations.list_conversations(user.id,
@@ -91,7 +112,8 @@ defmodule FountainWeb.ConversationController do
             channel_id: params["channel_id"],
             sandbox_id: params["sandbox_id"],
             status: statuses,
-            limit: limit
+            limit: limit,
+            labels: labels
           )
       )
     end
