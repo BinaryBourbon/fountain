@@ -13,6 +13,9 @@ defmodule FountainWeb.AgentJSON do
       system: a.system,
       model: a.model,
       runtime: a.runtime,
+      # The command the acp runtime launches, and null on every other one
+      # (#1634).
+      runtime_command: a.runtime_command,
       # Derived, never stored: whether this agent's runtime speaks ACP, and so
       # whether a client outside the server can render its output as protocol
       # rather than as one of the four proprietary dialects. `fountain acp`

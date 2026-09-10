@@ -7,8 +7,13 @@ public struct Agent: Sendable, Decodable, Identifiable, Hashable {
   public var name: String
   public var description: String?
   public var system: String?
-  public var model: String
+  /// `nil` on the `acp` runtime, which resolves no inference credential and
+  /// reads no model. Every other runtime always carries one.
+  public var model: String?
   public var runtime: Runtime
+  /// The shell line the `acp` runtime launches inside the sandbox. `nil` on
+  /// every other runtime, which resolves its own executable.
+  public var runtimeCommand: String?
   public var acp: Bool?
   public var sandboxProvider: SandboxProvider?
   public var sandboxMode: SandboxMode?
@@ -28,6 +33,7 @@ public struct Agent: Sendable, Decodable, Identifiable, Hashable {
 
   enum CodingKeys: String, CodingKey {
     case id, name, description, system, model, runtime, acp, skills, metadata
+    case runtimeCommand = "runtime_command"
     case sandboxProvider = "sandbox_provider"
     case sandboxMode = "sandbox_mode"
     case environmentID = "environment_id"
@@ -83,6 +89,8 @@ public struct AgentInput: Sendable, Encodable {
   public var system: String?
   public var model: String?
   public var runtime: Runtime?
+  /// Required when `runtime` is `.acp`, and refused on every other runtime.
+  public var runtimeCommand: String?
   public var sandboxProvider: SandboxProvider?
   public var sandboxMode: SandboxMode?
   public var environmentID: String?
@@ -99,6 +107,7 @@ public struct AgentInput: Sendable, Encodable {
     system: String? = nil,
     model: String? = nil,
     runtime: Runtime? = nil,
+    runtimeCommand: String? = nil,
     sandboxProvider: SandboxProvider? = nil,
     sandboxMode: SandboxMode? = nil,
     environmentID: String? = nil,
@@ -114,6 +123,7 @@ public struct AgentInput: Sendable, Encodable {
     self.system = system
     self.model = model
     self.runtime = runtime
+    self.runtimeCommand = runtimeCommand
     self.sandboxProvider = sandboxProvider
     self.sandboxMode = sandboxMode
     self.environmentID = environmentID
@@ -127,6 +137,7 @@ public struct AgentInput: Sendable, Encodable {
 
   enum CodingKeys: String, CodingKey {
     case name, description, system, model, runtime, skills, metadata
+    case runtimeCommand = "runtime_command"
     case sandboxProvider = "sandbox_provider"
     case sandboxMode = "sandbox_mode"
     case environmentID = "environment_id"

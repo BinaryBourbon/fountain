@@ -7850,6 +7850,7 @@
           "type": "object"
         },
         "model": {
+          "nullable": true,
           "required": true,
           "type": "string"
         },
@@ -7872,6 +7873,7 @@
         },
         "runtime": {
           "enum": [
+            "acp",
             "claude",
             "codex",
             "fountain-fixture",
@@ -7879,6 +7881,11 @@
             "opencode"
           ],
           "required": true,
+          "type": "string"
+        },
+        "runtime_command": {
+          "nullable": true,
+          "required": false,
           "type": "string"
         },
         "sandbox_mode": {
@@ -7990,7 +7997,8 @@
           "type": "object"
         },
         "model": {
-          "required": true,
+          "nullable": true,
+          "required": false,
           "type": "string"
         },
         "name": {
@@ -8012,6 +8020,7 @@
         },
         "runtime": {
           "enum": [
+            "acp",
             "claude",
             "codex",
             "fountain-fixture",
@@ -8019,6 +8028,11 @@
             "opencode"
           ],
           "required": true,
+          "type": "string"
+        },
+        "runtime_command": {
+          "nullable": true,
+          "required": false,
           "type": "string"
         },
         "sandbox_mode": {
@@ -8122,6 +8136,7 @@
           "type": "object"
         },
         "model": {
+          "nullable": true,
           "required": false,
           "type": "string"
         },
@@ -8144,12 +8159,18 @@
         },
         "runtime": {
           "enum": [
+            "acp",
             "claude",
             "codex",
             "fountain-fixture",
             "gemini",
             "opencode"
           ],
+          "required": false,
+          "type": "string"
+        },
+        "runtime_command": {
+          "nullable": true,
           "required": false,
           "type": "string"
         },
@@ -9983,6 +10004,7 @@
         },
         "runtime": {
           "enum": [
+            "acp",
             "claude",
             "codex",
             "fountain-fixture",
@@ -11486,6 +11508,7 @@
         },
         "runtime": {
           "enum": [
+            "acp",
             "claude",
             "codex",
             "fountain-fixture",

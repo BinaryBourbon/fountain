@@ -5,7 +5,18 @@ Notable changes to the Fountain Swift SDK follow
 
 ## Unreleased
 
+### Changed
+
+- `Agent.model` is `String?`. The `acp` runtime resolves no inference
+  credential and reads no model, so the wire sends an explicit null there. A
+  non-optional `model` threw `valueNotFound` on decode, and because a page is
+  decoded whole, one such agent in the account broke `agents.list()` for every
+  caller (#1634).
+
 ### Added
+
+- `Agent.runtimeCommand` and `AgentInput.runtimeCommand`, the shell line the
+  `acp` runtime launches inside the sandbox, and `Runtime.acp` (#1634).
 
 - `FountainKit`, a second product in this package: the same API with
   `Codable` models, a namespace per resource, a `FountainError` enum, typed

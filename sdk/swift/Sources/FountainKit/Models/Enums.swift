@@ -97,6 +97,9 @@ public struct Runtime: WireValue {
   public static let codex: Self = "codex"
   public static let gemini: Self = "gemini"
   public static let opencode: Self = "opencode"
+  /// Not a CLI: the agent names a command in `runtimeCommand` and Fountain
+  /// launches it inside the sandbox.
+  public static let acp: Self = "acp"
 }
 
 public struct BlockKind: WireValue {

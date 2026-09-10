@@ -70,6 +70,47 @@ defmodule FountainWeb.AgentControllerTest do
       end
     end
 
+    # A non-nullable model in the request schema made this a 400 from
+    # CastAndValidate, before the changeset ever saw it, so a converted agent
+    # kept a provider/model it no longer uses forever (#1634).
+    test "converts an agent to acp and clears the model it no longer uses", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id, runtime: "claude")
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_json("/api/agents/#{agent.id}", %{
+          runtime: "acp",
+          model: nil,
+          runtime_command: "chant acp"
+        })
+
+      body = json_response(conn, 200)
+      assert body["data"]["runtime"] == "acp"
+      assert body["data"]["runtime_command"] == "chant acp"
+      assert is_nil(body["data"]["model"])
+      assert is_nil(Fountain.Agents.get_agent(agent.id, user.id).model)
+    end
+
+    test "a null model on a model-driven runtime is a 422 naming the field", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id, runtime: "claude")
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_json("/api/agents/#{agent.id}", %{model: nil})
+
+      assert json_response(conn, 422)["errors"]["model"] == ["can't be blank"]
+    end
+
     test "returns 404 when the agent belongs to a different user", %{conn: conn, raw_key: raw_key} do
       other_user = insert_verified_user()
       other_agent = insert_agent(user_id: other_user.id)
@@ -106,6 +147,71 @@ defmodule FountainWeb.AgentControllerTest do
       payload = %{name: "test-bot", model: "anthropic/claude-sonnet-4-6", runtime: "claude"}
       conn = post_json(conn, "/api/agents", payload)
       assert json_response(conn, 401)
+    end
+
+    test "creates an acp agent from a command, with no model (#1634)", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      payload = %{name: "converger", runtime: "acp", runtime_command: "chant acp --env prod"}
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+
+      body = json_response(conn, 201)
+      assert body["data"]["runtime"] == "acp"
+      assert body["data"]["runtime_command"] == "chant acp --env prod"
+      assert is_nil(body["data"]["model"])
+      assert body["data"]["acp"] == true
+    end
+
+    test "returns 422 naming runtime_command when an acp agent has none", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", %{name: "converger", runtime: "acp"})
+
+      body = json_response(conn, 422)
+      assert body["errors"]["runtime_command"] == ["can't be blank"]
+    end
+
+    test "returns 422 naming runtime_command when another runtime carries one", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      payload = %{
+        name: "confused",
+        model: "anthropic/claude-sonnet-4-6",
+        runtime: "claude",
+        runtime_command: "chant acp"
+      }
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+
+      body = json_response(conn, 422)
+      assert [message] = body["errors"]["runtime_command"]
+      assert message =~ "only the acp runtime"
+    end
+
+    test "returns 422 naming model when a model-driven runtime has none", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", %{name: "modelless", runtime: "claude"})
+
+      body = json_response(conn, 422)
+      assert body["errors"]["model"] == ["can't be blank"]
     end
 
     test "returns 422 when a skill entry has neither content nor source", %{

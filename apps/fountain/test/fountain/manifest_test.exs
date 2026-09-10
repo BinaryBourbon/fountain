@@ -110,6 +110,32 @@ defmodule Fountain.ManifestTest do
     end
   end
 
+  describe "the acp runtime in a manifest (#1634)" do
+    test "an Agent declares its runtime_command, and needs no model", %{user: user} do
+      resource = %{
+        "kind" => "Agent",
+        "name" => "converger",
+        "spec" => %{"runtime" => "acp", "runtime_command" => "exec chant acp --env prod"}
+      }
+
+      assert {:ok, [%{action: :created}]} = Manifest.apply_manifest(user.id, [resource])
+
+      agent = Agents.get_agent_by_name("converger", user.id)
+      assert agent.runtime == "acp"
+      assert agent.runtime_command == "exec chant acp --env prod"
+      assert is_nil(agent.model)
+    end
+
+    test "runtime_command on a model-driven runtime fails its own row", %{user: user} do
+      resource = agent_resource("claudey", %{"runtime_command" => "chant acp"})
+
+      assert {:ok, [%{action: :error, errors: errors}]} =
+               Manifest.apply_manifest(user.id, [resource])
+
+      assert Map.has_key?(errors, "runtime_command")
+    end
+  end
+
   describe "apply_manifest/2 creation" do
     test "creates environments, vaults, and agents with secrets", %{user: user} do
       resources = [

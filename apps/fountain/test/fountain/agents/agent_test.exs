@@ -20,7 +20,7 @@ defmodule Fountain.Agents.AgentTest do
 
   describe "runtimes/0" do
     test "returns the expected list of runtimes" do
-      assert Agent.runtimes() == ~w(claude codex gemini opencode)
+      assert Agent.runtimes() == ~w(claude codex gemini opencode acp)
     end
   end
 
@@ -46,6 +46,78 @@ defmodule Fountain.Agents.AgentTest do
       changeset = Agent.changeset(%Agent{}, Map.delete(@valid_attrs, :runtime))
       refute changeset.valid?
       assert "can't be blank" in errors_on(changeset).runtime
+    end
+  end
+
+  describe "changeset/2 — the acp runtime (#1634)" do
+    @acp_attrs %{name: "converger", runtime: "acp", runtime_command: "chant acp"}
+
+    test "a command and no model is valid" do
+      changeset = Agent.changeset(%Agent{}, @acp_attrs)
+      assert changeset.valid?
+      assert get_change(changeset, :runtime_command) == "chant acp"
+      assert is_nil(get_change(changeset, :model))
+    end
+
+    test "a whole shell line is a legal command" do
+      attrs = %{@acp_attrs | runtime_command: "cd /srv/app && ./bin/agent acp --env prod"}
+      assert Agent.changeset(%Agent{}, attrs).valid?
+    end
+
+    test "no runtime_command names the field" do
+      changeset = Agent.changeset(%Agent{}, Map.delete(@acp_attrs, :runtime_command))
+      refute changeset.valid?
+      assert "can't be blank" in errors_on(changeset).runtime_command
+    end
+
+    test "a blank runtime_command names the field" do
+      changeset = Agent.changeset(%Agent{}, %{@acp_attrs | runtime_command: "   "})
+      refute changeset.valid?
+      assert "can't be blank" in errors_on(changeset).runtime_command
+    end
+
+    test "a model is optional but still has to parse and name a known provider" do
+      assert Agent.changeset(%Agent{}, Map.put(@acp_attrs, :model, "anthropic/x")).valid?
+      refute Agent.changeset(%Agent{}, Map.put(@acp_attrs, :model, "nope")).valid?
+
+      changeset = Agent.changeset(%Agent{}, Map.put(@acp_attrs, :model, "anthopic/x"))
+      refute changeset.valid?
+      assert Enum.any?(errors_on(changeset).model, &(&1 =~ "unknown provider"))
+    end
+
+    for runtime <- ~w(claude codex gemini opencode) do
+      test "runtime_command on the #{runtime} runtime names the field" do
+        attrs =
+          Map.merge(@valid_attrs, %{
+            runtime: unquote(runtime),
+            model: @model_for[unquote(runtime)],
+            runtime_command: "chant acp"
+          })
+
+        changeset = Agent.changeset(%Agent{}, attrs)
+        refute changeset.valid?
+        assert Enum.any?(errors_on(changeset).runtime_command, &(&1 =~ "only the acp runtime"))
+      end
+    end
+
+    test "a model is still required on every other runtime" do
+      changeset = Agent.changeset(%Agent{}, Map.delete(@valid_attrs, :model))
+      refute changeset.valid?
+      assert "can't be blank" in errors_on(changeset).model
+    end
+
+    test "switching an agent off acp clears the command it no longer takes" do
+      {:ok, agent} =
+        Fountain.Agents.create_agent(Map.put(@acp_attrs, :user_id, insert_verified_user().id))
+
+      # Left in place, the stored command is refused for the new runtime.
+      refute Agent.changeset(agent, %{runtime: "claude", model: "anthropic/x"}).valid?
+
+      assert Agent.changeset(agent, %{
+               runtime: "claude",
+               model: "anthropic/x",
+               runtime_command: nil
+             }).valid?
     end
   end
 
