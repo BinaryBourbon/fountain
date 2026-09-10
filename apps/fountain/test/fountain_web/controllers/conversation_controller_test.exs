@@ -1427,12 +1427,12 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "POST /api/conversations with images" do
-    test "returns 201 with conversation when images array is provided (decode_images non-empty branch)",
+    test "delivers opening text and image bytes when returning 201",
          %{conn: conn, user: user, raw_key: raw_key} do
       agent = insert_agent(user_id: user.id)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
-        {:ok, spawn(fn -> :ok end)}
+        {:ok, self()}
       end)
 
       image_data = Base.encode64("fake-image-bytes")
@@ -1442,10 +1442,34 @@ defmodule FountainWeb.ConversationControllerTest do
         |> authed_with_key(raw_key)
         |> post_json("/api/conversations", %{
           "agent_id" => agent.id,
+          "prompt" => "Review",
           "images" => [%{"media_type" => "image/png", "data" => image_data}]
         })
 
       assert json_response(conn, 201)
+      assert_received {:"$gen_cast", {:initial_prompt, "Review", [image]}}
+      assert image == %{media_type: "image/png", data: "fake-image-bytes"}
+    end
+
+    test "images without opening text are refused before reserving a sandbox", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      reject(Horde.DynamicSupervisor, :start_child, 2)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "images" => [%{"media_type" => "image/png", "data" => Base.encode64("bytes")}]
+        })
+
+      assert json_response(conn, 422)["error"] == "invalid_prompt"
+      assert Fountain.Repo.aggregate(Fountain.Conversations.Conversation, :count) == 0
+      assert Fountain.Repo.aggregate(Fountain.Conversations.Sandbox, :count) == 0
     end
 
     test "returns 201 with conversation when no images provided (decode_images [] branch)", %{
