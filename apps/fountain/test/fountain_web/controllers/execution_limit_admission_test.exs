@@ -3,6 +3,7 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
   use Mimic
 
   alias Fountain.{Conversations, Repo}
+  alias Fountain.Accounts.User
   alias Fountain.Conversations.{Conversation, Sandbox}
 
   setup do
@@ -117,6 +118,97 @@ defmodule FountainWeb.ExecutionLimitAdmissionTest do
     assert %{"error" => "not_found"} = request(ctx, params) |> json_response(404)
     refute_received :worker_started
   end
+
+  for path <- [:fresh, :attach, :resume, :rotate] do
+    test "#{path} inherits the stored account ceiling even when the request omits it", ctx do
+      save_ceiling(ctx.user, %{max_model_turns: 2})
+      before_counts = counts()
+
+      for request_limit <- [:omitted, nil, %{}] do
+        params = Map.put(attrs(ctx, unquote(path)), "account_execution_limits", %{})
+
+        params =
+          if request_limit == :omitted,
+            do: params,
+            else: Map.put(params, "execution_limits", request_limit)
+
+        assert %{"error" => "execution_limits_unsupported", "message" => message} =
+                 request(ctx, params) |> json_response(422)
+
+        assert message =~ "max_model_turns"
+        assert counts() == before_counts
+        assert Repo.reload!(ctx.conv).channel_id == "limits"
+        refute_received :worker_started
+      end
+    end
+  end
+
+  test "every configured account control is inherited", ctx do
+    for field <- Conversations.ExecutionLimits.keys() do
+      save_ceiling(ctx.user, %{field => 1})
+
+      assert %{"error" => "execution_limits_unsupported", "message" => message} =
+               request(ctx, attrs(ctx, :fresh)) |> json_response(422)
+
+      assert message =~ field
+    end
+
+    refute_received :worker_started
+  end
+
+  test "account ceilings are reread on each resume", ctx do
+    assert request(ctx, attrs(ctx, :resume)) |> json_response(200)
+    save_ceiling(ctx.user, %{wall_time_seconds: 30})
+
+    assert %{"error" => "execution_limits_unsupported"} =
+             request(ctx, attrs(ctx, :resume)) |> json_response(422)
+
+    save_ceiling(ctx.user, nil)
+    assert request(ctx, attrs(ctx, :resume)) |> json_response(200)
+  end
+
+  test "wider requests are rejected before runtime capability checks", ctx do
+    save_ceiling(ctx.user, %{max_model_turns: 2})
+    params = Map.put(attrs(ctx, :fresh), "execution_limits", %{"max_model_turns" => 3})
+
+    assert %{
+             "error" => "execution_limits_widen",
+             "errors" => %{"execution_limits" => ["cannot widen max_model_turns"]}
+           } =
+             request(ctx, params) |> json_response(422)
+
+    refute_received :worker_started
+  end
+
+  test "malformed account policy fails without exposing its contents", ctx do
+    corrupt =
+      ctx.user
+      |> Ecto.Changeset.change(execution_limits: %{"private-field" => "private-value"})
+      |> Repo.update!()
+      |> Repo.reload!()
+
+    response = request(ctx, attrs(ctx, :fresh)) |> json_response(422)
+    assert response["error"] == "execution_limits_invalid"
+    refute Jason.encode!(response) =~ "private-value"
+    refute Jason.encode!(response) =~ "private-field"
+    assert Repo.reload!(corrupt) == corrupt
+    refute_received :worker_started
+  end
+
+  test "another account's ceiling is neither inherited nor disclosed", ctx do
+    other = insert_active_user() |> save_ceiling(%{wall_time_seconds: 30})
+    assert request(ctx, attrs(ctx, :fresh)) |> json_response(201)
+    assert_received :worker_started
+
+    save_ceiling(ctx.user, %{max_model_turns: 2})
+    foreign = insert_agent(user_id: other.id)
+    params = %{"agent_id" => foreign.id}
+    assert %{"error" => "not_found"} = request(ctx, params) |> json_response(404)
+    refute_received :worker_started
+  end
+
+  defp save_ceiling(user, limits),
+    do: user |> Repo.reload!() |> User.execution_limits_changeset(limits) |> Repo.update!()
 
   defp counts, do: {Repo.aggregate(Conversation, :count), Repo.aggregate(Sandbox, :count)}
   defp attrs(ctx, :fresh), do: %{"agent_id" => ctx.agent.id, "sandbox_mode" => "ephemeral"}

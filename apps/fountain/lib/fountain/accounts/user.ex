@@ -26,8 +26,8 @@ defmodule Fountain.Accounts.User do
     # `Fountain.Credits`, in the same transaction as the ledger row; never
     # cast from user input.
     field :credit_balance_cents, :integer, default: 0
-    # Operator-owned per-turn ceiling storage. Admission does not consume this
-    # field yet; leave it empty until ceiling enforcement is integrated.
+    # Operator-owned per-turn ceilings, read by launch preflight. Later-turn and
+    # recovery ceiling checks remain unwired; leave overrides empty until integrated.
     # Never cast it through registration, OAuth, principal or profile changes.
     field :execution_limits, :map, default: %{}
     field :role, :string, default: "user"
