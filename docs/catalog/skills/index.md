@@ -37,9 +37,9 @@ sandbox.
 
 ```yaml
 skills:
-  - source: BinaryBourbon/fountain-api-skill
-    ref: v1.2.0        # optional: a tag, branch or sha
-    name: fountain-api # optional: rename on install
+  - source: anthropics/skills
+    ref: main             # optional: a tag, branch or sha
+    name: frontend-design # optional: install one named skill from the source
 ```
 
 With no `ref`, Fountain resolves the repository's default branch **at spawn
