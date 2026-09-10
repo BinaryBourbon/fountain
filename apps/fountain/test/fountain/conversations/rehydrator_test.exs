@@ -1,7 +1,125 @@
 defmodule Fountain.Conversations.RehydratorTest do
-  use ExUnit.Case, async: true
+  # The sweep queries all resumable rows; do not overlap independent-connection
+  # admission race fixtures in the async suites.
+  use Fountain.DataCase, async: false
+  use Mimic
 
-  alias Fountain.Conversations.Rehydrator
+  alias Fountain.Conversations.{ConversationServer, ExecutionAllowance, Rehydrator}
+
+  setup do
+    owner = self()
+
+    stub(Horde.DynamicSupervisor, :start_child, fn _, {ConversationServer, args} ->
+      send(owner, {:worker_start, args})
+      {:ok, owner}
+    end)
+
+    :ok
+  end
+
+  for status <- ["idle", "running"] do
+    test "boot refuses every saved control for a #{status} conversation without mutation" do
+      conv = resumable(unquote(status))
+      before = Repo.reload!(conv)
+      sandbox = Repo.reload!(conv.sandbox)
+      turn = if unquote(status == "running"), do: insert_turn(conv, status: "running")
+
+      for {control, limit} <- [
+            wall_time_seconds: 30,
+            max_model_turns: 2,
+            max_estimated_cost_usd: 0.5
+          ] do
+        allowance = save(conv, %{control => limit})
+
+        for _ <- 1..2 do
+          assert sweep() == 0
+          assert Repo.reload!(conv) == before
+          assert Repo.reload!(conv.sandbox) == sandbox
+          assert Repo.reload!(allowance) == allowance
+          if turn, do: assert(Repo.reload!(turn) == turn)
+          refute_received {:worker_start, _}
+        end
+
+        Repo.delete!(allowance)
+      end
+    end
+  end
+
+  for malformed <- [:map, :null] do
+    test "boot skips corrupt #{malformed} policy without exposing its contents" do
+      conv = resumable("idle")
+      allowance = save(conv, %{})
+
+      if unquote(malformed == :map) do
+        allowance
+        |> Ecto.Changeset.change(limits: %{"private-field" => "private-value"})
+        |> Repo.update!()
+      else
+        Repo.query!(
+          "UPDATE execution_allowances SET limits = 'null'::jsonb WHERE conversation_id = $1",
+          [Ecto.UUID.dump!(conv.id)]
+        )
+      end
+
+      log = ExUnit.CaptureLog.capture_log(fn -> assert sweep() == 0 end)
+      assert log =~ "execution_limits_invalid"
+      refute log =~ "private-field"
+      refute log =~ "private-value"
+      refute_received {:worker_start, _}
+      assert Repo.reload!(conv).status == "idle"
+    end
+  end
+
+  test "one refused tenant does not block absent or empty allowances, including an existing server" do
+    limited = resumable("running")
+    save(limited, %{max_model_turns: 2})
+    ordinary = resumable("idle")
+    existing = resumable("running")
+    save(existing, %{})
+    owner = self()
+
+    stub(Horde.DynamicSupervisor, :start_child, fn _, {ConversationServer, args} ->
+      send(owner, {:worker_start, args})
+
+      if args[:conversation_id] == existing.id,
+        do: {:error, {:already_started, owner}},
+        else: {:ok, owner}
+    end)
+
+    assert sweep() == 2
+    assert_received {:worker_start, first}
+    assert_received {:worker_start, second}
+
+    assert Enum.sort([first[:conversation_id], second[:conversation_id]]) ==
+             Enum.sort([ordinary.id, existing.id])
+
+    assert first[:initial_prompt] == nil
+    assert second[:initial_prompt] == nil
+    refute_received {:worker_start, _}
+    assert Repo.reload!(limited).status == "running"
+  end
+
+  test "boot still leaves non-ready sandboxes to lazy recovery" do
+    for status <- ["pending", "starting", "suspended", "terminated", "failed"] do
+      conv = resumable("idle")
+      conv.sandbox |> Ecto.Changeset.change(status: status) |> Repo.update!()
+    end
+
+    assert sweep() == 0
+    refute_received {:worker_start, _}
+  end
+
+  defp resumable(status) do
+    agent = insert_agent()
+    sandbox = insert_sandbox(user_id: agent.user_id, status: "ready")
+    insert_conversation(agent: agent, sandbox: sandbox, status: status)
+  end
+
+  defp save(conv, limits),
+    do: conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert!()
+
+  defp sweep,
+    do: Rehydrator.run(cluster_wait_ms: 0, stabilize_ms: 0, poll_ms: 1)
 
   describe "leader election" do
     test "a lone node (no peers) is always the leader" do
