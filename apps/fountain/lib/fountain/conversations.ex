@@ -13,6 +13,8 @@ defmodule Fountain.Conversations do
   alias Fountain.Audit
   alias Fountain.Conversations.{Blocks, Conversation, Labels, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
+  alias Fountain.Conversations.Lifecycle
+  alias Fountain.PermissionPolicy
   alias Fountain.Repo
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
@@ -3568,9 +3570,23 @@ defmodule Fountain.Conversations do
   defp resolve_permission_policy(policy, _agent) when policy == %{}, do: {:ok, nil}
 
   defp resolve_permission_policy(policy, agent) when is_map(policy) do
+    # The reserved keys are not tools, so the library never sees them and
+    # narrows them itself (#1635, `Fountain.PermissionPolicy`).
+    verdicts = PermissionPolicy.verdicts(policy)
+
     with :ok <- validate_policy_shape(policy),
-         :ok <- check_runtime_asks(policy, agent),
-         :ok <- Managoat.ACP.Permissions.check_narrows(agent.permission_policy, policy) do
+         :ok <- check_runtime_asks(verdicts, agent),
+         :ok <-
+           Managoat.ACP.Permissions.check_narrows(
+             PermissionPolicy.verdicts(agent.permission_policy),
+             verdicts
+           ),
+         :ok <-
+           PermissionPolicy.check_narrows(
+             agent.permission_policy,
+             policy,
+             div(Lifecycle.ask_timeout_ms(), 1000)
+           ) do
       {:ok, policy}
     end
   end
@@ -3589,21 +3605,38 @@ defmodule Fountain.Conversations do
   end
 
   defp validate_policy_shape(policy) do
-    Enum.find_value(policy, :ok, fn {tool, verdict} ->
-      cond do
-        not is_binary(tool) or tool == "" ->
-          {:error, :permission_policy_invalid}
+    with :ok <- validate_reserved_keys(policy) do
+      policy
+      |> PermissionPolicy.verdicts()
+      |> Enum.find_value(:ok, fn {tool, verdict} ->
+        cond do
+          not is_binary(tool) or tool == "" ->
+            {:error, :permission_policy_invalid}
 
-        verdict not in Managoat.ACP.Permissions.verdicts() ->
-          {:error, :permission_policy_invalid}
+          verdict not in Managoat.ACP.Permissions.verdicts() ->
+            {:error, :permission_policy_invalid}
 
-        not Managoat.ACP.Permissions.buildable?(verdict) ->
-          {:error, {:permission_policy_unbuilt, verdict}}
+          not Managoat.ACP.Permissions.buildable?(verdict) ->
+            {:error, {:permission_policy_unbuilt, verdict}}
 
-        true ->
-          nil
-      end
-    end)
+          true ->
+            nil
+        end
+      end)
+    end
+  end
+
+  # `ask_timeout` is seconds, not a verdict (#1635).
+  defp validate_reserved_keys(policy) do
+    case Map.fetch(policy, "ask_timeout") do
+      {:ok, value} ->
+        if PermissionPolicy.valid_ask_timeout?(value),
+          do: :ok,
+          else: {:error, :permission_policy_invalid}
+
+      :error ->
+        :ok
+    end
   end
 
   @doc """

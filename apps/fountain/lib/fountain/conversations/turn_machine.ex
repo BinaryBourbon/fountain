@@ -45,6 +45,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
   alias Fountain.{Agents, Conversations}
   alias Fountain.Conversations.{Conversation, Labels}
+  alias Fountain.PermissionPolicy
 
   @typedoc "What the peer reports about a turn, with the command ref already matched."
   @type payload :: tuple()
@@ -1158,7 +1159,25 @@ defmodule Fountain.Conversations.TurnMachine do
   # tightening an agent tightens the conversations already running under it.
   @spec effective_permission_policy(Conversation.t(), map() | nil) :: term()
   def effective_permission_policy(conv, agent) do
-    Managoat.ACP.Permissions.effective(agent && agent.permission_policy, conv.permission_policy)
+    Managoat.ACP.Permissions.effective(
+      PermissionPolicy.verdicts(agent && agent.permission_policy),
+      PermissionPolicy.verdicts(conv.permission_policy)
+    )
+  end
+
+  @doc """
+  How long a request that outlives this conversation's turn waits, in
+  seconds, or nil for the global ceiling (#1635).
+
+  Beside `effective_permission_policy/2` because it is the other half of the
+  same two maps: the tool half goes to the peer, and this one stays here.
+  """
+  @spec effective_ask_timeout_seconds(Conversation.t(), map() | nil) :: pos_integer() | nil
+  def effective_ask_timeout_seconds(conv, agent) do
+    PermissionPolicy.effective_ask_timeout_seconds(
+      agent && agent.permission_policy,
+      conv.permission_policy
+    )
   end
 
   # Ownership is already established: this server exists for this conversation.

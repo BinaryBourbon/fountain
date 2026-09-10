@@ -7937,14 +7937,27 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
+          "properties": {
+            "ask_timeout": {
+              "required": false,
+              "type": "integer"
+            }
+          },
           "required": false,
           "type": "object"
         },
@@ -8084,14 +8097,27 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
+          "properties": {
+            "ask_timeout": {
+              "required": false,
+              "type": "integer"
+            }
+          },
           "required": false,
           "type": "object"
         },
@@ -8223,14 +8249,27 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
+          "properties": {
+            "ask_timeout": {
+              "required": false,
+              "type": "integer"
+            }
+          },
           "required": false,
           "type": "object"
         },
@@ -10075,14 +10114,27 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
+          "properties": {
+            "ask_timeout": {
+              "required": false,
+              "type": "integer"
+            }
+          },
           "required": false,
           "type": "object"
         },
@@ -10218,14 +10270,27 @@
         },
         "permission_policy": {
           "additionalProperties": {
-            "enum": [
-              "ask",
-              "auto_allow",
-              "auto_deny"
-            ],
-            "type": "string"
+            "oneOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_allow",
+                  "auto_deny"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
           },
           "nullable": true,
+          "properties": {
+            "ask_timeout": {
+              "required": false,
+              "type": "integer"
+            }
+          },
           "required": false,
           "type": "object"
         },
