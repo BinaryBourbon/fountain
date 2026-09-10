@@ -373,14 +373,35 @@ defmodule Fountain.Team do
 
       %{conversation: conv} ->
         if live?(conv) do
-          case ConversationServer.send_prompt(conv.id, text, images, opts) do
-            :ok -> {:ok, Conversations.get_conversation(conv.id, user_id) || conv}
-            {:error, :gone} -> start_fresh(user_id, agent_id, conv, text, images, opts)
-            {:error, _} = err -> err
+          # Labels before the prompt (#1637): merged first, so a label the
+          # limits refuse means nothing happened at all rather than "the
+          # message went and the labels did not".
+          with {:ok, conv} <- label(conv, opts) do
+            case ConversationServer.send_prompt(conv.id, text, images, opts) do
+              :ok -> {:ok, Conversations.get_conversation(conv.id, user_id) || conv}
+              {:error, :gone} -> start_fresh(user_id, agent_id, conv, text, images, opts)
+              {:error, _} = err -> err
+            end
           end
         else
           start_fresh(user_id, agent_id, conv, text, images, opts)
         end
+    end
+  end
+
+  # `opts[:labels]` goes onto the conversation the message lands on (#1637).
+  # On the fresh path they ride in the create attrs instead, so a conversation
+  # that never existed is not labelled twice.
+  #
+  # Through `Conversations.set_conversation_labels/4`, not the writer beneath
+  # it: this route accepts a sandbox's own `sprite` token, and the teammate's
+  # conversation is somebody else's conversation as far as that token is
+  # concerned. The door is where the rule lives, so the refusal is the same
+  # one `PATCH .../labels` gives.
+  defp label(%Conversation{} = conv, opts) do
+    case Keyword.get(opts, :labels) do
+      nil -> {:ok, conv}
+      labels -> Conversations.set_conversation_labels(conv.id, conv.user_id, labels, opts)
     end
   end
 
@@ -401,7 +422,8 @@ defmodule Fountain.Team do
           "images" => images,
           "title" => prev.title,
           "environment_id" => prev.environment_id,
-          "vault_id" => prev.vault_id
+          "vault_id" => prev.vault_id,
+          "labels" => Keyword.get(opts, :labels) || %{}
         },
         opts
       )
@@ -784,10 +806,10 @@ defmodule Fountain.Team do
   first (`live?/1`, else the newest), then the retired ones newest first — a previous computer's thread, still bound to the channel until the
   teammate is removed. `[]` when the agent is not on the team.
   """
-  def list_teammate_conversations(user_id, agent_id)
+  def list_teammate_conversations(user_id, agent_id, opts \\ [])
       when is_binary(user_id) and is_binary(agent_id) do
     case user_id
-         |> Conversations.list_channel_conversations(@channel)
+         |> Conversations.list_channel_conversations(@channel, opts)
          |> Enum.filter(&(&1.agent_id == agent_id)) do
       [] ->
         []

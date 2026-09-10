@@ -794,15 +794,24 @@ defmodule Fountain.Conversations do
   the surface reading a channel — the team page — wants the last transcript
   even when nothing is running.
   """
-  def list_channel_conversations(user_id, channel_id)
+  def list_channel_conversations(user_id, channel_id, opts \\ [])
       when is_binary(user_id) and is_binary(channel_id) do
     from(c in annotated_query(user_id),
       where: c.channel_id == ^channel_id,
       order_by: [desc: c.inserted_at, desc: c.id]
     )
+    |> filter_by_labels(Keyword.get(opts, :labels))
     |> Repo.all()
     |> Repo.preload([:agent, :sandbox])
   end
+
+  # The same containment filter `list_conversations/2` applies (#1637), for
+  # the channel-bound list behind the team route.
+  defp filter_by_labels(query, labels) when is_map(labels) and map_size(labels) > 0 do
+    where(query, [conv: c], fragment("? @> ?", c.labels, type(^labels, :map)))
+  end
+
+  defp filter_by_labels(query, _labels), do: query
 
   @doc """
   Scoped fetch that also populates the read-model annotations —

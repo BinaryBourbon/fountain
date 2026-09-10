@@ -2553,7 +2553,16 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         prompt: %Schema{type: :string},
-        images: %Schema{type: :array, items: ImageInput, nullable: true}
+        images: %Schema{type: :array, items: ImageInput, nullable: true},
+        labels: %Schema{
+          type: :object,
+          nullable: true,
+          additionalProperties: %Schema{type: :string, nullable: true},
+          description:
+            "Labels to merge into the conversation this message lands on, whether that is " <>
+              "the teammate's current one or the fresh one a retired thread is replaced by. " <>
+              "Same limits as everywhere else; null removes a key."
+        }
       },
       required: [:prompt]
     })

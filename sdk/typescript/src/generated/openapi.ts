@@ -2033,6 +2033,8 @@ export interface paths {
         /**
          * Message a teammate
          * @description A turn on the teammate's conversation. A parked or reaped sandbox wakes; a conversation past resuming is replaced by a fresh one under the same binding, seeded with this message, so the response names the conversation the message went to. 400 `conversation_busy` while the previous turn is still running (the same shape as `POST /api/conversations/:id/prompts`), 503 while the computer is still starting.
+         *
+         *     `labels` merges onto the conversation the message lands on (#1637), before the turn is queued, so a label the limits refuse leaves the message unsent.
          */
         post: operations["FountainWeb.TeamController.message"];
         delete?: never;
@@ -4599,6 +4601,10 @@ export interface components {
         /** TeamMessageRequest */
         TeamMessageRequest: {
             images?: components["schemas"]["ImageInput"][] | null;
+            /** @description Labels to merge into the conversation this message lands on, whether that is the teammate's current one or the fresh one a retired thread is replaced by. Same limits as everywhere else; null removes a key. */
+            labels?: {
+                [key: string]: string | null;
+            } | null;
             prompt: string;
         };
         /** TeamMessageResponse */
@@ -14372,7 +14378,10 @@ export interface operations {
     };
     "FountainWeb.TeamController.conversations": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only conversations carrying these `key:value` labels (#1637). Repeatable and AND-combined, exactly as on `GET /api/conversations`. 400 `invalid_label_filter` on a value with no colon or an empty key. */
+                label?: string[];
+            };
             header?: never;
             path: {
                 agent_id: string;
@@ -14388,6 +14397,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeammateConversationListResponse"];
+                };
+            };
+            /** @description Invalid label filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Unauthorized */
@@ -14565,7 +14583,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Forbidden */
+            /** @description A sandbox token labelling another conversation */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14590,6 +14608,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Invalid labels */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangesetError"];
                 };
             };
             /** @description Too Many Requests */
