@@ -2615,12 +2615,17 @@ defmodule Fountain.Conversations do
             "ConversationServer failed to start for conv #{conv.id}: #{inspect(reason)}"
           )
 
-          update_conversation(conv, %{status: "failed"})
-          update_sandbox(sandbox, %{status: "failed"})
-          restore_rotated_channel(conv, opts)
-          result = _unsafe_get_conversation!(conv.id)
-          broadcast_sidebar_update(user_id)
-          {:ok, result}
+          if fail_initial_start(conv, sandbox) == :failed,
+            do: restore_rotated_channel(conv, opts)
+
+          case get_conversation(conv.id, user_id) do
+            nil ->
+              {:error, :not_found}
+
+            result ->
+              broadcast_sidebar_update(user_id)
+              {:ok, result}
+          end
       end
     else
       nil ->
@@ -2659,6 +2664,57 @@ defmodule Fountain.Conversations do
   # so anything that can wait on another transaction must be settled before it
   # is taken, or one account stalls provisioning for all of them.
   #
+  # A delayed start error owns only its original, still-pending binding.
+  # Match turn admission's machine -> parent -> sandbox lock order. Status
+  # changes commit together; metering follows commit and provider I/O is absent.
+  defp fail_initial_start(conv, sandbox) do
+    {:ok, result} =
+      Repo.transaction(fn ->
+        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+          @sandbox_lock_namespace,
+          :erlang.phash2(sandbox.id)
+        ])
+
+        parent = Repo.one(from c in Conversation, where: c.id == ^conv.id, lock: "FOR UPDATE")
+        machine = Repo.one(from s in Sandbox, where: s.id == ^sandbox.id, lock: "FOR UPDATE")
+
+        if pending_initial_binding?(parent, machine, conv, sandbox) and
+             _unsafe_running_turns_elsewhere(sandbox.id, nil) == 0 do
+          parent |> Conversation.changeset(%{status: "failed"}) |> Repo.update!()
+
+          machine
+          |> Sandbox.changeset(%{status: "failed"})
+          |> stamp_terminated_at()
+          |> Repo.update!()
+        else
+          :stale
+        end
+      end)
+
+    case result do
+      %Sandbox{} = failed ->
+        record_sandbox_usage("pending", failed)
+        :failed
+
+      :stale ->
+        :stale
+    end
+  end
+
+  defp pending_initial_binding?(%Conversation{} = parent, %Sandbox{} = machine, conv, sandbox) do
+    Map.take(parent, [:user_id, :sandbox_id, :status]) ==
+      %{user_id: conv.user_id, sandbox_id: sandbox.id, status: "pending"} and
+      Map.take(machine, [:user_id, :provider, :sprite_name, :status]) ==
+        %{
+          user_id: conv.user_id,
+          provider: sandbox.provider,
+          sprite_name: sandbox.sprite_name,
+          status: "pending"
+        }
+  end
+
+  defp pending_initial_binding?(_, _, _, _), do: false
+
   # An unlocked read was not enough: `create_sandbox/1` and the conversation
   # insert take `KEY SHARE` on `users` through their foreign keys, and
   # `Credits.insert_and_move/3` holds that row `FOR UPDATE` across a ledger
