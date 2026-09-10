@@ -194,6 +194,15 @@ upgrade, is in
   and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
   filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
   and the console's conversation lists render them as chips.
+- Permission requests can outlive the turn that raised them. An agent that ends
+  a turn with stop reason `waiting` keeps its request open, the conversation
+  goes idle and the sandbox suspends as usual. `GET /api/conversations/{id}`
+  lists such requests as `pending_requests`, and answering one opens a new turn
+  carrying the request id and the chosen option, which wakes the sandbox. The
+  wait is bounded by `_meta.fountain.timeout` on the request and by an
+  `ask_timeout` in the permission policy, the shorter of the two, else the
+  existing 5 minute ceiling. An answer is refused, and the request kept, when
+  the conversation cannot take the turn that carries it.
 
 ### Fixed
 

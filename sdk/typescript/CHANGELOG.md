@@ -11,6 +11,14 @@ server releases.
 
 ---
 
+## [1.30.0] - 2026-09-11
+
+### Added
+
+- Generated types carry a conversation's `pending_requests`, the permission requests that outlived a turn and are still waiting for an answer. Each entry has the request id, the tool, the options the agent offered, when it was asked and when it expires.
+- Generated types carry a turn's `waiting`, true when the turn ended with such a request still open.
+- `permission_policy` accepts `ask_timeout`, a number of seconds a request that outlived its turn waits before it is denied. It is the one policy key whose value is a number rather than a verdict, so the value type is now a union of the verdict enum and a number.
+
 ## [1.29.0] - 2026-09-11
 
 ### Changed
