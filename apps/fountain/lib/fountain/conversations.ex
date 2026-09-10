@@ -2982,6 +2982,12 @@ defmodule Fountain.Conversations do
   See `create_agent/2` for the rest of `opts` (`:actor`, `:request_ip`).
   """
   def reset_sandbox(%Sandbox{} = sandbox, opts \\ []) do
+    if Repo.in_transaction?(),
+      do: {:error, :provider_transaction_open},
+      else: do_reset_sandbox(sandbox, opts)
+  end
+
+  defp do_reset_sandbox(sandbox, opts) do
     now = DateTime.utc_now()
 
     result =

@@ -37,6 +37,18 @@ defmodule Fountain.Conversations.SandboxResetTest do
     {:ok, user: user, env: env, agent: agent, home: home, a: a, b: b}
   end
 
+  test "an enclosing transaction cannot start provider deletion or persist a reset fence", ctx do
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+    assert {:ok, {:error, :provider_transaction_open}} =
+             Repo.transaction(fn -> Conversations.reset_sandbox(ctx.home) end)
+
+    assert Repo.reload!(ctx.home).status == "ready"
+    refute Repo.reload!(ctx.home).reset_requested_at
+    assert Repo.reload!(ctx.a).runtime_session_id == "sess-a"
+    assert Conversations._unsafe_list_log_events(ctx.a.id) == []
+  end
+
   test "destroys the sprite, retires the row, keeps the conversations", ctx do
     test = self()
     stub(Managoat.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
