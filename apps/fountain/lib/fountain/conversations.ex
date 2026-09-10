@@ -1986,6 +1986,7 @@ defmodule Fountain.Conversations do
       )
       when is_binary(channel_id) and channel_id != "" do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id) do
@@ -2008,6 +2009,28 @@ defmodule Fountain.Conversations do
 
   def start_or_resume_conversation(attrs, opts) do
     with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
+  end
+
+  # No runtime has integrated end-to-end enforcement yet. Refuse a requested
+  # control before reserving capacity, attaching or unbinding a channel; an
+  # SDK option alone must not make admission promise a bounded execution.
+  defp check_execution_limits(user_id, request) do
+    # Ownership: each caller just fetched the agent by this authenticated user.
+    # Read the current account policy, never a request-supplied or cached map.
+    case {Fountain.Accounts.get_user(user_id),
+          Application.get_env(:fountain, :execution_limit_ceiling, %{})} do
+      {%Fountain.Accounts.User{execution_limits: ceiling}, host}
+      when is_map(ceiling) and is_map(host) ->
+        with {:ok, limits} <- ExecutionLimits.resolve(host, ceiling, request) do
+          ExecutionLimits.require_controls(limits, [])
+        end
+
+      {nil, _} ->
+        {:error, :not_found}
+
+      _ ->
+        {:error, {:execution_limits_invalid, "object_required"}}
+    end
   end
 
   # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
@@ -2115,6 +2138,7 @@ defmodule Fountain.Conversations do
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
@@ -2653,6 +2677,7 @@ defmodule Fountain.Conversations do
        )
        when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),

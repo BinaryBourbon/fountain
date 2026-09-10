@@ -168,6 +168,17 @@ Create a conversation with an agent and a first prompt, follow its events,
 and send later prompts to that same conversation. Keep the returned ID.
 A new conversation creates another thread.
 
+Launch requests inherit the stricter host and account execution ceilings. Omitted, null or
+empty `execution_limits` do not remove it. Wider requests return
+`422 execution_limits_widen`; malformed requests or configured policy return
+`422 execution_limits_invalid`. Nonempty effective limits return
+`422 execution_limits_unsupported`; Fountain cannot yet enforce these controls.
+These preflight checks cover fresh launches, sandbox attachments and channel
+resumes before worker start or channel changes. This is not an atomic reservation
+against later policy changes. Keep host and account ceilings empty until later-turn and
+recovery checks and runtime enforcement are integrated. Initial allowance
+persistence remains unwired.
+
 ```bash
 curl --fail-with-body \
   -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
