@@ -8,7 +8,7 @@ A `fountain.yml` is a multi-document YAML file. Each doc is one resource with th
 
 ```yaml
 apiVersion: fountain/v1
-kind: Environment | Vault | Agent
+kind: Environment | Vault | Agent | Teammate
 metadata:
   name: <unique-on-operator-side>
 spec:
@@ -19,7 +19,38 @@ The `metadata.name` is the upsert key. If a resource with that name exists, it's
 
 ## Order is irrelevant inside the file
 
-`fountain apply` reconciles **environments first, vaults second, agents last** — so an agent doc can reference an environment by name (`spec.environment: my-env`) even if that environment is defined later in the file. The reference also resolves against environments that **already exist** server-side, so a manifest can attach an agent to an environment managed elsewhere; a name that matches neither the manifest nor an existing environment fails that agent doc. Vaults aren't referenced from agents (they're picked per-conversation), so the order between envs and vaults doesn't matter functionally; the predictable ordering just makes the apply output easier to skim.
+`fountain apply` reconciles in a fixed order: **environments, vaults, agents, teammates** — so a doc can reference another by name even if that one is defined later in the file. An `Agent` references an `environment`; a `Teammate` references an `agent`, an `environment` and a `vault`. Every reference resolves against the manifest first and then against what **already exists** server-side, so a manifest can attach an agent to an environment managed elsewhere; a name that matches neither fails that doc and no other.
+
+## The team kinds
+
+A `Teammate` puts an agent on the team, which opens its conversation and provisions its computer. Re-applying moves what the teammate is called and which environment and vault it is bound to — it never provisions a second one, and it never resurrects a computer that is gone (message the teammate for that).
+
+Two things about it that surprise people:
+
+- **A `Teammate` doc is the whole teammate.** Unlike the other three kinds, where an absent `spec` key leaves that column alone, dropping `environment` or `vault` from a Teammate doc *clears* that binding — back to the agent's own environment and no vault. That is what makes the doc a declaration rather than a patch.
+- **Rebinding moves the computer.** A home is keyed on `(user, agent, environment, vault)`, so changing either id retires the machine the old key named; the teammate's next message builds a fresh one. Refused with an error on that row while a turn is still running there — the same refusal `Agent`'s `environment` gives (#1084). A conversation that *shared* that machine and names a different environment or vault does not follow the teammate; it builds its own on its next prompt. And because there is only ever one home per identity, a rebind onto an identity the agent **already** has a home for is **refused**, not merged onto that home — reset or remove the existing one first (#1636).
+
+**Two Teammate docs can't name the same agent.** An agent is on the team once, so the second doc fails and the first applies.
+
+```yaml
+---
+apiVersion: fountain/v1
+kind: Teammate
+metadata:
+  name: Ada
+spec:
+  agent: researcher
+  environment: my-project
+  vault: alice
+```
+
+## Nothing is pruned
+
+Apply is additive. Deleting a doc from the manifest leaves its record in place; delete it through its own command or the console.
+
+## What the trail says
+
+Each applied row leaves its context's own audit event, with the actor and IP of the request that applied it: `team.member.added` / `team.updated` for a Teammate. An `unchanged` row writes nothing at all.
 
 ## Example
 

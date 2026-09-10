@@ -33,6 +33,12 @@ upgrade, is in
   existing launches retain `owner` behavior. Applications processing mutually
   untrusted work can keep all Fountain API authority on their service host.
 
+- A `fountain apply` manifest can declare team membership. A `Teammate`
+  document names its agent, environment and vault, and the apply puts the agent
+  on the team, which opens its conversation and provisions its computer.
+  Re-applying moves the name and the bindings and provisions no second
+  computer (#1636).
+
 ### Fixed
 
 - A teammate can be moved to a different environment or vault. Fountain retires

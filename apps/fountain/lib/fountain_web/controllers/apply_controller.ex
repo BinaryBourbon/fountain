@@ -18,11 +18,18 @@ defmodule FountainWeb.ApplyController do
     summary: "Apply a compiled manifest (bulk upsert)",
     description:
       "Applies all resources from a compiled fountain.yml manifest in one request. " <>
-        "Resources are reconciled by name — environments first, then vaults, then " <>
-        "agents — so agent specs may reference an environment by name via " <>
-        "`spec.environment`. Application is best-effort per resource: the response " <>
-        "is 200 even when individual resources fail, with per-resource errors in " <>
-        "the result entries.",
+        "Resources are reconciled in a fixed order — environments, vaults, agents, " <>
+        "teammates — so a spec may name another document whatever the file's " <>
+        "order: an agent's `environment`, and a teammate's `agent`, `environment` " <>
+        "and `vault`. Every kind is keyed by the document's `name`. A `Teammate` " <>
+        "is read as a whole declaration, so an absent `environment` or `vault` " <>
+        "clears that binding, and moving either retires the computer the old " <>
+        "binding named (refused with an error on that row while a turn is running " <>
+        "on it). Two Teammate documents may not name the same agent. Apply is " <>
+        "additive: a document dropped from the manifest leaves its record in " <>
+        "place. Application is best-effort per resource: the response is 200 even " <>
+        "when an individual resource fails validation, is refused by its context " <>
+        "or raises, with per-resource errors in the result entries.",
     request_body: {"Compiled manifest", "application/json", Schemas.ApplyRequest},
     responses: [
       ok: {"Per-resource results", "application/json", Schemas.ApplyResponse},

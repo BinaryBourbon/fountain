@@ -10889,6 +10889,7 @@
           "enum": [
             "Agent",
             "Environment",
+            "Teammate",
             "Vault"
           ],
           "required": true,

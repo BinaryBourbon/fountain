@@ -2,7 +2,7 @@ defmodule Fountain.ManifestTest do
   use Fountain.DataCase, async: true
   use Mimic
 
-  alias Fountain.{Agents, Audit, Crypto, Environments, Manifest, Vaults}
+  alias Fountain.{Agents, Audit, Conversations, Crypto, Environments, Manifest, Team, Vaults}
 
   setup do
     # No starter agent (ADR 0038): every assertion here counts what the
@@ -16,6 +16,18 @@ defmodule Fountain.ManifestTest do
 
   defp vault_resource(name, spec \\ %{}) do
     %{"kind" => "Vault", "name" => name, "spec" => spec}
+  end
+
+  defp teammate_resource(name, spec) do
+    %{"kind" => "Teammate", "name" => name, "spec" => spec}
+  end
+
+  # Adding a teammate opens its conversation, which provisions its computer.
+  # The supervisor start is what a DataCase test cannot do for real.
+  defp inert_start_child do
+    stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+      {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+    end)
   end
 
   defp agent_resource(name, spec \\ %{}) do
@@ -289,7 +301,7 @@ defmodule Fountain.ManifestTest do
         ])
 
       assert [
-               %{name: "broken", action: :error, errors: %{model: _}},
+               %{name: "broken", action: :error, errors: %{"model" => _}},
                %{name: "ok-agent", action: :created}
              ] = results
     end
@@ -350,6 +362,381 @@ defmodule Fountain.ManifestTest do
         ])
 
       assert errors == %{"environment" => ["environment not found: their-env"]}
+    end
+  end
+
+  describe "apply_manifest/2 the whole estate" do
+    defp estate_manifest(vault_spec \\ %{"secrets" => %{"GH" => "ghp_x"}}) do
+      # Deliberately out of order: the kinds reconcile in a fixed order,
+      # whatever the file says.
+      [
+        teammate_resource("Ada", %{
+          "agent" => "ada",
+          "environment" => "proj",
+          "vault" => "alice"
+        }),
+        agent_resource("ada", %{"environment" => "proj"}),
+        vault_resource("alice", vault_spec),
+        env_resource("proj", %{"setup_script" => "echo hi"})
+      ]
+    end
+
+    test "the four kinds apply in one request, and a second apply changes nothing",
+         %{user: user} do
+      inert_start_child()
+      resources = estate_manifest()
+
+      {:ok, first} = Manifest.apply_manifest(user.id, resources)
+
+      assert Enum.map(first, &{&1.kind, &1.name, &1.action}) == [
+               {"Environment", "proj", :created},
+               {"Vault", "alice", :created},
+               {"Agent", "ada", :created},
+               {"Teammate", "Ada", :created}
+             ]
+
+      env = Environments.get_environment_by_name("proj", user.id)
+      vault = Vaults.get_vault_by_name("alice", user.id)
+      agent = Agents.get_agent_by_name("ada", user.id)
+
+      assert [%{name: "Ada", agent: %{id: agent_id}, conversation: conv}] =
+               Team.list_teammates(user.id)
+
+      assert agent_id == agent.id
+      assert conv.environment_id == env.id
+      assert conv.vault_id == vault.id
+
+      {:ok, second} = Manifest.apply_manifest(user.id, resources)
+
+      assert Enum.map(second, & &1.action) == List.duplicate(:unchanged, 4)
+      assert Enum.map(second, & &1.kind) == Enum.map(first, & &1.kind)
+
+      # Nothing was duplicated by the second pass.
+      assert length(Team.list_teammates(user.id)) == 1
+    end
+
+    test "the applied rows are audited with the request's attribution", %{user: user} do
+      inert_start_child()
+      opts = [actor: "api", request_ip: "203.0.113.5"]
+
+      {:ok, _} = Manifest.apply_manifest(user.id, estate_manifest(), opts)
+
+      events = Audit.list_recent_for_user(user.id, 200)
+      actions = Enum.map(events, & &1.action)
+
+      assert "team.member.added" in actions
+
+      for action <- ~w(team.member.added) do
+        event = Enum.find(events, &(&1.action == action))
+        assert event.actor == "api", "#{action} was recorded as #{event.actor}"
+        assert to_string(event.request_ip) == "203.0.113.5"
+      end
+    end
+
+    # The one thing a no-op apply does write: an inline secret is encrypted
+    # again every time, because the stored ciphertext cannot be compared with
+    # the plaintext given.
+    test "a re-apply with inline secrets writes only the secret events", %{user: user} do
+      inert_start_child()
+      resources = estate_manifest()
+
+      {:ok, _} = Manifest.apply_manifest(user.id, resources)
+      before = actions_for(user)
+
+      {:ok, second} = Manifest.apply_manifest(user.id, resources)
+      assert Enum.all?(second, &(&1.action == :unchanged))
+
+      added = actions_for(user) -- before
+      assert added == ["vault.secret.write"]
+    end
+
+    test "the update path is audited with the request's attribution", %{user: user} do
+      inert_start_child()
+      opts = [actor: "api", request_ip: "203.0.113.5"]
+      {:ok, _} = Manifest.apply_manifest(user.id, estate_manifest(%{}), opts)
+      before = user.id |> Audit.list_recent_for_user(500) |> length()
+
+      moved = [
+        env_resource("proj", %{"setup_script" => "echo hi"}),
+        vault_resource("alice"),
+        agent_resource("ada", %{"environment" => "proj"}),
+        teammate_resource("Ada of proj", %{"agent" => "ada", "environment" => "proj"})
+      ]
+
+      {:ok, results} = Manifest.apply_manifest(user.id, moved, opts)
+
+      assert Enum.map(results, &{&1.kind, &1.action}) == [
+               {"Environment", :unchanged},
+               {"Vault", :unchanged},
+               {"Agent", :unchanged},
+               {"Teammate", :updated}
+             ]
+
+      events = Audit.list_recent_for_user(user.id, 500)
+      added = Enum.take(events, length(events) - before)
+
+      for action <- ~w(team.updated) do
+        event = Enum.find(added, &(&1.action == action))
+
+        assert event,
+               "the update path left no #{action}; saw #{inspect(Enum.map(added, & &1.action))}"
+
+        assert event.actor == "api"
+        assert to_string(event.request_ip) == "203.0.113.5"
+      end
+    end
+
+    test "a second Teammate naming the same agent fails instead of renaming the first",
+         %{user: user} do
+      inert_start_child()
+
+      {:ok, results} =
+        Manifest.apply_manifest(user.id, [
+          agent_resource("ada"),
+          teammate_resource("Ada", %{"agent" => "ada"}),
+          teammate_resource("Ada again", %{"agent" => "ada"}),
+          teammate_resource("Ada", %{"agent" => "ada"})
+        ])
+
+      assert [
+               %{kind: "Agent", action: :created},
+               %{name: "Ada", action: :created},
+               %{name: "Ada again", action: :error, errors: dup_agent},
+               %{name: "Ada", action: :error, errors: dup_name}
+             ] = results
+
+      assert dup_agent == %{"agent" => ["is already claimed by another Teammate document"]}
+      assert dup_name == %{"name" => ["is already used by another Teammate document"]}
+      assert [%{name: "Ada"}] = Team.list_teammates(user.id)
+    end
+
+    # Without the claim check the second document renamed the first's
+    # conversation on every pass, so no apply was ever `unchanged`.
+    test "a manifest with a duplicate Teammate is still idempotent for the rest",
+         %{user: user} do
+      inert_start_child()
+
+      resources = [
+        agent_resource("ada"),
+        teammate_resource("Ada", %{"agent" => "ada"}),
+        teammate_resource("Ada again", %{"agent" => "ada"})
+      ]
+
+      {:ok, _} = Manifest.apply_manifest(user.id, resources)
+      {:ok, second} = Manifest.apply_manifest(user.id, resources)
+
+      assert Enum.map(second, & &1.action) == [:unchanged, :unchanged, :error]
+      assert [%{name: "Ada"}] = Team.list_teammates(user.id)
+    end
+
+    test "a Teammate mid-turn on the computer it would rebind fails that row", %{user: user} do
+      env = insert_env(user_id: user.id, name: "proj")
+      other = insert_env(user_id: user.id, name: "other")
+
+      agent =
+        insert_agent(
+          user_id: user.id,
+          name: "ada",
+          environment_id: other.id,
+          sandbox_mode: "persistent"
+        )
+
+      home =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: other.id,
+          provider: "sprites"
+        )
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox: home,
+          status: "running",
+          channel_id: Team.channel()
+        )
+
+      insert_turn(conv, status: "running")
+
+      {:ok, [%{kind: "Teammate", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [
+          teammate_resource("Ada", %{"agent" => "ada", "environment" => "proj"})
+        ])
+
+      assert %{"base" => [message]} = errors
+      assert message =~ "running a turn"
+      assert Conversations.get_conversation(conv.id, user.id).environment_id == nil
+      assert env.id
+    end
+
+    # A rebind onto an identity that already has a computer is refused rather
+    # than merged onto that computer. The row says what to do about it.
+    test "a Teammate rebound onto an occupied computer fails that row", %{user: user} do
+      env = insert_env(user_id: user.id, name: "proj")
+
+      agent =
+        insert_agent(user_id: user.id, name: "ada", sandbox_mode: "persistent")
+
+      home =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: nil,
+          provider: "sprites"
+        )
+
+      occupied =
+        insert_sandbox(
+          user_id: user.id,
+          status: "ready",
+          mode: "persistent",
+          agent_id: agent.id,
+          environment_id: env.id,
+          provider: "sprites"
+        )
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox: home,
+          status: "idle",
+          channel_id: Team.channel()
+        )
+
+      {:ok, [%{kind: "Teammate", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [
+          teammate_resource("Ada", %{"agent" => "ada", "environment" => "proj"})
+        ])
+
+      assert %{"base" => [message]} = errors
+      assert message =~ "already has a computer on that environment and vault"
+      assert Conversations.get_conversation(conv.id, user.id).environment_id == nil
+      assert Conversations._unsafe_get_sandbox!(occupied.id).status == "ready"
+    end
+
+    test "re-applying a Teammate moves its name, environment and vault", %{user: user} do
+      inert_start_child()
+
+      {:ok, _} =
+        Manifest.apply_manifest(user.id, [
+          env_resource("proj"),
+          vault_resource("alice"),
+          agent_resource("ada"),
+          teammate_resource("Ada", %{"agent" => "ada"})
+        ])
+
+      {:ok, results} =
+        Manifest.apply_manifest(user.id, [
+          env_resource("proj"),
+          vault_resource("alice"),
+          agent_resource("ada"),
+          teammate_resource("Ada of proj", %{
+            "agent" => "ada",
+            "environment" => "proj",
+            "vault" => "alice"
+          })
+        ])
+
+      assert %{kind: "Teammate", name: "Ada of proj", action: :updated} =
+               List.last(results)
+
+      assert [%{name: "Ada of proj", conversation: conv}] = Team.list_teammates(user.id)
+      assert conv.environment_id == Environments.get_environment_by_name("proj", user.id).id
+      assert conv.vault_id == Vaults.get_vault_by_name("alice", user.id).id
+    end
+
+    # A Teammate document is the whole teammate, unlike the other five kinds,
+    # where an absent spec key leaves the column alone. Dropping `environment`
+    # therefore puts the teammate back on the agent's own environment.
+    test "dropping a Teammate's environment and vault clears the bindings", %{user: user} do
+      inert_start_child()
+
+      bound = [
+        env_resource("proj"),
+        vault_resource("alice"),
+        agent_resource("ada"),
+        teammate_resource("Ada", %{
+          "agent" => "ada",
+          "environment" => "proj",
+          "vault" => "alice"
+        })
+      ]
+
+      {:ok, _} = Manifest.apply_manifest(user.id, bound)
+      assert [%{conversation: conv}] = Team.list_teammates(user.id)
+      assert conv.environment_id
+      assert conv.vault_id
+
+      unbound = List.replace_at(bound, 3, teammate_resource("Ada", %{"agent" => "ada"}))
+      {:ok, results} = Manifest.apply_manifest(user.id, unbound)
+
+      assert %{kind: "Teammate", action: :updated} = List.last(results)
+      assert [%{conversation: cleared}] = Team.list_teammates(user.id)
+      assert cleared.environment_id == nil
+      assert cleared.vault_id == nil
+
+      # And it settles: a third apply of the same file writes nothing.
+      {:ok, again} = Manifest.apply_manifest(user.id, unbound)
+      assert Enum.all?(again, &(&1.action == :unchanged))
+    end
+
+    test "a Teammate naming an unknown agent, environment or vault fails only its own row",
+         %{user: user} do
+      inert_start_child()
+
+      {:ok, results} =
+        Manifest.apply_manifest(user.id, [
+          agent_resource("ada"),
+          teammate_resource("no-agent", %{"agent" => "ghost"}),
+          teammate_resource("no-env", %{"agent" => "ada", "environment" => "ghost"}),
+          teammate_resource("no-vault", %{"agent" => "ada", "vault" => "ghost"}),
+          teammate_resource("nameless", %{}),
+          teammate_resource("Ada", %{"agent" => "ada"})
+        ])
+
+      assert [
+               %{kind: "Agent", name: "ada", action: :created},
+               %{name: "no-agent", action: :error, errors: agent_errors},
+               %{name: "no-env", action: :error, errors: env_errors},
+               %{name: "no-vault", action: :error, errors: vault_errors},
+               %{name: "nameless", action: :error, errors: blank_errors},
+               %{name: "Ada", action: :created}
+             ] = results
+
+      assert agent_errors == %{"agent" => ["agent not found: ghost"]}
+      assert env_errors == %{"environment" => ["environment not found: ghost"]}
+      assert vault_errors == %{"vault" => ["vault not found: ghost"]}
+      assert blank_errors == %{"agent" => ["can't be blank"]}
+
+      assert [%{name: "Ada"}] = Team.list_teammates(user.id)
+    end
+
+    test "a Teammate cannot resolve another tenant's agent", %{user: user} do
+      other = insert_verified_user()
+      insert_agent(user_id: other.id, name: "theirs")
+
+      {:ok, [%{kind: "Teammate", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [teammate_resource("T", %{"agent" => "theirs"})])
+
+      assert errors == %{"agent" => ["agent not found: theirs"]}
+      assert Team.list_teammates(user.id) == []
+    end
+
+    test "unknown spec keys on a Teammate are rejected", %{user: user} do
+      {:ok, [teammate]} =
+        Manifest.apply_manifest(user.id, [
+          teammate_resource("t", %{"agent" => "a", "environmnet" => "x"})
+        ])
+
+      assert teammate.errors == %{"environmnet" => ["is not a supported spec key"]}
+      assert Team.list_teammates(user.id) == []
     end
   end
 end

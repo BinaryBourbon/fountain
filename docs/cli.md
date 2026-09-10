@@ -317,7 +317,8 @@ fountain apply -f dir/ --var REGION=eu-west-1 # ${VAR} substitution, repeatable
 ```
 
 Apply is idempotent. It creates what is new, and updates what changed. It
-supports three kinds, which are `Environment`, `Vault` and `Agent`.
+supports four kinds, which are `Environment`, `Vault`, `Agent` and
+`Teammate`.
 
 `--var` and `${VAR}` substitution apply to a `spec.secrets` value alone. A
 `${VAR}` anywhere else in the document goes across as it stands. A
@@ -326,9 +327,53 @@ supports three kinds, which are `Environment`, `Vault` and `Agent`.
 The CLI compiles each document into one manifest, and sends that to
 `POST /api/apply` in one request.
 
-The server reconciles the environments, then the vaults, then the agents. It
-resolves an agent's `environment:` name reference, and that includes an
-environment that already exists on the server.
+The server reconciles the four kinds in the order above. A document can name
+another document whatever its position in the file. An `Agent` names an
+`environment`. A `Teammate` names an `agent`, an `environment` and a `vault`.
+Each name resolves against the manifest first, then against the records your
+account already holds.
+
+```yaml
+---
+apiVersion: fountain/v1
+kind: Teammate
+metadata:
+  name: Ada
+spec:
+  agent: ada             # an Agent document, or an agent you already have
+  environment: my-project
+  vault: alice
+```
+
+A `Teammate` document adds the agent to the team, which opens the teammate's
+conversation and starts its computer. A later apply moves the name, the
+environment and the vault the teammate is bound to. It starts no second
+computer.
+
+A `Teammate` document is the whole teammate. Drop `environment` or `vault`
+from it and the next apply clears that binding, which puts the teammate back
+on the agent's own environment and on no vault. The other three kinds behave
+the other way around, where an absent `spec` key leaves that field alone.
+
+A teammate's computer is built for one environment and one vault. Move either
+of them and Fountain retires that computer, so the teammate's next message
+builds a new one with the files and tools of a fresh machine. It refuses the
+row while a turn is still running there, and prints what to do about it. A
+conversation that shared the retired computer, and that names a different
+environment or vault, does not follow the teammate. It builds a machine of
+its own from what it names.
+
+Fountain keeps one computer for each agent, environment and vault. It refuses
+the row when the agent already has a computer on the environment and vault
+you are moving the teammate to. It does not join the teammate to that
+computer. Reset or remove the computer first, then apply again.
+
+Two `Teammate` documents cannot name the same agent. An agent is on the team
+once, so the second document fails and the first one applies.
+
+Apply is additive. A document that you delete from the manifest leaves its
+record in place. There is no prune, so delete a record through its own
+command or the console.
 
 The CLI prints `+` for a create, `~` for an update, `=` for a resource that
 already matched the manifest, and `!` for a failure. A second apply of the
@@ -341,7 +386,8 @@ errors and exits nonzero; valid resources in the same manifest still apply.
 Correct a misspelled field before you retry.
 
 Against an older server with no `/api/apply`, the CLI falls back to one call
-for each resource.
+for each resource. That older server has no `Teammate` document, so the CLI
+reports those and exits nonzero.
 
 ### Secret references
 
