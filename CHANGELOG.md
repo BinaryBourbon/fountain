@@ -33,6 +33,11 @@ upgrade, is in
   existing launches retain `owner` behavior. Applications processing mutually
   untrusted work can keep all Fountain API authority on their service host.
 
+- A `fountain apply` manifest can declare a teammate's schedules. A `Schedule`
+  document names its teammate, its cron and its prompt, and is keyed by name
+  under that teammate. A teammate name that two teammates answer to fails that
+  row rather than binding to one of them (#1636).
+
 - A `fountain apply` manifest can declare team membership. A `Teammate`
   document names its agent, environment and vault, and the apply puts the agent
   on the team, which opens its conversation and provisions its computer.

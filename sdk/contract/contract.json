@@ -10889,6 +10889,7 @@
           "enum": [
             "Agent",
             "Environment",
+            "Schedule",
             "Teammate",
             "Vault"
           ],

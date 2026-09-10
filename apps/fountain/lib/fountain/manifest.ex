@@ -4,11 +4,12 @@ defmodule Fountain.Manifest do
 
   Takes the full list of resources the CLI compiled from a `fountain.yml`
   and reconciles them against the tenant's records in one pass, in a fixed
-  order: environments, vaults, agents, teammates. The
+  order: environments, vaults, agents, teammates, schedules, webhooks. The
   order is what lets a document reference another by name regardless of
   where it sits in the file. An Agent's `environment`, a Teammate's `agent`,
-  `environment` and `vault` all resolve against the documents applied earlier
-  in this manifest first, then against the tenant's existing records.
+  `environment` and `vault`, and a Schedule's `teammate` all resolve against
+  the documents applied earlier in this manifest first, then against the
+  tenant's existing records.
 
   Each kind has its own upsert key:
 
@@ -18,6 +19,7 @@ defmodule Fountain.Manifest do
   | `Vault` | `name` | `Fountain.Vaults` |
   | `Agent` | `name` | `Fountain.Agents` |
   | `Teammate` | `name`, which names the agent's membership | `Fountain.Team` |
+  | `Schedule` | `name`, under its `teammate` | `Fountain.Team.Schedules` |
 
   A teammate is one agent's membership of the team, so the document's `name`
   is what the teammate is called and the resolved `agent` is what it
@@ -45,10 +47,11 @@ defmodule Fountain.Manifest do
   require Logger
 
   alias Fountain.{Agents, Crypto, Environments, Team, Vaults}
+  alias Fountain.Team.Schedules
 
   @unexpected "apply failed unexpectedly; see the server log"
 
-  @kinds ~w(Environment Vault Agent Teammate)
+  @kinds ~w(Environment Vault Agent Teammate Schedule)
 
   def kinds, do: @kinds
 
@@ -60,7 +63,7 @@ defmodule Fountain.Manifest do
   Apply `resources` (maps with `"kind"`, `"name"`, and `"spec"`) for `user_id`.
 
   Returns `{:ok, results}` with one result map per resource in apply order
-  (the 4 kinds in the order above, then any malformed entries). Each result
+  (the 5 kinds in the order above, then any malformed entries). Each result
   holds `:kind`, `:name`, an `:action` of `:created` / `:updated` /
   `:unchanged` / `:error`, changeset-style `:errors` when the action is
   `:error`, a `:secrets` list with the per-key upsert outcome, the
@@ -79,6 +82,7 @@ defmodule Fountain.Manifest do
     vaults = Map.get(groups, "Vault", [])
     agents = Map.get(groups, "Agent", [])
     teammates = Map.get(groups, "Teammate", [])
+    schedules = Map.get(groups, "Schedule", [])
 
     dek = if Enum.any?(envs ++ vaults, &has_secrets?/1), do: load_dek!(user_id)
 
@@ -95,9 +99,16 @@ defmodule Fountain.Manifest do
 
     refs = %{agents: agent_ids, environments: env_ids, vaults: vault_ids}
 
-    {teammate_results, _teammate_ids} =
+    {teammate_results, teammate_ids} =
       reconcile("Teammate", teammates, fn res, claimed ->
         apply_teammate(user_id, res, refs, claimed, opts)
+      end)
+
+    known_teammates = teammate_refs(user_id, schedules, teammate_ids)
+
+    {schedule_results, _} =
+      reconcile("Schedule", schedules, fn res, _claimed ->
+        apply_schedule(user_id, res, known_teammates, opts)
       end)
 
     results =
@@ -105,6 +116,7 @@ defmodule Fountain.Manifest do
         vault_results ++
         agent_results ++
         teammate_results ++
+        schedule_results ++
         Enum.map(invalid, &invalid_result/1)
 
     {:ok, results}
@@ -314,6 +326,40 @@ defmodule Fountain.Manifest do
     end
   end
 
+  defp apply_schedule(user_id, %{"name" => name} = res, known_teammates, opts) do
+    spec = spec_of(res)
+
+    with :ok <- validate_keys(res, ~w(name teammate cron prompt one_off enabled)),
+         {:ok, agent_id} <- require_ref("teammate", user_id, spec["teammate"], known_teammates) do
+      attrs =
+        spec
+        |> Map.drop(~w(teammate))
+        |> Map.merge(%{"name" => name, "agent_id" => agent_id})
+
+      reconcile_schedule(user_id, name, agent_id, attrs, opts)
+    else
+      {:error, errors} -> {result("Schedule", name, :error, errors, []), nil}
+    end
+  end
+
+  defp reconcile_schedule(user_id, name, agent_id, attrs, opts) do
+    existing =
+      user_id |> Schedules.list_schedules(agent_id) |> Enum.find(&(&1.name == name))
+
+    outcome =
+      if existing,
+        do: Schedules.update_schedule(existing, attrs, opts),
+        else: Schedules.create_schedule(user_id, attrs, opts)
+
+    case outcome do
+      {:ok, schedule} ->
+        {result("Schedule", name, verdict(existing, schedule), nil, [], schedule.id), nil}
+
+      {:error, reason} ->
+        {result("Schedule", name, :error, context_errors(reason), []), nil}
+    end
+  end
+
   # ── references ────────────────────────────────────────────────────────────
 
   # Resolve a `<field>: <name>` reference: documents applied earlier in this
@@ -325,6 +371,9 @@ defmodule Fountain.Manifest do
   defp resolve_ref(field, user_id, ref, ids) when is_binary(ref) do
     case ids[ref] || tenant_ref(field, user_id, ref) do
       nil -> {:error, %{field => ["#{field} not found: #{ref}"]}}
+      # Two teammates answer to this name, so the document does not say which
+      # record it means. Guessing would bind a schedule to the wrong agent.
+      :ambiguous -> {:error, %{field => ["#{field} name is not unique: #{ref}"]}}
       id -> {:ok, id}
     end
   end
@@ -343,9 +392,31 @@ defmodule Fountain.Manifest do
 
   defp tenant_ref("vault", user_id, name), do: id_of(Vaults.get_vault_by_name(name, user_id))
   defp tenant_ref("agent", user_id, name), do: id_of(Agents.get_agent_by_name(name, user_id))
+  defp tenant_ref("teammate", _user_id, _name), do: nil
 
   defp id_of(nil), do: nil
   defp id_of(record), do: record.id
+
+  # The teammates a Schedule may name: the ones this manifest just reconciled,
+  # over the ones the tenant already has. Skipped entirely when the manifest
+  # holds no schedules, because listing the team is several queries.
+  #
+  # A teammate's name is its conversation's title, or its agent's name, and
+  # neither is unique. A name two of the tenant's teammates answer to maps to
+  # `:ambiguous` and fails the Schedule row that uses it; a name this manifest
+  # reconciled is unique among the documents (`unclaimed/3`) and wins.
+  defp teammate_refs(_user_id, [], teammate_ids), do: teammate_ids
+
+  defp teammate_refs(user_id, _schedules, teammate_ids) do
+    user_id
+    |> Team.list_teammates()
+    |> Enum.group_by(& &1.name, & &1.agent.id)
+    |> Map.new(fn
+      {name, [agent_id]} -> {name, agent_id}
+      {name, _several} -> {name, :ambiguous}
+    end)
+    |> Map.merge(teammate_ids)
+  end
 
   # ── secrets ───────────────────────────────────────────────────────────────
 

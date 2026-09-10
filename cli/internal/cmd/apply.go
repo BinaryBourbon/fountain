@@ -76,10 +76,10 @@ func runApply(cmd *cobra.Command, args []string) error {
 // applyKindOrder is the order the server reconciles in, and the order the
 // payload is built in so the printed output reads the same way. A document
 // may name another whatever the file's order: an agent's `spec.environment`,
-// a teammate's `spec.agent`/`environment`/`vault`. The server resolves each by
-// name, including against records that already exist and are not part of this
-// manifest.
-var applyKindOrder = []string{"Environment", "Vault", "Agent", "Teammate"}
+// a teammate's `spec.agent`/`environment`/`vault`, a schedule's
+// `spec.teammate`. The server resolves each by name, including against records
+// that already exist and are not part of this manifest.
+var applyKindOrder = []string{"Environment", "Vault", "Agent", "Teammate", "Schedule"}
 
 // applyResource is one compiled manifest document. The whole manifest is
 // sent to POST /api/apply in a single request.
