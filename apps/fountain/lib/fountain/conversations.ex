@@ -2095,9 +2095,9 @@ defmodule Fountain.Conversations do
     |> Repo.update()
   end
 
-  # Inside admission's transaction, before locking a sandbox: turn admission
-  # also takes conversation -> sandbox locks. A competing rotation must not
-  # replace a binding that has moved since the initial lookup.
+  # Inside admission's transaction, before the attachment's sandbox row lock.
+  # Keep the selected conversation stable while replacing its binding; reject
+  # a competing rotation that has already moved it.
   defp unbind_rotated_channel(attrs, opts) do
     case Keyword.get(opts, :rotate_from) do
       nil ->
