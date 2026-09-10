@@ -11,12 +11,12 @@ server releases.
 
 ---
 
-## [1.24.0] - 2026-09-10
+## [1.25.0] — 2026-09-10
 
 ### Changed
 
 - **The package is now `@managoat/fountain-sdk`.** Same library, same API, same
-  version line: 1.24.0 follows 1.23.0. Update the dependency and the import
+  version line: 1.25.0 follows 1.24.0. Update the dependency and the import
   specifier; nothing else about your code changes.
 
   ```
@@ -29,6 +29,12 @@ server releases.
   ones. The move follows the repository into the managoat organization
   (`decisions/0048`), which is also where the scope that publishes this
   package now lives.
+
+## [1.24.0] — 2026-09-10
+
+### Added
+
+- Generated types cover the `Teammate`, `Schedule` and `Webhook` documents bulk apply now reconciles, the `unchanged` result action, and a webhook row's one-time `secret`.
 
 ## [1.23.0] - 2026-09-07
 

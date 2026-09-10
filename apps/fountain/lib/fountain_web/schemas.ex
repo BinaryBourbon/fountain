@@ -3122,11 +3122,22 @@ defmodule FountainWeb.Schemas do
       description:
         "One compiled document from a fountain.yml manifest. `spec` matches the " <>
           "create/update schema for the kind, plus an inline `secrets` map " <>
-          "(Environment and Vault). Agent specs may reference an environment by " <>
-          "name via `environment`; the server resolves it to `environment_id`.",
+          "(Environment and Vault). Specs reference other documents by name, and " <>
+          "the server resolves each to an id: an Agent's `environment`, a " <>
+          "Teammate's `agent`, `environment` and `vault`, and a Schedule's " <>
+          "`teammate`. Teammate specs take `agent`, `environment` and `vault`, " <>
+          "and a Teammate document is read as a whole declaration, so an absent " <>
+          "`environment` or `vault` clears that binding. Schedule specs take " <>
+          "`teammate` plus the TeamScheduleCreateRequest fields `cron`, " <>
+          "`prompt`, `one_off` and `enabled`; Webhook specs take the " <>
+          "WebhookEndpointCreateRequest fields `url`, `description` and " <>
+          "`event_types`, and are keyed by `url` rather than by `name`.",
       type: :object,
       properties: %{
-        kind: %Schema{type: :string, enum: ["Environment", "Vault", "Agent"]},
+        kind: %Schema{
+          type: :string,
+          enum: ["Environment", "Vault", "Agent", "Teammate", "Schedule", "Webhook"]
+        },
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         spec: %Schema{type: :object, additionalProperties: true}
       },
@@ -3175,9 +3186,26 @@ defmodule FountainWeb.Schemas do
       properties: %{
         kind: %Schema{type: :string},
         name: %Schema{type: :string},
-        action: %Schema{type: :string, enum: ["created", "updated", "error"]},
+        action: %Schema{
+          type: :string,
+          enum: ["created", "updated", "unchanged", "error"],
+          description:
+            "`unchanged` means the record already matched the document, so nothing " <>
+              "was written to it and no audit event was recorded. Inline " <>
+              "`spec.secrets` are re-encrypted on every apply and still report " <>
+              "`upserted` under `secrets`."
+        },
         errors: %Schema{type: :object, additionalProperties: true, nullable: true},
-        secrets: %Schema{type: :array, items: ApplySecretResult}
+        secrets: %Schema{type: :array, items: ApplySecretResult},
+        secret: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "A Webhook endpoint's HMAC-SHA256 signing secret, on the apply that " <>
+              "created it. Store it; it is not shown again, and an update never " <>
+              "returns it. Null on every other row.",
+          example: "whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU"
+        }
       },
       required: [:kind, :name, :action]
     })

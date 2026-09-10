@@ -50,7 +50,50 @@ upgrade, is in
   existing launches retain `owner` behavior. Applications processing mutually
   untrusted work can keep all Fountain API authority on their service host.
 
+- A `fountain apply` manifest can declare webhook endpoints. A `Webhook`
+  document is keyed by its `spec.url`, and the apply that creates one hands
+  back its signing secret on that result row and never again. A manifest that
+  holds a `Webhook` needs a full-scope credential, which is what
+  `POST /api/webhooks` needs, and a refused request writes none of the
+  manifest's other resources either (#1636).
+
+- A `fountain apply` manifest can declare a teammate's schedules. A `Schedule`
+  document names its teammate, its cron and its prompt, and is keyed by name
+  under that teammate. A teammate name that two teammates answer to fails that
+  row rather than binding to one of them (#1636).
+
+- A `fountain apply` manifest can declare team membership. A `Teammate`
+  document names its agent, environment and vault, and the apply puts the agent
+  on the team, which opens its conversation and provisions its computer.
+  Re-applying moves the name and the bindings and provisions no second
+  computer (#1636).
+
 ### Fixed
+
+- A teammate can be moved to a different environment or vault. Fountain retires
+  the computer the old binding named, so the teammate's next message builds one
+  from the new pair, and it refuses the move while a turn is running on that
+  computer. A move onto an environment and vault the agent already has a
+  computer for is refused rather than merged onto it (#1636).
+
+- A conversation that shares a sandbox follows the replacement machine only
+  when it declares the same environment and vault. The replacement is built
+  from the waking conversation's pair, so a co-tenant that named a different
+  one was run on another conversation's environment files and vault material,
+  and which pair won depended on which conversation woke first. One that names
+  something else now keeps its own pair and builds a machine from it on its
+  next prompt (#1636).
+
+- A resource in a `fountain apply` manifest that raises unexpectedly now fails
+  its own result row instead of the whole request. Before, the exception
+  abandoned a call that had already written the resources above it, so the
+  caller got a 500 and no result rows for writes that had landed (#1636).
+
+- Updating an environment, vault, agent or webhook endpoint with the values it
+  already holds no longer records an `*.updated` audit event naming no changed
+  fields, and `fountain apply` reports those rows as `unchanged` rather than
+  claiming an update. A re-apply of the same manifest now writes nothing and
+  says so (#1680).
 
 - A secret edited or rotated in an environment or vault during a brokered
   conversation reaches the broker before the next turn. The broker's copy was

@@ -25,7 +25,14 @@ func TestExamplesParse(t *testing.T) {
 		t.Fatal("no .yml/.yaml files under examples/")
 	}
 
-	knownKinds := map[string]bool{"Environment": true, "Vault": true, "Agent": true}
+	knownKinds := map[string]bool{
+		"Environment": true,
+		"Vault":       true,
+		"Agent":       true,
+		"Teammate":    true,
+		"Schedule":    true,
+		"Webhook":     true,
+	}
 	total := 0
 	checked := 0
 	for _, f := range files {

@@ -111,10 +111,15 @@ defmodule Fountain.Vaults do
   @doc "Update a vault. See `create_vault/2` for `opts`."
   def update_vault(%Vault{} = vault, attrs, opts \\ []) do
     changeset = Vault.changeset(vault, attrs)
+    result = Repo.update(changeset)
 
-    changeset
-    |> Repo.update()
-    |> audited("vault.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
+    # See `Fountain.Environments.update_environment/3`: a save that moves
+    # nothing records nothing (#1680).
+    if changeset.changes == %{} do
+      result
+    else
+      audited(result, "vault.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
+    end
   end
 
   @doc """

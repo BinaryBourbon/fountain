@@ -8380,6 +8380,7 @@
           "enum": [
             "created",
             "error",
+            "unchanged",
             "updated"
           ],
           "required": true,
@@ -8397,6 +8398,11 @@
         },
         "name": {
           "required": true,
+          "type": "string"
+        },
+        "secret": {
+          "nullable": true,
+          "required": false,
           "type": "string"
         },
         "secrets": {
@@ -10888,7 +10894,10 @@
           "enum": [
             "Agent",
             "Environment",
-            "Vault"
+            "Schedule",
+            "Teammate",
+            "Vault",
+            "Webhook"
           ],
           "required": true,
           "type": "string"

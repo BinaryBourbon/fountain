@@ -192,9 +192,14 @@ defmodule Fountain.Agents do
         Repo.update(changeset)
       end
 
+    # A save that moves nothing records nothing, the same rule
+    # `Fountain.Environments.update_environment/3` follows (#1680).
     result =
-      result
-      |> audited("agent.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
+      if changeset.changes == %{} do
+        result
+      else
+        audited(result, "agent.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
+      end
 
     # Only once the new identity is the committed one: a home torn down
     # against an update that then failed would be rebuilt for nothing.
