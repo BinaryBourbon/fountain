@@ -121,6 +121,8 @@ defmodule FountainWeb.AguiController do
     ],
     request_body: {"AG-UI run input", "application/json", @run_input},
     responses: [
+      unprocessable_entity:
+        {"Saved execution policy refused", "application/json", FountainWeb.Schemas.Error},
       conflict: {"Conflicting state", "application/json", FountainWeb.Schemas.Error},
       ok: {"AG-UI event stream", "text/event-stream", %OpenApiSpex.Schema{type: :string}},
       bad_request: {"Malformed run input", "application/json", FountainWeb.Schemas.Error},

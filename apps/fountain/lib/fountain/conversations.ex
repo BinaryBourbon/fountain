@@ -1885,7 +1885,8 @@ defmodule Fountain.Conversations do
                  {:ok, fresh} <- start_conversation(attrs, opts),
                  do: {:ok, fresh, :created}
           else
-            with :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+            with :ok <- _unsafe_check_saved_execution_allowance(conv.id),
+                 :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
                  do: {:ok, conv, :resumed}
           end
 
