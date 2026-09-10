@@ -53,11 +53,11 @@ Installed from a `owner/repo` source via the [skills.sh](https://skills.sh) CLI 
 ```json
 [
   {"source": "anthropics/skills", "name": "frontend-design"},
-  {"source": "BinaryBourbon/skills"}
+  {"source": "anthropics/skills"}
 ]
 ```
 
-`name` is optional — when omitted the skill's declared name from the repository is used. Installs run via `npx -y skills@latest add <source> --global` on the sprite **before** the network policy locks the sprite down, so they can reach npm and GitHub.
+`name` is optional — when given, Fountain passes `--skill <name>` so that one named skill is installed from the source; when omitted, skills.sh installs what the source declares. Installs run via `npx -y skills@latest add <source> --global` on the sprite **before** the network policy locks the sprite down, so they can reach npm and GitHub.
 
 ### Inline skill
 

@@ -99,7 +99,8 @@ spec:
   runtime: claude
   environment: python-data-env
   skills:
-    - source: BinaryBourbon/fountain-api-skill
+    - source: anthropics/skills
+      name: brainstorming
   mcp_servers:
     github:
       command: npx
