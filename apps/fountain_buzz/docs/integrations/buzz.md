@@ -108,7 +108,7 @@ by that name.
 
 ```sh
 curl -fsSLo buzz-backend-fountain \
-  https://github.com/BinaryBourbon/fountain/releases/latest/download/buzz-backend-fountain-linux-amd64
+  https://github.com/managoat/fountain/releases/latest/download/buzz-backend-fountain-linux-amd64
 chmod +x buzz-backend-fountain
 sudo mv buzz-backend-fountain /usr/local/bin/
 ```
@@ -306,7 +306,7 @@ A base prompt tells the agent the truth about its position. It holds no
 credentials and no relay connection, and these two tools are the only way it
 can publish.
 
-The [audit trail](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0013-audit-trail.md)
+The [audit trail](https://github.com/managoat/fountain/blob/main/decisions/0013-audit-trail.md)
 records each publish as `buzz.published`. It records the tool and the channel,
 and never the message content.
 
@@ -501,7 +501,7 @@ There are two settings, and both are optional. Read the
 ## How it works
 
 The design is
-[ADR 0020](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0020-buzz-as-a-client-of-the-acp-gateway.md).
+[ADR 0020](https://github.com/managoat/fountain/blob/main/decisions/0020-buzz-as-a-client-of-the-acp-gateway.md).
 Buzz takes part as an **ACP client** of Fountain.
 
 `buzz-acp` holds the relay connection, and drives the bound Fountain agent

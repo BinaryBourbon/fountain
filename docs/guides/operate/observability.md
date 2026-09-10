@@ -36,7 +36,7 @@ with it.
 ## Which alerts you get
 
 The portable rules are in
-[`deploy/k8s/prometheusrule.yaml`](https://github.com/BinaryBourbon/fountain/blob/main/deploy/k8s/prometheusrule.yaml).
+[`deploy/k8s/prometheusrule.yaml`](https://github.com/managoat/fountain/blob/main/deploy/k8s/prometheusrule.yaml).
 They are optional: enable the file in your Kustomization and install the
 PrometheusRule CRD and the scrapes its expressions need. A rule file alone
 does not collect metrics.

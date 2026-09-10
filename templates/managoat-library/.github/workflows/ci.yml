@@ -1,7 +1,7 @@
 name: CI
 
 # The gate on every PR and on main, for a managoat_* library that graduated
-# from the Fountain umbrella (BinaryBourbon/fountain, decisions/0037). Same
+# from the Fountain umbrella (managoat/fountain, decisions/0037). Same
 # checks the umbrella ran over it, in the same order, on the same Elixir and
 # OTP the umbrella pins. The publish workflow runs the tests again before it
 # publishes; this is the check a PR has to pass to reach main at all.

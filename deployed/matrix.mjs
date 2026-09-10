@@ -11,7 +11,9 @@ import { Redactor } from './lib/http.mjs';
 const ensure = (ok, message) => { if (!ok) throw new Error(message); };
 const keys = (value, allowed) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).every(k => allowed.includes(k));
 const unique = values => new Set(values).size === values.length;
-const issue = value => typeof value === 'string' && /^https:\/\/github\.com\/BinaryBourbon\/fountain\/issues\/[1-9][0-9]*$/.test(value);
+// Either owner: the repo moved to managoat (0048) and a matrix.json written
+// before that still cites issues under the old account, which redirect.
+const issue = value => typeof value === 'string' && /^https:\/\/github\.com\/(?:managoat|BinaryBourbon)\/fountain\/issues\/[1-9][0-9]*$/.test(value);
 const capabilities = ['execution', 'artifact', 'follow_up', 'tenant_isolation', 'lifecycle', 'streaming'];
 
 export function validateMatrix(matrix, subset) {

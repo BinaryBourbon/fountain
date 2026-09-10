@@ -7,7 +7,7 @@ import { McpReceiverSession } from '../lib/mcp-receiver.mjs';
 import { SecretEvidence } from '../lib/secret-evidence.mjs';
 import { fingerprint } from '../receivers/secrets.mjs';
 
-export const MCP_AUTH_GAP = 'https://github.com/BinaryBourbon/fountain/issues/1405';
+export const MCP_AUTH_GAP = 'https://github.com/managoat/fountain/issues/1405';
 export function mcpCoverage(runtime) {
   return ['claude', 'codex', 'gemini', 'opencode'].map(name => ({ runtime: name,
     static_bearer: name === runtime ? 'required_this_run' : 'not_run',

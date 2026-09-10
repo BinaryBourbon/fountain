@@ -12,10 +12,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BinaryBourbon/fountain.git",
+    "url": "git+https://github.com/managoat/fountain.git",
     "directory": "sdk/typescript"
   },
-  "homepage": "https://github.com/BinaryBourbon/fountain/tree/main/sdk/typescript",
+  "homepage": "https://github.com/managoat/fountain/tree/main/sdk/typescript",
   "keywords": [
     "fountain",
     "agent",

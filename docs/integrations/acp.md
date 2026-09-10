@@ -58,7 +58,7 @@ version when that is lower. `agentInfo` is `fountain`, with the CLI's version.
 | `session/cancel` | Interrupts the turn that runs. |
 | `session/load` | Reopens a conversation that this process did not start. It replays the stored `session/update` history **before** the response, as the spec demands. |
 | `session/set_model` | Not implemented. The model belongs to the Fountain agent. A change here would change each conversation on that agent. |
-| `session/request_permission` (agent → client) | Goes to your client when the policy for that tool is `ask` ([#708](https://github.com/BinaryBourbon/fountain/issues/708)). It carries the agent's own options. Your answer goes back to the agent. See [Permission prompts](#permission-prompts). |
+| `session/request_permission` (agent → client) | Goes to your client when the policy for that tool is `ask` ([#708](https://github.com/managoat/fountain/issues/708)). It carries the agent's own options. Your answer goes back to the agent. See [Permission prompts](#permission-prompts). |
 
 Fountain advertises `loadSession: true`. On prompts it advertises
 `image: true`, `audio: false` and `embeddedContext: false`. A client cannot
@@ -74,8 +74,8 @@ client's.
 ### The session id is the conversation id
 
 `session/new` returns the Fountain conversation id as the ACP `sessionId`
-([ADR 0015](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md),
-[#699](https://github.com/BinaryBourbon/fountain/issues/699)).
+([ADR 0015](https://github.com/managoat/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md),
+[#699](https://github.com/managoat/fountain/issues/699)).
 
 That is what makes `session/load` work across processes and across days. An
 editor hands back an id from last week, and it resolves to a real
@@ -86,7 +86,7 @@ minted it. It is also why the same id appears in the web UI, in
 ### What streams back
 
 The sandbox runtime already speaks ACP to Fountain
-([ADR 0014](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0014-agent-client-protocol.md)).
+([ADR 0014](https://github.com/managoat/fountain/blob/main/decisions/0014-agent-client-protocol.md)).
 So the adapter is a proxy, and not a translator. It forwards
 `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`
 and their siblings as they arrive, and rewrites the `sessionId` to yours.
@@ -113,10 +113,10 @@ other field in `_meta`.
 
 | Field | Meaning |
 |---|---|
-| `channelId` | Names the external channel that this session serves. With it, `session/new` **resumes** the conversation already bound to that channel, for this user, agent and vault. That is the same conversation, the same sandbox and the same runtime session, with a fresh ACP id on the client's side. A harness that forgets its sessions on restart therefore lands back where it was ([#774](https://github.com/BinaryBourbon/fountain/issues/774)). A destroyed sandbox also stops the resume. The workspace does not survive it, so Fountain opens a new conversation on a new sandbox ([#779](https://github.com/BinaryBourbon/fountain/issues/779)). Without it, each `session/new` is a new conversation. |
+| `channelId` | Names the external channel that this session serves. With it, `session/new` **resumes** the conversation already bound to that channel, for this user, agent and vault. That is the same conversation, the same sandbox and the same runtime session, with a fresh ACP id on the client's side. A harness that forgets its sessions on restart therefore lands back where it was ([#774](https://github.com/managoat/fountain/issues/774)). A destroyed sandbox also stops the resume. The workspace does not survive it, so Fountain opens a new conversation on a new sandbox ([#779](https://github.com/managoat/fountain/issues/779)). Without it, each `session/new` is a new conversation. |
 | `sandboxMode` | Where this one session's conversation runs, `ephemeral` or `persistent`. It replaces `--sandbox-mode` for the session. See [Sandboxes](../concepts/sandboxes.md). |
 | `sandboxId` | A sandbox id to attach this one session's conversation to. It replaces `--sandbox` for the session. |
-| `freshSession` | With `channelId`, it skips the resume this one time. It unbinds the current conversation, which continues and then retires like any other idle one. It opens a new conversation, and binds the channel to that. A Buzz owner's `!rotate` turns into this ([#788](https://github.com/BinaryBourbon/fountain/pull/788)). Fountain ignores it without `channelId`. |
+| `freshSession` | With `channelId`, it skips the resume this one time. It unbinds the current conversation, which continues and then retires like any other idle one. It opens a new conversation, and binds the channel to that. A Buzz owner's `!rotate` turns into this ([#788](https://github.com/managoat/fountain/pull/788)). Fountain ignores it without `channelId`. |
 
 The same knobs exist on the API, as `channel_id`, `fresh`, `sandbox_mode` and
 `sandbox_id` on `POST /api/conversations`. Read
@@ -156,7 +156,7 @@ names the tool. To set the agent's own policy, use the API or the console.
 **The opencode runtime never asks.** It decides permission in its own server,
 and sends no request. Fountain refuses a policy stricter than `auto_allow` on
 that runtime, and says so, and does not pretend to protect you
-([#959](https://github.com/BinaryBourbon/fountain/issues/959)).
+([#959](https://github.com/managoat/fountain/issues/959)).
 
 ## Lifecycle, sandboxes, and what survives
 
@@ -168,7 +168,7 @@ that runtime, and says so, and does not pretend to protect you
   to reattach, comes back as an error on the turn that met it. Prompt again to
   provision a fresh one. Fountain keeps the transcript either way, and
   `session/load` replays it. The agent's own memory in the sandbox does not
-  survive ([#649](https://github.com/BinaryBourbon/fountain/issues/649)).
+  survive ([#649](https://github.com/managoat/fountain/issues/649)).
 - **To close the client stops nothing.** The conversation is on the server,
   and the process is a window onto it. Reopen it with `session/load`, from the
   conversations app, or with `fountain conv`.
@@ -215,6 +215,6 @@ failure, replay and resume. Cleanup must leave no active turn or sandbox.
 The fixture bypasses inference and built-in CLI installation; keep a separate
 real-model canary for those guarantees.
 
-See the [deployed suite instructions](https://github.com/BinaryBourbon/fountain/blob/main/deployed/README.md#deterministic-acp-fixture)
+See the [deployed suite instructions](https://github.com/managoat/fountain/blob/main/deployed/README.md#deterministic-acp-fixture)
 for the target configuration and account/provider requirements. Run this
 profile only on a test deployment; it is excluded from production canaries.

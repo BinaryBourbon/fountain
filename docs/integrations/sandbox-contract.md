@@ -11,7 +11,7 @@ error taxonomy. `Managoat.Sandbox.ConformanceCase` is the conformance suite
 that each adapter must pass. It covers replay-from-start attach, total
 `write_stdin`, exactly one terminal frame for each command, `allow: []` as
 deny-all, and more.
-[ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md)
+[ADR 0018](https://github.com/managoat/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md)
 holds the design rationale.
 
 So far, four providers implement it.

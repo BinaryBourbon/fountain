@@ -51,7 +51,7 @@ same name.
 `GET /v1/models` response.
 
 The complete, runnable configuration is in
-[`examples/litellm-gateway`](https://github.com/BinaryBourbon/fountain/tree/main/examples/litellm-gateway).
+[`examples/litellm-gateway`](https://github.com/managoat/fountain/tree/main/examples/litellm-gateway).
 
 ## Preserve the thread
 

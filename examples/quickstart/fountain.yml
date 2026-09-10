@@ -6,7 +6,7 @@ metadata:
   name: fountain-quickstart
 spec:
   repositories:
-    - url: https://github.com/BinaryBourbon/fountain
+    - url: https://github.com/managoat/fountain
       mount_path: /workspace/fountain
 ---
 apiVersion: fountain.dev/v1

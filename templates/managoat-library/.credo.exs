@@ -1,5 +1,5 @@
 # Credo configuration for a managoat_* library, copied from
-# BinaryBourbon/fountain's .credo.exs with the `included` paths trimmed to this
+# managoat/fountain's .credo.exs with the `included` paths trimmed to this
 # repository's lib/ and test/ and Fountain's own check dropped. Run with
 # `mix credo --strict`, which is what CI does.
 #

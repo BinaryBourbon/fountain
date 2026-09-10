@@ -121,7 +121,7 @@ ends. Use the SSE endpoint for output.
 
 **The payload carries no values.** It has no transcript text, no prompt, no
 environment variable names and no secret values. The audit trail obeys the
-same rule ([ADR 0013](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0013-audit-trail.md)),
+same rule ([ADR 0013](https://github.com/managoat/fountain/blob/main/decisions/0013-audit-trail.md)),
 for the same reason. A payload is tenant data that leaves the building over a
 URL somebody typed into a form. The delivery log would otherwise hold a
 second, less guarded copy of every conversation.

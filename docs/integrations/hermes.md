@@ -59,7 +59,7 @@ Four reasons to reach for it.
     exactly as the CLI does, and `FOUNTAIN_PROFILE` chooses a profile.
 
     ```bash
-    brew install BinaryBourbon/tap/fountain
+    brew install managoat/tap/fountain
     fountain auth login
     ```
 
@@ -70,7 +70,7 @@ Four reasons to reach for it.
 2. Install the plugin, and turn it on.
 
     ```bash
-    hermes plugins install BinaryBourbon/fountain/integrations/hermes/fountain --enable
+    hermes plugins install managoat/fountain/integrations/hermes/fountain --enable
     ```
 
     From a checkout of this repo, a symlink does the same. Run
@@ -156,7 +156,7 @@ on the environment's setup script.
   exists, and runs it.
 
 The plugin's source and its tests are at
-[`integrations/hermes/`](https://github.com/BinaryBourbon/fountain/tree/main/integrations/hermes)
+[`integrations/hermes/`](https://github.com/managoat/fountain/tree/main/integrations/hermes)
 in the Fountain repo.
 
 ## Related

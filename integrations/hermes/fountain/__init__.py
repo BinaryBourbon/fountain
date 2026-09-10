@@ -6,7 +6,7 @@ Registers seven tools (`fountain_agents`, `fountain_run`, `fountain_send`,
 for them, and a `/fountain` slash command for humans.
 
 Install: symlink or copy this directory to `~/.hermes/plugins/fountain/`, or
-`hermes plugins install BinaryBourbon/fountain/integrations/hermes/fountain --enable`.
+`hermes plugins install managoat/fountain/integrations/hermes/fountain --enable`.
 Configure with `FOUNTAIN_API_KEY` (+ `FOUNTAIN_BASE_URL` for a self-hosted
 instance), `fountain auth login`, or `plugins.entries.fountain.settings.*`.
 """

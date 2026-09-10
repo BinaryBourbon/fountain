@@ -40,7 +40,7 @@ bin/migrate     # in the image; equivalent to
 
 `bin/migrate` ignores `MIGRATE_ON_BOOT`. It is the thing you run *to* migrate.
 In Kubernetes that is a Job ordered before the rollout, and
-[`deploy/k8s/README.md`](https://github.com/BinaryBourbon/fountain/blob/main/deploy/k8s/README.md)
+[`deploy/k8s/README.md`](https://github.com/managoat/fountain/blob/main/deploy/k8s/README.md)
 holds the manifest.
 
 Three things matter before you turn boot migrations off.

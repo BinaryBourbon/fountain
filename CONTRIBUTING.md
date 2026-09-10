@@ -109,7 +109,7 @@ gh issue create --label flake --label area:testing --title "Flake: <what raced>"
 
 Or use the **Flaky test** issue template, which applies the same labels. Every
 flake carries the `flake` label, so
-[the open ones](https://github.com/BinaryBourbon/fountain/issues?q=is%3Aopen+label%3Aflake)
+[the open ones](https://github.com/managoat/fountain/issues?q=is%3Aopen+label%3Aflake)
 are one query. Search before filing — the same flake gets found repeatedly, and
 a second issue splits the evidence. What makes one actionable is in CLAUDE.md
 under *Flaky tests*: the failing assertion, a rate rather than an adjective,

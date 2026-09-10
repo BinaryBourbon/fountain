@@ -14,4 +14,4 @@ the package ships without a bump fails the release gate.
 
 ### Added
 
-- Extracted from Fountain (BinaryBourbon/fountain#__EXTRACTION_PR__).
+- Extracted from Fountain (managoat/fountain#__EXTRACTION_PR__).

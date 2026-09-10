@@ -1085,7 +1085,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # closed with no exit frame was reported as {:exit, _, 0}, so this
       # landed on the :exit handler and wrote a *completed* turn with exit
       # code 0 — a turn that never finished, recorded as a clean one, which
-      # is the shape of BinaryBourbon/fountain#880.
+      # is the shape of managoat/fountain#880.
       {pid, ref} = start_with_turn(conv)
 
       send(pid, {:error, %{ref: ref}, :closed_before_exit})

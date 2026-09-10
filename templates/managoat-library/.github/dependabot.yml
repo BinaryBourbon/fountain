@@ -1,7 +1,7 @@
 # SHA-pinned actions never move on their own; dependabot is the only thing
 # that will ever propose bumping them. A mix bump that touches a runtime
 # dependency in mix.exs is a release (the release gate says so); a dev-only
-# bump is not. Same shape as BinaryBourbon/fountain's.
+# bump is not. Same shape as managoat/fountain's.
 version: 2
 updates:
   - package-ecosystem: github-actions

@@ -68,7 +68,7 @@ coverage, release boot, Swift, docs and distribution gates. No failed
 gate is skipped or changed to get an approval.
 
 An existing Go guest-handshake fixture race is tracked in
-[#1641](https://github.com/BinaryBourbon/fountain/issues/1641), reproduced in
+[#1641](https://github.com/managoat/fountain/issues/1641), reproduced in
 2 of 100 focused local runs on the inspected main revision. Its gate remains
 enabled. A confirmed failed check requests changes; missing execution is incomplete;
 rerunning until it turns green is not evidence that the defect was fixed.

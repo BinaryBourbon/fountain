@@ -15,7 +15,7 @@ defmodule Fountain.Team.McpTest do
       insert_agent(
         user_id: user.id,
         name: "fountain-maintainer",
-        description: "Maintains BinaryBourbon/fountain — the engineer for the server"
+        description: "Maintains managoat/fountain — the engineer for the server"
       )
 
     steward =

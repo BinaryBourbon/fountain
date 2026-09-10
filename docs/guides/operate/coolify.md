@@ -11,7 +11,7 @@ there too.
 
 For a plain Docker host with no interface in front of it, read
 [Deploy an instance](deploy.md). Coolify runs the same
-[`docker-compose.yml`](https://github.com/BinaryBourbon/fountain/blob/main/docker-compose.yml),
+[`docker-compose.yml`](https://github.com/managoat/fountain/blob/main/docker-compose.yml),
 so the two paths differ in the interface and not in the result.
 
 ## Before you start
@@ -35,7 +35,7 @@ You also need a sandbox provider token. Read
 ## Create the resource
 
 In Coolify, select **New**, then **Docker Compose**. Point it at
-`https://github.com/BinaryBourbon/fountain`, on the `main` branch, with
+`https://github.com/managoat/fountain`, on the `main` branch, with
 `docker-compose.yml` as the compose file.
 
 Coolify reads the file and lists the environment variables in it. Every

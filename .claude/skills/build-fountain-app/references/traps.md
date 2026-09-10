@@ -1,7 +1,7 @@
 # Traps every previous app hit
 
 Read once. Each entry cost real hours in fountain-team, fountain-workbench,
-dns-desk or the demo suite. Issue numbers are BinaryBourbon/fountain unless
+dns-desk or the demo suite. Issue numbers are managoat/fountain unless
 noted.
 
 ## Transport

@@ -54,7 +54,7 @@ defmodule FountainWeb.EnvironmentsFormLiveTest do
         },
         "repositories" => [
           %{
-            "url" => "https://github.com/BinaryBourbon/fountain",
+            "url" => "https://github.com/managoat/fountain",
             "mount_path" => "/workspace/fountain",
             "secret_key" => "GITHUB_TOKEN"
           }
@@ -92,7 +92,7 @@ defmodule FountainWeb.EnvironmentsFormLiveTest do
         },
         "repositories" => [
           %{
-            "url" => "https://github.com/BinaryBourbon/fountain",
+            "url" => "https://github.com/managoat/fountain",
             "mount_path" => "/workspace/fountain",
             "secret_key" => "GITHUB_TOKEN"
           }

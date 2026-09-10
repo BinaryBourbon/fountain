@@ -19,7 +19,7 @@ Install `mise`. Then
 ## 1. Clone
 
 ```bash
-gh repo clone BinaryBourbon/fountain
+gh repo clone managoat/fountain
 cd fountain
 ```
 

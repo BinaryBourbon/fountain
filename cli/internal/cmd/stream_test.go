@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/stream"
+	"github.com/managoat/fountain/cli/internal/stream"
 )
 
 // fakeStream serves a scripted sequence of connections. Each entry is the body

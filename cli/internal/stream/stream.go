@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/sse"
+	"github.com/managoat/fountain/cli/internal/sse"
 )
 
 // Opener opens an SSE body, resuming after lastEventID when non-empty.

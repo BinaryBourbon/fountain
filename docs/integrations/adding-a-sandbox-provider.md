@@ -11,7 +11,7 @@ Fountain pins it in `apps/fountain/mix.exs`. The runner adapter is a separate
 implements the same behaviour.
 
 Three places hold the contract itself.
-[ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md)
+[ADR 0018](https://github.com/managoat/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md)
 holds the *why* behind the shape of the seam. The `Managoat.Sandbox` moduledoc
 is the contract. `Managoat.Sandbox.ConformanceCase` is the executable form of
 it. When one of those disagrees with this page, it wins.
@@ -77,7 +77,7 @@ gRPC dependency.
 A provider change crosses two repositories. Open the adapter and conformance
 PR in the library, publish its Hex release, then bump Fountain's dependency
 pin and register the provider here. Follow the
-[component library contribution recipes](https://github.com/BinaryBourbon/fountain/blob/main/CONTRIBUTING.md#graduating-a-library)
+[component library contribution recipes](https://github.com/managoat/fountain/blob/main/CONTRIBUTING.md#graduating-a-library)
 for the library gates, release and consumer PR. A local path override can test
 the two changes together before release; the committed pin must name a
 published version.

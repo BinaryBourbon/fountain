@@ -75,7 +75,7 @@ You need Docker, OpenSSL, and a sandbox provider token. The Compose file runs
 Postgres. The example below uses Sprites as the sandbox provider.
 
 ```sh
-git clone https://github.com/BinaryBourbon/fountain
+git clone https://github.com/managoat/fountain
 cd fountain
 cp .env.compose.example .env
 
@@ -99,7 +99,7 @@ close registration, and configure the other sandbox providers.
 On macOS, install the CLI with Homebrew.
 
 ```sh
-brew install BinaryBourbon/tap/fountain
+brew install managoat/tap/fountain
 ```
 
 On Linux, Homebrew needs a C compiler before it installs a formula,
@@ -107,7 +107,7 @@ On Linux, Homebrew needs a C compiler before it installs a formula,
 
 ```sh
 curl -fsSLo fountain \
-  https://github.com/BinaryBourbon/fountain/releases/latest/download/fountain-linux-amd64
+  https://github.com/managoat/fountain/releases/latest/download/fountain-linux-amd64
 chmod +x fountain
 sudo mv fountain /usr/local/bin/
 ```
@@ -136,7 +136,7 @@ small manifest, apply it, and call the agent by name.
 
 ```sh
 curl -fsSLo fountain.yml \
-  https://raw.githubusercontent.com/BinaryBourbon/fountain/main/examples/quickstart/fountain.yml
+  https://raw.githubusercontent.com/managoat/fountain/main/examples/quickstart/fountain.yml
 
 fountain apply -f fountain.yml
 fountain run fountain-reader -p \

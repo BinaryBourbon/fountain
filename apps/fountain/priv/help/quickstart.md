@@ -4,10 +4,10 @@ Five minutes to your first conversation. Assumes the server is running and you h
 
 ## 1. Install the CLI and log in
 
-Pre-built binaries are attached to each [GitHub release](https://github.com/BinaryBourbon/fountain/releases). One-shot install for macOS arm64:
+Pre-built binaries are attached to each [GitHub release](https://github.com/managoat/fountain/releases). One-shot install for macOS arm64:
 
 ```bash
-curl -L -o fountain https://github.com/BinaryBourbon/fountain/releases/latest/download/fountain-darwin-arm64
+curl -L -o fountain https://github.com/managoat/fountain/releases/latest/download/fountain-darwin-arm64
 chmod +x fountain && sudo mv fountain /usr/local/bin/
 ```
 

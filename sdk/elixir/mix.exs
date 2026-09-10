@@ -11,16 +11,16 @@ defmodule FountainSdk.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: "Official Elixir SDK for Fountain",
-      source_url: "https://github.com/BinaryBourbon/fountain",
+      source_url: "https://github.com/managoat/fountain",
       package: [
         licenses: ["Apache-2.0"],
-        links: %{"GitHub" => "https://github.com/BinaryBourbon/fountain"}
+        links: %{"GitHub" => "https://github.com/managoat/fountain"}
       ],
       docs: [
         main: "readme",
         extras: ["README.md", "CHANGELOG.md", "LICENSE"],
         source_url_pattern:
-          "https://github.com/BinaryBourbon/fountain/blob/main/sdk/elixir/%{path}#L%{line}"
+          "https://github.com/managoat/fountain/blob/main/sdk/elixir/%{path}#L%{line}"
       ]
     ]
   end

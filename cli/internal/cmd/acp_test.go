@@ -12,9 +12,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BinaryBourbon/fountain/cli/credentials"
-	"github.com/BinaryBourbon/fountain/cli/internal/acp"
-	"github.com/BinaryBourbon/fountain/cli/internal/stream"
+	"github.com/managoat/fountain/cli/credentials"
+	"github.com/managoat/fountain/cli/internal/acp"
+	"github.com/managoat/fountain/cli/internal/stream"
 )
 
 func acpTestAPI(t *testing.T, baseURL string) fountainAPI {

@@ -27,7 +27,7 @@ for where a token comes from.
 ## Bring it up
 
 ```bash
-git clone https://github.com/BinaryBourbon/fountain
+git clone https://github.com/managoat/fountain
 cd fountain
 
 cp .env.compose.example .env

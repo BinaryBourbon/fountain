@@ -106,7 +106,7 @@ Add Fountain with Swift Package Manager:
 
 ```swift
 .package(
-    url: "https://github.com/BinaryBourbon/fountain.git",
+    url: "https://github.com/managoat/fountain.git",
     from: "0.16.0"
 )
 ```
@@ -153,10 +153,10 @@ machine, with the same checkout and the same session. See
 
 ## Get started with the CLI
 
-Install the `fountain` binary from the [Homebrew tap](https://github.com/BinaryBourbon/homebrew-tap):
+Install the `fountain` binary from the [Homebrew tap](https://github.com/managoat/homebrew-tap):
 
 ```sh
-brew install BinaryBourbon/tap/fountain
+brew install managoat/tap/fountain
 ```
 
 Log in against your Fountain instance:

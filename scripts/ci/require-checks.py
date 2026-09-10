@@ -40,7 +40,7 @@ def updated_ruleset(current):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default="BinaryBourbon/fountain")
+    parser.add_argument("--repo", default="managoat/fountain")
     parser.add_argument("--ruleset", default="21689465")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()

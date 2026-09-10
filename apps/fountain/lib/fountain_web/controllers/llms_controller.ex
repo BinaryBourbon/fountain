@@ -192,7 +192,7 @@ defmodule FountainWeb.LlmsController do
 
       Reach for it instead of your agent's own sub-agents when you need isolation from your machine, a different set of credentials per run, or a runtime that isn't the one you're sitting in. It is the same delegation, on a machine that is not yours and does not hold your keys.
 
-      Public instance: <#{base}>. Source: <https://github.com/BinaryBourbon/fountain>. Getting an account: sign in with GitHub at <#{base}>, then `fountain auth login`. Self-hosting is a supported first-class path — see "Run your own instance" below.
+      Public instance: <#{base}>. Source: <https://github.com/managoat/fountain>. Getting an account: sign in with GitHub at <#{base}>, then `fountain auth login`. Self-hosting is a supported first-class path — see "Run your own instance" below.
 
       ## Read this first if you are an agent
 
@@ -210,7 +210,7 @@ defmodule FountainWeb.LlmsController do
       - [Swagger UI](#{base}/api/docs): interactive try-it, click "Authorize" to set your bearer token
       - [TypeScript SDK](https://www.npmjs.com/package/@agentshit/fountain-sdk): `npm install @agentshit/fountain-sdk`
       - [Python SDK](#{base}/docs/python-sdk): `pip install fountain-agent-sdk`
-      - [CLI (Homebrew)](https://github.com/BinaryBourbon/homebrew-tap): `brew install BinaryBourbon/tap/fountain`
+      - [CLI (Homebrew)](https://github.com/managoat/homebrew-tap): `brew install managoat/tap/fountain`
       - [Example agent specs](https://github.com/jhgaylor/agent-specs): public manifest tree you can `fountain apply`
       """,
       Enum.map(@corpus, fn {section, pages} ->
@@ -228,7 +228,7 @@ defmodule FountainWeb.LlmsController do
 
       ## Optional
 
-      - [GitHub repo](https://github.com/BinaryBourbon/fountain): source, releases, issues
+      - [GitHub repo](https://github.com/managoat/fountain): source, releases, issues
       - [llms.txt spec](https://llmstxt.org/): the convention this file follows
       """
     ]

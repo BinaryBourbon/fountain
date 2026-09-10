@@ -88,7 +88,7 @@ jobs:
           set -euxo pipefail
           mkdir -p ../dist
           go build -trimpath \
-            -ldflags "-s -w -X github.com/BinaryBourbon/fountain/cli/internal/cmd.Version=${VERSION}" \
+            -ldflags "-s -w -X github.com/managoat/fountain/cli/internal/cmd.Version=${VERSION}" \
             -o "../dist/${{ matrix.artifact }}" ./cmd/fountain
           file "../dist/${{ matrix.artifact }}"
           du -h "../dist/${{ matrix.artifact }}"
@@ -325,7 +325,7 @@ jobs:
           # Digest-only push; image-manifest owns the tags. Provenance off so
           # each push is exactly one image manifest — attestation manifests
           # would confuse the imagetools merge.
-          outputs: type=image,name=ghcr.io/binarybourbon/fountain,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/managoat/fountain,push-by-digest=true,name-canonical=true,push=true
           provenance: false
           # Read build.yml's cache, write nothing back. The layers above
           # `COPY mix.exs` hit; the deps.compile layer below it may not,
@@ -333,7 +333,7 @@ jobs:
           # in mix.exs. build.yml owns that cache and is building the same
           # commit beside this run; a release must not overwrite the cache
           # every subsequent main build depends on.
-          cache-from: type=registry,ref=ghcr.io/binarybourbon/fountain:buildcache-${{ matrix.arch }}
+          cache-from: type=registry,ref=ghcr.io/managoat/fountain:buildcache-${{ matrix.arch }}
 
       - name: Export digest
         run: |
@@ -405,7 +405,7 @@ jobs:
       - name: Create and push the manifest lists
         working-directory: ${{ runner.temp }}/digests
         env:
-          IMAGE: ghcr.io/binarybourbon/fountain
+          IMAGE: ghcr.io/managoat/fountain
           TAG: ${{ steps.tag.outputs.tag }}
           MINOR: ${{ steps.tag.outputs.minor }}
         run: |
@@ -457,7 +457,7 @@ jobs:
       # earlier checks would still be green.
       - name: The published core image carries no extension
         env:
-          IMAGE: ghcr.io/binarybourbon/fountain
+          IMAGE: ghcr.io/managoat/fountain
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
@@ -567,7 +567,7 @@ jobs:
             name: "FountainReleaseSmoke",
             dependencies: [
               .package(
-                url: "https://github.com/BinaryBourbon/fountain.git",
+                url: "https://github.com/managoat/fountain.git",
                 exact: "${version}"
               )
             ],
@@ -692,7 +692,7 @@ jobs:
       - name: Checkout tap repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
-          repository: BinaryBourbon/homebrew-tap
+          repository: managoat/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
@@ -708,28 +708,28 @@ jobs:
           cat > tap/Formula/fountain.rb <<EOF
           class Fountain < Formula
             desc "CLI for Fountain — HTTP/JSON client, SSE consumer, and secret-store helper"
-            homepage "https://github.com/BinaryBourbon/fountain"
+            homepage "https://github.com/managoat/fountain"
             version "${VERSION}"
             license "MIT"
 
             on_macos do
               on_arm do
-                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-darwin-arm64"
+                url "https://github.com/managoat/fountain/releases/download/${TAG}/fountain-darwin-arm64"
                 sha256 "${SHA_DARWIN_ARM64}"
               end
               on_intel do
-                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-darwin-amd64"
+                url "https://github.com/managoat/fountain/releases/download/${TAG}/fountain-darwin-amd64"
                 sha256 "${SHA_DARWIN_AMD64}"
               end
             end
 
             on_linux do
               on_arm do
-                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-linux-arm64"
+                url "https://github.com/managoat/fountain/releases/download/${TAG}/fountain-linux-arm64"
                 sha256 "${SHA_LINUX_ARM64}"
               end
               on_intel do
-                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-linux-amd64"
+                url "https://github.com/managoat/fountain/releases/download/${TAG}/fountain-linux-amd64"
                 sha256 "${SHA_LINUX_AMD64}"
               end
             end

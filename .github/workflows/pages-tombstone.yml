@@ -16,7 +16,7 @@
 #
 # When these URLs have decayed enough not to be worth answering, delete this
 # workflow, `scripts/build-pages-tombstone.py`, and the Pages site itself
-# (`gh api -X DELETE repos/BinaryBourbon/fountain/pages`).
+# (`gh api -X DELETE repos/managoat/fountain/pages`).
 name: Pages tombstone
 
 on:

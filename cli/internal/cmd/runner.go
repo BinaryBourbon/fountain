@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BinaryBourbon/fountain/cli/config"
-	"github.com/BinaryBourbon/fountain/cli/internal/runner"
+	"github.com/managoat/fountain/cli/config"
+	"github.com/managoat/fountain/cli/internal/runner"
 	"github.com/spf13/cobra"
 )
 

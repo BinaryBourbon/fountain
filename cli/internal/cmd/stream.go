@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/stream"
+	"github.com/managoat/fountain/cli/internal/stream"
 )
 
 // streamOpener opens an SSE body, resuming after lastEventID when non-empty.

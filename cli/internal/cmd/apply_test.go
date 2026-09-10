@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/manifest"
+	"github.com/managoat/fountain/cli/internal/manifest"
 )
 
 func doc(kind, name string, spec map[string]any) *manifest.Doc {

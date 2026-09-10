@@ -42,7 +42,7 @@ Fountain 0.16.0 or newer:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/BinaryBourbon/fountain.git", from: "0.16.0")
+    .package(url: "https://github.com/managoat/fountain.git", from: "0.16.0")
 ]
 ```
 

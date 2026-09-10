@@ -80,7 +80,7 @@ Some rules keep that safe.
 |---|---|---|
 | claude | Yes | Measured on claude-agent-acp 0.66. Safe commands that its own sandbox runs never reach Fountain. |
 | codex | Yes | Measured on codex-acp 1.1.14. |
-| opencode | **No** | It decides this in its own server, and sends nothing. Fountain refuses a policy stricter than `auto_allow` on this runtime, with 422 `permission_policy_unenforceable` ([#959](https://github.com/BinaryBourbon/fountain/issues/959)). |
+| opencode | **No** | It decides this in its own server, and sends nothing. Fountain refuses a policy stricter than `auto_allow` on this runtime, with 422 `permission_policy_unenforceable` ([#959](https://github.com/managoat/fountain/issues/959)). |
 | gemini | Yes | Measured on gemini 0.53 with `gemini-2.5-flash`. Google removed that model for new API keys after this measurement. Its option ids are its own (`proceed_once`, `cancel`), so answer with an id from the request, never a name you know from another runtime. |
 
 ## An "always" answer does not always hold
@@ -103,7 +103,7 @@ Two limits are open work.
   for the sandbox wake, not one turn, so the grant in the runtime process
   survives (#817). A grant is still lost when the sandbox parks or the
   conversation ends. See
-  [#996](https://github.com/BinaryBourbon/fountain/issues/996).
+  [#996](https://github.com/managoat/fountain/issues/996).
 - claude asks again for a command that writes outside the directory where it
   runs.
   The rule that `Always Allow` writes cannot answer the check that stopped the

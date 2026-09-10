@@ -211,7 +211,7 @@ jobs:
           cat > "${RUNNER_TEMP}/body.md" <<EOF
           Version bump for ${TAG}: both \`mix.exs\` files, the two Swift version sources, and the six self-host image pins.
 
-          Merging this PR tags the squash commit \`${TAG}\` and dispatches \`release.yml\`, which builds the CLI binaries, publishes \`ghcr.io/binarybourbon/fountain:${TAG}\`, boots it through the documented quick start and creates the GitHub Release.
+          Merging this PR tags the squash commit \`${TAG}\` and dispatches \`release.yml\`, which builds the CLI binaries, publishes \`ghcr.io/managoat/fountain:${TAG}\`, boots it through the documented quick start and creates the GitHub Release.
 
           "Compose boots the pinned image" skips on this PR because the pinned image does not exist until the release runs; the same check runs on the tag instead.
           EOF

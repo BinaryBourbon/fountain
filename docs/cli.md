@@ -14,11 +14,11 @@ the real command tree, and it fails either way round.
 ## Install
 
 ```bash
-brew install BinaryBourbon/tap/fountain
+brew install managoat/tap/fountain
 ```
 
 Or take a release binary from the
-[GitHub Releases](https://github.com/BinaryBourbon/fountain/releases) page.
+[GitHub Releases](https://github.com/managoat/fountain/releases) page.
 
 On Linux, Homebrew compiles a formula and needs a C compiler first,
 `build-essential` on Debian and Ubuntu. A release binary needs no compiler,

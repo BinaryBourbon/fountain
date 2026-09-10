@@ -82,15 +82,15 @@ Pre-built binaries are attached to each GitHub release:
 
 ```sh
 # macOS arm64
-curl -L -o fountain https://github.com/BinaryBourbon/fountain/releases/latest/download/fountain-darwin-arm64
+curl -L -o fountain https://github.com/managoat/fountain/releases/latest/download/fountain-darwin-arm64
 chmod +x fountain && sudo mv fountain /usr/local/bin/
 
 # Linux amd64
-curl -L -o fountain https://github.com/BinaryBourbon/fountain/releases/latest/download/fountain-linux-amd64
+curl -L -o fountain https://github.com/managoat/fountain/releases/latest/download/fountain-linux-amd64
 chmod +x fountain && sudo mv fountain /usr/local/bin/
 ```
 
-Pinned versions are at `https://github.com/BinaryBourbon/fountain/releases/download/<tag>/fountain-<os>-<arch>`.
+Pinned versions are at `https://github.com/managoat/fountain/releases/download/<tag>/fountain-<os>-<arch>`.
 
 ## Streaming long turns
 

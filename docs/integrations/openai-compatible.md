@@ -87,7 +87,7 @@ curl https://your-fountain/v1/chat/completions \
 
 A complete terminal chat on the `openai` package, with the model picker and
 the thread header in place, is in the repository at
-[`examples/openai-chat`](https://github.com/BinaryBourbon/fountain/tree/main/examples/openai-chat).
+[`examples/openai-chat`](https://github.com/managoat/fountain/tree/main/examples/openai-chat).
 For LangChain and Deep Agents, where a Fountain agent is a subagent, read
 [LangChain and Deep Agents](langchain.md). To expose Fountain through LiteLLM
 or another gateway, read [Put Fountain behind an AI gateway](gateways.md).
@@ -295,7 +295,7 @@ one at `/account/inference-credentials`. Without one the sandbox spawns, the
 session initialises, and the turn fails with `Authentication required`, which
 reaches the client as an error that names it. Fountain has no platform-level
 model key, on purpose
-([ADR 0008](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0008-byo-inference-credentials.md)).
+([ADR 0008](https://github.com/managoat/fountain/blob/main/decisions/0008-byo-inference-credentials.md)).
 
 ## What it does not do
 
@@ -308,4 +308,4 @@ model key, on purpose
 
 The decision to carry a second public dialect on the server, and what it
 constrains, is
-[ADR 0035](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0035-openai-compatible-endpoint.md).
+[ADR 0035](https://github.com/managoat/fountain/blob/main/decisions/0035-openai-compatible-endpoint.md).
