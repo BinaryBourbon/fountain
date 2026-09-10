@@ -1152,6 +1152,72 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Narrow an existing allowance owned by `user_id`, retaining omitted controls.
+
+  This edits future policy only: it neither admits work nor resets an active
+  turn's usage/deadline. Initial allowance creation and current-ceiling checks
+  remain admission responsibilities. Missing and foreign records return the
+  same error. Concurrent writers revalidate against the latest locked value.
+  """
+  def narrow_execution_allowance(conversation_id, user_id, request, opts \\ []) do
+    result =
+      Repo.transaction(fn ->
+        # Keep ownership stable through the write; turn admission locks this
+        # conversation before its allowance too. No sandbox/provider work here.
+        Repo.one(
+          from c in Conversation,
+            where: c.id == ^conversation_id and c.user_id == ^user_id,
+            select: c.id,
+            lock: "FOR SHARE"
+        ) || Repo.rollback(:not_found)
+
+        allowance =
+          Repo.one(
+            from a in ExecutionAllowance,
+              where: a.conversation_id == ^conversation_id,
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:not_found)
+
+        unless is_map(allowance.limits),
+          do: Repo.rollback({:execution_limits_invalid, "object_required"})
+
+        changeset = ExecutionAllowance.narrow_changeset(allowance, request)
+
+        write =
+          if changeset.valid? and not Map.has_key?(changeset.changes, :limits),
+            do: {:ok, allowance},
+            else: Repo.update(changeset)
+
+        case write do
+          {:ok, updated} ->
+            changed =
+              Enum.filter(ExecutionLimits.keys(), &(updated.limits[&1] != allowance.limits[&1]))
+
+            {updated, changed}
+
+          {:error, changeset} ->
+            Repo.rollback(changeset)
+        end
+      end)
+
+    with {:ok, {updated, changed}} <- result do
+      if changed != [] do
+        Audit.record(%{
+          user_id: user_id,
+          action: "conversation.execution_allowance_narrowed",
+          resource_type: "conversation",
+          resource_id: conversation_id,
+          actor: Keyword.get(opts, :actor, "self"),
+          request_ip: Keyword.get(opts, :request_ip),
+          metadata: %{"changed" => changed}
+        })
+      end
+
+      {:ok, updated}
+    end
+  end
+
+  @doc """
   Refuse saved allowances that this deployment cannot enforce. Internal callers
   must establish conversation ownership first. Outside turn admission this is
   only a preflight; the turn transaction rechecks under its row locks.

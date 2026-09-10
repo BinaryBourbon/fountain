@@ -1,6 +1,7 @@
 defmodule Fountain.Conversations.ExecutionAllowanceTest do
   use Fountain.DataCase, async: true
 
+  alias Fountain.Conversations
   alias Fountain.Conversations.ExecutionAllowance, as: Allowance
 
   setup do
@@ -121,6 +122,123 @@ defmodule Fountain.Conversations.ExecutionAllowanceTest do
     assert Repo.reload!(other) == other
   end
 
+  test "scoped narrowing hides foreign and missing records before validating requests", %{
+    conversation: conv
+  } do
+    allowance = insert_allowance(conv.id)
+    other = insert_conversation()
+
+    for request <- [%{max_model_turns: 2}, %{"private-field" => "private-value"}] do
+      for {id, user_id} <- [
+            {conv.id, other.user_id},
+            {Ecto.UUID.generate(), conv.user_id},
+            {other.id, other.user_id}
+          ] do
+        assert Conversations.narrow_execution_allowance(id, user_id, request) ==
+                 {:error, :not_found}
+      end
+    end
+
+    assert Repo.reload!(allowance) == allowance
+    assert Repo.get(Allowance, other.id) == nil
+    assert allowance_events(conv) == []
+  end
+
+  test "scoped narrowing retains omitted fields without touching active work", %{
+    conversation: conv
+  } do
+    before = Repo.reload!(conv)
+    allowance = insert_allowance(conv.id)
+    turn = insert_turn(conv, status: "running")
+    sandbox = Repo.reload!(conv.sandbox)
+    other = insert_conversation() |> Map.fetch!(:id) |> insert_allowance()
+
+    assert {:ok, narrowed} =
+             Conversations.narrow_execution_allowance(
+               conv.id,
+               conv.user_id,
+               %{max_model_turns: 2},
+               actor: "api",
+               request_ip: "192.0.2.1"
+             )
+
+    assert narrowed.limits == %{"max_model_turns" => 2, "wall_time_seconds" => 60}
+    refute narrowed.revision == allowance.revision
+
+    for request <- [nil, %{}] do
+      assert {:ok, updated} =
+               Conversations.narrow_execution_allowance(conv.id, conv.user_id, request)
+
+      assert updated == narrowed
+    end
+
+    assert Repo.reload!(conv) == before
+    assert Repo.reload!(turn) == turn
+    assert Repo.reload!(sandbox) == sandbox
+    assert Repo.reload!(other) == other
+    assert [event] = allowance_events(conv)
+    assert event.user_id == conv.user_id
+    assert event.actor == "api"
+    assert event.request_ip == "192.0.2.1"
+    assert event.metadata == %{"changed" => ["max_model_turns"]}
+  end
+
+  test "scoped narrowing rejects wider, cleared and malformed requests", %{conversation: conv} do
+    allowance = insert_allowance(conv.id)
+
+    for request <- [%{max_model_turns: 11}, %{wall_time_seconds: nil}, %{unknown: 2}] do
+      assert {:error, changeset} =
+               Conversations.narrow_execution_allowance(conv.id, conv.user_id, request)
+
+      assert errors_on(changeset).limits != []
+      assert Repo.reload!(allowance) == allowance
+    end
+
+    assert allowance_events(conv) == []
+  end
+
+  test "scoped narrowing cannot erase corrupt saved policy", %{conversation: conv} do
+    allowance = insert_allowance(conv.id)
+
+    Repo.query!(
+      "UPDATE execution_allowances SET limits = 'null'::jsonb WHERE conversation_id = $1",
+      [Ecto.UUID.dump!(conv.id)]
+    )
+
+    corrupt = Repo.reload!(allowance)
+
+    for request <- [nil, %{}, %{max_model_turns: 2}] do
+      assert Conversations.narrow_execution_allowance(conv.id, conv.user_id, request) ==
+               {:error, {:execution_limits_invalid, "object_required"}}
+
+      assert Repo.reload!(corrupt) == corrupt
+    end
+
+    assert allowance_events(conv) == []
+  end
+
+  test "narrowing an empty policy does not admit an unsupported turn", %{conversation: conv} do
+    conv.id |> Allowance.new_changeset(%{}) |> Repo.insert!()
+
+    assert {:ok, allowance} =
+             Conversations.narrow_execution_allowance(conv.id, conv.user_id, %{max_model_turns: 2})
+
+    assert {:error, {:execution_limits_unsupported, ["max_model_turns"]}} =
+             Fountain.Conversations.TurnMachine.open(conv.id, conv.sandbox_id, "refused")
+
+    assert Repo.reload!(allowance).limits == %{"max_model_turns" => 2}
+    assert Conversations._unsafe_list_turns(conv.id) == []
+    refute Repo.exists?(from e in Fountain.Billing.UsageEvent, where: e.user_id == ^conv.user_id)
+  end
+
+  defp allowance_events(conv),
+    do:
+      Repo.all(
+        from e in Fountain.Audit.Event,
+          where:
+            e.resource_id == ^conv.id and e.action == "conversation.execution_allowance_narrowed"
+      )
+
   defp insert_allowance(conversation_id) do
     conversation_id
     |> Allowance.new_changeset(%{max_model_turns: 10, wall_time_seconds: 60})
@@ -132,12 +250,26 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
   use ExUnit.Case, async: false
 
   alias Fountain.Repo
+  alias Fountain.Conversations
   alias Fountain.Conversations.Sandbox
   alias Fountain.Conversations.ExecutionAllowance, as: Allowance
   import Fountain.DataCase, only: [errors_on: 1]
   import Fountain.Factory, only: [insert_conversation: 1]
+  import Ecto.Query, only: [from: 2]
 
   test "a writer blocked on another connection cannot restore a wider allowance" do
+    race(:stale)
+  end
+
+  test "a scoped writer revalidates widening after a concurrent narrowing commits" do
+    race(:widen)
+  end
+
+  test "concurrent scoped writers retain each other's tighter fields" do
+    race(:disjoint)
+  end
+
+  defp race(mode) do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
       # These rows must be committed: sharing the test's sandbox connection would
       # serialize the queries in Elixir and never exercise PostgreSQL contention.
@@ -158,7 +290,16 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
         independent_writer(fn ->
           Repo.transaction(fn ->
             updated =
-              allowance |> Allowance.narrow_changeset(%{max_model_turns: 2}) |> Repo.update!()
+              if mode == :stale do
+                allowance |> Allowance.narrow_changeset(%{max_model_turns: 2}) |> Repo.update!()
+              else
+                {:ok, updated} =
+                  Conversations.narrow_execution_allowance(allowance.conversation_id, user.id, %{
+                    max_model_turns: 2
+                  })
+
+                updated
+              end
 
             send(owner, :narrowed)
 
@@ -175,9 +316,20 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
 
         loser =
           independent_writer(fn ->
-            allowance
-            |> Allowance.narrow_changeset(%{max_model_turns: 5})
-            |> Repo.update(stale_error_field: :revision)
+            if mode == :stale do
+              allowance
+              |> Allowance.narrow_changeset(%{max_model_turns: 5})
+              |> Repo.update(stale_error_field: :revision)
+            else
+              request =
+                if mode == :widen, do: %{max_model_turns: 5}, else: %{wall_time_seconds: 10}
+
+              Conversations.narrow_execution_allowance(
+                allowance.conversation_id,
+                user.id,
+                request
+              )
+            end
           end)
 
         try do
@@ -189,15 +341,28 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
           await_blocked(loser_backend, System.monotonic_time(:millisecond) + 5_000)
           send(winner.pid, :commit)
           assert {:ok, updated} = Task.await(winner)
-          assert {:error, changeset} = Task.await(loser)
-          assert errors_on(changeset).revision == ["is stale"]
-          assert Repo.reload!(allowance) == updated
+
+          case {mode, Task.await(loser)} do
+            {:stale, {:error, changeset}} ->
+              assert errors_on(changeset).revision == ["is stale"]
+              assert Repo.reload!(allowance) == updated
+
+            {:widen, {:error, changeset}} ->
+              assert errors_on(changeset).limits == ["execution_limits_widen: max_model_turns"]
+              assert Repo.reload!(allowance) == updated
+
+            {:disjoint, {:ok, final}} ->
+              assert final.limits == %{"max_model_turns" => 2, "wall_time_seconds" => 10}
+              assert Repo.reload!(allowance) == final
+          end
+
           assert updated.limits["max_model_turns"] == 2
         after
           Task.shutdown(loser, :brutal_kill)
         end
       after
         Task.shutdown(winner, :brutal_kill)
+        Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
         Repo.delete!(user)
         Repo.get!(Sandbox, sandbox_id) |> Repo.delete!()
         assert Repo.get(Allowance, allowance.conversation_id) == nil

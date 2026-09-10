@@ -57,6 +57,8 @@ defmodule Fountain.AuditGuardrailTest do
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
     {"conversation caller tools", &__MODULE__.do_caller_tools/1, "conversation.caller_tools_set"},
+    {"allowance narrowing", &__MODULE__.do_allowance_narrowing/1,
+     "conversation.execution_allowance_narrowed"},
     {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
@@ -386,6 +388,16 @@ defmodule Fountain.AuditGuardrailTest do
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id)
     {:ok, _} = Conversations.delete_conversation(conv)
+  end
+
+  def do_allowance_narrowing(user) do
+    conv = insert_conversation(user_id: user.id)
+
+    conv.id
+    |> Fountain.Conversations.ExecutionAllowance.new_changeset(%{max_model_turns: 10})
+    |> Repo.insert!()
+
+    {:ok, _} = Conversations.narrow_execution_allowance(conv.id, user.id, %{max_model_turns: 2})
   end
 
   def do_caller_tools(user) do
