@@ -158,16 +158,18 @@ resources. The CLI compiles the manifest and submits the resource graph.
 Inspect every resource result. One failed resource does not mean that all
 other writes failed.
 
-A manifest holds four kinds. Fountain reconciles them in a fixed order, which
-is `Environment`, `Vault`, `Agent` and `Teammate`. A document can name another
+A manifest holds five kinds. Fountain reconciles them in a fixed order, which
+is `Environment`, `Vault`, `Agent`, `Teammate` and `Schedule`. A document can name another
 document whatever its position in the file. An `Agent` names an
 `environment`. A `Teammate` names an `agent`, an `environment` and a `vault`.
-Each name resolves against the manifest first, then against the records the
+A `Schedule` names a `teammate`. A teammate's name is not unique, so a name
+that two teammates answer to fails that row rather than binding to one of
+them. Each name resolves against the manifest first, then against the records the
 account already holds. A name that matches neither fails that document alone.
 
 A `Teammate` document is the whole teammate. Drop `environment` or `vault`
 from it and the apply clears that binding, which puts the teammate back on
-the agent's own environment and on no vault. The other three kinds behave the
+the agent's own environment and on no vault. The other four kinds behave the
 other way around, where an absent `spec` key leaves that field alone.
 
 Rebinding a teammate moves its computer. Fountain retires the machine the old
@@ -186,8 +188,9 @@ Apply is additive. A document that you delete from the manifest leaves its
 record in place. There is no prune.
 
 The audit trail names each applied row. Teammate rows record
-`team.member.added` and `team.updated`. Each row carries the actor and the IP
-address of the request that applied it.
+`team.member.added` and `team.updated`, and schedule rows record
+`team.schedule.created` and `team.schedule.updated`. Each row carries the
+actor and the IP address of the request that applied it.
 
 Each result row reports `created`, `updated`, `unchanged` or `error`. A
 second apply of an unchanged manifest reports `unchanged` for every row, and

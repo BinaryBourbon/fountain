@@ -3,6 +3,7 @@ defmodule Fountain.ManifestTest do
   use Mimic
 
   alias Fountain.{Agents, Audit, Conversations, Crypto, Environments, Manifest, Team, Vaults}
+  alias Fountain.Team.Schedules
 
   setup do
     # No starter agent (ADR 0038): every assertion here counts what the
@@ -16,6 +17,10 @@ defmodule Fountain.ManifestTest do
 
   defp vault_resource(name, spec \\ %{}) do
     %{"kind" => "Vault", "name" => name, "spec" => spec}
+  end
+
+  defp schedule_resource(name, spec) do
+    %{"kind" => "Schedule", "name" => name, "spec" => spec}
   end
 
   defp teammate_resource(name, spec) do
@@ -370,6 +375,11 @@ defmodule Fountain.ManifestTest do
       # Deliberately out of order: the kinds reconcile in a fixed order,
       # whatever the file says.
       [
+        schedule_resource("standup", %{
+          "teammate" => "Ada",
+          "cron" => "0 9 * * 1-5",
+          "prompt" => "What is on today?"
+        }),
         teammate_resource("Ada", %{
           "agent" => "ada",
           "environment" => "proj",
@@ -381,7 +391,7 @@ defmodule Fountain.ManifestTest do
       ]
     end
 
-    test "the four kinds apply in one request, and a second apply changes nothing",
+    test "the five kinds apply in one request, and a second apply changes nothing",
          %{user: user} do
       inert_start_child()
       resources = estate_manifest()
@@ -392,7 +402,8 @@ defmodule Fountain.ManifestTest do
                {"Environment", "proj", :created},
                {"Vault", "alice", :created},
                {"Agent", "ada", :created},
-               {"Teammate", "Ada", :created}
+               {"Teammate", "Ada", :created},
+               {"Schedule", "standup", :created}
              ]
 
       env = Environments.get_environment_by_name("proj", user.id)
@@ -406,13 +417,17 @@ defmodule Fountain.ManifestTest do
       assert conv.environment_id == env.id
       assert conv.vault_id == vault.id
 
+      assert [%{name: "standup", cron: "0 9 * * 1-5", one_off: false, enabled: true}] =
+               Schedules.list_schedules(user.id, agent.id)
+
       {:ok, second} = Manifest.apply_manifest(user.id, resources)
 
-      assert Enum.map(second, & &1.action) == List.duplicate(:unchanged, 4)
+      assert Enum.map(second, & &1.action) == List.duplicate(:unchanged, 5)
       assert Enum.map(second, & &1.kind) == Enum.map(first, & &1.kind)
 
       # Nothing was duplicated by the second pass.
       assert length(Team.list_teammates(user.id)) == 1
+      assert length(Schedules.list_schedules(user.id, agent.id)) == 1
     end
 
     test "the applied rows are audited with the request's attribution", %{user: user} do
@@ -425,8 +440,9 @@ defmodule Fountain.ManifestTest do
       actions = Enum.map(events, & &1.action)
 
       assert "team.member.added" in actions
+      assert "team.schedule.created" in actions
 
-      for action <- ~w(team.member.added) do
+      for action <- ~w(team.member.added team.schedule.created) do
         event = Enum.find(events, &(&1.action == action))
         assert event.actor == "api", "#{action} was recorded as #{event.actor}"
         assert to_string(event.request_ip) == "203.0.113.5"
@@ -460,7 +476,12 @@ defmodule Fountain.ManifestTest do
         env_resource("proj", %{"setup_script" => "echo hi"}),
         vault_resource("alice"),
         agent_resource("ada", %{"environment" => "proj"}),
-        teammate_resource("Ada of proj", %{"agent" => "ada", "environment" => "proj"})
+        teammate_resource("Ada of proj", %{"agent" => "ada", "environment" => "proj"}),
+        schedule_resource("standup", %{
+          "teammate" => "Ada of proj",
+          "cron" => "@daily",
+          "prompt" => "What is on today?"
+        })
       ]
 
       {:ok, results} = Manifest.apply_manifest(user.id, moved, opts)
@@ -469,13 +490,14 @@ defmodule Fountain.ManifestTest do
                {"Environment", :unchanged},
                {"Vault", :unchanged},
                {"Agent", :unchanged},
-               {"Teammate", :updated}
+               {"Teammate", :updated},
+               {"Schedule", :updated}
              ]
 
       events = Audit.list_recent_for_user(user.id, 500)
       added = Enum.take(events, length(events) - before)
 
-      for action <- ~w(team.updated) do
+      for action <- ~w(team.updated team.schedule.updated) do
         event = Enum.find(added, &(&1.action == action))
 
         assert event,
@@ -737,6 +759,115 @@ defmodule Fountain.ManifestTest do
 
       assert teammate.errors == %{"environmnet" => ["is not a supported spec key"]}
       assert Team.list_teammates(user.id) == []
+    end
+
+    test "a Schedule naming a teammate two of them answer to fails that row", %{user: user} do
+      inert_start_child()
+      one = insert_agent(user_id: user.id, name: "one")
+      two = insert_agent(user_id: user.id, name: "two")
+      {:ok, _} = Team.add_teammate(user.id, one.id, %{"name" => "Ada"})
+      {:ok, _} = Team.add_teammate(user.id, two.id, %{"name" => "Ada"})
+
+      {:ok, [%{kind: "Schedule", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [
+          schedule_resource("s", %{"teammate" => "Ada", "cron" => "@daily", "prompt" => "x"})
+        ])
+
+      assert errors == %{"teammate" => ["teammate name is not unique: Ada"]}
+    end
+
+    test "a Schedule may name a teammate the tenant already has", %{user: user} do
+      inert_start_child()
+      agent = insert_agent(user_id: user.id, name: "ada")
+      {:ok, _} = Team.add_teammate(user.id, agent.id, %{"name" => "Ada"})
+
+      {:ok, [%{kind: "Schedule", name: "nightly", action: :created}]} =
+        Manifest.apply_manifest(user.id, [
+          schedule_resource("nightly", %{
+            "teammate" => "Ada",
+            "cron" => "@daily",
+            "prompt" => "sweep",
+            "one_off" => true
+          })
+        ])
+
+      assert [%{name: "nightly", one_off: true}] = Schedules.list_schedules(user.id, agent.id)
+    end
+
+    test "a Schedule naming no teammate fails only its own row", %{user: user} do
+      {:ok, [good, bad]} =
+        Manifest.apply_manifest(user.id, [
+          vault_resource("v"),
+          schedule_resource("s", %{"teammate" => "ghost", "cron" => "@daily", "prompt" => "x"})
+        ])
+
+      assert good.action == :created
+      assert bad.action == :error
+      assert bad.errors == %{"teammate" => ["teammate not found: ghost"]}
+    end
+
+    test "an invalid cron fails with the same error the create route gives", %{user: user} do
+      inert_start_child()
+      agent = insert_agent(user_id: user.id, name: "ada")
+      {:ok, _} = Team.add_teammate(user.id, agent.id, %{"name" => "Ada"})
+
+      {:ok, [%{kind: "Schedule", action: :error, errors: errors}]} =
+        Manifest.apply_manifest(user.id, [
+          schedule_resource("bad", %{
+            "teammate" => "Ada",
+            "cron" => "not a cron",
+            "prompt" => "x"
+          })
+        ])
+
+      {:error, changeset} =
+        Schedules.create_schedule(user.id, %{
+          "agent_id" => agent.id,
+          "name" => "bad",
+          "cron" => "not a cron",
+          "prompt" => "x"
+        })
+
+      # Same content, keyed by string: an apply row's errors are string-keyed
+      # whichever branch produced them.
+      assert errors == Map.new(errors_on(changeset), fn {k, v} -> {to_string(k), v} end)
+      assert Map.has_key?(errors, "cron")
+      assert Schedules.list_schedules(user.id, agent.id) == []
+    end
+
+    test "re-applying a Schedule moves its cron, prompt, one_off and enabled", %{user: user} do
+      inert_start_child()
+      agent = insert_agent(user_id: user.id, name: "ada")
+      {:ok, _} = Team.add_teammate(user.id, agent.id, %{"name" => "Ada"})
+
+      apply_schedule = fn spec ->
+        Manifest.apply_manifest(user.id, [
+          schedule_resource("standup", Map.put(spec, "teammate", "Ada"))
+        ])
+      end
+
+      {:ok, [%{action: :created}]} = apply_schedule.(%{"cron" => "@daily", "prompt" => "a"})
+      {:ok, [%{action: :unchanged}]} = apply_schedule.(%{"cron" => "@daily", "prompt" => "a"})
+
+      {:ok, [%{action: :updated}]} =
+        apply_schedule.(%{
+          "cron" => "0 9 * * 1-5",
+          "prompt" => "b",
+          "one_off" => true,
+          "enabled" => false
+        })
+
+      assert [%{cron: "0 9 * * 1-5", prompt: "b", one_off: true, enabled: false}] =
+               Schedules.list_schedules(user.id, agent.id)
+    end
+
+    test "unknown spec keys on a Schedule are rejected", %{user: user} do
+      {:ok, [schedule]} =
+        Manifest.apply_manifest(user.id, [
+          schedule_resource("s", %{"teammate" => "t", "crn" => "@daily"})
+        ])
+
+      assert schedule.errors == %{"crn" => ["is not a supported spec key"]}
     end
   end
 end

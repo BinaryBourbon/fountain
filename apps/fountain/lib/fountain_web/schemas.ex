@@ -3123,14 +3123,19 @@ defmodule FountainWeb.Schemas do
         "One compiled document from a fountain.yml manifest. `spec` matches the " <>
           "create/update schema for the kind, plus an inline `secrets` map " <>
           "(Environment and Vault). Specs reference other documents by name, and " <>
-          "the server resolves each to an id: an Agent's `environment`, and a " <>
-          "Teammate's `agent`, `environment` and `vault`. Teammate specs take " <>
-          "`agent`, `environment` and `vault`, and a Teammate document is read " <>
-          "as a whole declaration, so an absent `environment` or `vault` clears " <>
-          "that binding.",
+          "the server resolves each to an id: an Agent's `environment`, a " <>
+          "Teammate's `agent`, `environment` and `vault`, and a Schedule's " <>
+          "`teammate`. Teammate specs take `agent`, `environment` and `vault`, " <>
+          "and a Teammate document is read as a whole declaration, so an absent " <>
+          "`environment` or `vault` clears that binding. Schedule specs take " <>
+          "`teammate` plus the TeamScheduleCreateRequest fields `cron`, " <>
+          "`prompt`, `one_off` and `enabled`.",
       type: :object,
       properties: %{
-        kind: %Schema{type: :string, enum: ["Environment", "Vault", "Agent", "Teammate"]},
+        kind: %Schema{
+          type: :string,
+          enum: ["Environment", "Vault", "Agent", "Teammate", "Schedule"]
+        },
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         spec: %Schema{type: :object, additionalProperties: true}
       },

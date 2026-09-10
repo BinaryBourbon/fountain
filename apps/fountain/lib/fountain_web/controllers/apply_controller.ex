@@ -19,9 +19,10 @@ defmodule FountainWeb.ApplyController do
     description:
       "Applies all resources from a compiled fountain.yml manifest in one request. " <>
         "Resources are reconciled in a fixed order — environments, vaults, agents, " <>
-        "teammates — so a spec may name another document whatever the file's " <>
-        "order: an agent's `environment`, and a teammate's `agent`, `environment` " <>
-        "and `vault`. Every kind is keyed by the document's `name`. A `Teammate` " <>
+        "teammates, schedules — so a spec may name another document whatever the " <>
+        "file's order: an agent's `environment`, a teammate's `agent`, " <>
+        "`environment` and `vault`, and a schedule's `teammate`. Every kind is " <>
+        "keyed by the document's `name`. A `Teammate` " <>
         "is read as a whole declaration, so an absent `environment` or `vault` " <>
         "clears that binding, and moving either retires the computer the old " <>
         "binding named (refused with an error on that row while a turn is running " <>
