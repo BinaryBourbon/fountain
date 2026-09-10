@@ -158,18 +158,24 @@ resources. The CLI compiles the manifest and submits the resource graph.
 Inspect every resource result. One failed resource does not mean that all
 other writes failed.
 
-A manifest holds five kinds. Fountain reconciles them in a fixed order, which
-is `Environment`, `Vault`, `Agent`, `Teammate` and `Schedule`. A document can name another
-document whatever its position in the file. An `Agent` names an
+A manifest holds six kinds. Fountain reconciles them in a fixed order, which
+is `Environment`, `Vault`, `Agent`, `Teammate`, `Schedule` and `Webhook`. A
+document can name another document whatever its position in the file. An `Agent` names an
 `environment`. A `Teammate` names an `agent`, an `environment` and a `vault`.
 A `Schedule` names a `teammate`. A teammate's name is not unique, so a name
 that two teammates answer to fails that row rather than binding to one of
-them. Each name resolves against the manifest first, then against the records the
-account already holds. A name that matches neither fails that document alone.
+them. Each name resolves against the manifest first, then against the records
+the account already holds. A name that matches neither fails that document
+alone.
+
+The document name is the key for five of the kinds. `Webhook` is the
+exception, and is keyed by `spec.url`. Change that URL and the apply creates
+a second endpoint. The first one stays, and keeps delivering, until you
+delete it through the webhook routes.
 
 A `Teammate` document is the whole teammate. Drop `environment` or `vault`
 from it and the apply clears that binding, which puts the teammate back on
-the agent's own environment and on no vault. The other four kinds behave the
+the agent's own environment and on no vault. The other five kinds behave the
 other way around, where an absent `spec` key leaves that field alone.
 
 Rebinding a teammate moves its computer. Fountain retires the machine the old
@@ -189,8 +195,17 @@ record in place. There is no prune.
 
 The audit trail names each applied row. Teammate rows record
 `team.member.added` and `team.updated`, and schedule rows record
-`team.schedule.created` and `team.schedule.updated`. Each row carries the
-actor and the IP address of the request that applied it.
+`team.schedule.created` and `team.schedule.updated`, and webhook rows record
+`webhook_endpoint.created` and `webhook_endpoint.updated`. The webhook actions
+carry the `webhook_endpoint` prefix that the webhook routes have always
+written, not a shorter `webhook` one. Each row carries the actor and the IP
+address of the request that applied it.
+
+A `Webhook` that an apply creates carries its signing secret in that result
+row. Fountain shows the secret one time. An update of the same endpoint
+carries no secret. A manifest that holds a `Webhook` needs a full-scope
+credential, which is what `POST /api/webhooks` needs. A sandbox-scoped
+credential is refused before any resource in that manifest is written.
 
 Each result row reports `created`, `updated`, `unchanged` or `error`. A
 second apply of an unchanged manifest reports `unchanged` for every row, and

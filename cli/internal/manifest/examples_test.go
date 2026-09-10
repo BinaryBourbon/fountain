@@ -31,6 +31,7 @@ func TestExamplesParse(t *testing.T) {
 		"Agent":       true,
 		"Teammate":    true,
 		"Schedule":    true,
+		"Webhook":     true,
 	}
 	total := 0
 	checked := 0

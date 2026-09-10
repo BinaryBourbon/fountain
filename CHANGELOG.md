@@ -33,6 +33,13 @@ upgrade, is in
   existing launches retain `owner` behavior. Applications processing mutually
   untrusted work can keep all Fountain API authority on their service host.
 
+- A `fountain apply` manifest can declare webhook endpoints. A `Webhook`
+  document is keyed by its `spec.url`, and the apply that creates one hands
+  back its signing secret on that result row and never again. A manifest that
+  holds a `Webhook` needs a full-scope credential, which is what
+  `POST /api/webhooks` needs, and a refused request writes none of the
+  manifest's other resources either (#1636).
+
 - A `fountain apply` manifest can declare a teammate's schedules. A `Schedule`
   document names its teammate, its cron and its prompt, and is keyed by name
   under that teammate. A teammate name that two teammates answer to fails that

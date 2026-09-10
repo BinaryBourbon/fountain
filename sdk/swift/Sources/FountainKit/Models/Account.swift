@@ -139,6 +139,9 @@ public struct ApplyResult: Sendable, Decodable, Hashable {
   public var action: String
   public var errors: JSONValue?
   public var secrets: [SecretResult]?
+  /// A `Webhook` endpoint's signing secret, on the apply that created it.
+  /// Nil on every other row, and on every later apply of the same endpoint.
+  public var secret: String?
 
   public struct SecretResult: Sendable, Decodable, Hashable {
     public var key: String

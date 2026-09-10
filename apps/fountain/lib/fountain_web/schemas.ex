@@ -3129,12 +3129,14 @@ defmodule FountainWeb.Schemas do
           "and a Teammate document is read as a whole declaration, so an absent " <>
           "`environment` or `vault` clears that binding. Schedule specs take " <>
           "`teammate` plus the TeamScheduleCreateRequest fields `cron`, " <>
-          "`prompt`, `one_off` and `enabled`.",
+          "`prompt`, `one_off` and `enabled`; Webhook specs take the " <>
+          "WebhookEndpointCreateRequest fields `url`, `description` and " <>
+          "`event_types`, and are keyed by `url` rather than by `name`.",
       type: :object,
       properties: %{
         kind: %Schema{
           type: :string,
-          enum: ["Environment", "Vault", "Agent", "Teammate", "Schedule"]
+          enum: ["Environment", "Vault", "Agent", "Teammate", "Schedule", "Webhook"]
         },
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         spec: %Schema{type: :object, additionalProperties: true}
@@ -3194,7 +3196,16 @@ defmodule FountainWeb.Schemas do
               "`upserted` under `secrets`."
         },
         errors: %Schema{type: :object, additionalProperties: true, nullable: true},
-        secrets: %Schema{type: :array, items: ApplySecretResult}
+        secrets: %Schema{type: :array, items: ApplySecretResult},
+        secret: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "A Webhook endpoint's HMAC-SHA256 signing secret, on the apply that " <>
+              "created it. Store it; it is not shown again, and an update never " <>
+              "returns it. Null on every other row.",
+          example: "whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU"
+        }
       },
       required: [:kind, :name, :action]
     })
