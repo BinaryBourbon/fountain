@@ -219,6 +219,47 @@ defmodule FountainWeb.CoreComponents do
   def status_badge(assigns), do: badge(assigns)
 
   # ────────────────────────────────────────────────────────────────────────────
+  # label_chips/1 (#1637)
+  #
+  # A conversation's labels, as small `key=value` chips. Sorted by key, so a
+  # row reads the same on every render. Renders nothing at all when there are
+  # none — an empty row of chips is noise on a list where most conversations
+  # carry no labels.
+  #
+  # `href` makes each chip a link to the same list filtered by that one label.
+  # Give it a function of `{key, value}`; leave it nil for a read-only list.
+  # ────────────────────────────────────────────────────────────────────────────
+
+  attr :labels, :map, default: %{}
+  attr :href, :any, default: nil
+
+  def label_chips(assigns) do
+    assigns = assign(assigns, :sorted, Enum.sort_by(assigns.labels || %{}, &elem(&1, 0)))
+
+    ~H"""
+    <span :if={@sorted != []} class="inline-flex flex-wrap gap-1 align-middle">
+      <.link
+        :for={{key, value} <- @sorted}
+        :if={@href}
+        patch={@href.({key, value})}
+        class="rounded bg-[var(--color-bg-2)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+        data-label-chip={key}
+      >
+        {key}={value}
+      </.link>
+      <span
+        :for={{key, value} <- @sorted}
+        :if={is_nil(@href)}
+        class="rounded bg-[var(--color-bg-2)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-text-secondary)]"
+        data-label-chip={key}
+      >
+        {key}={value}
+      </span>
+    </span>
+    """
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
   # modal/1
   # Accessible: FocusTrap JS hook traps Tab, phx-window-keydown closes on
   # Escape, backdrop click closes.

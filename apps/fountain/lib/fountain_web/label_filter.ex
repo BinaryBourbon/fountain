@@ -32,6 +32,24 @@ defmodule FountainWeb.LabelFilter do
     |> parse()
   end
 
+  @doc """
+  The same filter out of a LiveView's `uri`, for the console's conversation
+  list.
+
+  A LiveView gets no plug pipeline and its `params` are collapsed the same
+  way Plug collapses them, so the repeated key has to be read back off the
+  URI. One parser either way, so the console and the API cannot disagree
+  about what `?label=env:prod` means.
+  """
+  @spec from_uri(String.t()) :: {:ok, map()} | {:error, String.t()}
+  def from_uri(uri) when is_binary(uri) do
+    uri
+    |> URI.parse()
+    |> Map.get(:query)
+    |> Labels.from_query_string()
+    |> parse()
+  end
+
   defp parse(values) do
     case Labels.parse_filter(values) do
       {:ok, labels} -> {:ok, labels}

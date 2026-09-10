@@ -41,11 +41,52 @@ defmodule FountainWeb.DashboardLive.Index do
      |> assign(:replied?, Fountain.Activation.first_reply_at(user.id) != nil)
      |> assign(:active_count, counts.active)
      |> assign(:conversation_count, counts.total)
-     |> assign(:recent_conversations, Conversations.list_conversations(user.id, limit: 5))
      |> assign(:conversations_app, Apps.conversations())
      |> assign(:team_app, Apps.team())
      |> assign_usage(user)}
   end
+
+  # The recent-conversations list takes a `label` filter from the URL, the way
+  # /audit takes its filters (#1637): repeatable, AND-combined, and a link you
+  # can send someone. `uri` rather than `params` because Plug collapses a
+  # repeated query key to its last value and this filter is repeatable.
+  #
+  # A filter value the vocabulary does not recognise filters nothing and
+  # leaves the chips showing what was asked for, the same way the audit page
+  # treats a half-typed date.
+  @impl true
+  def handle_params(_params, uri, socket) do
+    user = socket.assigns.current_user
+
+    labels =
+      case FountainWeb.LabelFilter.from_uri(uri) do
+        {:ok, labels} -> labels
+        {:error, _invalid} -> %{}
+      end
+
+    {:noreply,
+     socket
+     |> assign(:label_filter, labels)
+     |> assign(
+       :recent_conversations,
+       Conversations.list_conversations(user.id, limit: 5, labels: labels)
+     )}
+  end
+
+  # The path a chip links to: this label added to whatever is already
+  # filtered, so two clicks narrow rather than replace.
+  #
+  # Built by hand rather than through `~p`'s query encoding, because the
+  # filter is a *repeated* `label=` key and the sigil builds a map.
+  defp dashboard_path(filter) do
+    case Enum.map_join(Enum.sort(filter), "&", &label_param/1) do
+      "" -> ~p"/dashboard"
+      query -> ~p"/dashboard" <> "?" <> query
+    end
+  end
+
+  defp label_param({key, value}),
+    do: "label=" <> URI.encode_www_form("#{key}:#{value}")
 
   # The calendar month (ADR 0031) — the same call the billing page makes, so
   # the two pages cannot report different numbers for "this month".
@@ -173,9 +214,26 @@ defmodule FountainWeb.DashboardLive.Index do
         </div>
       </section>
 
-      <section :if={@recent_conversations != []}>
-        <h2 class="text-lg font-medium mb-3">Recent conversations</h2>
-        <div class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+      <section :if={@recent_conversations != [] or @label_filter != %{}}>
+        <div class="flex items-baseline justify-between mb-3">
+          <h2 class="text-lg font-medium">Recent conversations</h2>
+          <span :if={@label_filter != %{}} class="text-xs">
+            <.label_chips labels={@label_filter} />
+            <.link patch={~p"/dashboard"} class="ml-2 text-[var(--color-text-muted)] hover:underline">
+              clear
+            </.link>
+          </span>
+        </div>
+        <p
+          :if={@recent_conversations == []}
+          class="rounded-lg border border-[var(--color-border)] px-4 py-3 text-sm text-[var(--color-text-muted)]"
+        >
+          No conversation carries every one of those labels.
+        </p>
+        <div
+          :if={@recent_conversations != []}
+          class="overflow-hidden rounded-lg border border-[var(--color-border)]"
+        >
           <table class="w-full text-sm">
             <tbody>
               <tr
@@ -184,6 +242,10 @@ defmodule FountainWeb.DashboardLive.Index do
               >
                 <td class="px-4 py-2">
                   <.conv_link conversation={c} app={@conversations_app} />
+                  <.label_chips
+                    labels={c.labels}
+                    href={fn {key, value} -> dashboard_path(Map.put(@label_filter, key, value)) end}
+                  />
                 </td>
                 <td class="px-4 py-2"><.badge status={c.status} /></td>
                 <td class="px-4 py-2 text-[var(--color-text-muted)] text-xs">
