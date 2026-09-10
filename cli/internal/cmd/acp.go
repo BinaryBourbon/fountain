@@ -12,13 +12,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/BinaryBourbon/fountain/cli/api"
-	"github.com/BinaryBourbon/fountain/cli/config"
-	"github.com/BinaryBourbon/fountain/cli/credentials"
-	"github.com/BinaryBourbon/fountain/cli/internal/acp"
-	"github.com/BinaryBourbon/fountain/cli/internal/output"
-	"github.com/BinaryBourbon/fountain/cli/internal/sse"
-	"github.com/BinaryBourbon/fountain/cli/internal/stream"
+	"github.com/managoat/fountain/cli/api"
+	"github.com/managoat/fountain/cli/config"
+	"github.com/managoat/fountain/cli/credentials"
+	"github.com/managoat/fountain/cli/internal/acp"
+	"github.com/managoat/fountain/cli/internal/output"
+	"github.com/managoat/fountain/cli/internal/sse"
+	"github.com/managoat/fountain/cli/internal/stream"
 	"github.com/spf13/cobra"
 )
 

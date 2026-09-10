@@ -1051,7 +1051,7 @@ defmodule FountainWeb.MarketingHTML do
         openclaw plugins install @openclaw/acpx
 
         # Hermes Agent: fountain_run and six siblings
-        hermes plugins install BinaryBourbon/fountain/integrations/hermes/fountain --enable
+        hermes plugins install managoat/fountain/integrations/hermes/fountain --enable
         """
       },
       %{
@@ -1330,7 +1330,7 @@ defmodule FountainWeb.MarketingHTML do
 
   ## /self-hosted
 
-  @repo_url "https://github.com/BinaryBourbon/fountain"
+  @repo_url "https://github.com/managoat/fountain"
 
   @doc "The project's repository. The self-hosted page links it from four places."
   def repo_url, do: @repo_url
@@ -1465,7 +1465,7 @@ defmodule FountainWeb.MarketingHTML do
   """
   def compose_example do
     """
-    git clone https://github.com/BinaryBourbon/fountain
+    git clone https://github.com/managoat/fountain
     cd fountain
 
     cp .env.compose.example .env

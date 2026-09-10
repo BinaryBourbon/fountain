@@ -1,6 +1,6 @@
 # Fountain Elixir SDK
 
-The official Elixir client for [Fountain](https://github.com/BinaryBourbon/fountain). It covers agent runs and follow-ups, reconnecting event streams, permission requests, resources and secrets, teammates and schedules, connections, conversation history, and sandbox lifecycle/files.
+The official Elixir client for [Fountain](https://github.com/managoat/fountain). It covers agent runs and follow-ups, reconnecting event streams, permission requests, resources and secrets, teammates and schedules, connections, conversation history, and sandbox lifecycle/files.
 
 ## Installation
 

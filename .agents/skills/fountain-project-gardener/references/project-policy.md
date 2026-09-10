@@ -2,7 +2,7 @@
 
 ## Scope and identity
 
-- Repository: `BinaryBourbon/fountain`
+- Repository: `managoat/fountain`
 - Account-owned Project: `BinaryBourbon` Project `1`
 - Project URL: `https://github.com/users/BinaryBourbon/projects/1`
 - The Project is private. Repository collaborators should normally have Write access unless the caller specifies a narrower policy.

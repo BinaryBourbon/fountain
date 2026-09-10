@@ -12,14 +12,14 @@
 // against the Buzz API should carry no obligation.
 //
 // The `replace` below is what makes this buildable in-repo before graduation
-// (#1510). On the day this directory moves to BinaryBourbon/fountain_buzz it
+// (#1510). On the day this directory moves to managoat/fountain_buzz it
 // becomes a version pin and nothing else about the module changes.
-module github.com/BinaryBourbon/fountain/apps/fountain_buzz/cli
+module github.com/managoat/fountain/apps/fountain_buzz/cli
 
 go 1.26.0
 
 require (
-	github.com/BinaryBourbon/fountain/cli v0.0.0
+	github.com/managoat/fountain/cli v0.0.0
 	github.com/nbd-wtf/go-nostr v0.52.3
 )
 
@@ -50,4 +50,4 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 )
 
-replace github.com/BinaryBourbon/fountain/cli => ../../../cli
+replace github.com/managoat/fountain/cli => ../../../cli

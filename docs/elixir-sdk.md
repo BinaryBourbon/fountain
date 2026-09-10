@@ -17,7 +17,7 @@ IO.puts(result.url)
 ```
 
 The source is in
-[`sdk/elixir/`](https://github.com/BinaryBourbon/fountain/tree/main/sdk/elixir).
+[`sdk/elixir/`](https://github.com/managoat/fountain/tree/main/sdk/elixir).
 It supports Elixir 1.15 and newer.
 
 Before installation, check that `fountain_sdk 0.1.0` is available on
@@ -128,7 +128,7 @@ Agents, environments and vaults have `list`, `get`, `create`, `update` and
     packages: %{apt: ["ripgrep"]},
     repositories: [
       %{
-        url: "https://github.com/BinaryBourbon/fountain",
+        url: "https://github.com/managoat/fountain",
         mount_path: "/work/fountain"
       }
     ]

@@ -52,7 +52,7 @@ Three reasons to reach for this, and not for a local agent.
 1. Install the CLI and log in.
 
     ```bash
-    brew install BinaryBourbon/tap/fountain
+    brew install managoat/tap/fountain
     fountain auth login
     ```
 
@@ -175,13 +175,13 @@ continues from where it stopped.
 - **The opencode runtime never asks.** It decides permission inside its own
   server, and it sends no request to your editor. Fountain refuses a policy it
   cannot enforce, with a 422 at session start
-  ([#959](https://github.com/BinaryBourbon/fountain/issues/959)). Nobody has
+  ([#959](https://github.com/managoat/fountain/issues/959)). Nobody has
   measured whether opencode's own config reaches the protocol
-  ([#962](https://github.com/BinaryBourbon/fountain/issues/962)).
+  ([#962](https://github.com/managoat/fountain/issues/962)).
 - **A reclaimed sandbox loses the agent's memory.** If Fountain reclaimed a
   conversation's sandbox while you were away, `session/load` still replays the
   full transcript. The agent itself does not remember it
-  ([#649](https://github.com/BinaryBourbon/fountain/issues/649)).
+  ([#649](https://github.com/managoat/fountain/issues/649)).
 
 ## When something goes wrong
 
@@ -209,9 +209,9 @@ on stdin, which tells you that the process starts and finds its credentials.
 ## How it works
 
 Two ADRs cover the design.
-[0014](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0014-agent-client-protocol.md)
+[0014](https://github.com/managoat/fountain/blob/main/decisions/0014-agent-client-protocol.md)
 made Fountain an ACP *client* of the coding agents it runs in sandboxes.
-[0015](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md)
+[0015](https://github.com/managoat/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md)
 makes it an ACP *agent* for editors.
 
 Together they make Fountain a proxy. The same block vocabulary arrives from a

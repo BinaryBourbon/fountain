@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/BinaryBourbon/fountain/cli/internal/output"
+	"github.com/managoat/fountain/cli/internal/output"
 	"github.com/spf13/cobra"
 )
 

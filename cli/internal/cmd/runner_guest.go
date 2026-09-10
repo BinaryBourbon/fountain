@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/BinaryBourbon/fountain/cli/internal/runner"
+	"github.com/managoat/fountain/cli/internal/runner"
 	"github.com/spf13/cobra"
 )
 

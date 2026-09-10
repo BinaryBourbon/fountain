@@ -17,7 +17,7 @@ print(result.url)
 ```
 
 The source is in
-[`sdk/python/`](https://github.com/BinaryBourbon/fountain/tree/main/sdk/python).
+[`sdk/python/`](https://github.com/managoat/fountain/tree/main/sdk/python).
 It supports Python 3.9 and newer and has no runtime dependencies.
 
 ```bash
@@ -114,7 +114,7 @@ environment = fountain.environments.create({
     "name": "fountain-ci",
     "packages": {"apt": ["ripgrep"]},
     "repositories": [{
-        "url": "https://github.com/BinaryBourbon/fountain",
+        "url": "https://github.com/managoat/fountain",
         "mount_path": "/work/fountain",
     }],
 })

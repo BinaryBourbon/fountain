@@ -34,7 +34,7 @@ Add Fountain as a package dependency:
 ```swift
 dependencies: [
     .package(
-        url: "https://github.com/BinaryBourbon/fountain.git",
+        url: "https://github.com/managoat/fountain.git",
         from: "0.16.0"
     ),
 ]

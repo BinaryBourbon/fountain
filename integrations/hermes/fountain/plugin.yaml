@@ -3,9 +3,9 @@ version: 0.1.0
 manifest_version: 2
 api_version: 1
 description: Run Fountain agents — sandboxed coding agents on a Fountain instance — as tools from Hermes.
-author: BinaryBourbon
+author: managoat
 license: MIT
-homepage: https://github.com/BinaryBourbon/fountain
+homepage: https://github.com/managoat/fountain
 tags: [fountain, delegation, sandbox, agents]
 provides_tools:
   - fountain_agents

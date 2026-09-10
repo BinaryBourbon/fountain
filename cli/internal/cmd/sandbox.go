@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/BinaryBourbon/fountain/cli/api"
-	"github.com/BinaryBourbon/fountain/cli/internal/output"
+	"github.com/managoat/fountain/cli/api"
+	"github.com/managoat/fountain/cli/internal/output"
 	"github.com/spf13/cobra"
 )
 

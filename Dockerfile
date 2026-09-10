@@ -155,7 +155,7 @@ ARG BUZZ_ACP_VERSION=0.5.14-fountain.4
 RUN apt-get update -y \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && mkdir -p /out \
- && base="https://github.com/BinaryBourbon/fountain/releases/download/buzz-acp-v${BUZZ_ACP_VERSION}" \
+ && base="https://github.com/managoat/fountain/releases/download/buzz-acp-v${BUZZ_ACP_VERSION}" \
  && for bin in buzz-acp buzz; do \
       asset="${bin}-linux-${TARGETARCH:-amd64}" \
       && curl -fsSL -o "/out/${bin}" "${base}/${asset}" \

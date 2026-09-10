@@ -5,6 +5,12 @@ name: Python SDK release gate
 
 on:
   pull_request:
+    # `labeled`/`unlabeled` for the escape hatch below, which reads labels off
+    # the event payload: without them, adding the label does nothing to the run
+    # that wants it. The TypeScript and Elixir gates have both since they were
+    # written; this one did not, so a metadata-only change here could only be
+    # landed by cutting a release nobody asked for.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - "sdk/python/**"
       - ".github/workflows/python-sdk-release-gate.yml"
@@ -17,6 +23,10 @@ jobs:
     name: A shipped change has a releasable version
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The deliberate exception, same as the other two gates: changing the
+    # published surface without cutting a release. It should take a label and
+    # a sentence in the PR.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'sdk-no-release') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5

@@ -1,6 +1,6 @@
 ---
 name: fountain-project-gardener
-description: Audit, triage, prune, and refresh the BinaryBourbon/fountain GitHub Project, its issues, labels, iterations, views, workflows, and access. Use when someone asks what work remains, what is stale, how to prioritize the backlog, or to organize or clean up Project #1.
+description: Audit, triage, prune, and refresh the managoat/fountain GitHub Project, its issues, labels, iterations, views, workflows, and access. Use when someone asks what work remains, what is stale, how to prioritize the backlog, or to organize or clean up Project #1.
 ---
 
 # Fountain Project Gardener

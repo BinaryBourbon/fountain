@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/BinaryBourbon/fountain/cli/api"
-	"github.com/BinaryBourbon/fountain/cli/internal/manifest"
-	"github.com/BinaryBourbon/fountain/cli/internal/output"
-	"github.com/BinaryBourbon/fountain/cli/internal/secrets"
-	"github.com/BinaryBourbon/fountain/cli/internal/substitution"
+	"github.com/managoat/fountain/cli/api"
+	"github.com/managoat/fountain/cli/internal/manifest"
+	"github.com/managoat/fountain/cli/internal/output"
+	"github.com/managoat/fountain/cli/internal/secrets"
+	"github.com/managoat/fountain/cli/internal/substitution"
 	"github.com/spf13/cobra"
 )
 

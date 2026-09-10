@@ -14,7 +14,7 @@ id never changes when somebody claims it. A sandbox name contains the tenant
 id, so a transfer of resources between accounts is a different machine. A claim
 touches no resource at all. It only records who is now behind the tenant.
 
-[ADR 0044](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0044-claimable-principals.md)
+[ADR 0044](https://github.com/managoat/fountain/blob/main/decisions/0044-claimable-principals.md)
 is the decision, and the API reference is in [API](../api.md).
 
 ## What you need first

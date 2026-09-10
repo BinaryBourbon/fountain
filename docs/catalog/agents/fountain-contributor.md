@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| Manifest | [`examples/agents/fountain-contributor/`](https://github.com/BinaryBourbon/fountain/tree/main/examples/agents/fountain-contributor) | <!-- vale disable-line STE.SentenceLength -->
+| Manifest | [`examples/agents/fountain-contributor/`](https://github.com/managoat/fountain/tree/main/examples/agents/fountain-contributor) | <!-- vale disable-line STE.SentenceLength -->
 | Runtime | claude, model `anthropic/claude-opus-5` |
 | Resources | one Environment, one Vault, one Agent |
 | First run | about 15 minutes to provision (measured), paid one time into a checkpoint |
@@ -17,7 +17,7 @@
 ## What it does
 
 It checks out
-[BinaryBourbon/fountain](https://github.com/BinaryBourbon/fountain), reads
+[managoat/fountain](https://github.com/managoat/fountain), reads
 `CLAUDE.md` and the ADRs, makes a change, runs the full local gate, and opens
 one pull request with `gh`. Its commits carry a DCO sign-off under your name,
 from the vault.

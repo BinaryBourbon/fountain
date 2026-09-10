@@ -13,10 +13,10 @@ defmodule Fountain.ReleasePinTest do
   @pins [
     {"docker-compose.yml", ~r/fountain:\$\{FOUNTAIN_IMAGE_TAG:-(v[\d.]+)\}/},
     {".env.compose.example", ~r/^FOUNTAIN_IMAGE_TAG=(v[\d.]+)$/m},
-    {"render.yaml", ~r/url: ghcr\.io\/binarybourbon\/fountain:(v[\d.]+)/},
-    {"fly.toml", ~r/image = "ghcr\.io\/binarybourbon\/fountain:(v[\d.]+)"/},
+    {"render.yaml", ~r/url: ghcr\.io\/managoat\/fountain:(v[\d.]+)/},
+    {"fly.toml", ~r/image = "ghcr\.io\/managoat\/fountain:(v[\d.]+)"/},
     {"deploy/k8s/kustomization.yaml", ~r/newTag: (v[\d.]+)/},
-    {"deploy/k8s/deployment.yaml", ~r/image: ghcr\.io\/binarybourbon\/fountain:(v[\d.]+)/}
+    {"deploy/k8s/deployment.yaml", ~r/image: ghcr\.io\/managoat\/fountain:(v[\d.]+)/}
   ]
 
   test "self-host image pins match the released version" do

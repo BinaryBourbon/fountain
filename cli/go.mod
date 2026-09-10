@@ -1,4 +1,4 @@
-module github.com/BinaryBourbon/fountain/cli
+module github.com/managoat/fountain/cli
 
 go 1.26.0
 

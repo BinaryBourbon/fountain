@@ -18,7 +18,7 @@ console.log(run.url);    // where a human can watch it happen
 ```
 
 The source lives in
-[`sdk/typescript/`](https://github.com/BinaryBourbon/fountain/tree/main/sdk/typescript).
+[`sdk/typescript/`](https://github.com/managoat/fountain/tree/main/sdk/typescript).
 It has no runtime dependency, and it needs Node 20.19 or newer.
 
 ```bash
@@ -137,7 +137,7 @@ const environment = await fountain.environments.create({
   packages: { apt: ["ripgrep"] },
   env_vars: { MIX_ENV: "test" },
   repositories: [
-    { url: "https://github.com/BinaryBourbon/fountain", mount_path: "/work/fountain" },
+    { url: "https://github.com/managoat/fountain", mount_path: "/work/fountain" },
   ],
   setup_script: "cd /work/fountain && mix deps.get",
   networking_type: "limited",

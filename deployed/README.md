@@ -434,7 +434,7 @@ This mode tests static bearer delivery. Its permitted identity is the fixture's
 per-run principal. It does not establish a Fountain conversation identity or
 test callback-token rotation. Conversation authentication for Claude, Codex,
 Gemini and OpenCode remains an explicit linked gap under
-[#1405](https://github.com/BinaryBourbon/fountain/issues/1405).
+[#1405](https://github.com/managoat/fountain/issues/1405).
 Each result lists the selected runtime as required and the other runtimes as
 not run. A selected runtime that cannot authenticate or discover the tools
 fails; it is never silently skipped.

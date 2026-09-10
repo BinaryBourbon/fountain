@@ -1,5 +1,5 @@
 # Builds the Fountain OCI image and pushes it to
-# ghcr.io/binarybourbon/fountain for every push to main whose CI
+# ghcr.io/managoat/fountain for every push to main whose CI
 # workflow succeeded. Multi-arch
 # (amd64 + arm64) — home-cloud k3s nodes are arm64 Apple Silicon Lima
 # VMs, single-arch amd64 images fail at pull with
@@ -28,11 +28,11 @@ on:
     branches: [main]
 
 env:
-  # ${{ github.repository_owner }} resolves to "BinaryBourbon" with the
-  # mixed case the org uses, but Docker registry repository names must be
-  # lowercase. Hardcoded rather than ${,,} via a shell step — the org
-  # name is stable enough that the indirection isn't worth it.
-  IMAGE: ghcr.io/binarybourbon/fountain
+  # Hardcoded, not ${{ github.repository }}. The owner moved once already
+  # (0048) and a literal is what made that move safe: a build under the new
+  # owner cannot write the old owner's packages, so a stale literal fails
+  # loudly here instead of publishing where Flux is not looking.
+  IMAGE: ghcr.io/managoat/fountain
   # The commit CI actually ran on — NOT github.sha, which for workflow_run
   # events is the default branch tip at trigger time and can race ahead if
   # another push lands while CI runs. Everything below (checkout, tags,
@@ -100,7 +100,7 @@ jobs:
           base=""
           for candidate in $(git rev-list --first-parent -n 50 HEAD~1 2>/dev/null); do
             if docker manifest inspect \
-                 "ghcr.io/binarybourbon/fountain:sha-${candidate}" > /dev/null 2>&1; then
+                 "ghcr.io/managoat/fountain:sha-${candidate}" > /dev/null 2>&1; then
               base="${candidate}"
               break
             fi

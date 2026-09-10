@@ -26,8 +26,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/BinaryBourbon/fountain/tree/main/sdk/python"
-Repository = "https://github.com/BinaryBourbon/fountain.git"
+Homepage = "https://github.com/managoat/fountain/tree/main/sdk/python"
+Repository = "https://github.com/managoat/fountain.git"
 Documentation = "https://managoat.com/docs/python-sdk"
 
 [tool.setuptools.packages.find]

@@ -18,7 +18,7 @@ Fountain follows [SemVer](https://semver.org/), before 1.0. A patch release,
 `v0.4`, can break something. The changelog calls each break out under
 **Upgrade notes**.
 
-Each release publishes the server image to `ghcr.io/binarybourbon/fountain`
+Each release publishes the server image to `ghcr.io/managoat/fountain`
 under two tags, next to the tags that track development.
 
 | Tag | Moves? | Use it for |

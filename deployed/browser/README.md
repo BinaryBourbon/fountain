@@ -130,7 +130,7 @@ Pull both exact image references before starting the case.
 
 ```json
 {
-  "app_image": "ghcr.io/binarybourbon/fountain@sha256:REPLACE_WITH_DIGEST",
+  "app_image": "ghcr.io/managoat/fountain@sha256:REPLACE_WITH_DIGEST",
   "postgres_image": "postgres@sha256:REPLACE_WITH_DIGEST",
   "context": "orbstack",
   "port": 14826

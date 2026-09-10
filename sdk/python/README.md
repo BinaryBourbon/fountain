@@ -118,7 +118,7 @@ environment = fountain.environments.create({
     "name": "fountain-ci",
     "packages": {"apt": ["ripgrep"]},
     "repositories": [{
-        "url": "https://github.com/BinaryBourbon/fountain",
+        "url": "https://github.com/managoat/fountain",
         "mount_path": "/work/fountain",
     }],
 })

@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/BinaryBourbon/fountain/cli/config"
-	"github.com/BinaryBourbon/fountain/cli/credentials"
+	"github.com/managoat/fountain/cli/config"
+	"github.com/managoat/fountain/cli/credentials"
 )
 
 // newTestClient points the client at a httptest server via the env vars that

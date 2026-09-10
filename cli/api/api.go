@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BinaryBourbon/fountain/cli/config"
-	"github.com/BinaryBourbon/fountain/cli/credentials"
+	"github.com/managoat/fountain/cli/config"
+	"github.com/managoat/fountain/cli/credentials"
 )
 
 // HTTPError carries the status code and decoded body for non-2xx responses.

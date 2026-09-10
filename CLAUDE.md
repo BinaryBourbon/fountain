@@ -570,7 +570,7 @@ a successful later attempt alone does not establish why the first failed:
 ```bash
 gh run list --workflow ci.yml --limit 200 \
   --json databaseId,attempt,conclusion,headBranch --jq '.[] | select(.attempt > 1)'
-gh api /repos/BinaryBourbon/fountain/actions/runs/<id>/attempts/1/jobs
+gh api /repos/managoat/fountain/actions/runs/<id>/attempts/1/jobs
 ```
 
 A green PR does not prove that a failed post-merge run is a flake. The merged

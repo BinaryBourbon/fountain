@@ -75,8 +75,8 @@ fountain vault set-secret alice GITHUB_TOKEN ghp_...
 Install:
 
 ```sh
-brew install BinaryBourbon/tap/fountain
-# or download from https://github.com/BinaryBourbon/fountain/releases/latest
+brew install managoat/tap/fountain
+# or download from https://github.com/managoat/fountain/releases/latest
 ```
 
 ## The two API patterns you'll actually use
@@ -306,4 +306,4 @@ Errors:
 - API reference: `$FOUNTAIN_BASE_URL/docs/api`
 - Full doc bundle for LLMs: `$FOUNTAIN_BASE_URL/llms-full.txt`
 - OpenAPI spec: `$FOUNTAIN_BASE_URL/api/openapi.json`
-- Source: https://github.com/BinaryBourbon/fountain
+- Source: https://github.com/managoat/fountain

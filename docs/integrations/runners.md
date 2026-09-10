@@ -24,7 +24,7 @@ Three reasons to want one.
 - **A setup you own outright.** A self-hosted Fountain and your own machines
   need no vendor account at all.
 
-[ADR 0022](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0022-self-hosted-runner-provider.md)
+[ADR 0022](https://github.com/managoat/fountain/blob/main/decisions/0022-self-hosted-runner-provider.md)
 holds the design.
 
 ## Summary
@@ -115,9 +115,9 @@ gets a kernel, an init and a root filesystem of its own. Its processes cannot
 reach the host.
 
 This is the VM mode that
-[ADR 0022](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0022-self-hosted-runner-provider.md)
+[ADR 0022](https://github.com/managoat/fountain/blob/main/decisions/0022-self-hosted-runner-provider.md)
 named and did not build.
-[ADR 0036](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0036-firecracker-runner-backend.md)
+[ADR 0036](https://github.com/managoat/fountain/blob/main/decisions/0036-firecracker-runner-backend.md)
 holds the design.
 
 ```bash
@@ -226,7 +226,7 @@ resumed still answers, as a Sprites sandbox does on its next exec.
   property of the adapter and not of one runner, so a Fountain change must
   come first. Nobody built it.
 - **A brokered tenant cannot use a runner.** With
-  [credential brokerage](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0019-egress-credential-brokerage.md)
+  [credential brokerage](https://github.com/managoat/fountain/blob/main/decisions/0019-egress-credential-brokerage.md)
   on for an account, Fountain refuses a conversation on any provider that does
   not advertise an egress policy. Every runner is such a provider, microVM or
   not. The launch fails with `backend_lacks_network_policy` before a sandbox

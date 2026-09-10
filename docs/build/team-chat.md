@@ -399,7 +399,7 @@ For an app with no backend, that is the whole authentication story.
 
 The roster row, the event router and the transcript folder above are one file
 in this repo,
-[`sdk/typescript/examples/chat.ts`](https://github.com/BinaryBourbon/fountain/blob/main/sdk/typescript/examples/chat.ts).
+[`sdk/typescript/examples/chat.ts`](https://github.com/managoat/fountain/blob/main/sdk/typescript/examples/chat.ts).
 
 It hires a temporary teammate, prints the roster, sends a message, renders the
 thread out of blocks, then cleans up after itself.
@@ -411,7 +411,7 @@ FOUNTAIN_API_KEY=ftn_… node examples/chat.ts
 
 CI typechecks it against the SDK on each push. That is the only reason this
 page can promise that the code on it compiles.
-[`examples/team.ts`](https://github.com/BinaryBourbon/fountain/blob/main/sdk/typescript/examples/team.ts)
+[`examples/team.ts`](https://github.com/managoat/fountain/blob/main/sdk/typescript/examples/team.ts)
 is the smaller version. Hire, say two things, watch the stream.
 
 ## Where this goes next

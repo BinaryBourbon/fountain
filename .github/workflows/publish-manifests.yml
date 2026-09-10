@@ -1,7 +1,7 @@
 name: publish-manifests
 
 # Publishes what Flux deploys: an OCI artifact at
-# ghcr.io/binarybourbon/fountain-manifests holding the exact tree that was
+# ghcr.io/managoat/fountain-manifests holding the exact tree that was
 # built, plus the image tag built from it, pinned in deploy/k8s's `images:`.
 # That pairing is the point. Flux once tracked `main`, where the two arrive
 # in separate commits minutes apart — the PR changes a manifest, the image
@@ -22,7 +22,7 @@ name: publish-manifests
 # less git machinery (#304). This workflow pushes no git refs at all.
 #
 # Flow: push to main → build.yml builds and pushes
-#   ghcr.io/binarybourbon/fountain:sha-<sha>
+#   ghcr.io/managoat/fountain:sha-<sha>
 #       → this workflow publishes the artifact from *that sha's tree* with
 #         the matching tag pinned: immutable `sha-<short>` plus a moving
 #         `latest`
@@ -34,7 +34,7 @@ name: publish-manifests
 # image they were written against" still holds.
 #
 # Rollback is one command, no git involved:
-#   flux tag artifact oci://ghcr.io/binarybourbon/fountain-manifests:sha-<old> --tag latest
+#   flux tag artifact oci://ghcr.io/managoat/fountain-manifests:sha-<old> --tag latest
 #
 # `main` is never deployed directly. The committed `newTag` in deploy/k8s is
 # the release pin self-hosters use; the artifact never carries it.
@@ -139,7 +139,7 @@ jobs:
       # The commit that was actually built — NOT main's tip. Pinning onto
       # the tip is what let a newer manifest ride out with an older image.
       SRC_SHA: ${{ github.event.workflow_run.head_sha || inputs.sha || github.sha }}
-      MANIFESTS: ghcr.io/binarybourbon/fountain-manifests
+      MANIFESTS: ghcr.io/managoat/fountain-manifests
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
@@ -163,8 +163,8 @@ jobs:
           image_sha=""
           for candidate in $(git rev-list --first-parent -n 50 "${SRC_SHA}"); do
             if docker manifest inspect \
-                 "ghcr.io/binarybourbon/fountain:sha-${candidate}" > /dev/null 2>&1; then
-              image="ghcr.io/binarybourbon/fountain:sha-${candidate}"
+                 "ghcr.io/managoat/fountain:sha-${candidate}" > /dev/null 2>&1; then
+              image="ghcr.io/managoat/fountain:sha-${candidate}"
               # The commit the IMAGE was built from, which is not always
               # SRC_SHA: on a manifest-only push this walk lands on an
               # ancestor. The pin must name what is running, not the tree
@@ -258,7 +258,7 @@ jobs:
           # Build what is about to be published, with the pin in it.
           echo "── verifying the staged tree builds"
           kubectl kustomize "${staging}/deploy/k8s" \
-            | grep -q "image: ghcr.io/binarybourbon/fountain:sha-" \
+            | grep -q "image: ghcr.io/managoat/fountain:sha-" \
             || { echo "staged tree does not carry a sha pin" >&2; exit 1; }
 
           flux push artifact "oci://${MANIFESTS}:sha-${SHORT}" \

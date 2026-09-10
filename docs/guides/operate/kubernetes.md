@@ -6,7 +6,7 @@ apply.
 ## Use `deploy/k8s/`
 
 A portable baseline lives in
-[`deploy/k8s/`](https://github.com/BinaryBourbon/fountain/tree/main/deploy/k8s).
+[`deploy/k8s/`](https://github.com/managoat/fountain/tree/main/deploy/k8s).
 They are plain manifests that you apply with `kubectl apply -k`. They assume
 no operators and no CRDs.
 
@@ -17,7 +17,7 @@ choices about probes and scale in inline comments.
 ## Track `main` with Flux
 
 Every merge to `main` publishes `deploy/` as an OCI artifact at
-`ghcr.io/binarybourbon/fountain-manifests`, with the image tag built from
+`ghcr.io/managoat/fountain-manifests`, with the image tag built from
 that commit in place of the release pin. The hosted instance runs from it. A
 Flux `OCIRepository` on the tag `latest` and a `Kustomization` on the path
 `./deploy/k8s` give you the same, and Flux `patches` hold your changes.

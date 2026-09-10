@@ -9,7 +9,7 @@ uses Docker Compose, and it is the shorter path.
 
 ## What the blueprint gives you
 
-[`render.yaml`](https://github.com/BinaryBourbon/fountain/blob/main/render.yaml)
+[`render.yaml`](https://github.com/managoat/fountain/blob/main/render.yaml)
 declares one web service and one managed Postgres. The web service runs the
 published image, not a build of your checkout. The blueprint gives you an
 instance that runs. It does not describe how the hosted service runs, which
@@ -120,7 +120,7 @@ Edit the tag in `render.yaml`, then apply the blueprint again.
 
 ```yaml
 image:
-  url: ghcr.io/binarybourbon/fountain:vX.Y.Z
+  url: ghcr.io/managoat/fountain:vX.Y.Z
 ```
 
 Read [Upgrade an instance](upgrade.md) first. Migrations run at boot, and

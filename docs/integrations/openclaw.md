@@ -66,7 +66,7 @@ OpenClaw runs on Node, and needs **Node ≥ 22.22.3**, or ≥ 24.15, or ≥ 25.9
 1. Install the Fountain CLI on the OpenClaw host, and log in.
 
     ```bash
-    brew install BinaryBourbon/tap/fountain
+    brew install managoat/tap/fountain
     fountain auth login
     ```
 
@@ -209,7 +209,7 @@ environments can stand in for its own, with `allowed_environment_ids`.
   gives you no Fountain identity for each channel user.
 - **We have not measured a permission prompt in a channel.** Fountain forwards
   `session/request_permission` to an ACP client
-  ([#708](https://github.com/BinaryBourbon/fountain/issues/708)), and the setup
+  ([#708](https://github.com/managoat/fountain/issues/708)), and the setup
   above keeps `permissionMode: "approve-all"` because nobody has driven an
   `ask` policy through OpenClaw yet. An unanswered prompt blocks the tool for 5
   minutes, and Fountain then refuses it. Leave the default until somebody
@@ -237,7 +237,7 @@ environments can stand in for its own, with `allowed_environment_ids`.
 - **A reclaimed sandbox loses the agent's memory.** If Fountain reclaimed a
   conversation's sandbox while you were away, a resume still replays the full
   transcript. The agent itself does not remember it
-  ([#649](https://github.com/BinaryBourbon/fountain/issues/649)).
+  ([#649](https://github.com/managoat/fountain/issues/649)).
 
 ## Verification
 
@@ -260,8 +260,8 @@ then `fountain acp`, then the sandbox. The gateway relays the reply back.
 We ran that against the real acpx, at 0.11.2 and 0.13.0, and OpenClaw, at
 2026.7.1 and 2026.8.1-beta.2. The brain pushed its model and a `thinking`
 level at the harness on the way. That is the case that used to abort the turn
-([#759](https://github.com/BinaryBourbon/fountain/issues/759),
-[#760](https://github.com/BinaryBourbon/fountain/issues/760)).
+([#759](https://github.com/managoat/fountain/issues/759),
+[#760](https://github.com/managoat/fountain/issues/760)).
 
 When you test through `openclaw agent`, or with a prompt that must delegate,
 check that the harness ran. OpenClaw's own model will happily answer a
@@ -291,9 +291,9 @@ fountain acp --agent researcher --log-level debug
 ## How it works
 
 Two ADRs cover the design.
-[0014](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0014-agent-client-protocol.md)
+[0014](https://github.com/managoat/fountain/blob/main/decisions/0014-agent-client-protocol.md)
 made Fountain an ACP *client* of the coding agents it runs in sandboxes.
-[0015](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md)
+[0015](https://github.com/managoat/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md)
 makes it an ACP *agent* for any ACP client, such as an editor,
 [Buzz](https://github.com/block/buzz), or OpenClaw.
 
@@ -301,7 +301,7 @@ Together they make Fountain a proxy. The same block vocabulary arrives from a
 sandbox on one side and leaves for the client on the other. So the adapter
 forwards an update and translates nothing. OpenClaw is one more client on that
 far side. Read the
-[2026-08-16 addendum to 0015](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md#addendum--2026-08-16-openclaw-is-another-acp-client-spike-verified).
+[2026-08-16 addendum to 0015](https://github.com/managoat/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md#addendum--2026-08-16-openclaw-is-another-acp-client-spike-verified).
 
 ## Related
 

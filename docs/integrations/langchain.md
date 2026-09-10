@@ -41,7 +41,7 @@ fountain keys create langchain
 Clone the example and install it.
 
 ```bash
-git clone https://github.com/BinaryBourbon/fountain
+git clone https://github.com/managoat/fountain
 cd fountain/examples/deepagents-contractor
 pip install -r requirements.txt
 export FOUNTAIN_TOKEN=ftn_...
@@ -151,4 +151,4 @@ set, so the loop stays in one sandbox. Two caveats.
 - A package on PyPI. The file is small enough to copy.
 
 The example is
-[`examples/deepagents-contractor`](https://github.com/BinaryBourbon/fountain/tree/main/examples/deepagents-contractor).
+[`examples/deepagents-contractor`](https://github.com/managoat/fountain/tree/main/examples/deepagents-contractor).

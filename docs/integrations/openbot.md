@@ -222,7 +222,7 @@ fails with `Authentication required`. That reaches the channel as a
 `RUN_ERROR` that names it.
 
 Fountain has no platform-level model key, on purpose
-([ADR 0008](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0008-byo-inference-credentials.md)).
+([ADR 0008](https://github.com/managoat/fountain/blob/main/decisions/0008-byo-inference-credentials.md)).
 
 ## What it does not do yet
 
@@ -236,7 +236,7 @@ Fountain has no platform-level model key, on purpose
   protocol. The API answers such a request at
   `POST /api/conversations/:id/requests/:request_id`, and the AG-UI endpoint
   does not carry it to the host
-  ([#643](https://github.com/BinaryBourbon/fountain/issues/643)).
+  ([#643](https://github.com/managoat/fountain/issues/643)).
 - **Attachments do not travel.** An attachment on an OpenBot message does not
   reach Fountain. The prompt is text.
 

@@ -38,7 +38,7 @@ a subscription, and not metered usage. Read
 [which credential claude uses](../catalog/runtimes/claude.md#which-credential-it-uses).
 
 This is a deliberate design
-([ADR 0008](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0008-byo-inference-credentials.md)).
+([ADR 0008](https://github.com/managoat/fountain/blob/main/decisions/0008-byo-inference-credentials.md)).
 Inference cost scales with usage, and it belongs to the person who causes it.
 Many users also want their own Claude subscription to do the work. If you look
 for a place to set `ANTHROPIC_API_KEY` in the server environment, there is

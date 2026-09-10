@@ -144,7 +144,7 @@ stand_alone() {
   perl -0pi -e '
     s/[ \t]*# Umbrella-first \(decisions\/0037\).*?lockfile: "\.\.\/\.\.\/mix\.lock",\n//s
       or die "mix.exs: umbrella block not found\n";
-    s|\@source_url "https://github\.com/BinaryBourbon/fountain/tree/main/apps/'"$app"'"|\@source_url "https://github.com/managoat/'"$app"'"|
+    s|\@source_url "https://github\.com/managoat/fountain/tree/main/apps/'"$app"'"|\@source_url "https://github.com/managoat/'"$app"'"|
       or die "mix.exs: \@source_url not found\n";
     s|links: %\{"GitHub" => \@source_url\}|links: %{"GitHub" => \@source_url, "Changelog" => "#{\@source_url}/blob/main/CHANGELOG.md"}|
       or die "mix.exs: links not found\n";
@@ -177,8 +177,8 @@ stand_alone() {
   fi
 
   git add -A
-  git commit -q -m "chore: stand alone (from BinaryBourbon/fountain apps/${app} at ${head_sha:0:12})" \
-    -m "The graduation of ${app} out of the Fountain umbrella (BinaryBourbon/fountain#1345, decisions/0037): the managoat-library template (CI, the release gate, the publish workflow, scripts/release.exs, NOTICE, CHANGELOG), mix.exs without its umbrella paths, and a mix.lock of its own. Merging a version bump to main publishes to hex."
+  git commit -q -m "chore: stand alone (from managoat/fountain apps/${app} at ${head_sha:0:12})" \
+    -m "The graduation of ${app} out of the Fountain umbrella (managoat/fountain#1345, decisions/0037): the managoat-library template (CI, the release gate, the publish workflow, scripts/release.exs, NOTICE, CHANGELOG), mix.exs without its umbrella paths, and a mix.lock of its own. Merging a version bump to main publishes to hex."
   echo "   committed $(git rev-parse --short HEAD)"
   cd "$root"
 }

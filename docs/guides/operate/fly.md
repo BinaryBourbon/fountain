@@ -9,7 +9,7 @@ uses Docker Compose, and it is the shorter path.
 
 ## What the file gives you
 
-[`fly.toml`](https://github.com/BinaryBourbon/fountain/blob/main/fly.toml)
+[`fly.toml`](https://github.com/managoat/fountain/blob/main/fly.toml)
 declares one machine on the published image. The machine runs the published
 image, not a build of your checkout. The file gives you an instance that runs.
 It does not describe how the hosted service runs, which is Kubernetes.
@@ -172,7 +172,7 @@ Edit the tag in `fly.toml`, then deploy again.
 
 ```toml
 [build]
-  image = "ghcr.io/binarybourbon/fountain:vX.Y.Z"
+  image = "ghcr.io/managoat/fountain:vX.Y.Z"
 ```
 
 Read [Upgrade an instance](upgrade.md) first. Migrations run at boot, and

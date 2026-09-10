@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/BinaryBourbon/fountain/cli/api"
-	"github.com/BinaryBourbon/fountain/cli/credentials"
+	"github.com/managoat/fountain/cli/api"
+	"github.com/managoat/fountain/cli/credentials"
 )
 
 // activeOpts builds credentials.Opts from the parsed --profile flag.

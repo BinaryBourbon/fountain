@@ -3,9 +3,9 @@ Copyright (c) 2026 Jake Gaylor
 
 Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-This library was extracted from Fountain, https://github.com/BinaryBourbon/fountain,
+This library was extracted from Fountain, https://github.com/managoat/fountain,
 where it began as the umbrella app
   apps/__NAME__
 under decisions/0037 (component libraries, extracted umbrella-first under the
 Managoat namespace), and graduated to this repository in
-BinaryBourbon/fountain#1345.
+managoat/fountain#1345.

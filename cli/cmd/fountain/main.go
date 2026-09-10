@@ -1,6 +1,6 @@
 package main
 
-import "github.com/BinaryBourbon/fountain/cli/internal/cmd"
+import "github.com/managoat/fountain/cli/internal/cmd"
 
 func main() {
 	cmd.Execute()

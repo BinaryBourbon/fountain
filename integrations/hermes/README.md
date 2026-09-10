@@ -1,6 +1,6 @@
 # Fountain plugin for Hermes Agent
 
-Run [Fountain](https://github.com/BinaryBourbon/fountain) agents as tools from
+Run [Fountain](https://github.com/managoat/fountain) agents as tools from
 [Hermes Agent](https://github.com/NousResearch/hermes-agent). Hermes gets
 `fountain_run` and friends; the work runs in a Fountain sandbox.
 
@@ -22,7 +22,7 @@ integrations/hermes/
 ## Install
 
 ```bash
-hermes plugins install BinaryBourbon/fountain/integrations/hermes/fountain --enable
+hermes plugins install managoat/fountain/integrations/hermes/fountain --enable
 # or, from a checkout:
 ln -s "$PWD/integrations/hermes/fountain" ~/.hermes/plugins/fountain && hermes plugins enable fountain
 ```
