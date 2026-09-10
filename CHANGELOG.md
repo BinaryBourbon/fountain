@@ -35,6 +35,12 @@ upgrade, is in
 
 ### Fixed
 
+- Updating an environment, vault, agent or webhook endpoint with the values it
+  already holds no longer records an `*.updated` audit event naming no changed
+  fields, and `fountain apply` reports those rows as `unchanged` rather than
+  claiming an update. A re-apply of the same manifest now writes nothing and
+  says so (#1680).
+
 - A secret edited or rotated in an environment or vault during a brokered
   conversation reaches the broker before the next turn. The broker's copy was
   split once, at provisioning, and only the tenant's connection tokens were

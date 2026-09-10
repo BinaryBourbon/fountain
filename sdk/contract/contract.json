@@ -8380,6 +8380,7 @@
           "enum": [
             "created",
             "error",
+            "unchanged",
             "updated"
           ],
           "required": true,

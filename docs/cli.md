@@ -330,6 +330,12 @@ The server reconciles the environments, then the vaults, then the agents. It
 resolves an agent's `environment:` name reference, and that includes an
 environment that already exists on the server.
 
+The CLI prints `+` for a create, `~` for an update, `=` for a resource that
+already matched the manifest, and `!` for a failure. A second apply of the
+same file prints `=` on every row, because Fountain wrote to none of them.
+Inline `spec.secrets` are the exception. Fountain encrypts them again on each
+apply, so they keep printing `~` under a row that prints `=`.
+
 The server rejects unknown `spec` keys per resource. The CLI prints those
 errors and exits nonzero; valid resources in the same manifest still apply.
 Correct a misspelled field before you retry.

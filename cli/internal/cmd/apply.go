@@ -135,8 +135,8 @@ var applyKindLabels = map[string]string{
 }
 
 // renderApplyResults prints one line per resource in the same format the
-// per-resource loop used (`+` create, `~` update, `!` error to stderr) and
-// reports whether any resource or secret failed.
+// per-resource loop used (`+` create, `~` update, `=` no change, `!` error to
+// stderr) and reports whether any resource or secret failed.
 func renderApplyResults(results []applyResult) (anyFailed bool) {
 	for _, r := range results {
 		label := applyKindLabels[r.Kind]
@@ -148,6 +148,8 @@ func renderApplyResults(results []applyResult) (anyFailed bool) {
 			fmt.Printf("%s  +  %s\n", label, r.Name)
 		case "updated":
 			fmt.Printf("%s  ~  %s\n", label, r.Name)
+		case "unchanged":
+			fmt.Printf("%s  =  %s\n", label, r.Name)
 		default:
 			anyFailed = true
 			warnf("%s  !  %s: %s", label, r.Name, formatResultErrors(r.Errors))

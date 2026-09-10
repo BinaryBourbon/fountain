@@ -30,11 +30,16 @@ defmodule Fountain.Manifest do
 
   Returns `{:ok, results}` with one result map per resource in apply order
   (environments, vaults, agents, then any malformed entries). Each result
-  holds `:kind`, `:name`, an `:action` of `:created` / `:updated` / `:error`,
-  changeset-style `:errors` when the action is `:error`, a `:secrets`
-  list with the per-key upsert outcome, and the reconciled record's `:id`
-  (nil for errors and for kinds that carry no secrets). Secret values are
-  never echoed back.
+  holds `:kind`, `:name`, an `:action` of `:created` / `:updated` /
+  `:unchanged` / `:error`, changeset-style `:errors` when the action is
+  `:error`, a `:secrets` list with the per-key upsert outcome, and the
+  reconciled record's `:id` (nil for errors and for kinds that carry no
+  secrets). Secret values are never echoed back.
+
+  `:unchanged` means the record already matched the document, so nothing was
+  written to it. Inline `spec.secrets` are re-encrypted on every apply and
+  keep reporting `:upserted` in `:secrets`, whatever the row's own verdict
+  says: the stored ciphertext cannot be compared with the plaintext given.
   """
   def apply_manifest(user_id, resources, opts \\ [])
       when is_binary(user_id) and is_list(resources) do
@@ -76,24 +81,21 @@ defmodule Fountain.Manifest do
   defp apply_environment(user_id, %{"name" => name} = res, dek, opts) do
     with :ok <- validate_spec(res, Environments.Environment, ~w(secrets)) do
       {attrs, secrets} = split_spec(res, name)
+      existing = Environments.get_environment_by_name(name, user_id)
 
       outcome =
-        case Environments.get_environment_by_name(name, user_id) do
-          nil ->
-            {:created, Environments.create_environment(Map.put(attrs, "user_id", user_id), opts)}
-
-          env ->
-            {:updated, Environments.update_environment(env, attrs, opts)}
-        end
+        if existing,
+          do: Environments.update_environment(existing, attrs, opts),
+          else: Environments.create_environment(Map.put(attrs, "user_id", user_id), opts)
 
       case outcome do
-        {action, {:ok, env}} ->
+        {:ok, env} ->
           secret_results =
             upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek, secret_opts(opts)))
 
-          {result("Environment", name, action, nil, secret_results, env.id), env}
+          {result("Environment", name, verdict(existing, env), nil, secret_results, env.id), env}
 
-        {_action, {:error, changeset}} ->
+        {:error, changeset} ->
           {result("Environment", name, :error, changeset_errors(changeset), []), nil}
       end
     else
@@ -104,21 +106,21 @@ defmodule Fountain.Manifest do
   defp apply_vault(user_id, %{"name" => name} = res, dek, opts) do
     with :ok <- validate_spec(res, Vaults.Vault, ~w(secrets)) do
       {attrs, secrets} = split_spec(res, name)
+      existing = Vaults.get_vault_by_name(name, user_id)
 
       outcome =
-        case Vaults.get_vault_by_name(name, user_id) do
-          nil -> {:created, Vaults.create_vault(Map.put(attrs, "user_id", user_id), opts)}
-          vault -> {:updated, Vaults.update_vault(vault, attrs, opts)}
-        end
+        if existing,
+          do: Vaults.update_vault(existing, attrs, opts),
+          else: Vaults.create_vault(Map.put(attrs, "user_id", user_id), opts)
 
       case outcome do
-        {action, {:ok, vault}} ->
+        {:ok, vault} ->
           secret_results =
             upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek, secret_opts(opts)))
 
-          result("Vault", name, action, nil, secret_results, vault.id)
+          result("Vault", name, verdict(existing, vault), nil, secret_results, vault.id)
 
-        {_action, {:error, changeset}} ->
+        {:error, changeset} ->
           result("Vault", name, :error, changeset_errors(changeset), [])
       end
     else
@@ -135,20 +137,21 @@ defmodule Fountain.Manifest do
         {:ok, env_attrs} ->
           attrs = Map.merge(attrs, env_attrs)
 
+          existing = Agents.get_agent_by_name(name, user_id)
+
           outcome =
-            case Agents.get_agent_by_name(name, user_id) do
-              nil -> {:created, Agents.create_agent(Map.put(attrs, "user_id", user_id), opts)}
-              agent -> {:updated, Agents.update_agent(agent, attrs, opts)}
-            end
+            if existing,
+              do: Agents.update_agent(existing, attrs, opts),
+              else: Agents.create_agent(Map.put(attrs, "user_id", user_id), opts)
 
           case outcome do
-            {action, {:ok, _agent}} ->
-              result("Agent", name, action, nil, [])
+            {:ok, agent} ->
+              result("Agent", name, verdict(existing, agent), nil, [])
 
             # Moving the agent's environment rebuilds its machine, which a
             # running turn blocks (#1084). Reported against the field that
             # caused it so `fountain apply` says what to do about it.
-            {_action, {:error, :sandbox_mid_turn}} ->
+            {:error, :sandbox_mid_turn} ->
               errors = %{
                 "environment" => [
                   "the agent is running a turn on its own machine; changing its " <>
@@ -158,7 +161,7 @@ defmodule Fountain.Manifest do
 
               result("Agent", name, :error, errors, [])
 
-            {_action, {:error, cs}} ->
+            {:error, cs} ->
               result("Agent", name, :error, changeset_errors(cs), [])
           end
 
@@ -268,6 +271,18 @@ defmodule Fountain.Manifest do
   end
 
   defp split_spec(_res, name), do: {%{"name" => name}, %{}}
+
+  # The third verdict. A record the manifest did not move reads `unchanged`,
+  # so a second apply of the same file says plainly that it wrote nothing.
+  # Compared over the schema's own columns with the timestamps left out: an
+  # Ecto update with no changes moves neither.
+  defp verdict(nil, _updated), do: :created
+
+  defp verdict(%mod{} = before, %mod{} = updated) do
+    fields = mod.__schema__(:fields) -- [:inserted_at, :updated_at]
+
+    if Map.take(before, fields) == Map.take(updated, fields), do: :unchanged, else: :updated
+  end
 
   # `id` is the reconciled record's id when there is one. It is not serialized
   # in the API response; callers use it to attribute the secret writes this

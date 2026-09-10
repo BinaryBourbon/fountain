@@ -134,7 +134,8 @@ public struct Catalog: Sendable, Decodable {
 public struct ApplyResult: Sendable, Decodable, Hashable {
   public var kind: String
   public var name: String
-  /// `created | updated | error`.
+  /// `created | updated | unchanged | error`. `unchanged` means the record
+  /// already matched the document, so nothing was written to it.
   public var action: String
   public var errors: JSONValue?
   public var secrets: [SecretResult]?

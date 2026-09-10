@@ -176,7 +176,10 @@ defmodule FountainWeb.ApplyControllerTest do
       refute conn.resp_body =~ "sekrit-value"
     end
 
-    test "re-apply reports updated actions", %{conn: conn, raw_key: raw_key} do
+    test "re-apply reports unchanged, and a changed spec reports updated", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       payload = %{
         "resources" => [%{"kind" => "Vault", "name" => "v", "spec" => %{}}]
       }
@@ -186,8 +189,17 @@ defmodule FountainWeb.ApplyControllerTest do
       assert %{"data" => %{"results" => [%{"action" => "created"}]}} =
                conn |> auth.() |> post_json(~p"/api/apply", payload) |> json_response(200)
 
-      assert %{"data" => %{"results" => [%{"action" => "updated"}]}} =
+      assert %{"data" => %{"results" => [%{"action" => "unchanged"}]}} =
                build_conn() |> auth.() |> post_json(~p"/api/apply", payload) |> json_response(200)
+
+      moved = %{
+        "resources" => [
+          %{"kind" => "Vault", "name" => "v", "spec" => %{"description" => "moved"}}
+        ]
+      }
+
+      assert %{"data" => %{"results" => [%{"action" => "updated"}]}} =
+               build_conn() |> auth.() |> post_json(~p"/api/apply", moved) |> json_response(200)
     end
 
     test "returns 200 with per-resource errors on partial failure", %{

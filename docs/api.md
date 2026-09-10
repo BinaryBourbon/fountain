@@ -155,8 +155,14 @@ which connection choices the UI can offer.
 
 Use `fountain apply` when a checked-in manifest should define several related
 resources. The CLI compiles the manifest and submits the resource graph.
-Inspect every resource result: one failed resource does not mean that all
+Inspect every resource result. One failed resource does not mean that all
 other writes failed.
+
+Each result row reports `created`, `updated`, `unchanged` or `error`. A
+second apply of an unchanged manifest reports `unchanged` for every row, and
+writes no audit event for those rows. Inline `spec.secrets` are encrypted
+again on each apply, so they keep reporting `upserted` under a row that
+reports `unchanged`.
 
 See [CLI](cli.md) for the workflow and the Apply operation in the
 [generated reference](/api/docs) for its wire format. Unknown configuration
