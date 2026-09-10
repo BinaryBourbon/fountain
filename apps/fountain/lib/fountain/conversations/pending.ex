@@ -52,14 +52,92 @@ defmodule Fountain.Conversations.Pending do
   def into_state(state, %__MODULE__{} = pending),
     do: %{state | caller_calls: pending.calls, permission_timer: pending.permission_timer}
 
+  @doc """
+  The server's whole pending family, over the server's state (#1369).
+
+  Each of these is `from_state/1`, the operation, then `into_state/2` and the
+  turn row written back. They lived in the `ConversationServer` as a private
+  adapter apiece, which is one round trip of boilerplate per call site in a
+  file that only shrinks. Each takes what it needs from state.
+  """
+  @spec ask(map(), term(), String.t(), list()) :: map()
+  def ask(state, request_id, tool, options) do
+    over(state, fn pending, turn ->
+      ask(pending, state.conversation_id, turn, request_id, tool, options)
+    end)
+  end
+
+  @doc "One request's end, whichever way."
+  @spec resolve(map(), term(), String.t(), String.t() | nil) :: map()
+  def resolve(state, request_id, outcome, option_id) do
+    over(state, fn pending, turn ->
+      resolve_permission(
+        pending,
+        state.conversation_id,
+        turn,
+        state.acp_peer,
+        request_id,
+        outcome,
+        option_id
+      )
+    end)
+  end
+
+  @doc "Whatever is held, if anything, as the turn ends."
+  @spec resolve_held(map(), String.t()) :: map()
+  def resolve_held(state, outcome) do
+    over(state, fn pending, turn ->
+      resolve_pending_permission(pending, state.conversation_id, turn, state.acp_peer, outcome)
+    end)
+  end
+
+  @doc "Everything still parked when the turn ends."
+  @spec drop(map(), String.t()) :: map()
+  def drop(state, outcome) do
+    into_state(state, drop_calls(from_state(state), state.conversation_id, outcome))
+  end
+
+  @doc "A human's answer, with the reply to hand back to them."
+  @spec answer(map(), term(), String.t()) :: {:ok | {:error, term()}, map()}
+  def answer(state, request_id, option_id) do
+    {reply, turn, pending} =
+      answer_permission(
+        from_state(state),
+        state.conversation_id,
+        state.current_turn,
+        state.acp_peer,
+        request_id,
+        option_id
+      )
+
+    {reply, %{into_state(state, pending) | current_turn: turn}}
+  end
+
+  defp over(state, fun) do
+    {turn, pending} = fun.(from_state(state), state.current_turn)
+    %{into_state(state, pending) | current_turn: turn}
+  end
+
   # ── permission requests (#940) ────────────────────────────────────────────
 
-  @doc "Re-arm a persisted request using its original ask time after transport recovery."
+  @doc """
+  Re-arm a persisted request using its original ask time after transport
+  recovery.
+
+  A request that outlived its turn (#1635) is skipped. Its deadline is on the
+  row and its own, and the sweep owns it; arming the in-turn timer over it
+  would deny it at the five-minute ceiling the detach exists to escape. The
+  reattach path only ever passes a `running` turn, and a detached one is
+  `completed`, so this is the belt to that braces.
+  """
   def restore_permission_timer(%__MODULE__{} = pending, turn) do
     if pending.permission_timer, do: Process.cancel_timer(pending.permission_timer)
 
     timer =
       case turn do
+        %{waiting: true} ->
+          nil
+
         %{pending_permission: %{"request_id" => id} = request} ->
           remaining =
             case DateTime.from_iso8601(request["asked_at"] || "") do
