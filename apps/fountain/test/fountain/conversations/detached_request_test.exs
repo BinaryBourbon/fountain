@@ -16,6 +16,7 @@ defmodule Fountain.Conversations.DetachedRequestTest do
   alias Fountain.Audit
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, DetachedRequest}
+  alias Fountain.Workers.DetachedRequestSweeper
 
   @options [
     %{"optionId" => "allow", "kind" => "allow_once", "name" => "Apply"},
@@ -356,6 +357,120 @@ defmodule Fountain.Conversations.DetachedRequestTest do
                Conversations.answer_permission_request(conv.id, user.id, "7.abc", "allow")
 
       assert Repo.reload(turn).waiting
+    end
+  end
+
+  describe "the sweep" do
+    test "denies a request past its deadline and tells the agent" do
+      %{conv: conv, turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      record_wake()
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 1
+
+      reloaded = Repo.reload(turn)
+      refute reloaded.waiting
+      refute reloaded.pending_permission
+
+      assert [event] = request_stages(conv.id, "done")
+      assert event["outcome"] == "timeout"
+      # Chosen from the agent's own list, never invented.
+      assert event["option_id"] == "deny"
+
+      assert_receive {:resume_prompt, prompt}
+
+      assert %{"fountain/permission_answer" => %{"outcome" => "timeout", "option_id" => "deny"}} =
+               Jason.decode!(prompt)
+    end
+
+    test "the denial is audited to the sweep, because no human decided it" do
+      %{user: user} = waiting_conversation(deadline: hours_from_now(-1))
+      record_wake()
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 1
+
+      assert denied =
+               user.id
+               |> Audit.list_recent_for_user(50)
+               |> Enum.find(&(&1.action == "conversation.permission_denied"))
+
+      assert denied.actor == "system:detached_request_sweeper"
+      assert denied.metadata["tool"] == "Bash"
+      assert denied.metadata["verdict"] == "timeout"
+    end
+
+    test "a running turn leaves the request for the next sweep" do
+      # The denial is owed, but the turn that carries it cannot queue behind a
+      # turn already in flight. Resolving anyway would lose it with nothing to
+      # retry from.
+      %{conv: conv, turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
+      reject(&ConversationServer.send_prompt/4)
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+
+      reloaded = Repo.reload(turn)
+      assert reloaded.waiting
+      assert reloaded.pending_permission["request_id"] == "7.abc"
+      assert request_stages(conv.id, "done") == []
+    end
+
+    test "a spent balance leaves the request for the next sweep" do
+      %{user: user, conv: conv, turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      drain_credit(user)
+
+      # No `reject/1` here: the second half of this test needs the delivery to
+      # work. The untouched row and the silent stream are what say the first
+      # sweep delivered nothing.
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+      assert Repo.reload(turn).waiting
+      assert request_stages(conv.id, "done") == []
+
+      # And it is not lost: the next sweep, after a top-up, carries it.
+      {:ok, _} = Fountain.Credits.grant(user.id, 500, "grant_admin", idempotency_key: "topup")
+      record_wake()
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 1
+      refute Repo.reload(turn).waiting
+    end
+
+    test "a conversation that is over resolves the request without a resume turn" do
+      # No turn will ever carry the denial, so the card stops waiting rather
+      # than the sweep finding the same row every minute forever.
+      %{conv: conv, turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
+      reject(&ConversationServer.send_prompt/4)
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 1
+
+      refute Repo.reload(turn).waiting
+      assert [%{"outcome" => "timeout"}] = request_stages(conv.id, "done")
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+    end
+
+    test "a request still inside its deadline is left alone" do
+      %{turn: turn} = waiting_conversation(deadline: hours_from_now(24))
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+      assert Repo.reload(turn).waiting
+    end
+
+    test "a turn that is not waiting is never a candidate, whatever its deadline" do
+      # A request held inside a running turn is the process timer's, and this
+      # sweep must not reach into one.
+      %{turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+
+      {:ok, _} =
+        Repo.update(Ecto.Changeset.change(turn, waiting: false, status: "running"))
+
+      assert DetachedRequestSweeper.sweep_expired_requests() == 0
+    end
+
+    test "the worker runs the sweep" do
+      %{turn: turn} = waiting_conversation(deadline: hours_from_now(-1))
+      record_wake()
+
+      assert :ok = DetachedRequestSweeper.perform(%Oban.Job{args: %{}})
+      refute Repo.reload(turn).waiting
     end
   end
 

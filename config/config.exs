@@ -28,6 +28,12 @@ config :fountain, Oban,
        # A server's autonomous quiet timer is in memory. Sweep old, silent
        # running turns whose server disappeared before that timer fired.
        {"*/5 * * * *", Fountain.Workers.AutonomousTurnReaper},
+       # Every minute: deny permission requests that outlived their turn and
+       # then ran out of time (#1635). Their deadline is on the turn row
+       # rather than in a process timer, because the sandbox parks and the
+       # server stops while such a request waits. One indexed query, usually
+       # empty.
+       {"* * * * *", Fountain.Workers.DetachedRequestSweeper},
        # Every 5 minutes: expire claimable principals nobody claimed (ADR
        # 0044). Latency here is money — an expired principal is a sprite still
        # running for a visitor who has gone — so the sweep runs on the same

@@ -4262,6 +4262,48 @@ defmodule Fountain.Conversations do
     end
   end
 
+  @doc """
+  Deny a detached request whose deadline has passed, and tell the agent
+  (#1635).
+
+  The denial picks from the options the agent itself offered, never an id it
+  did not send. Recorded as `conversation.permission_denied` with the sweep as
+  the actor, because no human was at the keyboard and saying otherwise would
+  be a lie about who decided.
+  """
+  @spec _unsafe_expire_detached_request(Turn.t(), keyword()) ::
+          :ok | {:error, term()}
+  def _unsafe_expire_detached_request(%Turn{} = turn, opts \\ []) do
+    request = turn.pending_permission
+    option_id = DetachedRequest.deny_option_id(request)
+    actor = Keyword.get(opts, :actor, "system:detached_request_sweeper")
+
+    # The gate first, for the same reason the answer door applies it first: a
+    # request resolved into a prompt nobody can deliver is gone, the agent is
+    # never told, and there is no second copy to retry from. The deadline has
+    # passed either way, so leaving the row is the safe half of the trade —
+    # the sweep is back in a minute.
+    #
+    # A conversation that is over is the exception: no turn will ever carry
+    # the denial, so the request is resolved and the card stops waiting.
+    case _unsafe_resume_gate(turn.conversation_id) do
+      :ok ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          resume_after_request(turn, request, "timeout", option_id, actor: actor)
+        end
+
+      {:error, :gone} ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          :ok
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
   # The resolution reaches the agent as a new turn, because the peer that
   # raised the request is gone and its JSON-RPC id with it. `send_prompt/4`
   # wakes a suspended sandbox on the way, which is the whole point of letting
@@ -4296,17 +4338,19 @@ defmodule Fountain.Conversations do
   Record that the permission policy withheld a tool from a running agent.
 
   Called by the `ConversationServer` when its peer reports a refusal (#939).
-  The actor is `sprite`: the agent asked, the policy answered, and no human was
-  involved — attributing it to the person who happened to write the policy
-  would be a lie about who was at the keyboard.
+  The actor defaults to `sprite`: the agent asked, the policy answered, and no
+  human was involved — attributing it to the person who happened to write the
+  policy would be a lie about who was at the keyboard. A detached request that
+  ran out of time (#1635) passes the sweep instead, for the same reason.
 
   Only refusals are recorded. A turn makes dozens of tool calls and a row per
   allow would make the trail a second copy of the transcript, which 0013
   forbids for exactly this reason. The tool's *input* is never recorded, only
   its name and the verdict.
   """
-  @spec record_permission_denied(binary(), String.t() | nil, String.t()) :: :ok
-  def record_permission_denied(conversation_id, tool, verdict) when is_binary(conversation_id) do
+  @spec record_permission_denied(binary(), String.t() | nil, String.t(), keyword()) :: :ok
+  def record_permission_denied(conversation_id, tool, verdict, opts \\ [])
+      when is_binary(conversation_id) do
     case _unsafe_get_conversation(conversation_id) do
       nil ->
         :ok
@@ -4317,7 +4361,7 @@ defmodule Fountain.Conversations do
           action: "conversation.permission_denied",
           resource_type: "conversation",
           resource_id: conv.id,
-          actor: "sprite",
+          actor: Keyword.get(opts, :actor, "sprite"),
           metadata: %{"tool" => tool, "verdict" => verdict}
         })
 
