@@ -1,5 +1,6 @@
 defmodule Fountain.ManifestTest do
   use Fountain.DataCase, async: true
+  use Mimic
 
   alias Fountain.{Agents, Audit, Crypto, Environments, Manifest, Vaults}
 
@@ -201,6 +202,50 @@ defmodule Fountain.ManifestTest do
       {:ok, second} = Manifest.apply_manifest(user.id, resources)
       assert Enum.all?(second, &(&1.action == :unchanged))
       assert actions_for(user) == before
+    end
+
+    # Best-effort per resource means per resource. Before this, a raise in one
+    # document abandoned a call that had already committed the documents above
+    # it, so the caller got a 500 and no rows at all — for writes that had
+    # already landed.
+    test "an exception in one document fails that row and not the request", %{user: user} do
+      env = insert_env(user_id: user.id, name: "proj")
+      insert_agent(user_id: user.id, name: "moves")
+
+      # Moving an agent's environment asks whether the machine it would orphan
+      # is mid-turn. That is the reach outside the changeset on this path.
+      stub(Fountain.Conversations, :_unsafe_homes_orphaned_by_environment, fn _a, _e ->
+        raise "the sandbox provider fell over"
+      end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:ok, results} =
+                   Manifest.apply_manifest(user.id, [
+                     env_resource("proj"),
+                     agent_resource("moves", %{"environment" => "proj"}),
+                     agent_resource("fine", %{"environment" => "proj"})
+                   ])
+
+          assert [
+                   %{kind: "Environment", action: :unchanged},
+                   %{name: "moves", action: :error, errors: errors},
+                   %{name: "fine", action: :created}
+                 ] = results
+
+          # The row says the pass failed and nothing more. The raised text stays
+          # in the log: the environment and vault passes hold plaintext secrets
+          # inside the same rescue, and an Elixir exception message embeds the
+          # value it choked on.
+          assert errors == %{"base" => ["apply failed unexpectedly; see the server log"]}
+          refute inspect(errors) =~ "sandbox provider fell over"
+        end)
+
+      assert log =~ "sandbox provider fell over"
+
+      # The documents above the failure stayed, and the ones below still applied.
+      assert Environments.get_environment_by_name("proj", user.id).id == env.id
+      assert Agents.get_agent_by_name("fine", user.id).environment_id == env.id
     end
 
     defp actions_for(user),
