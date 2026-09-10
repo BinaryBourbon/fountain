@@ -559,7 +559,7 @@ export interface paths {
         put?: never;
         /**
          * Apply a compiled manifest (bulk upsert)
-         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled by name — environments first, then vaults, then agents — so agent specs may reference an environment by name via `spec.environment`. Application is best-effort per resource: the response is 200 even when individual resources fail, with per-resource errors in the result entries.
+         * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled in a fixed order — environments, vaults, agents, teammates — so a spec may name another document whatever the file's order: an agent's `environment`, and a teammate's `agent`, `environment` and `vault`. Every kind is keyed by the document's `name`. A `Teammate` is read as a whole declaration, so an absent `environment` or `vault` clears that binding, and moving either retires the computer the old binding named (refused with an error on that row while a turn is running on it). Two Teammate documents may not name the same agent. Apply is additive: a document dropped from the manifest leaves its record in place. Application is best-effort per resource: the response is 200 even when an individual resource fails validation, is refused by its context or raises, with per-resource errors in the result entries.
          */
         post: operations["FountainWeb.ApplyController.create"];
         delete?: never;
@@ -3909,11 +3909,11 @@ export interface components {
         };
         /**
          * ManifestResource
-         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Agent specs may reference an environment by name via `environment`; the server resolves it to `environment_id`.
+         * @description One compiled document from a fountain.yml manifest. `spec` matches the create/update schema for the kind, plus an inline `secrets` map (Environment and Vault). Specs reference other documents by name, and the server resolves each to an id: an Agent's `environment`, and a Teammate's `agent`, `environment` and `vault`. Teammate specs take `agent`, `environment` and `vault`, and a Teammate document is read as a whole declaration, so an absent `environment` or `vault` clears that binding.
          */
         ManifestResource: {
             /** @enum {string} */
-            kind: "Environment" | "Vault" | "Agent";
+            kind: "Environment" | "Vault" | "Agent" | "Teammate";
             name: string;
             spec?: {
                 [key: string]: unknown;

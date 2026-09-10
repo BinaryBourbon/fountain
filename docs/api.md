@@ -158,6 +158,37 @@ resources. The CLI compiles the manifest and submits the resource graph.
 Inspect every resource result. One failed resource does not mean that all
 other writes failed.
 
+A manifest holds four kinds. Fountain reconciles them in a fixed order, which
+is `Environment`, `Vault`, `Agent` and `Teammate`. A document can name another
+document whatever its position in the file. An `Agent` names an
+`environment`. A `Teammate` names an `agent`, an `environment` and a `vault`.
+Each name resolves against the manifest first, then against the records the
+account already holds. A name that matches neither fails that document alone.
+
+A `Teammate` document is the whole teammate. Drop `environment` or `vault`
+from it and the apply clears that binding, which puts the teammate back on
+the agent's own environment and on no vault. The other three kinds behave the
+other way around, where an absent `spec` key leaves that field alone.
+
+Rebinding a teammate moves its computer. Fountain retires the machine the old
+binding named, so the next message builds one from the new environment and
+vault. It refuses the whole row while a turn is running on that machine. A
+conversation that shared the retired machine, and that names a different
+environment or vault, does not follow the teammate onto the new one. It
+builds a machine from what it names on its own next message.
+
+Fountain keeps one machine for each agent, environment and vault. The row
+fails when the agent already has one on the environment and vault the
+teammate moves to. Fountain does not join the teammate to that machine.
+Reset or delete the machine first, then apply again.
+
+Apply is additive. A document that you delete from the manifest leaves its
+record in place. There is no prune.
+
+The audit trail names each applied row. Teammate rows record
+`team.member.added` and `team.updated`. Each row carries the actor and the IP
+address of the request that applied it.
+
 Each result row reports `created`, `updated`, `unchanged` or `error`. A
 second apply of an unchanged manifest reports `unchanged` for every row, and
 writes no audit event for those rows. Inline `spec.secrets` are encrypted

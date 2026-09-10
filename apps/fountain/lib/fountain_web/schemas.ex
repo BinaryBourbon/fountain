@@ -3122,11 +3122,15 @@ defmodule FountainWeb.Schemas do
       description:
         "One compiled document from a fountain.yml manifest. `spec` matches the " <>
           "create/update schema for the kind, plus an inline `secrets` map " <>
-          "(Environment and Vault). Agent specs may reference an environment by " <>
-          "name via `environment`; the server resolves it to `environment_id`.",
+          "(Environment and Vault). Specs reference other documents by name, and " <>
+          "the server resolves each to an id: an Agent's `environment`, and a " <>
+          "Teammate's `agent`, `environment` and `vault`. Teammate specs take " <>
+          "`agent`, `environment` and `vault`, and a Teammate document is read " <>
+          "as a whole declaration, so an absent `environment` or `vault` clears " <>
+          "that binding.",
       type: :object,
       properties: %{
-        kind: %Schema{type: :string, enum: ["Environment", "Vault", "Agent"]},
+        kind: %Schema{type: :string, enum: ["Environment", "Vault", "Agent", "Teammate"]},
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         spec: %Schema{type: :object, additionalProperties: true}
       },

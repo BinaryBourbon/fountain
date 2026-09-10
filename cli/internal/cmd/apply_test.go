@@ -30,6 +30,7 @@ func TestBuildApplyPayloadOrdersAndStrips(t *testing.T) {
 			"runtime":     "claude",
 			"environment": "proj",
 		})},
+		"Teammate": {doc("Teammate", "Ada", map[string]any{"agent": "researcher"})},
 	}
 
 	// Payload order is the reconciliation order, whatever order the manifest
@@ -75,6 +76,7 @@ func TestGroupDocsBucketsEveryKind(t *testing.T) {
 	docs := []*manifest.Doc{
 		doc("Agent", "a", nil),
 		doc("Cluster", "nope", nil),
+		doc("Teammate", "Ada", nil),
 		doc("Environment", "e", nil),
 		doc("Vault", "v", nil),
 	}

@@ -75,10 +75,11 @@ func runApply(cmd *cobra.Command, args []string) error {
 
 // applyKindOrder is the order the server reconciles in, and the order the
 // payload is built in so the printed output reads the same way. A document
-// may name another whatever the file's order — an agent's `spec.environment`
-// — and the server resolves it by name, including against records that
-// already exist and are not part of this manifest.
-var applyKindOrder = []string{"Environment", "Vault", "Agent"}
+// may name another whatever the file's order: an agent's `spec.environment`,
+// a teammate's `spec.agent`/`environment`/`vault`. The server resolves each by
+// name, including against records that already exist and are not part of this
+// manifest.
+var applyKindOrder = []string{"Environment", "Vault", "Agent", "Teammate"}
 
 // applyResource is one compiled manifest document. The whole manifest is
 // sent to POST /api/apply in a single request.
@@ -183,10 +184,21 @@ func formatResultErrors(errs map[string]any) string {
 
 // legacyApply is the pre-bulk reconciliation path: one GET+write per
 // resource and one POST per secret. Kept for servers without /api/apply.
+//
+// A server that has no /api/apply also has none of the kinds beyond the first
+// three, so those are reported rather than reconciled: the run failed to do
+// what the manifest asked.
 func legacyApply(c *api.Client, grouped map[string][]*manifest.Doc) {
 	envs, vaults, agents := grouped["Environment"], grouped["Vault"], grouped["Agent"]
 	envIDByName := map[string]string{}
 	anyFailed := false
+
+	for _, kind := range applyKindOrder[3:] {
+		for _, d := range grouped[kind] {
+			anyFailed = true
+			warnf("%s  !  %s: this server is too old to apply %s documents", strings.ToLower(kind), d.Name(), kind)
+		}
+	}
 
 	for _, d := range envs {
 		if envID, ok := applyEnvironment(c, d); ok {
