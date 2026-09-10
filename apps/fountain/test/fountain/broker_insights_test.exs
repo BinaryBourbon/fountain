@@ -43,6 +43,7 @@ defmodule Fountain.Broker.Native.InsightsTest do
              injected: 0,
              passthrough: 0,
              denied: 0,
+             no_credential: 0,
              failed: 0
            }
 
@@ -81,6 +82,7 @@ defmodule Fountain.Broker.Native.InsightsTest do
              injected: 2,
              passthrough: 2,
              denied: 1,
+             no_credential: 0,
              failed: 1
            }
 
@@ -182,6 +184,133 @@ defmodule Fountain.Broker.Native.InsightsTest do
     assert session.credential_keys == ["GITHUB_TOKEN", "OPENAI_API_KEY"]
     refute Map.has_key?(session, :rules_ciphertext)
     refute Map.has_key?(session, :token_hash)
+  end
+
+  # `managoat_broker` refuses a request whose credential it cannot supply with
+  # a 502 that carries BOTH `outcome: denied` and `error: credential_missing`
+  # (its `refusal_error/1`; every other refusal writes no error). Counting
+  # `error IS NOT NULL` put that one request in Denied and in Failed at once,
+  # in the tiles, in both tables and in both `top_hosts` columns.
+  test "a refusal the broker made is counted once, under denied", %{user: user, conv: conv} do
+    log!(user, conv,
+      outcome: "denied",
+      error: "credential_missing",
+      status: 502,
+      host: "api.github.com"
+    )
+
+    # Policy refusals write no error at all.
+    log!(user, conv, outcome: "denied", status: 403, host: "api.github.com")
+    # A forward that broke: this is what Failed means.
+    log!(user, conv, outcome: "passthrough", error: "client_closed", host: "api.github.com")
+
+    overview = Insights._unsafe_overview_admin(24)
+
+    assert overview.window.denied == 2
+    assert overview.window.no_credential == 1
+    assert overview.window.failed == 1
+
+    assert overview.window.injected + overview.window.passthrough + overview.window.denied ==
+             overview.window.requests
+
+    assert [%{host: "api.github.com", requests: 3, denied: 2, failed: 1}] = overview.hosts
+
+    assert Enum.map(overview.denied, & &1.error) |> Enum.sort() == [nil, "credential_missing"]
+    assert Enum.map(overview.failed, & &1.error) == ["client_closed"]
+    assert overview.errors == [%{error: "client_closed", requests: 1}]
+  end
+
+  # `desc: r.id` and `desc: r.inserted_at` read the same and plan differently:
+  # only the second can stop at the window's edge, which is the whole reason
+  # the log table has an `inserted_at` index.
+  test "the two action lists are newest first", %{user: user, conv: conv} do
+    for minutes <- [30, 10, 20] do
+      at = DateTime.add(DateTime.utc_now(), -minutes, :minute)
+      log!(user, conv, outcome: "denied", host: "denied-#{minutes}.example", inserted_at: at)
+
+      log!(user, conv,
+        error: "upstream_reset",
+        host: "failed-#{minutes}.example",
+        inserted_at: at
+      )
+    end
+
+    overview = Insights._unsafe_overview_admin(24)
+
+    assert Enum.map(overview.denied, & &1.host) ==
+             ["denied-10.example", "denied-20.example", "denied-30.example"]
+
+    assert Enum.map(overview.failed, & &1.host) ==
+             ["failed-10.example", "failed-20.example", "failed-30.example"]
+  end
+
+  # `Sessions.create/1` releases nothing but expired rows, so a conversation
+  # holds one per provision and reattach. Oldest-first showed the stalest
+  # duplicates and hid the token the sandbox is actually dialling with.
+  test "live sessions are the most recently minted", %{user: user, conv: conv} do
+    for _ <- 1..3 do
+      {:ok, _} =
+        Sessions.create(%{
+          conversation_id: conv.id,
+          user_id: user.id,
+          rules: [],
+          meta: %{},
+          ttl_seconds: 600
+        })
+    end
+
+    [oldest, middle, _newest] =
+      Repo.all(from(s in Fountain.Broker.Native.Session, order_by: [asc: s.inserted_at]))
+
+    # The stale duplicates outlive the current one, so soonest-to-expire is
+    # exactly the wrong order to truncate on.
+    Repo.update_all(from(s in Fountain.Broker.Native.Session, where: s.id == ^oldest.id),
+      set: [expires_at: DateTime.add(DateTime.utc_now(), 30, :second)]
+    )
+
+    Repo.update_all(from(s in Fountain.Broker.Native.Session, where: s.id == ^middle.id),
+      set: [expires_at: DateTime.add(DateTime.utc_now(), 60, :second)]
+    )
+
+    overview = Insights._unsafe_overview_admin(24)
+
+    assert overview.sessions.live == 3
+    assert overview.sessions.conversations == 1
+
+    assert Enum.map(overview.live_sessions, & &1.id) ==
+             Repo.all(from(s in Fountain.Broker.Native.Session, order_by: [desc: s.inserted_at]))
+             |> Enum.map(& &1.id)
+  end
+
+  # The variable names come from a second read, because `array_agg` of arrays
+  # of different lengths does not work. That read used to span the window and
+  # have all but the ten displayed bindings thrown away on the next line.
+  test "the variable-name read names the bindings it is for", %{user: user, conv: conv} do
+    log!(user, conv, outcome: "injected", service: "gh", credential_keys: ["GITHUB_TOKEN"])
+
+    test_pid = self()
+    handler = {__MODULE__, make_ref()}
+
+    :telemetry.attach(
+      handler,
+      [:fountain, :repo, :query],
+      # `:telemetry` handlers are global, so this fires for every query every
+      # concurrent async test runs. Only this process's are ours.
+      fn _, _, meta, _ ->
+        if self() == test_pid and String.contains?(meta.query, "unnest") do
+          send(test_pid, {:keys_query, meta.query})
+        end
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    assert [%{service: "gh", credential_keys: ["GITHUB_TOKEN"]}] =
+             Insights._unsafe_overview_admin(24).services
+
+    assert_received {:keys_query, query}
+    assert query =~ ~r/service.* = ANY\(/
   end
 
   test "a deleted tenant's rows go with the tenant", %{user: user, conv: conv} do

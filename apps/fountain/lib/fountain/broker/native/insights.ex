@@ -28,6 +28,7 @@ defmodule Fountain.Broker.Native.Insights do
 
   @default_window_hours 24
   @windows [1, 24, 168]
+  @live_sessions_limit 50
 
   @doc "The windows the page offers, in hours."
   @spec windows() :: [pos_integer()]
@@ -48,8 +49,14 @@ defmodule Fountain.Broker.Native.Insights do
     * `:services` — the bindings whose credential the proxy attached, and the
       variable names it attached (never a value).
     * `:denied` — the most recent refusals, each linked to its conversation.
-    * `:errors` — how requests failed, by reason, in the window.
-    * `:live_sessions` — the sessions themselves, soonest to expire first.
+    * `:errors` — how forwarding failed, by reason, in the window. A refusal
+      the broker made is not in here; it is counted under `:window.denied`
+      and its `:no_credential` subset.
+    * `:live_sessions` — the sessions themselves, most recently minted first.
+      A conversation can hold more than one (`Sessions.create/1` mints on
+      every provision and reattach and releases only on expiry), so this is
+      capped at #{@live_sessions_limit}; `:live_sessions_total` is the true
+      count at the same read, and the page says when the list is short of it.
 
   `window_hours` is clamped to `windows/0`.
   """
@@ -57,8 +64,9 @@ defmodule Fountain.Broker.Native.Insights do
   def _unsafe_overview_admin(window_hours \\ @default_window_hours) do
     hours = if window_hours in @windows, do: window_hours, else: @default_window_hours
     since = DateTime.add(DateTime.utc_now(), -hours, :hour)
+    health = _unsafe_health_admin()
 
-    Map.merge(_unsafe_health_admin(), %{
+    Map.merge(health, %{
       window_hours: hours,
       window: window_counts(since),
       hosts: top_hosts(since, 10),
@@ -66,7 +74,11 @@ defmodule Fountain.Broker.Native.Insights do
       denied: recent(since, :denied, 20),
       errors: error_counts(since),
       failed: recent(since, :failed, 10),
-      live_sessions: live_sessions(50)
+      live_sessions: live_sessions(@live_sessions_limit),
+      # Taken with the list, not from `:sessions`: the health tick refreshes
+      # that count every 30s and leaves the list alone, so comparing the two
+      # would call the list truncated as soon as one new session was minted.
+      live_sessions_total: health.sessions.live
     })
   end
 
@@ -90,22 +102,16 @@ defmodule Fountain.Broker.Native.Insights do
     end
   end
 
-  # The derived CA's end, or nil where the broker is off. Read through the
-  # same function the telemetry tick uses, so the page and the alert can
-  # never disagree about the date.
+  # The derived CA's end, or nil where the broker is off. This calls the one
+  # function `emit_telemetry/0` derives `fountain_broker_ca_expires_in_seconds`
+  # from, so the page and `FountainBrokerCaExpiring` cannot disagree about the
+  # date. It used to be a second copy of the same PEM-to-DateTime chain with a
+  # comment claiming exactly this.
   defp ca_expires_at do
-    with :native <- Broker.backend(),
-         {:ok, pem} <- Fountain.Broker.Native.ca_pem() do
-      pem
-      |> X509.Certificate.from_pem!()
-      |> X509.Certificate.validity()
-      |> elem(2)
-      |> X509.DateTime.to_datetime()
-    else
+    case Broker.backend() do
+      :native -> Fountain.Broker.Native.ca_expires_at()
       _ -> nil
     end
-  rescue
-    _ -> nil
   end
 
   defp session_counts do
@@ -140,7 +146,22 @@ defmodule Fountain.Broker.Native.Insights do
           injected: count(fragment("CASE WHEN ? = 'injected' THEN 1 END", r.outcome)),
           passthrough: count(fragment("CASE WHEN ? = 'passthrough' THEN 1 END", r.outcome)),
           denied: count(fragment("CASE WHEN ? = 'denied' THEN 1 END", r.outcome)),
-          failed: count(r.error)
+          no_credential:
+            count(
+              fragment(
+                "CASE WHEN ? = 'denied' AND ? = 'credential_missing' THEN 1 END",
+                r.outcome,
+                r.error
+              )
+            ),
+          failed:
+            count(
+              fragment(
+                "CASE WHEN ? IS NOT NULL AND ? <> 'denied' THEN 1 END",
+                r.error,
+                r.outcome
+              )
+            )
         }
     )
   end
@@ -157,7 +178,14 @@ defmodule Fountain.Broker.Native.Insights do
           requests: count(r.id),
           injected: count(fragment("CASE WHEN ? = 'injected' THEN 1 END", r.outcome)),
           denied: count(fragment("CASE WHEN ? = 'denied' THEN 1 END", r.outcome)),
-          failed: count(r.error)
+          failed:
+            count(
+              fragment(
+                "CASE WHEN ? IS NOT NULL AND ? <> 'denied' THEN 1 END",
+                r.error,
+                r.outcome
+              )
+            )
         }
     )
   end
@@ -167,27 +195,36 @@ defmodule Fountain.Broker.Native.Insights do
   # Two reads rather than an aggregate over an array column: `array_agg` of
   # arrays needs every row the same length, which they are not.
   defp top_services(since, limit) do
-    keys = keys_by_service(since)
+    services =
+      Repo.all(
+        from r in Request,
+          where: r.inserted_at >= ^since and r.outcome == "injected" and not is_nil(r.service),
+          group_by: r.service,
+          order_by: [desc: count(r.id)],
+          limit: ^limit,
+          select: %{
+            service: r.service,
+            requests: count(r.id),
+            conversations: count(r.conversation_id, :distinct)
+          }
+      )
 
-    Repo.all(
-      from r in Request,
-        where: r.inserted_at >= ^since and r.outcome == "injected" and not is_nil(r.service),
-        group_by: r.service,
-        order_by: [desc: count(r.id)],
-        limit: ^limit,
-        select: %{
-          service: r.service,
-          requests: count(r.id),
-          conversations: count(r.conversation_id, :distinct)
-        }
-    )
-    |> Enum.map(&Map.put(&1, :credential_keys, Map.get(keys, &1.service, [])))
+    keys = keys_by_service(since, Enum.map(services, & &1.service))
+
+    Enum.map(services, &Map.put(&1, :credential_keys, Map.get(keys, &1.service, [])))
   end
 
-  defp keys_by_service(since) do
+  # Named services only, never the whole window: the unrestricted form read
+  # every injected row to build a map whose entries beyond these ten were
+  # thrown away on the next line.
+  defp keys_by_service(_since, []), do: %{}
+
+  defp keys_by_service(since, services) do
     Repo.all(
       from r in Request,
-        where: r.inserted_at >= ^since and r.outcome == "injected" and not is_nil(r.service),
+        where:
+          r.inserted_at >= ^since and r.outcome == "injected" and
+            r.service in ^services,
         distinct: true,
         select: {r.service, fragment("unnest(?)", r.credential_keys)}
     )
@@ -203,12 +240,18 @@ defmodule Fountain.Broker.Native.Insights do
   defp recent(since, :failed, limit),
     do: since |> recent_query(limit) |> where_failed() |> Repo.all()
 
+  # `desc: r.inserted_at` rather than `desc: r.id`, which reads identically
+  # and plans very differently: with a filter on `outcome` or `error` (neither
+  # indexed) a backward primary-key walk has no reason to stop at the window's
+  # edge, so a window holding no refusal walked the whole retained log to
+  # prove it. Ordering on the indexed column bounds the scan to the window.
+  # `r.id` stays as the tiebreak so rows sharing a timestamp keep an order.
   defp recent_query(since, limit) do
     from r in Request,
       left_join: u in User,
       on: u.id == r.user_id,
       where: r.inserted_at >= ^since,
-      order_by: [desc: r.id],
+      order_by: [desc: r.inserted_at, desc: r.id],
       limit: ^limit,
       select: %{
         id: r.id,
@@ -225,12 +268,14 @@ defmodule Fountain.Broker.Native.Insights do
   end
 
   defp where_outcome(query, outcome), do: from(r in query, where: r.outcome == ^outcome)
-  defp where_failed(query), do: from(r in query, where: not is_nil(r.error))
+
+  defp where_failed(query),
+    do: from(r in query, where: not is_nil(r.error) and r.outcome != "denied")
 
   defp error_counts(since) do
     Repo.all(
       from r in Request,
-        where: r.inserted_at >= ^since and not is_nil(r.error),
+        where: r.inserted_at >= ^since and not is_nil(r.error) and r.outcome != "denied",
         group_by: r.error,
         order_by: [desc: count(r.id)],
         select: %{error: r.error, requests: count(r.id)}
@@ -248,7 +293,7 @@ defmodule Fountain.Broker.Native.Insights do
         left_join: u in User,
         on: u.id == s.user_id,
         where: s.expires_at > ^now,
-        order_by: [asc: s.expires_at],
+        order_by: [desc: s.inserted_at],
         limit: ^limit,
         select: %{
           id: s.id,

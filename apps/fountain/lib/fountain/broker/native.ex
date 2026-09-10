@@ -478,22 +478,45 @@ defmodule Fountain.Broker.Native do
     :ok
   end
 
+  @doc """
+  When the derived root every brokered sandbox trusts stops being valid, or
+  `nil` where this deployment holds no CA to read.
+
+  Public because two readers need the same answer: `emit_telemetry/0` turns
+  it into `fountain_broker_ca_expires_in_seconds`, which is what
+  `FountainBrokerCaExpiring` alerts on, and `/admin/broker` prints the date.
+  A second copy of the PEM-to-`DateTime` chain would let the page and the
+  alert disagree about the one date whose passing stops every sandbox
+  trusting the proxy.
+  """
+  @spec ca_expires_at() :: DateTime.t() | nil
+  def ca_expires_at do
+    {:ok, pem} = ca_pem()
+
+    pem
+    |> X509.Certificate.from_pem!()
+    |> X509.Certificate.validity()
+    |> elem(2)
+    |> X509.DateTime.to_datetime()
+  rescue
+    _ -> nil
+  end
+
   # The root the library derives has a fixed twenty-year window today, so
   # this reads as a constant. It is exported anyway: the number is the one
   # thing that turns "the CA is fine" from an assumption into a series, and
   # a library that ever shortens the window becomes visible here rather than
   # on the day every sandbox stops trusting the proxy.
   defp ca_expires_in_seconds do
-    {:ok, pem} = ca_pem()
+    case ca_expires_at() do
+      %DateTime{} = not_after ->
+        DateTime.diff(not_after, DateTime.utc_now())
 
-    not_after =
-      pem
-      |> X509.Certificate.from_pem!()
-      |> X509.Certificate.validity()
-      |> elem(2)
-      |> X509.DateTime.to_datetime()
-
-    DateTime.diff(not_after, DateTime.utc_now())
+      # Skip the datapoint rather than publish a nil the alert would read as
+      # zero seconds left. `TelemetryTick` logs it and the next tick retries.
+      nil ->
+        raise "broker CA is unreadable, so its expiry gauge has no value"
+    end
   end
 
   # Which environment variables each rule's credential came from, by rule

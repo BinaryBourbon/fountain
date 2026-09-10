@@ -63,23 +63,38 @@ defmodule FountainWeb.AdminLive.Broker do
 
   defp assign_overview(socket), do: refresh_overview(socket, :all)
 
+  # `require_admin` runs once, at mount; a role or a session can be revoked
+  # while the tab is open, so every read rechecks before it queries. The three
+  # ineligible cases land where `FountainWeb.Live.Hooks` would have sent them
+  # — an operator who was only demoted still holds a valid session, and a
+  # login form in front of them reads as a failed login (#533).
   defp refresh_overview(socket, scope) do
     mounted = socket.assigns.current_user
 
     case Fountain.Accounts.get_user(mounted.id) do
-      %{role: "admin", email_verified_at: verified, session_version: version}
-      when not is_nil(verified) and version == mounted.session_version ->
-        overview =
-          case scope do
-            :all -> Insights._unsafe_overview_admin(socket.assigns.window)
-            :health -> Map.merge(socket.assigns.overview, Insights._unsafe_health_admin())
-          end
+      %{session_version: version} = user when version == mounted.session_version ->
+        eligible(socket, user, scope)
 
-        assign(socket, :overview, overview)
-
+      # No such user any more, or the session was revoked out from under it.
       _ ->
         redirect(socket, to: ~p"/auth/login")
     end
+  end
+
+  defp eligible(socket, %{email_verified_at: nil}, _scope),
+    do: redirect(socket, to: ~p"/auth/verify-pending")
+
+  defp eligible(socket, %{role: role}, _scope) when role != "admin",
+    do: push_navigate(socket, to: ~p"/dashboard")
+
+  defp eligible(socket, _user, scope) do
+    overview =
+      case scope do
+        :all -> Insights._unsafe_overview_admin(socket.assigns.window)
+        :health -> Map.merge(socket.assigns.overview, Insights._unsafe_health_admin())
+      end
+
+    assign(socket, :overview, overview)
   end
 
   @impl true
@@ -115,7 +130,8 @@ defmodule FountainWeb.AdminLive.Broker do
 
       <p class="text-xs text-zinc-500">
         Counts describe recorded requests. Dropped log rows are absent; check
-        <code>FountainBrokerLogDropping</code> in Grafana before treating counts as complete.
+        <code>FountainBrokerLogDropping</code>
+        in Grafana before treating counts as complete.
       </p>
 
       <div
@@ -184,7 +200,12 @@ defmodule FountainWeb.AdminLive.Broker do
           </.tile>
           <.tile label="Denied" alert={@overview.window.denied > 0}>
             {@overview.window.denied}
-            <:note>{share(@overview.window.denied, @overview.window.requests)}</:note>
+            <:note>
+              {share(@overview.window.denied, @overview.window.requests)}
+              <span :if={@overview.window.no_credential > 0}>
+                · {@overview.window.no_credential} for a missing credential
+              </span>
+            </:note>
           </.tile>
           <.tile label="Failed" alert={@overview.window.failed > 0}>
             {@overview.window.failed}
@@ -266,10 +287,23 @@ defmodule FountainWeb.AdminLive.Broker do
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Denied</h2>
         <p class="text-xs text-zinc-500">
-          These are host-policy denials: hosts outside a limited environment's allowed list.
+          Every request the broker answered itself. Most are policy working: a <code>403</code>
+          for a host outside a limited environment's allowed list. A
+          <code>502 credential_missing</code>
+          is not policy but the broker failing to hold a credential a rule names, so the request
+          was refused rather than sent without one; a run of them is one tenant's secret missing,
+          undecryptable or not yet granted, and this window holds
+          <span class={[@overview.window.no_credential > 0 && "text-red-700 font-medium"]}>
+            {@overview.window.no_credential}
+          </span>
+          of them. A <code>413</code>
+          is a body over the size limit. The <span class="font-medium">Ended</span>
+          column names which, because the binding does not reach the row: a refusal never matched
+          a rule the log could record.
           Unresolved proxy tokens are refused before a request row exists and do not appear here.
-          Check <code>fountain.broker.session_lookup</code> and the
-          <code>FountainBrokerSessionsUnresolvable</code> alert for those failures.
+          Check <code>fountain.broker.session_lookup</code>
+          and the <code>FountainBrokerSessionsUnresolvable</code>
+          alert for those failures.
         </p>
         <.request_table rows={@overview.denied} empty="Nothing was denied in this window." />
       </section>
@@ -281,7 +315,8 @@ defmodule FountainWeb.AdminLive.Broker do
           is the sandbox hanging up first, usually a cancelled turn;
           <code class="font-mono">upstream_*</code>
           is the origin, and a run of them on one host
-          is that host having a bad time, not the broker.
+          is that host having a bad time, not the broker. A refusal is not in here — it never
+          forwarded, so it is counted once, under Denied.
         </p>
         <.request_table rows={@overview.failed} empty="Nothing failed in this window." />
       </section>
@@ -291,6 +326,15 @@ defmodule FountainWeb.AdminLive.Broker do
         <div :if={@overview.live_sessions == []} class="text-sm text-zinc-500">
           No sandbox holds a proxy token right now.
         </div>
+        <p
+          :if={@overview.live_sessions_total > length(@overview.live_sessions)}
+          class="text-xs text-amber-700"
+        >
+          The {@overview.live_sessions_total} live sessions do not fit: these are the {length(
+            @overview.live_sessions
+          )} most recently minted. A conversation holds one per provision and reattach until each
+          expires, so a conversation can appear more than once.
+        </p>
         <table
           :if={@overview.live_sessions != []}
           class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"

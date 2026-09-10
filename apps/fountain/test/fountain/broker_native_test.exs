@@ -954,6 +954,23 @@ defmodule Fountain.BrokerNativeTest do
       assert left > 0
     end
 
+    # The page prints a date and the alert reads a countdown. Two copies of the
+    # PEM-to-`DateTime` chain would let them disagree about the one date whose
+    # passing stops every sandbox trusting the proxy, which is what a comment
+    # in `Insights` claimed could not happen while it was a second copy.
+    test "the gauge and the date /admin/broker prints come from one function" do
+      ref = :telemetry_test.attach_event_handlers(self(), [[:fountain, :broker, :ca]])
+      on_exit(fn -> :telemetry.detach(ref) end)
+
+      before = DateTime.utc_now()
+      assert :ok = Native.emit_telemetry()
+      assert_received {[:fountain, :broker, :ca], ^ref, %{expires_in_seconds: left}, _}
+
+      assert %DateTime{} = not_after = Native.ca_expires_at()
+      # The gauge is that date minus a `utc_now/0` taken a moment earlier.
+      assert_in_delta left, DateTime.diff(not_after, before), 2
+    end
+
     test "emits nothing when this deployment does not run the native backend" do
       Application.delete_env(:fountain, :broker_listen_port)
 
