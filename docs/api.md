@@ -321,6 +321,9 @@ conversation returns 403 `sprite_may_not_label_another_conversation`. This
 applies to all three doors that write labels, which are the labels route, a
 team message, and a `channel_id` resume.
 
+`conversation.*` webhook payloads carry `labels` under `data`. See
+[Webhooks](reference/webhooks.md).
+
 ### An agent that labels its own run
 
 An agent inside a turn does not need the route above. It sends an ACP

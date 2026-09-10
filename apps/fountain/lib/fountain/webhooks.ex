@@ -327,7 +327,8 @@ defmodule Fountain.Webhooks do
               user_id: c.user_id,
               agent_id: c.agent_id,
               parent_conversation_id: c.parent_conversation_id,
-              status: c.status
+              status: c.status,
+              labels: c.labels
             },
             e
           }
@@ -340,7 +341,8 @@ defmodule Fountain.Webhooks do
   end
 
   @doc """
-  The event envelope. Ids, a stage, a status, a duration. Nothing else, ever.
+  The event envelope. Ids, a stage, a status, a duration, the labels.
+  Nothing else, ever.
 
   `status` is the conversation's status as read at dispatch time, which can
   be stale by a hair against the transition that triggered it. Documented as
@@ -357,6 +359,10 @@ defmodule Fountain.Webhooks do
         "agent_id" => conv.agent_id,
         "parent_conversation_id" => conv.parent_conversation_id,
         "status" => conv.status,
+        # The conversation's labels (#1637). Ids and facts a program put
+        # there itself, never content, which is what keeps them inside the
+        # "ids, a stage, a status, a duration" rule above.
+        "labels" => conv.labels || %{},
         "stage" => event.stage,
         "state" => event.state,
         "turn_id" => event.turn_id,

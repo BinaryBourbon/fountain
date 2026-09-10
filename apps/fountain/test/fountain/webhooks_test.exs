@@ -202,12 +202,32 @@ defmodule Fountain.WebhooksTest do
                "agent_id",
                "conversation_id",
                "duration_ms",
+               "labels",
                "parent_conversation_id",
                "stage",
                "state",
                "status",
                "turn_id"
              ]
+    end
+
+    test "the payload carries the conversation's labels (#1637)", %{user: user, conv: conv} do
+      {endpoint, _} = endpoint_for(user, %{"event_types" => ["*"]})
+      {:ok, _} = Conversations._unsafe_merge_labels(conv, %{"env" => "prod", "drift" => "true"})
+
+      Conversations.publish_stage(conv.id, "turn", "done", %{turn_id: nil})
+
+      assert [job] = jobs_for(endpoint)
+      assert job.args["payload"]["data"]["labels"] == %{"env" => "prod", "drift" => "true"}
+    end
+
+    test "an unlabelled conversation still carries an object", %{user: user, conv: conv} do
+      {endpoint, _} = endpoint_for(user, %{"event_types" => ["*"]})
+
+      Conversations.publish_stage(conv.id, "turn", "done", %{turn_id: nil})
+
+      assert [job] = jobs_for(endpoint)
+      assert job.args["payload"]["data"]["labels"] == %{}
     end
 
     test "output events never dispatch", %{user: user, conv: conv} do
