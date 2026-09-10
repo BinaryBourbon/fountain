@@ -616,6 +616,132 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
     end)
   end
 
+  for path <- [:fresh, :attach] do
+    test "concurrent #{path} rotations retain only the winner after a PostgreSQL lock wait" do
+      rotation_race(unquote(path))
+    end
+  end
+
+  defp rotation_race(path) do
+    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
+      user =
+        Repo.insert!(%Fountain.Accounts.User{
+          email: "rotation-race-#{Ecto.UUID.generate()}@example.test",
+          credit_balance_cents: 500,
+          sandbox_limit_override: 20
+        })
+
+      env = Fountain.Factory.insert_env(user_id: user.id)
+
+      agent =
+        Fountain.Factory.insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
+
+      sandbox =
+        Fountain.Factory.insert_sandbox(
+          user_id: user.id,
+          agent_id: agent.id,
+          environment_id: env.id,
+          status: "ready"
+        )
+
+      previous =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox: sandbox,
+          status: "idle",
+          channel_id: "rotation"
+        )
+
+      owner = self()
+
+      params = %{
+        "user_id" => user.id,
+        "agent_id" => agent.id,
+        "channel_id" => "rotation",
+        "fresh" => true
+      }
+
+      params =
+        if path == :fresh,
+          do: Map.put(params, "sandbox_mode", "ephemeral"),
+          else: Map.put(params, "sandbox_id", sandbox.id)
+
+      try do
+        Repo.transaction(fn ->
+          # An actual FK insert holds KEY SHARE on the old conversation.
+          # Rotating its channel must coexist with references to that row.
+          insert_allowance(previous.id)
+
+          winner =
+            independent_writer(fn ->
+              Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:ok, self()} end)
+
+              Mimic.stub(Allowance, :new_changeset, fn id, limits ->
+                send(owner, :rotation_reserved)
+
+                receive do
+                  :commit -> Mimic.call_original(Allowance, :new_changeset, [id, limits])
+                after
+                  5_000 -> raise "rotation barrier timed out"
+                end
+              end)
+
+              Conversations.start_or_resume_conversation(params)
+            end)
+
+          try do
+            assert_receive :rotation_reserved, 5_000
+            # Uncommitted unbinding is invisible: the existing conversation remains
+            # the channel's binding while the winner waits to commit admission.
+            assert Conversations.channel_conversation(params).id == previous.id
+
+            loser =
+              independent_writer(fn ->
+                Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _, _ ->
+                  send(owner, :unexpected_worker_started)
+                  {:error, :fixture_rejection}
+                end)
+
+                Conversations.start_or_resume_conversation(params)
+              end)
+
+            try do
+              assert_receive {:backend, winner_pid, winner_backend}, 5_000
+              assert winner_pid == winner.pid
+              assert_receive {:backend, loser_pid, loser_backend}, 5_000
+              assert loser_pid == loser.pid
+              refute winner_backend == loser_backend
+              await_blocked(loser_backend, System.monotonic_time(:millisecond) + 5_000)
+              send(winner.pid, :commit)
+              assert {:ok, replacement, :created} = Task.await(winner)
+              assert {:error, changeset} = Task.await(loser)
+              assert errors_on(changeset).channel_id == ["binding changed; retry the rotation"]
+              assert Conversations.channel_conversation(params).id == replacement.id
+              assert Repo.reload!(previous).channel_id == nil
+              assert length(Conversations.list_conversations(user.id)) == 2
+              expected_sandboxes = if path == :fresh, do: 2, else: 1
+
+              assert Repo.aggregate(from(s in Sandbox, where: s.user_id == ^user.id), :count) ==
+                       expected_sandboxes
+
+              refute_received :unexpected_worker_started
+            after
+              Task.shutdown(loser, :brutal_kill)
+            end
+          after
+            Task.shutdown(winner, :brutal_kill)
+          end
+        end)
+      after
+        Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
+        sandboxes = Repo.all(from s in Sandbox, where: s.user_id == ^user.id)
+        Repo.delete!(user)
+        for saved <- sandboxes, do: Repo.delete!(saved)
+      end
+    end)
+  end
+
   defp race(mode) do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
       # These rows must be committed: sharing the test's sandbox connection would
