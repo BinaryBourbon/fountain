@@ -980,6 +980,9 @@ defmodule Fountain.Conversations.TurnMachine do
   a PTY so `isatty(0)` is true), `dir` (a workspace with a local .git) and
   `prompt_suffix` (image references for a runtime that cannot take images
   as flags).
+
+  On the acp runtime the argv is the agent's own `runtime_command` (#1634),
+  which is why the agent is in hand here as well as the conversation.
   """
   @spec command(
           boolean(),
@@ -992,7 +995,7 @@ defmodule Fountain.Conversations.TurnMachine do
         ) :: {String.t(), [String.t()], keyword()}
   def command(acp?, conv, agent, prompt, mode, runtime_session_id, opts) do
     if acp? do
-      {c, a} = Fountain.RuntimeDispatch.command(conv.runtime)
+      {c, a} = Fountain.RuntimeDispatch.command(conv.runtime, agent)
       # The ACP `cwd` is validated in band by the agent CLI against the real
       # filesystem, so it must be the path a process inside the sandbox sees
       # — identity on hosted providers, the mapped directory on a runner
@@ -1053,7 +1056,7 @@ defmodule Fountain.Conversations.TurnMachine do
   def acp_model(_conv, nil), do: nil
 
   def acp_model(conv, agent),
-    do: Managoat.Runtimes.Model.acp_model(conv.runtime || agent.runtime, agent.model)
+    do: Fountain.RuntimeDispatch.acp_model(conv.runtime || agent.runtime, agent.model)
 
   # The permission policy in force for this turn (#939): the agent's own,
   # clamped by whatever narrowing the launch asked for. Resolved per turn from
