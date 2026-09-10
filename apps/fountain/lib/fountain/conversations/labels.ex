@@ -8,9 +8,9 @@ defmodule Fountain.Conversations.Labels do
   `env=prod`, `drift=true`, `gated=apply`. Those facts are not text worth
   searching, so they are not in the full-text index and never will be.
 
-  Every door that writes labels goes through `changeset/1` here, called from
-  `Fountain.Conversations.Conversation.changeset/2`, so the limits cannot
-  drift between one writer and the next:
+  Every door that writes labels goes through `changeset/1` here, so the
+  limits cannot drift between the create request, the labels route, the team
+  message and the ACP extension notification:
 
     * at most 32 entries;
     * a key is a non-empty string of at most 64 bytes;
@@ -37,6 +37,8 @@ defmodule Fountain.Conversations.Labels do
   """
 
   import Ecto.Changeset, only: [get_change: 2, add_error: 3]
+
+  require Logger
 
   @max_entries 32
   @max_key_bytes 64
@@ -261,6 +263,59 @@ defmodule Fountain.Conversations.Labels do
      |> Enum.filter(&Map.has_key?(current, &1))
      |> Enum.sort()}
   end
+
+  @doc """
+  Merge the labels an agent stamped on its own run over the ACP extension
+  notification (#1637).
+
+  Unscoped, hence the prefix: it takes a bare conversation id and writes to
+  that row without a `user_id` and without a credential check. The only
+  caller is `Fountain.Conversations.TurnMachine`, running inside the
+  conversation's own `ConversationServer`, holding the id that server was
+  started with — so it cannot name another tenant's conversation, or another
+  conversation of the same tenant. A request-shaped caller wants
+  `Fountain.Conversations.set_conversation_labels/4`, which scopes by
+  `user_id` and applies the sandbox rule.
+
+  Recorded as `sprite` — code in the sandbox acting on the tenant's behalf
+  (ADR 0013).
+
+  **Nothing a label contains can take the turn down.** A stamp the limits
+  refuse is logged and dropped, and so is one that raises on its way to the
+  database. The run is mid-turn and doing real work, and losing it because a
+  value was 300 bytes long, or held a byte `jsonb` will not store, would be
+  the worse outcome by a distance.
+  """
+  @spec _unsafe_stamp(String.t() | nil, map()) :: :ok
+  def _unsafe_stamp(conversation_id, labels)
+
+  def _unsafe_stamp(conversation_id, labels)
+      when is_binary(conversation_id) and is_map(labels) do
+    # ownership: `conversation_id` is the id the calling `ConversationServer`
+    # was started with, held by its own turn machine. It cannot name another
+    # conversation, so both unscoped calls below are on this server's own row.
+    with %{} = conv <- Fountain.Conversations._unsafe_get_conversation(conversation_id),
+         {:error, changeset} <-
+           Fountain.Conversations._unsafe_merge_labels(conv, labels, actor: "sprite") do
+      Logger.warning(
+        "conv #{conversation_id}: refused _fountain/labels update: #{inspect(changeset.errors)}"
+      )
+    end
+
+    :ok
+  rescue
+    error ->
+      # The belt to `check_entry/2`'s braces. Every shape we know of is
+      # refused above with a message; this is here so that a shape we do not
+      # know of costs the stamp and not the turn.
+      Logger.warning(
+        "conv #{conversation_id}: _fountain/labels update raised: #{Exception.message(error)}"
+      )
+
+      :ok
+  end
+
+  def _unsafe_stamp(_conversation_id, _labels), do: :ok
 
   @doc """
   Every `label` value in a raw query string, in the order they were sent.

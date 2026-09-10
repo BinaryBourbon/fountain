@@ -183,7 +183,9 @@ defmodule FountainWeb.ConversationController do
         "256 bytes. A 422 names the offending key.\n\n" <>
         "The account's own key may label any of its conversations. A sandbox callback token " <>
         "may label **only the conversation it was minted for**; another id is refused with " <>
-        "403 `sprite_may_not_label_another_conversation`.",
+        "403 `sprite_may_not_label_another_conversation`. An agent inside a turn does not " <>
+        "need this route at all: it sends the `_fountain/labels` ACP extension update " <>
+        "instead.",
     parameters: [conversation_id: [in: :path, type: :string, required: true]],
     request_body: {"Labels", "application/json", Schemas.ConversationLabelsRequest},
     responses: [

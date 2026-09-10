@@ -1769,4 +1769,160 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
                GenServer.call(pid, {:park_caller_tool, "lookup_order", %{}, self()})
     end
   end
+
+  describe "labels over the ACP extension (#1637)" do
+    setup do
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+      {pid, ref} = start_acp_turn(conv)
+      {:ok, user: user, conv: conv, pid: pid, ref: ref}
+    end
+
+    defp labels_of(conv_id), do: Conversations._unsafe_get_conversation!(conv_id).labels
+
+    test "the agent stamps its own conversation mid-turn", %{conv: conv, pid: pid, ref: ref} do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "_fountain/labels",
+        "labels" => %{"drift" => "true", "env" => "prod"}
+      })
+
+      assert labels_of(conv.id) == %{"drift" => "true", "env" => "prod"}
+    end
+
+    test "a second stamp merges rather than replaces", %{conv: conv, pid: pid, ref: ref} do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"env" => "prod"}})
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"run" => "17"}})
+
+      assert labels_of(conv.id) == %{"env" => "prod", "run" => "17"}
+    end
+
+    test "a null value removes a key", %{conv: conv, pid: pid, ref: ref} do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "_fountain/labels",
+        "labels" => %{"env" => "prod", "run" => "17"}
+      })
+
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"env" => nil}})
+
+      assert labels_of(conv.id) == %{"run" => "17"}
+    end
+
+    test "the stamp never reaches the transcript", %{conv: conv, pid: pid, ref: ref} do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"env" => "prod"}})
+
+      events = Conversations._unsafe_list_log_events(conv.id)
+      refute Enum.any?(events, &(&1.data =~ "_fountain/labels"))
+    end
+
+    test "a stamp the limits refuse is dropped and the turn survives", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "_fountain/labels",
+        "labels" => %{"note" => String.duplicate("v", 300)}
+      })
+
+      assert labels_of(conv.id) == %{}
+      assert Process.alive?(pid)
+
+      # And the turn still ends normally.
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+    end
+
+    # Postgres refuses a NUL inside a jsonb string. Before `check_entry/2`
+    # rejected it, the write raised a Postgrex.Error inside the turn machine,
+    # which travelled up through `drive_turn/2` and killed the server and the
+    # turn it was running — a label costing a run.
+    test "a NUL byte in a stamp costs the stamp and not the turn", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "_fountain/labels",
+        "labels" => %{"note" => "before\u0000after"}
+      })
+
+      assert labels_of(conv.id) == %{}
+      assert Process.alive?(pid)
+
+      # The turn still ends, and a later legal stamp still lands.
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"env" => "prod"}})
+      assert labels_of(conv.id) == %{"env" => "prod"}
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+    end
+
+    # The extension is recognised by a decode, not by a substring: the cheap
+    # `String.contains?` in front of it is an optimisation, and agent prose
+    # that happens to mention the kind is still prose.
+    test "agent output that mentions the kind is still transcript", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "agent_message_chunk",
+        "content" => %{
+          "type" => "text",
+          "text" => ~s|stamp it with {"sessionUpdate":"_fountain/labels"}|
+        }
+      })
+
+      events = Conversations._unsafe_list_log_events(conv.id)
+      assert Enum.any?(events, &(&1.stream == "acp" and &1.data =~ "_fountain/labels"))
+
+      # And it labelled nothing.
+      assert labels_of(conv.id) == %{}
+    end
+
+    test "a stamp out of turn opens no autonomous turn", %{conv: conv, pid: pid, ref: ref} do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      before = length(Conversations._unsafe_list_turns(conv.id))
+
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"env" => "prod"}})
+
+      assert labels_of(conv.id) == %{"env" => "prod"}
+      assert length(Conversations._unsafe_list_turns(conv.id)) == before
+    end
+
+    test "the write is recorded as the sprite, with keys and no values", %{
+      user: user,
+      pid: pid,
+      ref: ref
+    } do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{"sessionUpdate" => "_fountain/labels", "labels" => %{"drift" => "true"}})
+
+      assert [event] =
+               user.id
+               |> Fountain.Audit.list_recent_for_user(50)
+               |> Enum.filter(&(&1.action == "conversation.labels_set"))
+
+      assert event.actor == "sprite"
+      assert event.metadata["keys"] == ["drift"]
+      refute inspect(event.metadata) =~ "true"
+    end
+  end
 end
