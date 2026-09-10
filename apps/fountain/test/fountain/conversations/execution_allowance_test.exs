@@ -504,6 +504,97 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
     end)
   end
 
+  test "attachment rechecks an account ceiling after a PostgreSQL lock wait" do
+    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
+      user =
+        Repo.insert!(%Fountain.Accounts.User{
+          email: "attach-policy-race-#{Ecto.UUID.generate()}@example.test",
+          credit_balance_cents: 500
+        })
+
+      env = Fountain.Factory.insert_env(user_id: user.id)
+
+      agent =
+        Fountain.Factory.insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
+
+      sandbox =
+        Fountain.Factory.insert_sandbox(
+          user_id: user.id,
+          agent_id: agent.id,
+          environment_id: env.id,
+          status: "ready"
+        )
+
+      owner = self()
+
+      winner =
+        independent_writer(fn ->
+          Repo.transaction(fn ->
+            updated =
+              user
+              |> Fountain.Accounts.User.execution_limits_changeset(%{max_model_turns: 2})
+              |> Repo.update!()
+
+            send(owner, :ceiling_changed)
+
+            receive do
+              :commit -> updated
+            after
+              5_000 -> raise "commit barrier timed out"
+            end
+          end)
+        end)
+
+      try do
+        assert_receive :ceiling_changed, 5_000
+
+        loser =
+          independent_writer(fn ->
+            Conversations.start_conversation(%{
+              "user_id" => user.id,
+              "agent_id" => agent.id,
+              "sandbox_id" => sandbox.id
+            })
+          end)
+
+        try do
+          assert_receive {:backend, winner_pid, winner_backend}, 5_000
+          assert winner_pid == winner.pid
+          assert_receive {:backend, loser_pid, loser_backend}, 5_000
+          assert loser_pid == loser.pid
+          refute winner_backend == loser_backend
+          await_blocked(loser_backend, System.monotonic_time(:millisecond) + 5_000)
+          send(winner.pid, :commit)
+          assert {:ok, _} = Task.await(winner)
+
+          assert {:error, {:execution_limits_unsupported, ["max_model_turns"]}} =
+                   Task.await(loser)
+
+          assert Conversations.list_conversations(user.id) == []
+
+          refute Repo.exists?(
+                   from e in Fountain.Audit.Event,
+                     where:
+                       e.user_id == ^user.id and
+                         e.action in [
+                           "conversation.created",
+                           "conversation.execution_allowance_created"
+                         ]
+                 )
+
+          assert Repo.reload!(sandbox) == sandbox
+        after
+          Task.shutdown(loser, :brutal_kill)
+        end
+      after
+        Task.shutdown(winner, :brutal_kill)
+        Repo.delete_all(from e in Fountain.Audit.Event, where: e.user_id == ^user.id)
+        Repo.delete!(user)
+        Repo.get!(Sandbox, sandbox.id) |> Repo.delete!()
+      end
+    end)
+  end
+
   defp race(mode) do
     Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
       # These rows must be committed: sharing the test's sandbox connection would

@@ -1200,20 +1200,24 @@ defmodule Fountain.Conversations do
       end)
 
     with {:ok, allowance} <- result do
-      Audit.record(%{
-        user_id: user_id,
-        action: "conversation.execution_allowance_created",
-        resource_type: "conversation",
-        resource_id: conversation_id,
-        actor: Keyword.get(opts, :actor, "self"),
-        request_ip: Keyword.get(opts, :request_ip),
-        metadata: %{
-          "controls" => Enum.filter(ExecutionLimits.keys(), &Map.has_key?(allowance.limits, &1))
-        }
-      })
+      record_execution_allowance_created(allowance, user_id, opts)
 
       {:ok, allowance}
     end
+  end
+
+  defp record_execution_allowance_created(allowance, user_id, opts) do
+    Audit.record(%{
+      user_id: user_id,
+      action: "conversation.execution_allowance_created",
+      resource_type: "conversation",
+      resource_id: allowance.conversation_id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{
+        "controls" => Enum.filter(ExecutionLimits.keys(), &Map.has_key?(allowance.limits, &1))
+      }
+    })
   end
 
   @doc """
@@ -2036,14 +2040,19 @@ defmodule Fountain.Conversations do
   # control before reserving capacity, attaching or unbinding a channel; an
   # SDK option alone must not make admission promise a bounded execution.
   defp check_execution_limits(user_id, request) do
+    with {:ok, _limits} <- resolve_admission_limits(user_id, request), do: :ok
+  end
+
+  defp resolve_admission_limits(user_id, request) do
     # Ownership: each caller just fetched the agent by this authenticated user.
     # Read the current account policy, never a request-supplied or cached map.
     case {Fountain.Accounts.get_user(user_id),
           Application.get_env(:fountain, :execution_limit_ceiling, %{})} do
       {%Fountain.Accounts.User{execution_limits: ceiling}, host}
       when is_map(ceiling) and is_map(host) ->
-        with {:ok, limits} <- ExecutionLimits.resolve(host, ceiling, request) do
-          ExecutionLimits.require_controls(limits, [])
+        with {:ok, limits} <- ExecutionLimits.resolve(host, ceiling, request),
+             :ok <- ExecutionLimits.require_controls(limits, []) do
+          {:ok, limits}
         end
 
       {nil, _} ->
@@ -2715,25 +2724,29 @@ defmodule Fountain.Conversations do
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
          :ok <- check_attach_capacity(sandbox, agent, attrs["prompt"]),
          {:ok, conv} <-
-           create_conversation(%{
-             sandbox_id: sandbox.id,
-             agent_id: agent.id,
-             # Ownership: agent came from the scoped get_agent above.
-             agent_version_id: Agents._unsafe_current_version_id(agent.id),
-             vault_id: vault_id,
-             environment_id: env_id,
-             user_id: user_id,
-             runtime: agent.runtime,
-             status: "idle",
-             source: attrs["source"] || "api",
-             parent_conversation_id: parent_id,
-             channel_id: attrs["channel_id"],
-             title: attrs["title"],
-             permission_policy: perm_policy,
-             # The bridge's tools (#1202) ride on both create paths: this
-             # one is what a home sandbox's second conversation takes.
-             caller_tools: attrs["caller_tools"] || []
-           }) do
+           create_attached_conversation(
+             %{
+               sandbox_id: sandbox.id,
+               agent_id: agent.id,
+               # Ownership: agent came from the scoped get_agent above.
+               agent_version_id: Agents._unsafe_current_version_id(agent.id),
+               vault_id: vault_id,
+               environment_id: env_id,
+               user_id: user_id,
+               runtime: agent.runtime,
+               status: "idle",
+               source: attrs["source"] || "api",
+               parent_conversation_id: parent_id,
+               channel_id: attrs["channel_id"],
+               title: attrs["title"],
+               permission_policy: perm_policy,
+               # The bridge's tools (#1202) ride on both create paths: this
+               # one is what a home sandbox's second conversation takes.
+               caller_tools: attrs["caller_tools"] || []
+             },
+             attrs["execution_limits"],
+             opts
+           ) do
       Audit.record(%{
         user_id: user_id,
         action: "conversation.created",
@@ -2756,6 +2769,50 @@ defmodule Fountain.Conversations do
     else
       nil -> {:error, :not_found}
       {:error, _} = err -> err
+    end
+  end
+
+  # Commit policy with the new conversation, before analytics, audit or prompt
+  # delivery. Lock its owners and recheck ceilings after the early preflight.
+  defp create_attached_conversation(attrs, request, opts) do
+    result =
+      Repo.transaction(fn ->
+        Repo.one(
+          from u in Fountain.Accounts.User,
+            where: u.id == ^attrs.user_id,
+            select: u.id,
+            lock: "FOR SHARE"
+        ) || Repo.rollback(:not_found)
+
+        agent =
+          Repo.one(
+            from a in Agents.Agent,
+              where: a.id == ^attrs.agent_id and a.user_id == ^attrs.user_id,
+              lock: "FOR SHARE"
+          ) || Repo.rollback(:not_found)
+
+        sandbox =
+          Repo.one(
+            from s in Sandbox,
+              where: s.id == ^attrs.sandbox_id and s.user_id == ^attrs.user_id,
+              lock: "FOR SHARE"
+          ) || Repo.rollback(:not_found)
+
+        with :ok <- check_attachable(sandbox, agent, attrs.vault_id, attrs.environment_id),
+             {:ok, limits} <- resolve_admission_limits(attrs.user_id, request),
+             {:ok, conv} <- %Conversation{} |> Conversation.changeset(attrs) |> Repo.insert(),
+             {:ok, allowance} <-
+               conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
+          {conv, allowance}
+        else
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+    with {:ok, {conv, allowance}} <- result do
+      Fountain.Activation.conversation_created(conv)
+      record_execution_allowance_created(allowance, conv.user_id, opts)
+      {:ok, conv}
     end
   end
 
