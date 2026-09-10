@@ -1,23 +1,38 @@
 ---
 type: ADR
 title: "The repo moves to the managoat organization, and every coordinate that names its owner moves with it"
-description: "BinaryBourbon/fountain — a personal user account — transfers to managoat/fountain. The repo name and the project name stay Fountain (0034). The owner-scoped coordinates move in the same window because the transfer forces them: ghcr.io/managoat/fountain and ghcr.io/managoat/fountain-manifests, github.com/managoat/fountain/cli and the Buzz provider module beside it, managoat/homebrew-tap. The registry names that carry no owner (npm @agentshit, PyPI fountain-agent-sdk, hex fountain_sdk) are decided here and moved after, each in its own PR. Not built: the transfer has not happened, and nothing in this file is in effect yet."
+description: "Done on 2026-09-10: BinaryBourbon/fountain — a personal user account — transferred to managoat/fountain, keeping the repo name and the project name (0034). The owner-scoped coordinates moved with it: ghcr.io/managoat/fountain and ghcr.io/managoat/fountain-manifests, github.com/managoat/fountain/cli and the Buzz provider module beside it, managoat/homebrew-tap. Production reconciles the new artifact and serves the new image. The registry names that carry no owner (npm @agentshit, PyPI fountain-agent-sdk, hex fountain_sdk) are decided here and move separately. Two things are still owed and named in the status block: the v0.16.0 image tag at the new path, and PyPI's trusted publisher."
 tags: [infra, open-source, release, deploy]
 status: stable
 adr: "0048"
 adr_status: "Accepted"
 date: 2026-09-10
-generated: { by: human:jhgaylor, at: 2026-09-10T06:02:22-04:00 }
-stale_after: 2026-10-10
+generated: { by: human:jhgaylor, at: 2026-09-10T06:44:48-04:00 }
+verified: { by: human:jhgaylor, at: 2026-09-10T06:44:48-04:00 }
 ---
 
 # 0048 — The repo moves to the managoat organization, and every coordinate that names its owner moves with it
 
-**Status:** Accepted, and **nothing described here is built**. The repo is
-still `BinaryBourbon/fountain`; every path, image and module in the "after"
-column below is a target, not a current fact. The PR that performs the
-transfer and lands the path sweep removes this caveat, sets `verified`, and
-drops `stale_after`.
+**Status:** Accepted and **done on 2026-09-10**. The repo is
+`managoat/fountain`, the sweep landed in #1795, the image and the manifest
+artifact publish to `ghcr.io/managoat/*`, home-cloud#221 flipped the
+`OCIRepository`, and production serves
+`ghcr.io/managoat/fountain:sha-e6fd69e6…` with `/llms.txt` pointing readers at
+`github.com/managoat/fountain`. What the cutover found, including three things
+this file did not predict, is in *After the move* below.
+
+**Two things are still owed**, neither of them blocking:
+
+- **`ghcr.io/managoat/fountain:v0.16.0` does not exist.** The quick-start pin
+  names it, and `ci.yml` takes its release-bump exemption rather than failing,
+  so the compose boot check is **skipped on every run** — a green check that
+  currently boots nothing. Either copy the tag
+  (`docker buildx imagetools create -t ghcr.io/managoat/fountain:v0.16.0 ghcr.io/binarybourbon/fountain:v0.16.0`,
+  which needs a token with `write:packages`) or accept it until the next
+  release publishes a version tag at the new path.
+- **PyPI's trusted publisher still names the old owner.** Web-only to change;
+  until it does, the next Python SDK release fails, and a failed publish is
+  invisible to every gate here.
 
 ## Context
 
@@ -138,11 +153,17 @@ and we do not delete the old repo name's redirect by creating anything at
 `BinaryBourbon/fountain`.
 
 The released tags are **copied** into the new namespace rather than left
-behind, before the path sweep merges. `ci.yml`'s quick-start job fails when
-`.env.compose.example`'s pin has no image, with one exemption — a pin equal to
-`mix.exs`'s version is read as a release bump in flight and skipped — so
-without the copy the documented self-host pin resolves nowhere and the compose
-boot check silently stops running instead of failing.
+behind. `ci.yml`'s quick-start job fails when `.env.compose.example`'s pin has
+no image, with one exemption — a pin equal to `mix.exs`'s version is read as a
+release bump in flight and skipped — so without the copy the documented
+self-host pin resolves nowhere and the compose boot check stops running instead
+of failing.
+
+**The copy goes after the first build, not before it.** A GHCR package grants
+push rights to the repository that created it, so a package seeded by a user's
+token is one the repo's own `build.yml` cannot write: it builds, then fails
+with `denied: permission_denied: write_package`, and the fix is UI-only. Let
+the build create the package; add the version tag to it afterwards.
 
 ### 5. 0043's Buzz graduation target becomes `managoat/fountain_buzz`
 
@@ -184,15 +205,13 @@ sweep) or publishes to a path Flux is not watching (after it).
    Grant it Write explicitly, or the bot's fix-PR flow stops working — and
    keep it non-admin, because "cannot approve its own PR" is what makes that
    flow safe.
-4. **Copy the released tags into the new namespace.** `v0.16.0` and `latest`
-   from `ghcr.io/binarybourbon/fountain`, so the documented self-host pin
-   resolves and `ci.yml`'s compose boot check keeps running against a real
-   image rather than taking its release-bump exemption.
-5. **Merge the path sweep.** The first build publishes
-   `ghcr.io/managoat/fountain:sha-<sha>` and the artifact at the new path. Make
-   both new packages public and link them to the repo: the `OCIRepository`
-   carries no `secretRef`, so Flux's fetch and a self-hoster's pull are both
-   anonymous.
+4. **Merge the path sweep.** The first build publishes
+   `ghcr.io/managoat/fountain:sha-<sha>` and, after it, the artifact. Confirm
+   both packages are readable anonymously — the `OCIRepository` carries no
+   `secretRef`, so Flux's fetch and a self-hoster's pull both are.
+5. **Copy the released tags into the new namespace**, now that the packages
+   exist and the repo owns them (decision 4 explains why this order and not the
+   other one).
 6. **Merge the home-cloud PR** and confirm Flux reconciles the new artifact and
    the pod pulls the new digest. Until this lands, prod runs the last old
    digest: safe, and not a deploy path.
@@ -203,6 +222,54 @@ sweep) or publishes to a path Flux is not watching (after it).
    `package.json`'s repository URL (`sdk-publish.yml:131`). Hex package links.
    The OIDC allow-claim in `managoat/review-loop-action`.
 8. **Unfreeze.**
+
+## After the move
+
+What happened on 2026-09-10, in the order it happened, because three of these
+were not predicted anywhere above.
+
+**Transferred intact, verified rather than assumed:** all five repository
+secrets, both Actions variables, the `github-pages` and `pypi` environments,
+the `Main Protection` ruleset with the same numeric id (`21689465`, the one
+`scripts/ci/require-checks.py` defaults to) and the same two required checks,
+Actions enabled, the open pull request, and the tap's collaborators.
+
+**1. `gitleaks-action` is licensed for organizations.** `Detect secrets` — one
+of the two *required* checks — began failing on the first push after the
+transfer with `[managoat] is an organization. License key is required.` Every
+PR in the repo was blocked. The scanner is MIT and unmetered; only the action
+wrapper is licensed, so #1798 dropped the wrapper for the pinned CLI over the
+same commit ranges. Anything that gates merges and wraps a third-party action
+is worth checking for a per-owner-type licence before a move like this.
+
+**2. The ruleset's implicit bypass does not survive.** Post-transfer,
+`bypass_actors` was `[]` and `current_user_can_bypass` was `never`, so
+`gh pr merge --admin` was refused on a PR whose checks were all green — on a
+repo whose convention is a solo admin merge. Re-declared as
+`OrganizationAdmin / always`, with all four rules intact.
+
+**3. The previous owner drops to the organization's base permission.** Owning a
+repo is not a grant that can move, so `BinaryBourbon` — the estate-medic bot
+identity — landed on `read` (the org's `default_repository_permission`) and
+could no longer push. It now has write through a `managoat/engineering` team,
+which also covers the tap. Two accounts with access to this repo are outside
+collaborators and stayed that way; a team is not the complete access list.
+
+**4. The packages came out public.** home-cloud's note that packages under
+`managoat` are private on creation did not apply here: a public repository's
+first push produced public `fountain` and `fountain-manifests` packages, both
+anonymously pullable, so the UI step the runbook reserved was not needed.
+
+**5. The Pages tombstone died, exactly as predicted.**
+`binarybourbon.github.io/fountain/` now 404s and `managoat.github.io/fountain/`
+serves, so the retired doc URLs the tombstone existed to redirect (#1011) are
+gone. Re-publishing the tombstone under the org does not bring them back; only
+the old host could.
+
+**Unrelated but worth recording:** `builds.hex.pm` was returning gateway errors
+through the whole window, which failed `setup-beam` in four jobs and
+`mix local.hex` inside the image build. Re-runs fixed all of them. A cutover
+day is a bad day to not know what your CI's external dependencies are.
 
 ## Consequences
 
@@ -215,7 +282,10 @@ sweep) or publishes to a path Flux is not watching (after it).
   (#1011); it gets rebuilt under the org or the old doc URLs die. Published
   self-host instructions pin the old image path, which keeps working but drifts
   from the docs until a reader upgrades.
-- **A merge freeze of an hour or two**, during which no deploy can ship.
+- **A merge freeze of an hour or two**, during which no deploy can ship. It was
+  about ninety minutes, most of it waiting on CI, and production never stopped
+  serving: the old pods kept running the old digest until the new artifact
+  reconciled.
 - **`release_pin_test.exs` and the CLI/SDK tests are the completeness gate.**
   Several tests assert these strings
   (`apps/fountain/test/fountain/{release_pin,team/mcp,conversations/conversation_server}_test.exs`,
@@ -226,9 +296,10 @@ sweep) or publishes to a path Flux is not watching (after it).
   (`users/BinaryBourbon/projects/1`, which `.agents/skills/fountain-project-gardener`
   drives) is owned by the account, not the repo, and no transfer moves it: it
   has to be rebuilt or copied under the org, and what a copy brings with it is
-  worth checking before assuming the board survives. And the `BinaryBourbon`
-  account keeps its second job as the estate-medic bot identity, which is why
-  it needs Write granted back explicitly (cutover step 3).
+  worth checking before assuming the board survives — it was left where it is.
+  And the `BinaryBourbon` account keeps its second job as the estate-medic bot
+  identity, which is why its write access had to be granted again (cutover
+  step 3, and *After the move* for how).
 - **Bus factor improves** in the one place it was worst: the repo can have a
   second admin without handing over a personal account.
 - **This ADR amends 0034, it does not contradict it.** The project is still
