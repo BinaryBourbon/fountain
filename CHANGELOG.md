@@ -71,6 +71,19 @@ upgrade, is in
   compatible endpoint is unchanged: it still synthesizes a caption for an
   image-only message, because clients of that dialect cannot always send one.
 
+- **`truncated` on a sandbox file or diff now means "this is not the whole
+  thing", not "the cap was reached"** (#1907). On
+  `GET /api/sandboxes/:id/file` and `GET /api/sandboxes/:id/diff` it is still
+  true when the file or diff is longer than `max_bytes`, and it is now also
+  true when redaction grew what was read past that cap — which happens when
+  `[REDACTED]` is longer than the value it stands in for. So a file that fits
+  `max_bytes` can come back `truncated: true` with its content cut. The
+  widening errs safe: `truncated: false` still means the bytes are complete,
+  which is the direction a caller depends on, and the new true case tells a
+  caller to ask for more. The field has been published since SDK 1.15.0; its
+  description changed with it, in the OpenAPI document and in the generated
+  TypeScript types.
+
 ### Added
 
 - **An `acp` runtime launches a named command, so a deterministic program can
@@ -579,6 +592,29 @@ upgrade, is in
   outbound WebSocket client to one known host, and Fountain serves HTTP with
   **Bandit, not Cowboy**, so cowlib is not on the inbound request path.
   Tracking upstream; `mix hex.audit` reports them and does not fail the build.
+- **A sandbox file read could return a fragment of a secret, at a byte offset
+  the caller chose** (#1907). `GET /api/sandboxes/:id/file` and
+  `GET /api/sandboxes/:id/diff` capped their output in the shell with
+  `head -c` and redacted in Elixir over whatever survived the cut. Redaction
+  matches a value's own bytes, so a cut through one left a prefix that matched
+  nothing and travelled on in the clear. On `/file` the cut lands at
+  `max_bytes`, which the caller sends, so this was not an occasional boundary
+  artifact that depended on where a value happened to sit: the caller decided
+  where the boundary fell relative to a value, and could walk it. Reading the
+  sandbox's `.env` that way is exactly what ADR 0039 decision 5 says is
+  prevented, and the reader need not be the tenant whose vault values
+  redaction protects — a `full`-scope key includes one issued to a
+  third-party OAuth app the user authorized. Both endpoints now ask their
+  script for enough bytes past the cap that a value lying across it arrives
+  whole (one less than the longest known value, which is the widest one can
+  straddle it), redact that, and only then cut the result down to what was
+  asked for. That last cut is taken in the bytes the script produced rather
+  than in the redacted text, because a value replaced by a shorter
+  `[REDACTED]` moves every byte behind it forward and could otherwise carry
+  an unmatched fragment back inside the cap. `/git-status` was never affected:
+  it drops a record its cap bisected rather than returning it. The change to
+  what `truncated` reports is under **Changed** above. Present since `/file`
+  and `max_bytes` shipped with ADR 0039, and published in SDK 1.15.0.
 
 ## [0.16.0] - 2026-09-03
 

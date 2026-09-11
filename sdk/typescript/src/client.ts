@@ -261,7 +261,9 @@ export class Fountain {
   /**
    * One file on a sandbox. `content` is the text when `encoding` is `utf-8`
    * and base64 otherwise; `size` is the whole file and `truncated` says
-   * whether `content` stopped at `maxBytes` (default 256 KiB, at most 4 MiB).
+   * whether `content` is short of it. That is true when the file is longer
+   * than `maxBytes` (default 256 KiB, at most 4 MiB), and also when redaction
+   * grows what was read past that cap.
    */
   async sandboxFile(id: string, path: string, opts: { maxBytes?: number } = {}): Promise<SandboxFile> {
     return this.api.data<SandboxFile>("GET", `/api/sandboxes/${id}/file`, {
