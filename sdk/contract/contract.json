@@ -552,6 +552,40 @@
         }
       }
     },
+    "DELETE /api/sandbox-queue/{id}": {
+      "operation_id": "FountainWeb.SandboxQueueController.delete",
+      "path_params": [
+        "id"
+      ],
+      "responses": {
+        "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "DELETE /api/sandboxes/{id}": {
       "operation_id": "FountainWeb.SandboxController.delete",
       "path_params": [
@@ -2587,6 +2621,75 @@
         "409": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "GET /api/sandbox-queue": {
+      "operation_id": "FountainWeb.SandboxQueueController.index",
+      "path_params": [],
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "SandboxRequestListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "GET /api/sandbox-queue/{id}": {
+      "operation_id": "FountainWeb.SandboxQueueController.show",
+      "path_params": [
+        "id"
+      ],
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "SandboxRequestResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "429": {
@@ -12457,6 +12560,18 @@
           ],
           "required": true,
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SandboxRequestListResponse": {
+      "properties": {
+        "data": {
+          "items": {
+            "ref": "SandboxRequest"
+          },
+          "required": true,
+          "type": "array"
         }
       },
       "type": "object"
