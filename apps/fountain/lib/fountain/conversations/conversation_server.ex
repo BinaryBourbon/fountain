@@ -963,17 +963,15 @@ defmodule Fountain.Conversations.ConversationServer do
                  state.runtime_module,
                  agent,
                  sprite_env
-               ) do
-          # `build_fingerprint` records what the disk was built from, and
-          # `applied_skills` what was mounted on it, so a later reapply can
-          # answer both questions from the row rather than guessing (#1565).
-          {:ok, _} =
-            Conversations.update_sandbox(sandbox, %{
-              status: "ready",
-              build_fingerprint: Reapply.fingerprint(env),
-              applied_skills: skills
-            })
-
+               ),
+             # Record what the disk was built from only if this attempt still
+             # owns a live row. Retirement can win while provider I/O runs.
+             {:ok, _} <-
+               Conversations.update_sandbox(sandbox, %{
+                 status: "ready",
+                 build_fingerprint: Reapply.fingerprint(env),
+                 applied_skills: skills
+               }) do
           Output.publish_stage(state.conversation_id, "provision", "done")
 
           # Best-effort: snapshot the fully-provisioned state so subsequent
@@ -997,6 +995,14 @@ defmodule Fountain.Conversations.ConversationServer do
           # queue_initial_prompt/3.
           {:noreply, new_state}
         else
+          {:error, %Ecto.Changeset{errors: [status: {"sandbox is retired", []}]}} ->
+            # This handle and token belong to this attempt. Do not fail the
+            # conversation or release every session: a replacement may own it.
+            _ = Managoat.Sandbox.destroy(handle)
+            Egress.release_prepared(prepared)
+            {:ok, prepared_state} = prepared
+            {:stop, :normal, prepared_state}
+
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
             _ = Managoat.Sandbox.destroy(handle)

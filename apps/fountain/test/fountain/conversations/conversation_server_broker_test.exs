@@ -466,6 +466,106 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       end
     end
 
+    for terminal <- ["terminated", "failed"] do
+      @tag terminal: terminal
+      test "retirement during provision preserves the #{terminal} row and replacement", %{
+        user: user,
+        agent: agent,
+        terminal: terminal
+      } do
+        conv = insert_conversation(user_id: user.id, agent: agent, sandbox_api_access: "owner")
+        sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+        test = self()
+        handle = stub_happy_sprite(sandbox.sprite_name)
+        stub(Fountain.Broker, :preflight, fn -> :ok end)
+        stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+
+        stub(Fountain.Broker, :prepare, fn id, secrets, bindings, opts ->
+          {:ok, session} = Fountain.Broker.Native.prepare(id, secrets, bindings, opts)
+          send(test, {:original_token, session.token})
+          {:ok, session}
+        end)
+
+        stub(Fountain.Conversations.Provisioning, :install_packages, fn _h, _e, _se, _id ->
+          send(test, {:provision_paused, self()})
+          receive do: (:resume_provision -> :ok)
+        end)
+
+        stub(Managoat.Sandbox.Sprites, :destroy, fn destroyed ->
+          send(test, {:destroyed, destroyed})
+          :ok
+        end)
+
+        reject(Managoat.Sandbox.Sprites, :spawn, 4)
+
+        {:ok, pid} =
+          GenServer.start(ConversationServer,
+            conversation_id: conv.id,
+            sandbox_id: sandbox.id,
+            runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+          )
+
+        ref = Process.monitor(pid)
+        on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+        assert_receive {:provision_paused, ^pid}, 5_000
+        assert_receive {:original_token, original}
+        callback_id = Fountain.Repo.reload!(conv).callback_api_key_id
+        assert is_binary(callback_id)
+
+        {:ok, retired} = Conversations.update_sandbox(sandbox, %{status: terminal})
+
+        replacement =
+          insert_sandbox(user_id: user.id, status: "ready", sprite_name: "replacement")
+
+        {:ok, _} =
+          Conversations.update_conversation(conv, %{sandbox_id: replacement.id, status: "idle"})
+
+        {:ok, replacement_session} =
+          Fountain.Broker.Native.prepare(conv.id, %{}, %{}, user_id: user.id)
+
+        ConversationServer.queue_initial_prompt(pid, "must never run")
+        send(pid, :resume_provision)
+
+        assert :normal = assert_stopped(ref, 5_000)
+        assert Fountain.Repo.reload!(sandbox).status == terminal
+        assert Fountain.Repo.reload!(sandbox).terminated_at == retired.terminated_at
+        assert Fountain.Repo.reload!(conv).status == "idle"
+        assert Fountain.Repo.reload!(conv).sandbox_id == replacement.id
+        assert Fountain.Repo.reload!(replacement).status == "ready"
+        assert_receive {:destroyed, ^handle}
+        refute_received {:destroyed, _}
+        assert :error = Fountain.Broker.Native.Sessions.lookup(original)
+        assert {:ok, _} = Fountain.Broker.Native.Sessions.lookup(replacement_session.token)
+        assert Fountain.Repo.get(Fountain.Accounts.ApiKey, callback_id).revoked_at
+        refute Enum.any?(stage_events(conv.id, "provision"), &(&1.state in ["done", "failed"]))
+      end
+    end
+
+    test "an unrelated ready-write error still fails provisioning", %{user: user, agent: agent} do
+      conv = insert_conversation(user_id: user.id, agent: agent)
+      stub_happy_sprite()
+      stub(Fountain.Broker, :preflight, fn -> :ok end)
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, _opts -> {:ok, @session} end)
+
+      stub(Conversations, :update_sandbox, fn sandbox, attrs ->
+        if attrs[:status] == "ready" do
+          {:error,
+           Ecto.Changeset.change(sandbox)
+           |> Ecto.Changeset.add_error(:build_fingerprint, "invalid")}
+        else
+          Mimic.call_original(Conversations, :update_sandbox, [sandbox, attrs])
+        end
+      end)
+
+      {_pid, ref, :stopped} = start_server(conv)
+      assert :normal = assert_stopped(ref)
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "failed"
+      assert Fountain.Repo.reload!(conv).status == "failed"
+      assert Enum.any?(stage_events(conv.id, "provision"), &(&1.state == "failed"))
+      refute Enum.any?(stage_events(conv.id, "provision"), &(&1.state == "done"))
+    end
+
     test "terminating the conversation releases the vault", %{user: user, agent: agent} do
       conv = insert_conversation(user_id: user.id, agent: agent)
       test = self()
