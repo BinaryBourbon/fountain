@@ -295,13 +295,20 @@ defmodule Fountain.SandboxFiles do
          {:ok, root, bytes} <- parse_diff(output) do
       truncated = byte_size(bytes) > max_bytes
 
+      values = secret_values(sandbox)
+
       text =
-        bytes |> binary_part(0, min(byte_size(bytes), max_bytes)) |> then(&redact(sandbox, &1))
+        bytes
+        |> binary_part(0, min(byte_size(bytes), max_bytes))
+        |> then(&redact_with(values, &1))
 
       {:ok,
        %{
          path: absolute,
-         repo_root: root,
+         # A root is a path the agent chose, so it travels like the entry
+         # paths beside it: through the same replacement and the same
+         # recoding, not raw.
+         repo_root: to_text(redact_with(values, root)),
          staged: staged,
          ref: ref,
          diff: to_text(text),
@@ -356,7 +363,7 @@ defmodule Fountain.SandboxFiles do
       {:ok,
        %{
          path: absolute,
-         repo_root: root,
+         repo_root: to_text(redact_with(values, root)),
          branch: branch && to_text(redact_with(values, branch)),
          untracked: untracked,
          entries: changes |> Enum.take(@max_entries) |> Enum.map(&redact_change(values, &1)),

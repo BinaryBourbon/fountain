@@ -185,9 +185,12 @@ defmodule FountainWeb.SandboxFilesController do
     ],
     responses: [
       ok: {"Status", "application/json", Schemas.SandboxStatusResponse},
-      # Declared rather than added to the schema guard's allowlist, where the
-      # sibling reads sit: the list is a ratchet for what #1432 already owes,
-      # and a new operation has no business growing it.
+      # The three sibling reads declare no 403 because 401/403/429 are
+      # composed from `:api` pipeline membership. This one says it out loud,
+      # since full scope is the whole story of the operation and a generated
+      # client reads the operation rather than the pipeline. Nothing about
+      # the wire differs; `FountainWeb.SchemaGuardAllowlist` is a ratchet for
+      # rendered-response disagreements and holds none of these.
       forbidden: {"Insufficient scope", "application/json", Schemas.Error},
       not_found: {"No such sandbox or path", "application/json", Schemas.Error},
       conflict: @not_ready,

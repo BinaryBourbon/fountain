@@ -320,8 +320,13 @@ defmodule Fountain.SandboxFilesTest do
 
       on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
 
-      expect_script(fn _, _, _ -> {:ok, diff_output("/r", "+key = sk-ant-secret-value\n"), 0} end)
-      assert {:ok, %{diff: "+key = [REDACTED]\n"}} = SandboxFiles.diff(ctx.sandbox, nil)
+      expect_script(fn _, _, _ ->
+        {:ok, diff_output("/r/sk-ant-secret-value", "+key = sk-ant-secret-value\n"), 0}
+      end)
+
+      # The root goes through the same replacement the hunks do.
+      assert {:ok, %{repo_root: "/r/[REDACTED]", diff: "+key = [REDACTED]\n"}} =
+               SandboxFiles.diff(ctx.sandbox, nil)
     end
   end
 
@@ -525,14 +530,21 @@ defmodule Fountain.SandboxFilesTest do
 
       expect_script(fn _, _, _ ->
         {:ok,
-         status_output("sk-live-abcdef-branch", [
-           record("R ", "dump-sk-live-abcdef.json"),
-           "old-sk-live-abcdef.json" <> <<0>>
-         ]), 0}
+         status_output(
+           "sk-live-abcdef-branch",
+           [
+             record("R ", "dump-sk-live-abcdef.json"),
+             "old-sk-live-abcdef.json" <> <<0>>
+           ],
+           @home <> "/clone-sk-live-abcdef"
+         ), 0}
       end)
 
+      # `repo_root` is a path the agent chose like the three beside it, so it
+      # is replaced like them rather than handed back raw.
       assert {:ok,
               %{
+                repo_root: @home <> "/clone-[REDACTED]",
                 branch: "[REDACTED]-branch",
                 entries: [
                   %{path: "dump-[REDACTED].json", renamed_from: "old-[REDACTED].json"}
