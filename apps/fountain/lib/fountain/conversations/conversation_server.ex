@@ -2118,17 +2118,27 @@ defmodule Fountain.Conversations.ConversationServer do
         "(sprite #{inspect(state.handle && state.handle.name)})"
     )
 
-    state = drop_connection(state, "reclaimed")
+    with :ok <- Lifecycle.prepare_destroy(state.sandbox_id, reason) do
+      state = drop_connection(state, "reclaimed")
 
-    Lifecycle.destroy(
-      state.conversation_id,
-      state.sandbox_id,
-      state.user_id,
-      state.handle,
-      reason
-    )
+      case Lifecycle.destroy(
+             state.conversation_id,
+             state.sandbox_id,
+             state.user_id,
+             state.handle,
+             reason
+           ) do
+        :ok -> {:stop, :normal, %{state | handle: nil}}
+        {:error, error} -> reclaim_refused(state, error)
+      end
+    else
+      {:error, error} -> reclaim_refused(state, error)
+    end
+  end
 
-    {:stop, :normal, %{state | handle: nil}}
+  defp reclaim_refused(state, error) do
+    Logger.warning("reclaim refused for conv #{state.conversation_id}: #{inspect(error)}")
+    {:noreply, state}
   end
 
   # Best-effort revoke of the per-conversation API key when this server
