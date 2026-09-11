@@ -1709,7 +1709,7 @@ export interface paths {
         };
         /**
          * Read a file on a sandbox
-         * @description The bytes of one file, redacted: every value of the sandbox's environment and vault is replaced with `[REDACTED]`, as in the transcript. `content` is the text when it is valid UTF-8 (`encoding: utf-8`) and base64 otherwise (`encoding: base64`). `size` is the whole file; `truncated` says whether `content` stopped at `max_bytes`. Full scope.
+         * @description The bytes of one file, redacted: every value of the sandbox's environment and vault is replaced with `[REDACTED]`, as in the transcript. `content` is the text when it is valid UTF-8 (`encoding: utf-8`) and base64 otherwise (`encoding: base64`). `size` is the whole file; `truncated` says whether `content` is short of it, which happens when the file is longer than `max_bytes` and also when redaction grows what was read past that cap. Full scope.
          */
         get: operations["FountainWeb.SandboxFilesController.show"];
         put?: never;
@@ -4354,7 +4354,7 @@ export interface components {
             repo_root: string;
             /** @description True when the index was diffed (`--cached`). */
             staged: boolean;
-            /** @description True when `diff` stopped at `max_bytes` before the end. */
+            /** @description True when `diff` is not the whole diff: either it is longer than `max_bytes`, or redaction grew what was read past it. False means `diff` is everything. */
             truncated: boolean;
         };
         /** SandboxDiffResponse */
@@ -4387,7 +4387,7 @@ export interface components {
             path: string;
             /** @description The whole file, in bytes. */
             size: number;
-            /** @description True when `content` stopped at `max_bytes` before the end of the file. */
+            /** @description True when `content` is not the whole file: either the file is longer than `max_bytes`, or redaction grew what was read past it. False means `content` is everything. */
             truncated: boolean;
         };
         /** SandboxFileResponse */

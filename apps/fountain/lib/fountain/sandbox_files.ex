@@ -222,7 +222,8 @@ defmodule Fountain.SandboxFiles do
   #{@default_max_bytes}, at most #{@max_max_bytes}). `content` is the text
   itself when it is valid UTF-8 (`encoding: "utf-8"`) and base64 otherwise
   (`encoding: "base64"`); `size` is the whole file and `truncated` says
-  whether `content` stopped short of it.
+  whether `content` is short of it — because the file is longer than
+  `max_bytes`, or because redaction grew what was read past the cap.
 
   Redaction runs before the cap, never after: `max_bytes` is the caller's to
   choose, so a cut taken first would let them place it inside a value and

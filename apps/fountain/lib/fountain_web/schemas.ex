@@ -200,7 +200,10 @@ defmodule FountainWeb.Schemas do
         size: %Schema{type: :integer, description: "The whole file, in bytes."},
         truncated: %Schema{
           type: :boolean,
-          description: "True when `content` stopped at `max_bytes` before the end of the file."
+          description:
+            "True when `content` is not the whole file: either the file is longer than " <>
+              "`max_bytes`, or redaction grew what was read past it. False means `content` " <>
+              "is everything."
         },
         encoding: %Schema{
           type: :string,
@@ -240,7 +243,9 @@ defmodule FountainWeb.Schemas do
         diff: %Schema{type: :string, description: "Unified diff, no colour."},
         truncated: %Schema{
           type: :boolean,
-          description: "True when `diff` stopped at `max_bytes` before the end."
+          description:
+            "True when `diff` is not the whole diff: either it is longer than `max_bytes`, " <>
+              "or redaction grew what was read past it. False means `diff` is everything."
         }
       },
       required: [:path, :repo_root, :staged, :diff, :truncated]
