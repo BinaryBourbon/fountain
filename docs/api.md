@@ -37,13 +37,44 @@ for administrative workflows.
 ### Sign in with Fountain (OAuth 2.0 for browser apps)
 
 Browser apps use the authorization code flow with PKCE. The returned token
-is a Fountain API key. Register the client and its exact redirect URIs with
-the instance operator before you start the flow.
+is a Fountain API key. Register the client and its exact redirect URIs
+before you start the flow.
 
 Keep the verifier in the app that initiated sign-in, and validate `state`
 on return. See [Build a team chat](build/team-chat.md) for an application
 example and the OAuth operations in the [generated reference](/api/docs)
 for the token exchange.
+
+### Register your own app
+
+Register a client in the console under **Account**, then **OAuth apps**, with
+`fountain oauth-client create`, or through the API.
+
+```
+GET    /api/oauth/clients        # the account's clients
+POST   /api/oauth/clients        # {name, redirect_uris} -> {client_id, ...}
+GET    /api/oauth/clients/:id
+PATCH  /api/oauth/clients/:id    # rename it, or replace the redirect URIs
+DELETE /api/oauth/clients/:id
+```
+
+These routes need a full-scope key. A sandbox token cannot register a client.
+A registered client leads to a full-scope key after consent.
+
+Your client starts in **development mode**. It signs in only the account that
+registered it. Every other account gets an error page instead of a redirect.
+Only an operator publishes a client for other accounts. After that, only an
+operator changes or removes the registration. Every other account signs in
+through it, and the `client_id` is random, so a deletion breaks them all.
+
+One account registers a maximum of 25 apps.
+
+A redirect URI must match exactly and must use `https`. A URI on `localhost`
+or `127.0.0.1` can use `http` and matches on any port.
+
+The redirect origins also call `/api` from a browser. One registration covers
+both sign-in and CORS. It needs no `OAUTH_CLIENTS` or `API_CORS_ORIGINS`
+change.
 
 ## Account state
 
@@ -428,6 +459,10 @@ A schedule runs work without a person at the keyboard. Choose the intended
 timezone and verify the next execution before you enable unattended work.
 See [Teammates](concepts/teammates.md) for how schedules relate to a teammate.
 The [generated reference](/api/docs) defines timing fields and run history.
+
+A browser client on another origin needs a registered OAuth client or an
+`API_CORS_ORIGINS` entry. Read [configuration](configuration.md). A bearer
+key is the one credential that crosses an origin.
 
 ## Support
 

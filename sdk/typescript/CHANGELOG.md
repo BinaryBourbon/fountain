@@ -11,6 +11,18 @@ server releases.
 
 ---
 
+## [1.28.0] - 2026-09-10
+
+### Added
+
+- Wire types for the OAuth client registry (#1125): `/api/oauth/clients` and
+  `/api/oauth/clients/{id}`, plus `OAuthClient`, `OAuthClientRequest`,
+  `OAuthClientUpdateRequest` and `OAuthClientListResponse`. The hand-written
+  layer does not model these; registering an app is a once-per-app setup step
+  a person does in the console or with `fountain oauth-client`, and the SDK's
+  work starts with the API key the flow mints. Reach them through the raw
+  client if you need them.
+
 ## [1.27.0] — 2026-09-10
 
 ### Added
