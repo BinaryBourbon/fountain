@@ -28,8 +28,9 @@ defmodule Fountain.RefusedModels do
   one agent every verified account owns (ADR 0038 decision 4), and so the
   highest-stakes of the three.
 
-  Surfaces still outside its reach are tracked on #1727: the shipped `fountain`
-  skill manifest, the `/help` pages and the OpenAPI field description.
+  Shipped skill manifests and `/help` pages are scanned together by
+  `Fountain.InstructionModelsTest`. The remaining surface tracked on #1727 is
+  the OpenAPI field description.
 
   ## Membership in the catalog is the stronger check
 
