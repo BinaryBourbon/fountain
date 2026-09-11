@@ -103,6 +103,20 @@ defmodule Fountain.Conversations.Reapply do
 
   `:built_with` is the Environment the sandbox records, used only when the row
   predates `build_fingerprint` and so cannot answer for itself.
+
+  ## What the refusal can name
+
+  A refusal carries the build field that forced it only when the selection
+  moves to a *different* Environment, because naming the field means diffing
+  the one the machine was built from against the one being asked for.
+
+  A refresh of the same Environment, edited in place, is the case that cannot.
+  Both sides are the same row read fresh, so every field compares equal however
+  far the build inputs moved. The stored digest still catches the move — it was
+  computed before the edit — but nothing left on the row says *which* input
+  changed, so the refusal is the general `:environment`. Recovering the field
+  there needs the digest to be per-field rather than one string, which is a
+  column change and not worth it for the message alone.
   """
   @spec check(Sandbox.t() | nil, keyword()) :: :ok | {:error, {:rebuild_required, blocker()}}
   def check(nil, _opts), do: :ok
@@ -132,8 +146,10 @@ defmodule Fountain.Conversations.Reapply do
   defp built_fingerprint(%Sandbox{build_fingerprint: fp}, _built_with) when is_binary(fp), do: fp
   defp built_fingerprint(_sandbox, built_with), do: fingerprint(built_with)
 
-  # Which field to name in the refusal. Falls back to `:environment` when the
-  # machine cannot say what it was built from and only the identity differs.
+  # Which field to name in the refusal. Falls back to `:environment` in two
+  # cases: the machine cannot say what it was built from, and both sides are
+  # the same Environment row, which is what a refresh of one edited in place
+  # looks like from here. See `check/2`.
   defp build_field(%Environment{} = was, %Environment{} = now) do
     cond do
       was.packages != now.packages -> :packages

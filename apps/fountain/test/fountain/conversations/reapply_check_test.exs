@@ -47,7 +47,10 @@ defmodule Fountain.Conversations.ReapplyCheckTest do
              )
   end
 
-  test "each build field names itself in the refusal", ctx do
+  test "each build field names itself when the selection moves to another environment", ctx do
+    # `built_with` is the environment the machine was built from and
+    # `target_environment` the one being asked for, so the field is nameable
+    # only while those are two different rows. The refresh case is below.
     cases = [
       {%{"packages" => %{"apt" => ["ripgrep"]}}, :packages},
       {%{
@@ -66,6 +69,20 @@ defmodule Fountain.Conversations.ReapplyCheckTest do
       assert {:error, {:rebuild_required, ^field}} =
                check(ctx.sandbox, target_environment: rebuilt, built_with: ctx.env)
     end
+  end
+
+  test "a refresh of an environment edited in place cannot name the field", ctx do
+    # The per-field cases above rebind to a second environment, which is not
+    # what a refresh does: the production call site reads both sides from the
+    # database, so a refresh passes the same row twice. The digest stored at
+    # build time still catches that the build inputs moved; no field can be
+    # singled out, and the refusal is the general one. Pinned so the behaviour
+    # is deliberate rather than incidental — `check/2` says why.
+    {:ok, edited} =
+      Environments.update_environment(ctx.env, %{"packages" => %{"apt" => ["ripgrep"]}})
+
+    assert {:error, {:rebuild_required, :environment}} =
+             check(ctx.sandbox, target_environment: edited, built_with: edited)
   end
 
   test "dropping the environment altogether needs the disk built again", ctx do
