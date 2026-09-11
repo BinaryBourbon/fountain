@@ -2504,10 +2504,11 @@ defmodule Fountain.Conversations.ConversationServer do
   # re-run a turn on a fresh spawn since #817; what this adds is closing the
   # abandoned attempt's span and tracer first, since that arm never had one
   # open to close.
-  # The row is gone. Unreachable: the effect is emitted only with one, and the
-  # drop before it closes an autonomous turn, never a user turn. Localized
-  # anyway, because the invariant lives two modules away and the alternative
-  # is `nil.prompt` taking the server down.
+  #
+  # The guard clause below is for the row being gone. Unreachable: the effect
+  # is emitted only with one, and the drop before it closes an autonomous
+  # turn, never a user turn. Localized anyway, because the invariant lives two
+  # modules away and the alternative is `nil.prompt` taking the server down.
   defp restart_session(%{current_turn: nil} = state, detail) do
     Logger.warning("conv #{state.conversation_id}: no turn to restart after #{detail}")
     state

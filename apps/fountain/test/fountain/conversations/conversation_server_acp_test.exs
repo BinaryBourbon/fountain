@@ -76,8 +76,12 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     {pid, ref}
   end
 
-  defp next_write do
-    assert_receive {:wrote, line}, 1_000
+  # The default covers a write on an open connection. A turn that had to spawn
+  # a fresh adapter first waits on `prepare_acp_adapter/3` before its peer says
+  # anything, which can outrun a second on a loaded runner — those call sites
+  # pass their own.
+  defp next_write(timeout \\ 1_000) do
+    assert_receive {:wrote, line}, timeout
     Jason.decode!(line)
   end
 
@@ -85,6 +89,22 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     line = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "result" => result}) <> "\n"
     send(pid, {:stdout, %{ref: ref}, line})
     settle(pid)
+  end
+
+  # A restarted turn's second attempt (#1667), from the fresh spawn's
+  # `initialize` through to the prompt's answer.
+  defp drive_restarted_turn_to_end(pid, ref) do
+    %{"id" => init_id, "method" => "initialize"} = next_write()
+    reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+    %{"id" => new_id, "method" => "session/new"} = next_write()
+    reply(pid, ref, new_id, %{"sessionId" => "sess_fresh", "models" => %{}})
+
+    %{"id" => set_id, "method" => "session/set_model"} = next_write()
+    reply(pid, ref, set_id, %{})
+
+    %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+    reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
   end
 
   defp turn_stage_states(conv_id) do
@@ -1191,6 +1211,49 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       # is one — reads a second as a second turn and leaves the outer one
       # open forever.
       assert ["started", "done"] = turn_stage_states(conv.id)
+    end
+
+    # The other half of the gate. A `started` suppressed on a real turn is a
+    # worse failure than the duplicate it prevents — a client that pairs stage
+    # events would never open a section at all — so the flag must not latch.
+    #
+    # Four clears guard it: `TurnMachine.finish/4` and `close_interrupted/1`,
+    # `kick_turn/4` on its first line, and `fail_turn_before_start/6`. This
+    # pins the outcome rather than any one of them — removing all four is what
+    # turns the stream below into `["started", "done", "done"]`. `finish/4` is
+    # the one that carries *this* path, which is why removing only the two in
+    # the server leaves it green.
+    test "a later turn announces itself again — the restart flag does not latch", ctx do
+      %{conv: conv, pid: pid, ref: ref} = ctx
+
+      reply_error(pid, ref, ctx.resume_id, %{"code" => -32_002, "message" => "gone"})
+      drive_restarted_turn_to_end(pid, ref)
+
+      # Turn 2 on a fresh spawn rather than the idle peer the restart left
+      # behind, because `run_fresh_turn/7` is the path the gate is on.
+      GenServer.stop(:sys.get_state(pid).acp_peer)
+      settle(pid)
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+
+      %{"id" => init_id, "method" => "initialize"} = next_write(5_000)
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      # `"models"` is what makes the peer pin the model before prompting, the
+      # same as the `session/new` answer in `drive_to_prompt/2`.
+      %{"id" => resume_id, "method" => "session/resume"} = next_write(5_000)
+      reply(pid, ref, resume_id, %{"models" => %{}})
+
+      %{"id" => set_id, "method" => "session/set_model"} = next_write(5_000)
+      reply(pid, ref, set_id, %{})
+
+      %{"id" => prompt_id, "method" => "session/prompt"} = next_write(5_000)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert ["started", "done", "started", "done"] = turn_stage_states(conv.id)
+
+      assert [%{status: "completed"}, %{status: "completed"}] =
+               Conversations._unsafe_list_turns(conv.id)
     end
 
     test "says on the transcript that the agent's memory did not survive", ctx do
