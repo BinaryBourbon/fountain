@@ -103,6 +103,28 @@ SDK job, also update `SDK_JOBS` and the `sdk-checks` dependencies. Run
 `test_gate.py` and `test_sdk_gate.py` to verify their agreement and every
 supported event plan.
 
+## SDK path classification
+
+`changes` reports four `sdk_<language>` outputs from `sdk_changes.py`, using
+its existing PR merge base or merge-group base. Job conditions do not yet
+consume these outputs; SDK execution stays unchanged in this prerequisite.
+
+The classifier selects an SDK for its directory, documentation page or
+registered release tooling. Shared contract and conformance files select all
+SDKs. So do API implementation, build configuration and unregistered paths.
+An explicit allowlist selects none for unrelated docs, console UI, server
+tests and telemetry. Mixed changes select the union of their SDKs.
+
+Invalid bases, failed or empty diffs, malformed paths and undecodable names
+select every SDK. The NUL-delimited Git diff disables rename detection, so a
+move out of an SDK still selects its former owner. Outputs contain only fixed
+keys and boolean values.
+
+Register a new language in `LANGUAGES` and `OWNED_FILES`, expose its workflow
+output, and add routing fixtures in `test_sdk_changes.py`. Register SDK docs
+and checked snippets before the unrelated-docs allowlist. Keep contract
+triggers outside that allowlist; uncertainty must select every SDK.
+
 ## Refresh partition timings
 
 Each partition records all module timings with eight concurrent cases, matching

@@ -67,7 +67,7 @@ jobs:
         run: bash scripts/ci/already-tested.sh
 
   changes:
-    name: Decide whether this is a docs-only change
+    name: Classify documentation and SDK changes
     # Never on push, and deliberately so. There, `already-tested` above
     # already collapses a rebased squash-merge to a few seconds, and a main
     # push that is NOT already-tested is precisely the case that must run
@@ -90,6 +90,10 @@ jobs:
       docs_touched: ${{ steps.filter.outputs.docs_touched }}
       cli_docs: ${{ steps.filter.outputs.cli_docs }}
       tree: ${{ steps.tree.outputs.tree }}
+      sdk_elixir: ${{ steps.sdks.outputs.sdk_elixir }}
+      sdk_python: ${{ steps.sdks.outputs.sdk_python }}
+      sdk_typescript: ${{ steps.sdks.outputs.sdk_typescript }}
+      sdk_swift: ${{ steps.sdks.outputs.sdk_swift }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
@@ -120,8 +124,10 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -u
+          base=""
           decide() {
             {
+              echo "diff_base=${base:-}"
               echo "docs_only=$1"
               echo "cli_docs=$2"
               echo "docs_touched=$3"
@@ -192,6 +198,12 @@ jobs:
 
           echo "docs-only — running the docs job instead of the Elixir suite"
           decide true "${cli_docs}" false
+
+      - name: Select SDKs from the same diff
+        id: sdks
+        env:
+          DIFF_BASE: ${{ steps.filter.outputs.diff_base }}
+        run: python3 scripts/ci/sdk_changes.py "$DIFF_BASE" >> "$GITHUB_OUTPUT"
 
   test:
     name: Build and Test (partition ${{ matrix.partition }})
