@@ -991,16 +991,17 @@ defmodule Fountain.Conversations.TurnMachine do
   same reason capacity is: there is no run to record, and the stage event says
   what happened.
   """
-  @spec open(String.t(), String.t(), String.t(), map() | nil) ::
+  @spec open(String.t(), String.t(), String.t(), map() | nil, integer() | nil) ::
           {:ok, Conversation.t(), Conversations.Turn.t()}
           | :at_capacity
           | :no_command
+          | :configuration_changed
           | {:error, term()}
-  def open(conversation_id, sandbox_id, prompt, agent \\ nil) do
+  def open(conversation_id, sandbox_id, prompt, agent \\ nil, revision \\ nil) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
 
     if runnable?(conv, agent),
-      do: open_turn(conv, sandbox_id, prompt),
+      do: open_turn(conv, sandbox_id, prompt, revision),
       else: refuse_no_command(conv)
   end
 
@@ -1024,7 +1025,7 @@ defmodule Fountain.Conversations.TurnMachine do
     :no_command
   end
 
-  defp open_turn(conv, sandbox_id, prompt) do
+  defp open_turn(conv, sandbox_id, prompt, revision) do
     conversation_id = conv.id
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
 
@@ -1038,9 +1039,15 @@ defmodule Fountain.Conversations.TurnMachine do
 
     capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 
-    case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity) do
+    case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity, revision) do
       {:ok, turn} ->
         {:ok, conv, turn}
+
+      # The server asked for a revision that is no longer current: a reapply
+      # landed and this server has not read it. Not a refusal — the caller
+      # reloads and starts the turn on the configuration that is now there.
+      {:error, :configuration_changed} ->
+        :configuration_changed
 
       {:error, :sandbox_at_capacity} ->
         publish_stage(conversation_id, "sandbox", "done", %{

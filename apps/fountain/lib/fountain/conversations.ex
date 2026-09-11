@@ -1181,6 +1181,20 @@ defmodule Fountain.Conversations do
   `{:error, {:rebuild_required, field}}` rather than silently applied or
   silently ignored. `Fountain.Conversations.Reapply` owns that rule and says
   why for each field.
+
+  ## What `{:ok, conv}` promises
+
+  That the selection is committed, and that no turn can open against the
+  previous one: `configuration_revision` moved, and turn admission compares it
+  with the revision the live server loaded.
+
+  It does not promise the running machine has already been reconfigured. A
+  server is told after the commit, and it can be mid-provision or gone by then.
+  Neither loses the change — the next wake builds from the row — so neither is
+  a failure of this call, and reporting one would hand the caller an error for
+  a selection that is already committed. The `configuration` stage event says
+  which of the two happened: `done` when a machine is configured now, `failed`
+  when it is selected and the machine has yet to catch up.
   """
   @spec reapply_conversation(Conversation.t(), map(), keyword()) ::
           {:ok, Conversation.t()} | {:error, term()}
@@ -1198,6 +1212,8 @@ defmodule Fountain.Conversations do
                do: do_reapply_conversation(current, attrs),
                else: {:error, :provisioning}
            end) do
+      metadata = reapply_metadata(previous, updated)
+
       # Outside the transaction: a failed audit insert would abort the
       # enclosing one and take the reapply with it.
       Audit.record(%{
@@ -1207,13 +1223,83 @@ defmodule Fountain.Conversations do
         resource_id: updated.id,
         actor: Keyword.get(opts, :actor, "self"),
         request_ip: Keyword.get(opts, :request_ip),
-        metadata: reapply_metadata(previous, updated)
+        metadata: metadata
       })
 
       broadcast_sidebar_update(updated.user_id)
+      announce_reapply(updated, metadata)
       {:ok, updated}
     end
   end
+
+  # The selection is committed by the time this runs, so it is not in doubt and
+  # the caller is not told otherwise. What is still in doubt is whether a
+  # machine has read it, and only `{:ok, :reloaded}` says one has. Everything
+  # else — no server, no machine, a server that refused — leaves the selection
+  # standing with nothing rewritten anywhere, which is the `failed` sentence
+  # rather than a `done` that would claim a machine is configured.
+  #
+  # Best-effort as a whole: this runs after the commit, so neither the call nor
+  # `publish_stage/4`'s own insert may take a reapply that already happened.
+  defp announce_reapply(conv, metadata) do
+    try do
+      common = %{
+        event: "reapplied",
+        previous: metadata["previous"],
+        current: metadata["current"],
+        changed_fields: metadata["changed_fields"]
+      }
+
+      case Fountain.Conversations.ConversationServer.refresh_configuration(
+             conv.id,
+             conv.configuration_revision
+           ) do
+        {:ok, :reloaded} ->
+          publish_stage(
+            conv.id,
+            "configuration",
+            "done",
+            Map.put(
+              common,
+              :message,
+              "The configuration was reapplied on this machine. The transcript and the " <>
+                "files on disk are kept; the next prompt starts a new runtime session."
+            )
+          )
+
+        # Total on purpose. This runs after the commit, so an unexpected shape
+        # here must become an event rather than a CaseClauseError that 500s a
+        # reapply which already happened.
+        other ->
+          publish_stage(
+            conv.id,
+            "configuration",
+            "failed",
+            common
+            |> Map.put(:reason, refresh_reason(other))
+            |> Map.put(
+              :message,
+              "The configuration is selected. No machine has read it yet; it is " <>
+                "applied when this conversation next wakes, and no turn can run " <>
+                "against the previous selection in the meantime."
+            )
+          )
+      end
+    rescue
+      error ->
+        Logger.error(
+          "conv #{conv.id}: announcing the reapplied configuration raised: " <>
+            Exception.format(:error, error, __STACKTRACE__)
+        )
+    end
+
+    :ok
+  end
+
+  defp refresh_reason({:ok, reason}), do: refresh_reason(reason)
+  defp refresh_reason({:error, reason}), do: refresh_reason(reason)
+  defp refresh_reason(reason) when is_atom(reason) or is_binary(reason), do: to_string(reason)
+  defp refresh_reason(other), do: inspect(other)
 
   defp do_reapply_conversation(conv, attrs) do
     agent_id = reapply_value(attrs, "agent_id", conv.agent_id)
@@ -1565,6 +1651,10 @@ defmodule Fountain.Conversations do
   Create a turn on a sandbox that may be shared, refusing when the runtime's
   capacity is used up by another conversation's running turn.
 
+  `revision` is the conversation's `configuration_revision` as the caller
+  understands it, or nil for a caller with none; a mismatch answers
+  `{:error, :configuration_changed}` (#1565).
+
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
   per-sandbox advisory lock and verify that the conversation still belongs
   to this nonterminal sandbox. An integer capacity also limits concurrent
@@ -1573,7 +1663,7 @@ defmodule Fountain.Conversations do
   nonempty allowance refuses the turn. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
   """
-  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
+  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity, revision \\ nil)
       when is_binary(sandbox_id) and
              (capacity == :unbounded or (is_integer(capacity) and capacity > 0)) do
     conv_id = Map.fetch!(attrs, :conversation_id)
@@ -1588,12 +1678,21 @@ defmodule Fountain.Conversations do
         # The allowance's FK takes KEY SHARE on this row when first inserted.
         # UPDATE also fences that first insert when there is no allowance row
         # to lock yet. Keep both locks through the turn insert.
-        Repo.one(
-          from c in Conversation,
-            where: c.id == ^conv_id,
-            select: c.id,
-            lock: "FOR UPDATE"
-        ) || Repo.rollback(:sandbox_unavailable)
+        conv =
+          Repo.one(
+            from c in Conversation,
+              where: c.id == ^conv_id,
+              select: %{id: c.id, configuration_revision: c.configuration_revision},
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:sandbox_unavailable)
+
+        # The server passes the revision it loaded. A reapply committed since
+        # then means this turn would run against settings the server has not
+        # read, so it is refused here rather than started wrong (#1565). A
+        # caller with no revision to offer is not checked.
+        if not is_nil(revision) and conv.configuration_revision != revision do
+          Repo.rollback(:configuration_changed)
+        end
 
         attached? =
           Repo.exists?(

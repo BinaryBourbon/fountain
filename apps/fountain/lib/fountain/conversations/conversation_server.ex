@@ -375,6 +375,38 @@ defmodule Fountain.Conversations.ConversationServer do
     result
   end
 
+  @doc """
+  Apply the conversation's current selection to the machine it is running on.
+
+  The conversation context calls this after it writes the new selection. A
+  server that is not running needs nothing: the next wake builds from the row,
+  which already says what to build. `revision` lets a server that has already
+  loaded that selection answer without doing the work again, which is what a
+  notification arriving after the server reloaded on its own looks like. See
+  `Fountain.Conversations.Reapply`.
+
+  Three answers, because "nothing is stale" and "a machine has read this" are
+  different facts and only the second earns a `configuration`/`done` event:
+
+    * `{:ok, :reloaded}` — a live server has the new selection;
+    * `{:ok, :no_server}` / `{:ok, :no_machine}` — there was nothing to tell,
+      so nothing was rewritten and the next wake builds from the row;
+    * `{:error, reason}` — a live server holds the previous selection and
+      could not be told.
+
+  Only the first means a machine was reconfigured. A caller that treats the
+  middle pair as success is right about the selection and wrong about the
+  machine, which is the distinction `announce_reapply/2` publishes.
+  """
+  @spec refresh_configuration(String.t(), integer() | nil) ::
+          {:ok, :reloaded | :no_server | :no_machine} | {:error, term()}
+  def refresh_configuration(conv_id, revision \\ nil) do
+    case whereis(conv_id) do
+      nil -> {:ok, :no_server}
+      pid -> call_server(pid, {:refresh_configuration, revision})
+    end
+  end
+
   # Records a lifecycle action against the conversation's owner.
   #
   # Only on success: an attempt against a conversation that is not running
@@ -462,6 +494,9 @@ defmodule Fountain.Conversations.ConversationServer do
       current_command: nil,
       current_command_ref: nil,
       current_turn: nil,
+      # The conversation's `configuration_revision` as this server last read
+      # it. Turn admission is checked against it (#1565).
+      configuration_revision: 0,
       # A runner's processes survive its websocket. Keep an accepted ACP
       # turn busy while its transport reconnects, with one bounded deadline.
       runner_reconnect: nil,
@@ -620,6 +655,15 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @impl true
+  # A prompt that lost the race to a reapply: rebuild from the row it has not
+  # read, then deliver the prompt against it.
+  def handle_continue({:reapply_prompt, prompt, images}, state) do
+    case handle_continue(:provision, state) do
+      {:noreply, fresh} -> handle_cast({:initial_prompt, prompt, images}, fresh)
+      stopped -> stopped
+    end
+  end
+
   def handle_continue(:provision, state) do
     conv = Conversations._unsafe_get_conversation(state.conversation_id)
     sandbox = state.sandbox_id && Conversations._unsafe_get_sandbox(state.sandbox_id)
@@ -708,6 +752,13 @@ defmodule Fountain.Conversations.ConversationServer do
           %{
             state
             | user_id: conv.user_id,
+              # Load-bearing placement: this is the one state assembly both the
+              # fresh-provision and the reattach arms of dispatch_provision/7
+              # come through. In either arm instead, a server that reloads
+              # after `:configuration_changed` would come back holding the old
+              # revision, and kick_turn -> :reapply_prompt -> :provision would
+              # spin against the database (#1565).
+              configuration_revision: conv.configuration_revision,
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
               inference_credentials: inference_creds,
@@ -1438,7 +1489,7 @@ defmodule Fountain.Conversations.ConversationServer do
            :ok <- TurnMachine.capacity_gate(state.sandbox_id, conv) do
         state = close_autonomous_turn(state, "superseded_by_prompt")
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-        {:reply, :ok, kick_turn(state, prompt, agent, images)}
+        replying_ok(kick_turn(state, prompt, agent, images))
       else
         {:error, _} = err -> {:reply, err, state}
       end
@@ -1567,6 +1618,31 @@ defmodule Fountain.Conversations.ConversationServer do
     {:stop, :normal, :ok, %{state | handle: nil}}
   end
 
+  # A notification for the revision this server already holds is a no-op: it
+  # reloaded on its own (`kick_turn`) before the message arrived.
+  def handle_call({:refresh_configuration, revision}, from, state) do
+    if revision == state.configuration_revision,
+      do: {:reply, {:ok, :reloaded}, state},
+      else: handle_call(:refresh_configuration, from, state)
+  end
+
+  def handle_call(:refresh_configuration, _from, %{current_turn: turn} = state)
+      when not is_nil(turn),
+      do: {:reply, {:error, :conversation_busy}, state}
+
+  # Nothing to reconfigure without a machine; the next wake builds from the
+  # row. Not a failure, and not a reload either: no file was rewritten, so this
+  # must not be reported as a machine that holds the new selection.
+  def handle_call(:refresh_configuration, _from, %{handle: nil} = state),
+    do: {:reply, {:ok, :no_machine}, state}
+
+  # The machine stays. Dropping the connection is what makes the next turn
+  # spawn a runtime that reads the rewritten files and the fresh environment.
+  def handle_call(:refresh_configuration, _from, state) do
+    state = drop_connection(state, "configuration_reapplied")
+    {:reply, {:ok, :reloaded}, %{state | handle: nil}, {:continue, :provision}}
+  end
+
   # Catch-all: an unmatched call must not die with a FunctionClauseError at
   # the callback head — that exception's message embeds the full state
   # (plaintext secrets included) in the crash report, and format_status/1
@@ -1595,7 +1671,7 @@ defmodule Fountain.Conversations.ConversationServer do
            :ok <- TurnMachine.gate(conv.user_id, state.inference_source) do
         state = close_autonomous_turn(state, "superseded_by_prompt")
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-        {:noreply, kick_turn(state, prompt, agent, images)}
+        kick_turn(state, prompt, agent, images)
       else
         {:error, reason} ->
           # A cast has no caller to reply to. Preserve existing work and its
@@ -2112,15 +2188,38 @@ defmodule Fountain.Conversations.ConversationServer do
     }
   end
 
+  # Returns the callback tuple rather than a state, because one outcome needs
+  # a continuation: a reapply committed while this server held an older
+  # revision, so the turn is not opened, the connection is dropped and the
+  # server rebuilds from the row before delivering the prompt (#1565).
   defp kick_turn(state, prompt, agent, images) do
     state = touch_activity(state)
 
-    case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt, agent) do
-      {:ok, conv, turn} -> run_turn(state, conv, turn, prompt, agent, images)
-      refused when refused in [:at_capacity, :no_command] -> state
-      {:error, _} -> drop_connection(state, "admission_refused")
+    case TurnMachine.open(
+           state.conversation_id,
+           state.sandbox_id,
+           prompt,
+           agent,
+           state.configuration_revision
+         ) do
+      {:ok, conv, turn} ->
+        {:noreply, run_turn(state, conv, turn, prompt, agent, images)}
+
+      refused when refused in [:at_capacity, :no_command] ->
+        {:noreply, state}
+
+      :configuration_changed ->
+        state = drop_connection(state, "configuration_reapplied")
+        {:noreply, %{state | handle: nil}, {:continue, {:reapply_prompt, prompt, images}}}
+
+      {:error, _} ->
+        {:noreply, drop_connection(state, "admission_refused")}
     end
   end
+
+  # `kick_turn/4` answers a cast's shape; a call needs `:ok` in front of it.
+  defp replying_ok({:noreply, state}), do: {:reply, :ok, state}
+  defp replying_ok({:noreply, state, continuation}), do: {:reply, :ok, state, continuation}
 
   defp run_turn(state, conv, turn, prompt, agent, images) do
     state = %{state | inference_model: agent && agent.model}
