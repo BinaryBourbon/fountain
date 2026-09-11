@@ -385,22 +385,27 @@ defmodule Fountain.Conversations.ConversationServer do
   notification arriving after the server reloaded on its own looks like. See
   `Fountain.Conversations.Reapply`.
 
-  `:ok` means no live server is left holding the previous selection, which
-  includes the case where there is no server at all.
+  Three answers, because "nothing is stale" and "a machine has read this" are
+  different facts and only the second earns a `configuration`/`done` event:
+
+    * `{:ok, :reloaded}` — a live server has the new selection;
+    * `{:ok, :no_server}` / `{:ok, :no_machine}` — there was nothing to tell,
+      so nothing was rewritten and the next wake builds from the row;
+    * `{:error, reason}` — a live server holds the previous selection and
+      could not be told.
+
+  Only the first means a machine was reconfigured. A caller that treats the
+  middle pair as success is right about the selection and wrong about the
+  machine, which is the distinction `announce_reapply/2` publishes.
   """
+  @spec refresh_configuration(String.t(), integer() | nil) ::
+          {:ok, :reloaded | :no_server | :no_machine} | {:error, term()}
   def refresh_configuration(conv_id, revision \\ nil) do
     case whereis(conv_id) do
-      nil -> :ok
-      pid -> settled(call_server(pid, {:refresh_configuration, revision}))
+      nil -> {:ok, :no_server}
+      pid -> call_server(pid, {:refresh_configuration, revision})
     end
   end
-
-  # A server that has gone away is the `whereis/1` miss above observed a few
-  # microseconds later: nothing is left holding the previous selection, and the
-  # next wake builds from the row. Reporting it as a failure would hand the
-  # caller an error for a selection that is already committed.
-  defp settled({:error, :not_running}), do: :ok
-  defp settled(other), do: other
 
   # Records a lifecycle action against the conversation's owner.
   #
@@ -747,6 +752,12 @@ defmodule Fountain.Conversations.ConversationServer do
           %{
             state
             | user_id: conv.user_id,
+              # Load-bearing placement: this is the one state assembly both the
+              # fresh-provision and the reattach arms of dispatch_provision/7
+              # come through. In either arm instead, a server that reloads
+              # after `:configuration_changed` would come back holding the old
+              # revision, and kick_turn -> :reapply_prompt -> :provision would
+              # spin against the database (#1565).
               configuration_revision: conv.configuration_revision,
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
@@ -1611,7 +1622,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # reloaded on its own (`kick_turn`) before the message arrived.
   def handle_call({:refresh_configuration, revision}, from, state) do
     if revision == state.configuration_revision,
-      do: {:reply, :ok, state},
+      do: {:reply, {:ok, :reloaded}, state},
       else: handle_call(:refresh_configuration, from, state)
   end
 
@@ -1619,15 +1630,17 @@ defmodule Fountain.Conversations.ConversationServer do
       when not is_nil(turn),
       do: {:reply, {:error, :conversation_busy}, state}
 
-  # Nothing to reconfigure without a machine; the next wake builds from the row.
+  # Nothing to reconfigure without a machine; the next wake builds from the
+  # row. Not a failure, and not a reload either: no file was rewritten, so this
+  # must not be reported as a machine that holds the new selection.
   def handle_call(:refresh_configuration, _from, %{handle: nil} = state),
-    do: {:reply, :ok, state}
+    do: {:reply, {:ok, :no_machine}, state}
 
   # The machine stays. Dropping the connection is what makes the next turn
   # spawn a runtime that reads the rewritten files and the fresh environment.
   def handle_call(:refresh_configuration, _from, state) do
     state = drop_connection(state, "configuration_reapplied")
-    {:reply, :ok, %{state | handle: nil}, {:continue, :provision}}
+    {:reply, {:ok, :reloaded}, %{state | handle: nil}, {:continue, :provision}}
   end
 
   # Catch-all: an unmatched call must not die with a FunctionClauseError at

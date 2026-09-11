@@ -89,11 +89,17 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       assert updated.runtime_session_id == "session-before-reapply"
       assert updated.configuration_revision == 1
 
+      # No server runs in this test, and none is stubbed, so this is the
+      # acceptance-criterion-one case: an idle conversation whose server has
+      # stopped. Nothing on the sprite was rewritten, so `done` would claim a
+      # machine holds the selection when none has read it. The selection still
+      # stands and the next wake applies it, which is what `failed` says here.
       [stage] =
         Conversations._unsafe_list_log_events(updated.id)
         |> Enum.filter(&(&1.kind == "stage" and &1.stage == "configuration"))
 
-      assert stage.state == "done"
+      assert stage.state == "failed"
+      assert Jason.decode!(stage.data)["reason"] == "no_server"
     end
 
     test "tells the live server to apply it", ctx do
@@ -101,7 +107,7 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
 
       stub(Fountain.Conversations.ConversationServer, :refresh_configuration, fn id, revision ->
         send(test, {:refreshed, id, revision})
-        :ok
+        {:ok, :reloaded}
       end)
 
       assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
@@ -109,8 +115,8 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       assert id == ctx.conv.id
       assert revision == updated.configuration_revision
 
-      # A server that took the selection gets `done`; the pair to the `failed`
-      # case below, which is the same committed row with a machine behind it.
+      # Only a live server that read the selection earns `done`. Its pair is
+      # the `failed` case below: the same committed row, nothing rewritten.
       [stage] =
         Conversations._unsafe_list_log_events(ctx.conv.id)
         |> Enum.filter(&(&1.kind == "stage" and &1.stage == "configuration"))

@@ -1233,57 +1233,70 @@ defmodule Fountain.Conversations do
   end
 
   # The selection is committed by the time this runs, so it is not in doubt and
-  # the caller is not told otherwise. What is still in doubt is whether the
-  # machine running now has read it, and that gets an event of its own rather
-  # than a `done` that would tell every follower the machine is configured when
-  # it is not.
+  # the caller is not told otherwise. What is still in doubt is whether a
+  # machine has read it, and only `{:ok, :reloaded}` says one has. Everything
+  # else — no server, no machine, a server that refused — leaves the selection
+  # standing with nothing rewritten anywhere, which is the `failed` sentence
+  # rather than a `done` that would claim a machine is configured.
+  #
+  # Best-effort as a whole: this runs after the commit, so neither the call nor
+  # `publish_stage/4`'s own insert may take a reapply that already happened.
   defp announce_reapply(conv, metadata) do
-    common = %{
-      event: "reapplied",
-      previous: metadata["previous"],
-      current: metadata["current"],
-      changed_fields: metadata["changed_fields"]
-    }
+    try do
+      common = %{
+        event: "reapplied",
+        previous: metadata["previous"],
+        current: metadata["current"],
+        changed_fields: metadata["changed_fields"]
+      }
 
-    case Fountain.Conversations.ConversationServer.refresh_configuration(
-           conv.id,
-           conv.configuration_revision
-         ) do
-      :ok ->
-        publish_stage(
-          conv.id,
-          "configuration",
-          "done",
-          Map.put(
-            common,
-            :message,
-            "The configuration was reapplied on this machine. The transcript and the " <>
-              "files on disk are kept; the next prompt starts a new runtime session."
+      case Fountain.Conversations.ConversationServer.refresh_configuration(
+             conv.id,
+             conv.configuration_revision
+           ) do
+        {:ok, :reloaded} ->
+          publish_stage(
+            conv.id,
+            "configuration",
+            "done",
+            Map.put(
+              common,
+              :message,
+              "The configuration was reapplied on this machine. The transcript and the " <>
+                "files on disk are kept; the next prompt starts a new runtime session."
+            )
           )
-        )
 
-      # Total on purpose. This runs after the commit, so an unexpected shape
-      # here must become an event rather than a CaseClauseError that 500s a
-      # reapply which already happened.
-      other ->
-        publish_stage(
-          conv.id,
-          "configuration",
-          "failed",
-          common
-          |> Map.put(:reason, refresh_reason(other))
-          |> Map.put(
-            :message,
-            "The configuration is selected, but the machine it is running on has not " <>
-              "read it yet. It is applied when this conversation next wakes, and no " <>
-              "turn can run against the previous selection in the meantime."
+        # Total on purpose. This runs after the commit, so an unexpected shape
+        # here must become an event rather than a CaseClauseError that 500s a
+        # reapply which already happened.
+        other ->
+          publish_stage(
+            conv.id,
+            "configuration",
+            "failed",
+            common
+            |> Map.put(:reason, refresh_reason(other))
+            |> Map.put(
+              :message,
+              "The configuration is selected. No machine has read it yet; it is " <>
+                "applied when this conversation next wakes, and no turn can run " <>
+                "against the previous selection in the meantime."
+            )
           )
+      end
+    rescue
+      error ->
+        Logger.error(
+          "conv #{conv.id}: announcing the reapplied configuration raised: " <>
+            Exception.format(:error, error, __STACKTRACE__)
         )
     end
 
     :ok
   end
 
+  defp refresh_reason({:ok, reason}), do: refresh_reason(reason)
   defp refresh_reason({:error, reason}), do: refresh_reason(reason)
   defp refresh_reason(reason) when is_atom(reason) or is_binary(reason), do: to_string(reason)
   defp refresh_reason(other), do: inspect(other)

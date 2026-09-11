@@ -33,13 +33,31 @@ defmodule Fountain.Conversations.ConversationServerRefreshTest do
     {:ok, user: user, env: env, agent: agent, sandbox: sandbox, conv: conv}
   end
 
+  test "with no server registered, the public entry point says so", ctx do
+    # Nothing else in this file reaches `refresh_configuration/2`: the tests
+    # below call the handler on a pid, and the context tests replace the whole
+    # function with Mimic. So the `whereis/1` half had no coverage at all, and
+    # a change to what it answers was invisible to the suite.
+    #
+    # This harness's servers are deliberately outside Horde (see
+    # `ConversationServerCase.start_server/2`), so the registry never finds one
+    # and this is the real production answer for an idle conversation whose
+    # server has stopped. It has to be distinguishable from a server that read
+    # the selection, because no file was rewritten here.
+    assert {:ok, :no_server} =
+             Fountain.Conversations.ConversationServer.refresh_configuration(ctx.conv.id)
+
+    assert {:ok, :no_server} =
+             Fountain.Conversations.ConversationServer.refresh_configuration(ctx.conv.id, 7)
+  end
+
   test "an idle server re-applies the row and keeps its machine", ctx do
     stub_happy_sprite()
     test = self()
     Mimic.stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
 
     {pid, _ref, :alive} = start_server(ctx.conv)
-    assert :ok = GenServer.call(pid, :refresh_configuration)
+    assert {:ok, :reloaded} = GenServer.call(pid, :refresh_configuration)
 
     # The machine is the whole point of the operation: it stays, and so does
     # everything the agent put on its disk.
@@ -54,7 +72,7 @@ defmodule Fountain.Conversations.ConversationServerRefreshTest do
     {pid, _ref, :alive} = start_server(ctx.conv)
 
     revision = :sys.get_state(pid).configuration_revision
-    assert :ok = GenServer.call(pid, {:refresh_configuration, revision})
+    assert {:ok, :reloaded} = GenServer.call(pid, {:refresh_configuration, revision})
     assert Process.alive?(pid)
     GenServer.stop(pid)
   end
@@ -81,7 +99,7 @@ defmodule Fountain.Conversations.ConversationServerRefreshTest do
     {pid, _ref, :alive} = start_server(ctx.conv)
     :sys.replace_state(pid, fn state -> %{state | handle: nil} end)
 
-    assert :ok = GenServer.call(pid, :refresh_configuration)
+    assert {:ok, :no_machine} = GenServer.call(pid, :refresh_configuration)
     assert Process.alive?(pid)
     GenServer.stop(pid)
   end
