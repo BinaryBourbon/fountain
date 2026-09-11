@@ -40,3 +40,46 @@ class RequiredChecksTest(unittest.TestCase):
             {"context": "CI required", "integration_id": 15368},
             {"context": "Detect secrets", "integration_id": 15368},
         ])
+
+    def test_merge_queue_is_opt_in(self):
+        result = module.updated_ruleset(self.current())
+        self.assertEqual([r["type"] for r in result["rules"] if r["type"] == "merge_queue"], [])
+        self.assertTrue(result["rules"][-1]["parameters"]["strict_required_status_checks_policy"])
+
+    def test_merge_queue_adds_the_rule_and_drops_the_up_to_date_requirement(self):
+        result = module.updated_ruleset(self.current(), merge_queue=True)
+        queue = next(r for r in result["rules"] if r["type"] == "merge_queue")
+        self.assertEqual(queue["parameters"], module.MERGE_QUEUE)
+        checks = next(r for r in result["rules"] if r["type"] == "required_status_checks")
+        self.assertFalse(checks["parameters"]["strict_required_status_checks_policy"])
+
+    def test_merge_queue_leaves_the_review_requirement_alone(self):
+        """Turning the queue on must not quietly relax who has to read a PR.
+
+        The queue decides whether a tree builds. Whether a human looked at it
+        is a separate gate, and enabling one is not a reason to drop the other.
+        """
+        for merge_queue in (False, True):
+            result = module.updated_ruleset(self.current(), merge_queue=merge_queue)
+            review = next(r for r in result["rules"] if r["type"] == "pull_request")
+            with self.subTest(merge_queue=merge_queue):
+                self.assertEqual(review["parameters"], next(
+                    r for r in self.current()["rules"] if r["type"] == "pull_request")["parameters"])
+
+    def test_merge_queue_is_idempotent_and_keeps_required_checks(self):
+        once = module.updated_ruleset(self.current(), merge_queue=True)
+        self.assertEqual(module.updated_ruleset(once, merge_queue=True), once)
+        contexts = [c["context"] for c in
+                    next(r for r in once["rules"] if r["type"] == "required_status_checks")
+                    ["parameters"]["required_status_checks"]]
+        self.assertEqual(contexts, ["CI required", "Detect secrets"])
+
+    def test_the_queue_cannot_outrun_the_free_plan_job_ceiling(self):
+        """One full CI run is 19 of the 20 concurrent jobs a free org gets.
+
+        Building more than one group at a time cannot run them in parallel; it
+        only starves every open PR of runners.
+        """
+        self.assertEqual(module.MERGE_QUEUE["max_entries_to_build"], 1)
+        self.assertGreater(module.MERGE_QUEUE["max_entries_to_merge"], 1)
+        self.assertEqual(module.MERGE_QUEUE["grouping_strategy"], "ALLGREEN")

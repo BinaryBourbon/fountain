@@ -4,11 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue. Every required check must name this event or the queue
+  # waits for a check that never arrives, times out and ejects the PR.
+  merge_group:
 
 concurrency:
-  # PR updates supersede one another. Main commits validate independently:
-  # a shared main group both delayed feedback and cancelled older pending runs.
-  # build.yml's built-ancestor diff includes changes from any unbuilt ancestor.
+  # PR updates supersede one another. Main commits and merge groups validate
+  # independently: a shared main group both delayed feedback and cancelled
+  # older pending runs, and cancelling a queue run ejects the PR it was
+  # deciding. build.yml's built-ancestor diff includes changes from any
+  # unbuilt ancestor.
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -32,9 +37,15 @@ env:
 jobs:
   already-tested:
     name: Skip the re-run when a PR already tested this exact tree
-    # Push-to-main only. On pull_request this job is skipped, its outputs are
-    # empty, and the `!= 'true'` tests below let everything run as before.
-    if: ${{ github.event_name == 'push' }}
+    # Main and the merge queue. On pull_request this job is skipped, its
+    # outputs are empty, and the `!= 'true'` tests below let everything run as
+    # before.
+    #
+    # In the queue it answers "is this group's tree one a PR run already
+    # tested?" — true whenever a single up-to-date PR is queued alone, which
+    # is what keeps the queue's throughput near today's. A batch combines
+    # trees no PR run ever had, so it falls through to the full suite.
+    if: ${{ github.event_name == 'push' || github.event_name == 'merge_group' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -57,13 +68,17 @@ jobs:
 
   changes:
     name: Decide whether this is a docs-only change
-    # pull_request only, and deliberately so. On push, `already-tested` above
+    # Never on push, and deliberately so. There, `already-tested` above
     # already collapses a rebased squash-merge to a few seconds, and a main
     # push that is NOT already-tested is precisely the case that must run
-    # everything. Skipped here means empty outputs, and the `!= 'true'` tests
+    # everything. Skipped means empty outputs, and the `!= 'true'` tests
     # below let every job run exactly as before — the same shape the
     # already-tested gate uses.
-    if: ${{ github.event_name == 'pull_request' }}
+    #
+    # The queue classifies its group for the same reason a PR does: without
+    # this, every docs-only merge would run the full Elixir suite on the way
+    # in, which is 11% of what lands here.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -100,6 +115,9 @@ jobs:
         # CHANGELOG.md is NOT on the allowlist even though docs/changelog.md
         # snippet-includes it — it is touched by the release-bump flow, where
         # skipping the suite is not wanted.
+        env:
+          # Empty on pull_request, which is how the script picks its base.
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -u
           decide() {
@@ -111,16 +129,27 @@ jobs:
             exit 0
           }
 
-          if ! git fetch --no-tags --quiet origin \
-               "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" 2>/dev/null; then
-            echo "could not fetch base ${GITHUB_BASE_REF} — running the full CI"
-            decide false false true
-          fi
+          # A merge group already knows the commit it was stacked onto, and
+          # there is no base *ref* to fetch: the group branch is transient and
+          # its base moves under it. A PR keeps the merge-base walk.
+          if [ -n "${MERGE_GROUP_BASE_SHA}" ]; then
+            base="${MERGE_GROUP_BASE_SHA}"
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              echo "merge group base ${base:0:7} is not in this checkout — running the full CI"
+              decide false false true
+            fi
+          else
+            if ! git fetch --no-tags --quiet origin \
+                 "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" 2>/dev/null; then
+              echo "could not fetch base ${GITHUB_BASE_REF} — running the full CI"
+              decide false false true
+            fi
 
-          base="$(git merge-base "refs/remotes/origin/${GITHUB_BASE_REF}" HEAD 2>/dev/null || true)"
-          if [ -z "${base}" ]; then
-            echo "no merge base with ${GITHUB_BASE_REF} — running the full CI"
-            decide false false true
+            base="$(git merge-base "refs/remotes/origin/${GITHUB_BASE_REF}" HEAD 2>/dev/null || true)"
+            if [ -z "${base}" ]; then
+              echo "no merge base with ${GITHUB_BASE_REF} — running the full CI"
+              decide false false true
+            fi
           fi
 
           changed="$(git diff --name-only "${base}" HEAD 2>/dev/null || true)"
@@ -1790,8 +1819,10 @@ jobs:
         run: python3 scripts/ci/gate.py
       # Only a successful aggregate verdict can publish evidence for main's
       # shortcut. Old runs without this artifact conservatively rerun CI.
-      - name: Record the tested PR tree
-        if: ${{ github.event_name == 'pull_request' }}
+      # A merge group publishes too, and that is what keeps main's push at a
+      # few seconds once the queue is the thing doing the testing.
+      - name: Record the tested tree
+        if: ${{ github.event_name != 'push' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tested-tree

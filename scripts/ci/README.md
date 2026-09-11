@@ -24,10 +24,58 @@ cat /tmp/fountain-required-checks.json
 python3 scripts/ci/require-checks.py --apply
 ```
 
-This requires `CI required` and `Detect secrets` from GitHub Actions. The new
-status rule requires the branch to be current with main before merging. It
+This requires `CI required` and `Detect secrets` from GitHub Actions. It
 preserves an existing status rule's strictness if one already exists. Run the
 preview again after applying to verify the stored policy.
+
+## The merge queue
+
+`--merge-queue` adds the queue rule and turns the up-to-date requirement off,
+because the queue supersedes it: instead of asking a PR to prove it was rebased
+recently, the queue builds the exact tree the merge will produce and merges
+only if that passes.
+
+It deliberately does **not** touch the review requirement. A PR still needs its
+approving review before GitHub will enqueue it at all — an unreviewed PR does
+not fail, it simply never enters the queue, which is worth knowing before
+debugging a `--auto` that appears to do nothing.
+
+```sh
+python3 scripts/ci/require-checks.py --merge-queue    # preview
+python3 scripts/ci/require-checks.py --merge-queue --apply
+```
+
+`--apply` refuses unless `ci.yml` and `secrets-scan.yml` **on main** carry a
+`merge_group:` trigger. That order is the one failure that has no visible
+cause: a queue whose required checks never start does not fail a PR, it waits
+out `check_response_timeout_minutes` and ejects it, with no red job anywhere to
+explain why. `test_every_event_the_workflow_triggers_on_is_a_plan` in
+`test_gate.py` keeps the workflow and `gate.py` from drifting apart later.
+
+Three CI events now exist, and `gate.py`'s `PROBES` table is the authority on
+what each one owes:
+
+| Event | Probes that run | What the plan means |
+|---|---|---|
+| `pull_request` | `changes` | Classify the diff; docs-only skips the Elixir suite |
+| `merge_group` | `changes` + `already-tested` | Classify the group, and skip it outright when its tree is one a PR run already tested |
+| `push` | `already-tested` | Main reuses the queue run (or a PR run) that tested this tree |
+
+The queue run and main's push both look for the `tested-tree` artifact, so a
+queued merge normally costs one full run, not two: the queue runs the suite,
+and main's push finds the queue's artifact and finishes in seconds. Main finds
+it through the queue's `gh-readonly-queue/<base>/pr-<number>-<sha>` branch
+name, which is the only link back from a squashed commit to the run that
+tested it.
+
+### Sizing
+
+`MERGE_QUEUE` in `require-checks.py` carries the reasoning for each value. The
+binding constraint is the free plan's 20 concurrent GitHub-hosted jobs against
+a full CI run's 19, which is why the queue builds one group at a time and buys
+its throughput by batching up to five PRs into that one group instead.
+Revisit `max_entries_to_build` when the concurrency ceiling changes, not
+before.
 
 ## Refresh partition timings
 
