@@ -101,6 +101,10 @@ installation, type checks, tests, builds, browser bundling, contract and
 conformance checks on Node 20.19.0 and 24. The minimum runtime runs compiled
 JavaScript from the same test sources in a temporary fixture tree. Node 24
 retains native TypeScript tests. Both legs build the SDK and browser bundle.
+They also pack and install the npm artifact in a temporary consumer project.
+That project typechecks against the published declarations and exercises the
+Node and browser entry points with a fake fetch implementation. It also bundles
+that consumer for a browser, checking the package export conditions.
 These three extracted jobs lint fixtures before their
 tests. Swift retains its separate conformance test step.
 `CI required` requires every selected SDK job. A failed, cancelled or

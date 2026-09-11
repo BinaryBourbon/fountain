@@ -1048,6 +1048,10 @@ jobs:
         working-directory: sdk/typescript
         run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
 
+      - name: SDK packed artifact
+        working-directory: sdk/typescript
+        run: node scripts/verify-package.mjs
+
       - name: TypeScript SDK contract
         working-directory: sdk/typescript
         run: npm run verify-contract

@@ -26,5 +26,6 @@ class TypeScriptSDKMatrixTest(unittest.TestCase):
                               ("TypeScript SDK conformance on the minimum runtime", "node scripts/test-compiled.mjs --conformance")):
             self.assertIn("if: ${{ matrix.node == '" + minimum + ".0' }}", steps[name])
             self.assertIn("run: " + command, steps[name])
-        for name in ("SDK install", "SDK typecheck", "SDK build", "SDK bundles for the browser", "TypeScript SDK contract"):
+        self.assertIn("run: node scripts/verify-package.mjs", steps["SDK packed artifact"])
+        for name in ("SDK install", "SDK typecheck", "SDK build", "SDK bundles for the browser", "SDK packed artifact", "TypeScript SDK contract"):
             self.assertNotIn("        if:", steps[name])
