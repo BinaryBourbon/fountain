@@ -8,6 +8,7 @@ defmodule Fountain.PrincipalsTest do
   """
 
   use Fountain.DataCase, async: true
+  use Mimic
 
   alias Fountain.Accounts
   alias Fountain.Credits
@@ -334,14 +335,45 @@ defmodule Fountain.PrincipalsTest do
       opts = [idempotency_key: "claim_1"]
 
       {:ok, first} = Principals.claim(ctx.claimable.id, ctx.token, claimer, opts)
+      {:ok, _, first_key} = Accounts.authenticate_api_key(first.api_key)
+
+      {:ok, {callback, _}} =
+        Accounts.create_api_key(first.claimable.user_id, "callback", scopes: ["sprite"])
+
       {:ok, second} = Principals.claim(ctx.claimable.id, ctx.token, claimer, opts)
 
+      assert {:error, :revoked} = Accounts.authenticate_api_key(first.api_key)
+      assert {:ok, _, _} = Accounts.authenticate_api_key(second.api_key)
+      assert is_nil(Repo.reload!(callback).revoked_at)
+
+      assert [audit] =
+               Repo.all(
+                 from a in Fountain.Audit.Event,
+                   where: a.resource_id == ^first_key.id and a.action == "api_key.revoked"
+               )
+
+      assert audit.user_id == first.claimable.user_id
       assert first.claimable.id == second.claimable.id
       refute first.api_key == second.api_key
 
       # A different key from the same account is not a replay.
       assert {:error, :already_claimed} =
                Principals.claim(ctx.claimable.id, ctx.token, claimer, idempotency_key: "other")
+    end
+
+    test "a failed credential mint rolls back the owner attachment and anonymous-key revocation",
+         ctx do
+      claimer = insert_verified_user()
+
+      stub(Accounts, :build_api_key, fn user_id, name, opts ->
+        {changeset, raw} = Mimic.call_original(Accounts, :build_api_key, [user_id, name, opts])
+        {Ecto.Changeset.add_error(changeset, :name, "mint refused"), raw}
+      end)
+
+      assert {:error, %Ecto.Changeset{}} = Principals.claim(ctx.claimable.id, ctx.token, claimer)
+      assert Repo.get!(ClaimableUser, ctx.claimable.id).status == "unclaimed"
+      assert is_nil(Principals.owner_id(ctx.claimable.user_id))
+      assert {:ok, _, _} = Accounts.authenticate_api_key(ctx.anon_key)
     end
 
     test "an account that cannot fund future work is refused without mutating", ctx do

@@ -138,6 +138,103 @@ defmodule Fountain.PrincipalsClaimReplayTest do
     end)
   end
 
+  test "concurrent claim replays leave one principal credential" do
+    {application, owner, opened, first} =
+      Sandbox.unboxed_run(Repo, fn ->
+        application = insert_verified_user()
+        owner = insert_verified_user()
+
+        {:ok, opened} =
+          Principals.create_claimable(application, %{"application_id" => "rotation"})
+
+        {:ok, first} =
+          Principals.claim(opened.claimable.id, opened.claim_token, owner,
+            idempotency_key: "rotate"
+          )
+
+        {application, owner, opened, first}
+      end)
+
+    on_exit(fn ->
+      Sandbox.unboxed_run(Repo, fn ->
+        ids = [application.id, owner.id, opened.claimable.user_id]
+        Repo.delete_all(from u in User, where: u.id in ^ids)
+      end)
+    end)
+
+    parent = self()
+
+    blocker =
+      Task.async(fn ->
+        Sandbox.unboxed_run(Repo, fn ->
+          Repo.transaction(fn ->
+            Repo.one!(
+              from c in ClaimableUser, where: c.id == ^opened.claimable.id, lock: "FOR UPDATE"
+            )
+
+            send(parent, :locked)
+
+            receive do
+              :release -> :ok
+            after
+              10_000 -> Repo.rollback(:test_release_timeout)
+            end
+          end)
+        end)
+      end)
+
+    assert_receive :locked, 5_000
+
+    replays =
+      for _ <- 1..2 do
+        Task.async(fn ->
+          Sandbox.unboxed_run(Repo, fn ->
+            %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
+            send(parent, {:rotation_backend, backend})
+            Principals.claim(opened.claimable.id, "", owner, idempotency_key: "rotate")
+          end)
+        end)
+      end
+
+    try do
+      for _ <- replays do
+        assert_receive {:rotation_backend, backend}, 5_000
+        assert waits_for_lock?(backend, System.monotonic_time(:millisecond) + 5_000)
+      end
+
+      send(blocker.pid, :release)
+      assert {:ok, :ok} = Task.await(blocker, 5_000)
+
+      results =
+        Enum.map(replays, fn task ->
+          assert {:ok, result} = Task.await(task, 5_000)
+          result
+        end)
+
+      Sandbox.unboxed_run(Repo, fn ->
+        assert {:error, :revoked} = Accounts.authenticate_api_key(first.api_key)
+
+        assert Enum.count(
+                 results,
+                 &match?({:ok, _, _}, Accounts.authenticate_api_key(&1.api_key))
+               ) == 1
+
+        assert Repo.aggregate(
+                 from(k in ApiKey,
+                   where:
+                     k.user_id == ^opened.claimable.user_id and "principal" in k.scopes and
+                       is_nil(k.revoked_at)
+                 ),
+                 :count
+               ) == 1
+      end)
+    after
+      send(blocker.pid, :release)
+      Task.shutdown(blocker, :brutal_kill)
+      Enum.each(replays, &Task.shutdown(&1, :brutal_kill))
+    end
+  end
+
   defp waits_for_lock?(backend, deadline) do
     waiting =
       Sandbox.unboxed_run(Repo, fn ->
