@@ -24,6 +24,12 @@ defmodule Fountain.PrincipalsTest do
     result
   end
 
+  defp assert_claimed_key_lifetime(key) do
+    assert %DateTime{} = key.expires_at
+    remaining = DateTime.diff(key.expires_at, DateTime.utc_now(), :second)
+    assert remaining in (30 * 86_400 - 5)..(30 * 86_400)
+  end
+
   describe "create_claimable/3" do
     test "opens a principal that is a real, isolated tenant" do
       app = application_account()
@@ -292,7 +298,7 @@ defmodule Fountain.PrincipalsTest do
       assert key.scopes == ["principal"]
       # Not the grant's deadline: that described the anonymous session, and a
       # key expiring at it would take a live machine off its new owner.
-      assert is_nil(key.expires_at)
+      assert_claimed_key_lifetime(key)
     end
 
     test "the anonymous credential expires with the grant", ctx do
@@ -343,7 +349,8 @@ defmodule Fountain.PrincipalsTest do
       {:ok, second} = Principals.claim(ctx.claimable.id, ctx.token, claimer, opts)
 
       assert {:error, :revoked} = Accounts.authenticate_api_key(first.api_key)
-      assert {:ok, _, _} = Accounts.authenticate_api_key(second.api_key)
+      assert {:ok, _, renewed} = Accounts.authenticate_api_key(second.api_key)
+      assert_claimed_key_lifetime(renewed)
       assert is_nil(Repo.reload!(callback).revoked_at)
 
       assert [audit] =
@@ -424,6 +431,7 @@ defmodule Fountain.PrincipalsTest do
 
       assert key.user_id == principal_id
       assert key.scopes == ["principal"]
+      assert_claimed_key_lifetime(key)
       assert {:ok, _, _} = Accounts.authenticate_api_key(raw)
       assert {:error, :revoked} = Accounts.authenticate_api_key(ctx.claimed.api_key)
       assert is_nil(Repo.reload!(callback).revoked_at)
