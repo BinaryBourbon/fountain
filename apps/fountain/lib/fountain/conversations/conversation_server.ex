@@ -2191,11 +2191,20 @@ defmodule Fountain.Conversations.ConversationServer do
     # return a prompt_suffix with image references to append to stdin.
     prompt_suffix = Keyword.get(build_opts, :prompt_suffix, "")
 
-    Output.publish_stage(state.conversation_id, "turn", "started", %{
-      turn_id: turn.id,
-      turn_number: turn_number,
-      mode: Atom.to_string(mode)
-    })
+    # Once per turn, not once per attempt (#1667). A client that pairs stage
+    # events rather than keying on `turn_id` reads a second `started` for the
+    # same row as a second turn: `blocks.ts` in the conversations app nests one
+    # inside the other and the outer one never closes, which is a turn rendered
+    # as running forever on the exact surface this issue is about. What
+    # happened is said instead by the `session`/`done` restart notice, which
+    # carries the turn id.
+    if is_nil(state.turn_session_retry) do
+      Output.publish_stage(state.conversation_id, "turn", "started", %{
+        turn_id: turn.id,
+        turn_number: turn_number,
+        mode: Atom.to_string(mode)
+      })
+    end
 
     # Open an OTel span for the turn. We can't use Telemetry.span here
     # because the turn finishes asynchronously (in the :exit handler);
@@ -2495,6 +2504,15 @@ defmodule Fountain.Conversations.ConversationServer do
   # re-run a turn on a fresh spawn since #817; what this adds is closing the
   # abandoned attempt's span and tracer first, since that arm never had one
   # open to close.
+  # The row is gone. Unreachable: the effect is emitted only with one, and the
+  # drop before it closes an autonomous turn, never a user turn. Localized
+  # anyway, because the invariant lives two modules away and the alternative
+  # is `nil.prompt` taking the server down.
+  defp restart_session(%{current_turn: nil} = state, detail) do
+    Logger.warning("conv #{state.conversation_id}: no turn to restart after #{detail}")
+    state
+  end
+
   defp restart_session(state, detail) do
     turn = state.current_turn
 

@@ -526,20 +526,18 @@ defmodule Fountain.Conversations.TurnMachine do
   def handle(%__MODULE__{} = turn, {:failed, reason}, _ctx), do: handle_failed(turn, reason)
 
   defp session_gone(%__MODULE__{} = turn, tag, detail) do
-    Logger.warning(
-      "conv #{turn.conversation_id}: runtime session is gone (#{tag}): #{detail}; " <>
-        "clearing it so this turn starts a new one"
-    )
-
     forget = {:forget_runtime_session, "session_gone", detail}
 
     cond do
       is_nil(turn.row) ->
         # A peer that failed to resume with no turn open: nothing was asked,
         # so there is nothing to replay and nothing to fail.
+        log_session_gone(turn, tag, detail, "clearing it so the next turn starts a new one")
         {turn, [forget, {:drop_connection, "failed"}]}
 
       is_nil(turn.session_retry) ->
+        log_session_gone(turn, tag, detail, "clearing it and running this turn on a new one")
+
         {%{turn | session_retry: detail},
          [forget, {:drop_connection, "session_gone"}, {:restart_session, detail}]}
 
@@ -547,6 +545,7 @@ defmodule Fountain.Conversations.TurnMachine do
         # The fresh session is gone too. Something is wrong that a third
         # attempt will not fix, so this is the failure #1657 shipped, said in
         # full, once.
+        log_session_gone(turn, tag, detail, "already restarted once; failing the turn")
         message = session_gone_message(detail)
 
         {turn,
@@ -557,6 +556,12 @@ defmodule Fountain.Conversations.TurnMachine do
            {:drop_connection, "failed"}
          ]}
     end
+  end
+
+  defp log_session_gone(turn, tag, detail, what_next) do
+    Logger.warning(
+      "conv #{turn.conversation_id}: runtime session is gone (#{tag}): #{detail}; #{what_next}"
+    )
   end
 
   defp handle_failed(%__MODULE__{} = turn, reason) do
@@ -691,11 +696,16 @@ defmodule Fountain.Conversations.TurnMachine do
   Everything a turn *ran with* goes — the span, the tracer and the metrics
   are per attempt, and the second attempt opens its own — while the row
   stays open, because the turn has not ended: its prompt has not been
-  answered, and it is about to be asked again. That is the whole billing
-  story too. One row means one `started_at`/`ended_at` interval, so
-  `SandboxUsage`'s `turn_seconds` counts the turn once and
-  `Workers.CreditPricer`'s `burn_turn:<turn_id>` is one key, where the
-  hand retry this replaces charged for two rows.
+  answered, and it is about to be asked again.
+
+  That is the whole billing story too. One row means one
+  `started_at`/`ended_at` interval, so `SandboxUsage`'s `turn_seconds`
+  counts the turn once and `Workers.CreditPricer`'s `burn_turn:<turn_id>`
+  is one key. What changes against the hand retry this replaces is not the
+  money — at `CREDIT_TURN_HOUR_CENTS` a cent buys 144 seconds, so the dead
+  turn row almost always priced at zero — but where the seconds land: the
+  abandoned attempt folds into the turn that answered instead of sitting on
+  a row of its own.
 
   The notice is the half of the old failure worth keeping. It says what a
   tenant cannot otherwise guess — that the agent's memory of the earlier

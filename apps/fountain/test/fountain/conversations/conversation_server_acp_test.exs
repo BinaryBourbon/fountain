@@ -87,6 +87,13 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     settle(pid)
   end
 
+  defp turn_stage_states(conv_id) do
+    conv_id
+    |> Conversations._unsafe_list_log_events()
+    |> Enum.filter(&(&1.kind == "stage" and &1.stage == "turn"))
+    |> Enum.map(& &1.state)
+  end
+
   defp reply_error(pid, ref, id, error) do
     line = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "error" => error}) <> "\n"
     send(pid, {:stdout, %{ref: ref}, line})
@@ -1178,6 +1185,12 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       # `burn_turn:<turn_id>` — where the hand retry this replaces billed two.
       assert [%{id: ^turn_id, status: "completed"}] = Conversations._unsafe_list_turns(conv.id)
       assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_fresh"
+
+      # One `started`, not one per attempt. A client that pairs stage events
+      # rather than keying on turn_id — `blocks.ts` in the conversations app
+      # is one — reads a second as a second turn and leaves the outer one
+      # open forever.
+      assert ["started", "done"] = turn_stage_states(conv.id)
     end
 
     test "says on the transcript that the agent's memory did not survive", ctx do

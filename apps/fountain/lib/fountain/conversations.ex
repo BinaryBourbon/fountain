@@ -1246,8 +1246,16 @@ defmodule Fountain.Conversations do
 
   What a restarted turn replays (#1667): the prompt is on the row, and this
   is the rest of it. Read back rather than held in the server's state so a
-  turn that never restarts pays nothing for the possibility, and so the
-  replay is of what was stored rather than of what the caller passed.
+  turn that never restarts pays nothing for the possibility.
+
+  Not necessarily byte-for-byte what the caller passed.
+  `_unsafe_insert_turn_images/2` halts on the first image its changeset
+  rejects and `TurnMachine.store_images/2` logs and continues, so a turn
+  whose third image had a bad media type holds two. A restarted turn then
+  prompts with the two that are on the record rather than the five the
+  caller sent — which is the more correct of the two, and costs nothing,
+  because the attempt that held the caller's list never reached
+  `session/prompt`.
   """
   @spec _unsafe_list_turn_images(String.t()) :: [%{media_type: String.t(), data: binary()}]
   def _unsafe_list_turn_images(turn_id) do
