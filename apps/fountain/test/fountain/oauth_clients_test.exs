@@ -460,4 +460,39 @@ defmodule Fountain.OAuthClientsTest do
       assert event.metadata["client_id"] == client.client_id
     end
   end
+
+  describe "registered_origin?/1" do
+    test "true for an origin a registered client redirects to" do
+      insert_oauth_client(redirect_uris: ["https://notes.test/callback"])
+
+      assert OAuth.registered_origin?("https://notes.test")
+      refute OAuth.registered_origin?("https://evil.test")
+    end
+
+    test "matches a loopback origin on any port" do
+      insert_oauth_client(redirect_uris: ["http://localhost:5173/callback"])
+
+      assert OAuth.registered_origin?("http://localhost:5173")
+      assert OAuth.registered_origin?("http://localhost:9999")
+      refute OAuth.registered_origin?("https://localhost:5173")
+    end
+
+    test "covers the config clients too, so OAUTH_CLIENTS need not be mirrored" do
+      assert OAuth.registered_origin?("https://app.test")
+    end
+
+    test "stops being true once the client is deleted" do
+      client = insert_oauth_client(redirect_uris: ["https://notes.test/callback"])
+      assert OAuth.registered_origin?("https://notes.test")
+
+      {:ok, _} = OAuth.delete_client(client)
+
+      refute OAuth.registered_origin?("https://notes.test")
+    end
+
+    test "is false for junk" do
+      refute OAuth.registered_origin?("not-an-origin")
+      refute OAuth.registered_origin?(nil)
+    end
+  end
 end

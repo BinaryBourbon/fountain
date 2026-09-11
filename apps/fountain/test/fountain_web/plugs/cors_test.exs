@@ -99,6 +99,61 @@ defmodule FountainWeb.Plugs.CorsTest do
     assert get_resp_header(conn, "access-control-allow-origin") == []
   end
 
+  describe "a registered OAuth client's origin (#1125)" do
+    test "is admitted with API_CORS_ORIGINS empty", %{conn: conn} do
+      Application.put_env(:fountain, :api_cors_origins, [])
+      insert_oauth_client(redirect_uris: ["https://notes.test/callback"])
+
+      conn =
+        conn
+        |> Map.put(:path_info, ["api", "conversations"])
+        |> put_req_header("origin", "https://notes.test")
+        |> call()
+
+      assert get_resp_header(conn, "access-control-allow-origin") == ["https://notes.test"]
+    end
+
+    test "does not admit an origin nobody registered", %{conn: conn} do
+      Application.put_env(:fountain, :api_cors_origins, [])
+      insert_oauth_client(redirect_uris: ["https://notes.test/callback"])
+
+      conn =
+        conn
+        |> Map.put(:path_info, ["api", "conversations"])
+        |> put_req_header("origin", "https://evil.test")
+        |> call()
+
+      assert get_resp_header(conn, "access-control-allow-origin") == []
+    end
+
+    test "admits a loopback origin on any port", %{conn: conn} do
+      Application.put_env(:fountain, :api_cors_origins, [])
+      insert_oauth_client(redirect_uris: ["http://localhost:5173/callback"])
+
+      conn =
+        conn
+        |> Map.put(:path_info, ["api", "conversations"])
+        |> put_req_header("origin", "http://localhost:5174")
+        |> call()
+
+      assert get_resp_header(conn, "access-control-allow-origin") == ["http://localhost:5174"]
+    end
+
+    test "stops admitting it once the client is deleted", %{conn: conn} do
+      Application.put_env(:fountain, :api_cors_origins, [])
+      client = insert_oauth_client(redirect_uris: ["https://notes.test/callback"])
+      {:ok, _} = Fountain.OAuth.delete_client(client)
+
+      conn =
+        conn
+        |> Map.put(:path_info, ["api", "conversations"])
+        |> put_req_header("origin", "https://notes.test")
+        |> call()
+
+      assert get_resp_header(conn, "access-control-allow-origin") == []
+    end
+  end
+
   test "end to end: a preflight against the endpoint is answered before auth", %{conn: conn} do
     Application.put_env(:fountain, :api_cors_origins, ["https://team.example.com"])
 

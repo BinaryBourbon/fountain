@@ -316,6 +316,35 @@ defmodule Fountain.OAuth do
     end
   end
 
+  @doc """
+  Whether an origin belongs to an operator or a tenant client.
+
+  CORS still requires a bearer key. This predicate grants no account access;
+  it only lets a browser present a key it already holds from an origin some
+  client registered.
+  """
+  @spec registered_origin?(term()) :: boolean()
+  def registered_origin?(origin) when is_binary(origin) do
+    case Client.origin_key(origin) do
+      nil -> false
+      key -> key in config_origin_keys() or Repo.exists?(origin_key_query(key))
+    end
+  end
+
+  def registered_origin?(_), do: false
+
+  defp origin_key_query(key) do
+    from c in Client, where: fragment("? @> ?", c.origin_keys, ^[key])
+  end
+
+  defp config_origin_keys do
+    config_clients()
+    |> Enum.flat_map(& &1.redirect_uris)
+    |> Client.origins_of()
+    |> Enum.map(&Client.origin_key/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
   defp client_count(user_id) do
     Repo.aggregate(from(c in Client, where: c.user_id == ^user_id), :count)
   end
