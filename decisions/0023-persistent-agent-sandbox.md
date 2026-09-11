@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "A persistent sandbox per agent, offered beside the sandbox-per-conversation model"
-description: "Built 2026-08-24 (#1057–#1068). Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape), with turns running concurrently where the runtime allows (amended 2026-08-23); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Companion design note: #805."
+description: "Built 2026-08-24 (#1057–#1068). Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape), with turns running concurrently where the runtime allows (amended 2026-08-23); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Amended 2026-09-11 (#1565): a home's identity key moves through one narrow door, the reapply action, which refuses any selection that would change the build inputs, the runtime, or a cotenant's configuration. Companion design note: #805."
 tags: [sandbox, lifecycle, conversations, product]
 status: stable
 adr: "0023"
 adr_status: "Accepted"
 date: 2026-08-17
-generated: { by: human:jhgaylor, at: 2026-08-17T17:30:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-23T23:30:00-04:00 }
+generated: { by: human:jhgaylor, at: 2026-09-11T12:00:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-09-11T12:00:00-04:00 }
 stale_after: 2027-02-01
 ---
 
@@ -44,6 +44,44 @@ the number to [0021](0021-oauth-for-first-party-apps.md) (OAuth for first-party
 apps), which was opened later the same day and merged first. Line references in
 the survey below were re-checked against `main` on the same date. Anything
 citing "ADR 0021" for a persistent sandbox — #793, #805 — means this file.
+
+**Amended 2026-09-11 — a home's identity key moves, through one narrow door.**
+The text below resolves the identity key as fixed, on the grounds that "a
+machine built from one environment is not a machine built from another, and
+re-materializing in place is not built". #1565 builds one door through that:
+`Fountain.Conversations.reapply_conversation/3` re-selects a conversation's
+Agent, Environment and Vault and writes the new triple onto the sandbox row it
+is already running, keeping the disk. The same stack puts it on the API as
+`POST /api/conversations/:id/reapply`. The reasoning that held the key fixed is
+kept rather than reversed, and it is what the door refuses on:
+
+- **The build inputs must be unchanged.** `sandboxes.build_fingerprint` records
+  a digest of what provisioning turned into filesystem state — packages,
+  repositories, the setup script, the network policy. A selection whose digest
+  differs is refused with `{:rebuild_required, field}`, so a machine built from
+  one environment still never becomes a machine built from another. What may
+  move is everything that is process environment or a file: variables, vault
+  values, the system prompt, skills, `.mcp.json`. The reattach path has
+  rewritten those on every wake since #848, so this is an established mechanism
+  rather than a new one.
+- **The runtime must be unchanged.** The ACP adapter is installed before the
+  network policy that would now block installing another.
+- **The machine must have no cotenants.** Skills, the instructions file and
+  `.mcp.json` live at per-sandbox paths, so reconfiguring a shared machine
+  would reconfigure it for conversations nobody asked about. A shared home
+  accepts only the selection its cotenants already have, which is a refresh.
+
+Two consequences for the model below. The lifecycle row for "vault or env
+changed" is no longer destroy-the-home unconditionally: a change that leaves
+the build inputs alone is applied in place instead, and the row is corrected.
+And a home's identity is now mutable, so the partial unique index on
+`(user_id, agent_id, environment_id, vault_id)` is load-bearing on update as
+well as on insert — a reapply onto a triple that already has a home comes back
+as a changeset error on `:home` and rolls back, rather than producing a second
+home for one identity.
+
+Turn admission is fenced against this with `conversations.configuration_revision`:
+a server that has not read the committed selection cannot open a turn on it.
 
 **Companion:** #805 is the "if we had designed it this way from the start"
 sketch — the sandbox as a first-class machine, a conversation as a binding of
@@ -355,7 +393,7 @@ unaffected.
 | max lifetime (continuous run) | destroy | **out of scope here — the ceiling itself is going away.** Decided 2026-08-23: a tenant who wants a machine running 24/7 is not something to stop, so the continuous-run ceiling (0017) is to be removed for every mode in its own change, not solved by this ADR. Until that lands, a home at the ceiling must not be destroyed (the disk is the product, #936); force-suspend, with every cut conversation's stage message saying so, is the interim behaviour. |
 | conversation terminated while others run | n/a | revoke the key, conversation `terminated`; the sprite is destroyed only when this was the last live conversation — the guard `_unsafe_sandbox_held_by_other?` that the no-server path already applies (`conversation_server.ex:245`) extends to the live `:terminate_conv` path |
 | provision failure | row `failed`, conv `failed` | row `failed`, conv `failed`; next conversation on the identity re-creates the home |
-| agent deleted / vault or env changed | n/a | destroy the home (identity no longer exists); a "reset home" action does the same on demand |
+| agent deleted / vault or env changed | n/a | destroy the home (identity no longer exists); a "reset home" action does the same on demand. **Amended 2026-09-11 (#1565):** a *selection* change that leaves the build inputs alone no longer destroys anything — `POST /api/conversations/:id/reapply` moves the home's identity onto the new triple and keeps the disk, refusing when the build inputs, the runtime or a cotenant say otherwise |
 | reaper abandoned pass | as today | as today — already N-aware |
 
 **6. The slot is the computer; the meter is two numbers.** *(Decided
@@ -478,7 +516,10 @@ to show something a conversation-centric view cannot.
   env vars, packages, cloned repos, setup scripts — so a machine built from
   one environment is not a machine built from another, and re-materializing
   in place is not built. It is also the key channel resume already uses
-  (#727, #783).
+  (#727, #783). **Amended 2026-09-11 (#1565):** the key is the same four
+  columns and still never spans two differently-built disks, but it is no
+  longer immutable — a reapply moves it onto the conversation's new selection
+  when the build inputs match. See the amendment at the top of this file.
 - **Attach.** `sandbox_id` onto a `suspended` home wakes it, under the quota
   lock. Onto a home whose launch names a different environment, vault or
   runtime: refused, the disk was shaped by the other one. Onto a home at
