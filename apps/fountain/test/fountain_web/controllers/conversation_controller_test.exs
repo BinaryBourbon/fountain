@@ -474,6 +474,201 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "queue: true at a capacity ceiling (#1033)" do
+    defp fill_cap(user) do
+      limit = Fountain.Quotas.sandbox_limit(user.id)
+      for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
+      limit
+    end
+
+    test "202 with the request and its position instead of 429", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "prompt" => "later is fine",
+          "queue" => true
+        })
+
+      body = json_response(conn, 202)["data"]
+      assert body["status"] == "queued"
+      assert body["kind"] == "start"
+      assert body["agent_id"] == agent.id
+      assert body["position"] == 1
+      assert body["conversation_id"] == nil
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.id == body["id"]
+      assert request.attrs["prompt"] == "later is fine"
+    end
+
+    test "the queued attrs carry only launch keys, never whatever else was sent", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/conversations", %{
+        "agent_id" => agent.id,
+        "prompt" => "hi",
+        "title" => "nightly",
+        "labels" => %{"team" => "ops"},
+        "queue" => true,
+        "junk" => String.duplicate("x", 64)
+      })
+      |> json_response(202)
+
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.attrs["title"] == "nightly"
+      assert request.attrs["labels"] == %{"team" => "ops"}
+      # `ConversationCreateRequest` allows unknown properties, so an allow
+      # list is the only thing standing between the table and arbitrary JSON.
+      refute Map.has_key?(request.attrs, "junk")
+      refute Map.has_key?(request.attrs, "queue")
+      refute Map.has_key?(request.attrs, "user_id")
+    end
+
+    test "a caller that did not ask still gets 429", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 429)["error"] == "sandbox_quota_exceeded"
+      assert Fountain.SandboxQueue.list_queued(user.id) == []
+    end
+
+    test "a start carrying images is never queued", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "queue" => true,
+          # Images need opening text of their own (#1840); without it the launch
+          # is refused 422 before it ever reaches the capacity decision this
+          # test is about.
+          "prompt" => "look at this",
+          "images" => [
+            %{"media_type" => "image/png", "data" => Base.encode64("fake-image-bytes")}
+          ]
+        })
+
+      # The server does not hold image bytes for an hour, so this keeps the
+      # immediate refusal rather than accepting work it cannot replay.
+      assert json_response(conn, 429)["error"] == "sandbox_quota_exceeded"
+      assert Fountain.SandboxQueue.list_queued(user.id) == []
+    end
+
+    test "a full queue keeps the immediate refusal", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      for _ <- 1..10 do
+        {:ok, _} =
+          Fountain.SandboxQueue.enqueue(%{
+            user_id: user.id,
+            agent_id: agent.id,
+            kind: "start",
+            attrs: %{}
+          })
+      end
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+
+      assert json_response(conn, 429)["error"] == "sandbox_quota_exceeded"
+      assert length(Fountain.SandboxQueue.list_queued(user.id)) == 10
+    end
+
+    test "a sprite token's queued start carries its ADR 0045 restriction", %{
+      conn: conn,
+      user: user
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+      {key, raw_sprite_key} = insert_sprite_api_key(user)
+
+      conn
+      |> authed_with_key(raw_sprite_key)
+      |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+      |> json_response(202)
+
+      # Stored, not consulted here: the drainer is what has to be held to it an
+      # hour later, and a replay that dropped it could merge this request's
+      # labels into a conversation the token does not own.
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.sandbox_key_id == key.id
+    end
+
+    test "an owner's own key queues with no restriction attached", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+      |> json_response(202)
+
+      # `nil` is what every rule reads as "no sandbox restriction applies", so
+      # a full-scope caller must not pick one up by accident.
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert is_nil(request.sandbox_key_id)
+    end
+
+    test "a start that succeeds is unaffected by the flag", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+
+      assert json_response(conn, 201)
+      assert Fountain.SandboxQueue.list_queued(user.id) == []
+    end
+  end
+
   describe "DELETE /api/conversations/:id" do
     test "deletes the conversation and returns 204", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)

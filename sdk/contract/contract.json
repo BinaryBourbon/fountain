@@ -5947,6 +5947,11 @@
             "ref": "ConversationResponse"
           }
         },
+        "202": {
+          "application/json": {
+            "ref": "SandboxRequestResponse"
+          }
+        },
         "400": {
           "application/json": {
             "ref": "Error"
@@ -10569,6 +10574,11 @@
           "required": false,
           "type": "string"
         },
+        "queue": {
+          "nullable": true,
+          "required": false,
+          "type": "boolean"
+        },
         "sandbox_api_access": {
           "enum": [
             "none",
@@ -12385,6 +12395,76 @@
       "properties": {
         "data": {
           "ref": "SandboxListing",
+          "required": true
+        }
+      },
+      "type": "object"
+    },
+    "SandboxRequest": {
+      "properties": {
+        "agent_id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
+        "conversation_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "error": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "required": false,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "schedule_run",
+            "start"
+          ],
+          "required": true,
+          "type": "string"
+        },
+        "position": {
+          "nullable": true,
+          "required": false,
+          "type": "integer"
+        },
+        "source": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "cancelled",
+            "expired",
+            "failed",
+            "queued",
+            "started",
+            "starting"
+          ],
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SandboxRequestResponse": {
+      "properties": {
+        "data": {
+          "ref": "SandboxRequest",
           "required": true
         }
       },
