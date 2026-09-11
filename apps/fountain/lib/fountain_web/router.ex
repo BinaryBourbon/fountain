@@ -780,6 +780,9 @@ defmodule FountainWeb.Router do
       # ── Self-hosted runners (ADR 0022) ─────────────────────────────────────────────────────
       live "/account/runners", RunnersLive.Index, :index
 
+      # ── OAuth apps the account registered for itself (#1125) ───────────────────────────────
+      live "/account/oauth-apps", OAuthClientsLive.Index, :index
+
       # ── Secret bindings at the egress broker (ADR 0019 gate 1b) ────────────────────────────
       live "/account/bindings", SecretBindingsLive.Index, :index
 
