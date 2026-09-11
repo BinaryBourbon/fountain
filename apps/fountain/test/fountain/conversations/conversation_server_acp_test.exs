@@ -2059,6 +2059,40 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert answered.metadata["request_id"] == request_id
     end
 
+    test "the expiry opens the same resume turn, with the denial" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 410, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+      register(pid, conv.id)
+
+      # Age the deadline past, as a sweep an hour later would find it.
+      turn = waiting_turn(conv.id)
+
+      {:ok, _} =
+        Fountain.Repo.update(
+          Ecto.Changeset.change(turn,
+            permission_deadline:
+              DateTime.utc_now() |> DateTime.add(-60) |> DateTime.truncate(:second)
+          )
+        )
+
+      assert Fountain.Workers.DetachedRequestSweeper.sweep_expired_requests() == 1
+      settle(pid)
+
+      params = drive_to_resume_prompt(pid, ref)
+      assert [%{"text" => text}] = params["prompt"]
+
+      assert %{"fountain/permission_answer" => answer} = Jason.decode!(text)
+      assert answer["request_id"] == request_id
+      assert answer["outcome"] == "timeout"
+      # The agent's own rejection, never an invented id.
+      assert answer["option_id"] == "no"
+    end
+
     test "the request webhooks fire on the ask and on the resolution" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
