@@ -28,7 +28,9 @@ defmodule Fountain.Principals do
 
     * `max_live_sandboxes` is written to `users.sandbox_limit_override`, so
       `Fountain.Quotas` needs no knowledge of principals: the override branch
-      answers before the balance rule is ever consulted.
+      answers before the balance rule is ever consulted. Because it answers
+      first, it is clamped at creation to the application's own effective cap,
+      so a principal can never out-provision the account funding it (#1687).
     * `max_cost_usd` is a credit grant moved from the application's balance
       into the principal's, so budget exhaustion is `Billing.check_spend/1`
       refusing at every door that spends (ADR 0031). With credits off nothing
@@ -191,13 +193,23 @@ defmodule Fountain.Principals do
           {:ok, %{claimable: ClaimableUser.t(), api_key: String.t(), claim_token: String.t()}}
           | {:error, term()}
   def create_claimable(%User{} = application, params, opts \\ []) do
-    with {:ok, attrs} <- cast_create(params),
+    with {:ok, attrs} <- cast_create(application, params),
          {:ok, claimable} <- upsert_claimable(application, attrs, opts) do
       issue_credentials(claimable, opts)
     end
   end
 
-  defp cast_create(params) do
+  # A third ceiling in the spirit of the two in `check_application_allowed/2`,
+  # bounding a leaked application key: `max_live_sandboxes` lands on
+  # `users.sandbox_limit_override`, which `Quotas.resolve_limit/3` answers with
+  # *before* the balance rule and the cap ceiling are ever consulted. Unclamped,
+  # a full-scope key could mint principals on a cent each that out-provision the
+  # account funding them, up to `SANDBOX_FLEET_CEILING` (#1687).
+  #
+  # Read by **id**, for the reason `check_application_allowed/2` gives about the
+  # balance: the `%User{}` the caller loaded carries a cached cap input that may
+  # predate its own opening credit.
+  defp cast_create(%User{} = application, params) do
     %{max_ttl_seconds: max_ttl, default_ttl_seconds: default_ttl, max_grant_cents: max_grant} =
       settings()
 
@@ -227,7 +239,11 @@ defmodule Fountain.Principals do
            expires_at: DateTime.utc_now() |> DateTime.add(ttl, :second) |> truncate(),
            grant_cents:
              limits |> Map.get("max_cost_usd") |> usd_to_cents() |> clamp(0, max_grant),
-           max_live_sandboxes: limits |> Map.get("max_live_sandboxes") |> as_integer(1) |> max(0),
+           max_live_sandboxes:
+             limits
+             |> Map.get("max_live_sandboxes")
+             |> as_integer(1)
+             |> clamp(0, Fountain.Quotas.sandbox_limit(application.id)),
            metadata: Map.get(params, "metadata", %{})
          }}
     end

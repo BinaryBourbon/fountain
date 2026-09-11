@@ -13,6 +13,7 @@ defmodule Fountain.PrincipalsTest do
   alias Fountain.Credits
   alias Fountain.Principals
   alias Fountain.Principals.ClaimableUser
+  alias Fountain.Quotas
 
   defp application_account, do: insert_verified_user()
 
@@ -52,10 +53,51 @@ defmodule Fountain.PrincipalsTest do
 
     test "max_live_sandboxes lands on the override the quota rule already reads" do
       app = application_account()
-      %{claimable: c} = open(app, %{"limits" => %{"max_live_sandboxes" => 3}})
+      asked = Quotas.sandbox_limit(app.id)
+      assert asked > 0
 
-      assert Accounts.get_user(c.user_id).sandbox_limit_override == 3
-      assert Fountain.Quotas.sandbox_limit(c.user_id) == 3
+      %{claimable: c} = open(app, %{"limits" => %{"max_live_sandboxes" => asked}})
+
+      assert Accounts.get_user(c.user_id).sandbox_limit_override == asked
+      assert Quotas.sandbox_limit(c.user_id) == asked
+    end
+
+    test "an unasked-for cap is still the default of one" do
+      app = application_account()
+      %{claimable: c} = open(app)
+
+      assert c.max_live_sandboxes == 1
+      assert Quotas.sandbox_limit(c.user_id) == 1
+    end
+
+    test "max_live_sandboxes cannot out-provision the account that funds it (#1687)" do
+      app = application_account()
+      app_limit = Quotas.sandbox_limit(app.id)
+      assert app_limit > 0
+
+      %{claimable: c} = open(app, %{"limits" => %{"max_live_sandboxes" => 100_000}})
+
+      assert c.max_live_sandboxes == app_limit
+      assert Accounts.get_user(c.user_id).sandbox_limit_override == app_limit
+      # The property, not the number: the override branch of `resolve_limit/3`
+      # answers before the balance rule, so an unclamped value here would let a
+      # $5 account fill `SANDBOX_FLEET_CEILING` a cent at a time.
+      assert Quotas.sandbox_limit(c.user_id) <= Quotas.sandbox_limit(app.id)
+    end
+
+    test "a richer application is still held to the deployment's cap ceiling" do
+      app = application_account()
+
+      {:ok, _} =
+        Credits.grant(app.id, 1_000_000, "grant_admin", idempotency_key: "test_rich:#{app.id}")
+
+      ceiling = Quotas.settings().cap_ceiling
+      assert Quotas.sandbox_limit(app.id) == ceiling
+
+      %{claimable: c} = open(app, %{"limits" => %{"max_live_sandboxes" => 100_000}})
+
+      assert c.max_live_sandboxes == ceiling
+      assert Quotas.sandbox_limit(c.user_id) == ceiling
     end
 
     test "the budget is moved from the application's balance into the principal's" do
