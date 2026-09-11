@@ -297,7 +297,7 @@ defmodule Fountain.Conversations.EgressTest do
   end
 
   describe "the session" do
-    test "prepare/4 publishes the broker stage around the mint", %{user: user} do
+    test "the broker stage completes only after CA installation", %{user: user} do
       broker_on([user.id])
       conv = insert_conversation(user_id: user.id)
 
@@ -315,7 +315,36 @@ defmodule Fountain.Conversations.EgressTest do
                  user_id: user.id
                )
 
-      assert [{"started", %{"keys" => ["GITHUB_TOKEN"]}}, {"done", %{"vault" => "c-test"}}] =
+      assert [{"started", %{"keys" => ["GITHUB_TOKEN"]}}] = stages(conv.id, "broker")
+      handle = %Handle{provider: :sprites, name: "s"}
+
+      stub(Fountain.Conversations.Provisioning, :install_broker_ca, fn ^handle, id ->
+        assert id == conv.id
+        assert [{"started", _}] = stages(conv.id, "broker")
+        :ok
+      end)
+
+      assert :ok = Egress.install_ca(@session, handle, conv.id)
+      assert [{"started", _}, {"done", %{"vault" => "c-test"}}] = stages(conv.id, "broker")
+    end
+
+    test "a failed CA command never leaves a completed broker stage", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      handle = %Handle{provider: :sprites, name: "s"}
+      stub(Broker, :prepare, fn _id, _b, _bi, _o -> {:ok, @session} end)
+      stub(Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _data, _opts -> :ok end)
+
+      stub(Managoat.Sandbox.Sprites, :exec, fn _h, "bash", _args, _opts ->
+        {:ok, "trust installation failed", 1}
+      end)
+
+      assert {:ok, session} = Egress.prepare(conv.id, %{}, %{}, user_id: user.id)
+
+      assert {:error, {:broker, :ca_install_exit, 1, _}} =
+               Egress.install_ca(session, handle, conv.id)
+
+      assert [{"started", _}, {"failed", %{"reason" => "ca_install_exit", "exit_code" => 1}}] =
                stages(conv.id, "broker")
     end
 
@@ -389,12 +418,11 @@ defmodule Fountain.Conversations.EgressTest do
       assert Egress.sandbox_env(@session) == Broker.sandbox_env(@session)
     end
 
-    test "install_ca/3 installs only when there is a session" do
+    test "install_ca/3 emits no broker stage without a session", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
       handle = %Handle{provider: :sprites, name: "s"}
-      assert :ok = Egress.install_ca(nil, handle, "c")
-
-      stub(Fountain.Conversations.Provisioning, :install_broker_ca, fn ^handle, "c" -> :ok end)
-      assert :ok = Egress.install_ca(@session, handle, "c")
+      assert :ok = Egress.install_ca(nil, handle, conv.id)
+      assert stages(conv.id, "broker") == []
     end
   end
 
