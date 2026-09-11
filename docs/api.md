@@ -284,7 +284,8 @@ curl --fail-with-body \
 Each value splits on its first colon. The key is the part before it, and the
 value is all of the rest. `label=path:apps/fountain:lib` therefore filters the
 key `path` for the value `apps/fountain:lib`. A value with no colon, or with
-an empty key, returns 400 `invalid_label_filter`.
+an empty key, returns 400 `invalid_label_filter`. The same parameter works on
+`GET /api/team/{agent_id}/conversations`.
 
 The parameter is an array in the OpenAPI document, with `style: form` and
 `explode: true`. A client that builds arrays as `label[]=env:prod` is
@@ -309,11 +310,16 @@ of these limits returns 422 and names the offending key under
 against labels that are already there. The key named is one you sent, and
 never one that was already on the conversation.
 
+A team message to `POST /api/team/{agent_id}/messages` also takes `labels`.
+Fountain merges them into the conversation that receives the message, before
+it queues the turn. A create call to `POST /api/conversations` with a
+`channel_id` that resumes a conversation merges them into that conversation.
+
 The account's own API key can label any of its conversations. A sandbox
 callback token can label only the conversation it was minted for. Another
 conversation returns 403 `sprite_may_not_label_another_conversation`. This
-applies to the labels route and to a `channel_id` resume, which merges the
-request's labels into the conversation it hands back.
+applies to all three doors that write labels, which are the labels route, a
+team message, and a `channel_id` resume.
 
 ### Workers without Fountain API access
 

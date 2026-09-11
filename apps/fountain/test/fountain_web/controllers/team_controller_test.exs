@@ -380,6 +380,37 @@ defmodule FountainWeb.TeamControllerTest do
              |> get("/api/team/#{loner.id}/conversations")
              |> json_response(404)
     end
+
+    test "the label filter is repeatable and AND-combined (#1637)", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      drifted = insert_teammate_conv(user, ada, labels: %{"env" => "prod", "drift" => "true"})
+      insert_teammate_conv(user, ada, labels: %{"env" => "prod"})
+      insert_teammate_conv(user, ada, labels: %{"env" => "staging"})
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/team/#{ada.id}/conversations?label=env:prod&label=drift:true")
+        |> json_response(200)
+
+      assert Enum.map(body["data"], & &1["id"]) == [drifted.id]
+      assert hd(body["data"])["labels"] == %{"env" => "prod", "drift" => "true"}
+    end
+
+    test "a label filter with no colon is a 400", %{conn: conn, user: user, raw_key: key} do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      insert_teammate_conv(user, ada)
+
+      assert %{"error" => "invalid_label_filter"} =
+               conn
+               |> authed_with_key(key)
+               |> get("/api/team/#{ada.id}/conversations?label=prod")
+               |> json_response(400)
+    end
   end
 
   describe "POST /api/team/:agent_id/conversations" do
@@ -498,6 +529,155 @@ defmodule FountainWeb.TeamControllerTest do
       assert body == %{"status" => "queued", "conversation_id" => conv.id}
       conv_id = conv.id
       assert_received {:sent, ^conv_id, "hello", [], "api"}
+    end
+
+    test "labels on the message land on the conversation it goes to (#1637)", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      conv = insert_teammate_conv(user, ada, labels: %{"env" => "prod"})
+      stub(ConversationServer, :send_prompt, fn _id, _text, _images, _opts -> :ok end)
+
+      assert %{"conversation_id" => _} =
+               conn
+               |> authed_with_key(key)
+               |> post_json("/api/team/#{ada.id}/messages", %{
+                 prompt: "hello",
+                 labels: %{"run" => "17"}
+               })
+               |> json_response(202)
+
+      assert Fountain.Conversations._unsafe_get_conversation!(conv.id).labels ==
+               %{"env" => "prod", "run" => "17"}
+    end
+
+    test "labels ride onto the fresh conversation when the thread is past resuming (#1637)", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      dead = insert_teammate_conv(user, ada, status: "terminated")
+      inert_start_child()
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> post_json("/api/team/#{ada.id}/messages", %{
+          prompt: "are you there?",
+          labels: %{"env" => "prod"}
+        })
+        |> json_response(202)
+
+      refute body["conversation_id"] == dead.id
+
+      assert Fountain.Conversations._unsafe_get_conversation!(body["conversation_id"]).labels ==
+               %{"env" => "prod"}
+    end
+
+    test "a sandbox token may not label the teammate's conversation (#1637)", %{
+      conn: conn,
+      user: user
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      conv = insert_teammate_conv(user, ada, labels: %{"env" => "prod"})
+      {_sprite, sprite_raw} = insert_sprite_api_key(user)
+      test_pid = self()
+
+      stub(ConversationServer, :send_prompt, fn _id, _text, _images, _opts ->
+        send(test_pid, :sent)
+        :ok
+      end)
+
+      assert %{"error" => "sprite_may_not_label_another_conversation"} =
+               conn
+               |> authed_with_key(sprite_raw)
+               |> post_json("/api/team/#{ada.id}/messages", %{
+                 prompt: "hello",
+                 labels: %{"run" => "17"}
+               })
+               |> json_response(403)
+
+      assert Fountain.Conversations._unsafe_get_conversation!(conv.id).labels == %{
+               "env" => "prod"
+             }
+
+      refute_received :sent
+    end
+
+    test "a sandbox token may label the conversation it was minted for (#1637)", %{
+      conn: conn,
+      user: user
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      conv = insert_teammate_conv(user, ada, labels: %{"env" => "prod"})
+      {sprite, sprite_raw} = insert_sprite_api_key(user)
+
+      {:ok, _} =
+        Fountain.Conversations.update_conversation(conv, %{callback_api_key_id: sprite.id})
+
+      stub(ConversationServer, :send_prompt, fn _id, _text, _images, _opts -> :ok end)
+
+      assert %{"status" => "queued"} =
+               conn
+               |> authed_with_key(sprite_raw)
+               |> post_json("/api/team/#{ada.id}/messages", %{
+                 prompt: "hello",
+                 labels: %{"run" => "17"}
+               })
+               |> json_response(202)
+
+      assert Fountain.Conversations._unsafe_get_conversation!(conv.id).labels ==
+               %{"env" => "prod", "run" => "17"}
+    end
+
+    test "a message with no labels leaves the ones already there (#1637)", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      conv = insert_teammate_conv(user, ada, labels: %{"env" => "prod"})
+      stub(ConversationServer, :send_prompt, fn _id, _text, _images, _opts -> :ok end)
+
+      conn
+      |> authed_with_key(key)
+      |> post_json("/api/team/#{ada.id}/messages", %{prompt: "hello"})
+      |> json_response(202)
+
+      assert Fountain.Conversations._unsafe_get_conversation!(conv.id).labels == %{
+               "env" => "prod"
+             }
+    end
+
+    test "a label the limits refuse leaves the message unsent, naming the key", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      insert_teammate_conv(user, ada)
+      test_pid = self()
+
+      stub(ConversationServer, :send_prompt, fn _id, _text, _images, _opts ->
+        send(test_pid, :sent)
+        :ok
+      end)
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> post_json("/api/team/#{ada.id}/messages", %{
+          prompt: "hello",
+          labels: %{"note" => String.duplicate("v", 300)}
+        })
+        |> json_response(422)
+
+      assert [message] = body["errors"]["labels"]
+      assert message =~ ~s("note")
+      refute_received :sent
     end
 
     test "400 conversation_busy while the teammate is busy, 404 when not on the team", %{

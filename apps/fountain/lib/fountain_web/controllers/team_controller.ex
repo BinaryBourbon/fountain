@@ -19,6 +19,9 @@ defmodule FountainWeb.TeamController do
 
   action_fallback FountainWeb.FallbackController
 
+  # Before the cast: `label` is a repeated key. See the plug's moduledoc.
+  plug FountainWeb.Plugs.RepeatedQueryParam, "label" when action in [:conversations]
+
   plug OpenApiSpex.Plug.CastAndValidate,
     replace_params: false,
     render_error: FountainWeb.Plugs.CastRenderError
@@ -120,9 +123,23 @@ defmodule FountainWeb.TeamController do
         "thread, read-only — behind it. Each is a full conversation object; read a " <>
         "retired thread with `GET /api/conversations/:id/events`. 404 when the agent is " <>
         "not on the team.",
-    parameters: [agent_id: [in: :path, type: :string, required: true]],
+    parameters: [
+      agent_id: [in: :path, type: :string, required: true],
+      label: [
+        in: :query,
+        schema: %OpenApiSpex.Schema{type: :array, items: %OpenApiSpex.Schema{type: :string}},
+        style: :form,
+        explode: true,
+        required: false,
+        description:
+          "Only conversations carrying these `key:value` labels (#1637). Repeatable and " <>
+            "AND-combined, exactly as on `GET /api/conversations`. 400 " <>
+            "`invalid_label_filter` on a value with no colon or an empty key."
+      ]
+    ],
     responses: [
       ok: {"Conversations", "application/json", Schemas.TeammateConversationListResponse},
+      bad_request: {"Invalid label filter", "application/json", Schemas.Error},
       not_found: {"Not on the team", "application/json", Schemas.Error}
     ]
   )
@@ -130,15 +147,12 @@ defmodule FountainWeb.TeamController do
   def conversations(conn, %{"agent_id" => agent_id}) do
     user = conn.assigns.current_user
 
-    case Team.get_teammate(user.id, agent_id) do
-      nil ->
-        {:error, :not_found}
-
-      %{conversation: current} ->
-        render(conn, :conversations,
-          conversations: Team.list_teammate_conversations(user.id, agent_id),
-          current_id: current.id
-        )
+    with {:ok, labels} <- FountainWeb.LabelFilter.from(conn),
+         %{conversation: current} <- Team.get_teammate(user.id, agent_id) || {:error, :not_found} do
+      render(conn, :conversations,
+        conversations: Team.list_teammate_conversations(user.id, agent_id, labels: labels),
+        current_id: current.id
+      )
     end
   end
 
@@ -370,12 +384,17 @@ defmodule FountainWeb.TeamController do
         "seeded with this message, so the response names the conversation the message " <>
         "went to. 400 `conversation_busy` while the previous turn is still running " <>
         "(the same shape as `POST /api/conversations/:id/prompts`), 503 while the " <>
-        "computer is still starting.",
+        "computer is still starting.\n\n" <>
+        "`labels` merges onto the conversation the message lands on (#1637), before the " <>
+        "turn is queued, so a label the limits refuse leaves the message unsent.",
     parameters: [agent_id: [in: :path, type: :string, required: true]],
     request_body: {"Message", "application/json", Schemas.TeamMessageRequest},
     responses: [
       accepted: {"Queued", "application/json", Schemas.TeamMessageResponse},
       not_found: {"Not on the team", "application/json", Schemas.Error},
+      unprocessable_entity: {"Invalid labels", "application/json", Schemas.ChangesetError},
+      forbidden:
+        {"A sandbox token labelling another conversation", "application/json", Schemas.Error},
       bad_request: {"A turn is still running", "application/json", Schemas.Error}
     ]
   )
@@ -383,8 +402,12 @@ defmodule FountainWeb.TeamController do
   def message(conn, %{"agent_id" => agent_id, "prompt" => prompt} = params) do
     user = conn.assigns.current_user
 
+    # `SandboxKey.opts/1`: this route writes labels onto the teammate's
+    # conversation (#1637), which a sandbox's own token does not own.
     with {:ok, images} <- FountainWeb.PromptImages.decode(params["images"]),
-         opts = [source: "api"] ++ Audited.attribution(conn),
+         opts =
+           [source: "api", labels: params["labels"]] ++
+             FountainWeb.SandboxKey.opts(conn) ++ Audited.attribution(conn),
          {:ok, conv} <- Team.send_message(user.id, agent_id, prompt, images, opts) do
       conn
       |> put_status(:accepted)

@@ -3152,10 +3152,24 @@
       "path_params": [
         "agent_id"
       ],
+      "query_params": {
+        "label": {
+          "items": {
+            "type": "string"
+          },
+          "required": false,
+          "type": "array"
+        }
+      },
       "responses": {
         "200": {
           "application/json": {
             "ref": "TeammateConversationListResponse"
+          }
+        },
+        "400": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "401": {
@@ -6472,6 +6486,11 @@
         "406": {
           "application/json": {
             "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "ChangesetError"
           }
         },
         "429": {
@@ -12467,6 +12486,15 @@
           "nullable": true,
           "required": false,
           "type": "array"
+        },
+        "labels": {
+          "additionalProperties": {
+            "nullable": true,
+            "type": "string"
+          },
+          "nullable": true,
+          "required": false,
+          "type": "object"
         },
         "prompt": {
           "required": true,
