@@ -4,6 +4,7 @@ defmodule Fountain.Agents.Agent do
 
   alias Fountain.Accounts.User
   alias Fountain.Environments.Environment
+  alias Fountain.PermissionPolicy
   alias Fountain.RuntimeDispatch
   alias Managoat.Runtimes.Model
 
@@ -270,10 +271,37 @@ defmodule Fountain.Agents.Agent do
           [permission_policy: "must be a map of tool name to verdict"]
 
         true ->
-          Enum.flat_map(policy, fn {tool, verdict} -> policy_errors(tool, verdict) end) ++
-            runtime_errors(changeset, policy)
+          verdicts = PermissionPolicy.verdicts(policy)
+
+          Enum.flat_map(verdicts, fn {tool, verdict} -> policy_errors(tool, verdict) end) ++
+            reserved_errors(policy) ++
+            runtime_errors(changeset, verdicts)
       end
     end)
+  end
+
+  # `ask_timeout` names no tool, so it is validated on its own rather than as
+  # a verdict (#1635). Seconds, positive, and bounded above by
+  # `PermissionPolicy.max_ask_timeout_seconds/0` — a year, which is not the
+  # idle bound in disguise but the point past which the deadline no longer
+  # fits in a `timestamp`. The message names the bound, because a refusal
+  # that only says "not a positive number" about 1e15 reads as a lie.
+  defp reserved_errors(policy) do
+    case Map.fetch(policy, "ask_timeout") do
+      {:ok, value} ->
+        if PermissionPolicy.valid_ask_timeout?(value) do
+          []
+        else
+          [
+            permission_policy:
+              "ask_timeout: #{inspect(value)} is not a positive number of seconds " <>
+                "no greater than #{PermissionPolicy.max_ask_timeout_seconds()}"
+          ]
+        end
+
+      :error ->
+        []
+    end
   end
 
   # A policy the runtime will never consult is refused rather than stored. The
