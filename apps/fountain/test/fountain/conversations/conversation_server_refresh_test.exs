@@ -104,6 +104,35 @@ defmodule Fountain.Conversations.ConversationServerRefreshTest do
     GenServer.stop(pid)
   end
 
+  test "a sleeping conversation reconciles its skills on the next wake", ctx do
+    stub_happy_sprite()
+
+    {:ok, _} =
+      Conversations.update_sandbox(ctx.sandbox, %{
+        status: "suspended",
+        build_fingerprint: Fountain.Conversations.Reapply.fingerprint(ctx.env)
+      })
+
+    {:ok, conv} = Conversations.update_conversation(ctx.conv, %{status: "idle"})
+
+    skills = [%{"name" => "fresh", "content" => "Updated skill"}]
+    {:ok, _} = Fountain.Agents.update_agent(ctx.agent, %{skills: skills})
+    test = self()
+
+    Mimic.expect(Fountain.SandboxSkills, :reconcile, fn _handle, "claude", ^skills, _previous ->
+      send(test, :skills_reconciled)
+      :ok
+    end)
+
+    assert {:ok, updated} = Conversations.reapply_conversation(conv, %{})
+    {pid, _, :alive} = start_server(updated)
+
+    assert_received :skills_reconciled
+    assert Conversations._unsafe_get_sandbox!(ctx.sandbox.id).applied_skills == skills
+    assert :sys.get_state(pid).configuration_revision == updated.configuration_revision
+    GenServer.stop(pid)
+  end
+
   test "a prompt reloads configuration when the refresh notification was missed", ctx do
     stub_happy_sprite()
     {pid, _, :alive} = start_server(ctx.conv)
