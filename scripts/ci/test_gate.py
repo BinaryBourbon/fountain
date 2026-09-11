@@ -12,6 +12,7 @@ EVENTS = ("pull_request", "push", "merge_group")
 def plan(event="pull_request", docs=False, touched=False, reuse=False):
     jobs = {job: {"result": "skipped", "outputs": {}} for job in JOBS}
     jobs["workflow-checks"]["result"] = "success"
+    jobs["sdk-checks"]["result"] = "success"
     if "already-tested" in PROBES[event]:
         jobs["already-tested"] = {"result": "success", "outputs": {"skip": str(reuse).lower()}}
     if "changes" in PROBES[event]:

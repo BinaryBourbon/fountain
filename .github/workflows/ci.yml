@@ -1814,6 +1814,27 @@ jobs:
       - name: Test CI decisions
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
 
+  sdk-checks:
+    name: SDK checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: ${{ always() }}
+    needs:
+      - already-tested
+      - changes
+      - elixir-sdk
+      - python-sdk
+      - typescript-sdk
+      - swift-sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+      - name: Every selected SDK check passed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/gate.py --sdk
+
   gate:
     name: CI required
     runs-on: ubuntu-24.04
@@ -1823,6 +1844,7 @@ jobs:
       - already-tested
       - changes
       - workflow-checks
+      - sdk-checks
       - test
       - coverage
       - elixir-static

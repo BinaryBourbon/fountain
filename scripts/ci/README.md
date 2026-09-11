@@ -71,7 +71,7 @@ tested it.
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full CI
-run now has 22 jobs, compared with the documented limit of 20 concurrent
+run now has 23 jobs, compared with the documented limit of 20 concurrent
 runners. The queue builds one group at a time and batches up to five PRs. Revisit
 `max_entries_to_build` when the concurrency limit changes.
 
@@ -86,13 +86,22 @@ The Elixir job owns its toolchain, cache, formatting, compilation, tests, docs,
 package dry run, contract and conformance checks. The Python job owns its
 tests, compilation, contract and conformance checks. The TypeScript job owns
 installation, type checks, tests, builds, browser bundling, contract and
-conformance checks. Each SDK job validates fixtures before its tests.
+conformance checks. These three extracted jobs lint fixtures before their
+tests. Swift retains its separate conformance test step.
 `CI required` requires all SDK jobs on every full plan, including main and
 merge groups. A failed, cancelled or unexpectedly skipped job fails the gate.
 
+`SDK checks` reports the SDK result even when docs-only classification or a
+previously tested tree skips every SDK leg. It validates the same probe
+outputs as the full gate and rejects missing, failed or unexpectedly skipped
+jobs. `CI required` depends on this aggregate. Only the full gate publishes
+`tested-tree` evidence; passing the SDK gate cannot authorize reuse of a tree.
+
 Per-language path routing remains tracked in #1413. Register a new job in
-`gate.py`'s `FULL_JOBS` and the workflow gate's `needs` list together. Run
-`test_gate.py` to verify their agreement and every supported event plan.
+`gate.py`'s `FULL_JOBS` and the workflow gate's `needs` list together. For an
+SDK job, also update `SDK_JOBS` and the `sdk-checks` dependencies. Run
+`test_gate.py` and `test_sdk_gate.py` to verify their agreement and every
+supported event plan.
 
 ## Refresh partition timings
 
