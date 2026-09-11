@@ -22,7 +22,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   alias Fountain.Conversations.{CallbackKey, Checkpoints, CodexChatGPT, Connection}
   alias Fountain.Conversations.{Conversation, Egress}
-  alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning}
+  alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnMachine}
 
   # Absolute ceiling on provisioning (#329). Generous against the summed
@@ -906,7 +906,16 @@ defmodule Fountain.Conversations.ConversationServer do
                  agent,
                  sprite_env
                ) do
-          {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+          # `build_fingerprint` records what the disk was built from, and
+          # `applied_skills` what was mounted on it, so a later reapply can
+          # answer both questions from the row rather than guessing (#1565).
+          {:ok, _} =
+            Conversations.update_sandbox(sandbox, %{
+              status: "ready",
+              build_fingerprint: Reapply.fingerprint(env),
+              applied_skills: skills
+            })
+
           Output.publish_stage(state.conversation_id, "provision", "done")
 
           # Best-effort: snapshot the fully-provisioned state so subsequent
