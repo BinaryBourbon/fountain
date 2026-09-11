@@ -448,14 +448,19 @@ home fails the request and moves neither binding.
 
 A conversation that sleeps applies the change on its next wake. A
 configuration revision stops a prompt against a configuration that a live
-worker did not read yet. Fountain removes the managed skills that the Agent no
+worker did not read yet. The `configuration` stage event reports which of the
+two happened. The status is `done` when a machine holds the new selection, and
+`failed` when the selection stands and the machine has yet to read it. The
+request succeeds in both cases. Fountain removes the managed skills that the Agent no
 longer names, and keeps the other files in the skills directory. On an older
 machine with no skill manifest, Fountain recovers the names from the recorded
 Agent version and from the installer's source lock. An entry with no ownership
 record stays where it is.
 
 Some selections need a new disk. Fountain refuses those with
-`409 rebuild_required` and a `field` that names the cause. A different runtime
+`409 rebuild_required` and a `field` that names the cause. Fountain answers
+`environment` when you edit one Environment in place. The machine records one
+digest of its build inputs, not a digest for each field. A different runtime
 needs one, because Fountain installs the agent adapter before the network
 policy, and that policy now blocks a second install. A different set of
 packages, repositories, setup script or network policy needs one too. A
