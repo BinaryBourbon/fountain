@@ -84,11 +84,19 @@ export class FakeFountain {
   providers: Record<string, unknown>[] = [];
   /** Sandboxes (ADR 0023), as `GET /api/sandboxes` lists them. */
   sandboxes: Record<string, unknown>[] = [];
-  /** What the disk reads answer (ADR 0039), keyed by `files` / `file` / `diff`. */
+  /** What the disk reads answer (ADR 0039), keyed by `files` / `file` / `git-status` / `diff`. */
   readonly disk: Record<string, Record<string, unknown>> = {
     files: { path: "/home/sprite", entries: [], truncated: false },
     file: { path: "/home/sprite/x", size: 0, truncated: false, encoding: "utf-8", content: "" },
     diff: { path: "/home/sprite", repo_root: "/home/sprite", staged: false, ref: null, diff: "", truncated: false },
+    "git-status": {
+      path: "/home/sprite",
+      repo_root: "/home/sprite",
+      branch: "main",
+      untracked: "normal",
+      entries: [],
+      truncated: false,
+    },
   };
   /** Secrets by `${collection}:${parentId}` → key → value. Never read back out. */
   readonly secrets = new Map<string, Map<string, string>>();
@@ -274,7 +282,7 @@ export class FakeFountain {
     // Sandboxes and their disks (ADR 0039). A read of an unknown sandbox
     // is 404 like the real one; the disk answers are whatever the test set.
     if (path === "/api/sandboxes") return json(res, 200, { data: this.sandboxes });
-    const sandbox = /^\/api\/sandboxes\/([^/]+)(?:\/(files|file|diff))?$/.exec(path);
+    const sandbox = /^\/api\/sandboxes\/([^/]+)(?:\/(files|file|git-status|diff))?$/.exec(path);
     if (sandbox) {
       const found = this.sandboxes.find((s) => s.id === sandbox[1]);
       if (!found) return json(res, 404, { error: "not_found" });

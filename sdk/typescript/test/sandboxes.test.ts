@@ -88,6 +88,33 @@ describe("a sandbox's disk (ADR 0039)", () => {
     assert.equal(d?.query.has("path"), false);
   });
 
+  test("sandboxGitStatus reports what a diff cannot: a file made and never staged", async () => {
+    fake.disk["git-status"] = {
+      path: "/home/sprite/repo",
+      repo_root: "/home/sprite/repo",
+      branch: "main",
+      untracked: "all",
+      entries: [
+        { path: "notes.md", index: "untracked", worktree: "untracked", renamed_from: null },
+        { path: "lib/new.ex", index: "renamed", worktree: "unchanged", renamed_from: "lib/old.ex" },
+      ],
+      truncated: false,
+    };
+
+    const status = await client().sandboxGitStatus(SANDBOX, { path: "repo", untracked: "all" });
+
+    assert.equal(status.branch, "main");
+    assert.equal(status.entries?.[0]?.index, "untracked");
+    assert.equal(status.entries?.[1]?.renamed_from, "lib/old.ex");
+    // Relative to repo_root, not to the sandbox home.
+    assert.equal(status.entries?.[0]?.path, "notes.md");
+
+    const [req] = fake.requests;
+    assert.equal(req?.path, `/api/sandboxes/${SANDBOX}/git-status`);
+    assert.equal(req?.query.get("path"), "repo");
+    assert.equal(req?.query.get("untracked"), "all");
+  });
+
   test("an unknown sandbox is a NotFoundError on the disk routes too", async () => {
     await assert.rejects(client().sandboxFiles("nope"), NotFoundError);
   });

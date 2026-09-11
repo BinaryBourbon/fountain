@@ -29,6 +29,17 @@ defmodule Fountain.SandboxFilesTest do
 
   defp b64(bytes), do: Base.encode64(bytes)
 
+  # `XY path\0`: one record of git's porcelain v1 under `-z`.
+  defp record(code, path), do: code <> " " <> path <> <<0>>
+
+  # The repository root and the branch, NUL-terminated as the script writes
+  # them, then the records as it passes them through.
+  defp status_output(branch, records, root \\ @home),
+    do: root <> <<0>> <> branch <> <<0>> <> IO.iodata_to_binary(records)
+
+  # A diff's header: the root, NUL-terminated, then the base64 body.
+  defp diff_output(root, bytes), do: root <> <<0>> <> b64(bytes)
+
   describe "resolve_path/2" do
     test "nil and relative paths resolve from the agent's working directory", ctx do
       assert {:ok, @home} = SandboxFiles.resolve_path(ctx.sandbox, nil)
@@ -226,8 +237,8 @@ defmodule Fountain.SandboxFilesTest do
 
       expect_script(fn _, script, args ->
         assert script =~ "git --no-pager --no-optional-locks diff --no-color --no-ext-diff"
-        assert args == [@home <> "/repo", "262145", "main", "1"]
-        {:ok, "#{@home}/repo\n" <> b64(diff), 0}
+        assert args == [@home <> "/repo", "262145", "main", "1", @home]
+        {:ok, diff_output(@home <> "/repo", diff), 0}
       end)
 
       assert {:ok,
@@ -243,8 +254,8 @@ defmodule Fountain.SandboxFilesTest do
 
     test "no ref and no staged flag pass as empty and 0", ctx do
       expect_script(fn _, _, args ->
-        assert args == [@home, "262145", "", "0"]
-        {:ok, "#{@home}\n" <> b64(""), 0}
+        assert args == [@home, "262145", "", "0", @home]
+        {:ok, diff_output(@home, ""), 0}
       end)
 
       assert {:ok, %{ref: nil, staged: false, diff: ""}} = SandboxFiles.diff(ctx.sandbox, nil)
@@ -258,20 +269,28 @@ defmodule Fountain.SandboxFilesTest do
     end
 
     test "the cap is one byte past max_bytes so an exact fit is not truncated", ctx do
-      expect_script(fn _, _, [_, "6", _, _] -> {:ok, "/r\n" <> b64("abcdefg"), 0} end)
+      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, diff_output("/r", "abcdefg"), 0} end)
 
       assert {:ok, %{diff: "abcde", truncated: true}} =
                SandboxFiles.diff(ctx.sandbox, nil, max_bytes: 5)
 
-      expect_script(fn _, _, [_, "6", _, _] -> {:ok, "/r\n" <> b64("abcde"), 0} end)
+      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, diff_output("/r", "abcde"), 0} end)
 
       assert {:ok, %{diff: "abcde", truncated: false}} =
                SandboxFiles.diff(ctx.sandbox, nil, max_bytes: 5)
     end
 
     test "a latin-1 hunk is recoded rather than refused", ctx do
-      expect_script(fn _, _, _ -> {:ok, "/r\n" <> b64(<<"caf", 0xE9>>), 0} end)
+      expect_script(fn _, _, _ -> {:ok, diff_output("/r", <<"caf", 0xE9>>), 0} end)
       assert {:ok, %{diff: "café"}} = SandboxFiles.diff(ctx.sandbox, nil)
+    end
+
+    test "a newline in the repository root keeps its header", ctx do
+      root = @home <> "/re\npo"
+      expect_script(fn _, _, _ -> {:ok, diff_output(root, "+x\n"), 0} end)
+
+      assert {:ok, %{repo_root: ^root, diff: "+x\n"}} =
+               SandboxFiles.diff(ctx.sandbox, "re\npo")
     end
 
     test "not a repository, an unknown ref and a missing directory are named", ctx do
@@ -301,8 +320,283 @@ defmodule Fountain.SandboxFilesTest do
 
       on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
 
-      expect_script(fn _, _, _ -> {:ok, "/r\n" <> b64("+key = sk-ant-secret-value\n"), 0} end)
-      assert {:ok, %{diff: "+key = [REDACTED]\n"}} = SandboxFiles.diff(ctx.sandbox, nil)
+      expect_script(fn _, _, _ ->
+        {:ok, diff_output("/r/sk-ant-secret-value", "+key = sk-ant-secret-value\n"), 0}
+      end)
+
+      # The root goes through the same replacement the hunks do.
+      assert {:ok, %{repo_root: "/r/[REDACTED]", diff: "+key = [REDACTED]\n"}} =
+               SandboxFiles.diff(ctx.sandbox, nil)
+    end
+  end
+
+  describe "status/3" do
+    test "reports an untracked file, the one state a diff cannot show", ctx do
+      expect_script(fn _, script, args ->
+        assert script =~ "git --no-pager --no-optional-locks status --porcelain=v1 -z"
+        assert args == [@home <> "/repo", "1048577", "normal", @home]
+
+        {:ok,
+         status_output("main", [
+           record("??", "notes.md"),
+           record(" M", "lib/app.ex"),
+           record("A ", "lib/new.ex"),
+           record("MM", "mix.exs"),
+           record(" D", "gone.txt"),
+           record("UU", "conflict.ex")
+         ]), 0}
+      end)
+
+      assert {:ok,
+              %{
+                path: @home <> "/repo",
+                repo_root: @home,
+                branch: "main",
+                untracked: "normal",
+                truncated: false,
+                entries: entries
+              }} = SandboxFiles.status(ctx.sandbox, "repo")
+
+      # Both porcelain columns, read separately: `MM` is staged and then
+      # edited again, `??` is untracked on both sides the way git reports it.
+      assert Enum.map(entries, &{&1.path, &1.index, &1.worktree}) == [
+               {"conflict.ex", "unmerged", "unmerged"},
+               {"gone.txt", "unchanged", "deleted"},
+               {"lib/app.ex", "unchanged", "modified"},
+               {"lib/new.ex", "added", "unchanged"},
+               {"mix.exs", "modified", "modified"},
+               {"notes.md", "untracked", "untracked"}
+             ]
+    end
+
+    test "a rename takes the record after it as its origin, destination first", ctx do
+      expect_script(fn _, _, _ ->
+        {:ok,
+         status_output("main", [
+           record("R ", "lib/new.ex"),
+           "lib/old.ex" <> <<0>>,
+           record(" M", "z.txt")
+         ]), 0}
+      end)
+
+      assert {:ok, %{entries: entries}} = SandboxFiles.status(ctx.sandbox, nil)
+
+      assert entries == [
+               %{
+                 path: "lib/new.ex",
+                 index: "renamed",
+                 worktree: "unchanged",
+                 renamed_from: "lib/old.ex"
+               },
+               %{path: "z.txt", index: "unchanged", worktree: "modified", renamed_from: nil}
+             ]
+    end
+
+    test "the untracked mode is one of three, and anything else reads as normal", ctx do
+      for mode <- ~w(all no normal) do
+        expect_script(fn _, _, [_, _, passed | _] ->
+          assert passed == mode
+          {:ok, status_output("main", []), 0}
+        end)
+
+        assert {:ok, %{untracked: ^mode}} = SandboxFiles.status(ctx.sandbox, nil, untracked: mode)
+      end
+
+      expect_script(fn _, _, [_, _, "normal" | _] -> {:ok, status_output("main", []), 0} end)
+
+      assert {:ok, %{untracked: "normal", entries: []}} =
+               SandboxFiles.status(ctx.sandbox, nil, untracked: "--ignored")
+    end
+
+    test "a detached HEAD has no branch, and a clean tree no entries", ctx do
+      expect_script(fn _, _, _ -> {:ok, status_output("", []), 0} end)
+
+      assert {:ok, %{branch: nil, entries: [], truncated: false}} =
+               SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "a record the byte cap cut in half is dropped rather than half-read", ctx do
+      expect_script(fn _, _, _ ->
+        {:ok, status_output("main", [record(" M", "a.txt"), " M b.tx"]), 0}
+      end)
+
+      assert {:ok, %{entries: [%{path: "a.txt"}], truncated: true}} =
+               SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "a cut that landed on a record boundary is still truncated", ctx do
+      # Whole and NUL-terminated, so the tail cannot show this cut. Only the
+      # byte past the cap can, which is why the script is asked for one.
+      name = String.duplicate("x", 1_048_577 - 4)
+
+      expect_script(fn _, _, _ ->
+        {:ok, status_output("main", [record(" M", name)]), 0}
+      end)
+
+      assert {:ok, %{entries: [%{path: ^name}], truncated: true}} =
+               SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "more changes than the entry cap are cut to it and flagged", ctx do
+      records = for i <- 1..2_001, do: record(" M", "f#{i}.txt")
+      expect_script(fn _, _, _ -> {:ok, status_output("main", records), 0} end)
+
+      assert {:ok, %{entries: entries, truncated: true}} = SandboxFiles.status(ctx.sandbox, nil)
+      assert length(entries) == 2_000
+    end
+
+    test "a record with a letter git does not write is skipped, not guessed at", ctx do
+      expect_script(fn _, _, _ ->
+        {:ok, status_output("main", [record("ZZ", "odd.txt"), record(" M", "ok.txt")]), 0}
+      end)
+
+      assert {:ok, %{entries: [%{path: "ok.txt"}]}} = SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "a path git wrote verbatim that is not UTF-8 is recoded, not refused", ctx do
+      expect_script(fn _, _, _ ->
+        {:ok, status_output("main", [record("??", <<"caf", 0xE9, ".md">>)]), 0}
+      end)
+
+      assert {:ok, %{entries: [%{path: "café.md"}]}} = SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "a newline in the repository root keeps its header, its branch and its entry", ctx do
+      # A directory may be named this, and `resolve_path/2` refuses only NUL
+      # and invalid UTF-8, so a caller can reach one. Framed with newlines the
+      # header read `repo_root: "<home>/re"`, `branch: "po"`, and the one real
+      # record decoded from `main\n?? new.txt` and was dropped: a 200 with no
+      # entries for a repository that has a change.
+      root = @home <> "/re\npo"
+
+      expect_script(fn _, _, _ ->
+        {:ok, status_output("main", [record("??", "new.txt")], root), 0}
+      end)
+
+      assert {:ok, %{repo_root: ^root, branch: "main", entries: [%{path: "new.txt"}]}} =
+               SandboxFiles.status(ctx.sandbox, "re\npo")
+    end
+
+    test "the roots the script confines discovery to cross host_path too", ctx do
+      # They are compared against what `git rev-parse --show-toplevel` prints
+      # inside the sandbox, so an unmapped root would refuse every repository
+      # on a runner rather than confine one.
+      stub(Managoat.Sandbox, :host_path, fn _handle, path -> "/Users/me/box" <> path end)
+
+      expect_script(fn _, _, args ->
+        assert args == [
+                 "/Users/me/box/home/sprite",
+                 "1048577",
+                 "normal",
+                 "/Users/me/box/home/sprite"
+               ]
+
+        {:ok, status_output("main", [], "/Users/me/box/home/sprite"), 0}
+      end)
+
+      assert {:ok, %{path: @home}} = SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "not a repository, a missing directory and a file are named", ctx do
+      expect_script(fn _, _, _ -> {:ok, "", 6} end)
+      assert {:error, :not_a_repository} = SandboxFiles.status(ctx.sandbox, "plain")
+
+      expect_script(fn _, _, _ -> {:ok, "", 3} end)
+      assert {:error, :path_not_found} = SandboxFiles.status(ctx.sandbox, "gone")
+
+      expect_script(fn _, _, _ -> {:ok, "", 4} end)
+      assert {:error, :not_a_directory} = SandboxFiles.status(ctx.sandbox, "file.txt")
+    end
+
+    test "output the script did not produce is a command failure, not a crash", ctx do
+      expect_script(fn _, _, _ -> {:ok, "no second line", 0} end)
+      assert {:error, {:sandbox_command_failed, 0, _}} = SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "a diagnostic the byte cap split mid-character still encodes as JSON", ctx do
+      # The failure path caps git's message with `head -c 4096`, which cuts on
+      # a byte: a diagnostic that long in a non-Latin filename or a translated
+      # locale loses half of the character that straddles the cap. The 422
+      # this error renders as would be a 500 if the body would not encode.
+      cut = binary_part("fatal: unable to read '" <> String.duplicate("é", 3000), 0, 4096)
+      refute String.valid?(cut)
+
+      expect_script(fn _, _, _ -> {:ok, status_output("main", []) <> cut, 8} end)
+
+      assert {:error, {:sandbox_command_failed, 8, output}} =
+               SandboxFiles.status(ctx.sandbox, nil)
+
+      assert String.valid?(output)
+      assert {:ok, _} = Jason.encode(%{error: "sandbox_command_failed", output: output})
+      assert output =~ "fatal: unable to read"
+    end
+
+    test "a failing command's output is redacted before it is recoded", ctx do
+      {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
+      env = insert_env(user_id: ctx.user.id)
+      secret = "sk-live-café"
+
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => secret}, dek)
+
+      sandbox =
+        insert_sandbox(
+          user_id: ctx.user.id,
+          status: "ready",
+          environment_id: env.id,
+          agent_id: ctx.agent.id
+        )
+
+      # Recoding first would rewrite the secret's own bytes, and the search
+      # for them would then find nothing.
+      message = "fatal: unable to read '" <> secret <> "'" <> String.duplicate("é", 3000)
+      cut = binary_part(message, 0, 4096)
+      refute String.valid?(cut)
+
+      expect_script(fn _, _, _ -> {:ok, cut, 8} end)
+
+      assert {:error, {:sandbox_command_failed, 8, output}} = SandboxFiles.status(sandbox, nil)
+      assert String.valid?(output)
+      assert output =~ "[REDACTED]"
+      refute output =~ "café"
+    end
+
+    test "a path is redacted the way file content is", ctx do
+      {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
+      env = insert_env(user_id: ctx.user.id)
+
+      {:ok, _} =
+        Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => "sk-live-abcdef"}, dek)
+
+      sandbox =
+        insert_sandbox(
+          user_id: ctx.user.id,
+          status: "ready",
+          environment_id: env.id,
+          agent_id: ctx.agent.id
+        )
+
+      expect_script(fn _, _, _ ->
+        {:ok,
+         status_output(
+           "sk-live-abcdef-branch",
+           [
+             record("R ", "dump-sk-live-abcdef.json"),
+             "old-sk-live-abcdef.json" <> <<0>>
+           ],
+           @home <> "/clone-sk-live-abcdef"
+         ), 0}
+      end)
+
+      # `repo_root` is a path the agent chose like the three beside it, so it
+      # is replaced like them rather than handed back raw.
+      assert {:ok,
+              %{
+                repo_root: @home <> "/clone-[REDACTED]",
+                branch: "[REDACTED]-branch",
+                entries: [
+                  %{path: "dump-[REDACTED].json", renamed_from: "old-[REDACTED].json"}
+                ]
+              }} = SandboxFiles.status(sandbox, nil)
     end
   end
 end

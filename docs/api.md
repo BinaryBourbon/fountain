@@ -383,15 +383,18 @@ See [Sandboxes](concepts/sandboxes.md) and
 in the [generated reference](/api/docs) describe attachment identity, reset
 conditions, and refusal during a turn.
 
-### Files and git diff
+### Files, git status and git diff
 
-Use the sandbox read operations to inspect files and tracked changes while
-an agent works. Reads do not wake a parked machine. A diff does not include
-untracked files, so it is not a complete inventory of the working directory.
+Use the sandbox read operations to inspect files and changes while an agent
+works. Reads do not wake a parked machine. A diff compares tracked content
+only. To see a file the agent made and never staged, use the git status
+operation. Its entry paths are relative to the repository root, not to the
+sandbox home.
 
 The [generated reference](/api/docs) defines path confinement, byte limits,
-truncation, encoding, and comparison options. Check truncation before you show
-a response as a complete file. Treat redacted output as a display value.
+truncation, encoding, comparison options, and the untracked modes. Check
+truncation before you show a response as a complete file. Treat redacted
+output as a display value.
 
 ## Search
 
