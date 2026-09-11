@@ -244,6 +244,15 @@ curl --fail-with-body \
   "$FOUNTAIN_URL/api/conversations"
 ```
 
+A first prompt is optional. A launch with no prompt creates the conversation
+and waits for a later turn. A prompt that is present must contain words.
+Fountain refuses blank or whitespace-only text with `422 invalid_prompt`.
+
+Images need that first prompt. Fountain refuses images that arrive with no
+text, and the error is `422 invalid_prompt`. An unsupported `media_type`,
+empty bytes, or more than 10MB give `422 invalid_images`. Both checks run
+before the launch reserves a sandbox, so bad input costs no machine.
+
 This starts real work and can consume credits and provider usage.
 [Conversation states](reference/conversation-states.md) explains lifecycle
 transitions. The Conversations operations in the

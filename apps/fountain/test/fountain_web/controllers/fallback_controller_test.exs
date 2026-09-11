@@ -10,6 +10,18 @@ defmodule FountainWeb.FallbackControllerTest do
     assert %{"error" => "sandbox_reset_pending"} = json_response(conn, 409)
   end
 
+  test "unusable opening input names itself rather than falling to the safety net", %{conn: conn} do
+    for {reason, error} <- [invalid_prompt: "invalid_prompt", invalid_images: "invalid_images"] do
+      body =
+        conn
+        |> FountainWeb.FallbackController.call({:error, reason})
+        |> json_response(422)
+
+      assert body["error"] == error
+      assert is_binary(body["message"]) and body["message"] != ""
+    end
+  end
+
   describe "{:error, %Ecto.Changeset{}} → 422" do
     test "POST /api/agents with missing required fields returns 422 with errors body", %{
       conn: conn

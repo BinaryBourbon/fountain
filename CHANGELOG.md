@@ -46,6 +46,16 @@ upgrade, is in
   admin sandbox list. That retires the row and releases the slot; the machine
   at the provider is then the operator's to check.
 
+- `POST /api/conversations` refuses an opening prompt it cannot use, before it
+  reserves a sandbox or creates the conversation. Whitespace-only text and a
+  non-string prompt return `422 invalid_prompt`. Images sent with no opening
+  text return `422 invalid_prompt` as well; previously such a request was
+  accepted and provisioned a machine that received pixels and no instruction.
+  An image whose `media_type` is unsupported, whose decoded bytes are empty, or
+  which exceeds the 10MB ceiling returns `422 invalid_images`. The OpenAI-
+  compatible endpoint is unchanged: it still synthesizes a caption for an
+  image-only message, because clients of that dialect cannot always send one.
+
 ### Added
 
 - **An `acp` runtime launches a named command, so a deterministic program can

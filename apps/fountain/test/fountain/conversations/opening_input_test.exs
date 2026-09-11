@@ -92,6 +92,39 @@ defmodule Fountain.Conversations.OpeningInputTest do
     end
   end
 
+  @tag path: :create
+  test "a context caller may supply string-keyed images", ctx do
+    stub(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:ok, self()} end)
+
+    assert {:ok, _} =
+             start(ctx, %{
+               "prompt" => "Review",
+               "images" => [%{"media_type" => "image/png", "data" => <<0, 1, 2>>}]
+             })
+  end
+
+  @tag path: :create
+  test "a string-keyed image is held to the same rules", ctx do
+    reject(Horde.DynamicSupervisor, :start_child, 2)
+
+    for image <- [
+          %{"media_type" => "text/html", "data" => "html"},
+          %{"media_type" => "image/png", "data" => ""},
+          %{"media_type" => "image/png"}
+        ] do
+      assert {:error, :invalid_images} =
+               start(ctx, %{"prompt" => "Review", "images" => [image]})
+    end
+  end
+
+  test "a struct is not an image" do
+    assert {:error, :invalid_images} =
+             Fountain.Conversations.PromptInput.validate_initial(%{
+               "prompt" => "Review",
+               "images" => [%URI{}]
+             })
+  end
+
   defp start(ctx, extra) do
     attrs = %{"user_id" => ctx.user.id, "agent_id" => ctx.agent.id}
     attrs = if ctx.path == :attach, do: Map.put(attrs, "sandbox_id", ctx.sandbox.id), else: attrs
