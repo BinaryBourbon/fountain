@@ -2313,6 +2313,7 @@ defmodule Fountain.Conversations do
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
     - `title`                 — optional display title (the team page names a teammate with it)
+    - `labels`                — optional `key => value` strings (#1637); see `Conversations.Labels`
   """
   def start_conversation(attrs, opts \\ [])
 
@@ -2377,7 +2378,8 @@ defmodule Fountain.Conversations do
                title: attrs["title"],
                sandbox_api_access: api_access,
                permission_policy: perm_policy,
-               caller_tools: attrs["caller_tools"] || []
+               caller_tools: attrs["caller_tools"] || [],
+               labels: attrs["labels"] || %{}
              },
              attrs["execution_limits"],
              opts
@@ -2979,7 +2981,8 @@ defmodule Fountain.Conversations do
                permission_policy: perm_policy,
                # The bridge's tools (#1202) ride on both create paths: this
                # one is what a home sandbox's second conversation takes.
-               caller_tools: attrs["caller_tools"] || []
+               caller_tools: attrs["caller_tools"] || [],
+               labels: attrs["labels"] || %{}
              },
              attrs["execution_limits"],
              opts
