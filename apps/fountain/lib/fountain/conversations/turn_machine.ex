@@ -247,7 +247,7 @@ defmodule Fountain.Conversations.TurnMachine do
     end
   end
 
-  def handle(%__MODULE__{} = turn, {:model_selected, requested, effective, source}, _ctx) do
+  def handle(%__MODULE__{} = turn, {:model_selected, requested, effective, source}, ctx) do
     selection = %{
       requested_model: requested,
       effective_model: effective,
@@ -255,7 +255,7 @@ defmodule Fountain.Conversations.TurnMachine do
       status: "selected"
     }
 
-    turn = record_model_selection(turn, selection)
+    turn = record_model_selection(turn, selection, ctx)
 
     publish_stage(
       turn.conversation_id,
@@ -273,7 +273,7 @@ defmodule Fountain.Conversations.TurnMachine do
     handle(turn, {:failed, {:model_selection_failed, requested, detail}}, ctx)
   end
 
-  def handle(%__MODULE__{} = turn, {:failed, {:model_selection_failed, requested, detail}}, _ctx) do
+  def handle(%__MODULE__{} = turn, {:failed, {:model_selection_failed, requested, detail}}, ctx) do
     message =
       "Could not select model #{requested}: #{detail}. No prompt was sent. " <>
         "Choose a model available in this runtime, or refresh its model catalog and check account access."
@@ -285,7 +285,7 @@ defmodule Fountain.Conversations.TurnMachine do
       error: message
     }
 
-    turn = record_model_selection(turn, selection)
+    turn = record_model_selection(turn, selection, ctx)
 
     publish_stage(
       turn.conversation_id,
@@ -754,11 +754,41 @@ defmodule Fountain.Conversations.TurnMachine do
 
   defp put_model(usage, _source, _model), do: usage
 
-  defp record_model_selection(%__MODULE__{row: nil} = turn, _selection), do: turn
+  defp record_model_selection(%__MODULE__{row: nil} = turn, _selection, _ctx), do: turn
 
-  defp record_model_selection(turn, selection) do
-    {:ok, row} = Conversations._unsafe_update_turn(turn.row, %{model_selection: selection})
+  defp record_model_selection(turn, selection, ctx) do
+    attrs = stamp_inference(%{model_selection: selection}, turn.row, ctx)
+    {:ok, row} = Conversations._unsafe_update_turn(turn.row, attrs)
     %{turn | row: row}
+  end
+
+  # The inference stamp, written at turn start rather than only at the end
+  # (#1685).
+  #
+  # `Managoat.ACP.Peer` reports `:model_selected` from `send_prompt/1`,
+  # immediately before it writes `session/prompt`, so this runs once per ACP
+  # turn at the moment tokens are about to be spent. Before #1685 the stamp
+  # was applied only in the `{:done, ...}` clause, which a turn reaches only
+  # when the prompt is *answered*: an adapter exit, a sandbox deadline, a
+  # server restart, an interrupt or a runtime that reports no usage all left
+  # a turn that spent Fountain's key with no record that it had.
+  #
+  # `with_inference/2` decides the source, exactly as the end-of-turn write
+  # does — one derivation, so the two writes cannot disagree. What it returns
+  # for an empty map is the stamp alone, and `%{}` on a deployment holding no
+  # platform key, which is what keeps a self-hosted install's turn rows
+  # unchanged.
+  #
+  # The end-of-turn write merges its token figures over this (see
+  # `Conversations._unsafe_record_turn_usage/2`), so a turn that does answer
+  # its prompt ends with the same map it carried before #1685.
+  defp stamp_inference(attrs, %{usage: usage}, _ctx) when is_map(usage), do: attrs
+
+  defp stamp_inference(attrs, _row, ctx) do
+    case with_inference(%{}, ctx) do
+      stamp when map_size(stamp) > 0 -> Map.put(attrs, :usage, stamp)
+      _ -> attrs
+    end
   end
 
   @spec record_usage(t(), map() | nil) :: :ok

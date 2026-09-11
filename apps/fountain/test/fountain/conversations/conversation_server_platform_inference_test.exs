@@ -172,6 +172,120 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
     end
   end
 
+  # #1685. The mark above is applied in the `{:done, ...}` clause, which a
+  # turn reaches only when its prompt is *answered*. Production over seven
+  # days: 26 turns carried the mark and 319 ended with no usage map at all —
+  # whichever of those ran on the platform key spent it invisibly. The stamp
+  # is therefore written at turn start, where `Managoat.ACP.Peer` reports
+  # `:model_selected` immediately before it writes `session/prompt`.
+  describe "the mark at turn start (#1685)" do
+    setup %{user: user, agent: agent} do
+      conv = insert_conversation(user_id: user.id, agent: agent)
+      row = insert_turn(conv, status: "running", started_at: DateTime.utc_now())
+
+      machine = %TurnMachine{
+        conversation_id: conv.id,
+        row: row,
+        metrics:
+          TurnMachine.start_metrics("claude", :sprites, System.monotonic_time(:millisecond))
+      }
+
+      {:ok, conv: conv, row: row, machine: machine}
+    end
+
+    test "a turn whose adapter dies before the response still says whose key ran it", %{
+      machine: m,
+      row: row
+    } do
+      {_m, []} = select_model(m, platform_ctx())
+
+      # No `{:done, ...}` ever arrives: the adapter exits, the sandbox hits
+      # its deadline, or the server restarts.
+      assert stored(row).usage == %{
+               "inference" => "platform",
+               "model" => "anthropic/claude-opus-5"
+             }
+    end
+
+    test "so does one that is interrupted", %{machine: m, row: row} do
+      {m, []} = select_model(m, platform_ctx())
+
+      TurnMachine.mark_interrupted(m)
+
+      assert stored(row).status == "interrupted"
+      assert stored(row).usage["inference"] == "platform"
+    end
+
+    test "so does one that fails before it can report anything", %{machine: m, conv: conv} do
+      other = insert_turn(conv, status: "running")
+      {_m, []} = select_model(%{m | row: other}, platform_ctx())
+
+      TurnMachine.fail_before_start(other, conv.id, "spawn", "boom", 1)
+
+      assert stored(other).status == "failed"
+      assert stored(other).usage["inference"] == "platform"
+    end
+
+    test "a turn on the tenant's own key is not stamped as a platform one", %{
+      machine: m,
+      row: row
+    } do
+      ctx = %{platform_ctx() | inference: :own}
+      {_m, []} = select_model(m, ctx)
+
+      assert stored(row).usage == %{"inference" => "own"}
+      refute stored(row).usage["inference"] == "platform"
+    end
+
+    test "a deployment holding no platform key stamps nothing at all", %{machine: m, row: row} do
+      Application.delete_env(:fountain, :platform_anthropic_api_key)
+
+      {_m, []} = select_model(m, platform_ctx())
+      assert is_nil(stored(row).usage)
+    end
+
+    test "a turn that does answer its prompt ends with the map it had before the stamp", %{
+      machine: m,
+      conv: conv,
+      row: row
+    } do
+      ctx = platform_ctx()
+      {m, []} = select_model(m, ctx)
+
+      assert {_m, [{:finish, "completed", _, _}]} =
+               TurnMachine.handle(m, {:done, "end_turn", %{"input" => 5, "output" => 3}}, ctx)
+
+      assert stored(row).usage == TurnMachine.with_inference(%{"input" => 5, "output" => 3}, ctx)
+
+      # And the conversation's running sums moved once, not twice.
+      assert %{usage_input_tokens: 5, usage_output_tokens: 3} =
+               Conversations._unsafe_get_conversation!(conv.id)
+    end
+
+    test "the API reports no token figure for a turn carrying only the stamp" do
+      assert FountainWeb.ConversationJSON.turn_usage(%{
+               "inference" => "platform",
+               "model" => "anthropic/claude-opus-5"
+             }) == nil
+
+      assert FountainWeb.ConversationJSON.turn_usage(%{
+               "inference" => "platform",
+               "model" => "anthropic/claude-opus-5",
+               "input" => 5,
+               "output" => 3
+             }) == %{input: 5, output: 3}
+    end
+  end
+
+  defp platform_ctx, do: %{inference: :platform, model: "anthropic/claude-opus-5"}
+
+  # What `Managoat.ACP.Peer` reports from `send_prompt/1`, just before it
+  # writes `session/prompt`.
+  defp select_model(machine, ctx),
+    do: TurnMachine.handle(machine, {:model_selected, ctx.model, ctx.model, "runtime"}, ctx)
+
+  defp stored(row), do: Fountain.Repo.get!(Conversations.Turn, row.id)
+
   defp stub_turn_boundary do
     test = self()
     ref = make_ref()
