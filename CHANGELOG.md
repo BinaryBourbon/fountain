@@ -64,7 +64,6 @@ upgrade, is in
   `AgentUpdate["model"]` are `string | null` and optional. A client that
   assumed a string needs a null check. Nothing else on the wire changed
   shape.
->>>>>>> theirs
 
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
   toolchain setup run within an explicit bound. It persists through API/spec
