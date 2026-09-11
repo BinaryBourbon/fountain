@@ -484,7 +484,8 @@ defmodule Fountain.SandboxFiles do
     """
   end
 
-  # The repository root on the first line, then the diff base64-encoded.
+  # The repository root, NUL-terminated, then the diff base64-encoded. A
+  # newline would not do: a directory name may contain one.
   # The ref is verified first because a pipeline's status is `base64`'s,
   # which would turn an unknown ref into an empty diff. `--no-optional-locks`
   # keeps a read from contending with the agent's own git for the index.
@@ -515,16 +516,18 @@ defmodule Fountain.SandboxFiles do
     if [ -n "$ref" ]; then
       git rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || exit 7
     fi
-    printf '%s\n' "$root"
+    printf '%s\0' "$root"
     if [ "$staged" = 1 ]; then set -- --cached; else set --; fi
     if [ -n "$ref" ]; then set -- "$@" "$ref"; fi
     git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" | head -c "$n" | base64
     """
   end
 
-  # The repository root and the branch on the first two lines, then the
-  # porcelain records as they come: `-z` already frames them with NUL, so
-  # unlike a file's bytes they need no base64 to survive a transport.
+  # The repository root and the branch NUL-terminated, then the porcelain
+  # records as they come: `-z` already frames them with NUL, so unlike a
+  # file's bytes they need no base64 to survive a transport. The header is
+  # framed the same way for the same reason — a path may hold a newline and
+  # cannot hold a NUL.
   #
   # The branch is asked for separately rather than parsed out of the `-b`
   # header, whose one line has to carry "no branch", "no commits yet" and an
@@ -583,7 +586,7 @@ defmodule Fountain.SandboxFiles do
     done
     [ -n "$inside" ] || exit 6
     branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
-    printf '%s\n%s\n' "$root" "$branch"
+    printf '%s\0%s\0' "$root" "$branch"
     case $untracked in
       all) set -- --untracked-files=all ;;
       no) set -- --untracked-files=no ;;
@@ -636,18 +639,26 @@ defmodule Fountain.SandboxFiles do
     end
   end
 
+  # The header is framed with NUL like the records are, not with a newline:
+  # a directory name may contain a newline and may not contain a NUL, so a
+  # repository at `<home>/re\npo` otherwise reported `repo_root` as
+  # `<home>/re` and read the rest of its own path as the payload.
   defp parse_diff(output) do
-    with [root, encoded] <- String.split(output, "\n", parts: 2),
+    with [root, encoded] <- String.split(output, <<0>>, parts: 2),
          {:ok, bytes} <- Base.decode64(encoded, ignore: :whitespace) do
-      {:ok, String.trim(root), bytes}
+      {:ok, root, bytes}
     else
       _ -> {:error, {:sandbox_command_failed, 0, "unparseable diff output"}}
     end
   end
 
+  # NUL-framed for the reason `parse_diff/1` gives, and here it cost an entry
+  # as well as the header: the branch read as the tail of the root's own path,
+  # and the one real record decoded from bytes that were never a record and
+  # was dropped — `entries: []` for a repository with a change.
   defp parse_status(output) do
-    case String.split(output, "\n", parts: 3) do
-      [root, branch, body] -> {:ok, String.trim(root), blank_to_nil(branch), body}
+    case String.split(output, <<0>>, parts: 3) do
+      [root, branch, body] -> {:ok, root, blank_to_nil(branch), body}
       _ -> {:error, {:sandbox_command_failed, 0, "unparseable status output"}}
     end
   end

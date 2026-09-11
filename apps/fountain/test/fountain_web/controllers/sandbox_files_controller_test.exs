@@ -210,7 +210,7 @@ defmodule FountainWeb.SandboxFilesControllerTest do
   describe "GET /api/sandboxes/:id/diff" do
     test "diffs the working directory's repository, with staged and ref as flags", ctx do
       diff = "diff --git a/f b/f\n+x\n"
-      exec_returns("#{@home}\n" <> b64(diff))
+      exec_returns(@home <> <<0>> <> b64(diff))
 
       data =
         ctx.conn
@@ -277,7 +277,10 @@ defmodule FountainWeb.SandboxFilesControllerTest do
   describe "GET /api/sandboxes/:id/git-status" do
     test "reports untracked and deleted paths, which no diff shows together", ctx do
       exec_returns(
-        "#{@home}\nmain\n" <>
+        @home <>
+          <<0>> <>
+          "main" <>
+          <<0>> <>
           record("??", "notes.md") <> record(" D", "gone.txt") <> record("A ", "new.ex")
       )
 

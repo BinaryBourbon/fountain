@@ -32,10 +32,13 @@ defmodule Fountain.SandboxFilesTest do
   # `XY path\0`: one record of git's porcelain v1 under `-z`.
   defp record(code, path), do: code <> " " <> path <> <<0>>
 
-  # The repository root and the branch, then the records as the script
-  # passes them through.
+  # The repository root and the branch, NUL-terminated as the script writes
+  # them, then the records as it passes them through.
   defp status_output(branch, records, root \\ @home),
-    do: "#{root}\n#{branch}\n" <> IO.iodata_to_binary(records)
+    do: root <> <<0>> <> branch <> <<0>> <> IO.iodata_to_binary(records)
+
+  # A diff's header: the root, NUL-terminated, then the base64 body.
+  defp diff_output(root, bytes), do: root <> <<0>> <> b64(bytes)
 
   describe "resolve_path/2" do
     test "nil and relative paths resolve from the agent's working directory", ctx do
@@ -235,7 +238,7 @@ defmodule Fountain.SandboxFilesTest do
       expect_script(fn _, script, args ->
         assert script =~ "git --no-pager --no-optional-locks diff --no-color --no-ext-diff"
         assert args == [@home <> "/repo", "262145", "main", "1", @home]
-        {:ok, "#{@home}/repo\n" <> b64(diff), 0}
+        {:ok, diff_output(@home <> "/repo", diff), 0}
       end)
 
       assert {:ok,
@@ -252,7 +255,7 @@ defmodule Fountain.SandboxFilesTest do
     test "no ref and no staged flag pass as empty and 0", ctx do
       expect_script(fn _, _, args ->
         assert args == [@home, "262145", "", "0", @home]
-        {:ok, "#{@home}\n" <> b64(""), 0}
+        {:ok, diff_output(@home, ""), 0}
       end)
 
       assert {:ok, %{ref: nil, staged: false, diff: ""}} = SandboxFiles.diff(ctx.sandbox, nil)
@@ -266,20 +269,28 @@ defmodule Fountain.SandboxFilesTest do
     end
 
     test "the cap is one byte past max_bytes so an exact fit is not truncated", ctx do
-      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, "/r\n" <> b64("abcdefg"), 0} end)
+      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, diff_output("/r", "abcdefg"), 0} end)
 
       assert {:ok, %{diff: "abcde", truncated: true}} =
                SandboxFiles.diff(ctx.sandbox, nil, max_bytes: 5)
 
-      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, "/r\n" <> b64("abcde"), 0} end)
+      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, diff_output("/r", "abcde"), 0} end)
 
       assert {:ok, %{diff: "abcde", truncated: false}} =
                SandboxFiles.diff(ctx.sandbox, nil, max_bytes: 5)
     end
 
     test "a latin-1 hunk is recoded rather than refused", ctx do
-      expect_script(fn _, _, _ -> {:ok, "/r\n" <> b64(<<"caf", 0xE9>>), 0} end)
+      expect_script(fn _, _, _ -> {:ok, diff_output("/r", <<"caf", 0xE9>>), 0} end)
       assert {:ok, %{diff: "café"}} = SandboxFiles.diff(ctx.sandbox, nil)
+    end
+
+    test "a newline in the repository root keeps its header", ctx do
+      root = @home <> "/re\npo"
+      expect_script(fn _, _, _ -> {:ok, diff_output(root, "+x\n"), 0} end)
+
+      assert {:ok, %{repo_root: ^root, diff: "+x\n"}} =
+               SandboxFiles.diff(ctx.sandbox, "re\npo")
     end
 
     test "not a repository, an unknown ref and a missing directory are named", ctx do
@@ -309,7 +320,7 @@ defmodule Fountain.SandboxFilesTest do
 
       on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
 
-      expect_script(fn _, _, _ -> {:ok, "/r\n" <> b64("+key = sk-ant-secret-value\n"), 0} end)
+      expect_script(fn _, _, _ -> {:ok, diff_output("/r", "+key = sk-ant-secret-value\n"), 0} end)
       assert {:ok, %{diff: "+key = [REDACTED]\n"}} = SandboxFiles.diff(ctx.sandbox, nil)
     end
   end
@@ -443,6 +454,22 @@ defmodule Fountain.SandboxFilesTest do
       end)
 
       assert {:ok, %{entries: [%{path: "café.md"}]}} = SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "a newline in the repository root keeps its header, its branch and its entry", ctx do
+      # A directory may be named this, and `resolve_path/2` refuses only NUL
+      # and invalid UTF-8, so a caller can reach one. Framed with newlines the
+      # header read `repo_root: "<home>/re"`, `branch: "po"`, and the one real
+      # record decoded from `main\n?? new.txt` and was dropped: a 200 with no
+      # entries for a repository that has a change.
+      root = @home <> "/re\npo"
+
+      expect_script(fn _, _, _ ->
+        {:ok, status_output("main", [record("??", "new.txt")], root), 0}
+      end)
+
+      assert {:ok, %{repo_root: ^root, branch: "main", entries: [%{path: "new.txt"}]}} =
+               SandboxFiles.status(ctx.sandbox, "re\npo")
     end
 
     test "the roots the script confines discovery to cross host_path too", ctx do

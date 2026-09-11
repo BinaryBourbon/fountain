@@ -91,6 +91,29 @@ defmodule Fountain.SandboxFilesScriptTest do
     end
   end
 
+  describe "the header a script writes" do
+    test "is NUL-framed, so a newline in the repository's path survives it" do
+      # A directory may be named this. Framed with newlines, the header of a
+      # repository at `<dir>/re\npo` reported the root as `<dir>/re`, the
+      # branch as `po`, and read the first real record out of the rest of its
+      # own path — which decoded as nothing and was dropped.
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "re\npo"))
+
+      assert {output, 0} = run(:status, [repo, @cap, "all", repo])
+      # `--show-toplevel` prints the physical path, which on a mac reaches
+      # this directory through `/private`; what matters is that the name
+      # arrives whole rather than cut at its newline.
+      assert [root, "main", body] = String.split(output, <<0>>, parts: 3)
+      assert String.ends_with?(root, "/re\npo")
+      assert body =~ "?? new.txt"
+
+      assert {output, 0} = run(:diff, [repo, @cap, "", "0", repo])
+      assert [^root, encoded] = String.split(output, <<0>>, parts: 2)
+      assert {:ok, diff} = Base.decode64(encoded, ignore: :whitespace)
+      assert diff =~ "a/a.txt"
+    end
+  end
+
   describe "repository discovery is confined" do
     setup do
       # The shape a self-hosted runner has: the sandbox is a directory under
@@ -121,6 +144,16 @@ defmodule Fountain.SandboxFilesScriptTest do
       assert output =~ "?? .ssh_id_rsa_name"
 
       assert {_output, 0} = run(:diff, [ctx.sandbox, @cap, "", "0", ctx.outside])
+    end
+
+    test "a newline in a root's own path does not smuggle one past the check", ctx do
+      # The root is compared whole, so the two halves of a name with a
+      # newline in it are not two roots.
+      odd = Path.join(ctx.outside, "re\npo")
+      repo!(odd)
+
+      assert {_output, 0} = run(:status, [odd, @cap, "all", odd])
+      assert {_output, 6} = run(:status, [odd, @cap, "all", Path.join(ctx.outside, "re")])
     end
 
     test "one of several roots is enough, the way `roots/1` passes them", ctx do
