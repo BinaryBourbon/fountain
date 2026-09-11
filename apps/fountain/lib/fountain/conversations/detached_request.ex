@@ -59,6 +59,7 @@ defmodule Fountain.Conversations.DetachedRequest do
   """
 
   alias Fountain.Conversations.Lifecycle
+  alias Fountain.PermissionPolicy
   alias Managoat.ACP.Permissions
 
   @answer_key "fountain/permission_answer"
@@ -71,13 +72,20 @@ defmodule Fountain.Conversations.DetachedRequest do
   The per-request timeout in seconds, from the `session/request_permission`
   params, or nil.
 
-  Read from `_meta.fountain.timeout`. A value that is not a positive number of
-  seconds reads as nil, so a typo falls back to the policy rather than
-  becoming "deny at once" or "never deny".
+  Read from `_meta.fountain.timeout` through
+  `Fountain.PermissionPolicy.seconds/1`, which is the same parser the policy
+  half uses. One parser on purpose: this half comes from inside the sandbox
+  and has no door to be refused at, so if it had a bound of its own it would
+  be the one that went without.
+
+  A value it cannot read is nil, so a typo falls back to the policy rather
+  than becoming "deny at once" or "never deny" — and a value past the
+  ceiling falls back the same way rather than producing a deadline no
+  `timestamp` can hold.
   """
   @spec timeout_seconds(map() | nil) :: pos_integer() | nil
   def timeout_seconds(%{"_meta" => %{"fountain" => %{"timeout" => value}}}),
-    do: positive_seconds(value)
+    do: PermissionPolicy.seconds(value)
 
   def timeout_seconds(_params), do: nil
 
@@ -131,7 +139,15 @@ defmodule Fountain.Conversations.DetachedRequest do
   def params_for({id, params}, request_id) when id == request_id, do: params
   def params_for(_kept, _request_id), do: nil
 
-  @doc "When a request raised now, waiting `timeout_ms`, is denied."
+  @doc """
+  When a request raised now, waiting `timeout_ms`, is denied.
+
+  Bounded by whoever produced `timeout_ms`: both sources go through
+  `Fountain.PermissionPolicy.seconds/1`, so the result is a datetime a
+  `timestamp` column can hold. It was not, once — an unbounded `ask_timeout`
+  of 1e15 seconds put this at year 31690765, and the write raised inside the
+  `handle_info` that detaches the request.
+  """
   @spec deadline(pos_integer(), DateTime.t()) :: DateTime.t()
   def deadline(timeout_ms, now \\ DateTime.utc_now()) do
     now |> DateTime.add(timeout_ms, :millisecond) |> DateTime.truncate(:second)
@@ -199,15 +215,4 @@ defmodule Fountain.Conversations.DetachedRequest do
 
   defp options(%{"options" => options}) when is_list(options), do: options
   defp options(_request), do: []
-
-  defp positive_seconds(n) when is_integer(n) and n > 0, do: n
-
-  defp positive_seconds(n) when is_binary(n) do
-    case Integer.parse(n) do
-      {i, ""} when i > 0 -> i
-      _ -> nil
-    end
-  end
-
-  defp positive_seconds(_n), do: nil
 end

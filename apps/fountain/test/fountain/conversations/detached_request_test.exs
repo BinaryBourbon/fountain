@@ -88,6 +88,35 @@ defmodule Fountain.Conversations.DetachedRequestTest do
       end
     end
 
+    test "the sandbox cannot name a deadline no timestamp can hold" do
+      # This half has no door to be refused at: the request is already
+      # raised. Unbounded, 1e15 seconds produced a year-31690765 deadline
+      # that Postgrex refused to encode, raising inside the `handle_info`
+      # that detaches the request and leaving the turn `running` with the
+      # request neither detached nor denied. It falls back instead, which is
+      # what every other unreadable value here does.
+      over = Fountain.PermissionPolicy.max_ask_timeout_seconds() + 1
+
+      for value <- [over, 999_999_999_999_999] do
+        params = %{"_meta" => %{"fountain" => %{"timeout" => value}}}
+
+        assert DetachedRequest.timeout_ms(params, 600) == 600_000
+
+        assert DetachedRequest.timeout_ms(params, nil) ==
+                 Fountain.Conversations.Lifecycle.ask_timeout_ms()
+      end
+    end
+
+    test "the ceiling itself is honoured, so the bound is not an off-by-one" do
+      max = Fountain.PermissionPolicy.max_ask_timeout_seconds()
+      params = %{"_meta" => %{"fountain" => %{"timeout" => max}}}
+
+      assert DetachedRequest.timeout_ms(params, nil) == max * 1000
+
+      # And the deadline it produces is a datetime Postgres can store.
+      assert DetachedRequest.deadline(max * 1000).year < 294_276
+    end
+
     test "a deadline longer than the idle bound is accepted, which is the point" do
       # The in-turn ceiling has to sit under the idle bound because the turn
       # holding it defers idle reclaim. A detached request holds nothing open,
