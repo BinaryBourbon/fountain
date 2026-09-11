@@ -454,15 +454,25 @@ defmodule Fountain.Principals do
   # the claim token's hash is rewritten, so a replayed create hands back a
   # usable pair rather than two values the caller can do nothing with.
   defp issue_credentials(%ClaimableUser{} = claimable, opts) do
-    token = new_token()
+    # Claim and expiry revoke keys under this same lock. The earlier replay
+    # lookup is only a snapshot: recheck after the lock, and hold it through
+    # both credential writes so a claim cannot miss a newly minted key.
+    Repo.transaction(fn ->
+      token = new_token()
 
-    with {:ok, {_key, raw}} <- mint_principal_key(claimable, opts),
-         {:ok, claimable} <-
-           claimable
-           |> Ecto.Changeset.change(claim_token_hash: hash_token(token))
-           |> Repo.update() do
-      {:ok, %{claimable: claimable, api_key: raw, claim_token: token}}
-    end
+      with %ClaimableUser{} = current <- lock_claimable(claimable.id),
+           {:ok, current} <- still_open(current),
+           {:ok, {_key, raw}} <- mint_principal_key(current, opts),
+           {:ok, current} <-
+             current
+             |> Ecto.Changeset.change(claim_token_hash: hash_token(token))
+             |> Repo.update() do
+        %{claimable: current, api_key: raw, claim_token: token}
+      else
+        nil -> Repo.rollback(:not_found)
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
   end
 
   # The anonymous credential expires with the grant, so a leaked one dies on
