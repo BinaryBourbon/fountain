@@ -11,15 +11,27 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
   #      format_status/1 redacts it at the gen_server level.
   #   3. :sys.get_status (ops tooling, remote console) renders state through
   #      the same callback.
+  #
+  # #1690 covered four more fields that held plaintext and were not scrubbed:
+  # the brokered values, the proxy session, the env credentials and the
+  # resolved MCP document. The field guard at the bottom of this file is the
+  # part that stops the next one arriving unnoticed.
   use Fountain.ConversationServerCase
 
   import ExUnit.CaptureLog
+
+  alias Fountain.Conversations.Redaction
 
   @secret_env_value "sprite-env-secret-value-315"
   @dek_value "raw-tenant-dek-bytes-315"
   @inference_value "sk-ant-byo-credential-315"
   @callback_value "fnt_callback_key_315"
   @sprites_token "sprites-platform-token-315"
+  @brokered_value "ghp-brokered-github-token-1690"
+  @broker_token "broker-session-token-1690"
+  @env_credential_value "sk-ant-env-credential-1690"
+  @mcp_header_value "mcp-resolved-header-token-1690"
+  @mcp_env_value "mcp-resolved-env-token-1690"
 
   defp start_server_with_secrets do
     stub_happy_sprite()
@@ -44,6 +56,20 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
             }
           },
           sprite_env: [{"MY_SECRET", @secret_env_value}, {"OTHER", "other-value-315"}],
+          brokered: %{"GITHUB_TOKEN" => @brokered_value},
+          broker: %{
+            vault: "vault-1690",
+            token: @broker_token,
+            expires_at: DateTime.utc_now()
+          },
+          env_credentials: %{"ANTHROPIC_API_KEY" => @env_credential_value},
+          resolved_mcp_servers: %{
+            "linear" => %{
+              "url" => "https://mcp.linear.app/sse",
+              "headers" => %{"Authorization" => "Bearer " <> @mcp_header_value},
+              "env" => %{"LINEAR_TOKEN" => @mcp_env_value}
+            }
+          },
           tenant_key: @dek_value,
           inference_credentials: %{"anthropic" => @inference_value},
           callback_token: @callback_value
@@ -60,6 +86,12 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     refute rendered =~ @inference_value
     refute rendered =~ @callback_value
     refute rendered =~ @sprites_token
+    # #1690.
+    refute rendered =~ @brokered_value
+    refute rendered =~ @broker_token
+    refute rendered =~ @env_credential_value
+    refute rendered =~ @mcp_header_value
+    refute rendered =~ @mcp_env_value
   end
 
   test "unknown calls and casts do not crash at the callback head" do
@@ -108,5 +140,174 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     # Key names survive so reports stay debuggable.
     assert rendered =~ "MY_SECRET"
     assert rendered =~ "[REDACTED]"
+
+    # Including the ones #1690 added: which keys are brokered and which MCP
+    # servers were resolved is the whole debugging signal of those fields.
+    assert rendered =~ "GITHUB_TOKEN"
+    assert rendered =~ "ANTHROPIC_API_KEY"
+    assert rendered =~ "linear"
+    assert rendered =~ "Authorization"
+    assert rendered =~ "LINEAR_TOKEN"
+  end
+
+  # ── The field guard (#1690) ────────────────────────────────────────────────
+  #
+  # Two leaky fields arrived with the broker (#1136/#1150) and a third with
+  # #1511, each in a change that had no reason to think about crash reports.
+  # A name-pattern guard (`cred|token|secret|broker`) would have caught the
+  # first two and missed `resolved_mcp_servers`, so this guard works the other
+  # way round: every state field is sentinel-filled unless it is named below as
+  # legitimately plaintext, and the sentinel must not survive
+  # `Redaction.server_state/1`.
+  #
+  # A new state field is therefore a failing test until its author either
+  # redacts it or adds it here with a reason. That is the intended cost.
+
+  @sentinel "SENTINEL-1690-MUST-NOT-ESCAPE"
+
+  # Fields that are legitimately plaintext in a crash report. Each one is a
+  # claim that it cannot hold a credential.
+  @plaintext_fields [
+    # Identifiers, configuration and bookkeeping. No tenant data at all.
+    :conversation_id,
+    :sandbox_id,
+    :user_id,
+    :runtime_module,
+    :runtime_session_id,
+    :callback_api_key_id,
+    :sandbox_started_at,
+    :last_activity_at,
+    :output_bytes,
+    :output_capped,
+    :turn_metrics,
+    :broker_network,
+    :inference_source,
+    :inference_model,
+    # Names and provenance, never values: the env var names brokered for the
+    # tenant's connections, the tenant's own brokered key names, the row ids
+    # the secrets came from, and the bindings — key, host, auth type and
+    # `{{KEY}}` templates, which is all a binding holds (ADR 0019 gate 1b).
+    :connection_keys,
+    :tenant_keys,
+    :secret_sources,
+    :broker_bindings,
+    # Process plumbing: pids, refs, timers and spans.
+    :current_command_ref,
+    :acp_peer,
+    :acp_peer_mon,
+    :permission_timer,
+    :autonomous_quiet,
+    :current_turn_span,
+    :stream_tracer,
+    :runner_reconnect,
+    # The sandbox command handle. Its adapter-owned `private` (the SDK command,
+    # which embeds the platform client) is excluded from `inspect/1` by the
+    # struct's own `@derive {Inspect, only: [:provider, :ref]}`.
+    :current_command,
+    # Tenant data rather than credentials, and each has its own protection on
+    # the path that persists it: the turn row and its prompt, parked caller-tool
+    # arguments (#1202), and the two reattach buffers, which hold sandbox output
+    # bytes mid-parse — the transcript path is redacted at the single log writer
+    # by `Redaction.redact/2`, which is what this module mostly exists for.
+    :current_turn,
+    :caller_calls,
+    :runner_replay,
+    :replay_skip,
+    :replay_dedup
+  ]
+
+  # Fields the redaction covers. The value is a sentinel wearing the shape the
+  # field really has, because `server_state/1` reads some of those shapes.
+  defp sentinel_shapes do
+    %{
+      handle: %Managoat.Sandbox.Handle{
+        provider: :sprites,
+        name: "sentinel-sprite",
+        private: %Sprites.Sprite{
+          name: "sentinel-sprite",
+          client: %Sprites.Client{token: @sentinel}
+        }
+      },
+      sprite_env: [{"SENTINEL_KEY", @sentinel}],
+      brokered: %{"SENTINEL_KEY" => @sentinel},
+      broker: %{vault: @sentinel, token: @sentinel, expires_at: @sentinel},
+      env_credentials: %{"SENTINEL_KEY" => @sentinel},
+      resolved_mcp_servers: %{
+        "sentinel" => %{
+          "headers" => %{"Authorization" => @sentinel},
+          "env" => %{"SENTINEL_KEY" => @sentinel},
+          "args" => [@sentinel]
+        }
+      },
+      tenant_key: @sentinel,
+      inference_credentials: %{"sentinel" => @sentinel},
+      callback_token: @sentinel
+    }
+  end
+
+  # `structs: false` renders a struct as a plain map, so a field protected only
+  # by its own `@derive {Inspect, …}` is still seen here. That is deliberately
+  # stricter than the crash report: `@derive` on someone else's struct is not a
+  # guarantee this server gets to make, and a consumer that walks the state map
+  # (a Sentry serializer, `:sys.get_status` tooling) never consults it.
+  defp render(state),
+    do: inspect(state, structs: false, limit: :infinity, printable_limit: :infinity)
+
+  test "every ConversationServer state field is classified" do
+    {pid, _ref} = start_server_with_secrets()
+
+    fields = pid |> :sys.get_state() |> Map.keys() |> Enum.sort()
+    classified = Enum.sort(@plaintext_fields ++ Map.keys(sentinel_shapes()))
+
+    assert fields -- classified == [],
+           """
+           New ConversationServer state field(s): #{inspect(fields -- classified)}.
+
+           Either redact them in Fountain.Conversations.Redaction.server_state/1
+           and give each a sentinel shape here, or add them to
+           @plaintext_fields with a comment saying why their value is safe to
+           print in a crash report.
+           """
+
+    assert classified -- fields == [],
+           "stale entries for state fields that no longer exist: " <>
+             inspect(classified -- fields)
+  end
+
+  test "no secret-bearing state field survives server_state/1 with its value" do
+    {pid, _ref} = start_server_with_secrets()
+    state = :sys.get_state(pid)
+    shapes = sentinel_shapes()
+
+    leaking =
+      for field <- Map.keys(state), field not in @plaintext_fields do
+        value = Map.get(shapes, field, @sentinel)
+
+        rendered =
+          try do
+            state |> Map.put(field, value) |> Redaction.server_state() |> render()
+          rescue
+            error ->
+              flunk("""
+              server_state/1 raised on #{inspect(field)}: #{Exception.message(error)}
+
+              A raise here is itself a leak — OTP reports the unredacted state
+              when format_status/1 fails. Give the field a sentinel shape in
+              sentinel_shapes/0 that matches what it really holds.
+              """)
+          end
+
+        if rendered =~ @sentinel, do: field
+      end
+      |> Enum.reject(&is_nil/1)
+
+    assert leaking == [],
+           """
+           These state fields keep their value through
+           Fountain.Conversations.Redaction.server_state/1: #{inspect(leaking)}.
+
+           A crash in any callback prints them (#315, #1690). Scrub them there,
+           keeping key names so reports stay debuggable.
+           """
   end
 end

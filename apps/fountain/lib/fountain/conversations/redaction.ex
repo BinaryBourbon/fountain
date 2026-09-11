@@ -150,12 +150,30 @@ defmodule Fountain.Conversations.Redaction do
 
   Key names are kept and only values are replaced, so crash reports stay
   debuggable.
+
+  The list is the whole point, and it has fallen behind the state twice
+  (#1690): `brokered` and `broker` arrived with the egress broker
+  (#1136/#1150), `resolved_mcp_servers` with the one-substitution-pass fix
+  (#1511), and none of them were scrubbed. `ConversationServerRedactionTest`'s
+  field guard now fails for a new state field until it is either redacted here
+  or classified as plaintext there, so the next one cannot arrive quietly.
   """
   def server_state(state) do
     %{
       state
       | handle: state.handle && %{state.handle | private: nil},
-        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, "[REDACTED]"} end),
+        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, @placeholder} end),
+        # ADR 0019: `Broker.split/2` leaves placeholders in the sandbox env and
+        # puts the real values here, so this map — not `sprite_env` — is where
+        # a brokered GITHUB_TOKEN, connection token or inference key lives.
+        brokered: secrets(state.brokered),
+        # The minted proxy session: `%{vault, token, expires_at}`. Every value
+        # goes rather than the token alone, so a field added to the session
+        # shape is redacted the day it appears; the vault and the expiry are
+        # already published on the `broker` stage event.
+        broker: secrets(state.broker),
+        env_credentials: secrets(state.env_credentials),
+        resolved_mcp_servers: deep_redact(state.resolved_mcp_servers),
         tenant_key: secret(state.tenant_key),
         inference_credentials: secrets(state.inference_credentials),
         callback_token: secret(state.callback_token)
@@ -172,9 +190,25 @@ defmodule Fountain.Conversations.Redaction do
     end)
   end
 
-  defp secrets(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
+  # A struct is not enumerable, so it cannot be walked key by key. Replacing it
+  # whole is the safe reading: `format_status/1` raising is itself a leak, since
+  # OTP then reports the unredacted state.
+  defp secrets(%_{}), do: @placeholder
+  defp secrets(%{} = map), do: Map.new(map, fn {k, _v} -> {k, @placeholder} end)
   defp secrets(other), do: secret(other)
 
   defp secret(nil), do: nil
-  defp secret(_present), do: "[REDACTED]"
+  defp secret(_present), do: @placeholder
+
+  # `resolved_mcp_servers` is the agent's MCP document with `${VAR}` already
+  # substituted (#1404/#1511): a header written `Bearer ${GITHUB_TOKEN}` holds
+  # the token itself, and so does a server's `env`. Which servers were resolved
+  # is exactly the debugging signal worth keeping, so every key and the shape of
+  # the document survive and only the leaves go.
+  defp deep_redact(nil), do: nil
+  defp deep_redact(%_{}), do: @placeholder
+  defp deep_redact(%{} = map), do: Map.new(map, fn {k, v} -> {k, deep_redact(v)} end)
+  defp deep_redact(list) when is_list(list), do: Enum.map(list, &deep_redact/1)
+  defp deep_redact(value) when is_binary(value), do: @placeholder
+  defp deep_redact(other), do: other
 end
