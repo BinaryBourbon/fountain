@@ -226,6 +226,27 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
       assert stored(other).usage["inference"] == "platform"
     end
 
+    test "a failed model selection stamps nothing: no prompt went out", %{
+      machine: m,
+      row: row
+    } do
+      ctx = platform_ctx()
+
+      # Every peer source of this report is in `phase: :setting_model`,
+      # strictly before `send_prompt/1`. The turn spent no tokens, and a
+      # stamp here would be indistinguishable afterwards from a turn that
+      # died mid-inference.
+      assert {_m, [{:finish, "failed", _, _}, {:drop_connection, "failed"}]} =
+               TurnMachine.handle(
+                 m,
+                 {:failed, {:model_selection_failed, ctx.model, "no such model"}},
+                 ctx
+               )
+
+      assert is_nil(stored(row).usage)
+      assert stored(row).model_selection["status"] == "failed"
+    end
+
     test "a turn on the tenant's own key is not stamped as a platform one", %{
       machine: m,
       row: row
