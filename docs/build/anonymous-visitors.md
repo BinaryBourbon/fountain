@@ -53,6 +53,13 @@ curl -sX POST https://your-fountain/api/claimable-users \
 Keep `api_key` and `claim_token` in the visitor's session. Fountain stores only
 their hashes and shows them once.
 
+Fountain reduces a limit that your application cannot supply. The deployment
+maximum bounds `expires_in`. The maximum grant bounds `max_cost_usd`. Your
+application's own sandbox cap bounds `max_live_sandboxes`, and the deployment
+ceiling bounds that cap. A principal thus never runs more sandboxes than the
+account that pays for it. Read `max_live_sandboxes` in the response for the
+value in force.
+
 Now use `api_key` as any other Fountain key. Make an agent, start a
 conversation, watch the events stream. The computer is live before the visitor
 has an account.
