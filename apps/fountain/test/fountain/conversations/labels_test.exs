@@ -1,14 +1,15 @@
 defmodule Fountain.Conversations.LabelsTest do
   @moduledoc """
-  Labels on a conversation (#1637): the rule.
+  Labels on a conversation (#1637): the rule and the merge.
 
-  What is here is the behaviour every writer inherits, because
-  `Fountain.Conversations.Conversation.changeset/2` is the only thing that
-  puts the column on a row.
+  The doors are covered where they live, so what is here is the behaviour
+  every one of them inherits.
+
   """
 
   use Fountain.DataCase, async: true
 
+  alias Fountain.Audit
   alias Fountain.Conversations
   alias Fountain.Conversations.Labels
 
@@ -118,7 +119,7 @@ defmodule Fountain.Conversations.LabelsTest do
     # The wiring, not the rule: `Conversation.changeset/2` is what every
     # writer of the column goes through, so `check/1` running from there is
     # what makes the limits inescapable rather than advisory.
-    test "the changeset refuses a write over the limits, naming the key", %{user: user} do
+    test "a plain update through the changeset is held to the limits too", %{user: user} do
       conv = insert_conversation(user_id: user.id)
       long = String.duplicate("v", Labels.max_value_bytes() + 1)
 
@@ -129,11 +130,289 @@ defmodule Fountain.Conversations.LabelsTest do
       assert message =~ ~s("note")
     end
 
-    test "an unrelated update leaves the labels alone", %{user: user} do
+    test "the changeset refuses a write over the limits, naming the key", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+
+      assert {:error, changeset} =
+               Conversations._unsafe_merge_labels(conv, %{"note" => String.duplicate("v", 300)})
+
+      assert %{labels: [message]} = errors_on(changeset)
+      assert message =~ ~s("note")
+    end
+
+    test "the count ceiling counts the merged result, not the request", %{user: user} do
+      thirty_two = for n <- 1..32, into: %{}, do: {"k#{n}", "v"}
+      conv = insert_conversation(user_id: user.id, labels: thirty_two)
+
+      assert {:error, changeset} =
+               Conversations._unsafe_merge_labels(conv, %{"one-too-many" => "v"})
+
+      assert %{labels: [message]} = errors_on(changeset)
+      assert message =~ "at most 32 labels"
+
+      # And it names the key the caller sent, not whichever of the 32 already
+      # on the row happens to sort into the boundary position.
+      assert message =~ ~s("one-too-many")
+      refute message =~ ~s("k1")
+    end
+
+    test "a write of many at once names the one that does not fit", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      labels = for n <- 1..33, into: %{}, do: {String.pad_leading("#{n}", 3, "0"), "x"}
+
+      assert {:error, changeset} = Conversations._unsafe_merge_labels(conv, labels)
+      assert %{labels: [message]} = errors_on(changeset)
+      assert message =~ ~s("033")
+    end
+
+    test "a merge that only removes keys never trips the ceiling", %{user: user} do
+      thirty_two = for n <- 1..32, into: %{}, do: {"k#{n}", "v"}
+      conv = insert_conversation(user_id: user.id, labels: thirty_two)
+
+      assert {:ok, updated} =
+               Conversations._unsafe_merge_labels(conv, %{"k1" => nil, "new" => "v"})
+
+      assert map_size(updated.labels) == 32
+      assert updated.labels["new"] == "v"
+      refute Map.has_key?(updated.labels, "k1")
+    end
+  end
+
+  describe "merge" do
+    test "adds and overwrites, leaves the rest alone" do
+      assert %{"a" => "2", "b" => "1"} = Labels.merge(%{"a" => "1", "b" => "1"}, %{"a" => "2"})
+    end
+
+    test "a null value removes the key" do
+      assert %{"b" => "1"} = Labels.merge(%{"a" => "1", "b" => "1"}, %{"a" => nil})
+    end
+
+    test "removing a key that is not there is not an error" do
+      assert %{"b" => "1"} = Labels.merge(%{"b" => "1"}, %{"a" => nil})
+    end
+
+    test "changed_keys reports written and removed, sorted" do
+      current = %{"a" => "1", "b" => "1", "z" => "1"}
+      incoming = %{"a" => "1", "b" => "2", "c" => "3", "z" => nil, "gone" => nil}
+
+      # "a" is unchanged so it is not written; "gone" was never there, so
+      # removing it removed nothing and the trail does not claim otherwise.
+      assert {["b", "c"], ["z"]} = Labels.changed_keys(current, incoming)
+    end
+  end
+
+  describe "_unsafe_merge_labels/3" do
+    setup do
+      user = insert_active_user()
+      conv = insert_conversation(user_id: user.id, labels: %{"env" => "staging"})
+      {:ok, user: user, conv: conv}
+    end
+
+    test "merges rather than replaces", %{conv: conv} do
+      assert {:ok, updated} = Conversations._unsafe_merge_labels(conv, %{"drift" => "true"})
+      assert updated.labels == %{"env" => "staging", "drift" => "true"}
+    end
+
+    test "a null value removes one key", %{conv: conv} do
+      assert {:ok, updated} = Conversations._unsafe_merge_labels(conv, %{"env" => nil})
+      assert updated.labels == %{}
+    end
+
+    test "records the keys that changed and never the values", %{user: user, conv: conv} do
+      assert {:ok, _} =
+               Conversations._unsafe_merge_labels(conv, %{"drift" => "true", "env" => nil})
+
+      assert [event] =
+               user.id
+               |> Audit.list_recent_for_user(50)
+               |> Enum.filter(&(&1.action == "conversation.labels_set"))
+
+      assert event.metadata["keys"] == ["drift"]
+      assert event.metadata["removed_keys"] == ["env"]
+      assert event.metadata["label_count"] == 1
+      refute event.metadata |> inspect() =~ "true"
+    end
+
+    test "a merge that changes nothing writes nothing and records nothing", %{
+      user: user,
+      conv: conv
+    } do
+      assert {:ok, same} = Conversations._unsafe_merge_labels(conv, %{"env" => "staging"})
+      assert same.updated_at == conv.updated_at
+
+      assert [] =
+               user.id
+               |> Audit.list_recent_for_user(50)
+               |> Enum.filter(&(&1.action == "conversation.labels_set"))
+    end
+  end
+
+  describe "set_conversation_labels/4" do
+    setup do
+      user = insert_active_user()
+      {key, _raw} = insert_sprite_api_key(user)
+
+      mine =
+        insert_conversation(user_id: user.id, callback_api_key_id: key.id, labels: %{"a" => "1"})
+
+      theirs = insert_conversation(user_id: user.id)
+
+      {:ok, user: user, key: key, mine: mine, theirs: theirs}
+    end
+
+    test "the owner's own key may label any of their conversations", %{
+      user: user,
+      theirs: theirs
+    } do
+      assert {:ok, updated} =
+               Conversations.set_conversation_labels(theirs.id, user.id, %{"env" => "prod"})
+
+      assert updated.labels == %{"env" => "prod"}
+    end
+
+    test "a sandbox token may label the conversation it was minted for", %{
+      user: user,
+      key: key,
+      mine: mine
+    } do
+      assert {:ok, updated} =
+               Conversations.set_conversation_labels(mine.id, user.id, %{"env" => "prod"},
+                 sandbox_key_id: key.id,
+                 actor: "sprite"
+               )
+
+      assert updated.labels == %{"a" => "1", "env" => "prod"}
+    end
+
+    test "a sandbox token may not label another conversation", %{
+      user: user,
+      key: key,
+      theirs: theirs
+    } do
+      assert {:error, :sprite_may_not_label_another_conversation} =
+               Conversations.set_conversation_labels(theirs.id, user.id, %{"env" => "prod"},
+                 sandbox_key_id: key.id
+               )
+
+      assert Conversations.get_conversation(theirs.id, user.id).labels == %{}
+    end
+
+    test "labels that are not a map at all are a validation failure, not a no-op", %{
+      user: user,
+      theirs: theirs
+    } do
+      assert {:error, changeset} =
+               Conversations.set_conversation_labels(theirs.id, user.id, "env=prod")
+
+      assert %{labels: [message]} = errors_on(changeset)
+      assert message =~ "object of string keys"
+      assert Conversations.get_conversation(theirs.id, user.id).labels == %{}
+    end
+
+    test "another tenant's conversation reads as not found", %{user: user} do
+      other = insert_conversation(user_id: insert_active_user().id)
+
+      assert {:error, :not_found} =
+               Conversations.set_conversation_labels(other.id, user.id, %{"env" => "prod"})
+    end
+  end
+
+  describe "labels and the rest of the row" do
+    setup do
+      {:ok, user: insert_active_user()}
+    end
+
+    test "an unrelated update leaves them alone", %{user: user} do
+      conv = insert_conversation(user_id: user.id, labels: %{"env" => "prod"})
+
+      assert {:ok, updated} = Conversations.update_conversation(conv, %{status: "idle"})
+      assert updated.status == "idle"
+      assert updated.labels == %{"env" => "prod"}
+      assert Conversations.get_conversation(conv.id, user.id).labels == %{"env" => "prod"}
+    end
+
+    test "a title change leaves them alone", %{user: user} do
       conv = insert_conversation(user_id: user.id, labels: %{"env" => "prod"})
 
       assert {:ok, updated} = Conversations.update_conversation(conv, %{title: "renamed"})
       assert updated.labels == %{"env" => "prod"}
+    end
+  end
+
+  describe "a channel resume" do
+    setup do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+
+      bound =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          status: "idle",
+          channel_id: "chat:1",
+          labels: %{"env" => "prod"},
+          sandbox: insert_sandbox(user_id: user.id, status: "ready")
+        )
+
+      {:ok, user: user, agent: agent, bound: bound}
+    end
+
+    defp resume(context, extra) do
+      Conversations.start_or_resume_conversation(
+        Map.merge(
+          %{
+            "agent_id" => context.agent.id,
+            "user_id" => context.user.id,
+            "channel_id" => "chat:1"
+          },
+          extra
+        )
+      )
+    end
+
+    test "merges the request's labels into the conversation it hands back", context do
+      assert {:ok, conv, :resumed} = resume(context, %{"labels" => %{"run" => "17"}})
+      assert conv.id == context.bound.id
+      assert conv.labels == %{"env" => "prod", "run" => "17"}
+    end
+
+    test "a resume with no labels changes nothing", context do
+      assert {:ok, conv, :resumed} = resume(context, %{})
+      assert conv.labels == %{"env" => "prod"}
+    end
+
+    test "a null value removes a key on resume", context do
+      assert {:ok, conv, :resumed} = resume(context, %{"labels" => %{"env" => nil}})
+      assert conv.labels == %{}
+    end
+
+    test "a label the limits refuse fails the resume rather than being dropped", context do
+      assert {:error, changeset} =
+               resume(context, %{"labels" => %{"note" => String.duplicate("v", 300)}})
+
+      assert %{labels: [message]} = errors_on(changeset)
+      assert message =~ ~s("note")
+
+      assert Conversations.get_conversation(context.bound.id, context.user.id).labels ==
+               %{"env" => "prod"}
+    end
+
+    test "a sandbox token may not relabel a conversation it was not minted for", context do
+      {key, _raw} = insert_sprite_api_key(context.user)
+
+      assert {:error, :sprite_may_not_label_another_conversation} =
+               Conversations.start_or_resume_conversation(
+                 %{
+                   "agent_id" => context.agent.id,
+                   "user_id" => context.user.id,
+                   "channel_id" => "chat:1",
+                   "labels" => %{"run" => "17"}
+                 },
+                 sandbox_key_id: key.id
+               )
+
+      assert Conversations.get_conversation(context.bound.id, context.user.id).labels ==
+               %{"env" => "prod"}
     end
   end
 end

@@ -11,7 +11,7 @@ defmodule Fountain.Conversations do
   require Logger
 
   alias Fountain.Audit
-  alias Fountain.Conversations.{Blocks, Conversation, LogEvent, Sandbox, Turn, TurnImage}
+  alias Fountain.Conversations.{Blocks, Conversation, Labels, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
   alias Fountain.Repo
 
@@ -957,6 +957,132 @@ defmodule Fountain.Conversations do
           :ok
       end)
     end
+  end
+
+  @doc """
+  Merge `labels` into `conversation_id`'s. **The door every request-shaped
+  caller uses** (#1637).
+
+  Merge, not replace: a key that is not named is left alone and a key whose
+  value is `nil` is removed, so a run can stamp one outcome without reading
+  the rest first. `Conversations.Labels` owns the limits, and a write that
+  breaks one comes back as a changeset naming the offending key.
+
+  **A sandbox may label its own conversation only.** Pass
+  `sandbox_key_id: key.id` whenever the caller authenticated with a
+  `sprite`-scoped token: the conversation must be the one that token was
+  minted for (`callback_api_key_id`), or the write is refused with
+  `:sprite_may_not_label_another_conversation`. Without that check a worker
+  holding an account-scoped callback key could relabel every other run on the
+  account, which is exactly the loop ADR 0045 describes. That is why the
+  check lives here and not in a controller: more than one request path will
+  write labels, and the rule has to hold on the door rather than on whichever
+  of them remembered.
+
+  `labels` that is not a map at all is a validation failure, not a silent
+  no-op, so every door refuses `{"labels": "env=prod"}` the same way.
+
+  Tenant-scoped: an id belonging to another account reads as `:not_found`.
+  """
+  @spec set_conversation_labels(binary(), binary(), term(), keyword()) ::
+          {:ok, Conversation.t()} | {:error, term()}
+  def set_conversation_labels(conversation_id, user_id, labels, opts \\ [])
+      when is_binary(conversation_id) and is_binary(user_id) do
+    case get_conversation(conversation_id, user_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Conversation{} = conv ->
+        if sandbox_owns?(conv, Keyword.get(opts, :sandbox_key_id)) do
+          # Ownership: `conv` came from the tenant-scoped fetch above.
+          _unsafe_merge_labels(conv, labels, opts)
+        else
+          {:error, :sprite_may_not_label_another_conversation}
+        end
+    end
+  end
+
+  # No sandbox key on the request is the owner's own credential, which may
+  # label any conversation it can already fetch.
+  defp sandbox_owns?(_conv, nil), do: true
+  defp sandbox_owns?(%Conversation{callback_api_key_id: id}, key_id), do: id == key_id
+
+  @doc """
+  Merge `labels` into a conversation row, with no tenant scoping and no
+  credential rule.
+
+  Unscoped, hence the prefix. The legitimate caller is
+  `set_conversation_labels/4`, which scopes and applies the sandbox rule
+  before delegating here. A request path that calls this directly has skipped
+  the rule that stops one sandbox relabelling another, so do not add one.
+
+  A merge that changes nothing writes nothing and records nothing — a
+  deterministic run re-stamping the same outcome on every tick is the normal
+  case. Audited as `conversation.labels_set` with the keys written and the
+  keys removed, never the values (ADR 0013).
+  """
+  @spec _unsafe_merge_labels(Conversation.t(), term(), keyword()) ::
+          {:ok, Conversation.t()} | {:error, Ecto.Changeset.t()}
+  def _unsafe_merge_labels(conv, labels, opts \\ [])
+
+  def _unsafe_merge_labels(%Conversation{} = conv, labels, opts) when is_map(labels) do
+    current = conv.labels || %{}
+    merged = Labels.merge(current, labels)
+
+    cond do
+      merged == current -> {:ok, conv}
+      true -> write_labels(conv, current, labels, merged, opts)
+    end
+  end
+
+  # Anything that is not a map is a validation failure with the same shape a
+  # broken limit produces, so a caller reads one answer whichever door it
+  # came through.
+  def _unsafe_merge_labels(%Conversation{} = conv, labels, _opts) do
+    {:error, label_refusal(conv, Labels.check(labels))}
+  end
+
+  defp write_labels(conv, current, labels, merged, opts) do
+    case Labels.check_merge(current, labels) do
+      :ok ->
+        {written, removed} = Labels.changed_keys(current, labels)
+
+        conv
+        |> Conversation.changeset(%{labels: merged})
+        |> Repo.update()
+        |> tap(fn
+          {:ok, updated} -> record_labels_set(updated, written, removed, merged, opts)
+          _ -> :ok
+        end)
+
+      refusal ->
+        {:error, label_refusal(conv, refusal)}
+    end
+  end
+
+  defp record_labels_set(conv, written, removed, merged, opts) do
+    Audit.record(%{
+      user_id: conv.user_id,
+      action: "conversation.labels_set",
+      resource_type: "conversation",
+      resource_id: conv.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{
+        "keys" => written,
+        "removed_keys" => removed,
+        "label_count" => map_size(merged)
+      }
+    })
+  end
+
+  # `Labels.check_merge/2` words the refusal from the write the caller made;
+  # this is what turns that sentence into the `errors.labels` a 422 renders,
+  # the same key the changeset validator would have used.
+  defp label_refusal(%Conversation{} = conv, {:error, message}) do
+    conv
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.add_error(:labels, message)
   end
 
   def update_conversation(%Conversation{} = conv, attrs) do
@@ -2047,8 +2173,10 @@ defmodule Fountain.Conversations do
   binding return a channel validation error to the loser.
 
   Two concurrent first calls for one channel can both create; the next call
-  resumes whichever is newer. Nothing is audited on the resume path — nothing
-  changed.
+  resumes whichever is newer. Nothing is audited on the resume path unless
+  `attrs["labels"]` actually changes something: it is the same conversation,
+  so labels merge into the row it hands back (#1637) and that write records
+  `conversation.labels_set` like any other.
   """
   def start_or_resume_conversation(attrs, opts \\ [])
 
@@ -2070,6 +2198,7 @@ defmodule Fountain.Conversations do
           else
             with :ok <- _unsafe_check_saved_execution_allowance(conv.id),
                  :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+                 {:ok, conv} <- resume_labels(conv, attrs["labels"], opts),
                  do: {:ok, conv, :resumed}
           end
 
@@ -2109,6 +2238,20 @@ defmodule Fountain.Conversations do
         {:error, {:execution_limits_invalid, "object_required"}}
     end
   end
+
+  # A resume lands on the conversation the binding already has, so labels on
+  # the request are merged into it rather than dropped (#1637). A caller that
+  # sends none changes nothing, and the resume stays the silent path it was.
+  #
+  # Through `set_conversation_labels/4` rather than the writer beneath it:
+  # this runs on `POST /api/conversations`, which a sandbox's own token may
+  # call, and a resume names an *existing* conversation. Writing here
+  # directly would let a sprite minted for one conversation relabel any other
+  # of the tenant's by resuming its channel.
+  defp resume_labels(%Conversation{} = conv, nil, _opts), do: {:ok, conv}
+
+  defp resume_labels(%Conversation{} = conv, labels, opts),
+    do: set_conversation_labels(conv.id, conv.user_id, labels, opts)
 
   # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
   # request may send a string. Anything else is not a request.

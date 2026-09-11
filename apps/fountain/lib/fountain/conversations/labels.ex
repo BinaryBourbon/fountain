@@ -18,7 +18,15 @@ defmodule Fountain.Conversations.Labels do
     * neither may contain a NUL byte, which Postgres refuses inside `jsonb`.
 
   A refusal names the offending key, because a caller sending thirty-two of
-  them cannot otherwise tell which one Fountain disliked.
+  them cannot otherwise tell which one Fountain disliked. On a merge the key
+  named is one the caller actually sent — see `check_merge/2`.
+
+  ## Merge, and how a key is removed
+
+  Writes merge (`merge/2`): a key that is not mentioned is left alone. A key
+  whose value is `null` is removed. That is what lets a run add one label
+  without reading the others first, and what makes a channel resume keep the
+  labels the binding already carried.
   """
 
   import Ecto.Changeset, only: [get_change: 2, add_error: 3]
@@ -69,6 +77,69 @@ defmodule Fountain.Conversations.Labels do
   end
 
   def check(_labels), do: {:error, "must be an object of string keys and string values"}
+
+  @doc """
+  Check what merging `incoming` into `current` would produce, wording the
+  refusal from the write the caller actually made.
+
+  `check/1` alone would blame an arbitrary key for the count: merging one new
+  label into a conversation that already holds 32 puts a *pre-existing* key
+  over the boundary in sorted order, and telling somebody their write of
+  `run` failed because of `env` — a label they never touched — sends them to
+  fix the wrong thing. So the count is reported against the first key this
+  write adds.
+
+  Entry-level problems need no such care: `current` is already on the row and
+  therefore already legal, so any entry `check/1` rejects came from
+  `incoming`.
+  """
+  @spec check_merge(map(), term()) :: :ok | {:error, String.t()}
+  def check_merge(current, incoming) when is_map(current) and is_map(incoming) do
+    merged = merge(current, incoming)
+
+    with :ok <- check_entries(merged) do
+      check_merged_count(current, incoming, merged)
+    end
+  end
+
+  def check_merge(_current, incoming), do: check(incoming)
+
+  defp check_merged_count(current, incoming, merged) do
+    if map_size(merged) > @max_entries do
+      {:error,
+       "at most #{@max_entries} labels; #{describe(blamed_key(current, incoming, merged))} does not fit"}
+    else
+      :ok
+    end
+  end
+
+  # The first key of this write that does not fit.
+  #
+  # The labels already on the row are kept — the caller did not ask to change
+  # them — so the room left is the ceiling minus what survives the merge, and
+  # what spills past it is one of the keys this write added. Adding `run` to a
+  # conversation that already holds 32 therefore names `run`, and sending 33
+  # at once names the 33rd rather than the first.
+  #
+  # The fallback covers a write that adds nothing and is over the limit
+  # anyway, which only a row already past the ceiling can produce.
+  defp blamed_key(current, incoming, merged) do
+    retained = Enum.count(Map.keys(current), &(not removed?(incoming, &1)))
+
+    added =
+      incoming
+      |> Enum.reject(fn {key, value} -> is_nil(value) or Map.has_key?(current, key) end)
+      |> Enum.map(&elem(&1, 0))
+      |> Enum.sort_by(&describe/1)
+      |> Enum.drop(max(@max_entries - retained, 0))
+
+    case added do
+      [key | _] -> key
+      [] -> merged |> Map.keys() |> Enum.sort_by(&describe/1) |> Enum.at(@max_entries)
+    end
+  end
+
+  defp removed?(incoming, key), do: Map.has_key?(incoming, key) and is_nil(Map.get(incoming, key))
 
   defp check_count(labels) do
     if map_size(labels) > @max_entries do
@@ -144,5 +215,43 @@ defmodule Fountain.Conversations.Labels do
   defp cut(binary, bytes) do
     candidate = binary_part(binary, 0, bytes)
     if String.valid?(candidate), do: candidate, else: cut(binary, bytes - 1)
+  end
+
+  @doc """
+  Merge `incoming` into `current`. A key with a `nil` value is removed; a key
+  that is absent is left alone.
+
+  Nothing is validated here — the merged map goes through `changeset/1` on
+  its way to the row, so a write that would break a limit is refused with the
+  key named rather than half-applied.
+  """
+  @spec merge(map() | nil, map()) :: map()
+  def merge(current, incoming) when is_map(incoming) do
+    Enum.reduce(incoming, current || %{}, fn
+      {key, nil}, acc -> Map.delete(acc, key)
+      {key, value}, acc -> Map.put(acc, key, value)
+    end)
+  end
+
+  @doc """
+  Which keys `merge/2` would change, as `{written, removed}` — both sorted,
+  both keys only.
+
+  The audit trail records these and never the values (ADR 0013).
+  """
+  @spec changed_keys(map() | nil, map()) :: {[String.t()], [String.t()]}
+  def changed_keys(current, incoming) when is_map(incoming) do
+    current = current || %{}
+
+    {removed, written} =
+      incoming
+      |> Enum.filter(fn {key, value} -> Map.get(current, key, :absent) != value end)
+      |> Enum.split_with(fn {_key, value} -> is_nil(value) end)
+
+    {written |> Enum.map(&to_string(elem(&1, 0))) |> Enum.sort(),
+     removed
+     |> Enum.map(&to_string(elem(&1, 0)))
+     |> Enum.filter(&Map.has_key?(current, &1))
+     |> Enum.sort()}
   end
 end
