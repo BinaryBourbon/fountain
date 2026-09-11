@@ -24,7 +24,7 @@ defmodule Fountain.Conversations do
   }
 
   alias Fountain.Conversations.Reapply
-  alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
+  alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
@@ -2051,22 +2051,28 @@ defmodule Fountain.Conversations do
   same best-effort contract — it cannot fail this update.
   """
   def _unsafe_update_turn(%Turn{} = turn, attrs) do
-    changeset =
-      turn
-      |> Turn.changeset(attrs)
-      |> maybe_put_reply_text(turn)
+    # ownership: this is the already-owned actor's turn or a system recovery write.
+    result =
+      Fountain.Conversations.ExecutionGuard._unsafe_write_turn(turn, attrs, fn current, allowed ->
+        changeset = current |> Turn.changeset(allowed) |> maybe_put_reply_text(current)
 
-    result = Repo.update(changeset)
+        case Repo.update(changeset) do
+          {:ok, updated} -> {:ok, {updated, changeset}}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
 
-    # The write that *materialises* the reply, not every later update to a
-    # turn that already has one — a turn is written again after it ends, and
-    # activation happens once.
-    with {:ok, updated} <- result,
-         text when is_binary(text) <- Ecto.Changeset.get_change(changeset, :reply_text) do
-      Fountain.Activation.turn_replied(updated)
+    case result do
+      {:ok, {updated, changeset}} ->
+        if is_binary(Ecto.Changeset.get_change(changeset, :reply_text)) do
+          Fountain.Activation.turn_replied(updated)
+        end
+
+        {:ok, updated}
+
+      {:error, reason} ->
+        {:error, reason}
     end
-
-    result
   end
 
   @doc """
@@ -2213,8 +2219,19 @@ defmodule Fountain.Conversations do
 
   defp maybe_put_reply_text(%Ecto.Changeset{valid?: false} = changeset, _turn), do: changeset
 
+  # `get_field`, not `get_change`: a turn fenced by `ExecutionGuard` has its
+  # `:status` dropped from `attrs` before the writer sees it, so the change is
+  # gone by here while the row is already terminal — and a turn that ends at a
+  # deadline would have kept a null `reply_text` forever.
+  #
+  # This does reach the unbounded path, where the two used to agree: a terminal
+  # turn whose text is still null is now re-derived on each later write rather
+  # than only on the write that ended it. That is the same work
+  # `_unsafe_backfill_reply_texts/0` below does, on the same rows, for the same
+  # reason — a turn whose assistant blocks landed after its status did. The
+  # guard is `reply_text: nil`, so a turn that has one is never revisited.
   defp maybe_put_reply_text(changeset, %Turn{reply_text: nil} = turn) do
-    case Ecto.Changeset.get_change(changeset, :status) do
+    case Ecto.Changeset.get_field(changeset, :status) do
       status when status in @terminal_turn_statuses ->
         Ecto.Changeset.put_change(changeset, :reply_text, _unsafe_turn_reply_text(turn))
 
@@ -3418,6 +3435,15 @@ defmodule Fountain.Conversations do
   # live one nobody can find. What happens to the conversations on the home
   # is the caller's decision — agent delete terminates them, a reset keeps
   # them.
+  #
+  # `terminated_at` is deliberately not passed. A caller that already retired
+  # the row under its machine lock — `do_reset_sandbox/2` does, so that a
+  # bounded registration cannot slip in behind the destroy — keeps the stamp it
+  # wrote, and `update_sandbox/2` sees no change to make. A caller that did not
+  # gets one from `stamp_terminated_at/1`. Passing `utc_now()` here instead
+  # moved the stamp to *after* the provider call, so it disagreed with the
+  # `duration_ms` on the `sandbox_terminated` usage row by the length of a
+  # destroy — and that row is what a provider bill is reconciled against.
   defp _unsafe_retire_home(%Sandbox{} = sandbox) do
     handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
@@ -3429,8 +3455,7 @@ defmodule Fountain.Conversations do
         Logger.warning("home #{sandbox.sprite_name} destroy failed: #{inspect(reason)}")
     end
 
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
+    {:ok, _} = update_sandbox(sandbox, %{status: "terminated"})
     :ok
   end
 
@@ -3465,6 +3490,15 @@ defmodule Fountain.Conversations do
 
   Two audit rows, not one: `sandbox.reset_requested` when the fence commits,
   and `sandbox.reset` only when the provider confirms the destroy.
+
+  Also refused with `:execution_fenced` while a bounded turn on this machine
+  has remote work Fountain cannot account for (ADR 0046). That is a third,
+  distinct fact: `:sandbox_mid_turn` is a live turn and ends by itself,
+  `:sandbox_reset_pending` is a delete this function asked for and has not had
+  confirmed, and `:execution_fenced` is a command that may still be running
+  under a deadline whose termination was never acknowledged. It is bounded —
+  the deadline coordinator writes an unresolvable obligation off — so this
+  refusal clears on its own without needing the reaping the other one does.
 
   `opts[:reason]` says *why*, and reaches every transcript on the machine and
   the audit row: `"home_reset"` (the owner asked — the default),
@@ -3509,6 +3543,16 @@ defmodule Fountain.Conversations do
 
           _unsafe_running_turns_elsewhere(current.id, nil) > 0 ->
             Repo.rollback(:sandbox_mid_turn)
+
+          # ownership: `current` is the caller's scoped sandbox, re-read under
+          # this transaction's lock.
+          #
+          # A turn that has ended locally can still owe a remote termination
+          # (ADR 0046), so this outlives the running-turn check above and is a
+          # different answer. Destroying the machine would drop the journal row
+          # that says the command was never confirmed stopped.
+          ExecutionGuard._unsafe_sandbox_open?(current.id) ->
+            Repo.rollback(:execution_fenced)
 
           true ->
             :ok
