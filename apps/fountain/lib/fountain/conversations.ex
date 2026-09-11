@@ -2534,6 +2534,7 @@ defmodule Fountain.Conversations do
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
     with :ok <- require_provider_commit_boundary(),
+         :ok <- Fountain.Conversations.PromptInput.validate_initial(attrs),
          %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
@@ -3286,6 +3287,7 @@ defmodule Fountain.Conversations do
        )
        when is_binary(user_id) do
     with :ok <- require_provider_commit_boundary(),
+         :ok <- Fountain.Conversations.PromptInput.validate_initial(attrs),
          %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),

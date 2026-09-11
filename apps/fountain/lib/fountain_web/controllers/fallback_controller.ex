@@ -42,6 +42,34 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # Opening input a launch cannot use (Fountain.Conversations.PromptInput).
+  # Refused before any sandbox is reserved, so nothing was spent. Named here
+  # rather than left to the terminal safety net below: these are ordinary
+  # client mistakes, and the net logs a warning and answers without a message.
+  def call(conn, {:error, :invalid_prompt}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "invalid_prompt",
+      message:
+        "prompt must be a string with words in it; images require one. " <>
+          "Omit both to open a conversation with no first turn."
+    })
+  end
+
+  def call(conn, {:error, :invalid_images}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "invalid_images",
+      message:
+        "each image needs a supported media_type (" <>
+          Enum.join(Fountain.Images.valid_media_types(), ", ") <>
+          ") and between 1 byte and " <>
+          "#{div(Fountain.Images.max_prompt_image_bytes(), 1024 * 1024)}MB of data"
+    })
+  end
+
   # start_conversation rejects an unknown / cross-tenant vault by returning
   # {:error, :vault_not_found}. Surface as 404 so callers can't tell the
   # difference between "no such vault" and "vault belongs to someone else".

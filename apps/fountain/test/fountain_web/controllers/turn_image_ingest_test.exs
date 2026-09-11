@@ -42,7 +42,11 @@ defmodule FountainWeb.TurnImageIngestTest do
   defp post_create(conn, raw_key, agent, images) do
     conn
     |> authed_with_key(raw_key)
-    |> post_json("/api/conversations", %{"agent_id" => agent.id, "images" => images})
+    |> post_json("/api/conversations", %{
+      "agent_id" => agent.id,
+      "prompt" => "Describe these images",
+      "images" => images
+    })
   end
 
   describe "media type" do
@@ -65,7 +69,7 @@ defmodule FountainWeb.TurnImageIngestTest do
 
     test "every allowed type is accepted", %{raw_key: raw_key, agent: agent} do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec ->
-        {:ok, spawn(fn -> :ok end)}
+        {:ok, self()}
       end)
 
       for type <- Conversations.TurnImage.valid_media_types() do
@@ -74,6 +78,9 @@ defmodule FountainWeb.TurnImageIngestTest do
           |> post_create(raw_key, agent, [%{"media_type" => type, "data" => png()}])
 
         assert conn.status in [200, 201], "#{type} was rejected with #{conn.status}"
+        assert_received {:"$gen_cast", {:initial_prompt, "Describe these images", [image]}}
+        assert image.media_type == type
+        assert image.data == Base.decode64!(png())
       end
     end
   end

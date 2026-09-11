@@ -639,7 +639,13 @@ defmodule FountainWeb.Schemas do
               "permission_policy_widens rather than silently clamped, and one the runtime " <>
               "never consults is refused with 422 permission_policy_unenforceable."
         },
-        prompt: %Schema{type: :string, description: "Optional first turn prompt."},
+        prompt: %Schema{
+          type: :string,
+          description:
+            "Optional first turn prompt. A launch may open with no prompt at all, but a " <>
+              "prompt that is present must carry words: blank and whitespace-only text is " <>
+              "refused with 422 invalid_prompt, before the launch reserves a sandbox."
+        },
         title: %Schema{
           type: :string,
           nullable: true,
@@ -649,7 +655,12 @@ defmodule FountainWeb.Schemas do
         images: %Schema{
           type: :array,
           items: ImageInput,
-          description: "Optional images to attach to the initial prompt.",
+          description:
+            "Optional images to attach to the initial prompt. They require that prompt: " <>
+              "images with no opening text are refused with 422 invalid_prompt, and an " <>
+              "image whose media_type is unsupported or whose decoded bytes are empty or " <>
+              "over the 10MB ceiling is refused with 422 invalid_images. Both refusals " <>
+              "happen before a sandbox is reserved.",
           nullable: true
         },
         sprite_name: %Schema{
