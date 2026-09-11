@@ -25,6 +25,8 @@ config :fountain, Oban,
        # matters. Each run is one paginated list plus at most a handful of
        # deletes.
        {"7 * * * *", Fountain.Workers.SandboxReaper},
+       # Recover reset fences left by provider errors or a lost caller.
+       {"*/5 * * * *", Fountain.Workers.SandboxResetReconciler},
        # A server's autonomous quiet timer is in memory. Sweep old, silent
        # running turns whose server disappeared before that timer fired.
        {"*/5 * * * *", Fountain.Workers.AutonomousTurnReaper},
