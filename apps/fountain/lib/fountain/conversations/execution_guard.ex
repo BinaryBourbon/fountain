@@ -18,7 +18,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
   import Ecto.Query
 
   alias Fountain.{Audit, Repo}
-  alias Fountain.Conversations.{Conversation, Sandbox, Turn, TurnExecution}
+  alias Fountain.Conversations.{Conversation, ExecutionLimits, Sandbox, Turn, TurnExecution}
 
   @fenced ~w(awaiting_identity ready submitted uncertain)
   @terminal_turns ~w(completed failed interrupted)
@@ -69,7 +69,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
           if prior && is_nil(prior.provider_session_id),
             do: Repo.rollback(:connection_unidentified)
 
+          limits = resolve_turn_limits(conv)
+          enforce_deadline_ceiling!(turn, deadline_at, limits)
+
           attrs = %{
+            execution_limits: limits,
             turn_id: turn.id,
             conversation_id: conv.id,
             user_id: conv.user_id,
@@ -577,6 +581,53 @@ defmodule Fountain.Conversations.ExecutionGuard do
         from e in TurnExecution,
           where: e.conversation_id == ^conversation_id and e.state not in ["completed", "stopped"]
       )
+
+  # The allowance this turn is admitted under, resolved once under the parent
+  # lock and frozen onto the journal row. The saved conversation allowance is
+  # `execution_allowances` (#1790), not a column on the parent: it carries a
+  # revision, so a launch and a resume cannot silently overwrite each other.
+  #
+  # `for_new_turn/3` tightens rather than re-resolves — a later turn may be
+  # narrower than the saved allowance but never wider, so raising an account
+  # ceiling mid-conversation does not widen a conversation that was already
+  # admitted under a lower one.
+  defp resolve_turn_limits(conv) do
+    user = Repo.get!(Fountain.Accounts.User, conv.user_id)
+
+    saved =
+      case Repo.one(
+             from a in Fountain.Conversations.ExecutionAllowance,
+               where: a.conversation_id == ^conv.id,
+               select: a.limits
+           ) do
+        nil -> %{}
+        limits when is_map(limits) -> limits
+        _ -> Repo.rollback({:execution_limits_invalid, "object_required"})
+      end
+
+    case ExecutionLimits.for_new_turn(
+           ExecutionLimits.host_ceiling(),
+           user.execution_limits,
+           saved
+         ) do
+      {:ok, limits} -> limits
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  # A journal row's deadline is absolute, so the wall-clock allowance is checked
+  # against it here rather than trusted from the caller that computed it. A
+  # caller that asks for a deadline beyond the allowance is refused, not clamped
+  # — silently shortening someone's requested bound is the worse answer.
+  defp enforce_deadline_ceiling!(turn, deadline_at, %{"wall_time_seconds" => seconds}) do
+    if is_nil(turn.started_at), do: Repo.rollback(:turn_not_started)
+    ceiling = DateTime.add(turn.started_at, seconds, :second)
+
+    if DateTime.compare(deadline_at, ceiling) == :gt,
+      do: Repo.rollback({:execution_limits_widen, "wall_time_seconds"})
+  end
+
+  defp enforce_deadline_ceiling!(_turn, _deadline_at, _limits), do: :ok
 
   # A session id is interpolated into a provider termination request, so it is
   # validated as an opaque token rather than trusted as a string: unreserved

@@ -1048,6 +1048,25 @@ defmodule Fountain.Accounts do
     end)
   end
 
+  @doc """
+  Set the operator-owned per-turn execution ceilings for an account.
+
+  `User.execution_limits_changeset/2` has existed since the admission campaign
+  with nothing but tests calling it, which meant the only way to give an account
+  a ceiling was to write the column by hand. Like the sandbox-cap setter above
+  this belongs behind the admin boundary: no tenant profile or registration path
+  accepts these fields, and the audit row names the fields rather than a
+  policy nobody can reconstruct. `nil` clears the ceiling.
+  """
+  def update_execution_limits(%User{} = user, limits, opts \\ []) do
+    user
+    |> User.execution_limits_changeset(limits)
+    |> Repo.update()
+    |> audited_account("account.execution_limits_changed", "user", opts, fn updated ->
+      %{"from" => user.execution_limits, "to" => updated.execution_limits}
+    end)
+  end
+
   @doc false
   def hash_key(raw_key) when is_binary(raw_key) do
     :crypto.hash(:sha256, raw_key) |> Base.encode16(case: :lower)

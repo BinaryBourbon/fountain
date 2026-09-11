@@ -1869,7 +1869,7 @@ defmodule Fountain.Conversations do
 
       %ExecutionAllowance{limits: limits} when is_map(limits) ->
         with {:ok, normalized} <- ExecutionLimits.normalize(limits) do
-          ExecutionLimits.require_controls(normalized, [])
+          ExecutionLimits.require_controls(normalized, ExecutionLimits.enforced_controls(nil))
         end
 
       _ ->
@@ -2680,12 +2680,12 @@ defmodule Fountain.Conversations do
   defp resolve_admission_limits(user_id, request) do
     # Ownership: each caller just fetched the agent by this authenticated user.
     # Read the current account policy, never a request-supplied or cached map.
-    case {Fountain.Accounts.get_user(user_id),
-          Application.get_env(:fountain, :execution_limit_ceiling, %{})} do
+    case {Fountain.Accounts.get_user(user_id), ExecutionLimits.host_ceiling()} do
       {%Fountain.Accounts.User{execution_limits: ceiling}, host}
       when is_map(ceiling) and is_map(host) ->
         with {:ok, limits} <- ExecutionLimits.resolve(host, ceiling, request),
-             :ok <- ExecutionLimits.require_controls(limits, []) do
+             :ok <-
+               ExecutionLimits.require_controls(limits, ExecutionLimits.enforced_controls(nil)) do
           {:ok, limits}
         end
 

@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Durable turn deadlines and remote execution identity"
-description: "Persist turn deadlines and provider-operation intent before I/O; the journal is implemented locally, while API, transport and lifecycle enforcement remain unbuilt."
+description: "Persist turn deadlines and provider-operation intent before I/O; the journal and its per-turn allowance are implemented, while transport and lifecycle enforcement remain unbuilt."
 tags: [conversations, sandbox, reliability, limits]
 status: draft
 adr: "0046"
@@ -109,9 +109,18 @@ below; the second needs no scheduler and ships with the journal.
 
 ## Required integration and acceptance
 
-- Validate typed limits against runtime capabilities and host/account ceilings.
-  A conversation override cannot widen its authorized allowance. Define each
-  limit's per-turn or per-session scope; SDK cost estimates are not billed cost.
+- ~~Validate typed limits against runtime capabilities and host/account
+  ceilings.~~ Done, mostly before this ADR: the admission campaign (#1787-#1793)
+  shipped `ExecutionLimits`, `users.execution_limits` and `execution_allowances`
+  on `main`, and admission refuses any control `enforced_controls/1` does not
+  name — which today is all of them. The journal's share is
+  `turn_executions.execution_limits`: the allowance a turn was admitted under,
+  frozen on registration and checked against the absolute deadline by
+  `enforce_deadline_ceiling!/3`. A caller that asks for a deadline beyond the
+  allowance is refused rather than clamped. Recovery reads the frozen copy, so a
+  ceiling changed mid-turn neither narrows nor widens work already admitted.
+  Each limit's per-turn or per-session scope, and the fact that SDK cost is
+  estimated rather than billed, still need documenting for a reader.
 - Record identity outside the conversation mailbox. Bind it to the command ref,
   original connection and turn; do not infer it from sandbox output or argv.
 - Route every bounded turn start/end, autonomous turn, interruption and restart
@@ -138,6 +147,20 @@ Journal retention after confirmed cleanup and account deletion also needs an
 explicit policy. Uncertainty must never be erased by transcript deletion — but
 it must not be permanent either, which is what the ageing exit above settles.
 The cutoff itself is the supervisor's to choose and is not fixed here.
+
+### What the public surface does and does not yet promise
+
+`turns.limit_reason` is on the API, the OpenAPI document and the wire contract,
+because a client cannot otherwise tell a bounded failure from a plain one — a
+runtime that answers after its deadline still exits zero, so `exit_code` alone
+reads as success. It is output-only and additive.
+
+The **request** side is deliberately not published yet. `enforced_controls/1`
+returns `[]`, so every `execution_limits` a caller sends is refused; declaring
+the field in the contract and shipping it in four SDKs and the CLI would
+publish a control the server cannot honour, and an SDK version bump publishes
+on merge. That surface belongs in the PR that first enforces a control, which
+is also the PR that deletes this paragraph.
 
 `managoat_sandbox 0.3.0` supplies confirmed remote termination. Provider identity
 notifications await [Sprites #33](https://github.com/superfly/sprites-ex/pull/33),

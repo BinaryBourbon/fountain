@@ -267,6 +267,11 @@ attachments save their initial allowance with the conversation before worker
 startup or prompt delivery. Fresh launches also reserve the sandbox in that
 transaction; a failed insert leaves no sandbox or conversation.
 
+A turn that a limit ended carries `limit_reason`. Read it before you read
+`exit_code`. A runtime that answers after its deadline can exit zero. A client
+that reads only `exit_code` then shows a stopped turn as a success. The
+transcript event for that turn puts the same value in `stop_reason`.
+
 ```bash
 curl --fail-with-body \
   -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
