@@ -11,6 +11,13 @@ server releases.
 
 ---
 
+## [1.29.0] - 2026-09-11
+
+### Changed
+
+- Generated types carry `queue` on a conversation create, and the `SandboxRequest` shape a queued start answers with (ADR 0042). At the tenant sandbox cap or the fleet ceiling, a start that sets `queue: true` gets 202 and a request id instead of 429 or 503.
+- `/api/sandbox-queue` is deliberately not wrapped. The run handle promises an immediate conversation, and a queued start hands back a request first; reach the three routes over the raw HTTP client until a queued-run handle owns the polling and the cancellation.
+
 ## [1.28.0] - 2026-09-10
 
 ### Added
