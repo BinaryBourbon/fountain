@@ -495,4 +495,28 @@ defmodule Fountain.OAuthClientsTest do
       refute OAuth.registered_origin?(nil)
     end
   end
+
+  describe "form_action_origins/1" do
+    test "is the origin of the redirect the browser will actually be sent to" do
+      assert OAuth.form_action_origins("https://mine.test/callback") == ["https://mine.test"]
+      assert OAuth.form_action_origins("https://mine.test:8443/cb") == ["https://mine.test:8443"]
+    end
+
+    # The registered URI is the wrong source: a loopback client registered
+    # against :5199 and legally asked for :5200 would get a header naming
+    # :5199, and Chrome would block a redirect the server had approved.
+    test "follows the requested port, not the registered one" do
+      assert OAuth.form_action_origins("http://localhost:5200/callback") ==
+               ["http://localhost:5200"]
+    end
+
+    test "keeps IPv6 loopback bracketed for the CSP" do
+      assert OAuth.form_action_origins("http://[::1]:5200/callback") ==
+               ["http://[::1]:5200"]
+    end
+
+    test "is empty for something with no origin" do
+      assert OAuth.form_action_origins("/callback") == []
+    end
+  end
 end

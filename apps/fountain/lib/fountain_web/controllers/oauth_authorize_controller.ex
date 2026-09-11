@@ -17,13 +17,14 @@ defmodule FountainWeb.OAuthAuthorizeController do
   alias FountainWeb.ReturnTo
 
   plug :put_layout, false
-  plug :allow_redirect_form_action
   plug :require_user
 
   def show(conn, params) do
     case OAuth.validate_request(params, conn.assigns.current_user.id) do
       {:ok, client} ->
-        render(conn, :consent, client: client, params: request_params(params), error: nil)
+        conn
+        |> allow_redirect_form_action(params["redirect_uri"])
+        |> render(:consent, client: client, params: request_params(params), error: nil)
 
       {:error, reason} ->
         conn |> put_status(:bad_request) |> render(:invalid, reason: reason)
@@ -35,9 +36,14 @@ defmodule FountainWeb.OAuthAuthorizeController do
 
     case OAuth.validate_request(params, user.id) do
       {:ok, _client} when decision == "allow" ->
+        # Widened on the branch that redirects, not before the mint: a
+        # :server_error renders an error page, and that page has no business
+        # naming an origin in its form-action.
         case OAuth.authorize(user.id, params, FountainWeb.Audited.attribution(conn)) do
           {:ok, code} ->
-            redirect(conn,
+            conn
+            |> allow_redirect_form_action(params["redirect_uri"])
+            |> redirect(
               external:
                 with_query(params["redirect_uri"], %{"code" => code, "state" => params["state"]})
             )
@@ -47,7 +53,9 @@ defmodule FountainWeb.OAuthAuthorizeController do
         end
 
       {:ok, _client} ->
-        redirect(conn,
+        conn
+        |> allow_redirect_form_action(params["redirect_uri"])
+        |> redirect(
           external:
             with_query(params["redirect_uri"], %{
               "error" => "access_denied",
@@ -81,10 +89,12 @@ defmodule FountainWeb.OAuthAuthorizeController do
 
   # The base browser CSP is `form-action 'self'`; a successful consent POST
   # redirects the browser to the app's own origin, which Chrome enforces
-  # form-action against on the redirect. Widen it — only here — to the
-  # registered clients' redirect origins (#818).
-  defp allow_redirect_form_action(conn, _opts) do
-    origins = Enum.join(["'self'" | OAuth.redirect_origins()], " ")
+  # form-action against on the redirect. Widen it — only here, and only to
+  # this request's already-validated redirect origin (#818, narrowed in
+  # #1125). The requested URI is the source, not the registration: an RFC
+  # 8252 loopback redirect's port varies legally.
+  defp allow_redirect_form_action(conn, redirect_uri) do
+    origins = Enum.join(["'self'" | OAuth.form_action_origins(redirect_uri)], " ")
 
     update_resp_header(conn, "content-security-policy", "", fn csp ->
       if String.contains?(csp, "form-action"),
