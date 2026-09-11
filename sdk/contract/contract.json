@@ -479,6 +479,45 @@
         }
       }
     },
+    "DELETE /api/oauth/clients/{id}": {
+      "operation_id": "FountainWeb.OAuthClientController.delete",
+      "path_params": [
+        "id"
+      ],
+      "responses": {
+        "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "DELETE /api/runners/{id}": {
       "operation_id": "FountainWeb.RunnerController.delete",
       "path_params": [
@@ -2394,6 +2433,75 @@
         }
       }
     },
+    "GET /api/oauth/clients": {
+      "operation_id": "FountainWeb.OAuthClientController.index",
+      "path_params": [],
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "OAuthClientListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "GET /api/oauth/clients/{id}": {
+      "operation_id": "FountainWeb.OAuthClientController.show",
+      "path_params": [
+        "id"
+      ],
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "OAuthClient"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "GET /api/runners": {
       "operation_id": "FountainWeb.RunnerController.index",
       "path_params": [],
@@ -4059,6 +4167,57 @@
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "PATCH /api/oauth/clients/{id}": {
+      "operation_id": "FountainWeb.OAuthClientController.update",
+      "path_params": [
+        "id"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "OAuthClientUpdateRequest"
+          }
+        },
+        "required": true
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "OAuthClient"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "429": {
@@ -6181,6 +6340,50 @@
         "422": {
           "application/json": {
             "ref": "ChangesetError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "POST /api/oauth/clients": {
+      "operation_id": "FountainWeb.OAuthClientController.create",
+      "path_params": [],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "OAuthClientRequest"
+          }
+        },
+        "required": true
+      },
+      "responses": {
+        "201": {
+          "application/json": {
+            "ref": "OAuthClient"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
           }
         },
         "429": {
@@ -11237,6 +11440,96 @@
           },
           "required": true,
           "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "OAuthClient": {
+      "properties": {
+        "client_id": {
+          "required": true,
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "required": true,
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
+        "name": {
+          "required": true,
+          "type": "string"
+        },
+        "origins": {
+          "items": {
+            "type": "string"
+          },
+          "required": true,
+          "type": "array"
+        },
+        "published": {
+          "required": true,
+          "type": "boolean"
+        },
+        "redirect_uris": {
+          "items": {
+            "type": "string"
+          },
+          "required": true,
+          "type": "array"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "OAuthClientListResponse": {
+      "properties": {
+        "data": {
+          "items": {
+            "ref": "OAuthClient"
+          },
+          "required": true,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "OAuthClientRequest": {
+      "properties": {
+        "name": {
+          "required": true,
+          "type": "string"
+        },
+        "redirect_uris": {
+          "items": {
+            "type": "string"
+          },
+          "required": true,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "OAuthClientUpdateRequest": {
+      "properties": {
+        "name": {
+          "required": false,
+          "type": "string"
+        },
+        "redirect_uris": {
+          "items": {
+            "type": "string"
+          },
+          "required": false,
+          "type": "array"
         }
       },
       "type": "object"
