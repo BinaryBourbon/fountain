@@ -301,6 +301,9 @@ defmodule Fountain.Conversations.ConversationServer do
   sprite. If not, just mark the DB rows terminated so the user can still
   clean up dead conversations after a server restart.
 
+  An enclosing database transaction is refused before contacting the actor or
+  updating rows, so teardown cannot escape a caller's rollback.
+
   Named `terminate_conversation` rather than `terminate`: taking `opts` for
   audit attribution (#545) would have made this `terminate/2`, which is the
   OTP callback below. Two different meanings under one name in one module was
@@ -309,12 +312,16 @@ defmodule Fountain.Conversations.ConversationServer do
   the client half gets the unambiguous name.
   """
   def terminate_conversation(conv_id, opts \\ []) do
-    # ownership: callers established this conversation's tenant. Cleanup must
-    # survive a blocked actor, failed provider teardown, or subsequent deletion.
-    case Fountain.Conversations.ExecutionGuard._unsafe_interrupt(conv_id) do
-      {:ok, _} -> terminate_after_retirement(conv_id, opts)
-      {:error, :not_found} -> {:error, :not_running}
-      {:error, _} = error -> error
+    if Fountain.Repo.in_transaction?() do
+      {:error, :provider_transaction_open}
+    else
+      # ownership: callers established this conversation's tenant. Cleanup must
+      # survive a blocked actor, failed provider teardown, or subsequent deletion.
+      case Fountain.Conversations.ExecutionGuard._unsafe_interrupt(conv_id) do
+        {:ok, _} -> terminate_after_retirement(conv_id, opts)
+        {:error, :not_found} -> {:error, :not_running}
+        {:error, _} = error -> error
+      end
     end
   end
 
@@ -336,6 +343,7 @@ defmodule Fountain.Conversations.ConversationServer do
               # must not take either down.
               sandbox_id = conv.sandbox_id
 
+              # ownership: sandbox_id comes from that same authorized conversation.
               if is_binary(sandbox_id) and
                    not Conversations._unsafe_sandbox_kept_on_terminate?(sandbox_id, conv.id) do
                 sb = Conversations._unsafe_get_sandbox!(sandbox_id)
@@ -349,7 +357,16 @@ defmodule Fountain.Conversations.ConversationServer do
           end
 
         pid ->
-          call_server(pid, :terminate_conv)
+          # This pid is routinely on another pod, and mid-deploy some pods
+          # predate the tuple clause: they answer the catch-all with
+          # `:unknown_call`, which would leave the sprite running and billing.
+          # Retry the bare atom they understand. Only that catch-all produces
+          # `:unknown_call` here and it has no side effects, so no double
+          # terminate; #1980 keeps the mirror clause for old-pod callers.
+          case call_server(pid, {:terminate_conv, Keyword.take(opts, [:actor, :request_ip])}) do
+            {:error, :unknown_call} -> call_server(pid, :terminate_conv)
+            other -> other
+          end
       end
 
     audit_lifecycle(conv_id, "conversation.terminated", result, opts)
