@@ -29,6 +29,10 @@
       "reason": "Claimable principals (ADR 0044). A trusted application opens and claims these with its own full-scope key; the credential that comes back is an ordinary API key, so an SDK's job starts after this point and every endpoint it already models is what the principal then uses. Paddock is the first caller and reaches these four over plain HTTP."
     },
     {
+      "operations": ["* /api/oauth/clients*"],
+      "reason": "Self-service OAuth client registration (#1125, ADR 0021). A person registers an app once, in the console or with `fountain oauth-client`, and then puts the returned client_id in the app. An SDK caller's work starts after that point, with the API key the flow mints, and every endpoint a client then calls is already modelled."
+    },
+    {
       "operations": ["POST /api/oauth/token", "POST /api/oauth/revoke"],
       "reason": "Sign in with Fountain. The browser apps run the code+PKCE dance themselves against these two, and the token they get IS an API key, so the SDK starts after this point."
     },
