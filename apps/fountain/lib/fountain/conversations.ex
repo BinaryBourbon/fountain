@@ -1739,6 +1739,9 @@ defmodule Fountain.Conversations do
           # conversation: a stale deadline must not be able to terminate a
           # process a successor has started using (ADR 0046). The parent is
           # already locked above, so this is a plain read.
+          #
+          # ownership: conv_id was proved attached to this tenant's sandbox by
+          # the `attached?` check above, under the same locks.
           if ExecutionGuard._unsafe_open_execution?(conv_id),
             do: Repo.rollback(:execution_fenced)
 

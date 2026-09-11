@@ -20,7 +20,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Vaults
   }
 
-  alias Fountain.Conversations.{CallbackKey, Checkpoints, CodexChatGPT, Connection}
+  alias Fountain.Conversations.{CallbackKey, Checkpoints, Connection}
   alias Fountain.Conversations.{Conversation, DetachedRequest, Egress}
   alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnLaunch, TurnMachine}
@@ -1716,24 +1716,20 @@ defmodule Fountain.Conversations.ConversationServer do
         # Admission can refuse under its row locks after these preflights
         # pass. Same answer as the `else` below, and for the same reason.
         case kick_turn(state, prompt, agent, images) do
-          {:error, reason, next} ->
-            drop_initial_prompt(next, reason)
-
-          cast_shape ->
-            cast_shape
+          {:error, reason, next} -> {:noreply, log_initial_refusal(next, reason)}
+          cast_shape -> cast_shape
         end
       else
-        {:error, reason} -> drop_initial_prompt(state, reason)
+        {:error, reason} ->
+          # A cast has no caller to reply to. Preserve existing work and its
+          # connection when this queued prompt cannot be admitted.
+          Logger.info(
+            "conv #{state.conversation_id}: dropping initial prompt (#{inspect(reason)})"
+          )
+
+          {:noreply, state}
       end
     end
-  end
-
-  # A cast has no caller to reply to. Preserve existing work and its
-  # connection when this queued prompt cannot be admitted.
-  defp drop_initial_prompt(state, reason) do
-    Logger.info("conv #{state.conversation_id}: dropping initial prompt (#{inspect(reason)})")
-
-    {:noreply, state}
   end
 
   # Another conversation on this machine parked or destroyed it (see
@@ -2303,6 +2299,11 @@ defmodule Fountain.Conversations.ConversationServer do
     }
   end
 
+  defp log_initial_refusal(state, reason) do
+    Logger.info("conv #{state.conversation_id}: initial turn refused (#{inspect(reason)})")
+    state
+  end
+
   # Returns the callback tuple rather than a state, because one outcome needs
   # a continuation: a reapply committed while this server held an older
   # revision, so the turn is not opened, the connection is dropped and the
@@ -2399,8 +2400,7 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-
-  defp fail_turn_before_start(state, turn, reason, what, exit_code \\ nil, output \\ []) do
+  defp fail_turn_before_start(state, turn, reason, what, exit_code, output) do
     detail = TurnMachine.failure_detail(reason, exit_code)
     Logger.error("#{what}: #{detail}")
 
@@ -2414,7 +2414,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
     TurnMachine.fail_before_start(turn, state.conversation_id, what, detail, exit_code)
 
-    %{state | current_turn: nil}
+    state = %{state | current_turn: nil}
+
+    # A bounded turn that never started still holds a journal and a transport.
+    # Closing here is the retirement intent, not a confirmed remote stop — the
+    # coordinator owns the confirmation.
+    if state.turn_execution, do: close_bounded_connection(state), else: state
   end
 
   # Time to first token (#535), one-shot per turn: `TurnMachine.maybe_emit_first_output/1`.

@@ -24,98 +24,55 @@ defmodule Fountain.Conversations.ExecutionGuard do
   @fenced ~w(awaiting_identity ready submitted uncertain)
   @terminal_turns ~w(completed failed interrupted)
 
-  @doc "Atomically admit a turn and its execution journal before any preparation."
-  def _unsafe_admit_turn(attrs, sandbox_id, capacity, writer) do
-    transaction(fn ->
-      conv_id = Map.fetch!(attrs, :conversation_id)
-      lock_sandbox(sandbox_id)
-      conv = lock_parent(conv_id) || Repo.rollback(:not_found)
-      if conv.sandbox_id != sandbox_id, do: Repo.rollback(:ownership_changed)
-      if open_execution?(conv.id), do: Repo.rollback(:execution_fenced)
+  @doc """
+  Register a bounded turn's journal inside the caller's admission transaction.
 
-      user = Repo.get!(Fountain.Accounts.User, conv.user_id)
+  Deliberately a step rather than a replacement for
+  `Conversations._unsafe_create_turn_on_sandbox/3`. That function already holds
+  the per-sandbox advisory lock, takes `FOR UPDATE` on the parent so the
+  allowance's foreign key cannot deadlock against it (#1790), proves the
+  conversation is still attached to a **non-terminal** sandbox owned by the same
+  tenant (#1761, #1764), and rechecks the saved allowance under those locks.
+  Re-implementing admission here would drop every one of those; adding a step to
+  it keeps them and still commits the journal with the turn.
 
-      limits =
-        case ExecutionLimits.for_new_turn(
-               ExecutionLimits.host_ceiling(),
-               user.execution_limits,
-               conv.execution_limits
-             ) do
-          {:ok, limits} -> limits
-          {:error, reason} -> Repo.rollback(reason)
-        end
+  A turn with no configured allowance registers nothing: the journal is for
+  bounded turns, and an unbounded turn has nothing to expire.
+  """
+  def _unsafe_register_bounded(turn, sandbox_id, conv) do
+    limits = resolve_turn_limits(conv)
 
-      case ExecutionLimits.require_controls(
-             limits,
-             ExecutionLimits.enforced_controls(conv.runtime)
-           ) do
-        :ok -> :ok
-        {:error, reason} -> Repo.rollback(reason)
-      end
-
-      # ownership: conv is the locked parent for this actor and sandbox binding.
-      if is_integer(capacity) and
-           Fountain.Conversations._unsafe_running_turns_elsewhere(sandbox_id, conv.id) >= capacity,
-         do: Repo.rollback(:sandbox_at_capacity)
-
-      # The journal requires an absolute deadline. SDK-only requests cannot be
-      # admitted through this transport by inventing an undocumented allowance.
-      if map_size(limits) > 0 and not Map.has_key?(limits, "wall_time_seconds"),
+    if map_size(limits) == 0 do
+      :unbounded
+    else
+      # A journal row needs an absolute deadline. A request carrying only SDK
+      # controls cannot be admitted by inventing an allowance nobody asked for.
+      unless Map.has_key?(limits, "wall_time_seconds"),
         do: Repo.rollback({:execution_limits_invalid, "wall_time_seconds_required"})
 
-      turn =
-        case writer.() do
-          {:ok, turn} -> turn
-          {:error, reason} -> Repo.rollback(reason)
-        end
+      sandbox = Repo.get(Sandbox, sandbox_id) || Repo.rollback(:sandbox_not_found)
+      if sandbox.provider != "sprites", do: Repo.rollback(:provider_not_supported)
 
-      if map_size(limits) > 0 do
-        sandbox = Repo.get(Sandbox, sandbox_id) || Repo.rollback(:sandbox_not_found)
-        if sandbox.provider != "sprites", do: Repo.rollback(:provider_not_supported)
-
-        case Managoat.Runtimes.ACP.execution_limits(
-               conv.runtime,
-               ExecutionLimits.sdk_options(limits)
-             ) do
-          {:ok, _} -> :ok
-          {:error, reason} -> Repo.rollback(reason)
-        end
-
-        deadline = DateTime.add(turn.started_at, limits["wall_time_seconds"], :second)
-
-        case _unsafe_register(turn.id, Ecto.UUID.generate(), deadline) do
-          {:ok, _} -> :ok
-          {:error, reason} -> Repo.rollback(reason)
-        end
-      end
-
-      {turn, nil, nil}
-    end)
-  end
-
-  @doc "An idle legacy connection cannot start background work after bounded policy is applied."
-  def _unsafe_autonomous_turn(conversation_id, writer) do
-    transaction(fn ->
-      conv = lock_parent(conversation_id) || Repo.rollback(:not_found)
-      user = Repo.get!(Fountain.Accounts.User, conv.user_id)
-
-      case ExecutionLimits.for_new_turn(
-             ExecutionLimits.host_ceiling(),
-             user.execution_limits,
-             conv.execution_limits
+      case Managoat.Runtimes.ACP.execution_limits(
+             conv.runtime,
+             ExecutionLimits.sdk_options(limits)
            ) do
-        {:ok, limits} when map_size(limits) == 0 -> :ok
-        _ -> Repo.rollback(:execution_fenced)
-      end
-
-      if open_execution?(conversation_id), do: Repo.rollback(:execution_fenced)
-
-      case writer.() do
-        {:ok, turn} -> {turn, nil, nil}
+        {:ok, _} -> :ok
         {:error, reason} -> Repo.rollback(reason)
       end
-    end)
+
+      if is_nil(turn.started_at), do: Repo.rollback(:turn_not_started)
+      deadline = DateTime.add(turn.started_at, limits["wall_time_seconds"], :second)
+
+      case _unsafe_register(turn.id, Ecto.UUID.generate(), deadline) do
+        {:ok, execution} -> {:bounded, execution}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end
   end
+
+  @doc "Whether an unresolved bounded execution fences this conversation. Caller holds the parent lock."
+  def _unsafe_open_execution?(conversation_id), do: open_execution?(conversation_id)
 
   @doc "Refuse a new prompt or wake while an earlier bounded execution is unresolved."
   def _unsafe_admission_gate(conversation_id) do
@@ -833,16 +790,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
   defp resolve_turn_limits(conv) do
     user = Repo.get!(Fountain.Accounts.User, conv.user_id)
 
-    saved =
-      case Repo.one(
-             from a in Fountain.Conversations.ExecutionAllowance,
-               where: a.conversation_id == ^conv.id,
-               select: a.limits
-           ) do
-        nil -> %{}
-        limits when is_map(limits) -> limits
-        _ -> Repo.rollback({:execution_limits_invalid, "object_required"})
-      end
+    saved = saved_allowance(conv.id)
 
     case ExecutionLimits.for_new_turn(
            ExecutionLimits.host_ceiling(),
@@ -851,6 +799,18 @@ defmodule Fountain.Conversations.ExecutionGuard do
          ) do
       {:ok, limits} -> limits
       {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp saved_allowance(conversation_id) do
+    case Repo.one(
+           from a in Fountain.Conversations.ExecutionAllowance,
+             where: a.conversation_id == ^conversation_id,
+             select: a.limits
+         ) do
+      nil -> %{}
+      limits when is_map(limits) -> limits
+      _ -> Repo.rollback({:execution_limits_invalid, "object_required"})
     end
   end
 

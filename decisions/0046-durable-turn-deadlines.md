@@ -128,12 +128,15 @@ either.
   `turn_executions.execution_limits`: the allowance a turn was admitted under,
   frozen on registration and checked against the absolute deadline by
   `enforce_deadline_ceiling!/3`. A caller that asks for a deadline beyond the
-  allowance is refused rather than clamped. The column is written today and read
-  by nothing: the reader that honours the frozen copy, so that a ceiling changed
-  mid-turn neither narrows nor widens work already admitted, arrives with the
-  command transport that gives a recovered turn something to resume. Each limit's
-  per-turn or per-session scope, and the fact that SDK cost is estimated rather
-  than billed, still need documenting for a reader.
+  allowance is refused rather than clamped. `TurnLaunch.bounded_sdk_limits/2`
+  is the reader: a launching bounded turn hands the SDK the frozen copy rather
+  than current policy, so a ceiling changed mid-turn neither narrows nor widens
+  work already admitted. The **recovery** reader is still missing — a turn
+  resumed after a restart has nothing to resume into until the command
+  transport can reattach — so the frozen copy is honoured on the way out and
+  not yet on the way back. Each limit's per-turn or per-session scope, and the
+  fact that SDK cost is estimated rather than billed, still need documenting
+  for a reader.
 - Record identity outside the conversation mailbox. Bind it to the command ref,
   original connection and turn; do not infer it from sandbox output or argv.
 - Route every bounded turn start/end, autonomous turn, interruption and restart
@@ -148,8 +151,8 @@ Integration surfaces already inspected:
 
 | Surface | Remaining work |
 | --- | --- |
-| `TurnMachine.open` and autonomous starts | Atomically reserve authorized limits and register before any provider work. |
-| `ConversationServer.run_turn` and warm reuse | Preserve the deadline and connection identity; gate every prompt before writing it. |
+| `TurnMachine.open` and autonomous starts | Implemented: registration happens inside the existing admission transaction, for prompted and autonomous turns alike. |
+| `ConversationServer.run_turn` and warm reuse | Implemented: a bounded turn discards any warm connection, spawns through the supervised transport, and every actor message rechecks the journal before it is handled. |
 | `TurnMachine.start_acp_peer` | Implemented for Sprites (`ExecutionTransport`): spawn intent before I/O, stdin closed until identity binds, every write rechecking the journal. Other providers refuse. |
 | `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
 | `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
@@ -160,6 +163,29 @@ Journal retention after confirmed cleanup and account deletion also needs an
 explicit policy. Uncertainty must never be erased by transcript deletion — but
 it must not be permanent either, which is what the ageing exit above settles.
 The cutoff itself is the supervisor's to choose and is not fixed here.
+
+### Autonomous turns are bounded, not refused
+
+A configured allowance does not stop a conversation doing background work.
+Routing autonomous turns through the same admission gives them a journal and a
+deadline, so the coordinator expires one exactly as it expires a prompted turn.
+The alternative considered was refusing them outright, which would have turned
+one account ceiling into "no schedules and no background follow-ups for this
+account" — a product decision, affecting a shipped feature, that nothing had
+written down.
+
+### Admission stays where it already was
+
+The journal registers *inside*
+`Conversations._unsafe_create_turn_on_sandbox/3` rather than replacing it. That
+function holds the per-sandbox advisory lock, takes `FOR UPDATE` on the parent
+so the allowance's foreign key cannot deadlock against it (#1790, #1793),
+proves the conversation is still attached to a non-terminal sandbox owned by
+the same tenant (#1761, #1764), and rechecks the saved allowance under those
+locks. Every one of those is load-bearing and none of them is the journal's
+business, so registration is a step added to that transaction, not a
+replacement for it. A turn refused for an unavailable sandbox therefore still
+answers `:sandbox_unavailable`, before the journal is consulted at all.
 
 ### A successful reply is not evidence the command stopped
 

@@ -1,7 +1,14 @@
 defmodule Fountain.Conversations.BoundedLifecycleTest do
   use Fountain.ConversationServerCase
 
-  alias Fountain.Conversations.{ExecutionGuard, ExecutionLimits, Turn, TurnExecution}
+  alias Fountain.Conversations.{
+    ExecutionAllowance,
+    ExecutionGuard,
+    ExecutionLimits,
+    Turn,
+    TurnExecution
+  }
+
   alias Managoat.Sandbox
   alias Managoat.Sandbox.Command
 
@@ -14,14 +21,17 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
     agent = insert_agent(user_id: user.id, runtime: "claude")
     conv = insert_conversation(user_id: user.id, sandbox: sandbox, agent: agent, status: "idle")
 
-    conv =
-      conv
-      |> Ecto.Changeset.change(
-        execution_limits: %{"wall_time_seconds" => 60, "max_model_turns" => 2}
-      )
-      |> Repo.update!()
+    limits = %{"wall_time_seconds" => 60, "max_model_turns" => 2}
+    save_allowance(conv.id, limits)
 
-    %{conv: conv, sandbox: sandbox, user: user}
+    %{conv: conv, sandbox: sandbox, user: user, limits: limits}
+  end
+
+  # The saved conversation allowance lives in `execution_allowances`, which
+  # carries a revision so a launch and a resume cannot overwrite each other.
+  defp save_allowance(conversation_id, limits) do
+    Repo.delete_all(from a in ExecutionAllowance, where: a.conversation_id == ^conversation_id)
+    conversation_id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert!()
   end
 
   defp attrs(c),
@@ -41,7 +51,7 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
   test "turn and immutable deadline are committed together; an open journal blocks another", c do
     {turn, execution} = admit(c)
     assert DateTime.compare(execution.deadline_at, DateTime.add(turn.started_at, 60)) == :eq
-    assert execution.execution_limits == c.conv.execution_limits
+    assert execution.execution_limits == c.limits
     assert execution.user_id == c.user.id
     assert execution.spawn_submitted_at == nil
 
@@ -68,7 +78,12 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
   test "a failed journal registration rolls back the new turn", c do
     c.sandbox |> Ecto.Changeset.change(status: "failed") |> Repo.update!()
 
-    assert {:error, :sandbox_not_ready} =
+    # `:sandbox_unavailable`, not the journal's `:sandbox_not_ready`: main's
+    # admission proves the conversation is still attached to a non-terminal
+    # sandbox owned by the same tenant (#1761, #1764) before the journal is
+    # reached at all. Registration on top of that check is the point — it is
+    # not a replacement for it.
+    assert {:error, :sandbox_unavailable} =
              Conversations._unsafe_create_turn_on_sandbox(attrs(c), c.sandbox.id, :unbounded)
 
     assert Repo.aggregate(Turn, :count) == 0
@@ -76,7 +91,7 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
   end
 
   test "SDK-only requests cannot acquire an invented wall allowance", c do
-    c.conv |> Ecto.Changeset.change(execution_limits: %{"max_model_turns" => 2}) |> Repo.update!()
+    save_allowance(c.conv.id, %{"max_model_turns" => 2})
 
     assert {:error, {:execution_limits_invalid, "wall_time_seconds_required"}} =
              Conversations._unsafe_create_turn_on_sandbox(attrs(c), c.sandbox.id, :unbounded)
@@ -210,12 +225,10 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
     conv =
       c.conv
-      |> Ecto.Changeset.change(
-        runtime: "codex",
-        agent_id: agent.id,
-        execution_limits: %{"wall_time_seconds" => 60}
-      )
+      |> Ecto.Changeset.change(runtime: "codex", agent_id: agent.id)
       |> Repo.update!()
+
+    save_allowance(conv.id, %{"wall_time_seconds" => 60})
 
     {pid, _transport, _ref, execution} = start_bounded(%{c | conv: conv})
 
@@ -264,9 +277,7 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
   end
 
   test "the independent transport deadline releases an actor waiting on its peer", c do
-    c.conv
-    |> Ecto.Changeset.change(execution_limits: %{"wall_time_seconds" => 3})
-    |> Repo.update!()
+    save_allowance(c.conv.id, %{"wall_time_seconds" => 3})
 
     {pid, _transport, _ref, execution} = start_bounded(c)
     # Leave initialize unanswered: the actor has no model output to wake it.
@@ -293,11 +304,38 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
     assert_receive :lifecycle_scheduled
   end
 
-  test "an old unbounded connection cannot create an autonomous turn under new limits", c do
-    assert {:error, :execution_fenced} =
-             Fountain.Conversations.Connection.open_autonomous_turn(c.conv.id, c.user.id)
+  test "an autonomous turn under an allowance is bounded, not refused", c do
+    # The original of this test asserted that any allowance refused autonomous
+    # work outright. That would turn one configured ceiling into "no schedules
+    # and no background follow-ups for this account", which is a product
+    # decision nothing had written down. Routing autonomous turns through the
+    # same admission gives them a journal and a deadline instead, so the
+    # coordinator can expire one exactly as it expires a prompted turn.
+    {turn, span, tracer} =
+      Fountain.Conversations.Connection.open_autonomous_turn(
+        c.conv.id,
+        c.user.id,
+        c.sandbox.id
+      )
 
-    assert Repo.aggregate(Turn, :count) == 0
+    assert turn.origin == "autonomous"
+    assert span
+    assert tracer
+
+    execution = ExecutionGuard._unsafe_for_turn(turn.id)
+    assert execution, "an autonomous turn under an allowance must be journalled"
+    assert execution.execution_limits == c.limits
+    assert DateTime.compare(execution.deadline_at, DateTime.add(turn.started_at, 60)) == :eq
+
+    # And the fence still holds against a second one.
+    assert {:error, :execution_fenced} =
+             Fountain.Conversations.Connection.open_autonomous_turn(
+               c.conv.id,
+               c.user.id,
+               c.sandbox.id
+             )
+
+    assert Repo.aggregate(Turn, :count) == 1
   end
 
   defp start_bounded(c) do

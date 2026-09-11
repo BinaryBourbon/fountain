@@ -18,9 +18,9 @@ defmodule Fountain.Conversations.TurnLaunch do
   require Logger
   require OpenTelemetry.Tracer
 
-  alias Fountain.Agents
   alias Fountain.Conversations
-  alias Fountain.Conversations.{CodexChatGPT, Connection, McpServers, Output, TurnMachine}
+  alias Fountain.Conversations.{CodexChatGPT, Connection, ExecutionLimits}
+  alias Fountain.Conversations.{McpServers, Output, TurnMachine}
 
   def run(state, conv, turn, prompt, agent, images, acp?, fail_before_start) do
     turn_number = turn.turn_number
@@ -99,8 +99,22 @@ defmodule Fountain.Conversations.TurnLaunch do
         ]
         |> then(&if cwd, do: Keyword.put(&1, :dir, cwd), else: &1)
 
-      case Connection.spawn_command(state, conv.runtime, cmd, args, spawn_opts) do
-        {:ok, command} ->
+      # A bounded turn goes through the supervised transport, which records
+      # spawn intent before any I/O and keeps stdin closed until the provider
+      # names its session (ADR 0046). Everything else keeps the legacy spawn.
+      spawn_result =
+        if state.turn_execution do
+          # ownership: admission registered this actor's turn against its
+          # persisted tenant and sandbox.
+          Connection._unsafe_spawn_bounded(state, conv.runtime, cmd, args, spawn_opts)
+        else
+          with {:ok, command} <-
+                 Connection.spawn_command(state, conv.runtime, cmd, args, spawn_opts),
+               do: {:ok, command, nil}
+        end
+
+      case spawn_result do
+        {:ok, command, transport} ->
           # write_stdin/2 is total by contract — a runtime that exits before
           # reading its prompt yields {:error, :command_exited} rather than
           # taking this server down (#603).
@@ -139,7 +153,9 @@ defmodule Fountain.Conversations.TurnLaunch do
                     model: TurnMachine.acp_model(conv, agent),
                     permission_policy: TurnMachine.effective_permission_policy(conv, agent),
                     auth:
-                      CodexChatGPT.peer_auth(state.runtime_module, state.inference_credentials)
+                      CodexChatGPT.peer_auth(state.runtime_module, state.inference_credentials),
+                    execution_transport: transport,
+                    execution_limits: bounded_sdk_limits(state, conv.runtime)
                   )
                 else
                   {nil, nil}
@@ -148,6 +164,7 @@ defmodule Fountain.Conversations.TurnLaunch do
               %{
                 state
                 | current_command: command,
+                  execution_transport: transport,
                   current_command_ref: command.ref,
                   current_turn: turn,
                   runtime_session_id: runtime_session_id,
@@ -187,7 +204,7 @@ defmodule Fountain.Conversations.TurnLaunch do
           end
 
         {:error, reason} ->
-          fail_before_start.(state, turn, reason, "spawn failed")
+          fail_before_start.(state, turn, reason, "spawn failed", nil, [])
       end
     after
       # The successful path keeps the span open until :exit; the error
@@ -205,4 +222,15 @@ defmodule Fountain.Conversations.TurnLaunch do
   # Called only from inside kick_turn's try block, which restores the caller's
   # previous current-span in its `after`; the span this ends is the turn span
   # kick_turn opened a few lines above the call.
+
+  # The SDK's own view of the allowance, from the frozen journal copy rather
+  # than from current policy: an in-flight turn keeps what it was admitted
+  # under. Nil for an unbounded turn, which asks the SDK for nothing.
+  defp bounded_sdk_limits(%{turn_execution: nil}, _runtime), do: nil
+
+  defp bounded_sdk_limits(state, runtime) do
+    options = ExecutionLimits.sdk_options(state.turn_execution.execution_limits)
+    {:ok, limits} = Managoat.Runtimes.ACP.execution_limits(runtime, options)
+    limits
+  end
 end
