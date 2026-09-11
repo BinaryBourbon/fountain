@@ -201,8 +201,9 @@ upgrade, is in
   carrying the request id and the chosen option, which wakes the sandbox. The
   wait is bounded by `_meta.fountain.timeout` on the request and by an
   `ask_timeout` in the permission policy, the shorter of the two, else the
-  existing 5 minute ceiling. An answer is refused, and the request kept, when
-  the conversation cannot take the turn that carries it.
+  existing 5 minute ceiling, and at most a year either way. An answer is
+  refused, and the request kept, when the conversation cannot take the turn
+  that carries it.
 
 ### Fixed
 

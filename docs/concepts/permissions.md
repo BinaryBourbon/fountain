@@ -159,6 +159,12 @@ Where the request and the policy both name one, the **shorter** wins. The
 request is written inside the sandbox and the policy belongs to the tenant, so
 an agent can bound its own wait and cannot extend the tenant's.
 
+An `ask_timeout` cannot be longer than a year. Fountain refuses a longer one
+when you save the agent or when you start the conversation. A database
+timestamp cannot hold a longer deadline. This is not a limit on how long a
+wait is useful. A per-request `_meta.fountain.timeout` above the same limit
+falls back to the policy, or to the 5 minute ceiling.
+
 A launch policy may shorten the agent's `ask_timeout` and may not lengthen it.
 Where the agent named none, the 5 minute ceiling is what a launch may only
 shorten. A longer wait is more time for somebody to approve the tool, so
