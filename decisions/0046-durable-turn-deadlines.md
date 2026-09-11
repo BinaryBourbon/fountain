@@ -164,6 +164,22 @@ explicit policy. Uncertainty must never be erased by transcript deletion — but
 it must not be permanent either, which is what the ageing exit above settles.
 The cutoff itself is the supervisor's to choose and is not fixed here.
 
+### Release refuses on a fact, not an inference
+
+Releasing a conversation refuses while a bounded execution is unresolved,
+because that is a durable fact and the journal row saying so would be dropped
+with the parent. It does **not** refuse on a `running` turn row when no server
+is alive: there, the row is as likely an orphan as a live turn — a deploy, a
+Horde rebalance or a plain `{:stop, :normal, _}` leaves one behind — and
+release is what an owner reaches for in exactly that state. Inferring "busy"
+from the row fenced the owner out of their own recovery with nothing able to
+un-fence it, which is the same failure as the permanent reset refusal above.
+A live server keeps the row authoritative and still refuses.
+
+The two refusals therefore say different things: `:busy` is a turn a live
+actor is running, and `:execution_fenced` is remote work Fountain cannot yet
+account for. The second has an age; the first ends on its own.
+
 ### The fence suppresses; it never rewrites
 
 A retired bounded turn's output events are not written and not broadcast:

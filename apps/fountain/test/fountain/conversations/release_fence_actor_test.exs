@@ -27,7 +27,7 @@ defmodule Fountain.Conversations.ReleaseFenceActorTest do
     key = Repo.get!(Fountain.Accounts.ApiKey, parent.callback_api_key_id)
     events = Conversations._unsafe_list_log_events(conv.id)
 
-    assert {:error, :busy} = GenServer.call(pid, :release_conv)
+    assert {:error, :execution_fenced} = GenServer.call(pid, :release_conv)
     assert :sys.get_state(pid) == before
     assert Conversations._unsafe_get_conversation!(conv.id) == parent
     assert Repo.reload!(key) == key
