@@ -275,4 +275,22 @@ describe("vault expiry metadata", () => {
     assert.equal(url.searchParams.get("sandbox_id"), "sandbox-id");
     assert.equal(url.searchParams.get("roots_only"), "true");
   });
+
+  test("setLabels merges through PATCH and returns the record", async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const fountain = new Fountain({
+      baseUrl: "https://fountain.test", apiKey: "fk_test",
+      fetch: async (url, init) => {
+        requests.push({ url, init });
+        return Response.json({ data: { id: "c1", labels: { env: "prod" } } });
+      },
+    });
+    const record = await fountain.resume("c1").setLabels({ env: "prod", drift: null });
+    assert.deepEqual(record.labels, { env: "prod" });
+    assert.equal(requests[0]!.init?.method, "PATCH");
+    assert.equal(new URL(requests[0]!.url).pathname, "/api/conversations/c1/labels");
+    assert.deepEqual(JSON.parse(String(requests[0]!.init?.body)), {
+      labels: { env: "prod", drift: null },
+    });
+  });
 });

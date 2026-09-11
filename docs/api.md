@@ -255,6 +255,48 @@ event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render runtime output; clients should not
 parse each runtime's native dialect.
 
+### Labels
+
+A label is a `key=value` pair of strings on a conversation. A program stamps
+its own runs with the facts it knew when the turn ended. Examples are
+`env=prod`, `drift=true` and `gated=apply`. Labels are not searched. Use them
+to slice a list.
+
+Set them at creation, and read them back on every conversation object.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"YOUR_AGENT_ID","labels":{"env":"prod"}}' \
+  "$FOUNTAIN_URL/api/conversations"
+```
+
+`PATCH /api/conversations/{id}/labels` merges labels into a conversation. A
+key the body does not name stays as it is. A key with a `null` value is
+removed.
+
+```bash
+curl --fail-with-body -X PATCH \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"labels":{"drift":"true","env":null}}' \
+  "$FOUNTAIN_URL/api/conversations/$CONVERSATION_ID/labels"
+```
+
+A conversation holds at most 32 labels. A key is at most 64 bytes and a value
+is at most 256 bytes. Neither can contain a NUL byte. A write that breaks one
+of these limits returns 422 and names the offending key under
+`errors.labels`. The count applies to the merged result, so a merge can fail
+against labels that are already there. The key named is one you sent, and
+never one that was already on the conversation.
+
+The account's own API key can label any of its conversations. A sandbox
+callback token can label only the conversation it was minted for. Another
+conversation returns 403 `sprite_may_not_label_another_conversation`. This
+applies to the labels route and to a `channel_id` resume, which merges the
+request's labels into the conversation it hands back.
+
 ### Workers without Fountain API access
 
 Set `sandbox_api_access` to `none` when the host must retain Fountain API

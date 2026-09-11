@@ -587,6 +587,13 @@ defmodule FountainWeb.Router do
       # The JSON read-model for the log feed; /stream below is the tail (#519).
       get "/events", ConversationController, :events, as: :events
       post "/read", ConversationController, :read, as: :read
+      # Labels (#1637). Not behind :require_full_scope on purpose: the point
+      # of the route is that a sandbox stamps its own conversation.
+      # `Conversations.set_conversation_labels/4` is what refuses a sandbox
+      # token naming a different one, and it is the door the team message and
+      # a channel resume write through as well — the two other places a
+      # request can change a conversation's labels.
+      patch "/labels", ConversationController, :labels, as: :labels
       # Answer a permission request the agent is blocked on (#940). Nested so
       # the conversation is tenant-scoped before the request id is looked at.
       post "/requests/:request_id", ConversationController, :answer_request, as: :answer_request

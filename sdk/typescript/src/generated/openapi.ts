@@ -1158,7 +1158,7 @@ export interface paths {
         put?: never;
         /**
          * Start a conversation
-         * @description Creates a sandbox + conversation pair, starts the runtime in a fresh sprite, and (if `prompt` is supplied) sends it as turn 1. With `channel_id`, resumes the latest live conversation already bound to that channel for the same agent and vault (200, `meta.resumed: true`) instead of opening a new one (201). Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.
+         * @description Creates a sandbox + conversation pair, starts the runtime in a fresh sprite, and (if `prompt` is supplied) sends it as turn 1. With `channel_id`, resumes the latest live conversation already bound to that channel for the same agent and vault (200, `meta.resumed: true`) instead of opening a new one (201). `labels` (#1637) are stamped on the new conversation; with `channel_id`, a resume merges them into the conversation it hands back, and a sandbox callback token resuming a conversation it was not minted for is refused with 403. Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.
          */
         post: operations["FountainWeb.ConversationController.create"];
         delete?: never;
@@ -1227,6 +1227,30 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{conversation_id}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set a conversation's labels
+         * @description Merges `labels` into the conversation's own (#1637). A key the body does not name is left alone, and a key whose value is `null` is removed, so a run can stamp one outcome without reading the rest first.
+         *
+         *     At most 32 labels survive the merge; a key is at most 64 bytes and a value at most 256 bytes. A 422 names the offending key.
+         *
+         *     The account's own key may label any of its conversations. A sandbox callback token may label **only the conversation it was minted for**; another id is refused with 403 `sprite_may_not_label_another_conversation`.
+         */
+        patch: operations["FountainWeb.ConversationController.labels"];
         trace?: never;
     };
     "/api/conversations/{conversation_id}/prompts": {
@@ -3499,6 +3523,10 @@ export interface components {
             id: string;
             /** Format: date-time */
             inserted_at?: string;
+            /** @description Free-form key/value strings on the conversation. A program stamps its own run with them (`env=prod`, `drift=true`) and `GET /api/conversations?label=env:prod` filters on them. At most 32 entries; a key is at most 64 bytes and a value at most 256 bytes. Always an object, empty when nothing set one. */
+            labels?: {
+                [key: string]: string;
+            };
             /**
              * Format: date-time
              * @description Most recent runtime output, falling back to creation time. Stage events (reconnects, sandbox lifecycle) do not count.
@@ -3556,6 +3584,10 @@ export interface components {
             fresh?: boolean | null;
             /** @description Optional images to attach to the initial prompt. */
             images?: components["schemas"]["ImageInput"][] | null;
+            /** @description Key/value strings to stamp on the conversation. At most 32 entries; a key is at most 64 bytes and a value at most 256 bytes, and a 422 names the offending key under `errors.labels`. With channel_id, a resume merges these into the conversation it hands back rather than dropping them. */
+            labels?: {
+                [key: string]: string;
+            } | null;
             /** @description Per-launch permission override (#939). Keys are matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); "default" covers the rest. Prefer a kind: claude titles a tool call with the command it is about to run, so a title matches one invocation only. Merged with the agent's own policy, taking the stricter of the two. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped, and one the runtime never consults is refused with 422 permission_policy_unenforceable. */
             permission_policy?: {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
@@ -3586,6 +3618,16 @@ export interface components {
              * @description Optional vault whose secrets override the environment's baseline at sprite spawn. Must satisfy the agent's allowed_vault_ids when that allowlist is set.
              */
             vault_id?: string | null;
+        };
+        /**
+         * ConversationLabelsRequest
+         * @description Labels to merge into a conversation. A key not named is left alone; a key whose value is null is removed.
+         */
+        ConversationLabelsRequest: {
+            /** @description The pairs to merge. null removes a key. At most 32 entries survive the merge; a key is at most 64 bytes and a value at most 256 bytes. A 422 names the offending key under `errors.labels`. */
+            labels: {
+                [key: string]: string | null;
+            };
         };
         /** ConversationListResponse */
         ConversationListResponse: {
@@ -10229,7 +10271,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Forbidden */
+            /** @description A sandbox token labelling the conversation a resume landed on */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10534,6 +10576,87 @@ export interface operations {
             };
             /** @description Sandbox or fleet unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConversationController.labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Labels */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConversationLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A sandbox token labelling another conversation */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No acceptable representation */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description Invalid labels */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnprocessableEntityError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
