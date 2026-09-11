@@ -93,8 +93,14 @@ defmodule Fountain.Accounts.Deletion do
 
   defp do_delete_user(user, opts) do
     delete_owned_principals(user, opts)
-    sprites = destroy_sprites(user)
 
+    with sprites when is_integer(sprites) <-
+           destroy_sprites(user, Keyword.put_new(opts, :reason, "account_deleted")) do
+      delete_user_row(user, sprites, opts)
+    end
+  end
+
+  defp delete_user_row(user, sprites, opts) do
     Audit.record(%{
       user_id: user.id,
       action: "account.deleted",
@@ -154,7 +160,10 @@ defmodule Fountain.Accounts.Deletion do
   @doc """
   Stop every sandbox a tenant is running, and return how many sprites were
   destroyed. Refuses an enclosing database transaction before stopping actors
-  or calling a provider.
+  or calling a provider. Known machines are admission-fenced before actor
+  shutdown; machines found afterward are fenced before provider deletion.
+  Forced cleanup may interrupt already-admitted turns. Options carry actor,
+  request_ip and a reason for the committed teardown request.
 
   Ask a live ConversationServer to tear itself down where one exists, so the
   sprite goes through the same path as a user-initiated terminate. Otherwise
@@ -165,18 +174,35 @@ defmodule Fountain.Accounts.Deletion do
   keeps the rows. Duplicating this would be duplicating the part that costs
   money when it is wrong.
   """
-  @spec destroy_sprites(User.t() | binary()) :: non_neg_integer() | {:error, term()}
-  def destroy_sprites(%User{id: user_id}), do: destroy_sprites(user_id)
+  @spec destroy_sprites(User.t() | binary(), keyword()) :: non_neg_integer() | {:error, term()}
+  def destroy_sprites(user, opts \\ [])
+  def destroy_sprites(%User{id: user_id}, opts), do: destroy_sprites(user_id, opts)
 
-  def destroy_sprites(user_id) when is_binary(user_id) do
+  def destroy_sprites(user_id, opts) when is_binary(user_id) do
     if Repo.in_transaction?() do
       {:error, :provider_transaction_open}
     else
-      do_destroy_sprites(user_id)
+      opts = Keyword.put_new(opts, :reason, "compute_stopped")
+
+      with :ok <- fence_sprites(user_id, opts) do
+        do_destroy_sprites(user_id, opts)
+      end
     end
   end
 
-  defp do_destroy_sprites(user_id) do
+  defp fence_sprites(user_id, opts) do
+    # ownership: live_sandboxes/1 scopes every row to this caller-owned user_id.
+    user_id
+    |> live_sandboxes()
+    |> Enum.reduce_while(:ok, fn sandbox, :ok ->
+      case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+        {:ok, _} -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp do_destroy_sprites(user_id, opts) do
     conv_ids =
       Conversations.list_conversations(user_id)
       |> Enum.filter(&(ConversationServer.whereis(&1.id) != nil))
@@ -194,10 +220,29 @@ defmodule Fountain.Accounts.Deletion do
       end
     end)
 
+    # Actors may have retired a row or created another machine while stopping.
+    # Re-read and fence each remaining row before touching its provider.
+    # ownership: live_sandboxes/1 scopes these fresh rows to the same user_id.
+    user_id
+    |> live_sandboxes()
+    |> Enum.reduce_while(0, fn sandbox, count ->
+      case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+        {:ok, %{status: status} = fenced} when status in @non_terminal ->
+          {:cont, count + if(destroy_sprite(fenced), do: 1, else: 0)}
+
+        {:ok, _retired} ->
+          {:cont, count}
+
+        {:error, _} = error ->
+          {:halt, error}
+      end
+    end)
+  end
+
+  defp live_sandboxes(user_id) do
     Sandbox
     |> where([s], s.user_id == ^user_id and s.status in ^@non_terminal)
     |> Repo.all()
-    |> Enum.count(&destroy_sprite/1)
   end
 
   defp destroy_sprite(%Sandbox{sprite_name: name} = sandbox) when is_binary(name) do
