@@ -74,15 +74,13 @@ def updated_ruleset(current, merge_queue=False):
             rule = {"type": "merge_queue"}
             result["rules"].append(rule)
         rule["parameters"] = dict(MERGE_QUEUE)
-        # A review requirement no solo-authored PR can satisfy is not a gate,
-        # it is a detour: every merge here became `gh pr merge --admin`, and an
-        # admin merge skips the queue. Requiring zero approvals is what the
-        # repository already does in practice, and it is the difference between
-        # a queue every PR goes through and a queue nothing goes through. The
-        # `pull_request` rule itself stays, so main still takes no direct push.
-        review = next((r for r in result["rules"] if r["type"] == "pull_request"), None)
-        if review is not None:
-            review["parameters"]["required_approving_review_count"] = 0
+        # The review requirement is deliberately NOT touched here. A queue
+        # answers "does this tree build", which is a different question from
+        # "did anyone read it", and on a repository where most PRs are written
+        # by agents the second question is the one worth keeping. The cost is
+        # that an approval has to come from somewhere before a PR can be
+        # queued at all: GitHub will not enqueue a PR whose merge requirements
+        # are unmet, so an unreviewed PR simply never enters.
     return result
 
 

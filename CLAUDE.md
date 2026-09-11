@@ -461,7 +461,14 @@ would produce before letting it in.
 gh pr merge <N> --squash --auto     # queue it; the queue merges when green
 ```
 
-What that changes, in practice:
+**A PR still needs an approving review to get in.** GitHub refuses to enqueue a
+PR whose merge requirements are unmet, so an unreviewed PR does not fail —
+it never enters, and `--auto` sits there looking like the queue is broken. If a
+PR seems stuck, check `gh pr view <N> --json reviewDecision` before you check
+anything else. Approval is a human's to give; never manufacture one from a
+second account to get a PR moving.
+
+What else changes, in practice:
 
 - **Nothing needs rebasing to be mergeable.** The up-to-date requirement is
   off, because the queue tests the merge result directly rather than asking a

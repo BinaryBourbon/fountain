@@ -53,17 +53,18 @@ class RequiredChecksTest(unittest.TestCase):
         checks = next(r for r in result["rules"] if r["type"] == "required_status_checks")
         self.assertFalse(checks["parameters"]["strict_required_status_checks_policy"])
 
-    def test_merge_queue_stops_requiring_a_review_nobody_can_give(self):
-        """Otherwise every merge stays `--admin`, which skips the queue.
+    def test_merge_queue_leaves_the_review_requirement_alone(self):
+        """Turning the queue on must not quietly relax who has to read a PR.
 
-        The pull_request rule survives at zero approvals, so main still
-        refuses a direct push.
+        The queue decides whether a tree builds. Whether a human looked at it
+        is a separate gate, and enabling one is not a reason to drop the other.
         """
-        result = module.updated_ruleset(self.current(), merge_queue=True)
-        review = next(r for r in result["rules"] if r["type"] == "pull_request")
-        self.assertEqual(review["parameters"]["required_approving_review_count"], 0)
-        self.assertEqual(module.updated_ruleset(self.current())["rules"][1]["parameters"]
-                         ["required_approving_review_count"], 1)
+        for merge_queue in (False, True):
+            result = module.updated_ruleset(self.current(), merge_queue=merge_queue)
+            review = next(r for r in result["rules"] if r["type"] == "pull_request")
+            with self.subTest(merge_queue=merge_queue):
+                self.assertEqual(review["parameters"], next(
+                    r for r in self.current()["rules"] if r["type"] == "pull_request")["parameters"])
 
     def test_merge_queue_is_idempotent_and_keeps_required_checks(self):
         once = module.updated_ruleset(self.current(), merge_queue=True)

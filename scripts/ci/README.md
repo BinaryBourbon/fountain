@@ -35,6 +35,11 @@ because the queue supersedes it: instead of asking a PR to prove it was rebased
 recently, the queue builds the exact tree the merge will produce and merges
 only if that passes.
 
+It deliberately does **not** touch the review requirement. A PR still needs its
+approving review before GitHub will enqueue it at all — an unreviewed PR does
+not fail, it simply never enters the queue, which is worth knowing before
+debugging a `--auto` that appears to do nothing.
+
 ```sh
 python3 scripts/ci/require-checks.py --merge-queue    # preview
 python3 scripts/ci/require-checks.py --merge-queue --apply

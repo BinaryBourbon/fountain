@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "A merge queue tests what it merges"
-description: "Main takes ~26 merges a day and half land a tree no CI run ever tested; a GitHub merge queue builds the merge result before it merges, and the review requirement drops to zero because it was bypassed on every solo merge anyway."
+description: "Main takes ~26 merges a day and half land a tree no CI run ever tested; a GitHub merge queue builds the merge result before it merges. The up-to-date requirement comes off because the queue supersedes it; the review requirement stays, so a PR needs an approval before it can be queued at all."
 tags: [ci, process, github]
 status: stable
 adr: "0050"
@@ -66,17 +66,27 @@ throughput by batching up to five PRs into that group instead, because
 speculating two groups deep cannot run two groups on a 20-job ceiling — it
 queues the second behind the first while starving every open PR.
 
-Two rules come off, and each was already off in practice:
+**One rule comes off: the up-to-date requirement.** It was an approximation of
+"tested against what it will merge into", and the queue tests that directly.
+Keeping both only forces rebases to prove what the queue is about to prove
+properly.
 
-- **The up-to-date requirement**, because it was an approximation of "tested
-  against what it will merge into" and the queue tests that directly. Keeping
-  both only forces rebases to prove what the queue is about to prove properly.
-- **The review requirement**, from 1 approving review to 0. A solo-authored PR
-  could never satisfy it, so every merge here was `gh pr merge --admin` — and
-  an admin merge skips the queue. A review requirement that is bypassed on
-  every merge is not a gate, and leaving it on is the difference between a
-  queue every PR goes through and a queue nothing goes through. The
-  `pull_request` rule itself stays, so main still refuses a direct push.
+**The review requirement stays at one approval**, and this was reconsidered
+deliberately. Dropping it to zero is tempting because the arithmetic favours
+it: a solo-authored PR cannot satisfy it, so merges here became
+`gh pr merge --admin`, and an admin merge skips the queue — which makes the
+queue look inert. But the two gates answer different questions. The queue
+answers *does this tree build*. Review answers *did anyone read it*, and on a
+repository where most PRs are written by agents that is the question worth
+keeping. Turning on a machine that checks the first is not a reason to stop
+asking the second.
+
+The cost is real and is accepted: an approval has to come from somewhere before
+a PR can be queued at all, because GitHub will not enqueue a PR whose merge
+requirements are unmet. An unreviewed PR does not fail — it simply never
+enters. On this repository that means a human approving from the second
+account, and `--admin` remains available for a genuine emergency, where it
+still skips the queue and still says so in the PR.
 
 ## Consequences
 
@@ -112,9 +122,12 @@ in *Things NOT to do*.
 - **Rebase before merging, no queue** — the cheap version of the same lever,
   and it was the standing advice before this. It depends on remembering, it
   does not survive a burst of agent-opened PRs, and it cannot batch.
-- **Keep the review requirement and queue only reviewed PRs** — leaves a
-  permanent `--admin` path for hand-authored PRs, so the queue covers part of
-  the traffic and main still takes untested trees from the rest.
+- **Drop the review requirement to zero** — considered and rejected. It buys
+  the tidier story (every PR reaches the queue, no `--admin` anywhere) by
+  deleting the only gate that asks whether a human read the change, which is
+  the wrong one to delete on a repository this agent-heavy. Requiring an
+  approval means some PRs wait on one; that is the intended behavior, not a
+  defect to engineer around.
 - **A smaller PR run, full suite only in the queue** — the mature pattern, and
   the right answer if CI spend becomes the binding constraint. It trades away
   PR feedback quality, which is the thing agents working here depend on most.
