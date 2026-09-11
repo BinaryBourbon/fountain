@@ -40,6 +40,17 @@ defmodule Fountain.OpsGauges do
         Fountain.Conversations.Sandbox.statuses()
       )
 
+      # Waiting and claimed only, for the same reason the Oban states above
+      # exclude `completed`: the terminal statuses are history rows, so a
+      # `last_value` over them only ever climbs and says nothing about queue
+      # health now. Outcomes are counted as they happen, on
+      # `[:fountain, :sandbox_queue, :completed]`.
+      emit_status_counts(
+        [:fountain, :sandbox_queue, :requests],
+        Fountain.SandboxQueue.Request,
+        Fountain.SandboxQueue.Request.active_statuses()
+      )
+
       emit_sandbox_provider_counts()
       emit_oban_depths()
     end)
@@ -76,9 +87,18 @@ defmodule Fountain.OpsGauges do
     end
   end
 
+  # Scoped to the statuses asked for, which is a no-op for a caller passing its
+  # schema's whole list and the difference between a full-table group-by and an
+  # index read for one passing a subset. This runs every ten seconds.
   defp emit_status_counts(event, schema, statuses) do
     counts =
-      Repo.all(from(r in schema, group_by: r.status, select: {r.status, count(r.id)}))
+      Repo.all(
+        from(r in schema,
+          where: r.status in ^statuses,
+          group_by: r.status,
+          select: {r.status, count(r.id)}
+        )
+      )
       |> Map.new()
 
     for status <- statuses do
