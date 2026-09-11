@@ -107,6 +107,22 @@ upgrade, is in
   The consent page's `form-action` header now names the one redirect origin
   this request asked for rather than every registered client's.
 
+- **A start that meets a capacity ceiling can wait instead of failing**
+  (#1033, `decisions/0042`). Set `queue: true` on `POST /api/conversations`:
+  at the tenant sandbox cap or the fleet ceiling, Fountain answers `202` with
+  a sandbox request and its position rather than `429` or `503`, and starts
+  the conversation when a slot frees. Callers that do not ask keep the error
+  they handle today. A teammate schedule's cron firing uses the queue on its
+  own, because nobody is there to retry it; the page's and the API's "Run
+  now" still gets the refusal. `GET /api/sandbox-queue`,
+  `GET /api/sandbox-queue/:id` and `DELETE /api/sandbox-queue/:id` list, read
+  and cancel that work. The queue delays the cap and never raises it: ten
+  requests per tenant (`SANDBOX_QUEUE_MAX_DEPTH`), one hour each
+  (`SANDBOX_QUEUE_MAX_WAIT_SECONDS`), every replay back through the same
+  reservation, credit and inference gates, and a full queue keeps the
+  immediate error. Starts carrying images or naming a `sandbox_id` never
+  queue.
+
 - **An `acp` runtime launches a named command, so a deterministic program can
   run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
   `runtime_command` field carries the command it runs. The field is required

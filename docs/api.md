@@ -295,6 +295,26 @@ event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render runtime output; clients should not
 parse each runtime's native dialect.
 
+### Wait for capacity
+
+A start can reach the tenant sandbox cap or the fleet ceiling. Fountain then
+answers `429` or `503`. Set `queue: true` to wait instead. Fountain answers
+`202` with a sandbox request and its one-based `position`. The request becomes
+a conversation when capacity is free.
+
+`GET /api/sandbox-queue` lists your requests in position order.
+`GET /api/sandbox-queue/{id}` reports the status of one request. It carries
+`conversation_id` after the start. `DELETE /api/sandbox-queue/{id}` cancels a
+request that still has the `queued` status.
+
+Each tenant holds ten requests at once. A request waits one hour at most. A
+full queue keeps the immediate `429` or `503` answer. A start with images does
+not wait. A start with an explicit `sandbox_id` does not wait. A queued start
+must pass the credit gate and the inference gate again.
+
+A teammate schedule uses the queue without the flag. No person is present
+when its cron fires, so Fountain must not lose the run.
+
 ### Labels
 
 A label is a `key=value` pair of strings on a conversation. A program stamps

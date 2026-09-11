@@ -26,8 +26,9 @@ Here is the scheduled work. All times are UTC.
 | Schedule | Job | What it does |
 |---|---|---|
 | Each hour at :07 | The sandbox reaper. | Reconciles the sandbox rows against sprites.dev. It frees a row stuck mid-provision, expires an abandoned sandbox, destroys a sprite whose row is already terminal, and reports an untracked sprite. |
-| 04:23 daily | The retention pruner. | Deletes a row past its retention. Log events and Stripe events go after 90 days, audit events after 365, usage events after 400, and a revoked API key after 30. |
+| 04:23 daily | The retention pruner. | Deletes a row past its retention. Log events and Stripe events go after 90 days, audit events after 365, and usage events after 400. A revoked API key or a finished sandbox request goes after 30. |
 | 05:41 daily | The unverified-account pruner. | Deletes an account that never verified its email, after 30 days, through the full deletion path. That covers sprites and audit. |
+| Each 5 minutes | The sandbox queue drainer. | Replays work that waits for sandbox capacity, and expires a request past its wait bound. A freed sandbox slot drains the queue at once; this run is the backstop. |
 | Each 10 minutes | The credit pricer. | Burns each closed turn and each priced message into the credit ledger, and sweeps each expired grant. |
 | 06:23 daily | The credit expirer. | Sweeps each expired grant. It is a backstop for the pricer. |
 | 06:47 daily | The rent collector. | Charges a month of rent for each teammate number and inbox on its anniversary, sends the reminders, and releases a contact after seven unpaid days. |
