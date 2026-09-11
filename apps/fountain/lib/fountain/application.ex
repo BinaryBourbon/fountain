@@ -35,6 +35,12 @@ defmodule Fountain.Application do
     # The proxy's request-log handler. Attached here rather than from
     # `children/0` so that function stays a pure reading of the configuration,
     # which is what pins its order in `application_children_test.exs`.
+    #
+    # This condition and the one in `broker_children/0` are the same question
+    # asked twice, and they have to stay in step: a listener started without
+    # this handler attached would proxy correctly and write no
+    # `broker_requests` row, so `/api/conversations/:id/egress` would go quiet
+    # with nothing failing anywhere. Change one, change the other.
     if Fountain.Broker.backend() == :native, do: Fountain.Broker.Native.attach_telemetry()
 
     opts = [strategy: :one_for_one, name: Fountain.Supervisor]
@@ -76,28 +82,30 @@ defmodule Fountain.Application do
       {Ecto.Migrator,
        repos: Application.fetch_env!(:fountain, :ecto_repos),
        skip: skip_migrations?(),
-       migrator: &Fountain.Migrations.run/3},
-      {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Fountain.PubSub},
-      # Fire-and-forget work started from a request and never awaited: the
-      # `last_used_at` stamp on an API key, the password-reset email. These
-      # used to be `Task.async`, which *links* to the caller — so a transient
-      # failure in a write nobody wants the result of could take down the
-      # request process that started it, or the test that made the request
-      # (#1040). Supervised and unlinked, a crash here is a log line.
-      {Task.Supervisor, name: Fountain.TaskSupervisor},
-      Fountain.PlatformChatGPT.Refresher,
-      FountainWeb.Plugs.RateLimit.Sweeper,
-      Fountain.Conversations.Redaction,
-      Fountain.FeatureFlags.Cache,
-      Fountain.Analytics.Sink,
-      Fountain.Team.Comms.Inbound.Seen,
-      # Extensions may add cron entries (ADR 0043, #1507). Core-only, this is
-      # the configured options untouched; nothing in config names a worker
-      # module the release might not carry.
-      {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
+       migrator: &Fountain.Migrations.run/3}
     ] ++
       broker_children() ++
+      [
+        {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: Fountain.PubSub},
+        # Fire-and-forget work started from a request and never awaited: the
+        # `last_used_at` stamp on an API key, the password-reset email. These
+        # used to be `Task.async`, which *links* to the caller — so a transient
+        # failure in a write nobody wants the result of could take down the
+        # request process that started it, or the test that made the request
+        # (#1040). Supervised and unlinked, a crash here is a log line.
+        {Task.Supervisor, name: Fountain.TaskSupervisor},
+        Fountain.PlatformChatGPT.Refresher,
+        FountainWeb.Plugs.RateLimit.Sweeper,
+        Fountain.Conversations.Redaction,
+        Fountain.FeatureFlags.Cache,
+        Fountain.Analytics.Sink,
+        Fountain.Team.Comms.Inbound.Seen,
+        # Extensions may add cron entries (ADR 0043, #1507). Core-only, this is
+        # the configured options untouched; nothing in config names a worker
+        # module the release might not carry.
+        {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
+      ] ++
       cluster_children(cluster_topologies) ++
       [
         # Horde.Registry + Horde.DynamicSupervisor are CRDT-backed
@@ -139,11 +147,23 @@ defmodule Fountain.Application do
   # BROKER_LISTEN_PORT selects it; on Agent Vault or with brokerage off, no
   # process here exists. The writer it casts rows to starts first, so no
   # request finds it missing; `start/2` attaches the telemetry handler that
-  # does the casting before any of this starts.
+  # does the casting before any of this starts, on the same `backend/0` test
+  # as this one. The two must stay in step — see the note there for what a
+  # divergence costs.
   #
-  # Where these sit in `children/0` is not cosmetic: after `Fountain.Repo`,
-  # which is the only thing they need, and before everything that can ask the
-  # proxy to broker. They sat *after* `FountainWeb.Endpoint` until #1726, and
+  # Where these sit in `children/0` is not cosmetic: third, straight after
+  # `Fountain.Repo` and `Ecto.Migrator`, which between them are everything the
+  # listener needs — the repo its session store and request log read and
+  # write, and the migration that created their tables. `listener_spec/0`
+  # reads three application-environment keys and nothing else;
+  # `Managoat.Broker.init/1` builds an ETS certificate cache, a
+  # `:persistent_term` entry and a ThousandIsland child spec;
+  # `RequestLog.init/1` returns a static map and reaches the repo only when it
+  # flushes. None of them touches PubSub, Oban, Horde or the endpoint, so
+  # nothing is skipped by starting this early.
+  #
+  # Being third puts them **last but two** to stop, which is the point. They
+  # sat *after* `FountainWeb.Endpoint` until #1726, and
   # reverse termination meant the listener stopped **first** on every
   # rollout — the endpoint went on serving, and the conversation servers
   # under `Fountain.ConversationSupervisor` went on reattaching, for the
@@ -152,6 +172,13 @@ defmodule Fountain.Application do
   # replacement appeared: draining, not starting. Readiness cannot close that
   # end, because a terminating pod does not get to re-advertise itself
   # unready in time. Ordering can, and it closes the starting end too.
+  #
+  # Oban is the same trap one layer down, which is why these moved above it
+  # rather than merely above the endpoint. A job that runs in the tail of a
+  # drain would otherwise meet a listener that had already stopped. No worker
+  # under `lib/fountain/workers/` launches or provisions today, so nothing
+  # meets it — but "nothing meets it today" is exactly what the reattach case
+  # looked like before anyone traced it.
   #
   # The starting end matters to CI as well as to kubelet. All three `probe()`
   # helpers that curl `/health/ready` (two in ci.yml, one in

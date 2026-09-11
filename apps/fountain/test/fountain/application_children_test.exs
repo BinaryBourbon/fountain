@@ -13,6 +13,10 @@ defmodule Fountain.ApplicationChildrenTest do
   had already gone, each one failing with `:listener_down`. The failures
   looked like a startup race and were a shutdown one.
 
+  So these assertions are about the *draining* end, read backwards: each
+  "starts before X" is really "outlives X". The listener is third in the
+  list, after only the repo and the migrator, which is everything it needs.
+
   `async: false`: the broker children exist only when `:broker_listen_port` is
   set, which is application environment.
   """
@@ -42,6 +46,22 @@ defmodule Fountain.ApplicationChildrenTest do
       assert before?(ids, Managoat.Broker, Horde.DynamicSupervisor)
     end
 
+    test "the listener starts before Oban, so it outlives every job" do
+      # The same trap one layer down from the endpoint. Reverse termination
+      # would otherwise stop the listener while jobs still ran in the tail of
+      # a drain. Nothing under lib/fountain/workers/ launches or provisions
+      # today; this is here so that stays a choice rather than an accident.
+      ids = ids()
+
+      assert before?(ids, Managoat.Broker, Oban)
+    end
+
+    test "the migrator starts before the broker, so its tables exist" do
+      ids = ids()
+
+      assert before?(ids, Ecto.Migrator, Fountain.Broker.Native.RequestLog)
+    end
+
     test "the request-log writer starts before the listener" do
       # A row cast at the first proxied request must find a writer.
       ids = ids()
@@ -49,7 +69,9 @@ defmodule Fountain.ApplicationChildrenTest do
       assert before?(ids, Fountain.Broker.Native.RequestLog, Managoat.Broker)
     end
 
-    test "the repo starts before the broker, which is all the broker needs" do
+    test "the repo starts before the broker" do
+      # The session store and the request log both read and write it, and it
+      # is the only process either of them needs.
       ids = ids()
 
       assert before?(ids, Fountain.Repo, Fountain.Broker.Native.RequestLog)
