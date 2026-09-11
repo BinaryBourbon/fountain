@@ -202,6 +202,22 @@ defmodule Fountain.OAuth do
   end
 
   @doc """
+  The one redirect origin the consent response's `form-action` may name.
+
+  Derived from the request's validated `redirect_uri` rather than from the
+  registration, because a loopback client's port varies legally (RFC 8252):
+  a header naming the registered port would have Chrome block a redirect the
+  server had already approved.
+  """
+  @spec form_action_origins(String.t()) :: [String.t()]
+  def form_action_origins(redirect_uri) do
+    case Client.origin_of(redirect_uri) do
+      nil -> []
+      origin -> [origin]
+    end
+  end
+
+  @doc """
   Revoke the token (an API key) presented by an app that is signing out.
 
   Fountain's own, not the library's: the library never learns what a token
