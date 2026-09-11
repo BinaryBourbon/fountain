@@ -71,9 +71,10 @@ tested it.
 
 ### Sizing
 
-`MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full CI
-run now has 24 jobs, compared with the documented limit of 20 concurrent
-runners. The queue builds one group at a time and batches up to five PRs. Revisit
+`MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full mixed
+PR runs 25 jobs; a full merge group runs 26 because both probes run. The
+documented limit is 20 concurrent runners. The queue builds one group at a
+time and batches up to five PRs. Revisit
 `max_entries_to_build` when the concurrency limit changes.
 
 ## SDK jobs
@@ -89,7 +90,10 @@ tests, compilation, contract and conformance checks on Python 3.9 and 3.13.
 These cover the package minimum and newest declared runtime. Both legs must
 pass; a failure does not cancel the other leg. The TypeScript job owns
 installation, type checks, tests, builds, browser bundling, contract and
-conformance checks. These three extracted jobs lint fixtures before their
+conformance checks on Node 20.19.0 and 24. The minimum runtime runs compiled
+JavaScript from the same test sources in a temporary fixture tree. Node 24
+retains native TypeScript tests. Both legs build the SDK and browser bundle.
+These three extracted jobs lint fixtures before their
 tests. Swift retains its separate conformance test step.
 `CI required` requires every selected SDK job. A failed, cancelled or
 unexpectedly skipped job fails the gate. Main runs all SDKs unless a verified

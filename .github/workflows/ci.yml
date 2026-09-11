@@ -954,7 +954,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_conformance.py" -v
 
   typescript-sdk:
-    name: TypeScript SDK
+    name: TypeScript SDK (${{ matrix.node }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
@@ -964,20 +964,24 @@ jobs:
     permissions:
       contents: read
 
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20.19.0", "24"]
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
       - name: SDK conformance scenarios are well formed
         run: python3 sdk/conformance/lint.py
 
-      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
-      # directly, so `npm test` needs nothing but the dev dependency on tsc —
-      # which is also what enforces `erasableSyntaxOnly`, the setting that
-      # keeps those sources runnable without a build step.
+      # Node 24 runs the TypeScript test sources directly. The minimum
+      # runtime runs JavaScript compiled from those same tests. Both legs
+      # typecheck, build and verify the SDK contract and browser bundle.
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
 
@@ -1006,7 +1010,13 @@ jobs:
         working-directory: sdk/typescript
         run: npm run typecheck
 
+      - name: SDK tests on the minimum runtime
+        if: ${{ matrix.node == '20.19.0' }}
+        working-directory: sdk/typescript
+        run: node scripts/test-compiled.mjs
+
       - name: SDK tests
+        if: ${{ matrix.node == '24' }}
         working-directory: sdk/typescript
         run: npm test
 
@@ -1024,7 +1034,13 @@ jobs:
         working-directory: sdk/typescript
         run: npm run verify-contract
 
+      - name: TypeScript SDK conformance on the minimum runtime
+        if: ${{ matrix.node == '20.19.0' }}
+        working-directory: sdk/typescript
+        run: node scripts/test-compiled.mjs --conformance
+
       - name: TypeScript SDK conformance
+        if: ${{ matrix.node == '24' }}
         working-directory: sdk/typescript
         run: npm run conformance
 
