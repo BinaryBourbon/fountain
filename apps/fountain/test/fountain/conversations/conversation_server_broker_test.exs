@@ -178,6 +178,122 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       end
     end
 
+    for initial <- ["ready", "suspended"], terminal <- ["terminated", "failed"] do
+      @tag initial: initial, terminal: terminal
+      test "retirement during #{initial} wake preserves #{terminal} and the replacement", %{
+        user: user,
+        conv: conv,
+        sandbox: sandbox,
+        initial: initial,
+        terminal: terminal
+      } do
+        configure_broker([user.id])
+        {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: initial})
+        test = self()
+
+        stub(Fountain.Broker, :prepare, fn id, secrets, bindings, opts ->
+          {:ok, session} = Fountain.Broker.Native.prepare(id, secrets, bindings, opts)
+          send(test, {:original_token, session.token})
+          {:ok, session}
+        end)
+
+        stub(Fountain.Conversations.Provisioning, :prepare_runtime_sprite, fn _h,
+                                                                              _r,
+                                                                              _m,
+                                                                              _a,
+                                                                              _e ->
+          send(test, {:wake_paused, self()})
+          receive do: (:resume_wake -> :ok)
+        end)
+
+        reject(Managoat.Sandbox.Sprites, :destroy, 1)
+        reject(Managoat.Sandbox.Sprites, :list_sessions, 1)
+        reject(Managoat.Sandbox.Sprites, :spawn, 4)
+
+        {:ok, pid} =
+          GenServer.start(ConversationServer,
+            conversation_id: conv.id,
+            sandbox_id: sandbox.id,
+            runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+          )
+
+        ref = Process.monitor(pid)
+        on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+        assert_receive {:wake_paused, ^pid}, 5_000
+        assert_receive {:original_token, original}
+        callback_id = Fountain.Repo.reload!(conv).callback_api_key_id
+        assert is_binary(callback_id)
+
+        {:ok, retired} = Conversations.update_sandbox(sandbox, %{status: terminal})
+
+        replacement =
+          insert_sandbox(user_id: user.id, status: "ready", sprite_name: "replacement")
+
+        {:ok, _} = Conversations.update_conversation(conv, %{sandbox_id: replacement.id})
+
+        {:ok, replacement_session} =
+          Fountain.Broker.Native.prepare(conv.id, %{}, %{}, user_id: user.id)
+
+        ConversationServer.queue_initial_prompt(pid, "must never run")
+        send(pid, :resume_wake)
+
+        assert :normal = assert_stopped(ref, 5_000)
+        assert Fountain.Repo.reload!(sandbox).status == terminal
+        assert Fountain.Repo.reload!(sandbox).terminated_at == retired.terminated_at
+        assert Fountain.Repo.reload!(conv).sandbox_id == replacement.id
+        assert Fountain.Repo.reload!(conv).status == "idle"
+        assert Fountain.Repo.reload!(replacement).status == "ready"
+        assert :error = Fountain.Broker.Native.Sessions.lookup(original)
+        assert {:ok, _} = Fountain.Broker.Native.Sessions.lookup(replacement_session.token)
+        assert Fountain.Repo.get(Fountain.Accounts.ApiKey, callback_id).revoked_at
+        refute Enum.any?(stage_events(conv.id, "reattach"), &(&1.state == "done"))
+      end
+    end
+
+    for initial <- ["ready", "suspended"] do
+      test "an ordinary #{initial} wake succeeds and preserves the lifetime rule", %{
+        conv: conv,
+        sandbox: sandbox
+      } do
+        resumed = DateTime.add(DateTime.utc_now(), -600) |> DateTime.truncate(:second)
+
+        {:ok, _} =
+          Conversations.update_sandbox(sandbox, %{
+            status: unquote(initial),
+            last_resumed_at: resumed
+          })
+
+        {pid, _ref, :alive} = start_server(conv)
+        on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+        current = Fountain.Repo.reload!(sandbox)
+        assert current.status == "ready"
+
+        if unquote(initial) == "ready",
+          do: assert(current.last_resumed_at == resumed),
+          else: assert(DateTime.compare(current.last_resumed_at, resumed) == :gt)
+
+        assert Enum.any?(stage_events(conv.id, "reattach"), &(&1.state == "done"))
+      end
+    end
+
+    test "an unrelated ready-write rejection is not treated as retirement", %{
+      conv: conv,
+      sandbox: sandbox
+    } do
+      rejection =
+        {:error,
+         Ecto.Changeset.change(sandbox) |> Ecto.Changeset.add_error(:status, "other failure")}
+
+      stub(Conversations, :update_sandbox, fn _row, _attrs -> rejection end)
+
+      {_pid, ref, :stopped} = start_server(conv)
+      assert {%MatchError{term: ^rejection}, _stack} = assert_stopped(ref)
+      assert Fountain.Repo.reload!(sandbox).status == "ready"
+      assert Fountain.Repo.reload!(conv).status == "idle"
+      refute Enum.any?(stage_events(conv.id, "reattach"), &(&1.state == "done"))
+    end
+
     test "a removed tenant gets its limited environment policy back", %{conv: conv, env: env} do
       configure_broker(["someone-else"])
 
