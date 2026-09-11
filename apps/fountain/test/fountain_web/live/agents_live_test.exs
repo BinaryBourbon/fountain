@@ -257,7 +257,7 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       refute html =~ "credential on this account yet"
 
       view
-      |> form("form", %{
+      |> form("#agent-form", %{
         "agent" => %{
           "name" => "converger",
           "runtime" => "acp",
@@ -273,7 +273,7 @@ defmodule FountainWeb.AgentsLive.IndexTest do
     end
 
     test "switching an acp agent onto a model runtime drops the command", %{conn: conn} do
-      user = with_credential(insert_verified_user())
+      user = insert_verified_user()
 
       agent =
         insert_agent(user_id: user.id, runtime: "acp", runtime_command: "chant acp")
@@ -341,18 +341,6 @@ defmodule FountainWeb.AgentsLive.IndexTest do
   end
 
   describe "permission policy (#939)" do
-    # The form renders a credential card, as its own nested <form>, when the
-    # account holds no key for the model's provider. Nested forms truncate the
-    # outer one for LiveViewTest, so a submit test needs the key on file.
-    defp with_credential(user) do
-      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
-
-      {:ok, _} =
-        Fountain.InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant-x")
-
-      user
-    end
-
     test "the form shows what answers before the agent runs a tool", %{conn: conn} do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id, permission_policy: %{"default" => "ask"})
@@ -368,14 +356,14 @@ defmodule FountainWeb.AgentsLive.IndexTest do
     end
 
     test "saving stores the default and the per-kind overrides", %{conn: conn} do
-      user = with_credential(insert_verified_user())
+      user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
       conn = login_user(conn, user)
 
       {:ok, view, _html} = live(conn, ~p"/agents/#{agent.id}/edit")
 
       view
-      |> form("form", %{
+      |> form("#agent-form", %{
         "agent" => %{
           "name" => agent.name,
           "model" => agent.model,
@@ -394,14 +382,14 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       # Every agent predates this field. Saving an unrelated edit must not
       # start writing `%{"default" => "auto_allow"}` into rows that had `%{}`,
       # which would read as a policy someone chose.
-      user = with_credential(insert_verified_user())
+      user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
       conn = login_user(conn, user)
 
       {:ok, view, _html} = live(conn, ~p"/agents/#{agent.id}/edit")
 
       view
-      |> form("form", %{
+      |> form("#agent-form", %{
         "agent" => %{
           "name" => "renamed",
           "model" => agent.model,
@@ -551,7 +539,7 @@ defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
       assert html =~ "me@example.com (google)"
 
       view
-      |> form("form", %{
+      |> form("#agent-form", %{
         "agent" => %{
           "name" => agent.name,
           "model" => agent.model,
@@ -573,7 +561,7 @@ defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
       assert html =~ "me@example.com (google)"
 
       view
-      |> form("form", %{
+      |> form("#agent-form", %{
         "agent" => %{"name" => agent.name, "model" => agent.model, "runtime" => agent.runtime}
       })
       |> render_submit()
@@ -592,12 +580,77 @@ defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
       assert html =~ "kept as is"
 
       view
-      |> form("form", %{
+      |> form("#agent-form", %{
         "agent" => %{"name" => "renamed", "model" => agent.model, "runtime" => agent.runtime}
       })
       |> render_submit()
 
       assert Fountain.Agents.get_agent(agent.id, user.id).mcp_servers == %{"remote" => remote}
     end
+  end
+end
+
+defmodule FountainWeb.AgentsLive.FreshAccountTest do
+  # This test enables two instance-level sandbox providers so the selector
+  # participates in the browser form; other suites read the same config.
+  use FountainWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+
+  test "credential validation preserves a fresh account's complete agent form", %{conn: conn} do
+    adapter = Managoat.Sandbox.Sprites
+    previous = Application.get_env(:managoat_sandbox, adapter, [])
+    runners = Application.get_env(:fountain, :runners_enabled)
+    Application.put_env(:fountain, :runners_enabled, true)
+    on_exit(fn -> Application.put_env(:fountain, :runners_enabled, runners) end)
+
+    Application.put_env(
+      :managoat_sandbox,
+      adapter,
+      Keyword.put(previous, :token, "test-provider")
+    )
+
+    on_exit(fn -> Application.put_env(:managoat_sandbox, adapter, previous) end)
+
+    user = insert_verified_user()
+    conn = login_user(conn, user)
+    {:ok, view, html} = live(conn, ~p"/agents/new")
+    assert html =~ "credential on this account yet"
+
+    assert has_element?(
+             view,
+             ~s(form[phx-submit=submit] select[name="agent[sandbox_provider]"])
+           )
+
+    refute has_element?(view, "form form")
+    model = hd(Fountain.Agents.ModelCatalog.suggestions("codex"))
+
+    params = %{
+      "name" => "fresh-form-regression",
+      "description" => "Keep this description",
+      "system" => "Keep this prompt",
+      "runtime" => "codex",
+      "model" => model,
+      "sandbox_provider" => "runner"
+    }
+
+    view |> form("form[phx-submit=submit]", %{"agent" => params}) |> render_change()
+
+    assert view
+           |> form("form[phx-submit=save_credential]", %{"value" => ""})
+           |> render_submit() =~ "Paste a value before saving."
+
+    assert has_element?(view, ~s(input[name="agent[name]"][value="fresh-form-regression"]))
+    assert has_element?(view, ~s(input[name="agent[model]"][value="#{model}"]))
+    assert Fountain.Agents.get_agent_by_name(params["name"], user.id) == nil
+
+    view |> form("form[phx-submit=submit]", %{"agent" => params}) |> render_submit()
+    agent = Fountain.Agents.get_agent_by_name(params["name"], user.id)
+    assert agent.runtime == "codex"
+    assert agent.model == model
+    assert agent.sandbox_provider == "runner"
+    assert agent.description == params["description"]
+    assert agent.system == params["system"]
+    assert Fountain.InferenceCredentials.missing_for_model(user.id, model) != nil
   end
 end
