@@ -7,6 +7,13 @@ defmodule FountainWeb.ConversationJSON do
   def show(%{conversation: conv, resumed: resumed?}),
     do: %{data: data(conv), meta: %{resumed: resumed?}}
 
+  # Requests that outlived a turn (#1635). Served on `show` only: the
+  # conversation is idle while one waits, so a client that reloads has
+  # nowhere else to learn the card is still up, and a list of conversations
+  # would pay a query per row for something almost always empty.
+  def show(%{conversation: conv, pending_requests: requests}),
+    do: %{data: Map.put(data(conv), :pending_requests, Enum.map(requests, &request_data/1))}
+
   def show(%{conversation: conv}), do: %{data: data(conv)}
   def turns(%{turns: turns}), do: %{data: Enum.map(turns, &turn_data/1)}
 
@@ -77,6 +84,19 @@ defmodule FountainWeb.ConversationJSON do
       usage_total: %{input: c.usage_input_tokens || 0, output: c.usage_output_tokens || 0},
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
+    }
+  end
+
+  defp request_data(request) do
+    %{
+      request_id: request.request_id,
+      tool: request.tool,
+      # The agent's own option list, verbatim. Answer with an id from it and
+      # never with one from another runtime.
+      options: request.options,
+      asked_at: request.asked_at,
+      deadline: request.deadline,
+      turn_id: request.turn_id
     }
   end
 
@@ -183,6 +203,10 @@ defmodule FountainWeb.ConversationJSON do
       status: t.status,
       # `user` or `autonomous` (#817); rows from before the column read as user.
       origin: t.origin || "user",
+      # The turn ended with a permission request still open (#1635). The
+      # request is on GET /api/conversations/{id} as `pending_requests` until
+      # somebody answers it or its deadline passes.
+      waiting: t.waiting == true,
       exit_code: t.exit_code,
       started_at: t.started_at,
       ended_at: t.ended_at,

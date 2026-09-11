@@ -6286,7 +6286,17 @@
             "ref": "PermissionAnswerResponse"
           }
         },
+        "400": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "402": {
           "application/json": {
             "ref": "Error"
           }
@@ -10491,6 +10501,13 @@
           "required": false,
           "type": "string"
         },
+        "pending_requests": {
+          "items": {
+            "ref": "PendingPermissionRequest"
+          },
+          "required": false,
+          "type": "array"
+        },
         "permission_policy": {
           "additionalProperties": {
             "oneOf": [
@@ -11780,6 +11797,45 @@
         },
         "token": {
           "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PendingPermissionRequest": {
+      "properties": {
+        "asked_at": {
+          "format": "date-time",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "deadline": {
+          "format": "date-time",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "required": true,
+          "type": "array"
+        },
+        "request_id": {
+          "required": true,
+          "type": "string"
+        },
+        "tool": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "turn_id": {
+          "format": "uuid",
+          "required": false,
           "type": "string"
         }
       },
@@ -13706,6 +13762,10 @@
             }
           ],
           "required": false
+        },
+        "waiting": {
+          "required": false,
+          "type": "boolean"
         }
       },
       "type": "object"
