@@ -36,6 +36,18 @@ defmodule Fountain.Health do
     readiness probe can help with. The check is skipped where
     `BROKER_LISTEN_PORT` is unset, so a deployment with brokerage off keeps
     exactly the probe it had.
+
+    Two things this check is honest about. Mid-ratchet — `BROKER_TENANTS`
+    naming a few ids rather than `*` (ADR 0019 §9) — it is stricter than it
+    has to be: a pod with no listener could still serve the tenants that are
+    not brokered, and this pulls it out of rotation for all of them. The gate
+    is `BROKER_LISTEN_PORT` because that is what decides whether a listener
+    exists at all, and no load balancer can sort brokered traffic from
+    unbrokered anyway. And it closes only the **starting** end. A pod whose
+    listener stops while it drains cannot re-advertise itself unready in
+    time; what closes that end is the listener's position in
+    `Fountain.Application.children/0`, ahead of everything that can ask it to
+    broker, and the two fixes landed together.
   """
 
   require Logger
@@ -91,10 +103,13 @@ defmodule Fountain.Health do
   `Managoat.Broker.running?/0` is a `Process.whereis/1` and a
   `Process.alive?/1`, microseconds with no socket and no pool behind them.
   This check therefore adds nothing to the probe's worst case, and the
-  `timeoutSeconds` sized for a dead Postgres still covers it. The rescue is
-  cheap insurance for a backend that ever does more: a raise here would
-  render 500 from a public endpoint, which reads as a broken app rather than
-  an unready one.
+  `timeoutSeconds` sized for a dead Postgres still covers it.
+
+  The `rescue` and `catch` below bound a **raise or an exit, not slowness** —
+  a raise here would render 500 from a public endpoint, which reads as a
+  broken app rather than an unready one. They are not a substitute for a
+  timeout. A backend that could block needs a real bound added here, and
+  `@check_opts` is the shape it should take.
   """
   @spec broker_listener() :: :ok | :error
   def broker_listener do

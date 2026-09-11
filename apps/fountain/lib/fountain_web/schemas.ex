@@ -2418,7 +2418,7 @@ defmodule FountainWeb.Schemas do
           type: :object,
           description: "Per-dependency result. `ok` or `error`, with no further detail.",
           additionalProperties: %Schema{type: :string, enum: ["ok", "error"]},
-          example: %{"database" => "ok"}
+          example: %{"database" => "ok", "broker_listener" => "ok"}
         }
       },
       required: [:status, :checks]

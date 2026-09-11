@@ -32,78 +32,14 @@ defmodule Fountain.Application do
     # one returns and stops it before this one goes away.
     Fountain.Extensions.validate!()
 
-    cluster_topologies = Application.get_env(:libcluster, :topologies, [])
-
-    children =
-      [
-        FountainWeb.Telemetry,
-        Fountain.Repo,
-        # Migrates over the one ordered path set (ADR 0043, #1506): core first,
-        # then every installed extension's. `:migrator` is Ecto's own hook for
-        # exactly this; without it the child would run `Ecto.Migrator.run/3`,
-        # which hard-codes the single core path and would silently skip an
-        # extension's migrations on every boot.
-        {Ecto.Migrator,
-         repos: Application.fetch_env!(:fountain, :ecto_repos),
-         skip: skip_migrations?(),
-         migrator: &Fountain.Migrations.run/3},
-        {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: Fountain.PubSub},
-        # Fire-and-forget work started from a request and never awaited: the
-        # `last_used_at` stamp on an API key, the password-reset email. These
-        # used to be `Task.async`, which *links* to the caller — so a transient
-        # failure in a write nobody wants the result of could take down the
-        # request process that started it, or the test that made the request
-        # (#1040). Supervised and unlinked, a crash here is a log line.
-        {Task.Supervisor, name: Fountain.TaskSupervisor},
-        Fountain.PlatformChatGPT.Refresher,
-        FountainWeb.Plugs.RateLimit.Sweeper,
-        Fountain.Conversations.Redaction,
-        Fountain.FeatureFlags.Cache,
-        Fountain.Analytics.Sink,
-        Fountain.Team.Comms.Inbound.Seen,
-        # Extensions may add cron entries (ADR 0043, #1507). Core-only, this is
-        # the configured options untouched; nothing in config names a worker
-        # module the release might not carry.
-        {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
-      ] ++
-        cluster_children(cluster_topologies) ++
-        [
-          # Horde.Registry + Horde.DynamicSupervisor are CRDT-backed
-          # cluster-aware replacements. Single-node behavior is
-          # unchanged; on multiple nodes they sync state and let
-          # processes be addressed across the cluster.
-          {Horde.Registry, [name: Fountain.ConversationRegistry, keys: :unique, members: :auto]},
-          {Horde.DynamicSupervisor,
-           [
-             name: Fountain.ConversationSupervisor,
-             strategy: :one_for_one,
-             distribution_strategy: Horde.UniformDistribution,
-             members: :auto,
-             # Explicit, and sized to the fleet: the default (3 restarts in
-             # 5s) is a budget SHARED by every ConversationServer on the
-             # node — one child that crashes deterministically on start
-             # exhausts it in under a second, and exceeding it terminates
-             # this supervisor and with it every running conversation here.
-             # 100/10s tolerates a correlated transient burst (a Sprites
-             # outage failing many provisions at once) while still stopping
-             # a genuine infinite loop. The known deterministic crash paths
-             # (rows deleted before handle_continue(:provision)) are also
-             # guarded in the server itself.
-             max_restarts: 100,
-             max_seconds: 10
-           ]},
-          # Self-hosted runner sockets (ADR 0022): a `fountain runner` daemon
-          # dials in and its connection process registers here under the
-          # runner id (Fountain.Runners.Host), so `Managoat.Runner.Adapter`
-          # on any node can reach it.
-          {Horde.Registry, [name: Fountain.RunnerRegistry, keys: :unique, members: :auto]},
-          FountainWeb.Endpoint
-        ] ++ broker_children()
+    # The proxy's request-log handler. Attached here rather than from
+    # `children/0` so that function stays a pure reading of the configuration,
+    # which is what pins its order in `application_children_test.exs`.
+    if Fountain.Broker.backend() == :native, do: Fountain.Broker.Native.attach_telemetry()
 
     opts = [strategy: :one_for_one, name: Fountain.Supervisor]
 
-    case Supervisor.start_link(children, opts) do
+    case Supervisor.start_link(children(), opts) do
       {:ok, sup} ->
         # Rehydrate ConversationServers for non-terminal conversations whose
         # sprite was fully provisioned at the last clean stop. Done in a
@@ -118,14 +54,114 @@ defmodule Fountain.Application do
     end
   end
 
+  # The supervision tree, in start order. A `:one_for_one` supervisor
+  # terminates in reverse, so this one list decides two separate things: what
+  # is up before the endpoint serves its first request, and what is still up
+  # while the endpoint drains its last.
+  #
+  # Public for the test that pins both ends of that order; not part of the
+  # app's API.
+  @doc false
+  def children do
+    cluster_topologies = Application.get_env(:libcluster, :topologies, [])
+
+    [
+      FountainWeb.Telemetry,
+      Fountain.Repo,
+      # Migrates over the one ordered path set (ADR 0043, #1506): core first,
+      # then every installed extension's. `:migrator` is Ecto's own hook for
+      # exactly this; without it the child would run `Ecto.Migrator.run/3`,
+      # which hard-codes the single core path and would silently skip an
+      # extension's migrations on every boot.
+      {Ecto.Migrator,
+       repos: Application.fetch_env!(:fountain, :ecto_repos),
+       skip: skip_migrations?(),
+       migrator: &Fountain.Migrations.run/3},
+      {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
+      {Phoenix.PubSub, name: Fountain.PubSub},
+      # Fire-and-forget work started from a request and never awaited: the
+      # `last_used_at` stamp on an API key, the password-reset email. These
+      # used to be `Task.async`, which *links* to the caller — so a transient
+      # failure in a write nobody wants the result of could take down the
+      # request process that started it, or the test that made the request
+      # (#1040). Supervised and unlinked, a crash here is a log line.
+      {Task.Supervisor, name: Fountain.TaskSupervisor},
+      Fountain.PlatformChatGPT.Refresher,
+      FountainWeb.Plugs.RateLimit.Sweeper,
+      Fountain.Conversations.Redaction,
+      Fountain.FeatureFlags.Cache,
+      Fountain.Analytics.Sink,
+      Fountain.Team.Comms.Inbound.Seen,
+      # Extensions may add cron entries (ADR 0043, #1507). Core-only, this is
+      # the configured options untouched; nothing in config names a worker
+      # module the release might not carry.
+      {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
+    ] ++
+      broker_children() ++
+      cluster_children(cluster_topologies) ++
+      [
+        # Horde.Registry + Horde.DynamicSupervisor are CRDT-backed
+        # cluster-aware replacements. Single-node behavior is
+        # unchanged; on multiple nodes they sync state and let
+        # processes be addressed across the cluster.
+        {Horde.Registry, [name: Fountain.ConversationRegistry, keys: :unique, members: :auto]},
+        {Horde.DynamicSupervisor,
+         [
+           name: Fountain.ConversationSupervisor,
+           strategy: :one_for_one,
+           distribution_strategy: Horde.UniformDistribution,
+           members: :auto,
+           # Explicit, and sized to the fleet: the default (3 restarts in
+           # 5s) is a budget SHARED by every ConversationServer on the
+           # node — one child that crashes deterministically on start
+           # exhausts it in under a second, and exceeding it terminates
+           # this supervisor and with it every running conversation here.
+           # 100/10s tolerates a correlated transient burst (a Sprites
+           # outage failing many provisions at once) while still stopping
+           # a genuine infinite loop. The known deterministic crash paths
+           # (rows deleted before handle_continue(:provision)) are also
+           # guarded in the server itself.
+           max_restarts: 100,
+           max_seconds: 10
+         ]},
+        # Self-hosted runner sockets (ADR 0022): a `fountain runner` daemon
+        # dials in and its connection process registers here under the
+        # runner id (Fountain.Runners.Host), so `Managoat.Runner.Adapter`
+        # on any node can reach it.
+        {Horde.Registry, [name: Fountain.RunnerRegistry, keys: :unique, members: :auto]},
+        # Last, and it has to stay last: it starts only once everything it can
+        # reach is up, and it stops before any of that goes away.
+        FountainWeb.Endpoint
+      ]
+  end
+
   # The native egress proxy (ADR 0019, #1340) listens only when
   # BROKER_LISTEN_PORT selects it; on Agent Vault or with brokerage off, no
-  # process here exists. Its request log is a telemetry handler attached
-  # before the listener takes a connection, and the writer it casts rows to
-  # starts first so no request finds it missing.
+  # process here exists. The writer it casts rows to starts first, so no
+  # request finds it missing; `start/2` attaches the telemetry handler that
+  # does the casting before any of this starts.
+  #
+  # Where these sit in `children/0` is not cosmetic: after `Fountain.Repo`,
+  # which is the only thing they need, and before everything that can ask the
+  # proxy to broker. They sat *after* `FountainWeb.Endpoint` until #1726, and
+  # reverse termination meant the listener stopped **first** on every
+  # rollout — the endpoint went on serving, and the conversation servers
+  # under `Fountain.ConversationSupervisor` went on reattaching, for the
+  # whole termination grace period, each one failing with `:listener_down`.
+  # One pod nine minutes into its life failed 41 seconds after its
+  # replacement appeared: draining, not starting. Readiness cannot close that
+  # end, because a terminating pod does not get to re-advertise itself
+  # unready in time. Ordering can, and it closes the starting end too.
+  #
+  # The starting end matters to CI as well as to kubelet. All three `probe()`
+  # helpers that curl `/health/ready` (two in ci.yml, one in
+  # scripts/compose-boot-check.sh) treat the first non-200 as a verdict and
+  # do not retry it, so a fixture that ever sets BROKER_LISTEN_PORT would
+  # fail the build on a transient 503. Started here, the listener is up
+  # before the endpoint answers at all, so there is no transient 503 to
+  # catch. No fixture sets it today.
   defp broker_children do
     if Fountain.Broker.backend() == :native do
-      Fountain.Broker.Native.attach_telemetry()
       [Fountain.Broker.Native.RequestLog, Fountain.Broker.Native.listener_spec()]
     else
       []
