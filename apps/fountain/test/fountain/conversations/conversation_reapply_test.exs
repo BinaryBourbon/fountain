@@ -108,20 +108,38 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       assert_received {:refreshed, id, revision}
       assert id == ctx.conv.id
       assert revision == updated.configuration_revision
+
+      # A server that took the selection gets `done`; the pair to the `failed`
+      # case below, which is the same committed row with a machine behind it.
+      [stage] =
+        Conversations._unsafe_list_log_events(ctx.conv.id)
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "configuration"))
+
+      assert stage.state == "done"
     end
 
-    test "a refresh that fails is the answer, not a footnote", ctx do
+    test "a machine that has not caught up is an event, not a failed call", ctx do
       Mimic.expect(Fountain.Conversations.ConversationServer, :refresh_configuration, fn _, _ ->
         {:error, :conversation_busy}
       end)
 
-      assert {:error, :conversation_busy} = Conversations.reapply_conversation(ctx.conv, %{})
+      # The commit already happened, so the caller is not told it did not.
+      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert updated.configuration_revision == 1
 
-      # No successful lifecycle event over a server that never reloaded.
-      refute Enum.any?(
-               Conversations._unsafe_list_log_events(ctx.conv.id),
-               &(&1.stage == "configuration")
-             )
+      # The part the previous shape of this test never looked at: the row moved
+      # while the call reported an error, which is what made the error a lie.
+      reread = Conversations._unsafe_get_conversation!(ctx.conv.id)
+      assert reread.configuration_revision == 1
+      assert reread.vault_id == updated.vault_id
+
+      # No `done` over a server that never reloaded. `failed` says the
+      # selection stands and the machine is behind, which is the true state.
+      [stage] =
+        Conversations._unsafe_list_log_events(ctx.conv.id)
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "configuration"))
+
+      assert stage.state == "failed"
     end
 
     test "audits the change, naming the fields that moved", ctx do

@@ -384,13 +384,23 @@ defmodule Fountain.Conversations.ConversationServer do
   loaded that selection answer without doing the work again, which is what a
   notification arriving after the server reloaded on its own looks like. See
   `Fountain.Conversations.Reapply`.
+
+  `:ok` means no live server is left holding the previous selection, which
+  includes the case where there is no server at all.
   """
   def refresh_configuration(conv_id, revision \\ nil) do
     case whereis(conv_id) do
       nil -> :ok
-      pid -> call_server(pid, {:refresh_configuration, revision})
+      pid -> settled(call_server(pid, {:refresh_configuration, revision}))
     end
   end
+
+  # A server that has gone away is the `whereis/1` miss above observed a few
+  # microseconds later: nothing is left holding the previous selection, and the
+  # next wake builds from the row. Reporting it as a failure would hand the
+  # caller an error for a selection that is already committed.
+  defp settled({:error, :not_running}), do: :ok
+  defp settled(other), do: other
 
   # Records a lifecycle action against the conversation's owner.
   #

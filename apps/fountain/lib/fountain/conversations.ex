@@ -1181,6 +1181,20 @@ defmodule Fountain.Conversations do
   `{:error, {:rebuild_required, field}}` rather than silently applied or
   silently ignored. `Fountain.Conversations.Reapply` owns that rule and says
   why for each field.
+
+  ## What `{:ok, conv}` promises
+
+  That the selection is committed, and that no turn can open against the
+  previous one: `configuration_revision` moved, and turn admission compares it
+  with the revision the live server loaded.
+
+  It does not promise the running machine has already been reconfigured. A
+  server is told after the commit, and it can be mid-provision or gone by then.
+  Neither loses the change — the next wake builds from the row — so neither is
+  a failure of this call, and reporting one would hand the caller an error for
+  a selection that is already committed. The `configuration` stage event says
+  which of the two happened: `done` when a machine is configured now, `failed`
+  when it is selected and the machine has yet to catch up.
   """
   @spec reapply_conversation(Conversation.t(), map(), keyword()) ::
           {:ok, Conversation.t()} | {:error, term()}
@@ -1198,6 +1212,8 @@ defmodule Fountain.Conversations do
                do: do_reapply_conversation(current, attrs),
                else: {:error, :provisioning}
            end) do
+      metadata = reapply_metadata(previous, updated)
+
       # Outside the transaction: a failed audit insert would abort the
       # enclosing one and take the reapply with it.
       Audit.record(%{
@@ -1207,35 +1223,70 @@ defmodule Fountain.Conversations do
         resource_id: updated.id,
         actor: Keyword.get(opts, :actor, "self"),
         request_ip: Keyword.get(opts, :request_ip),
-        metadata: reapply_metadata(previous, updated)
+        metadata: metadata
       })
 
       broadcast_sidebar_update(updated.user_id)
-
-      # A refresh that fails is the answer, not a footnote: publishing a
-      # successful lifecycle event over a server that never reloaded would
-      # tell every follower the machine is configured when it is not.
-      with :ok <-
-             Fountain.Conversations.ConversationServer.refresh_configuration(
-               updated.id,
-               updated.configuration_revision
-             ) do
-        metadata = reapply_metadata(previous, updated)
-
-        publish_stage(updated.id, "configuration", "done", %{
-          event: "reapplied",
-          previous: metadata["previous"],
-          current: metadata["current"],
-          changed_fields: metadata["changed_fields"],
-          message:
-            "The configuration was reapplied on this machine. The transcript and the " <>
-              "files on disk are kept; the next prompt starts a new runtime session."
-        })
-
-        {:ok, updated}
-      end
+      announce_reapply(updated, metadata)
+      {:ok, updated}
     end
   end
+
+  # The selection is committed by the time this runs, so it is not in doubt and
+  # the caller is not told otherwise. What is still in doubt is whether the
+  # machine running now has read it, and that gets an event of its own rather
+  # than a `done` that would tell every follower the machine is configured when
+  # it is not.
+  defp announce_reapply(conv, metadata) do
+    common = %{
+      event: "reapplied",
+      previous: metadata["previous"],
+      current: metadata["current"],
+      changed_fields: metadata["changed_fields"]
+    }
+
+    case Fountain.Conversations.ConversationServer.refresh_configuration(
+           conv.id,
+           conv.configuration_revision
+         ) do
+      :ok ->
+        publish_stage(
+          conv.id,
+          "configuration",
+          "done",
+          Map.put(
+            common,
+            :message,
+            "The configuration was reapplied on this machine. The transcript and the " <>
+              "files on disk are kept; the next prompt starts a new runtime session."
+          )
+        )
+
+      # Total on purpose. This runs after the commit, so an unexpected shape
+      # here must become an event rather than a CaseClauseError that 500s a
+      # reapply which already happened.
+      other ->
+        publish_stage(
+          conv.id,
+          "configuration",
+          "failed",
+          common
+          |> Map.put(:reason, refresh_reason(other))
+          |> Map.put(
+            :message,
+            "The configuration is selected, but the machine it is running on has not " <>
+              "read it yet. It is applied when this conversation next wakes, and no " <>
+              "turn can run against the previous selection in the meantime."
+          )
+        )
+    end
+
+    :ok
+  end
+
+  defp refresh_reason({:error, reason}), do: refresh_reason(reason)
+  defp refresh_reason(reason) when is_atom(reason) or is_binary(reason), do: to_string(reason)
+  defp refresh_reason(other), do: inspect(other)
 
   defp do_reapply_conversation(conv, attrs) do
     agent_id = reapply_value(attrs, "agent_id", conv.agent_id)
