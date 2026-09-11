@@ -329,4 +329,32 @@ defmodule Fountain.Conversations.ConversationServerAcpRuntimeTest do
       assert is_nil(:sys.get_state(pid).current_turn.pending_permission)
     end
   end
+
+  describe "an agent deleted under a live conversation" do
+    test "refuses the turn rather than spawning nothing" do
+      user = insert_verified_user()
+      agent = acp_agent(user)
+      conv = insert_conversation(agent: agent, user_id: user.id)
+
+      # Deleting an agent nilifies its conversations' pointer, and the command
+      # lived on the agent. Every other runtime resolves its argv from a table
+      # and carries on; this one has nothing left to run.
+      {:ok, _} = Fountain.Agents.delete_agent(agent)
+
+      {pid, _ref} = start_acp_turn(conv)
+
+      # No turn row, the way a sandbox at capacity opens none, and a stage
+      # event on the feed saying why.
+      assert [] = Conversations._unsafe_list_turns(conv.id)
+      refute_receive {:spawned, _cmd, _args, _opts}, 200
+
+      stage =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.find(&(&1.kind == "stage" and &1.stage == "turn" and &1.state == "failed"))
+
+      assert stage.data =~ "no_runtime_command"
+      assert Process.alive?(pid)
+    end
+  end
 end
