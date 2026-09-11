@@ -392,7 +392,17 @@ defmodule Fountain.Conversations.TurnParentTest do
   test "session preparation and a late pre-start failure cannot change a successor", c do
     {next, _} = successor(c)
     assert {:error, :execution_fenced} = TurnMachine.session_plan(c.turn, nil)
-    assert :ok = TurnMachine.fail_before_start(c.turn, c.conv.id, "spawn", "late failure", 1)
+
+    assert :ok =
+             TurnMachine.fail_before_start(
+               c.turn,
+               c.conv.id,
+               c.conv.sandbox_id,
+               "spawn",
+               "late failure",
+               1
+             )
+
     assert Repo.get!(Conversation, c.conv.id).status == "running"
     assert Repo.get!(Conversation, c.conv.id).runtime_session_id == "original-session"
     assert Repo.get!(Turn, next.id).status == "running"
