@@ -43,6 +43,30 @@ defmodule Fountain.Credits.InferenceTest do
     })
   end
 
+  # Turns carrying the #1685 turn-start stamp and nothing else, in bulk: the
+  # page-boundary test needs more of them than the pricer's page holds.
+  defp stamp_only_turns(conv, count) do
+    at = ~U[2026-08-02 10:00:00Z]
+    stamp = %{"inference" => "platform", "model" => "anthropic/claude-opus-5"}
+
+    rows =
+      for n <- 1..count do
+        %{
+          id: Ecto.UUID.generate(),
+          conversation_id: conv.id,
+          turn_number: n,
+          prompt: "stamped",
+          status: "failed",
+          started_at: at,
+          ended_at: at,
+          usage: stamp,
+          inserted_at: at
+        }
+      end
+
+    Repo.insert_all(Fountain.Conversations.Turn, rows)
+  end
+
   defp conv_for(user, provider \\ "sprites") do
     sandbox = insert_sandbox(user_id: user.id, provider: provider, status: "ready")
     insert_conversation(user_id: user.id, sandbox: sandbox)
@@ -237,6 +261,48 @@ defmodule Fountain.Credits.InferenceTest do
 
       assert %{inference: 0} = CreditPricer.run(since: @since, now: @now)
       assert Credits.list_entries(user.id) == []
+    end
+
+    test "a turn carrying only the turn-start stamp burns nothing" do
+      user = insert_empty_user()
+      conv = conv_for(user)
+
+      # #1685: the stamp says whose key ran the turn, and no token figure was
+      # ever reported for it. What a turn with unknown tokens should cost is
+      # an open decision, so for now it costs nothing.
+      platform_turn(conv, %{"inference" => "platform", "model" => "anthropic/claude-opus-5"})
+
+      assert %{inference: 0} = CreditPricer.run(since: @since, now: @now)
+      assert Credits.list_entries(user.id) == []
+    end
+
+    test "a full page of stamp-only turns does not starve the priceable turn behind them" do
+      user = insert_empty_user()
+      conv = conv_for(user)
+
+      # One more than the pricer's page, every one of them older than the
+      # turn that can be priced. The pass stops on a page that wrote nothing,
+      # so a selector that admitted these would never reach the last turn —
+      # and in production they outnumber the answered turns ten to one.
+      stamp_only_turns(conv, 501)
+
+      turn =
+        platform_turn(
+          conv,
+          %{
+            "inference" => "platform",
+            "model" => "anthropic/claude-opus-5",
+            "input" => 10_000_000
+          },
+          started_at: ~U[2026-08-02 18:00:00Z]
+        )
+
+      assert %{inference: 1} = CreditPricer.run(since: @since, now: @now)
+
+      assert [entry] =
+               user.id |> Credits.list_entries() |> Enum.filter(&(&1.reason == "burn_inference"))
+
+      assert entry.resource_id == turn.id
     end
 
     test "an open turn is not priced until it closes" do

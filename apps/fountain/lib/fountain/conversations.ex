@@ -1802,11 +1802,25 @@ defmodule Fountain.Conversations do
   differs per runtime (a per-call delta, a thread total, a per-step figure).
   A second call for the same turn would double-count the conversation, so
   it refuses when the turn already carries a usage.
+
+  The one usage map that is not an end-of-turn record is the turn-start
+  inference stamp (#1685): it carries no token figure, so it has counted
+  towards nothing and there is nothing to double. This write merges over it
+  — the stamp's keys are the two `TurnMachine.with_inference/2` writes here
+  as well, so a turn that answers its prompt ends with the map it would have
+  carried with no stamp at all.
   """
   def _unsafe_record_turn_usage(%Turn{}, nil), do: :ok
-  def _unsafe_record_turn_usage(%Turn{usage: %{}}, _usage), do: {:error, :already_recorded}
 
-  def _unsafe_record_turn_usage(%Turn{} = turn, %{} = usage) do
+  def _unsafe_record_turn_usage(%Turn{usage: %{} = recorded} = turn, %{} = usage) do
+    if Turn.inference_stamp_only?(recorded),
+      do: write_turn_usage(turn, Map.merge(recorded, usage)),
+      else: {:error, :already_recorded}
+  end
+
+  def _unsafe_record_turn_usage(%Turn{} = turn, %{} = usage), do: write_turn_usage(turn, usage)
+
+  defp write_turn_usage(%Turn{} = turn, %{} = usage) do
     # `usage` is whatever the runtime reported. The map is stored as it came,
     # but the counters it increments are bigints: a string or an object here
     # used to raise inside the transaction and take the turn's usage

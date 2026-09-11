@@ -252,7 +252,7 @@ defmodule Fountain.Conversations.TurnMachine do
     end
   end
 
-  def handle(%__MODULE__{} = turn, {:model_selected, requested, effective, source}, _ctx) do
+  def handle(%__MODULE__{} = turn, {:model_selected, requested, effective, source}, ctx) do
     selection = %{
       requested_model: requested,
       effective_model: effective,
@@ -260,7 +260,9 @@ defmodule Fountain.Conversations.TurnMachine do
       status: "selected"
     }
 
-    turn = record_model_selection(turn, selection)
+    # The only report that precedes a prompt going out, so the only one that
+    # stamps (#1685).
+    turn = record_model_selection(turn, selection, inference_stamp(turn.row, ctx))
 
     publish_stage(
       turn.conversation_id,
@@ -290,7 +292,10 @@ defmodule Fountain.Conversations.TurnMachine do
       error: message
     }
 
-    turn = record_model_selection(turn, selection)
+    # No inference stamp: every peer source of this report is in
+    # `phase: :setting_model`, strictly before `send_prompt/1`, so the turn
+    # spent nothing — as the message above says.
+    turn = record_model_selection(turn, selection, %{})
 
     publish_stage(
       turn.conversation_id,
@@ -804,11 +809,51 @@ defmodule Fountain.Conversations.TurnMachine do
 
   defp put_model(usage, _source, _model), do: usage
 
-  defp record_model_selection(%__MODULE__{row: nil} = turn, _selection), do: turn
+  # `extra` is whatever else belongs in the same write — the inference stamp,
+  # and nothing else so far. One update, so a turn cannot carry the stamp
+  # without the selection that earned it.
+  defp record_model_selection(%__MODULE__{row: nil} = turn, _selection, _extra), do: turn
 
-  defp record_model_selection(turn, selection) do
-    {:ok, row} = Conversations._unsafe_update_turn(turn.row, %{model_selection: selection})
+  defp record_model_selection(turn, selection, extra) do
+    attrs = Map.put(extra, :model_selection, selection)
+    {:ok, row} = Conversations._unsafe_update_turn(turn.row, attrs)
     %{turn | row: row}
+  end
+
+  # The inference stamp, written at turn start rather than only at the end
+  # (#1685). Returns the `usage` attribute to merge into the selection write,
+  # or `%{}` when there is nothing to stamp.
+  #
+  # **Only from the `:model_selected` report.** `Managoat.ACP.Peer` sends that
+  # one from `send_prompt/1`, immediately before it writes `session/prompt`,
+  # so it is the one report that means "tokens are about to be spent". Its
+  # sibling `:model_selection_failed` is raised in `phase: :setting_model`,
+  # strictly earlier, and stamping there would mark a turn that spent nothing
+  # — indistinguishable afterwards from one that died mid-inference, which is
+  # the question #1916 has to answer.
+  #
+  # Before #1685 the stamp was applied only in the `{:done, ...}` clause,
+  # which a turn reaches only when the prompt is *answered*: an adapter exit,
+  # a sandbox deadline, a server restart, an interrupt or a runtime that
+  # reports no usage all left a turn that spent Fountain's key with no record
+  # that it had.
+  #
+  # `with_inference/2` decides the source, exactly as the end-of-turn write
+  # does — one derivation, so the two writes cannot disagree. What it returns
+  # for an empty map is the stamp alone, and `%{}` on a deployment holding no
+  # platform key, which is what keeps a self-hosted install's turn rows
+  # unchanged.
+  #
+  # The end-of-turn write merges its token figures over this (see
+  # `Conversations._unsafe_record_turn_usage/2`), so a turn that does answer
+  # its prompt ends with the same map it carried before #1685.
+  defp inference_stamp(%{usage: usage}, _ctx) when is_map(usage), do: %{}
+
+  defp inference_stamp(_row, ctx) do
+    case with_inference(%{}, ctx) do
+      stamp when map_size(stamp) > 0 -> %{usage: stamp}
+      _ -> %{}
+    end
   end
 
   @spec record_usage(t(), map() | nil) :: :ok

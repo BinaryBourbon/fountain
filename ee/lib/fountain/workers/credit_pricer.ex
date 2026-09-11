@@ -243,10 +243,29 @@ defmodule Fountain.Workers.CreditPricer do
   # (ADR 0022) costs Fountain no sandbox time and still spends Fountain's
   # inference key when the tenant has none of their own.
   #
-  # `usage ->> 'inference' = 'platform'` is the whole selector: the
+  # `usage ->> 'inference' = 'platform'` is the source selector: the
   # ConversationServer stamps that key only on a turn whose credentials came
   # from `Fountain.PlatformInference`, so a deployment that holds no platform
   # key has no matching row and this query is a cheap miss.
+  #
+  # A turn figure has to be there too. Since #1685 the stamp is written at
+  # turn start, so a platform turn that never answered its prompt — an
+  # adapter exit, a sandbox deadline, a restart, an interrupt — carries the
+  # source with no token count. `cost_cents/1` prices such a row at zero and
+  # writes no ledger row, and *that* is still the behaviour: what a turn with
+  # unknown tokens should cost has not been decided (#1685 follow-up).
+  #
+  # `jsonb_typeof` before anything else, for the reason `Conversations`
+  # gives over the same column: `usage` is whatever the runtime reported, and
+  # nothing validates its shape on the way in.
+  #
+  # It is excluded from the page rather than filtered out of it because the
+  # pass stops on a page that wrote nothing. Those turns outnumber the
+  # answered ones by better than ten to one in production, so leaving them in
+  # would let a full page of unpriceable rows hold the cursor still and starve
+  # the priceable turns behind them — a worse billing bug than the one the
+  # stamp fixes. The rows are on disk and queryable by the same selector when
+  # the pricing decision lands.
   defp unpriced_inference_turns(floor) do
     from(t in Turn,
       join: c in Conversation,
@@ -257,6 +276,14 @@ defmodule Fountain.Workers.CreditPricer do
       where: not is_nil(t.ended_at),
       where: t.ended_at >= ^floor,
       where: fragment("? ->> 'inference' = 'platform'", t.usage),
+      where:
+        fragment(
+          "(jsonb_typeof(? -> 'input') = 'number' or jsonb_typeof(? -> 'output') = 'number' or jsonb_typeof(? -> 'cache_read') = 'number' or jsonb_typeof(? -> 'cache_write') = 'number')",
+          t.usage,
+          t.usage,
+          t.usage,
+          t.usage
+        ),
       where: not is_nil(c.user_id),
       order_by: [asc: t.ended_at],
       limit: @batch,

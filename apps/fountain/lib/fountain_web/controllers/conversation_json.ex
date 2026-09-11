@@ -191,8 +191,22 @@ defmodule FountainWeb.ConversationJSON do
       # The end-of-turn figure as the runtime reported it (#827); null when
       # it reported none or the turn predates the column.
       model_selection: t.model_selection,
-      usage: t.usage && usage_data(t.usage)
+      usage: turn_usage(t.usage)
     }
+  end
+
+  @doc """
+  A turn's `usage` field for the API: the end-of-turn figure, or null.
+
+  Null covers the turn-start inference stamp (#1685) as well as a missing
+  column. That stamp says whose key the turn runs on and carries no token
+  figure, so reporting it here would answer "how many tokens did this turn
+  spend" with a zero nobody measured.
+  """
+  def turn_usage(nil), do: nil
+
+  def turn_usage(%{} = usage) do
+    if Turn.inference_stamp_only?(usage), do: nil, else: usage_data(usage)
   end
 
   @doc "Stored token counts and adapter accounting claims; absent counts remain absent in qualified reports."

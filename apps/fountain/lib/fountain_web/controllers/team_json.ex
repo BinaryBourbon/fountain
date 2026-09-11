@@ -53,7 +53,7 @@ defmodule FountainWeb.TeamJSON do
       prompt: turn.prompt,
       status: turn.status,
       inserted_at: turn.inserted_at,
-      usage: turn.usage && ConversationJSON.usage_data(turn.usage)
+      usage: ConversationJSON.turn_usage(turn.usage)
     }
   end
 
