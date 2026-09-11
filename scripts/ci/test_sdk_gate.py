@@ -13,6 +13,7 @@ from test_gate import plan
 
 
 CASES = [
+    ("workflow_dispatch", {}),
     ("pull_request", {}), ("pull_request", {"docs": True}),
     ("push", {}), ("push", {"reuse": True}),
     ("merge_group", {}), ("merge_group", {"docs": True}),

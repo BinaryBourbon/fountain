@@ -52,7 +52,7 @@ out `check_response_timeout_minutes` and ejects it, with no red job anywhere to
 explain why. `test_every_event_the_workflow_triggers_on_is_a_plan` in
 `test_gate.py` keeps the workflow and `gate.py` from drifting apart later.
 
-Three CI events now exist, and `gate.py`'s `PROBES` table is the authority on
+Four CI events now exist, and `gate.py`'s `PROBES` table is the authority on
 what each one owes:
 
 | Event | Probes that run | What the plan means |
@@ -60,6 +60,7 @@ what each one owes:
 | `pull_request` | `changes` | Classify the diff; docs-only skips the Elixir suite |
 | `merge_group` | `changes` + `already-tested` | Classify the group, and skip it outright when its tree is one a PR run already tested |
 | `push` | `already-tested` | Main reuses the queue run (or a PR run) that tested this tree |
+| `workflow_dispatch` | `changes` | Run the complete plan, without diff-based skips or tree reuse |
 
 The queue run and main's push both look for the `tested-tree` artifact, so a
 queued merge normally costs one full run, not two: the queue runs the suite,
@@ -90,7 +91,9 @@ conformance checks. These three extracted jobs lint fixtures before their
 tests. Swift retains its separate conformance test step.
 `CI required` requires every selected SDK job. A failed, cancelled or
 unexpectedly skipped job fails the gate. Main runs all SDKs unless a verified
-tested tree authorizes reuse.
+tested tree authorizes reuse. Manual workflow dispatch always selects every
+SDK and the full server plan, including prose checks. Both gates reject a
+manual classification that attempts to skip part of that plan.
 
 `SDK checks` reports the SDK result even when docs-only classification or a
 previously tested tree skips every SDK leg. It validates the same probe

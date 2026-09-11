@@ -21,6 +21,7 @@ JOBS = FULL_JOBS | {"already-tested", "changes", "workflow-checks", "docs", "doc
 # whether the tree it is about to test has already been tested.
 PROBES = {
     "pull_request": {"changes"},
+    "workflow_dispatch": {"changes"},
     "push": {"already-tested"},
     "merge_group": {"already-tested", "changes"},
 }
@@ -64,6 +65,8 @@ def _expected_plan(event, needs, jobs):
     docs_only, docs_touched, sdks = (
         _classification(needs) if "changes" in PROBES[event] else (False, True, SDK_JOBS)
     )
+    if event == "workflow_dispatch" and (docs_only or not docs_touched or sdks != SDK_JOBS):
+        raise ValueError("manual CI must select the complete plan")
     # SDK docs can select a language even when the server plan is docs-only.
     if not reuse:
         expected.update(dict.fromkeys(sdks, "success"))
