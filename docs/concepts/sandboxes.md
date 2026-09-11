@@ -49,13 +49,22 @@ now. Fountain refuses each change with `409 sandbox_mid_turn` while a
 conversation on that machine runs a turn. Let the turn end, or stop it, then
 send the request again.
 
+Only a `ready` or `suspended` machine resets. A machine in the `pending` or
+`starting` status answers `409 sandbox_not_resettable` with that status. It
+has no disk to replace yet.
+
 A reset blocks new turns before it calls the provider. It releases capacity
 only after the provider confirms deletion. A timeout or lost request keeps
 the reset fence and quota reservation. Another reset returns
-`409 sandbox_reset_pending`; it does not send another delete. The operator
-must reconcile the provider outcome. Do not clear the fence or repeat the
-operation based only on a missing provider response. Automatic reconciliation
-is not implemented.
+`409 sandbox_reset_pending`, and so does an attach or a wake. None of them
+send a second delete. Automatic reconciliation is not implemented.
+
+To clear an unconfirmed reset, an operator reaps the sandbox from the admin
+sandbox list. That terminates the row and releases the quota slot. The
+machine at the provider is then the operator's to check, because Fountain
+has no evidence that the delete completed. Do not use a reap as a routine
+retry. The audit trail shows `sandbox.reset_requested` when the fence commits
+and `sandbox.reset` only when the provider confirms the deletion.
 
 When a home parks, Fountain can take a checkpoint of its disk. The operator
 turns this on with `CHECKPOINT_CREATION_ENABLED`, and only a provider with

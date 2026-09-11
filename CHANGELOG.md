@@ -33,6 +33,19 @@ upgrade, is in
   and version line; `@agentshit/fountain-sdk` keeps its published versions and
   receives no new ones. See `sdk/typescript/CHANGELOG.md`.
 
+- A sandbox reset is fenced until the provider confirms the deletion. The
+  fence commits before any provider call, so no turn starts on a machine that
+  is on its way out, and the quota slot stays held until the delete is
+  confirmed rather than released on an unconfirmed one. A second reset, an
+  attach and a wake all answer `409 sandbox_reset_pending` instead of sending
+  another delete. Only a `ready` or `suspended` machine resets now; `pending`
+  and `starting` answer `409 sandbox_not_resettable`, because a machine still
+  under construction has no disk to replace. A reset that the provider does
+  not confirm records `sandbox.reset_requested`; `sandbox.reset` now means the
+  delete succeeded. To clear an unconfirmed reset, reap the sandbox from the
+  admin sandbox list. That retires the row and releases the slot; the machine
+  at the provider is then the operator's to check.
+
 ### Added
 
 - **An `acp` runtime launches a named command, so a deterministic program can

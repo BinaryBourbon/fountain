@@ -365,7 +365,13 @@ defmodule Fountain.Conversations.Lifecycle do
       # Ownership: as home?/1 above.
       sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
 
-      if sandbox.status not in ["terminated", "failed"] do
+      # A machine whose reset is unconfirmed is on its way out, not parking.
+      # `update_sandbox/2` lets a retiring write through the fence but refuses
+      # `suspended`, and this clause matches `{:ok, _}`. The reaper's own park
+      # pass filters the same rows; there is no checkpoint worth taking of a
+      # disk that is meant to be gone.
+      if sandbox.status not in ["terminated", "failed"] and
+           is_nil(sandbox.reset_requested_at) do
         # A home's disk is kept at its quietest moment, where the provider
         # can (ADR 0023, #1073). Best-effort: the park goes ahead either way.
         HomeCheckpoint.on_park(sandbox)
