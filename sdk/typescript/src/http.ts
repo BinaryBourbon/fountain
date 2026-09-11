@@ -4,7 +4,7 @@ import type { ResolvedConfig } from "./config.ts";
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface RequestOptions {
-  query?: Record<string, string | number | boolean | undefined | null>;
+  query?: Record<string, string | number | boolean | string[] | undefined | null>;
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -50,6 +50,14 @@ export class HttpClient {
     const url = new URL(path.startsWith("http") ? path : this.config.baseUrl + path);
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value === undefined || value === null || value === "") continue;
+      // An array is a repeated key, not a comma-joined string. That is what
+      // `style: form, explode: true` means in the OpenAPI document, and it is
+      // how `?label=env:prod&label=drift:true` reaches the server; joining
+      // them would send one filter Fountain cannot parse.
+      if (Array.isArray(value)) {
+        for (const item of value) url.searchParams.append(key, String(item));
+        continue;
+      }
       url.searchParams.set(key, String(value));
     }
     return url.toString();

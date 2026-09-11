@@ -276,6 +276,17 @@ describe("vault expiry metadata", () => {
     assert.equal(url.searchParams.get("roots_only"), "true");
   });
 
+  test("a label filter goes out as a repeated key, not a joined string", async () => {
+    let requested = "";
+    const fountain = new Fountain({
+      baseUrl: "https://fountain.test", apiKey: "fk_test",
+      fetch: async (url) => { requested = url; return Response.json({ data: [] }); },
+    });
+    await fountain.conversations({ labels: { env: "prod", drift: "true" } });
+    const url = new URL(requested);
+    assert.deepEqual(url.searchParams.getAll("label").sort(), ["drift:true", "env:prod"]);
+  });
+
   test("setLabels merges through PATCH and returns the record", async () => {
     const requests: { url: string; init?: RequestInit }[] = [];
     const fountain = new Fountain({

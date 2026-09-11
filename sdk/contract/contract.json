@@ -1865,6 +1865,13 @@
           "required": false,
           "type": "string"
         },
+        "label": {
+          "items": {
+            "type": "string"
+          },
+          "required": false,
+          "type": "array"
+        },
         "limit": {
           "required": false,
           "type": "integer"

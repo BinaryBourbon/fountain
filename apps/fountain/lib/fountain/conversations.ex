@@ -732,6 +732,10 @@ defmodule Fountain.Conversations do
   for `limit: n` — which the console's dashboard uses to ask for the five it
   shows instead of every row a busy account has.
 
+  `labels: %{"env" => "prod"}` (#1637) keeps the conversations carrying every
+  one of those pairs — jsonb containment, so a row with more labels than the
+  filter names still matches, and the GIN index on the column serves it.
+
   Populates the `last_active_at` virtual field using `kind: "output"` log
   events only — stage events (reconnects, lifecycle) are excluded so
   reconnects don't produce false unread indicators.
@@ -764,6 +768,9 @@ defmodule Fountain.Conversations do
 
         {:channel_id, id}, q when is_binary(id) and id != "" ->
           where(q, [conv: c], c.channel_id == ^id)
+
+        {:labels, labels}, q when is_map(labels) and map_size(labels) > 0 ->
+          where(q, [conv: c], fragment("? @> ?", c.labels, type(^labels, :map)))
 
         {:status, [_ | _] = statuses}, q ->
           where(q, [conv: c], c.status in ^statuses)

@@ -177,10 +177,19 @@ export class Fountain {
    * Roots only by default: a conversation an agent spawned from inside a
    * sandbox is listed under its parent's tree, not again at the top level.
    * Pass `{ rootsOnly: false }` for the flat list, children included.
+   *
+   * `labels` keeps the conversations carrying every pair given — the wire is
+   * a repeatable `label=key:value`, combined with AND.
    */
-  async conversations(opts: { rootsOnly?: boolean; sandboxId?: string } = {}): Promise<ConversationRecord[]> {
+  async conversations(
+    opts: { rootsOnly?: boolean; sandboxId?: string; labels?: Record<string, string> } = {},
+  ): Promise<ConversationRecord[]> {
     return this.api.list<ConversationRecord>("/api/conversations", {
-      query: { roots_only: opts.rootsOnly === false ? undefined : "true", sandbox_id: opts.sandboxId },
+      query: {
+        roots_only: opts.rootsOnly === false ? undefined : "true",
+        sandbox_id: opts.sandboxId,
+        label: opts.labels && Object.entries(opts.labels).map(([k, v]) => `${k}:${v}`),
+      },
     });
   }
 

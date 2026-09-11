@@ -1,7 +1,7 @@
 defmodule FountainWeb.ConversationLabelsTest do
   @moduledoc """
-  Labels over the wire (#1637): create, read back, the merge route and who is
-  allowed to call it.
+  Labels over the wire (#1637): create, read back, the repeatable AND filter,
+  the merge route and who is allowed to call it.
   """
 
   use FountainWeb.ConnCase, async: true
@@ -87,6 +87,72 @@ defmodule FountainWeb.ConversationLabelsTest do
       conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{conv.id}")
 
       assert %{"data" => %{"labels" => %{}}} = json_response(conn, 200)
+    end
+  end
+
+  describe "GET /api/conversations?label=" do
+    setup %{user: user} do
+      prod_drift =
+        insert_conversation(user_id: user.id, labels: %{"env" => "prod", "drift" => "true"})
+
+      prod_clean = insert_conversation(user_id: user.id, labels: %{"env" => "prod"})
+      staging = insert_conversation(user_id: user.id, labels: %{"env" => "staging"})
+
+      {:ok, prod_drift: prod_drift, prod_clean: prod_clean, staging: staging}
+    end
+
+    defp listed(conn),
+      do: conn |> json_response(200) |> Map.fetch!("data") |> Enum.map(& &1["id"])
+
+    test "one pair keeps the conversations carrying it", context do
+      ids =
+        context.conn
+        |> authed_with_key(context.raw_key)
+        |> get("/api/conversations?label=env:prod")
+        |> listed()
+
+      assert Enum.sort(ids) == Enum.sort([context.prod_drift.id, context.prod_clean.id])
+    end
+
+    test "a repeated label is combined with AND", context do
+      ids =
+        context.conn
+        |> authed_with_key(context.raw_key)
+        |> get("/api/conversations?label=env:prod&label=drift:true")
+        |> listed()
+
+      assert ids == [context.prod_drift.id]
+    end
+
+    test "combines with the other filters", context do
+      ids =
+        context.conn
+        |> authed_with_key(context.raw_key)
+        |> get("/api/conversations?status=pending&label=env:staging")
+        |> listed()
+
+      assert ids == [context.staging.id]
+    end
+
+    test "a value splits on its first colon only", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id, labels: %{"path" => "apps/fountain:lib"})
+
+      ids =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations?label=path:apps/fountain:lib")
+        |> listed()
+
+      assert ids == [conv.id]
+    end
+
+    test "a value with no colon is a 400 rather than a silent match-all", context do
+      conn =
+        context.conn
+        |> authed_with_key(context.raw_key)
+        |> get("/api/conversations?label=prod")
+
+      assert %{"error" => "invalid_label_filter"} = json_response(conn, 400)
     end
   end
 
