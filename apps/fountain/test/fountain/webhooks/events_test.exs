@@ -22,6 +22,7 @@ defmodule Fountain.Webhooks.EventsTest do
   @sources [
     "lib/fountain/conversations.ex",
     "lib/fountain/conversations/conversation_server.ex",
+    "lib/fountain/conversations/checkpoints.ex",
     "lib/fountain/conversations/reattachment.ex",
     "lib/fountain/conversations/provisioning.ex",
     "lib/fountain/conversations/egress.ex",
