@@ -911,7 +911,7 @@ jobs:
         run: mix test test/conformance_test.exs
 
   python-sdk:
-    name: Python SDK
+    name: Python SDK (${{ matrix.python }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
@@ -921,27 +921,37 @@ jobs:
     permissions:
       contents: read
 
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
       - name: SDK conformance scenarios are well formed
-        run: python3 sdk/conformance/lint.py
+        run: python sdk/conformance/lint.py
 
       # The Python SDK is deliberately stdlib-only, so its source tests run
-      # on the same interpreter without an install step.
+      # on the minimum and newest declared runtimes without a package install.
       - name: Python SDK tests
-        run: python3 -m unittest discover -s sdk/python/tests -v
+        run: python -m unittest discover -s sdk/python/tests -v
 
       - name: Python SDK compiles
-        run: python3 -m compileall -q sdk/python/src sdk/python/scripts
+        run: python -m compileall -q sdk/python/src sdk/python/scripts
 
       - name: Python SDK contract
         working-directory: sdk/python
-        run: python3 scripts/verify_contract.py
+        run: python scripts/verify_contract.py
 
       - name: Python SDK conformance
         working-directory: sdk/python
-        run: python3 -m unittest discover -s tests -p "test_conformance.py" -v
+        run: python -m unittest discover -s tests -p "test_conformance.py" -v
 
   typescript-sdk:
     name: TypeScript SDK

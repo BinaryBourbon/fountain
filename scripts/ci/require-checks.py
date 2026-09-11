@@ -19,14 +19,14 @@ def api(path, payload=None, method="PUT"):
 # Sized against this repo's measured CI, not GitHub's defaults.
 #
 # max_entries_to_build: 1 — the org is on the free plan, which allows 20
-# concurrent GitHub-hosted jobs, and ONE full CI run has 23 jobs. Speculating
+# concurrent GitHub-hosted jobs, and ONE full CI run has 24 jobs. Speculating
 # two groups deep cannot run two groups; it queues the second behind the first
 # while also starving every open PR. Raise this only after the concurrency
 # ceiling does.
 #
 # min_entries_to_merge: 2 with a 5 minute wait — batching is the only lever
 # that buys throughput under that same ceiling, because five PRs merged as one
-# group cost one 23-job run instead of five. In a burst the group fills at once
+# group cost one 24-job run instead of five. In a burst the group fills at once
 # and nothing waits; in a quiet hour a lone PR waits up to five minutes, which
 # is the hour where nobody is blocked on it.
 #

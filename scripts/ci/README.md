@@ -72,7 +72,7 @@ tested it.
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full CI
-run now has 23 jobs, compared with the documented limit of 20 concurrent
+run now has 24 jobs, compared with the documented limit of 20 concurrent
 runners. The queue builds one group at a time and batches up to five PRs. Revisit
 `max_entries_to_build` when the concurrency limit changes.
 
@@ -85,7 +85,9 @@ macOS. Each reads the committed contract; `release-and-contract` checks its
 generation.
 The Elixir job owns its toolchain, cache, formatting, compilation, tests, docs,
 package dry run, contract and conformance checks. The Python job owns its
-tests, compilation, contract and conformance checks. The TypeScript job owns
+tests, compilation, contract and conformance checks on Python 3.9 and 3.13.
+These cover the package minimum and newest declared runtime. Both legs must
+pass; a failure does not cancel the other leg. The TypeScript job owns
 installation, type checks, tests, builds, browser bundling, contract and
 conformance checks. These three extracted jobs lint fixtures before their
 tests. Swift retains its separate conformance test step.
