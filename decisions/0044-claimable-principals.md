@@ -130,7 +130,12 @@ abandoning what it already has.
    alone. It records the new key and replaced key ids in the owner's audit
    trail after commit. Claimed credentials expire 30 days after each issuance,
    independently of the anonymous grant deadline. The owner's API keys page
-   can replace them before or after expiry.
+   can replace them before or after expiry. Existing active principal keys
+   with no expiry get a 30-day renewal window when migrated. A database
+   trigger supplies the same deadline when an older writer inserts a
+   principal key without one during rollout. Explicit deadlines and keys
+   without principal scope are unaffected. Rolling back the trigger retains
+   deadlines already assigned.
 
 **The API is four routes**, all behind `:require_full_scope`:
 `POST /api/claimable-users`, `GET /api/claimable-users/:id`,
