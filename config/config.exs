@@ -66,7 +66,11 @@ config :fountain, Oban,
        # 06:47 UTC daily: rent for numbers and inboxes, the grace reminders,
        # and the release on day seven (ADR 0030 decision 4). No-ops until a
        # rent price is set.
-       {"47 6 * * *", Fountain.Workers.CreditRentCollector}
+       {"47 6 * * *", Fountain.Workers.CreditRentCollector},
+       # Five-minute backstop for the event-driven sandbox queue (ADR 0042).
+       # Normal drains come from a sandbox leaving a cap-counting status; this
+       # catches a lost poke and expires work that waited too long.
+       {"*/5 * * * *", Fountain.Workers.SandboxQueueDrainer}
      ]}
   ]
 
