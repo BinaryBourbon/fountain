@@ -864,7 +864,10 @@ defmodule Fountain.Conversations.ConversationServer do
         # The broker session is minted before the env is built, because the
         # env carries it; the CA is installed before anything dials out,
         # because nothing dials out without it (ADR 0019 gate 1a).
-        with {:ok, state} <- broker_prepare(state),
+        # Keep the result outside `with`: its else cannot see the minted state.
+        prepared = Egress.prepare_state(state)
+
+        with {:ok, state} <- prepared,
              sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url),
              # A real step, not best effort: an agent whose MCP servers could
              # not be written would otherwise run without them and report
@@ -933,7 +936,7 @@ defmodule Fountain.Conversations.ConversationServer do
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
             _ = Managoat.Sandbox.destroy(handle)
-            Egress.release(state.user_id, state.conversation_id)
+            Egress.release_prepared(prepared)
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
             Output.publish_stage(state.conversation_id, "provision", "failed", %{
@@ -1037,7 +1040,7 @@ defmodule Fountain.Conversations.ConversationServer do
              fn -> Managoat.Sandbox.get(handle) end,
              label: "sprite lookup on wake"
            ),
-         {:ok, state} <- broker_prepare(state),
+         {:ok, state} <- Egress.prepare_state(state),
          :ok <- Egress.reattach_policy(handle, env, state.conversation_id, state.user_id) do
       Output.publish_stage(state.conversation_id, "reattach", "started", %{
         sprite_name: sandbox.sprite_name,
@@ -1378,21 +1381,6 @@ defmodule Fountain.Conversations.ConversationServer do
       sandbox_url: sandbox_url,
       brokered: Egress.sandbox_env(state.broker)
     )
-  end
-
-  # Keep the minted proxy session in server state; unbrokered state is unchanged.
-  defp broker_prepare(state) do
-    if Egress.brokered?(state.user_id) do
-      case Egress.prepare(state.conversation_id, state.brokered, state.broker_bindings,
-             network: state.broker_network,
-             user_id: state.user_id
-           ) do
-        {:ok, session} -> {:ok, %{state | broker: session}}
-        {:error, _} = error -> error
-      end
-    else
-      {:ok, state}
-    end
   end
 
   # The OAuth token was refused: forget it on both sides and, when brokered,
