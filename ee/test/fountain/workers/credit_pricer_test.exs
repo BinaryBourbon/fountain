@@ -4,7 +4,8 @@ defmodule Fountain.Workers.CreditPricerTest do
   providers Fountain pays for, only from the configured instant.
   """
 
-  use Fountain.DataCase, async: true
+  # Message pricing changes global :credits configuration read by other suites.
+  use Fountain.DataCase, async: false
 
   alias Fountain.Billing
   alias Fountain.Credits
