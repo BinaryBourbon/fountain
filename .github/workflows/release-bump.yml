@@ -8,8 +8,10 @@ name: Release bump
 #    the PR. CI runs on it like
 #    any other PR; the compose boot check knows the pinned image does not
 #    exist yet and skips.
-# 2. Merging that PR (`gh pr merge --squash --admin`, like every PR here)
-#    triggers the `tag` job below, which tags the squash commit and
+# 2. Queueing that PR (`gh pr merge --squash --auto`, like every PR here)
+#    triggers the `tag` job below once the queue merges it. The trigger is
+#    `pull_request: [closed]`, which the queue fires the same way a direct
+#    merge did. It tags the squash commit and
 #    dispatches release.yml to build the CLI binaries, publish the
 #    versioned image, boot it, and create the GitHub Release.
 #

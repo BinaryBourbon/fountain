@@ -309,8 +309,9 @@ graduates.
 PRs: a bump in the library (its gate insists), then a pin in Fountain. The
 version pins here are `~> 0.1.0`, patch-level while every library is 0.x, so
 a library's `0.2.0` reaches Fountain only when someone bumps the pin, on
-purpose. Under this repository's ruleset a solo merge is
-`gh pr merge --admin`, and a merged-PR branch push runs no CI here, so the pin
+purpose. Under this repository's ruleset a merge is
+`gh pr merge --squash --auto`, which queues the PR, and a merged-PR branch
+push runs no CI here, so the pin
 PR is the only place the new version is exercised against Fountain; do not
 skip its gates. Merges into a library repository are yours once its CI is
 green, because its `main` is what publishes.

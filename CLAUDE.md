@@ -411,7 +411,8 @@ wrap `record/1` in a way that makes it blocking for the user.
 
 ## CI pipeline
 
-`.github/workflows/ci.yml` runs on every push to `main` and all PRs. The
+`.github/workflows/ci.yml` runs on every push to `main`, all PRs, and every
+merge group (see *How a change lands* below). The
 gates are grouped into jobs that share nothing, so the job name in a red
 build tells you which toolchain to go and look at:
 
@@ -442,12 +443,49 @@ matching regressions live in `hex_advisories_test.exs`.
 Evidence is in `decisions/evidence/decimal-advisory.json`; reproduce the public
 registry controls with `python3 scripts/verify-decimal-audit.py`.
 
-On `main`, `already-tested` can reuse a successful PR run's `tested-tree`
-artifact. That artifact records the actual checkout tree (normally GitHub's
-synthetic PR merge), and is uploaded only after `CI required` passes. A missing,
-expired or different artifact runs full CI. Main runs independently; superseded
+On `main`, `already-tested` can reuse a successful PR **or merge-group** run's
+`tested-tree` artifact. That artifact records the actual checkout tree, and is
+uploaded only after `CI required` passes. A missing, expired or different
+artifact runs full CI. Main and merge groups run independently; superseded
 PR runs cancel. Wording reports are advisory; security and structural docs
 checks remain blocking.
+
+### How a change lands
+
+Main takes roughly 26 merges a day, and a PR that was green an hour ago was
+green against a different main. A **merge queue** closes that gap: you no
+longer merge a PR, you *queue* it, and GitHub builds the exact tree the merge
+would produce before letting it in.
+
+```bash
+gh pr merge <N> --squash --auto     # queue it; the queue merges when green
+```
+
+What that changes, in practice:
+
+- **Nothing needs rebasing to be mergeable.** The up-to-date requirement is
+  off, because the queue tests the merge result directly rather than asking a
+  branch to prove it was recently rebased. Rebase because you want the code,
+  not to satisfy a gate.
+- **A queued PR can still be rejected.** If the group fails, the PR is ejected
+  and stays open with the failure attached. That failure is usually real —
+  it is your change against a main it had never been tested with.
+- **Merging is no longer instant**, and should not be waited on synchronously.
+  A lone PR waits up to five minutes for company (batching is how the queue
+  affords a full suite under the free plan's 20 concurrent jobs), then builds.
+- **Main's push stays cheap.** The queue's run publishes the `tested-tree`
+  artifact and main's push finds it, so a queued merge costs one full CI run,
+  not two.
+
+**Stacked PRs do not go in the queue** until they are the tip. GitHub only
+queues a PR whose base is `main`, so a stack still lands one stage at a time:
+merge stage 1, let GitHub retarget stage 2 to `main`, queue stage 2. The
+retarget is now GitHub's job rather than yours, which removes the trap where a
+stale base merged cleanly into a branch that no longer existed. Land a feature
+as a stack of small chained PRs exactly as before.
+
+`scripts/ci/README.md` documents the three CI events and the queue's sizing;
+`gate.py`'s `PROBES` table is the authority on what each event owes.
 
 ### Coverage
 
@@ -596,6 +634,15 @@ way on 2026-09-04, two had already been fixed after the failed run.
   having its connection pulled away. `Task.async` is right where the caller
   keeps the ref and handles the reply (`Analytics.Sink`).
 - **Don't push directly to `main`.** All changes go through PRs; the CI gate must pass.
+- **Don't merge past the queue with `--admin`.** Organization admins can still
+  bypass, and every bypass lands a tree the queue never tested — which is the
+  exact thing it exists to stop, and it also denies main's push the
+  `tested-tree` artifact, so the full suite re-runs on main anyway. Use
+  `gh pr merge <N> --squash --auto`. `--admin` is for a genuine emergency
+  (reverting a broken main), and says so in the PR.
+- **Don't wait synchronously for a queued PR to merge.** Queue it and move on;
+  a lone PR waits up to five minutes for company before it even builds. Come
+  back to it, or watch `gh pr checks <N>`.
 - **Don't re-run a red test until it goes green and move on.** Keep the failed
   run's evidence and investigate what changed between attempts. File confirmed
   flakes with the `flake` label, and record unexplained failures with what you

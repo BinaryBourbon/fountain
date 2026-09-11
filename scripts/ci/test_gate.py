@@ -3,22 +3,27 @@ from pathlib import Path
 import re
 import unittest
 
-from gate import FULL_JOBS, JOBS, validate
+from gate import FULL_JOBS, JOBS, PROBES, validate
+
+
+EVENTS = ("pull_request", "push", "merge_group")
 
 
 def plan(event="pull_request", docs=False, touched=False, reuse=False):
     jobs = {job: {"result": "skipped", "outputs": {}} for job in JOBS}
     jobs["workflow-checks"]["result"] = "success"
-    if event == "push":
+    if "already-tested" in PROBES[event]:
         jobs["already-tested"] = {"result": "success", "outputs": {"skip": str(reuse).lower()}}
-    else:
+    if "changes" in PROBES[event]:
         jobs["changes"] = {"result": "success", "outputs": {
             "docs_only": str(docs).lower(), "docs_touched": str(touched).lower(),
             "cli_docs": "false", "tree": "a" * 40,
         }}
+    if reuse:
+        return jobs
     if docs:
         jobs["docs"]["result"] = "success"
-    elif not reuse:
+    else:
         for job in FULL_JOBS:
             jobs[job]["result"] = "success"
         if touched or event == "push":
@@ -35,16 +40,32 @@ class GateTest(unittest.TestCase):
         dependencies = gate.split("    needs:\n", 1)[1].split("    steps:\n", 1)[0]
         self.assertEqual(set(re.findall(r"^      - (.*)$", dependencies, re.M)), JOBS)
 
+    def test_every_event_the_workflow_triggers_on_is_a_plan(self):
+        """A trigger the gate cannot validate fails every run of that event.
+
+        The merge queue is the expensive version: an unsupported event fails
+        `CI required`, and the queue reads that as the PR being broken and
+        ejects it.
+        """
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text()
+        triggers = workflow.split("\non:\n", 1)[1].split("\nconcurrency:", 1)[0]
+        declared = set(re.findall(r"^  ([a-z_]+):$", triggers, re.M))
+        self.assertEqual(declared, set(PROBES))
+
     def test_all_supported_plans(self):
         for event, options in [("pull_request", {}), ("pull_request", {"docs": True}),
                                ("pull_request", {"touched": True}), ("push", {}),
-                               ("push", {"reuse": True})]:
+                               ("push", {"reuse": True}), ("merge_group", {}),
+                               ("merge_group", {"docs": True}), ("merge_group", {"touched": True}),
+                               ("merge_group", {"reuse": True})]:
             with self.subTest(event=event, options=options):
                 validate(event, plan(event, **options))
 
     def test_every_required_job_rejects_failure_cancel_and_skip(self):
         for event, options in [("pull_request", {"touched": True}), ("pull_request", {"docs": True}),
-                               ("push", {}), ("push", {"reuse": True})]:
+                               ("push", {}), ("push", {"reuse": True}),
+                               ("merge_group", {"touched": True}), ("merge_group", {"docs": True}),
+                               ("merge_group", {"reuse": True})]:
             original = plan(event, **options)
             for job, state in original.items():
                 if state["result"] != "success":
@@ -57,27 +78,48 @@ class GateTest(unittest.TestCase):
                             validate(event, jobs)
 
     def test_missing_job_is_not_a_pass(self):
-        for job in JOBS:
-            jobs = plan()
-            del jobs[job]
-            with self.assertRaises(ValueError):
-                validate("pull_request", jobs)
+        for event in EVENTS:
+            for job in JOBS:
+                jobs = plan(event)
+                del jobs[job]
+                with self.subTest(event=event, job=job):
+                    with self.assertRaises(ValueError):
+                        validate(event, jobs)
 
     def test_missing_classification_or_tree_is_not_a_docs_skip(self):
-        for key in ("docs_only", "docs_touched", "cli_docs", "tree"):
-            jobs = plan(docs=True)
-            del jobs["changes"]["outputs"][key]
-            with self.assertRaises(ValueError):
-                validate("pull_request", jobs)
+        for event in ("pull_request", "merge_group"):
+            for key in ("docs_only", "docs_touched", "cli_docs", "tree"):
+                jobs = plan(event, docs=True)
+                del jobs["changes"]["outputs"][key]
+                with self.subTest(event=event, key=key):
+                    with self.assertRaises(ValueError):
+                        validate(event, jobs)
 
     def test_missing_reuse_decision_fails(self):
-        jobs = plan("push", reuse=True)
-        jobs["already-tested"]["outputs"] = {}
-        with self.assertRaises(ValueError):
-            validate("push", jobs)
+        for event in ("push", "merge_group"):
+            jobs = plan(event, reuse=True)
+            jobs["already-tested"]["outputs"] = {}
+            with self.subTest(event=event):
+                with self.assertRaises(ValueError):
+                    validate(event, jobs)
 
     def test_unexpected_failed_job_cannot_hide_on_docs_path(self):
-        jobs = plan(docs=True)
-        jobs["test"]["result"] = "failure"
+        for event in ("pull_request", "merge_group"):
+            jobs = plan(event, docs=True)
+            jobs["test"]["result"] = "failure"
+            with self.subTest(event=event):
+                with self.assertRaises(ValueError):
+                    validate(event, jobs)
+
+    def test_a_merge_group_needs_both_probes(self):
+        """Either probe alone would let the queue merge on half a decision."""
+        for probe in ("already-tested", "changes"):
+            jobs = plan("merge_group")
+            jobs[probe] = {"result": "skipped", "outputs": {}}
+            with self.subTest(probe=probe):
+                with self.assertRaises(ValueError):
+                    validate("merge_group", jobs)
+
+    def test_unsupported_event_is_rejected(self):
         with self.assertRaises(ValueError):
-            validate("pull_request", jobs)
+            validate("workflow_dispatch", plan("pull_request"))
