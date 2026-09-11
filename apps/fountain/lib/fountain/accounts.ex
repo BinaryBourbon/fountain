@@ -668,45 +668,46 @@ defmodule Fountain.Accounts do
   @spec create_api_key(binary(), String.t(), keyword()) ::
           {:ok, {ApiKey.t(), String.t()}} | {:error, Ecto.Changeset.t()}
   def create_api_key(user_id, name, opts \\ []) when is_binary(user_id) and is_binary(name) do
-    raw = "ftn_" <> Base.encode16(:crypto.strong_rand_bytes(32), case: :lower)
-    key_hash = hash_key(raw)
-    key_prefix = String.slice(raw, 0, 8)
+    {changeset, raw} = build_api_key(user_id, name, opts)
 
-    %ApiKey{}
-    |> ApiKey.changeset(%{
-      user_id: user_id,
-      name: name,
-      key_hash: key_hash,
-      key_prefix: key_prefix,
-      scopes: Keyword.get(opts, :scopes, ["full"]),
-      expires_at: Keyword.get(opts, :expires_at)
-    })
-    |> Repo.insert()
-    |> case do
-      {:ok, key} ->
-        Audit.record(%{
-          user_id: user_id,
-          action: "api_key.created",
-          resource_type: "api_key",
-          resource_id: key.id,
-          actor: Keyword.get(opts, :actor, "self"),
-          request_ip: Keyword.get(opts, :request_ip),
-          # Name, scopes and prefix identify *which* key without being the
-          # key: the prefix is already stored in the clear and is what the
-          # settings UI shows, so it is the handle a reader can match a
-          # trail row against a listed key by.
-          metadata: %{
-            "name" => key.name,
-            "scopes" => key.scopes,
-            "key_prefix" => key.key_prefix
-          }
-        })
-
-        {:ok, {key, raw}}
-
-      {:error, cs} ->
-        {:error, cs}
+    with {:ok, key} <- Repo.insert(changeset) do
+      record_api_key_created(key, opts)
+      {:ok, {key, raw}}
     end
+  end
+
+  @doc "Build a key changeset and plaintext without persistence; transactional callers audit after commit."
+  def build_api_key(user_id, name, opts \\ []) do
+    raw = "ftn_" <> Base.encode16(:crypto.strong_rand_bytes(32), case: :lower)
+
+    changeset =
+      ApiKey.changeset(%ApiKey{}, %{
+        user_id: user_id,
+        name: name,
+        key_hash: hash_key(raw),
+        key_prefix: String.slice(raw, 0, 8),
+        scopes: Keyword.get(opts, :scopes, ["full"]),
+        expires_at: Keyword.get(opts, :expires_at)
+      })
+
+    {changeset, raw}
+  end
+
+  @doc "Record a committed key mint; call outside the transaction that inserted it."
+  def record_api_key_created(%ApiKey{} = key, opts \\ []) do
+    Audit.record(%{
+      user_id: key.user_id,
+      action: "api_key.created",
+      resource_type: "api_key",
+      resource_id: key.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{
+        "name" => key.name,
+        "scopes" => key.scopes,
+        "key_prefix" => key.key_prefix
+      }
+    })
   end
 
   @doc """

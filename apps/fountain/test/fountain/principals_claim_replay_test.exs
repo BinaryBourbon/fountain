@@ -2,6 +2,7 @@ defmodule Fountain.PrincipalsClaimReplayTest do
   # Real independent transactions must see committed fixtures. Keep them out
   # of concurrent DataCase suites and delete only this test's accounts.
   use ExUnit.Case, async: false
+  use Mimic
 
   import Ecto.Query
   import Fountain.Factory
@@ -91,6 +92,50 @@ defmodule Fountain.PrincipalsClaimReplayTest do
       Task.shutdown(claim, :brutal_kill)
       Task.shutdown(replay, :brutal_kill)
     end
+  end
+
+  test "credential audit runs after commit and cannot abort the credential transaction" do
+    application = Sandbox.unboxed_run(Repo, fn -> insert_verified_user() end)
+
+    on_exit(fn ->
+      Sandbox.unboxed_run(Repo, fn ->
+        principal_ids =
+          Repo.all(
+            from c in ClaimableUser,
+              where: c.application_user_id == ^application.id,
+              select: c.user_id
+          )
+
+        Repo.delete_all(from u in User, where: u.id in ^[application.id | principal_ids])
+      end)
+    end)
+
+    stub(Fountain.Audit, :record, fn attrs ->
+      if attrs.action == "api_key.created" do
+        refute Repo.in_transaction?()
+        # The real audit recorder rescues a failed insert. That must not
+        # invalidate the transaction that committed the working credentials.
+        {:error, :audit_unavailable}
+      else
+        Mimic.call_original(Fountain.Audit, :record, [attrs])
+      end
+    end)
+
+    Sandbox.unboxed_run(Repo, fn ->
+      assert {:ok, first} =
+               Principals.create_claimable(application, %{"application_id" => "audit"},
+                 idempotency_key: "audit"
+               )
+
+      assert {:ok, replay} =
+               Principals.create_claimable(application, %{"application_id" => "audit"},
+                 idempotency_key: "audit"
+               )
+
+      assert first.claimable.id == replay.claimable.id
+      assert {:ok, _, _} = Accounts.authenticate_api_key(replay.api_key)
+      assert Repo.get!(ClaimableUser, replay.claimable.id).claim_token_hash
+    end)
   end
 
   defp waits_for_lock?(backend, deadline) do
