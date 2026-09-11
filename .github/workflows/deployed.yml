@@ -108,6 +108,7 @@ jobs:
           kubectl version --client
       - name: Verify public ingress and clean fixtures
         id: suite
+        timeout-minutes: 52 # Leave time for evidence and a fresh cleanup process.
         run: node deployed/ci.mjs
       - name: Finish scheduled monitor
         if: always() && github.event_name == 'schedule'
@@ -121,6 +122,24 @@ jobs:
         with:
           name: deployed-${{ env.SUITE_TARGET }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/deployed-${{ github.run_id }}-${{ github.run_attempt }}/results/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Retry interrupted or failed fixture cleanup
+        id: cleanup
+        if: always() && (steps.suite.outcome == 'failure' || steps.suite.outcome == 'cancelled')
+        timeout-minutes: 4
+        run: |
+          root="$RUNNER_TEMP/deployed-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          node deployed/cleanup-replay.mjs --config "$root/target.json" \
+            --results "$root/results" --out "$root/cleanup-replay"
+      - name: Retain cleanup retry evidence and updated manifests
+        if: always() && steps.cleanup.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployed-cleanup-${{ env.SUITE_TARGET }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/deployed-${{ github.run_id }}-${{ github.run_attempt }}/results/
+            ${{ runner.temp }}/deployed-${{ github.run_id }}-${{ github.run_attempt }}/cleanup-replay/
           retention-days: 30
           if-no-files-found: warn
       - name: Remove deployment credentials

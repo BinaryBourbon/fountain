@@ -198,6 +198,31 @@ node deployed/cli.mjs cleanup --config /tmp/fountain-target.json \
   --manifest /tmp/fountain-run-001/cleanup.json --out /tmp/fountain-cleanup-001
 ```
 
+For a normal run or a matrix, replay all manifests from its results directory:
+
+```bash
+node deployed/cleanup-replay.mjs --config /tmp/fountain-target.json \
+  --results /tmp/fountain-run-001 --out /tmp/fountain-cleanup-batch-001
+```
+
+The output directory must be new and outside the source results. Replay checks
+up to seventeen manifests, continues after a failed manifest, and records each
+outcome in `replay.json`. After three minutes, replay attempts no more manifests;
+the current runner retains its separate cleanup deadline. Any failed or
+unattempted manifest keeps the batch nonzero. Keep the original target file,
+credentials and receiver sidecars with the manifests for recovery.
+
+In CI, verification has a 52-minute step timeout within the 60-minute job.
+After a failed or interrupted suite step, the workflow uploads the original
+evidence, then starts a fresh cleanup process with a four-minute step timeout.
+It uploads updated manifests and replay evidence under a separate
+`deployed-cleanup-...` artifact, preserving the original `deployed-...` artifact.
+A successful retry does not change the failed verification verdict.
+[GitHub cancellation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation)
+can terminate the job before these final steps finish. A hard job timeout or
+runner loss can prevent upload and replay. This step cannot recover journals
+lost with the runner.
+
 Use the same target and account. Cleanup has its own deadline, tolerates
 already deleted resources, and runs in reverse creation order. A lost create
 response can be reconciled by an exact unique name. When an intent has no
