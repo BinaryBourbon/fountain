@@ -408,6 +408,14 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
     id
   end
 
+  defp drain_queries(acc \\ []) do
+    receive do
+      {:query, q} -> drain_queries([q | acc])
+    after
+      0 -> Enum.reverse(acc)
+    end
+  end
+
   defp wait_idle(pid, attempts \\ 200)
   defp wait_idle(_pid, 0), do: flunk("bounded actor did not become idle")
 
@@ -448,22 +456,21 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
       assert :ok = ExecutionGuard._unsafe_actor_gate(execution.id, execution.connection_id)
 
-      queries = drain_queries()
+      # Filtered to this gate's own table rather than counting every query in
+      # the VM: an ambient repo call from any supervised process would turn a
+      # correct gate into a red build, and a global count of one is the easiest
+      # assertion there is to make flaky.
+      all = drain_queries()
+      queries = Enum.filter(all, &(&1 =~ "turn_executions"))
 
-      assert length(queries) == 1, "expected one query, got: #{inspect(queries)}"
+      assert length(queries) == 1, "expected one journal query, got: #{inspect(queries)}"
       [query] = queries
       assert query =~ ~r/^SELECT/i
       refute query =~ "FOR UPDATE"
       refute query =~ "FOR SHARE"
-      refute Enum.any?(queries, &(&1 =~ ~r/^(begin|savepoint)/i))
-    end
 
-    defp drain_queries(acc \\ []) do
-      receive do
-        {:query, q} -> drain_queries([q | acc])
-      after
-        0 -> Enum.reverse(acc)
-      end
+      # No transaction opened around it, whoever else was talking to the repo.
+      refute Enum.any?(all, &(&1 =~ ~r/^\s*(begin|savepoint)/i))
     end
 
     test "retires on a superseded connection, a closed state and a passed deadline", c do
@@ -504,7 +511,19 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
       wait_idle(pid)
 
       assert Process.alive?(pid), "the actor died rather than retiring"
-      assert is_nil(:sys.get_state(pid).turn_execution)
+
+      # `turn_execution` alone proves nothing here: the first version of this
+      # fix cleared it *before* `Connection.close_bounded/1`, whose first clause
+      # returns untouched on a nil journal — so the field was nil and the
+      # connection was still fully alive. `current_command_ref` is the one that
+      # bites: left set, the next prompt resumes onto a turn already failed.
+      state = :sys.get_state(pid)
+      assert is_nil(state.turn_execution)
+      assert is_nil(state.execution_transport)
+      assert is_nil(state.current_command)
+      assert is_nil(state.current_command_ref)
+      assert is_nil(state.acp_peer)
+      assert is_nil(state.acp_peer_mon)
     end
   end
 end

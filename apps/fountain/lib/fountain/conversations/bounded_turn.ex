@@ -73,8 +73,19 @@ defmodule Fountain.Conversations.BoundedTurn do
       "conv #{state.conversation_id}: bounded retirement found no journal (#{inspect(reason)})"
     )
 
-    state = %{state | turn_execution: nil}
-
+    # `turn_execution` stays set through this. `Connection.close_bounded/1`
+    # returns untouched on `%{turn_execution: nil}`, so clearing it first made
+    # the close below a no-op — and that close is the only thing on this path
+    # that retires the transport, stops the peer and drops `current_command_ref`.
+    # Leaving them set is worse than the crash this clause replaced: the next
+    # prompt would take the unbounded path, find the connection alive and
+    # resume onto a turn this function already failed.
+    #
+    # Both exits are covered. With a turn, `finish_turn` ends with its own
+    # `if state.turn_execution, do: close_bounded_connection(state)` and does
+    # the work, exactly as the success path above relies on. Without one, the
+    # pipeline's own call does it. `close_bounded/1` clears the field either
+    # way; nothing here needs it nil early.
     if state.current_turn do
       finish_turn.(state, "failed", %{"outcome" => "journal_missing"}, %{
         reason: "execution_journal_missing"
