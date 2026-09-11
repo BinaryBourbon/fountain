@@ -2225,9 +2225,6 @@ defmodule Fountain.Conversations do
     # used to raise inside the transaction and take the turn's usage
     # recording with it. Anything that is not a non-negative integer counts
     # as nothing, which is what an unreported figure already counts as.
-    input = counter_value(Map.get(usage, "input"))
-    output = counter_value(Map.get(usage, "output"))
-
     Repo.transaction(fn ->
       # Same parent-before-turn lock order as ExecutionGuard. Delayed accounting
       # survives retirement, but duplicate deliveries cannot debit twice.
@@ -2241,7 +2238,30 @@ defmodule Fountain.Conversations do
             lock: "FOR UPDATE"
         ) || Repo.rollback(:not_found)
 
-      if is_map(current.usage), do: Repo.rollback(:already_recorded)
+      # The row read under the lock is what decides, not the one the caller
+      # matched on — that is the whole point of re-reading it. But `usage` is
+      # not only a figure: a turn carries an inference stamp from the moment
+      # it starts (#1685), which is a map and is not a recorded usage. Refuse
+      # a real second figure, and merge over a stamp exactly as
+      # `_unsafe_record_turn_usage/2` does on the unlocked read above.
+      # Checking `is_map/1` alone refused every stamped turn, which is every
+      # turn on platform inference.
+      usage =
+        cond do
+          is_nil(current.usage) -> usage
+          Turn.inference_stamp_only?(current.usage) -> Map.merge(current.usage, usage)
+          true -> Repo.rollback(:already_recorded)
+        end
+
+      # After the merge, so a stamp that ever grows a counter still debits it.
+      # `usage` is whatever the runtime reported. The map is stored as it came,
+      # but the counters it increments are bigints: a string or an object here
+      # used to raise inside the transaction and take the turn's usage
+      # recording with it. Anything that is not a non-negative integer counts
+      # as nothing, which is what an unreported figure already counts as.
+      input = counter_value(Map.get(usage, "input"))
+      output = counter_value(Map.get(usage, "output"))
+
       {:ok, updated} = current |> Turn.changeset(%{usage: usage}) |> Repo.update()
 
       {1, _} =
