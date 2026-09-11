@@ -36,6 +36,49 @@ defmodule Fountain.Team.Schedules do
 
   @actor "system:team_scheduler"
 
+  @doc """
+  What a schedule row says once its queued run ended without ever running.
+
+  `Fountain.SandboxQueue` calls this on the two terminal transitions that never
+  reach `run_schedule/2`: a request that expired at the wait bound, and one
+  somebody cancelled. Without it `last_error` keeps reporting a wait that is
+  over — a cron schedule self-corrects at its next firing, but a `one_off` has
+  no next firing, so its row would claim it was waiting for a slot nothing is
+  waiting for.
+
+  No `last_run_at`: nothing ran. Not audited either, because
+  `sandbox_request.expired` and `sandbox_request.cancelled` already record the
+  event this mirrors onto the schedule, and the trail is not a second copy of
+  it (ADR 0013).
+  """
+  def note_queued_run_ended(schedule_id, user_id, status)
+      when is_binary(schedule_id) and is_binary(user_id) and is_binary(status) do
+    case get_schedule(schedule_id, user_id) do
+      nil ->
+        :ok
+
+      schedule ->
+        {:ok, _} =
+          schedule
+          |> Schedule.run_changeset(%{last_error: describe_queue_outcome(status)})
+          |> Repo.update()
+
+        Team.broadcast_schedules_changed(user_id)
+        :ok
+    end
+  end
+
+  defp describe_queue_outcome("expired"), do: "timed out waiting for a free sandbox slot"
+  defp describe_queue_outcome("cancelled"), do: "the queued run was cancelled"
+  defp describe_queue_outcome(status), do: "the queued run ended: #{status}"
+
+  # What the row says while work sits in the queue. Reported by every caller,
+  # not only the one that enqueued: the drainer replays with
+  # `actor: "system:sandbox_queue"`, and a replay that met the ceiling again
+  # must leave the row saying "waiting" rather than flip it back to the
+  # capacity error the queue exists to absorb (ADR 0042 decision 3).
+  @waiting "waiting for a free sandbox slot"
+
   @doc "The audit actor a run fires as."
   def actor, do: @actor
 
@@ -161,9 +204,14 @@ defmodule Fountain.Team.Schedules do
   now". Returns `{:ok, conv}` with the conversation the prompt went to, or
   the `Team.send_message/5` / `Conversations.start_conversation/2` error
   unchanged (`:busy`, `:provisioning`, `:not_found`, `{:sandbox_quota_exceeded, _}`,
-  ...). Either way `last_run_at` is stamped, and `last_conversation_id` /
+  ...). A firing that ran stamps `last_run_at`, and `last_conversation_id` /
   `last_error` say how it went; the caller decides whether an error is worth
   retrying (the worker snoozes on `:busy` and `:provisioning`).
+
+  A capacity refusal is queued for the cron caller and nobody else — see
+  `await_capacity/2`. "Run now" gets the error unchanged. A firing that is
+  waiting on capacity stamps no `last_run_at` and records nothing: it is not a
+  run, and the request's own trail says what happened.
 
   `opts` is audit attribution: `Fountain.Workers.TeamScheduleRun` passes
   `actor: "system:team_scheduler"`, the UI passes the socket's. Recorded as
@@ -177,31 +225,69 @@ defmodule Fountain.Team.Schedules do
 
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    run_attrs =
+    # Two different questions, and conflating them is what made a person's
+    # refused "Run now" stop being recorded at all.
+    #
+    # `waiting?` decides what the ROW says. A live request means this
+    # schedule's work is waiting, whoever asked.
+    #
+    # `queued_by_us?` decides whether this CALLER fired. The cron caller
+    # queued instead of firing, and the drainer is replaying a firing already
+    # on the trail; both are silent. Anybody else fired and got an answer, and
+    # a refusal that writes the row is a mutation that records (ADR 0013).
+    waiting? =
       case result do
-        {:ok, conv} -> %{last_run_at: now, last_conversation_id: conv.id, last_error: nil}
-        {:error, reason} -> %{last_run_at: now, last_error: describe_error(reason)}
+        {:error, {:sandbox_quota_exceeded, _}} -> await_capacity(schedule, opts)
+        {:error, :fleet_full} -> await_capacity(schedule, opts)
+        _ -> false
+      end
+
+    queued_by_us? = Keyword.get(opts, :actor) in [@actor, Fountain.SandboxQueue.actor()]
+
+    run_attrs =
+      cond do
+        # Nothing fired, so `last_run_at` keeps saying when the schedule last
+        # actually ran.
+        waiting? and queued_by_us? -> %{last_error: @waiting}
+        # Somebody fired and was refused while the work waits. The attempt is
+        # stamped and recorded; the row still reports the wait, because that is
+        # what is true of the schedule.
+        waiting? -> %{last_run_at: now, last_error: @waiting}
+        true -> ran_attrs(result, now)
       end
 
     {:ok, _} = schedule |> Schedule.run_changeset(run_attrs) |> Repo.update()
     Team.broadcast_schedules_changed(schedule.user_id)
 
-    record(
-      "team.schedule.fired",
-      schedule,
-      opts,
-      Map.merge(describe(schedule), %{
-        "outcome" => if(match?({:ok, _}, result), do: "ok", else: run_attrs.last_error),
-        "conversation_id" =>
-          case result do
-            {:ok, conv} -> conv.id
-            _ -> nil
-          end
-      })
-    )
+    unless waiting? and queued_by_us? do
+      record(
+        "team.schedule.fired",
+        schedule,
+        opts,
+        Map.merge(describe(schedule), %{
+          # The outcome this caller got, not what the row displays: a person
+          # refused while work waits was refused, and the trail should say so.
+          "outcome" => outcome(result),
+          "conversation_id" =>
+            case result do
+              {:ok, conv} -> conv.id
+              _ -> nil
+            end
+        })
+      )
+    end
 
     result
   end
+
+  defp outcome({:ok, _conv}), do: "ok"
+  defp outcome({:error, reason}), do: describe_error(reason)
+
+  defp ran_attrs({:ok, conv}, now),
+    do: %{last_run_at: now, last_conversation_id: conv.id, last_error: nil}
+
+  defp ran_attrs({:error, reason}, now),
+    do: %{last_run_at: now, last_error: describe_error(reason)}
 
   # A fresh conversation with what the teammate has: its agent, and the
   # environment override and vault its current team conversation carries.
@@ -282,6 +368,42 @@ defmodule Fountain.Team.Schedules do
     end
   end
 
+  # Scheduled work opts into the bounded queue: unlike an interactive caller,
+  # a cron firing has nobody present to retry it when capacity frees, and a
+  # 09:00 run that meets a fan-out at 08:59 is simply lost.
+  #
+  # Only the cron caller enqueues. `run_schedule/2` is also the page's and the
+  # API's "Run now" (`POST /api/team/:agent_id/schedules/:id/run`), and
+  # queueing there would hand a person a 429 or 503 while a conversation
+  # started on its own up to an hour later, with no request id in the response
+  # to watch or cancel. ADR 0042 decision 3 buys the queue with "a cron firing
+  # has nobody there to retry it", which is exactly what somebody pressing a
+  # button is not. The queue's own replay is excluded by the same test: the
+  # drainer already holds the claim, so re-entering would stack a second
+  # request behind the one being replayed.
+  #
+  # Returns whether the work is waiting, which is a different question from
+  # who was allowed to put it there. A depth-bound refusal leaves no request,
+  # so the caller gets the capacity error it was about to get anyway.
+  defp await_capacity(%Schedule{} = schedule, opts) do
+    if Keyword.get(opts, :actor) == @actor, do: enqueue_run(schedule, opts)
+
+    Fountain.SandboxQueue.schedule_request(schedule.user_id, schedule.id) != nil
+  end
+
+  defp enqueue_run(%Schedule{} = schedule, opts) do
+    Fountain.SandboxQueue.enqueue(
+      %{
+        user_id: schedule.user_id,
+        agent_id: schedule.agent_id,
+        kind: "schedule_run",
+        schedule_id: schedule.id,
+        source: "schedule"
+      },
+      opts
+    )
+  end
+
   # What a run's failure reads as on the row and in the UI. Never the prompt.
   def describe_error(:busy), do: "teammate was busy"
 
@@ -291,6 +413,7 @@ defmodule Fountain.Team.Schedules do
   def describe_error(:provisioning), do: "teammate's computer was still starting"
   def describe_error(:not_found), do: "agent is not on the team"
   def describe_error(:insufficient_credits), do: "out of credit"
+  def describe_error(:fleet_full), do: "sandbox fleet is full"
   def describe_error(:runner_offline), do: "teammate's machine is offline"
   def describe_error(:sprite_probe_failed), do: "could not reach the sandbox provider"
 

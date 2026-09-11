@@ -719,11 +719,55 @@ defmodule FountainWeb.Schemas do
               "at most 64 bytes and a value at most 256 bytes, and a 422 names the offending " <>
               "key under `errors.labels`. With channel_id, a resume merges these into the " <>
               "conversation it hands back rather than dropping them."
+        },
+        queue: %Schema{
+          type: :boolean,
+          nullable: true,
+          description:
+            "When a fresh start reaches the tenant or the fleet concurrency ceiling, wait " <>
+              "in the bounded sandbox queue and return 202 with a SandboxRequest instead " <>
+              "of 429 or 503 (ADR 0042). Starts carrying images or an explicit sandbox_id " <>
+              "are never queued, and a full queue keeps the immediate error."
         }
       },
       required: [:agent_id]
     })
   end
+
+  defmodule SandboxRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxRequest",
+      description: "Work waiting for sandbox capacity (ADR 0042).",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        agent_id: %Schema{type: :string, format: :uuid},
+        kind: %Schema{type: :string, enum: Fountain.SandboxQueue.Request.kinds()},
+        status: %Schema{type: :string, enum: Fountain.SandboxQueue.Request.statuses()},
+        source: %Schema{type: :string, nullable: true},
+        conversation_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "The conversation the request became, once it started."
+        },
+        error: %Schema{type: :string, nullable: true},
+        position: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "One-based place in the tenant's queue; null once it stops waiting."
+        },
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :agent_id, :kind, :status]
+    })
+  end
+
+  item_response(SandboxRequestResponse, of: SandboxRequest)
+  list_response(SandboxRequestListResponse, of: SandboxRequest)
 
   defmodule ConversationLabelsRequest do
     @moduledoc false
