@@ -58,6 +58,11 @@ defmodule Fountain.SandboxFiles do
 
   # Exit codes the scripts reserve. Anything else nonzero is the command
   # itself failing, surfaced with its output.
+  #
+  # 8 is the one nonzero code a script produces that is *not* named here:
+  # git failing after the repository was found. It is deliberately left to
+  # the catch-all, so the caller gets `{:sandbox_command_failed, 8, output}`
+  # with git's own message rather than an error word this module invented.
   @exit_missing 3
   @exit_wrong_kind 4
   @exit_unreadable 5
@@ -426,6 +431,16 @@ defmodule Fountain.SandboxFiles do
     if script == read_script(), do: :is_a_directory, else: :not_a_directory
   end
 
+  # The scripts themselves, for the suite. A mocked `exec` proves what parses
+  # the output and nothing about what produces it, and all three defects
+  # #1596 found were in the shell rather than in the parsing.
+  @doc false
+  @spec script(:list | :read | :diff | :status) :: String.t()
+  def script(:list), do: list_script()
+  def script(:read), do: read_script()
+  def script(:diff), do: diff_script()
+  def script(:status), do: status_script()
+
   # `type \t size \t name \0` per entry; the name goes last so a tab in it
   # survives, and NUL ends it so a newline does too.
   defp list_script do
@@ -498,6 +513,20 @@ defmodule Fountain.SandboxFiles do
   #
   # The mode chooses between fixed flags rather than reaching the command
   # line, so caller data is never adjacent to a `--`.
+  #
+  # The last command is a pipeline, so the script's own status is `head`'s and
+  # is always 0. `${PIPESTATUS[0]}` is git's, and it is the difference between
+  # a clean tree and a repository git could not read at all — a corrupt
+  # `.git/index`, or an LFS clone with no `git-lfs` on PATH, otherwise answers
+  # a rewritten tree with `entries: []`. `set -o pipefail` is the wrong
+  # instrument: `head -c` closes the pipe at the byte cap, git dies of SIGPIPE
+  # with status 141, and the truncation this script asks for would read as a
+  # failure. So 141 passes with 0, and everything else exits 8 carrying git's
+  # own message — collected by a second run that reads only stderr, because
+  # `exec/4` leaves `stderr_to_stdout: false` and the first run's went
+  # nowhere. Merging stderr into stdout instead would interleave a git warning
+  # into the NUL-framed records on the *success* path, which is a worse trade
+  # than a second invocation on a path that has already failed.
   defp status_script do
     ~S"""
     d=$1
@@ -515,6 +544,14 @@ defmodule Fountain.SandboxFiles do
       *) set -- --untracked-files=normal ;;
     esac
     git --no-pager --no-optional-locks status --porcelain=v1 -z "$@" | head -c "$n"
+    st=${PIPESTATUS[0]}
+    case $st in
+      0|141) ;;
+      *)
+        git --no-pager --no-optional-locks status --porcelain=v1 "$@" 2>&1 >/dev/null | head -c 4096
+        exit 8
+        ;;
+    esac
     """
   end
 

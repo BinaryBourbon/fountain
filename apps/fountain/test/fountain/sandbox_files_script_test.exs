@@ -1,0 +1,93 @@
+defmodule Fountain.SandboxFilesScriptTest do
+  @moduledoc """
+  The scripts behind `Fountain.SandboxFiles`, run by a real bash against a
+  real repository.
+
+  The rest of the suite mocks `Managoat.Sandbox.exec/4`, which proves what
+  parses the output and nothing at all about what produces it. Every defect
+  #1596 found lived in the shell: a pipeline's exit status, an unconfined
+  `git rev-parse --show-toplevel`, and a header framed with the one byte a
+  path may contain.
+  """
+  use ExUnit.Case, async: true
+
+  alias Fountain.SandboxFiles
+  alias Fountain.TmpDir
+
+  # The byte cap `status/3` passes: one past `@max_status_bytes`.
+  @cap "1048577"
+
+  # `exec/4` leaves `stderr_to_stdout: false` on every adapter, so a script's
+  # stderr goes nowhere. Dropping it here keeps the test reading what a
+  # caller reads — and keeps a deliberate `fatal:` out of the suite's output.
+  defp run(kind, args) do
+    System.cmd(
+      "bash",
+      ["-c", "exec 2>/dev/null\n" <> SandboxFiles.script(kind), "fountain-files" | args],
+      env: git_env()
+    )
+  end
+
+  # A repository that is this test's alone: no global config, no templates,
+  # no hooks the developer happens to have installed.
+  defp git_env do
+    [{"GIT_CONFIG_GLOBAL", "/dev/null"}, {"GIT_CONFIG_SYSTEM", "/dev/null"}]
+  end
+
+  defp git!(dir, args) do
+    {out, code} = System.cmd("git", args, cd: dir, env: git_env(), stderr_to_stdout: true)
+    assert code == 0, "git #{Enum.join(args, " ")} failed: #{out}"
+    out
+  end
+
+  # A repository with one commit, one tracked edit and one untracked file.
+  defp repo!(dir) do
+    File.mkdir_p!(dir)
+    git!(dir, ["init", "-q"])
+    git!(dir, ["checkout", "-q", "-b", "main"])
+    File.write!(Path.join(dir, "a.txt"), "one\n")
+    git!(dir, ["add", "a.txt"])
+    git!(dir, ["-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "init"])
+    File.write!(Path.join(dir, "a.txt"), "two\n")
+    File.write!(Path.join(dir, "new.txt"), "fresh\n")
+    dir
+  end
+
+  describe "status_script/0 exit status" do
+    test "a healthy repository answers 0 with its two changes" do
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
+
+      assert {output, 0} = run(:status, [repo, @cap, "all"])
+      assert output =~ "M a.txt"
+      assert output =~ "?? new.txt"
+    end
+
+    test "git failing after discovery is a failure, not an empty status" do
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
+      # What an unreadable index looks like. The realistic trigger is a clean
+      # filter that is not installed (an LFS clone with no `git-lfs` on
+      # PATH); this one is reproducible without a second binary.
+      File.write!(Path.join(repo, ".git/index"), "x")
+
+      assert {output, code} = run(:status, [repo, @cap, "all"])
+
+      # Not 0: `entries: []` here is byte-for-byte what a clean tree returns,
+      # and the tree is not clean.
+      assert code == 8
+      assert output =~ "fatal:"
+    end
+
+    test "the byte cap still truncates, and the SIGPIPE it causes is not a failure" do
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
+
+      # Past a pipe buffer, so `head -c` closing at the cap really does kill
+      # git with SIGPIPE (status 141) rather than letting it finish writing
+      # into the buffer. This is what a bare `set -o pipefail` would break.
+      long = String.duplicate("n", 240)
+      for i <- 1..1_000, do: File.write!(Path.join(repo, "#{long}#{i}.txt"), "x")
+
+      assert {output, 0} = run(:status, [repo, "64", "all"])
+      assert byte_size(output) < 1_000
+    end
+  end
+end
