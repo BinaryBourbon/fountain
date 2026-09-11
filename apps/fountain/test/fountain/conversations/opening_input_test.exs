@@ -3,7 +3,7 @@ defmodule Fountain.Conversations.OpeningInputTest do
   use Mimic
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Conversation, ConversationServer, Sandbox}
+  alias Fountain.Conversations.{Conversation, ConversationServer, PromptInput, Sandbox}
 
   setup do
     user = insert_active_user()
@@ -92,37 +92,53 @@ defmodule Fountain.Conversations.OpeningInputTest do
     end
   end
 
-  @tag path: :create
-  test "a context caller may supply string-keyed images", ctx do
-    stub(Horde.DynamicSupervisor, :start_child, fn _, _ -> {:ok, self()} end)
+  # Atom-only matching rejected every string-keyed map, so a rejection on its
+  # own cannot tell "refused for the right reason" from "never read". Each case
+  # pairs the refusal with the accept, which only holds when string keys are
+  # read at all. Asserted against `validate_initial/1` directly because the
+  # accept half provisions a sandbox through the context and would otherwise
+  # spend the tenant's quota once per case.
+  test "a string-keyed image is read, not merely refused" do
+    good = %{"media_type" => "image/png", "data" => <<0, 1, 2>>}
 
-    assert {:ok, _} =
-             start(ctx, %{
-               "prompt" => "Review",
-               "images" => [%{"media_type" => "image/png", "data" => <<0, 1, 2>>}]
-             })
-  end
-
-  @tag path: :create
-  test "a string-keyed image is held to the same rules", ctx do
-    reject(Horde.DynamicSupervisor, :start_child, 2)
-
-    for image <- [
-          %{"media_type" => "text/html", "data" => "html"},
-          %{"media_type" => "image/png", "data" => ""},
-          %{"media_type" => "image/png"}
+    for bad <- [
+          %{good | "media_type" => "text/html"},
+          %{good | "data" => ""},
+          Map.delete(good, "data"),
+          Map.delete(good, "media_type"),
+          %{good | "data" => :binary.copy(<<0>>, Fountain.Images.max_prompt_image_bytes() + 1)}
         ] do
       assert {:error, :invalid_images} =
-               start(ctx, %{"prompt" => "Review", "images" => [image]})
+               PromptInput.validate_initial(%{"prompt" => "Review", "images" => [bad]})
+
+      assert :ok = PromptInput.validate_initial(%{"prompt" => "Review", "images" => [good]})
     end
   end
 
-  test "a struct is not an image" do
+  test "a struct is refused rather than raised out of Access" do
     assert {:error, :invalid_images} =
-             Fountain.Conversations.PromptInput.validate_initial(%{
+             PromptInput.validate_initial(%{"prompt" => "Review", "images" => [%URI{}]})
+
+    # The same shape on a plain map is accepted, so the clause above is the
+    # struct head doing its job rather than the map read failing.
+    assert :ok =
+             PromptInput.validate_initial(%{
                "prompt" => "Review",
-               "images" => [%URI{}]
+               "images" => [%{"media_type" => "image/png", "data" => <<0>>}]
              })
+  end
+
+  # Attach rather than create: this is about the bytes surviving the context
+  # unchanged, and it needs no second sandbox to say so.
+  @tag path: :attach
+  test "string-keyed and atom-keyed images reach delivery unchanged", ctx do
+    for image <- [
+          %{"media_type" => "image/png", "data" => <<0, 1, 2>>},
+          %{media_type: "image/png", data: <<0, 1, 2>>}
+        ] do
+      expect(ConversationServer, :send_prompt, fn _, "Review", [^image], _ -> :ok end)
+      assert {:ok, _} = start(ctx, %{"prompt" => "Review", "images" => [image]})
+    end
   end
 
   defp start(ctx, extra) do

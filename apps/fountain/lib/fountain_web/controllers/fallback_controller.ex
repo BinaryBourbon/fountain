@@ -65,7 +65,8 @@ defmodule FountainWeb.FallbackController do
       message:
         "each image needs a supported media_type (" <>
           Enum.join(Fountain.Images.valid_media_types(), ", ") <>
-          ") and between 1 byte and 10MB of data"
+          ") and between 1 byte and " <>
+          "#{div(Fountain.Images.max_prompt_image_bytes(), 1024 * 1024)}MB of data"
     })
   end
 

@@ -3616,7 +3616,7 @@ export interface components {
             environment_id?: string | null;
             /** @description With channel_id: skip the resume and open a new conversation (201), which then becomes the channel's binding. Sent by a chat harness relaying its owner's rotate command. Ignored without channel_id. */
             fresh?: boolean | null;
-            /** @description Optional images to attach to the initial prompt. */
+            /** @description Optional images to attach to the initial prompt. They require that prompt: images with no opening text are refused with 422 invalid_prompt, and an image whose media_type is unsupported or whose decoded bytes are empty or over the 10MB ceiling is refused with 422 invalid_images. Both refusals happen before a sandbox is reserved. */
             images?: components["schemas"]["ImageInput"][] | null;
             /** @description Key/value strings to stamp on the conversation. At most 32 entries; a key is at most 64 bytes and a value at most 256 bytes, and a 422 names the offending key under `errors.labels`. With channel_id, a resume merges these into the conversation it hands back rather than dropping them. */
             labels?: {
@@ -3629,7 +3629,7 @@ export interface components {
             } & {
                 [key: string]: ("auto_allow" | "ask" | "auto_deny") | number;
             }) | null;
-            /** @description Optional first turn prompt. */
+            /** @description Optional first turn prompt. A launch may open with no prompt at all, but a prompt that is present must carry words: blank and whitespace-only text is refused with 422 invalid_prompt, before the launch reserves a sandbox. */
             prompt?: string;
             /**
              * @description none omits the sandbox Fountain credential on provision and every wake. Requires a fresh ephemeral sandbox; unavailable on attach or policy-changing channel resume.
