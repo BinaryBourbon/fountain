@@ -16,6 +16,21 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
+  PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
+  took the feature away from every deployment that configures no flag service,
+  because a flag nobody can answer reads off. The flag now reads **on** where
+  `POSTHOG_PROJECT_API_KEY` is unset, so an upgrade keeps the Connections page
+  and the `/api/connections`, `/api/connection-providers` and
+  `/api/secret-bindings` routes. An operator who set
+  `FEATURE_FLAGS_ON=connections` to get the feature back can drop it, and
+  nothing changes where PostHog is configured: it answers the flag as before,
+  and `FEATURE_FLAGS_ON` still wins over both. The switch that turns
+  Connections off is the broker: an account is offered the feature only while
+  `BROKER_TENANTS` names it.
+
 ### Changed
 
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
@@ -56,7 +71,57 @@ upgrade, is in
   compatible endpoint is unchanged: it still synthesizes a caption for an
   image-only message, because clients of that dialect cannot always send one.
 
+- **`truncated` on a sandbox file or diff now means "this is not the whole
+  thing", not "the cap was reached"** (#1907). On
+  `GET /api/sandboxes/:id/file` and `GET /api/sandboxes/:id/diff` it is still
+  true when the file or diff is longer than `max_bytes`, and it is now also
+  true when redaction grew what was read past that cap — which happens when
+  `[REDACTED]` is longer than the value it stands in for. So a file that fits
+  `max_bytes` can come back `truncated: true` with its content cut. The
+  widening errs safe: `truncated: false` still means the bytes are complete,
+  which is the direction a caller depends on, and the new true case tells a
+  caller to ask for more. The field has been published since SDK 1.15.0; its
+  description changed with it, in the OpenAPI document and in the generated
+  TypeScript types.
+
 ### Added
+
+- **An account registers its own OAuth clients** (#1125, ADR 0021 amended).
+  "Sign in with Fountain" no longer needs an operator to edit `OAUTH_CLIENTS`
+  and redeploy. Register an app in the console under Account, then OAuth apps,
+  with `fountain oauth-client create`, or over `/api/oauth/clients`, and the
+  response carries the generated `client_id` the app sends. The registration
+  also admits the app's redirect origins to `/api`, so one registration covers
+  both the sign-in and the calls that follow it and `API_CORS_ORIGINS` needs
+  no entry.
+
+  A new client is in **development mode**: it signs in only the account that
+  registered it, and every other account gets an error page rather than a
+  redirect. That is what makes a self-chosen redirect URI safe, and it is why
+  an owner may name a sandbox's HTTPS URL or an `http://localhost` one. A
+  loopback URI matches on any port (RFC 8252). Only an operator publishes a
+  client for other accounts to use, and only an operator changes or removes it
+  afterwards. One account holds at most 25. Registration needs a full-scope
+  key, because a client is a standing route to a full-scope key after consent.
+
+  The consent page's `form-action` header now names the one redirect origin
+  this request asked for rather than every registered client's.
+
+- **A start that meets a capacity ceiling can wait instead of failing**
+  (#1033, `decisions/0042`). Set `queue: true` on `POST /api/conversations`:
+  at the tenant sandbox cap or the fleet ceiling, Fountain answers `202` with
+  a sandbox request and its position rather than `429` or `503`, and starts
+  the conversation when a slot frees. Callers that do not ask keep the error
+  they handle today. A teammate schedule's cron firing uses the queue on its
+  own, because nobody is there to retry it; the page's and the API's "Run
+  now" still gets the refusal. `GET /api/sandbox-queue`,
+  `GET /api/sandbox-queue/:id` and `DELETE /api/sandbox-queue/:id` list, read
+  and cancel that work. The queue delays the cap and never raises it: ten
+  requests per tenant (`SANDBOX_QUEUE_MAX_DEPTH`), one hour each
+  (`SANDBOX_QUEUE_MAX_WAIT_SECONDS`), every replay back through the same
+  reservation, credit and inference gates, and a full queue keeps the
+  immediate error. Starts carrying images or naming a `sandbox_id` never
+  queue.
 
 - **An `acp` runtime launches a named command, so a deterministic program can
   run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
@@ -129,8 +194,32 @@ upgrade, is in
   and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
   filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
   and the console's conversation lists render them as chips.
+- Permission requests can outlive the turn that raised them. An agent that ends
+  a turn with stop reason `waiting` keeps its request open, the conversation
+  goes idle and the sandbox suspends as usual. `GET /api/conversations/{id}`
+  lists such requests as `pending_requests`, and answering one opens a new turn
+  carrying the request id and the chosen option, which wakes the sandbox. The
+  wait is bounded by `_meta.fountain.timeout` on the request and by an
+  `ask_timeout` in the permission policy, the shorter of the two, else the
+  existing 5 minute ceiling, and at most a year either way. An answer is
+  refused, and the request kept, when the conversation cannot take the turn
+  that carries it.
 
 ### Fixed
+
+- **An account whose `connections` flag is off can revoke what it already
+  holds** (#1693). The flag stood in front of every door, the ones that take a
+  credential away included, while the runtime kept brokering those same tokens
+  into sandboxes: revoking a connection, deleting a provider and unbinding a
+  secret each answered 404 for a credential that was still in use. The flag
+  now gates only the doors that add one, which are connecting an account,
+  defining or editing a provider, binding a secret, pointing a binding at a
+  different host and enabling a binding that is disabled. Listing, revoking,
+  unbinding, deleting and disabling are open to every account the egress
+  broker is on for, in the console and over the API: `DELETE` unbinds and
+  `PATCH` with `enabled: false` and nothing else disables. The Gmail MCP
+  endpoint serves a connection that already exists the way the rest of the
+  runtime does.
 
 - A teammate can be moved to a different environment or vault. Fountain retires
   the computer the old binding named, so the teammate's next message builds one
@@ -550,6 +639,29 @@ upgrade, is in
   outbound WebSocket client to one known host, and Fountain serves HTTP with
   **Bandit, not Cowboy**, so cowlib is not on the inbound request path.
   Tracking upstream; `mix hex.audit` reports them and does not fail the build.
+- **A sandbox file read could return a fragment of a secret, at a byte offset
+  the caller chose** (#1907). `GET /api/sandboxes/:id/file` and
+  `GET /api/sandboxes/:id/diff` capped their output in the shell with
+  `head -c` and redacted in Elixir over whatever survived the cut. Redaction
+  matches a value's own bytes, so a cut through one left a prefix that matched
+  nothing and travelled on in the clear. On `/file` the cut lands at
+  `max_bytes`, which the caller sends, so this was not an occasional boundary
+  artifact that depended on where a value happened to sit: the caller decided
+  where the boundary fell relative to a value, and could walk it. Reading the
+  sandbox's `.env` that way is exactly what ADR 0039 decision 5 says is
+  prevented, and the reader need not be the tenant whose vault values
+  redaction protects — a `full`-scope key includes one issued to a
+  third-party OAuth app the user authorized. Both endpoints now ask their
+  script for enough bytes past the cap that a value lying across it arrives
+  whole (one less than the longest known value, which is the widest one can
+  straddle it), redact that, and only then cut the result down to what was
+  asked for. That last cut is taken in the bytes the script produced rather
+  than in the redacted text, because a value replaced by a shorter
+  `[REDACTED]` moves every byte behind it forward and could otherwise carry
+  an unmatched fragment back inside the cap. `/git-status` was never affected:
+  it drops a record its cap bisected rather than returning it. The change to
+  what `truncated` reports is under **Changed** above. Present since `/file`
+  and `max_bytes` shipped with ADR 0039, and published in SDK 1.15.0.
 
 ## [0.16.0] - 2026-09-03
 

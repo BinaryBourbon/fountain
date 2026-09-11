@@ -16,7 +16,9 @@ defmodule Fountain.FeatureFlags do
      and a flag that was off stays off; the outage does not flip anything.
   4. **Off.** No override, no PostHog (or PostHog unreachable with nothing
      cached) → `false`. Fail closed: an unreachable flag service must never
-     turn a feature on.
+     turn a feature on. The one exception is `@on_without_posthog`, the flags
+     that gate a shipped feature rather than an unfinished one: those read on
+     where the deployment configured no PostHog at all.
 
   The lookup is bounded — `@timeout_ms` — so a slow PostHog costs a request
   at most that much once per user per `@fresh_ms`, not on every call. The
@@ -45,12 +47,27 @@ defmodule Fountain.FeatureFlags do
     openai_compat: "openai_compat"
   }
 
+  # The flags that read **on** where there is no PostHog to ask.
+  #
+  # "Off because we asked and were told no" and "off because there is nobody
+  # to ask" are different answers, and only the first one is a decision. Rule
+  # 4 above fails closed on both, which is right for a flag that gates an
+  # unfinished feature: nobody loses anything they had. It is wrong for a flag
+  # that gates a **shipped** one, because a self-host configures no PostHog —
+  # so the flag reads off there forever and the feature disappears on the
+  # upgrade that introduced the flag (#1620, #1693). A flag listed here is on
+  # for a deployment with no `POSTHOG_PROJECT_API_KEY`, and is answered by
+  # PostHog like any other wherever one is configured. `FEATURE_FLAGS_ON`
+  # still wins over both, and so does a PostHog answer of "off".
+  @on_without_posthog Map.new([:connections], &{Map.fetch!(@flags, &1), true})
+
   @doc "The PostHog key for a known flag atom."
   def key!(flag) when is_atom(flag), do: Map.fetch!(@flags, flag)
 
   @doc """
   Whether `flag` is on for `user` — a `%Fountain.Accounts.User{}`, a user id
-  string, or `nil` (no user: only static overrides apply).
+  string, or `nil` (no user: only the answers that are the same for everyone
+  apply, the static overrides and `@on_without_posthog`).
   """
   @spec enabled?(atom | String.t(), term) :: boolean
   def enabled?(flag, user) when is_atom(flag), do: enabled?(key!(flag), user)
@@ -127,11 +144,10 @@ defmodule Fountain.FeatureFlags do
   defp distinct_id(id) when is_binary(id), do: id
   defp distinct_id(_), do: nil
 
-  defp remote_enabled?(_flag, nil), do: false
-
   defp remote_enabled?(flag, distinct_id) do
-    case configured?() do
-      false -> false
+    cond do
+      not configured?() -> Map.get(@on_without_posthog, flag, false)
+      is_nil(distinct_id) -> false
       true -> Map.get(flags_for(distinct_id), flag, false) == true
     end
   end

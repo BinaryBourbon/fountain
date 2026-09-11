@@ -209,9 +209,12 @@ defmodule FountainWeb.AgentsLive.Form do
   end
 
   # The active connections the form can offer, only where connections exist
-  # (accounts with the Connections flag and broker on). Elsewhere the select is not rendered.
+  # (a brokered account). Elsewhere the select is not rendered. The rollout
+  # flag is not asked: naming a connection the account already holds is not
+  # connecting a new one, and an agent must stay editable after the flag goes
+  # off (#1693).
   defp connections_for(user_id) do
-    if Fountain.Connections.enabled_for?(user_id),
+    if Fountain.Connections.manageable_for?(user_id),
       do: Fountain.Connections.active_connections(user_id),
       else: []
   end

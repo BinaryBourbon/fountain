@@ -108,8 +108,12 @@ defmodule FountainWeb.ConnectionController do
     end
   end
 
+  # Every action here reads or removes. None of them adds a connection —
+  # connecting an account is a browser round trip — so the gate is the broker,
+  # not the rollout flag: an account that holds connections can always list
+  # them and cut them off (#1693).
   defp require_connections(conn, _opts) do
-    if Fountain.Connections.enabled_for?(conn.assigns.current_user.id) do
+    if Fountain.Connections.manageable_for?(conn.assigns.current_user.id) do
       conn
     else
       conn

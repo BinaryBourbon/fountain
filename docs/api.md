@@ -37,13 +37,44 @@ for administrative workflows.
 ### Sign in with Fountain (OAuth 2.0 for browser apps)
 
 Browser apps use the authorization code flow with PKCE. The returned token
-is a Fountain API key. Register the client and its exact redirect URIs with
-the instance operator before you start the flow.
+is a Fountain API key. Register the client and its exact redirect URIs
+before you start the flow.
 
 Keep the verifier in the app that initiated sign-in, and validate `state`
 on return. See [Build a team chat](build/team-chat.md) for an application
 example and the OAuth operations in the [generated reference](/api/docs)
 for the token exchange.
+
+### Register your own app
+
+Register a client in the console under **Account**, then **OAuth apps**, with
+`fountain oauth-client create`, or through the API.
+
+```
+GET    /api/oauth/clients        # the account's clients
+POST   /api/oauth/clients        # {name, redirect_uris} -> {client_id, ...}
+GET    /api/oauth/clients/:id
+PATCH  /api/oauth/clients/:id    # rename it, or replace the redirect URIs
+DELETE /api/oauth/clients/:id
+```
+
+These routes need a full-scope key. A sandbox token cannot register a client.
+A registered client leads to a full-scope key after consent.
+
+Your client starts in **development mode**. It signs in only the account that
+registered it. Every other account gets an error page instead of a redirect.
+Only an operator publishes a client for other accounts. After that, only an
+operator changes or removes the registration. Every other account signs in
+through it, and the `client_id` is random, so a deletion breaks them all.
+
+One account registers a maximum of 25 apps.
+
+A redirect URI must match exactly and must use `https`. A URI on `localhost`
+or `127.0.0.1` can use `http` and matches on any port.
+
+The redirect origins also call `/api` from a browser. One registration covers
+both sign-in and CORS. It needs no `OAUTH_CLIENTS` or `API_CORS_ORIGINS`
+change.
 
 ## Account state
 
@@ -264,6 +295,26 @@ event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render runtime output; clients should not
 parse each runtime's native dialect.
 
+### Wait for capacity
+
+A start can reach the tenant sandbox cap or the fleet ceiling. Fountain then
+answers `429` or `503`. Set `queue: true` to wait instead. Fountain answers
+`202` with a sandbox request and its one-based `position`. The request becomes
+a conversation when capacity is free.
+
+`GET /api/sandbox-queue` lists your requests in position order.
+`GET /api/sandbox-queue/{id}` reports the status of one request. It carries
+`conversation_id` after the start. `DELETE /api/sandbox-queue/{id}` cancels a
+request that still has the `queued` status.
+
+Each tenant holds ten requests at once. A request waits one hour at most. A
+full queue keeps the immediate `429` or `503` answer. A start with images does
+not wait. A start with an explicit `sandbox_id` does not wait. A queued start
+must pass the credit gate and the inference gate again.
+
+A teammate schedule uses the queue without the flag. No person is present
+when its cron fires, so Fountain must not lose the run.
+
 ### Labels
 
 A label is a `key=value` pair of strings on a conversation. A program stamps
@@ -428,6 +479,10 @@ A schedule runs work without a person at the keyboard. Choose the intended
 timezone and verify the next execution before you enable unattended work.
 See [Teammates](concepts/teammates.md) for how schedules relate to a teammate.
 The [generated reference](/api/docs) defines timing fields and run history.
+
+A browser client on another origin needs a registered OAuth client or an
+`API_CORS_ORIGINS` entry. Read [configuration](configuration.md). A bearer
+key is the one credential that crosses an origin.
 
 ## Support
 

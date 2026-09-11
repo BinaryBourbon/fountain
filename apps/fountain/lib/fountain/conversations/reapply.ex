@@ -60,8 +60,11 @@ defmodule Fountain.Conversations.Reapply do
   `:shared_sandbox` blocker below.
   """
 
+  import Ecto.Query
+
   alias Fountain.Conversations.Sandbox
   alias Fountain.Environments.Environment
+  alias Fountain.{Conversations, Repo}
 
   @typedoc "Why a selection cannot be applied to the machine that is already there."
   @type blocker ::
@@ -187,4 +190,61 @@ defmodule Fountain.Conversations.Reapply do
     do:
       "other conversations share this machine, and its skills, instructions and MCP " <>
         "configuration are per-machine rather than per-conversation"
+
+  @doc """
+  Move the machine's binding identity to the selection just committed.
+
+  The identity is what `Conversations.check_attachable/4` matches a later
+  attach against, so it has to follow the conversation rather than stay on
+  the machine's original three. A persistent home is unique per identity, so
+  a move onto one that already exists comes back as a changeset error on
+  `:home` and rolls the whole reapply back: two homes for one identity is
+  exactly what the partial index exists to prevent.
+
+  `applied_skills` is carried forward, not replaced. It records what is on
+  the disk now, which is what the skills reconciliation compares against; the
+  newly selected skills only become the recorded set once they are actually
+  installed. Older disks have no record, so the configuration the conversation
+  was launched with stands in.
+  """
+  @spec update_identity(map(), map(), String.t() | nil, String.t() | nil) ::
+          :ok | {:error, Ecto.Changeset.t()}
+  def update_identity(%{sandbox_id: nil}, _agent, _env_id, _vault_id), do: :ok
+
+  def update_identity(conv, agent, env_id, vault_id) do
+    # ownership: conv came from the tenant-scoped API fetch or its own server.
+    sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    previous = sandbox.applied_skills || previous_skills(conv)
+
+    case Conversations.update_sandbox(sandbox, %{
+           agent_id: agent.id,
+           environment_id: env_id || agent.environment_id,
+           vault_id: vault_id,
+           applied_skills: previous
+         }) do
+      {:ok, _} -> :ok
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  @doc """
+  The skills the conversation's recorded Agent version named.
+
+  The seed for a disk that predates the manifest: it is the selection that
+  was installed when the machine was built, so it is the best available
+  answer to "which entries under the skills root are ours".
+  """
+  @spec previous_skills(map()) :: [map()]
+  def previous_skills(%{agent_version_id: nil}), do: []
+
+  def previous_skills(conv) do
+    # The conversation's own version; ownership was checked at the API door.
+    case Repo.one(
+           from v in Fountain.Agents.AgentVersion,
+             where: v.id == ^conv.agent_version_id and v.user_id == ^conv.user_id
+         ) do
+      nil -> []
+      version -> version.config["skills"] || []
+    end
+  end
 end

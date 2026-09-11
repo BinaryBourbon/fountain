@@ -11,11 +11,28 @@ defmodule Fountain.Conversations do
   require Logger
 
   alias Fountain.Audit
-  alias Fountain.Conversations.{Blocks, Conversation, Labels, LogEvent, Sandbox, Turn, TurnImage}
+
+  alias Fountain.Conversations.{
+    Blocks,
+    Conversation,
+    DetachedRequest,
+    Labels,
+    LogEvent,
+    Sandbox,
+    Turn,
+    TurnImage
+  }
+
+  alias Fountain.Conversations.Reapply
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
+
+  # Advisory-lock namespace for per-sandbox machine operations. Distinct from
+  # Quotas' per-user reservation (4315): this one is taken inside a turn
+  # start, and the two must never be mistaken for one another.
+  @sandbox_lock_namespace 4316
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
   #
@@ -1159,6 +1176,345 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Re-resolve the Agent, Environment and Vault for an existing conversation,
+  on the machine it is already running (#1565).
+
+  `conv` must come from `get_conversation/2`; the lookups below are
+  tenant-scoped to that owner. An omitted field keeps its current selection,
+  and an explicit nil clears the Environment override or the Vault. An empty
+  map is therefore a refresh of what is already selected.
+
+  The sandbox is kept. Environment variables, the system prompt, skills and
+  MCP servers are what a later link of this stack rewrites under it;
+  everything the agent has on disk survives either way.
+
+  A selection that would need the disk built again is refused as
+  `{:error, {:rebuild_required, field}}` rather than silently applied or
+  silently ignored. `Fountain.Conversations.Reapply` owns that rule and says
+  why for each field.
+
+  ## What `{:ok, conv}` promises
+
+  That the selection is committed, and that no turn can open against the
+  previous one: `configuration_revision` moved, and turn admission compares it
+  with the revision the live server loaded.
+
+  It does not promise the running machine has already been reconfigured. A
+  server is told after the commit, and it can be mid-provision or gone by then.
+  Neither loses the change — the next wake builds from the row — so neither is
+  a failure of this call, and reporting one would hand the caller an error for
+  a selection that is already committed. The `configuration` stage event says
+  which of the two happened: `done` when a machine is configured now, `failed`
+  when it is selected and the machine has yet to catch up.
+  """
+  @spec reapply_conversation(Conversation.t(), map(), keyword()) ::
+          {:ok, Conversation.t()} | {:error, term()}
+  def reapply_conversation(%Conversation{} = conv, attrs \\ %{}, opts \\ [])
+      when is_map(attrs) do
+    with {:ok, {previous, updated}} <-
+           with_sandbox_lock(conv.sandbox_id, fn ->
+             # Ownership was established by the caller. Re-read under the lock
+             # so concurrent reapplications preserve each other's omitted
+             # fields rather than each writing from a stale copy.
+             current =
+               Repo.one!(from c in Conversation, where: c.id == ^conv.id, lock: "FOR UPDATE")
+
+             if current.sandbox_id == conv.sandbox_id,
+               do: do_reapply_conversation(current, attrs),
+               else: {:error, :provisioning}
+           end) do
+      metadata = reapply_metadata(previous, updated)
+
+      # Outside the transaction: a failed audit insert would abort the
+      # enclosing one and take the reapply with it.
+      Audit.record(%{
+        user_id: updated.user_id,
+        action: "conversation.configuration_reapplied",
+        resource_type: "conversation",
+        resource_id: updated.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: metadata
+      })
+
+      broadcast_sidebar_update(updated.user_id)
+      announce_reapply(updated, metadata)
+      {:ok, updated}
+    end
+  end
+
+  # The selection is committed by the time this runs, so it is not in doubt and
+  # the caller is not told otherwise. What is still in doubt is whether a
+  # machine has read it, and only `{:ok, :reloaded}` says one has. Everything
+  # else — no server, no machine, a server that refused — leaves the selection
+  # standing with nothing rewritten anywhere, which is the `failed` sentence
+  # rather than a `done` that would claim a machine is configured.
+  #
+  # Best-effort as a whole: this runs after the commit, so neither the call nor
+  # `publish_stage/4`'s own insert may take a reapply that already happened.
+  defp announce_reapply(conv, metadata) do
+    try do
+      common = %{
+        event: "reapplied",
+        previous: metadata["previous"],
+        current: metadata["current"],
+        changed_fields: metadata["changed_fields"]
+      }
+
+      case Fountain.Conversations.ConversationServer.refresh_configuration(
+             conv.id,
+             conv.configuration_revision
+           ) do
+        {:ok, :reloaded} ->
+          publish_stage(
+            conv.id,
+            "configuration",
+            "done",
+            Map.put(
+              common,
+              :message,
+              "The configuration was reapplied on this machine. The transcript and the " <>
+                "files on disk are kept; the next prompt starts a new runtime session."
+            )
+          )
+
+        # Total on purpose. This runs after the commit, so an unexpected shape
+        # here must become an event rather than a CaseClauseError that 500s a
+        # reapply which already happened.
+        other ->
+          publish_stage(
+            conv.id,
+            "configuration",
+            "failed",
+            common
+            |> Map.put(:reason, refresh_reason(other))
+            |> Map.put(
+              :message,
+              "The configuration is selected. No machine has read it yet; it is " <>
+                "applied when this conversation next wakes, and no turn can run " <>
+                "against the previous selection in the meantime."
+            )
+          )
+      end
+    rescue
+      error ->
+        Logger.error(
+          "conv #{conv.id}: announcing the reapplied configuration raised: " <>
+            Exception.format(:error, error, __STACKTRACE__)
+        )
+    end
+
+    :ok
+  end
+
+  defp refresh_reason({:ok, reason}), do: refresh_reason(reason)
+  defp refresh_reason({:error, reason}), do: refresh_reason(reason)
+  defp refresh_reason(reason) when is_atom(reason) or is_binary(reason), do: to_string(reason)
+  defp refresh_reason(other), do: inspect(other)
+
+  defp do_reapply_conversation(conv, attrs) do
+    agent_id = reapply_value(attrs, "agent_id", conv.agent_id)
+    vault_selection = reapply_value(attrs, "vault_id", conv.vault_id)
+    environment_selection = reapply_value(attrs, "environment_id", conv.environment_id)
+
+    with :ok <- assert_reapplicable(conv),
+         {:ok, agent_id} <- reapply_agent_id(agent_id),
+         %Fountain.Agents.Agent{} = agent <-
+           Fountain.Agents.get_agent(agent_id, conv.user_id) || {:error, :not_found},
+         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
+         {:ok, _provider} <- resolve_sandbox_provider(agent),
+         {:ok, vault_id} <- resolve_vault_id(vault_selection, conv.user_id, agent),
+         {:ok, environment_id} <-
+           resolve_environment_id(environment_selection, conv.user_id, agent),
+         {:ok, _permission_policy} <- resolve_permission_policy(conv.permission_policy, agent),
+         :ok <- assert_applicable_in_place(conv, agent, environment_id, vault_id),
+         {:ok, updated} <-
+           write_reapplied_configuration(conv,
+             agent_id: agent.id,
+             # Ownership: `agent` was fetched above by both id and conv.user_id.
+             agent_version_id: Fountain.Agents._unsafe_current_version_id(agent.id),
+             vault_id: vault_id,
+             environment_id: environment_id,
+             runtime: agent.runtime,
+             configuration_revision: conv.configuration_revision + 1
+           ),
+         :ok <- Reapply.update_identity(conv, agent, environment_id, vault_id) do
+      {:ok, {conv, updated}}
+    end
+  end
+
+  # An omitted key keeps what the row already says; a key present with an
+  # explicit nil clears it. Both spellings are accepted because the API hands
+  # string keys through and the context's own callers use atoms.
+  defp reapply_value(attrs, key, current) do
+    atom_key = String.to_existing_atom(key)
+
+    cond do
+      Map.has_key?(attrs, key) -> Map.get(attrs, key)
+      Map.has_key?(attrs, atom_key) -> Map.get(attrs, atom_key)
+      true -> current
+    end
+  end
+
+  # `conversations.agent_id` is `nilify_all`, so deleting an agent leaves the
+  # conversation naming nothing and an omitted `agent_id` inherits that nil.
+  # Ecto refuses to compare nil in a query, so the lookup would raise rather
+  # than answer; refuse the way a wake does instead. An id that was supplied
+  # and does not resolve is a different answer, and the lookup still gives it.
+  defp reapply_agent_id(id) when is_binary(id), do: {:ok, id}
+  defp reapply_agent_id(nil), do: {:error, :no_agent}
+  defp reapply_agent_id(_other), do: {:error, :not_found}
+
+  # Ownership: `conv` reached here from a tenant-scoped fetch, the sandbox is
+  # its own, and the environments are looked up scoped to the same owner.
+  defp assert_applicable_in_place(%Conversation{sandbox_id: nil}, _agent, _env_id, _vault_id),
+    do: :ok
+
+  defp assert_applicable_in_place(%Conversation{} = conv, agent, environment_id, vault_id) do
+    sandbox = _unsafe_get_sandbox(conv.sandbox_id)
+    target_environment_id = environment_id || agent.environment_id
+    target_identity = {agent.id, target_environment_id, vault_id}
+
+    with :ok <- assert_not_shared(sandbox, conv, target_identity) do
+      Reapply.check(sandbox,
+        current_runtime: conv.runtime,
+        target_runtime: agent.runtime,
+        target_environment: environment_for(target_environment_id, conv.user_id),
+        built_with: sandbox && environment_for(sandbox.environment_id, conv.user_id)
+      )
+    end
+  end
+
+  # Skills, instructions and MCP config live at per-machine paths, so
+  # reconfiguring a shared machine reconfigures it for its cotenants too.
+  # `check_attachable/4` pins every conversation on a machine to one identity,
+  # so a selection that still matches theirs is the refresh they would want
+  # anyway. Anything else is refused rather than imposed on them.
+  defp assert_not_shared(nil, _conv, _target), do: :ok
+
+  defp assert_not_shared(%Sandbox{} = sandbox, conv, target) do
+    if _unsafe_sandbox_held_by_other?(sandbox.id, conv.id) and
+         {sandbox.agent_id, sandbox.environment_id, sandbox.vault_id} != target do
+      {:error, {:rebuild_required, :shared_sandbox}}
+    else
+      :ok
+    end
+  end
+
+  defp environment_for(nil, _user_id), do: nil
+  defp environment_for(id, user_id), do: Fountain.Environments.get_environment(id, user_id)
+
+  # A prompt that arrives between the checks above and this write would wake
+  # the conversation and start a turn on the configuration being replaced.
+  # One guarded statement: the row moves only while no turn runs, and a caller
+  # that lost the race is told it is busy rather than silently overwritten.
+  defp write_reapplied_configuration(%Conversation{} = conv, fields) do
+    running_turn =
+      from(t in Turn,
+        where: t.conversation_id == parent_as(:conv).id and t.status == "running",
+        select: 1
+      )
+
+    fields = Keyword.put(fields, :updated_at, DateTime.utc_now() |> DateTime.truncate(:second))
+
+    {count, _} =
+      from(c in Conversation, as: :conv, where: c.id == ^conv.id and not exists(running_turn))
+      |> Repo.update_all(set: fields)
+
+    if count == 1,
+      do: {:ok, _unsafe_get_conversation!(conv.id)},
+      else: {:error, :conversation_busy}
+  end
+
+  defp assert_reapplicable(%Conversation{status: "idle", id: id}),
+    do: assert_no_running_turn(id)
+
+  defp assert_reapplicable(%Conversation{status: "running"}),
+    do: {:error, :conversation_busy}
+
+  # A conversation created without a prompt never leaves `pending`: provision
+  # success flips the *sandbox* row, and only a turn ending writes `idle`. So
+  # refusing every `pending` row would put "I picked the wrong agent before I
+  # sent anything" permanently out of reach, behind a Retry-After that never
+  # cleared. A provision genuinely in flight is still a retry.
+  defp assert_reapplicable(%Conversation{status: "pending"} = conv) do
+    if reapply_provision_in_flight?(conv),
+      do: {:error, :provisioning},
+      else: assert_no_running_turn(conv.id)
+  end
+
+  defp assert_reapplicable(%Conversation{status: status}) when status in ~w(failed terminated),
+    do: {:error, :gone}
+
+  # Ownership: `conv` reached here from a tenant-scoped fetch, and the row
+  # read below is its own machine.
+  defp reapply_provision_in_flight?(%Conversation{sandbox_id: nil}), do: false
+
+  defp reapply_provision_in_flight?(%Conversation{sandbox_id: sandbox_id}) do
+    case _unsafe_get_sandbox(sandbox_id) do
+      %Sandbox{status: status} when status in ["pending", "starting"] -> true
+      _ -> false
+    end
+  end
+
+  defp assert_no_running_turn(conversation_id) do
+    if Repo.exists?(
+         from t in Turn,
+           where: t.conversation_id == ^conversation_id and t.status == "running"
+       ) do
+      {:error, :conversation_busy}
+    else
+      :ok
+    end
+  end
+
+  # Names what moved, never a value: these are the conversation's own
+  # references to tenant resources, which is what "which selection" means.
+  defp reapply_metadata(previous, current) do
+    fields = [:agent_id, :agent_version_id, :environment_id, :vault_id, :runtime]
+
+    changed =
+      fields
+      |> Enum.filter(fn field -> Map.get(previous, field) != Map.get(current, field) end)
+      |> Enum.map(&Atom.to_string/1)
+
+    %{
+      "changed_fields" => changed,
+      "previous" => reapply_selection(previous),
+      "current" => reapply_selection(current),
+      "configuration_revision" => current.configuration_revision
+    }
+  end
+
+  defp reapply_selection(conv) do
+    %{
+      "agent_id" => conv.agent_id,
+      "agent_version_id" => conv.agent_version_id,
+      "environment_id" => conv.environment_id,
+      "vault_id" => conv.vault_id
+    }
+  end
+
+  # The lock turn admission takes, so a reapply and a turn start cannot
+  # interleave on one machine. `nil` is a conversation whose machine has not
+  # been minted yet; there is nothing to serialize against.
+  defp with_sandbox_lock(sandbox_id, fun) do
+    Repo.transaction(fn ->
+      if sandbox_id do
+        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+          @sandbox_lock_namespace,
+          :erlang.phash2(sandbox_id)
+        ])
+      end
+
+      case fun.() do
+        {:ok, value} -> value
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  @doc """
   Best-effort terminate the running ConversationServer (destroys the sprite
   if alive), then delete the conversation row. Cascades to turns and log
   events via the FK.
@@ -1302,14 +1658,13 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # Advisory-lock namespace for per-sandbox machine operations. Distinct from
-  # Quotas' per-user reservation (4315): this one is taken inside a turn
-  # start, and the two must never be mistaken for one another.
-  @sandbox_lock_namespace 4316
-
   @doc """
   Create a turn on a sandbox that may be shared, refusing when the runtime's
   capacity is used up by another conversation's running turn.
+
+  `revision` is the conversation's `configuration_revision` as the caller
+  understands it, or nil for a caller with none; a mismatch answers
+  `{:error, :configuration_changed}` (#1565).
 
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
   per-sandbox advisory lock and verify that the conversation still belongs
@@ -1319,7 +1674,7 @@ defmodule Fountain.Conversations do
   nonempty allowance refuses the turn. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
   """
-  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
+  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity, revision \\ nil)
       when is_binary(sandbox_id) and
              (capacity == :unbounded or (is_integer(capacity) and capacity > 0)) do
     conv_id = Map.fetch!(attrs, :conversation_id)
@@ -1334,12 +1689,21 @@ defmodule Fountain.Conversations do
         # The allowance's FK takes KEY SHARE on this row when first inserted.
         # UPDATE also fences that first insert when there is no allowance row
         # to lock yet. Keep both locks through the turn insert.
-        Repo.one(
-          from c in Conversation,
-            where: c.id == ^conv_id,
-            select: c.id,
-            lock: "FOR UPDATE"
-        ) || Repo.rollback(:sandbox_unavailable)
+        conv =
+          Repo.one(
+            from c in Conversation,
+              where: c.id == ^conv_id,
+              select: %{id: c.id, configuration_revision: c.configuration_revision},
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:sandbox_unavailable)
+
+        # The server passes the revision it loaded. A reapply committed since
+        # then means this turn would run against settings the server has not
+        # read, so it is refused here rather than started wrong (#1565). A
+        # caller with no revision to offer is not checked.
+        if not is_nil(revision) and conv.configuration_revision != revision do
+          Repo.rollback(:configuration_changed)
+        end
 
         attached? =
           Repo.exists?(
@@ -1808,11 +2172,25 @@ defmodule Fountain.Conversations do
   differs per runtime (a per-call delta, a thread total, a per-step figure).
   A second call for the same turn would double-count the conversation, so
   it refuses when the turn already carries a usage.
+
+  The one usage map that is not an end-of-turn record is the turn-start
+  inference stamp (#1685): it carries no token figure, so it has counted
+  towards nothing and there is nothing to double. This write merges over it
+  — the stamp's keys are the two `TurnMachine.with_inference/2` writes here
+  as well, so a turn that answers its prompt ends with the map it would have
+  carried with no stamp at all.
   """
   def _unsafe_record_turn_usage(%Turn{}, nil), do: :ok
-  def _unsafe_record_turn_usage(%Turn{usage: %{}}, _usage), do: {:error, :already_recorded}
 
-  def _unsafe_record_turn_usage(%Turn{} = turn, %{} = usage) do
+  def _unsafe_record_turn_usage(%Turn{usage: %{} = recorded} = turn, %{} = usage) do
+    if Turn.inference_stamp_only?(recorded),
+      do: write_turn_usage(turn, Map.merge(recorded, usage)),
+      else: {:error, :already_recorded}
+  end
+
+  def _unsafe_record_turn_usage(%Turn{} = turn, %{} = usage), do: write_turn_usage(turn, usage)
+
+  defp write_turn_usage(%Turn{} = turn, %{} = usage) do
     # `usage` is whatever the runtime reported. The map is stored as it came,
     # but the counters it increments are bigints: a string or an object here
     # used to raise inside the transaction and take the turn's usage
@@ -3718,6 +4096,11 @@ defmodule Fountain.Conversations do
 
   Audited as a decision about tenant-owned state, per 0013: the tool and the
   verdict, never the tool's input.
+
+  A request that outlived its turn (#1635) is answered through the same door
+  and audited the same way. What differs is what the answer does: there is no
+  peer left to take it, so the request is resolved on the turn row and a new
+  turn is opened carrying it, which wakes a suspended sandbox on the way.
   """
   @spec answer_permission_request(binary(), binary(), String.t(), String.t(), keyword()) ::
           :ok | {:error, term()}
@@ -3725,35 +4108,273 @@ defmodule Fountain.Conversations do
       when is_binary(conv_id) and is_binary(user_id) do
     actor = Keyword.get(opts, :actor, "self")
 
-    cond do
-      actor == "sprite" ->
+    case {actor, get_conversation(conv_id, user_id)} do
+      {"sprite", _conv} ->
         {:error, :sprite_may_not_answer}
 
-      is_nil(get_conversation(conv_id, user_id)) ->
+      {_actor, nil} ->
         {:error, :not_found}
 
-      true ->
-        do_answer_permission(conv_id, user_id, request_id, option_id, opts)
+      # A conversation nobody can prompt cannot carry an answer back to the
+      # agent, so the request is left where it is rather than resolved into
+      # nothing.
+      {_actor, %Conversation{status: status}} when status not in ["idle", "running"] ->
+        {:error, :not_running}
+
+      {_actor, conv} ->
+        do_answer_permission(conv, user_id, request_id, option_id, opts)
     end
   end
 
-  defp do_answer_permission(conv_id, user_id, request_id, option_id, opts) do
+  # The detached row is looked at first, and deliberately. A turn that ended
+  # `waiting` (#1635) left the request on its row while the peer that raised
+  # it may still be idle on the sandbox holding the JSON-RPC id: asking the
+  # server first would answer a connection whose turn is over and report
+  # success, and the new turn that actually carries the answer would never
+  # open.
+  defp do_answer_permission(conv, user_id, request_id, option_id, opts) do
+    # Ownership: established by the tenant-scoped `get_conversation/2` in
+    # `answer_permission_request/5` immediately above this call.
+    case _unsafe_waiting_turn(conv.id, request_id) do
+      nil -> answer_held_permission(conv.id, user_id, request_id, option_id, opts)
+      turn -> answer_detached_permission(conv, turn, user_id, option_id, opts)
+    end
+  end
+
+  defp answer_held_permission(conv_id, user_id, request_id, option_id, opts) do
     case ConversationServer.answer_permission(conv_id, request_id, option_id) do
       :ok ->
-        Audit.record(%{
-          user_id: user_id,
-          action: "conversation.permission_answered",
-          resource_type: "conversation",
-          resource_id: conv_id,
-          actor: Keyword.get(opts, :actor, "self"),
-          request_ip: Keyword.get(opts, :request_ip),
-          metadata: %{"request_id" => request_id, "option_id" => option_id}
-        })
-
-        :ok
+        record_permission_answered(conv_id, user_id, request_id, option_id, opts)
 
       {:error, _} = err ->
         err
+    end
+  end
+
+  # A request nobody is holding open any more: resolve the row, then open the
+  # turn that tells the agent.
+  #
+  # Every gate the wake path would apply is applied **first**, before the row
+  # is touched. Resolving and then failing to deliver loses the answer with
+  # nothing to retry from, and hands the caller a 409 that says somebody else
+  # answered — which is a lie about what happened.
+  defp answer_detached_permission(conv, turn, user_id, option_id, opts) do
+    request = turn.pending_permission
+    request_id = request["request_id"]
+
+    if DetachedRequest.offered?(request, option_id) do
+      with :ok <- _unsafe_resume_gate(conv),
+           :ok <- _unsafe_resolve_detached_request(turn, "answered", option_id),
+           :ok <-
+             record_permission_answered(
+               turn.conversation_id,
+               user_id,
+               request_id,
+               option_id,
+               opts
+             ) do
+        resume_after_request(turn, request, "answered", option_id, opts)
+      end
+    else
+      {:error, :unknown_option}
+    end
+  end
+
+  @doc """
+  Whether a resume turn can be opened on this conversation right now (#1635).
+
+  The gates the wake will run, run before the request row is resolved. The
+  three answers differ in what a caller should do about them:
+
+  * `:ok` — go ahead.
+  * `{:error, :busy}` — a turn is running, so the resume turn cannot queue
+    behind it. Retry when the conversation is idle; the sweep does, a minute
+    later.
+  * `{:error, :gone}` — the conversation is over, so no turn will ever carry
+    the answer.
+
+  Anything else is the account's own refusal (suspended, out of credit), and
+  is retryable once the account is not.
+
+  WARNING: not scoped by owner. The answer door establishes ownership first;
+  the sweep is a system sweep.
+  """
+  @spec _unsafe_resume_gate(Conversation.t() | binary()) :: :ok | {:error, term()}
+  def _unsafe_resume_gate(conv_id) when is_binary(conv_id) do
+    case _unsafe_get_conversation(conv_id) do
+      nil -> {:error, :gone}
+      conv -> _unsafe_resume_gate(conv)
+    end
+  end
+
+  def _unsafe_resume_gate(%Conversation{} = conv) do
+    cond do
+      conv.status in ["terminated", "failed"] ->
+        {:error, :gone}
+
+      conv.status != "idle" ->
+        {:error, :busy}
+
+      true ->
+        with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id) do
+          Fountain.Billing.check_spend(conv.user_id)
+        end
+    end
+  end
+
+  defp record_permission_answered(conv_id, user_id, request_id, option_id, opts) do
+    Audit.record(%{
+      user_id: user_id,
+      action: "conversation.permission_answered",
+      resource_type: "conversation",
+      resource_id: conv_id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{"request_id" => request_id, "option_id" => option_id}
+    })
+
+    :ok
+  end
+
+  @doc """
+  The turn a detached request is waiting on, or nil (#1635).
+
+  WARNING: not scoped by owner. Call it after a tenant-scoped fetch of the
+  conversation, which is what `answer_permission_request/5` does.
+  """
+  @spec _unsafe_waiting_turn(binary(), String.t()) :: Turn.t() | nil
+  def _unsafe_waiting_turn(conv_id, request_id) do
+    Turn
+    |> where([t], t.conversation_id == ^conv_id and t.waiting == true)
+    |> where([t], fragment("?->>'request_id' = ?", t.pending_permission, ^request_id))
+    |> Repo.one()
+  end
+
+  @doc """
+  Every request this conversation is waiting on, oldest turn first (#1635).
+
+  WARNING: not scoped by owner. Call it after a tenant-scoped fetch, which is
+  what `ConversationController.show/2` does.
+  """
+  @spec _unsafe_list_pending_requests(binary()) :: [map()]
+  def _unsafe_list_pending_requests(conv_id) do
+    Turn
+    |> where([t], t.conversation_id == ^conv_id and t.waiting == true)
+    |> where([t], not is_nil(t.pending_permission))
+    |> order_by([t], asc: t.turn_number)
+    |> Repo.all()
+    |> Enum.map(&DetachedRequest.to_json(&1.pending_permission, &1))
+  end
+
+  @doc """
+  Take a detached request off its turn, once (#1635).
+
+  First answer wins, and here that is enforced by the update itself rather
+  than by a process holding the request: the `where` names the request id the
+  caller read, so a second answer, the sweep and a client racing the sweep all
+  find nothing to update and get `{:error, :no_pending_permission}`.
+
+  The `request`/`done` stage event is published by whoever won, exactly as the
+  in-turn path publishes it.
+
+  WARNING: not scoped by owner. Both callers establish ownership first — the
+  answer door by fetching the conversation for the user, the sweep by being a
+  system sweep.
+  """
+  @spec _unsafe_resolve_detached_request(Turn.t(), String.t(), String.t() | nil) ::
+          :ok | {:error, :no_pending_permission}
+  def _unsafe_resolve_detached_request(%Turn{} = turn, outcome, option_id) do
+    request_id = turn.pending_permission["request_id"]
+
+    {count, _} =
+      Turn
+      |> where([t], t.id == ^turn.id and t.waiting == true)
+      |> where([t], fragment("?->>'request_id' = ?", t.pending_permission, ^request_id))
+      |> Repo.update_all(set: [waiting: false, pending_permission: nil, permission_deadline: nil])
+
+    if count == 1 do
+      publish_stage(turn.conversation_id, "request", "done", %{
+        request_id: request_id,
+        outcome: outcome,
+        option_id: option_id,
+        detached: true
+      })
+
+      :ok
+    else
+      {:error, :no_pending_permission}
+    end
+  end
+
+  @doc """
+  Deny a detached request whose deadline has passed, and tell the agent
+  (#1635).
+
+  The denial picks from the options the agent itself offered, never an id it
+  did not send. Recorded as `conversation.permission_denied` with the sweep as
+  the actor, because no human was at the keyboard and saying otherwise would
+  be a lie about who decided.
+  """
+  @spec _unsafe_expire_detached_request(Turn.t(), keyword()) ::
+          :ok | {:error, term()}
+  def _unsafe_expire_detached_request(%Turn{} = turn, opts \\ []) do
+    request = turn.pending_permission
+    option_id = DetachedRequest.deny_option_id(request)
+    actor = Keyword.get(opts, :actor, "system:detached_request_sweeper")
+
+    # The gate first, for the same reason the answer door applies it first: a
+    # request resolved into a prompt nobody can deliver is gone, the agent is
+    # never told, and there is no second copy to retry from. The deadline has
+    # passed either way, so leaving the row is the safe half of the trade —
+    # the sweep is back in a minute.
+    #
+    # A conversation that is over is the exception: no turn will ever carry
+    # the denial, so the request is resolved and the card stops waiting.
+    case _unsafe_resume_gate(turn.conversation_id) do
+      :ok ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          resume_after_request(turn, request, "timeout", option_id, actor: actor)
+        end
+
+      {:error, :gone} ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          :ok
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  # The resolution reaches the agent as a new turn, because the peer that
+  # raised the request is gone and its JSON-RPC id with it. `send_prompt/4`
+  # wakes a suspended sandbox on the way, which is the whole point of letting
+  # the request outlive the turn.
+  defp resume_after_request(turn, request, outcome, option_id, opts) do
+    case ConversationServer.send_prompt(
+           turn.conversation_id,
+           DetachedRequest.resume_prompt(request, outcome, option_id),
+           [],
+           opts
+         ) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        # The gates above passed and the row is already resolved, so this is a
+        # race rather than a refusal: something took the conversation between
+        # the two. Its own error would tell the caller to retry an answer that
+        # no longer exists, so it becomes one that says what actually
+        # happened.
+        Logger.warning(
+          "conv #{turn.conversation_id}: resolved detached request " <>
+            "#{request["request_id"]} but could not open the turn that carries " <>
+            "the answer: #{inspect(reason)}"
+        )
+
+        {:error, :answer_not_delivered}
     end
   end
 
@@ -3761,17 +4382,19 @@ defmodule Fountain.Conversations do
   Record that the permission policy withheld a tool from a running agent.
 
   Called by the `ConversationServer` when its peer reports a refusal (#939).
-  The actor is `sprite`: the agent asked, the policy answered, and no human was
-  involved — attributing it to the person who happened to write the policy
-  would be a lie about who was at the keyboard.
+  The actor defaults to `sprite`: the agent asked, the policy answered, and no
+  human was involved — attributing it to the person who happened to write the
+  policy would be a lie about who was at the keyboard. A detached request that
+  ran out of time (#1635) passes the sweep instead, for the same reason.
 
   Only refusals are recorded. A turn makes dozens of tool calls and a row per
   allow would make the trail a second copy of the transcript, which 0013
   forbids for exactly this reason. The tool's *input* is never recorded, only
   its name and the verdict.
   """
-  @spec record_permission_denied(binary(), String.t() | nil, String.t()) :: :ok
-  def record_permission_denied(conversation_id, tool, verdict) when is_binary(conversation_id) do
+  @spec record_permission_denied(binary(), String.t() | nil, String.t(), keyword()) :: :ok
+  def record_permission_denied(conversation_id, tool, verdict, opts \\ [])
+      when is_binary(conversation_id) do
     case _unsafe_get_conversation(conversation_id) do
       nil ->
         :ok
@@ -3782,7 +4405,7 @@ defmodule Fountain.Conversations do
           action: "conversation.permission_denied",
           resource_type: "conversation",
           resource_id: conv.id,
-          actor: "sprite",
+          actor: Keyword.get(opts, :actor, "sprite"),
           metadata: %{"tool" => tool, "verdict" => verdict}
         })
 

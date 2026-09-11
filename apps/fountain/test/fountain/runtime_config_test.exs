@@ -321,6 +321,33 @@ defmodule Fountain.RuntimeConfigTest do
       assert tenants.(" , ") == []
     end
 
+    test "named tenants with no listener is a boot error, not a silent fall back to plaintext",
+         %{base: base} do
+      # The fail-open direction of #1686. `enabled_for?/1` is
+      # `configured?() and ...`, so a deployment that names tenants and loses
+      # BROKER_LISTEN_PORT brokers nobody and hands every sandbox plaintext
+      # credentials, with nothing in the logs to say so.
+      for tenants <- ["*", "a-user-id", " a-user-id , b-user-id "] do
+        assert_raise RuntimeError,
+                     ~r/BROKER_TENANTS names tenants to broker, so BROKER_LISTEN_PORT/,
+                     fn ->
+                       read_prod_config(Map.put(base, "BROKER_TENANTS", tenants))
+                     end
+      end
+    end
+
+    test "tenants that trim away to nobody still boot without a listener", %{base: base} do
+      # The guard is on who is named, not on the variable being present: a
+      # manifest that sets BROKER_TENANTS to separators means nobody, which is
+      # the inert state the ratchet starts from.
+      for tenants <- ["", " , "] do
+        cfg = read_prod_config(Map.put(base, "BROKER_TENANTS", tenants))
+
+        assert cfg[:broker_tenants] == []
+        assert cfg[:broker_listen_port] == nil
+      end
+    end
+
     test "a `*` mixed into a list is refused rather than read as an id", %{base: base} do
       # Otherwise the list would silently broker one tenant whose id is "*"
       # and nobody else, which reads at a glance like it brokers everyone.

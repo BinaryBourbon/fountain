@@ -200,7 +200,10 @@ defmodule FountainWeb.Schemas do
         size: %Schema{type: :integer, description: "The whole file, in bytes."},
         truncated: %Schema{
           type: :boolean,
-          description: "True when `content` stopped at `max_bytes` before the end of the file."
+          description:
+            "True when `content` is not the whole file: either the file is longer than " <>
+              "`max_bytes`, or redaction grew what was read past it. False means `content` " <>
+              "is everything."
         },
         encoding: %Schema{
           type: :string,
@@ -240,7 +243,9 @@ defmodule FountainWeb.Schemas do
         diff: %Schema{type: :string, description: "Unified diff, no colour."},
         truncated: %Schema{
           type: :boolean,
-          description: "True when `diff` stopped at `max_bytes` before the end."
+          description:
+            "True when `diff` is not the whole diff: either it is longer than `max_bytes`, " <>
+              "or redaction grew what was read past it. False means `diff` is everything."
         }
       },
       required: [:path, :repo_root, :staged, :diff, :truncated]
@@ -370,6 +375,50 @@ defmodule FountainWeb.Schemas do
         output: %Schema{type: :integer, minimum: 0}
       },
       required: [:input, :output]
+    })
+  end
+
+  defmodule PendingPermissionRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PendingPermissionRequest",
+      description:
+        "A permission request that outlived its turn (#1635). The agent ended the " <>
+          "turn with stop reason `waiting` while this request was open, so the " <>
+          "conversation is idle, the sandbox may be suspended, and the request is " <>
+          "still waiting for an answer. Answer it at " <>
+          "POST /api/conversations/{id}/requests/{request_id}, which resolves it and " <>
+          "opens a new turn carrying the outcome to the agent.",
+      type: :object,
+      properties: %{
+        request_id: %Schema{type: :string},
+        tool: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The tool the agent asked about, as the transcript labels it."
+        },
+        options: %Schema{
+          type: :array,
+          items: %Schema{type: :object, additionalProperties: true},
+          description:
+            "The options the agent offered, verbatim. `option_id` must be one of " <>
+              "these `optionId` values; an id from another runtime is refused."
+        },
+        asked_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        deadline: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description:
+            "When the request is denied for want of an answer. Set from the " <>
+              "request's own `_meta.fountain.timeout`, else the policy's " <>
+              "`ask_timeout`, else the global ask timeout."
+        },
+        turn_id: %Schema{type: :string, format: :uuid}
+      },
+      required: [:request_id, :options]
     })
   end
 
@@ -515,7 +564,15 @@ defmodule FountainWeb.Schemas do
         },
         usage_total: UsageTotal,
         inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
+        updated_at: %Schema{type: :string, format: :"date-time"},
+        pending_requests: %Schema{
+          type: :array,
+          items: PendingPermissionRequest,
+          description:
+            "Permission requests that outlived a turn and are still waiting for an " <>
+              "answer (#1635). Served on GET /api/conversations/{id} only; absent " <>
+              "from the list and from the create response."
+        }
       },
       required: [:id, :runtime, :status]
     })
@@ -719,11 +776,55 @@ defmodule FountainWeb.Schemas do
               "at most 64 bytes and a value at most 256 bytes, and a 422 names the offending " <>
               "key under `errors.labels`. With channel_id, a resume merges these into the " <>
               "conversation it hands back rather than dropping them."
+        },
+        queue: %Schema{
+          type: :boolean,
+          nullable: true,
+          description:
+            "When a fresh start reaches the tenant or the fleet concurrency ceiling, wait " <>
+              "in the bounded sandbox queue and return 202 with a SandboxRequest instead " <>
+              "of 429 or 503 (ADR 0042). Starts carrying images or an explicit sandbox_id " <>
+              "are never queued, and a full queue keeps the immediate error."
         }
       },
       required: [:agent_id]
     })
   end
+
+  defmodule SandboxRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxRequest",
+      description: "Work waiting for sandbox capacity (ADR 0042).",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        agent_id: %Schema{type: :string, format: :uuid},
+        kind: %Schema{type: :string, enum: Fountain.SandboxQueue.Request.kinds()},
+        status: %Schema{type: :string, enum: Fountain.SandboxQueue.Request.statuses()},
+        source: %Schema{type: :string, nullable: true},
+        conversation_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "The conversation the request became, once it started."
+        },
+        error: %Schema{type: :string, nullable: true},
+        position: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "One-based place in the tenant's queue; null once it stops waiting."
+        },
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :agent_id, :kind, :status]
+    })
+  end
+
+  item_response(SandboxRequestResponse, of: SandboxRequest)
+  list_response(SandboxRequestListResponse, of: SandboxRequest)
 
   defmodule ConversationLabelsRequest do
     @moduledoc false
@@ -838,6 +939,13 @@ defmodule FountainWeb.Schemas do
             "Who opened the turn: `user` for a prompt somebody sent, `autonomous` " <>
               "for a turn the server opened for a background cycle the agent ran " <>
               "after its prompt was answered (#817)."
+        },
+        waiting: %Schema{
+          type: :boolean,
+          description:
+            "The turn ended with a permission request still open (#1635): the agent " <>
+              "answered with stop reason `waiting`, the turn is `completed` and the " <>
+              "request is on the conversation as a `pending_requests` entry."
         },
         exit_code: %Schema{type: :integer, nullable: true},
         started_at: %Schema{type: :string, format: :"date-time", nullable: true},
@@ -3699,6 +3807,100 @@ defmodule FountainWeb.Schemas do
   # ApiKey is referenced by the implicit alias the nested defmodule above
   # created; it only exists after that definition, hence the ordering.
   list_response(ApiKeyListResponse, of: ApiKey)
+
+  defmodule OAuthClient do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthClient",
+      description:
+        "A tenant-owned OAuth client. Unpublished clients are in development " <>
+          "mode and can sign in only their owner. Their redirect origins are " <>
+          "also admitted by CORS.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        client_id: %Schema{
+          type: :string,
+          description: "The client_id sent to /oauth/authorize."
+        },
+        name: %Schema{type: :string, description: "Shown on the consent page."},
+        redirect_uris: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          description: "Exact match, except that an unpublished loopback URI matches on any port."
+        },
+        origins: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          description:
+            "Origins derived from redirect_uris and admitted by CORS. A " <>
+              "loopback origin is admitted on any port, not only the port shown here."
+        },
+        published: %Schema{
+          type: :boolean,
+          description: "False means development mode with owner-only sign-in."
+        },
+        created_at: %Schema{type: :string, format: :"date-time"},
+        updated_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [
+        :id,
+        :client_id,
+        :name,
+        :redirect_uris,
+        :origins,
+        :published,
+        :created_at,
+        :updated_at
+      ]
+    })
+  end
+
+  defmodule OAuthClientRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthClientRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, minLength: 1},
+        redirect_uris: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          minItems: 1
+        }
+      },
+      required: [:name, :redirect_uris],
+      example: %{
+        name: "Notes",
+        redirect_uris: ["https://abc123.sprites.app/callback", "http://localhost:5173/callback"]
+      }
+    })
+  end
+
+  defmodule OAuthClientUpdateRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthClientUpdateRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, minLength: 1},
+        redirect_uris: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          minItems: 1
+        }
+      },
+      example: %{name: "Notes for Fountain"}
+    })
+  end
+
+  list_response(OAuthClientListResponse, of: OAuthClient)
 
   defmodule Runner do
     @moduledoc false

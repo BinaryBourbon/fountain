@@ -11,6 +11,33 @@ server releases.
 
 ---
 
+## [1.30.0] - 2026-09-11
+
+### Added
+
+- Generated types carry a conversation's `pending_requests`, the permission requests that outlived a turn and are still waiting for an answer. Each entry has the request id, the tool, the options the agent offered, when it was asked and when it expires.
+- Generated types carry a turn's `waiting`, true when the turn ended with such a request still open.
+- `permission_policy` accepts `ask_timeout`, a number of seconds a request that outlived its turn waits before it is denied. It is the one policy key whose value is a number rather than a verdict, so the value type is now a union of the verdict enum and a number.
+
+## [1.29.0] - 2026-09-11
+
+### Changed
+
+- Generated types carry `queue` on a conversation create, and the `SandboxRequest` shape a queued start answers with (ADR 0042). At the tenant sandbox cap or the fleet ceiling, a start that sets `queue: true` gets 202 and a request id instead of 429 or 503.
+- `/api/sandbox-queue` is deliberately not wrapped. The run handle promises an immediate conversation, and a queued start hands back a request first; reach the three routes over the raw HTTP client until a queued-run handle owns the polling and the cancellation.
+
+## [1.28.0] - 2026-09-10
+
+### Added
+
+- Wire types for the OAuth client registry (#1125): `/api/oauth/clients` and
+  `/api/oauth/clients/{id}`, plus `OAuthClient`, `OAuthClientRequest`,
+  `OAuthClientUpdateRequest` and `OAuthClientListResponse`. The hand-written
+  layer does not model these; registering an app is a once-per-app setup step
+  a person does in the console or with `fountain oauth-client`, and the SDK's
+  work starts with the API key the flow mints. Reach them through the raw
+  client if you need them.
+
 ## [1.27.0] — 2026-09-10
 
 ### Added

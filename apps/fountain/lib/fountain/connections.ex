@@ -51,12 +51,39 @@ defmodule Fountain.Connections do
   alias Fountain.Connections.{Connection, OAuth, Platform, Provider}
   alias Managoat.McpAuth
 
-  @doc "Whether this account may use Connections and manage credential bindings."
+  @doc """
+  Whether this account may **add** a connection, a provider or a credential
+  binding.
+
+  Two things have to be true. The egress broker is on for the tenant
+  (ADR 0019) — without it a token would have to enter a sandbox in the clear.
+  And the `connections` rollout flag is on for them. Gate every door that
+  creates something on this one, and nothing else: see
+  `manageable_for?/1` for the rest.
+  """
   @spec enabled_for?(String.t()) :: boolean()
   def enabled_for?(user_id) do
     Fountain.Broker.enabled_for?(user_id) and
       Fountain.FeatureFlags.enabled?(:connections, user_id)
   end
+
+  @doc """
+  Whether this account's existing connections and bindings may be listed,
+  revoked and deleted.
+
+  The broker alone, deliberately, because that is what the runtime paths which
+  attach a token gate on (`Fountain.Conversations.Egress`). A tenant whose
+  rollout flag goes off keeps every credential that is already brokered into
+  their sandboxes, so the doors that take one away have to stay open. Behind
+  the creation gate, revocation answered 404 while the token kept flowing, and
+  the account had no way to turn off a credential that was still in use
+  (#1693).
+
+  A tenant with no rows gets an empty list rather than a 404, which is the
+  price of never having to ask "do they still hold one?" before answering.
+  """
+  @spec manageable_for?(String.t()) :: boolean()
+  def manageable_for?(user_id), do: Fountain.Broker.enabled_for?(user_id)
 
   # How close to expiry a token is considered stale. A turn may run for a
   # while on the token it started with, so refresh well ahead.
