@@ -102,6 +102,7 @@ ends. Use the SSE endpoint for output.
     "agent_id": "7ab1…",
     "parent_conversation_id": null,
     "status": "idle",
+    "labels": {"env": "prod", "drift": "true"},
     "stage": "turn",
     "state": "done",
     "turn_id": "3d90…",
@@ -116,11 +117,15 @@ ends. Use the SSE endpoint for output.
 | `type` | `conversation.<stage>.<status>`. |
 | `created_at` | The time Fountain recorded the transition, in UTC, to the microsecond. |
 | `data.status` | The conversation status Fountain read at dispatch time. Treat it as advisory. |
+| `data.labels` | The conversation's labels, read at dispatch time. An empty object when it has none. |
 | `data.turn_id` | A turn event carries it. Every other event carries null. |
 | `data.duration_ms` | How long the stage took, where the stage records a duration. |
 
 **The payload carries no values.** It has no transcript text, no prompt, no
-environment variable names and no secret values. The audit trail obeys the
+environment variable names and no secret values. Labels are the one free-form
+field, and they are there because a caller put them there itself. The agent
+in the sandbox can also stamp them over its ACP session. Treat a label as
+data your own run wrote, and not as a value Fountain derived. The audit trail obeys the
 same rule ([ADR 0013](https://github.com/managoat/fountain/blob/main/decisions/0013-audit-trail.md)),
 for the same reason. A payload is tenant data that leaves the building over a
 URL somebody typed into a form. The delivery log would otherwise hold a
