@@ -15,20 +15,60 @@ defmodule Fountain.SandboxQueue do
   Bounded twice. A tenant holds at most `SANDBOX_QUEUE_MAX_DEPTH` active
   requests, and a request waits at most `SANDBOX_QUEUE_MAX_WAIT_SECONDS`.
   Beyond the depth bound the caller keeps its immediate capacity error.
+
+  ## Claiming
+
+  Several replicas can be told a slot freed at the same instant, so a drain
+  claims before it replays. Every write that moves a row out of a live status
+  is a compare-and-swap fenced on the `(status, updated_at)` the drain
+  observed, and a claim is the same compare-and-swap: `claim_next/2` will take
+  a `queued` row, or a `starting` row whose claim outran
+  `@claim_timeout_seconds` because the worker holding it died. Only the
+  replica that won the swap can write that row's outcome, so a zombie replay
+  cannot overwrite the row a recovering drain has since taken.
   """
 
   import Ecto.Query, only: [from: 2]
+
+  require Logger
 
   alias Fountain.Audit
   alias Fountain.Repo
   alias Fountain.SandboxQueue.Request
 
   @default_max_depth 10
+  @default_max_wait_seconds 3600
 
   # One source of truth. `Request.active_statuses/0` is what the ops gauge
   # reads too, and two copies would let the depth bound and the gauge disagree
   # silently if a status were ever added.
   @active_statuses Request.active_statuses()
+
+  # A worker can die after its compare-and-swap and before its replay
+  # finishes. Both replay paths normally return in milliseconds — provisioning
+  # happens in the ConversationServer, not under the claim — so five minutes
+  # identifies an abandoned claim with a wide margin.
+  @claim_timeout_seconds 300
+
+  # Not this request's fault and not this tenant's ceiling: the turn in flight
+  # ends, the home sandbox finishes provisioning, the runner comes back. The
+  # request goes back in line rather than burning its prompt on a condition
+  # that clears by itself. `Fountain.Workers.TeamScheduleRun` snoozes on
+  # exactly this list, for exactly this reason.
+  @transient_errors ~w(busy provisioning runner_offline sandbox_at_capacity)a
+
+  # Every replay and every terminal write the drain makes is attributed to the
+  # queue, not to whoever originally asked. The audit vocabulary is closed
+  # (ADR 0013) and `system:<worker>` is the shape a background caller takes.
+  @system_actor "system:sandbox_queue"
+
+  @doc """
+  The audit actor a replay runs as.
+
+  Exposed the way `Team.Schedules.actor/0` is, so a surface can tell the
+  drainer's replay from a person's own call without hardcoding the string.
+  """
+  def actor, do: @system_actor
 
   # Its own advisory-lock namespace. The depth bound counts rows in
   # `sandbox_requests` and has nothing to serialize against a sandbox
@@ -156,7 +196,7 @@ defmodule Fountain.SandboxQueue do
   reached a `starting` row would abandon a start already in flight.
   """
   def cancel_request(%Request{} = request, opts \\ []) do
-    case terminate(request.id, "queued", %{status: "cancelled", attrs: %{}}) do
+    case swap(request.id, "queued", %{status: "cancelled", attrs: %{}}) do
       {:ok, cancelled} ->
         audited(cancelled, "sandbox_request.cancelled", opts)
         emit_depth(cancelled.user_id)
@@ -167,19 +207,254 @@ defmodule Fountain.SandboxQueue do
     end
   end
 
-  # One compare-and-swap from `expected` to whatever `attrs` says, returning
-  # the row it wrote or `:stale` when somebody else moved it first. Every
-  # transition out of a live status goes through here, so no path in this
-  # module writes a status with a blind `Repo.update/1`.
-  defp terminate(id, expected, attrs) do
-    now = DateTime.utc_now()
-    sets = attrs |> Map.to_list() |> Keyword.put(:updated_at, now)
+  @doc """
+  Expire overdue work, then drain one tenant in FIFO claim order.
+
+  Returns `%{started:, failed:, expired:}`. Safe to run concurrently with
+  another drain of the same tenant: every row it touches is claimed first.
+  """
+  def drain(user_id) when is_binary(user_id) do
+    expired = expire_overdue(user_id)
+    {started, failed} = drain_loop(user_id, {0, 0})
+    emit_depth(user_id)
+    %{started: started, failed: failed, expired: expired}
+  end
+
+  @doc """
+  Whether any tenant has work waiting or claimed.
+
+  An existence probe against the partial index, for the choke point that has
+  to decide whether a freed slot is worth a job at all. Cheaper than
+  `user_ids_with_active_requests/0`, which scans for the distinct set.
+  """
+  def any_active_requests? do
+    Repo.exists?(from r in Request, where: r.status in ^@active_statuses)
+  end
+
+  @doc "Tenant ids with work waiting or currently claimed."
+  def user_ids_with_active_requests do
+    Repo.all(
+      from r in Request,
+        where: r.status in ^@active_statuses,
+        distinct: true,
+        select: r.user_id
+    )
+  end
+
+  # `skipped` holds the requests this pass released for a transient reason.
+  # Without it the loop would re-claim the row it just put back and spin.
+  defp drain_loop(user_id, counts, skipped \\ [])
+
+  defp drain_loop(user_id, {started, failed} = counts, skipped) do
+    case claim_next(user_id, skipped) do
+      nil ->
+        counts
+
+      {request, fence} ->
+        case attempt(request) do
+          {:ok, conversation_id} ->
+            finish(request, fence, %{status: "started", conversation_id: conversation_id})
+            drain_loop(user_id, {started + 1, failed}, skipped)
+
+          # Capacity did not free after all. Every request behind this one
+          # would meet the same wall, so stop the pass entirely rather than
+          # walk the whole queue into the same refusal.
+          {:error, {:sandbox_quota_exceeded, _}} ->
+            release(request, fence)
+            counts
+
+          {:error, :fleet_full} ->
+            release(request, fence)
+            counts
+
+          # Transient and specific to this request's teammate rather than to
+          # the tenant, so the rest of the queue can still make progress.
+          {:error, reason} when reason in @transient_errors ->
+            release(request, fence)
+            drain_loop(user_id, counts, [request.id | skipped])
+
+          {:error, reason} ->
+            finish(request, fence, %{status: "failed", error: describe(reason)})
+            drain_loop(user_id, {started, failed + 1}, skipped)
+        end
+    end
+  end
+
+  # The claim. Takes the oldest waiting row, or the oldest abandoned claim,
+  # and swaps it to `starting` fenced on the exact `(status, updated_at)` this
+  # read observed. Losing the swap means another replica got there first, so
+  # go round again rather than replaying a row somebody else owns.
+  defp claim_next(user_id, skipped) do
+    cutoff = DateTime.add(DateTime.utc_now(), -@claim_timeout_seconds, :second)
+
+    query =
+      from r in Request,
+        where:
+          r.user_id == ^user_id and r.id not in ^skipped and
+            (r.status == "queued" or (r.status == "starting" and r.updated_at < ^cutoff)),
+        order_by: [asc: r.inserted_at, asc: r.id],
+        limit: 1
+
+    case Repo.one(query) do
+      nil ->
+        nil
+
+      request ->
+        case swap_fenced(request, %{status: "starting"}) do
+          {:ok, claimed} ->
+            if request.status == "starting" do
+              Logger.info(
+                "sandbox queue: recovered request #{claimed.id} from an abandoned claim"
+              )
+            end
+
+            {claimed, claimed.updated_at}
+
+          # Another replica got there first. Skipping the row we lost makes
+          # termination structural — each turn round either claims a row or
+          # removes a candidate — rather than resting on the row no longer
+          # matching the query. A row that is claimed and released inside this
+          # pass simply waits for the next one.
+          :stale ->
+            claim_next(user_id, [request.id | skipped])
+        end
+    end
+  end
+
+  # Back in line, under the same fence. A lost swap means a recovering drain
+  # already took the claim: there is nothing left to release, and raising here
+  # would fail the job and strand every other request this tenant has waiting.
+  defp release(%Request{} = request, fence) do
+    case swap_fenced(%{request | status: "starting", updated_at: fence}, %{status: "queued"}) do
+      {:ok, _} ->
+        :ok
+
+      :stale ->
+        Logger.info("sandbox queue: request #{request.id} was no longer claimed on release")
+        :ok
+    end
+  end
+
+  # The terminal write, under the same fence for the same reason. A blind
+  # update here is the double-start hole: a replay slow enough to lose its
+  # claim would overwrite the row a recovering drain had already replayed.
+  defp finish(%Request{} = request, fence, attrs) do
+    case swap_fenced(
+           %{request | status: "starting", updated_at: fence},
+           Map.put(attrs, :attrs, %{})
+         ) do
+      {:ok, updated} ->
+        # The status names its own event. A `case` over today's two outcomes
+        # would be a `CaseClauseError` raised inside the pass the moment a
+        # third one is written through here, and it would strand every other
+        # request this tenant has waiting.
+        audited(updated, "sandbox_request.#{updated.status}", actor: @system_actor)
+        emit_completed(updated, request.inserted_at)
+        :ok
+
+      :stale ->
+        Logger.warning(
+          "sandbox queue: request #{request.id} lost its claim mid-replay; outcome not recorded"
+        )
+
+        :ok
+    end
+  end
+
+  defp attempt(%Request{kind: "start"} = request) do
+    attrs =
+      request.attrs
+      |> Map.put("user_id", request.user_id)
+      |> Map.put("agent_id", request.agent_id)
+      |> put_unless_nil("source", request.source)
+
+    with {:ok, conversation, _outcome} <-
+           Fountain.Conversations.start_or_resume_conversation(attrs, replay_opts(request)) do
+      {:ok, conversation.id}
+    end
+  end
+
+  defp attempt(%Request{kind: "schedule_run", schedule_id: schedule_id} = request) do
+    case Fountain.Team.Schedules.get_schedule(schedule_id, request.user_id) do
+      nil ->
+        {:error, :schedule_deleted}
+
+      schedule ->
+        with {:ok, conversation} <-
+               Fountain.Team.Schedules.run_schedule(schedule, actor: @system_actor) do
+          {:ok, conversation.id}
+        end
+    end
+  end
+
+  # What the door passed, minus what only a live request has. `source` is the
+  # provenance the API inferred from the parent-conversation header, so a
+  # queued fan-out has to replay as `agent` rather than default to `api`;
+  # `sandbox_key_id` is the ADR 0045 restriction, and dropping it would let a
+  # `sprite` token relabel a conversation it does not own by way of a
+  # `channel_id` resume the replay reaches an hour later. `request_ip` is
+  # deliberately absent: there is no request.
+  defp replay_opts(%Request{sandbox_key_id: nil}), do: [actor: @system_actor]
+
+  defp replay_opts(%Request{sandbox_key_id: key_id}),
+    do: [actor: @system_actor, sandbox_key_id: key_id]
+
+  defp put_unless_nil(attrs, _key, nil), do: attrs
+  defp put_unless_nil(attrs, key, value), do: Map.put(attrs, key, value)
+
+  defp expire_overdue(user_id) do
+    cutoff = DateTime.add(DateTime.utc_now(), -max_wait_seconds(), :second)
+
+    overdue =
+      Repo.all(
+        from r in Request,
+          where: r.user_id == ^user_id and r.status == "queued" and r.inserted_at < ^cutoff
+      )
+
+    Enum.count(overdue, fn request ->
+      case swap(request.id, "queued", %{status: "expired", attrs: %{}}) do
+        {:ok, expired} ->
+          audited(expired, "sandbox_request.expired", actor: @system_actor)
+          emit_completed(expired, request.inserted_at)
+          true
+
+        :stale ->
+          false
+      end
+    end)
+  end
+
+  # One compare-and-swap on status alone, for the transitions a caller makes
+  # from outside a claim. Returns the row it wrote, or `:stale` when somebody
+  # else moved it first. No path in this module writes a status with a blind
+  # `Repo.update/1`.
+  defp swap(id, expected_status, attrs) do
+    sets = attrs |> Map.to_list() |> Keyword.put(:updated_at, DateTime.utc_now())
 
     case Repo.update_all(
-           from(r in Request, where: r.id == ^id and r.status == ^expected),
+           from(r in Request, where: r.id == ^id and r.status == ^expected_status),
            set: sets
          ) do
       {1, _} -> {:ok, Repo.get!(Request, id)}
+      {0, _} -> :stale
+    end
+  end
+
+  # The same swap, fenced on the exact version observed. `updated_at` is
+  # microsecond-resolution and every write here changes it, so the pair is a
+  # version token: a writer holding an older one has been overtaken.
+  defp swap_fenced(observed, attrs) do
+    sets = attrs |> Map.to_list() |> Keyword.put(:updated_at, DateTime.utc_now())
+
+    case Repo.update_all(
+           from(r in Request,
+             where:
+               r.id == ^observed.id and r.status == ^observed.status and
+                 r.updated_at == ^observed.updated_at
+           ),
+           set: sets
+         ) do
+      {1, _} -> {:ok, Repo.get!(Request, observed.id)}
       {0, _} -> :stale
     end
   end
@@ -214,6 +489,24 @@ defmodule Fountain.SandboxQueue do
 
   defp existing_schedule_request(_params), do: nil
 
+  defp emit_completed(%Request{} = request, waiting_since) do
+    :telemetry.execute(
+      [:fountain, :sandbox_queue, :completed],
+      %{
+        wait_ms: DateTime.diff(DateTime.utc_now(), waiting_since, :millisecond),
+        count: 1
+      },
+      %{status: request.status, kind: request.kind}
+    )
+  end
+
+  defp describe({:sandbox_quota_exceeded, %{count: count, limit: limit}}),
+    do: "sandbox quota: #{count}/#{limit}"
+
+  defp describe(%Ecto.Changeset{}), do: "invalid conversation attrs"
+  defp describe(reason) when is_atom(reason), do: to_string(reason)
+  defp describe(reason), do: inspect(reason) |> String.slice(0, 250)
+
   defp emit_depth(user_id) do
     :telemetry.execute(
       [:fountain, :sandbox_queue, :tenant_depth],
@@ -246,4 +539,12 @@ defmodule Fountain.SandboxQueue do
 
   defp max_depth,
     do: Application.get_env(:fountain, :sandbox_queue_max_depth, @default_max_depth)
+
+  defp max_wait_seconds,
+    do:
+      Application.get_env(
+        :fountain,
+        :sandbox_queue_max_wait_seconds,
+        @default_max_wait_seconds
+      )
 end
