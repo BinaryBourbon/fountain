@@ -539,6 +539,31 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 402)
     end
 
+    # The `message` is the assertion that matters: without the fallback clause
+    # the terminal safety net still answers 422 with the bare atom, so a test
+    # that only checked the status and `error` would pass with no clause at
+    # all (#1632).
+    test "returns 422 invalid_sprite_name, with a message, for a malformed suffix", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post(
+          "/api/conversations",
+          Jason.encode!(%{"agent_id" => agent.id, "sprite_name" => "not a valid name"})
+        )
+
+      body = json_response(conn, 422)
+      assert body["error"] == "invalid_sprite_name"
+      assert body["message"] =~ "suffix of an account-scoped sandbox name"
+    end
+
     test "returns 404 when agent_id does not exist", %{conn: conn, raw_key: raw_key} do
       unknown_agent_id = Ecto.UUID.generate()
 

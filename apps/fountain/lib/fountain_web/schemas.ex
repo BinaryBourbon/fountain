@@ -590,12 +590,16 @@ defmodule FountainWeb.Schemas do
           description:
             "Name the conversation's machine instead of taking a generated name. " <>
               "The value is the suffix of an account-scoped name: the server keeps the " <>
-              "fountain-<account>- prefix every generated name carries, so a name can " <>
-              "never resolve to another account's machine. 1 to 40 characters of " <>
-              "letters, digits, - and _, starting with a letter or digit; a name that " <>
-              "already carries this account's prefix is taken as it stands. 422 " <>
-              "invalid_sprite_name otherwise. Refused with sandbox_api_access none, " <>
-              "which requires a machine no other conversation can reach."
+              "fountain-<account>- prefix every generated name carries, so a name you " <>
+              "choose lands in your own namespace rather than another account's. " <>
+              "1 to 40 characters of letters, digits, - and _, starting with a letter " <>
+              "or digit; a name that already carries this account's prefix is taken as " <>
+              "it stands, so a name from an earlier launch resolves to the same machine. " <>
+              "422 invalid_sprite_name otherwise. Refused with 422 " <>
+              "sprite_name_not_supported on an agent that runs on a self-hosted runner, " <>
+              "where the name carries the runner instead. Refused with " <>
+              "sandbox_api_access none, which requires a machine no other conversation " <>
+              "can reach."
         },
         sandbox_mode: %Schema{
           type: :string,

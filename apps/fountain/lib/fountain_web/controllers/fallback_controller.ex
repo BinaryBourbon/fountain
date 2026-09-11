@@ -441,6 +441,17 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, :sprite_name_not_supported}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "sprite_name_not_supported",
+      message:
+        "this agent runs on a self-hosted runner, where the sandbox name carries the " <>
+          "runner it is placed on; omit sprite_name and let the server mint it"
+    })
+  end
+
   def call(conn, {:error, :invalid_sandbox_mode}) do
     conn
     |> put_status(:unprocessable_entity)

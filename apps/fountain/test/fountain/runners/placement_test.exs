@@ -56,6 +56,51 @@ defmodule Fountain.Runners.PlacementTest do
     assert runner_id == runner.id
   end
 
+  test "an explicit sprite_name is refused on the runner provider" do
+    # The name is the placement here: it carries the runner id, and an
+    # account-scoped name cannot also be a runner name. Refusing beats minting
+    # a sandbox `Runners.parse_sandbox_name/1` cannot read back (#1632).
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, sandbox_provider: "runner")
+    {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
+    {:ok, daemon} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
+    on_exit(fn -> FakeDaemon.stop(daemon) end)
+
+    before = Fountain.Quotas.active_sandbox_count(user.id)
+
+    assert {:error, :sprite_name_not_supported} =
+             Conversations.start_conversation(%{
+               "agent_id" => agent.id,
+               "user_id" => user.id,
+               "sprite_name" => "pinned-name"
+             })
+
+    assert Fountain.Quotas.active_sandbox_count(user.id) == before
+  end
+
+  test "a runner sandbox's own name does not round-trip, it is refused" do
+    # The reason the round-trip claim is scoped to the hosted providers: a
+    # runner name is 48 characters and carries no account prefix, so handing
+    # one back is the refusal above rather than an adoption of that machine.
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, sandbox_provider: "runner")
+    {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
+    {:ok, daemon} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
+    on_exit(fn -> FakeDaemon.stop(daemon) end)
+
+    assert {:ok, conv} =
+             Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+    minted = Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name
+
+    assert {:error, :sprite_name_not_supported} =
+             Conversations.start_conversation(%{
+               "agent_id" => agent.id,
+               "user_id" => user.id,
+               "sprite_name" => minted
+             })
+  end
+
   test "an explicit sprite_name is honored regardless of provider, under this account's prefix" do
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id)

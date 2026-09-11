@@ -2488,7 +2488,8 @@ defmodule Fountain.Conversations do
     - `prompt`                — optional first prompt (sends turn 1 immediately)
     - `sprite_name`           — optional suffix for the sandbox name, which is always
                                 "fountain-<short-user-id>-<suffix>"; defaults to a random
-                                suffix. Refused with `sandbox_api_access: "none"` (#1632)
+                                suffix. Refused with `sandbox_api_access: "none"`, and on
+                                the runner provider, whose names carry placement (#1632)
     - `vault_id`              — optional vault whose secrets override the env's
     - `environment_id`        — optional environment to provision from instead of the
                                 agent's own (#783); subject to `agent.allowed_environment_ids`
@@ -3521,9 +3522,13 @@ defmodule Fountain.Conversations do
   # 409 because it assumes Fountain minted every name it asks for. A verbatim
   # override broke that assumption: two rows in two accounts could name one
   # machine, and that machine holds a tenant's decrypted environment and vault
-  # values on disk. Keeping this tenant's prefix on every name makes the
-  # collision impossible rather than unlikely. A name that already carries the
-  # prefix — one an earlier launch handed back — is taken as it stands.
+  # values on disk. Keeping this tenant's prefix on every name puts a chosen
+  # name in the caller's own namespace: not reachable adversarially, because a
+  # caller cannot pick their own user id, though two accounts whose ids share
+  # their first eight characters would share a namespace — #1919 is where a
+  # unique index makes that "cannot" rather than "will not". A name that
+  # already carries the prefix — one an earlier launch handed back — is taken
+  # as it stands.
   defp mint_sprite_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
 
   defp mint_sprite_name(_provider, user_id, nil),
@@ -3531,6 +3536,17 @@ defmodule Fountain.Conversations do
 
   # An empty override is no override, the way an empty sandbox_mode is.
   defp mint_sprite_name(provider, user_id, ""), do: mint_sprite_name(provider, user_id, nil)
+
+  # On the runner provider the name *is* the placement (ADR 0022): the runner
+  # id rides in it, because `Managoat.Sandbox` hands an adapter nothing else,
+  # and `Runners.parse_sandbox_name/1` reads it back out. An account-scoped
+  # name cannot also be a runner name — prefixing `runner-<32 hex>-<8 hex>`
+  # produces a name that no longer parses — so there is nothing to honor here
+  # and refusing plainly beats minting a sandbox nothing can locate. The
+  # override was never useful on this provider anyway: a verbatim one that did
+  # not carry a runner id detached the row from its machine just as silently.
+  defp mint_sprite_name(:runner, _user_id, name) when is_binary(name),
+    do: {:error, :sprite_name_not_supported}
 
   defp mint_sprite_name(_provider, user_id, name) when is_binary(name) do
     prefix = sprite_name_prefix(user_id)

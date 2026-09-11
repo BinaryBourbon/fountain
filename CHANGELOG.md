@@ -18,6 +18,23 @@ upgrade, is in
 
 ### Changed
 
+- **`sprite_name` on `POST /api/conversations` is now a suffix, not the whole
+  machine name.** The server keeps the `fountain-<account>-` prefix every
+  generated name already carried, so a name a caller chooses lands in their own
+  namespace instead of anywhere in the provider's. Provider names are unique
+  per deployment token rather than per tenant, and the Sprites adapter adopts a
+  name that already exists, so the previous verbatim behavior let two sandbox
+  rows in two accounts point at one machine. Three changes go with it: a name
+  that already carries this account's prefix is taken as it stands (a name from
+  an earlier launch still resolves to the same machine); a suffix outside
+  `[A-Za-z0-9][A-Za-z0-9_-]{0,39}` answers `422 invalid_sprite_name` rather
+  than reaching a provider; and `sprite_name` is refused with
+  `sandbox_api_access: "none"`, and on an agent that runs on a self-hosted
+  runner (`422 sprite_name_not_supported`), where the name carries the runner
+  it is placed on. Existing sandbox rows are untouched. All four SDKs expose
+  the field and need no change; callers that passed a full name get the same
+  machine under an account-scoped name.
+
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
   that named the old owner moved with it (`decisions/0048`). The container
   image is `ghcr.io/managoat/fountain`, the Homebrew tap is
