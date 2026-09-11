@@ -92,21 +92,22 @@ defmodule Fountain.Conversations.OpeningInputTest do
     end
   end
 
-  # Atom-only matching rejected every string-keyed map, so a rejection on its
-  # own cannot tell "refused for the right reason" from "never read". Each case
-  # pairs the refusal with the accept, which only holds when string keys are
-  # read at all. Asserted against `validate_initial/1` directly because the
-  # accept half provisions a sandbox through the context and would otherwise
-  # spend the tenant's quota once per case.
-  test "a string-keyed image is read, not merely refused" do
-    good = %{"media_type" => "image/png", "data" => <<0, 1, 2>>}
+  # `attrs["images"]` is the decoded shape. Each refusal is paired with the
+  # accept, so the pair only passes when the map is actually read rather than
+  # rejected wholesale.
+  test "only the decoded shape is accepted" do
+    good = %{media_type: "image/png", data: <<0, 1, 2>>}
 
     for bad <- [
-          %{good | "media_type" => "text/html"},
-          %{good | "data" => ""},
-          Map.delete(good, "data"),
-          Map.delete(good, "media_type"),
-          %{good | "data" => :binary.copy(<<0>>, Fountain.Images.max_prompt_image_bytes() + 1)}
+          %{good | media_type: "text/html"},
+          %{good | data: ""},
+          Map.delete(good, :data),
+          Map.delete(good, :media_type),
+          %{good | data: :binary.copy(<<0>>, Fountain.Images.max_prompt_image_bytes() + 1)},
+          # Not the decoded shape: `PromptImages.decode/1` returns atom keys,
+          # and the three consumers below pattern-match them.
+          %{"media_type" => "image/png", "data" => <<0, 1, 2>>},
+          %URI{}
         ] do
       assert {:error, :invalid_images} =
                PromptInput.validate_initial(%{"prompt" => "Review", "images" => [bad]})
@@ -115,30 +116,58 @@ defmodule Fountain.Conversations.OpeningInputTest do
     end
   end
 
-  test "a struct is refused rather than raised out of Access" do
-    assert {:error, :invalid_images} =
-             PromptInput.validate_initial(%{"prompt" => "Review", "images" => [%URI{}]})
+  # The gap the mocked delivery test leaves: `validate_initial/1` saying `:ok`
+  # is only worth anything if the shape it accepts survives the consumers that
+  # run after a sandbox has been paid for. `store_images/2` sits in
+  # `run_turn/6` before the ACP branch and turns an `{:error, changeset}` into
+  # a log line, but a key it cannot match raises out of the server instead.
+  test "the accepted shape survives every consumer that runs after provisioning", ctx do
+    image = %{media_type: "image/png", data: <<0, 1, 2>>}
+    assert :ok = PromptInput.validate_initial(%{"prompt" => "Review", "images" => [image]})
 
-    # The same shape on a plain map is accepted, so the clause above is the
-    # struct head doing its job rather than the map read failing.
-    assert :ok =
-             PromptInput.validate_initial(%{
-               "prompt" => "Review",
-               "images" => [%{"media_type" => "image/png", "data" => <<0>>}]
-             })
+    conv = insert_conversation(user_id: ctx.user.id, agent: ctx.agent)
+
+    # A turn each: `store_images/2` swallows a duplicate-position changeset
+    # error by design, so sharing one would hide whether it read the map.
+    [direct, stored] =
+      for n <- 1..2 do
+        {:ok, turn} =
+          Conversations._unsafe_create_turn(%{
+            conversation_id: conv.id,
+            turn_number: n,
+            status: "running",
+            prompt: "Review"
+          })
+
+        turn
+      end
+
+    assert {:ok, 1} = Conversations._unsafe_insert_turn_images(direct.id, [image])
+    assert :ok = Fountain.Conversations.TurnMachine.store_images(stored, [image])
+
+    assert %{images: [%{media_type: "image/png", data: <<0, 1, 2>>}]} =
+             Repo.preload(stored, :images)
+
+    expect(Managoat.Sandbox.Sprites, :write_file, fn _h, _path, data, _opts ->
+      assert data == image.data
+      :ok
+    end)
+
+    assert [{path, "image/png"}] =
+             Fountain.Conversations.Output.write_image_temp_files(
+               %Managoat.Sandbox.Handle{provider: :sprites, name: "s"},
+               direct.id,
+               [image]
+             )
+
+    assert path =~ ".png"
   end
 
-  # Attach rather than create: this is about the bytes surviving the context
-  # unchanged, and it needs no second sandbox to say so.
   @tag path: :attach
-  test "string-keyed and atom-keyed images reach delivery unchanged", ctx do
-    for image <- [
-          %{"media_type" => "image/png", "data" => <<0, 1, 2>>},
-          %{media_type: "image/png", data: <<0, 1, 2>>}
-        ] do
-      expect(ConversationServer, :send_prompt, fn _, "Review", [^image], _ -> :ok end)
-      assert {:ok, _} = start(ctx, %{"prompt" => "Review", "images" => [image]})
-    end
+  test "the decoded shape reaches delivery unchanged", ctx do
+    image = %{media_type: "image/png", data: <<0, 1, 2>>}
+    expect(ConversationServer, :send_prompt, fn _, "Review", [^image], _ -> :ok end)
+    assert {:ok, _} = start(ctx, %{"prompt" => "Review", "images" => [image]})
   end
 
   defp start(ctx, extra) do

@@ -21,9 +21,27 @@ defmodule Fountain.Conversations.PromptInput do
   layer's message is the friendlier one and still wins for HTTP callers,
   because it runs first.
 
-  Images may arrive string-keyed or atom-keyed. `decode/1` hands back atom keys
-  and every current caller routes through it, but a context caller building the
-  map itself should not get `:invalid_images` for a valid image.
+  `attrs["images"]` is the **decoded** shape — `[%{media_type: binary, data: binary}]`
+  with atom keys and raw bytes, which is what `PromptImages.decode/1` returns and
+  what every caller already passes. This is not a preference. It is the shape the
+  rest of the pipeline pattern-matches on, so accepting anything else here would
+  only move the failure later and make it worse:
+
+      Conversations._unsafe_insert_turn_images/2   fn {%{media_type: mt, data: data}, idx} -> ...
+      Output.write_image_temp_files/3              fn {%{media_type: mt, data: data}, idx} -> ...
+
+  `TurnMachine.store_images/2` is on every runtime's path
+  (`ConversationServer.run_turn/6`, before the ACP branch) and handles an
+  `{:error, changeset}` by logging and continuing — but a key it cannot match
+  raises `FunctionClauseError`, which is not an error tuple and which no `rescue`
+  on that path catches. A validator that said `:ok` to a shape those three cannot
+  read would trade a free refusal for a crashed turn on a sandbox the tenant had
+  already paid to provision, which is the opposite of the point of validating
+  here at all.
+
+  So an image that is not the decoded shape is `{:error, :invalid_images}`, and
+  a caller that has bytes of its own runs them through
+  `FountainWeb.PromptImages.decode/1` first.
   """
 
   alias Fountain.Images
@@ -51,14 +69,13 @@ defmodule Fountain.Conversations.PromptInput do
 
   defp validate_payload(_, _), do: {:error, :invalid_prompt}
 
-  # `Map.get/2`, not `image[...]`: a struct would raise out of Access.
-  defp valid_image?(image) when is_map(image) do
-    media_type = Map.get(image, :media_type) || Map.get(image, "media_type")
-    data = Map.get(image, :data) || Map.get(image, "data")
-
-    is_binary(data) and Images.valid_media_type?(media_type) and byte_size(data) > 0 and
-      byte_size(data) <= Images.max_prompt_image_bytes()
-  end
+  # A pattern match, not `Map.get/2` or Access: this is the decoded shape or it
+  # is nothing, and a struct or a string-keyed map falls to the clause below
+  # rather than raising.
+  defp valid_image?(%{media_type: media_type, data: data}) when is_binary(data),
+    do:
+      Images.valid_media_type?(media_type) and byte_size(data) > 0 and
+        byte_size(data) <= Images.max_prompt_image_bytes()
 
   defp valid_image?(_), do: false
 end
