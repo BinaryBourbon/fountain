@@ -118,6 +118,26 @@ Use a schedule when the run must happen without you. Read the
 - [Architecture](../architecture.md), for what runs where.
 - [The guided tour](../tour.md), which runs one from start to finish.
 
+## Labels
+
+A conversation carries free-form `key=value` strings. They record what a run
+found, and not what it said. `env=prod` and `drift=true` are the shape of
+them.
+
+Set them at launch, merge them later with
+`PATCH /api/conversations/:id/labels`, or let the agent stamp its own run over
+the ACP extension notification. Filter a list with a repeatable
+`?label=env:prod` parameter, which Fountain combines with AND.
+
+A conversation holds at most 32 of them. A key is at most 64 bytes and a value
+is at most 256 bytes. Read the
+[Labels section](../api.md#labels) of the API reference for the wire format,
+the merge rules and the size limits.
+
+Labels are not part of full-text search. Search covers titles, prompts and
+replies, which is what a person scans. A label is a fact a program already
+knew.
+
 ## Discover conversations on a sandbox
 
 Use `GET /api/conversations?sandbox_id=<uuid>` to list conversations on a
