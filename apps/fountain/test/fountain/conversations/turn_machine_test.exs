@@ -65,11 +65,20 @@ defmodule Fountain.Conversations.TurnMachineTest do
         turn_metrics: %{a: 1},
         stream_tracer: :tracer,
         replay_dedup: MapSet.new(["x"]),
+        turn_session_retry: "gone once",
         other: :untouched
       }
 
       machine = TurnMachine.from_state(state)
-      assert %TurnMachine{row: ^row, span: :span, metrics: %{a: 1}, tracer: :tracer} = machine
+
+      assert %TurnMachine{
+               row: ^row,
+               span: :span,
+               metrics: %{a: 1},
+               tracer: :tracer,
+               session_retry: "gone once"
+             } = machine
+
       assert MapSet.member?(machine.replay_dedup, "x")
 
       assert TurnMachine.into_state(state, %{machine | row: nil, span: nil}) ==
@@ -302,34 +311,67 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert no_key =~ "no Anthropic API key is on file"
     end
 
-    # The failure that reads as a quiet conversation. A first turn whose ACP
-    # `initialize` fails leaves `runtime_session_id` set — `session_plan/2`
-    # persisted it before the turn ran — and no rollout under it, so every
-    # later prompt resumes a session that was never opened and fails the same
-    # way, with the conversation back to `idle` in between.
-    test "a resume against a session that is not there clears the id first", %{machine: m} do
+    # The failure that read as a quiet conversation, and #1667's answer to it.
+    # A first turn whose ACP `initialize` fails leaves `runtime_session_id`
+    # set — `session_plan/2` persisted it before the turn ran — and no rollout
+    # under it, so every later prompt resumed a session that was never opened.
+    # Nothing was asked of the model, so the turn is restarted rather than
+    # failed: the id is cleared, the dead connection dropped, and the same row
+    # runs again on a fresh session.
+    test "a resume against a session that is not there restarts the turn", %{machine: m} do
       error = %{
         "code" => -32_603,
         "message" => "Internal error",
         "data" => %{"details" => "no rollout found for thread id be412434-0b99"}
       }
 
-      assert {^m,
+      detail = "no rollout found for thread id be412434-0b99"
+
+      assert {restarted,
               [
-                {:forget_runtime_session, "session_gone",
-                 "no rollout found for thread id be412434-0b99"},
+                {:forget_runtime_session, "session_gone", ^detail},
+                {:drop_connection, "session_gone"},
+                {:restart_session, ^detail}
+              ]} = TurnMachine.handle(m, {:failed, {:acp_error, :resume_session, error}})
+
+      # No `finish`: the turn has not ended, and the row it will run again on
+      # is the one it started with.
+      assert restarted.row == m.row
+      assert restarted.session_retry == detail
+    end
+
+    test "a second session_gone on the fresh session fails the turn", %{machine: m} do
+      {restarted, _} =
+        TurnMachine.handle(
+          m,
+          {:failed, {:acp_error, :resume_session, %{"code" => -32_002, "message" => "gone"}}}
+        )
+
+      assert {^restarted,
+              [
+                {:forget_runtime_session, "session_gone", _},
                 {:finish, "failed", %{"error" => message, "acp.session_gone" => true},
                  %{reason: message}},
                 {:drop_connection, "failed"}
-              ]} = TurnMachine.handle(m, {:failed, {:acp_error, :resume_session, error}})
+              ]} =
+               TurnMachine.handle(
+                 restarted,
+                 {:failed,
+                  {:acp_error, :resume_session, %{"code" => -32_002, "message" => "gone again"}}}
+               )
 
-      assert message =~ "no rollout found for thread id be412434-0b99"
+      assert message =~ "gone again"
       assert message =~ "Send your prompt again"
       assert message =~ "will not remember"
     end
 
-    test "the -32002 a replaced disk answers with is the same failure", %{machine: m} do
-      assert {^m, [{:forget_runtime_session, "session_gone", _} | _]} =
+    test "the -32002 a replaced disk answers with is the same restart", %{machine: m} do
+      assert {%{session_retry: "Resource not found"},
+              [
+                {:forget_runtime_session, "session_gone", _},
+                {:drop_connection, "session_gone"},
+                {:restart_session, _}
+              ]} =
                TurnMachine.handle(
                  m,
                  {:failed,
@@ -359,6 +401,8 @@ defmodule Fountain.Conversations.TurnMachineTest do
                )
     end
 
+    # Nothing to replay, so nothing to restart: the id is cleared and the
+    # connection dropped, exactly as before #1667.
     test "the same failure with no turn open still clears the session", %{machine: m} do
       idle = idle(m)
 

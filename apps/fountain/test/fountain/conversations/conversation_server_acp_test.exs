@@ -87,6 +87,12 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     settle(pid)
   end
 
+  defp reply_error(pid, ref, id, error) do
+    line = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "error" => error}) <> "\n"
+    send(pid, {:stdout, %{ref: ref}, line})
+    settle(pid)
+  end
+
   # A message crosses three mailboxes: the server takes the stdout chunk and
   # casts it to the peer, the peer acts and reports back, and the server acts on
   # the report. Syncing only the server would assert against a state one hop
@@ -1098,6 +1104,104 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       refute conv.id
              |> Conversations._unsafe_list_log_events()
              |> Enum.any?(&(&1.kind == "stage" and &1.stage == "session"))
+    end
+  end
+
+  describe "a resume the runtime says is gone (#1667)" do
+    # The shape eight deploys in one day produced. Each pod roll kills the
+    # sandbox's ACP sessions, so the next prompt on a conversation that was
+    # idle across the roll resumes a session that is not there. That used to
+    # fail the turn and tell the tenant to send the prompt again — a message
+    # only a reader of log events ever saw, which in the conversations app is
+    # indistinguishable from a dead conversation. The turn restarts itself on
+    # a fresh session instead, and runs the prompt it is already holding.
+    setup do
+      Mimic.stub(Managoat.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
+
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      conv =
+        insert_conversation(
+          agent: acp_agent(user),
+          user_id: user.id,
+          sandbox: sandbox,
+          status: "idle",
+          runtime_session_id: "sess_prior"
+        )
+
+      {pid, ref} = start_acp_turn(conv)
+
+      %{"id" => init_id} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      %{"id" => resume_id, "method" => "session/resume"} = next_write()
+
+      {:ok, conv: conv, pid: pid, ref: ref, resume_id: resume_id}
+    end
+
+    test "runs the prompt on a fresh session instead of failing the turn", ctx do
+      %{conv: conv, pid: pid, ref: ref} = ctx
+
+      assert [%{status: "running", prompt: "first"} = turn] =
+               Conversations._unsafe_list_turns(conv.id)
+
+      turn_id = turn.id
+
+      reply_error(pid, ref, ctx.resume_id, %{
+        "code" => -32_002,
+        "message" => "Resource not found: sess_prior"
+      })
+
+      # Still running: nothing was asked of the model, so there is nothing to
+      # report and no reason to make the tenant type the prompt again.
+      assert [%{status: "running"}] = Conversations._unsafe_list_turns(conv.id)
+
+      # A fresh adapter, handshaking into `session/new` rather than a resume.
+      %{"id" => init_id, "method" => "initialize"} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      %{"id" => new_id, "method" => "session/new"} = next_write()
+      reply(pid, ref, new_id, %{"sessionId" => "sess_fresh", "models" => %{}})
+
+      %{"id" => set_id, "method" => "session/set_model"} = next_write()
+      reply(pid, ref, set_id, %{})
+
+      # The prompt off the turn row, not one the tenant sent twice.
+      %{"id" => prompt_id, "method" => "session/prompt", "params" => params} = next_write()
+      assert [%{"type" => "text", "text" => "first"}] = params["prompt"]
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      # One turn, completed. One row means one started_at/ended_at interval,
+      # so `SandboxUsage` counts it once and `CreditPricer` writes one
+      # `burn_turn:<turn_id>` — where the hand retry this replaces billed two.
+      assert [%{id: ^turn_id, status: "completed"}] = Conversations._unsafe_list_turns(conv.id)
+      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_fresh"
+    end
+
+    test "says on the transcript that the agent's memory did not survive", ctx do
+      %{conv: conv, pid: pid, ref: ref} = ctx
+
+      reply_error(pid, ref, ctx.resume_id, %{
+        "code" => -32_002,
+        "message" => "Resource not found: sess_prior"
+      })
+
+      [reset, restarted] =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "session"))
+        |> Enum.map(&Jason.decode!(&1.data))
+
+      assert %{"event" => "reset", "reason" => "session_gone"} = reset
+
+      assert %{"event" => "restarted", "reason" => "session_gone", "message" => message} =
+               restarted
+
+      assert restarted["turn_id"]
+      assert message =~ "running on a fresh session"
+      assert message =~ "does not remember the turns before this one"
     end
   end
 

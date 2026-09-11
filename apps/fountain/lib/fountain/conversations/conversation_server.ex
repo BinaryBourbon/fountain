@@ -480,6 +480,9 @@ defmodule Fountain.Conversations.ConversationServer do
       # Stream tracer for parsing Claude's stream-json stdout into OTel
       # child spans and events. nil for non-Claude runtimes.
       stream_tracer: nil,
+      # The `session_gone` detail this turn has already been restarted for
+      # (#1667), or nil. `TurnMachine` reads it to refuse a second restart.
+      turn_session_retry: nil,
       # The ACP peer driving the in-flight turn, when the agent has opted in
       # (0014 gate 2). nil on the legacy path, which is the default. Monitored
       # rather than linked: a protocol bug must fail a turn, not take down a
@@ -2107,7 +2110,8 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp kick_turn(state, prompt, agent, images) do
-    state = touch_activity(state)
+    # A new turn has not been restarted (#1667), whatever the last one did.
+    state = touch_activity(%{state | turn_session_retry: nil})
 
     case TurnMachine.open(state.conversation_id, state.sandbox_id, prompt, agent) do
       {:ok, conv, turn} -> run_turn(state, conv, turn, prompt, agent, images)
@@ -2346,7 +2350,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     TurnMachine.fail_before_start(turn, state.conversation_id, what, detail, exit_code)
 
-    %{state | current_turn: nil}
+    %{state | current_turn: nil, turn_session_retry: nil}
   end
 
   # Time to first token (#535), one-shot per turn: `TurnMachine.maybe_emit_first_output/1`.
@@ -2433,6 +2437,9 @@ defmodule Fountain.Conversations.ConversationServer do
     TurnMachine.forget_runtime_session(state, conv, reason, detail)
   end
 
+  defp apply_effect(state, {:restart_session, detail}),
+    do: restart_session(state, detail)
+
   defp apply_effect(state, {:ask_permission, request_id, tool, options}),
     do: Pending.ask(state, request_id, tool, options)
 
@@ -2471,6 +2478,45 @@ defmodule Fountain.Conversations.ConversationServer do
         state = drop_connection(state, "peer_refused_reuse")
         run_fresh_turn(state, conv, turn, prompt, TurnMachine.agent_for(conv), images, true)
     end
+  end
+
+  # #1667: the runtime session was gone, so this turn's first attempt never
+  # reached the model. The session has been forgotten and the connection
+  # dropped by the effects before this one, so `session_plan/2` now reads
+  # `:run` and the spawn below opens a fresh session under a new id.
+  #
+  # The same turn row, run again: the prompt comes off it and the images come
+  # from `turn_images`, which is where `store_images/2` put them before the
+  # first attempt. `run_fresh_turn/7` rather than `run_turn/6` for that
+  # reason — the images are already stored and the title is already being
+  # generated, and doing either twice would duplicate rows.
+  #
+  # The same shape as `resume_acp_connection/5`'s refusal arm, which has
+  # re-run a turn on a fresh spawn since #817; what this adds is closing the
+  # abandoned attempt's span and tracer first, since that arm never had one
+  # open to close.
+  defp restart_session(state, detail) do
+    turn = state.current_turn
+
+    # Ownership: this server exists for this conversation, and the turn is the
+    # one it is running — the GenServer case in CLAUDE.md's `_unsafe_` rules.
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+
+    state =
+      TurnMachine.into_state(
+        state,
+        TurnMachine.restart_attempt(TurnMachine.from_state(state), detail)
+      )
+
+    run_fresh_turn(
+      state,
+      conv,
+      turn,
+      turn.prompt,
+      TurnMachine.agent_for(conv),
+      Conversations._unsafe_list_turn_images(turn.id),
+      true
+    )
   end
 
   # Close the connection (`Connection.close/3`). An autonomous turn still open

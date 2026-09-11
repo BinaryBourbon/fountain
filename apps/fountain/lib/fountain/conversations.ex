@@ -1241,6 +1241,24 @@ defmodule Fountain.Conversations do
     Repo.get_by(TurnImage, turn_id: turn_id, position: position)
   end
 
+  @doc """
+  A turn's images back in the shape they were sent in, in position order.
+
+  What a restarted turn replays (#1667): the prompt is on the row, and this
+  is the rest of it. Read back rather than held in the server's state so a
+  turn that never restarts pays nothing for the possibility, and so the
+  replay is of what was stored rather than of what the caller passed.
+  """
+  @spec _unsafe_list_turn_images(String.t()) :: [%{media_type: String.t(), data: binary()}]
+  def _unsafe_list_turn_images(turn_id) do
+    Repo.all(
+      from i in TurnImage,
+        where: i.turn_id == ^turn_id,
+        order_by: [asc: i.position],
+        select: %{media_type: i.media_type, data: i.data}
+    )
+  end
+
   def _unsafe_next_turn_number(conversation_id) do
     last =
       Repo.one(
