@@ -815,8 +815,8 @@ jobs:
             exit 1
           fi
 
-  sdk-clients:
-    name: SDK clients, CLI and plugins
+  elixir-sdk:
+    name: Elixir SDK
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
@@ -826,18 +826,15 @@ jobs:
     permissions:
       contents: read
 
-    # No umbrella deps/_build cache and no Postgres. Everything here either is
-    # a standalone project (sdk/elixir has its own cache below, cli/ and
-    # apps/fountain_buzz/cli are Go modules) or reads the COMMITTED
-    # sdk/contract/contract.json rather than rebuilding it -- which is the
-    # whole reason that projection is committed. The one job that does rebuild
-    # it is `release-and-contract`, and it fails there if it is stale.
+    # Independent from the umbrella, Postgres and the other SDK toolchains.
     env:
       MIX_ENV: test
 
     steps:
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: SDK conformance scenarios are well formed
+        run: python3 sdk/conformance/lint.py
 
       - name: Set up Elixir
         id: beam
@@ -847,10 +844,7 @@ jobs:
           otp-version: "28.3"
 
       # The Elixir SDK is a standalone Mix project. Keep its dependency graph
-      # and build artifacts separate from this umbrella's -- which also puts
-      # them outside the two caches above, so they need their own entry or
-      # every PR recompiles finch, mint, hpax, ex_doc and makeup from scratch
-      # on the critical path.
+      # and build artifacts separate from the umbrella's cache.
       - name: Restore Elixir SDK cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
@@ -885,30 +879,6 @@ jobs:
         working-directory: sdk/elixir
         run: MIX_ENV=dev mix hex.build
 
-      # The behavioural half (#1412). sdk/contract pins the shape of the wire;
-      # these scenarios pin what a client does with it — SSE framing, cursor
-      # resume, error mapping, terminal run states. They are one set of JSON
-      # files run by four adapters.
-      #
-      # The lint is not only a format check: it validates every fixture body
-      # against the schema sdk/contract/contract.json declares for that
-      # operation, which is what stops a scenario going green against a
-      # response the real server would never send.
-      #
-      # It runs FIRST, before any adapter. In the job this was split out of it
-      # sat directly above the three conformance runs, which is the same thing
-      # when the order is Elixir, Python, TypeScript throughout. Here the steps
-      # are grouped by language instead, so a malformed fixture would otherwise
-      # fail two adapters with a confusing message before the step that names
-      # the real problem ever ran.
-      - name: SDK conformance scenarios are well formed
-        run: python3 sdk/conformance/lint.py
-
-      # Four separate contract checks rather than a loop, so a failing log line
-      # names the client a contributor has to go and fix. Each reads the
-      # committed contract and its own manifest; none rebuilds the spec, which
-      # `release-and-contract` does. The Swift equivalent runs inside
-      # `swift test` in the swift-sdk job.
       - name: Elixir SDK contract
         working-directory: sdk/elixir
         run: mix test test/contract_test.exs
@@ -916,6 +886,28 @@ jobs:
       - name: Elixir SDK conformance
         working-directory: sdk/elixir
         run: mix test test/conformance_test.exs
+
+  sdk-clients:
+    name: Python/TypeScript SDKs, CLI and plugins
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
+
+    permissions:
+      contents: read
+
+    # Standalone clients and Go modules read the committed wire contract.
+    # release-and-contract rebuilds it and checks for staleness.
+    steps:
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      # Validate fixture bodies against the committed contract before either
+      # SDK adapter runs. The Elixir and Swift jobs validate them independently.
+      - name: SDK conformance scenarios are well formed
+        run: python3 sdk/conformance/lint.py
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -1803,6 +1795,7 @@ jobs:
       - elixir-static
       - release-and-contract
       - sdk-clients
+      - elixir-sdk
       - swift-sdk
       - core-distribution
       - compose-fresh-clone

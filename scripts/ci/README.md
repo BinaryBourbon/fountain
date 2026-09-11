@@ -70,12 +70,25 @@ tested it.
 
 ### Sizing
 
-`MERGE_QUEUE` in `require-checks.py` carries the reasoning for each value. The
-binding constraint is the free plan's 20 concurrent GitHub-hosted jobs against
-a full CI run's 19, which is why the queue builds one group at a time and buys
-its throughput by batching up to five PRs into that one group instead.
-Revisit `max_entries_to_build` when the concurrency ceiling changes, not
-before.
+`MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full CI
+run now has 20 jobs, matching the documented concurrent runner limit. The
+queue builds one group at a time and batches up to five PRs. Revisit
+`max_entries_to_build` when the concurrency limit changes.
+
+## SDK jobs
+
+The Elixir SDK runs in `elixir-sdk`, alongside the Python/TypeScript, CLI and
+plugin job (`sdk-clients`). The Swift job (`swift-sdk`) runs on Linux and
+macOS. Each reads the committed contract; `release-and-contract` checks its
+generation.
+The Elixir job owns its toolchain, cache, formatting, compilation, tests, docs,
+package dry run, contract and conformance checks. Its fixture lint runs before
+the tests. `CI required` requires it on every full plan, including main and
+merge groups. A failed, cancelled or unexpectedly skipped job fails the gate.
+
+Per-language path routing remains tracked in #1413. Register a new job in
+`gate.py`'s `FULL_JOBS` and the workflow gate's `needs` list together. Run
+`test_gate.py` to verify their agreement and every supported event plan.
 
 ## Refresh partition timings
 
