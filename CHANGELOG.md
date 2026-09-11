@@ -86,6 +86,27 @@ upgrade, is in
 
 ### Added
 
+- **An account registers its own OAuth clients** (#1125, ADR 0021 amended).
+  "Sign in with Fountain" no longer needs an operator to edit `OAUTH_CLIENTS`
+  and redeploy. Register an app in the console under Account, then OAuth apps,
+  with `fountain oauth-client create`, or over `/api/oauth/clients`, and the
+  response carries the generated `client_id` the app sends. The registration
+  also admits the app's redirect origins to `/api`, so one registration covers
+  both the sign-in and the calls that follow it and `API_CORS_ORIGINS` needs
+  no entry.
+
+  A new client is in **development mode**: it signs in only the account that
+  registered it, and every other account gets an error page rather than a
+  redirect. That is what makes a self-chosen redirect URI safe, and it is why
+  an owner may name a sandbox's HTTPS URL or an `http://localhost` one. A
+  loopback URI matches on any port (RFC 8252). Only an operator publishes a
+  client for other accounts to use, and only an operator changes or removes it
+  afterwards. One account holds at most 25. Registration needs a full-scope
+  key, because a client is a standing route to a full-scope key after consent.
+
+  The consent page's `form-action` header now names the one redirect origin
+  this request asked for rather than every registered client's.
+
 - **An `acp` runtime launches a named command, so a deterministic program can
   run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
   `runtime_command` field carries the command it runs. The field is required
