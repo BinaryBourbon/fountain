@@ -90,6 +90,11 @@ with OTP 26.2.5.21 and Elixir 1.19.2 with OTP 28.3. Formatting uses 1.19.2
 because formatter output differs between versions; all remaining checks run
 on both pairs. The Python job owns its
 tests, compilation, contract and conformance checks on Python 3.9 and 3.13.
+Both legs also build an sdist and wheel, install the wheel in a fresh virtual
+environment and run the SDK regression suite against that installed package.
+This replaces the full source-tree test run; separate contract and conformance
+steps retain their focused diagnostics.
+The verifier checks the type marker, package version and every SDK import path.
 These cover the package minimum and newest declared runtime. Both legs must
 pass; a failure does not cancel the other leg. The TypeScript job owns
 installation, type checks, tests, builds, browser bundling, contract and

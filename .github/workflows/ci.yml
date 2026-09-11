@@ -949,11 +949,8 @@ jobs:
       - name: SDK conformance scenarios are well formed
         run: python sdk/conformance/lint.py
 
-      # The Python SDK is deliberately stdlib-only, so its source tests run
-      # on the minimum and newest declared runtimes without a package install.
-      - name: Python SDK tests
-        run: python -m unittest discover -s sdk/python/tests -v
-
+      # The SDK has no runtime dependencies. Check source syntax and wire
+      # assumptions, then exercise the built distribution below.
       - name: Python SDK compiles
         run: python -m compileall -q sdk/python/src sdk/python/scripts
 
@@ -964,6 +961,15 @@ jobs:
       - name: Python SDK conformance
         working-directory: sdk/python
         run: python -m unittest discover -s tests -p "test_conformance.py" -v
+
+      - name: Python SDK build tool
+        run: python -m pip install --disable-pip-version-check build
+
+      - name: Python SDK package dry run
+        run: python -m build --outdir "$RUNNER_TEMP/python-sdk-dist" sdk/python
+
+      - name: Python SDK installed wheel
+        run: python sdk/python/scripts/verify_wheel.py "$RUNNER_TEMP"/python-sdk-dist/*.whl
 
   typescript-sdk:
     name: TypeScript SDK (${{ matrix.node }})
