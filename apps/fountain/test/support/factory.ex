@@ -251,20 +251,26 @@ defmodule Fountain.Factory do
         "name" => "agent-#{uniq()}",
         # The changeset requires the provider prefix to match the runtime
         # (#553), so a call site that overrides only :runtime still gets a
-        # model its runtime can actually reach.
+        # model its runtime can actually reach. The acp runtime is the
+        # inverse: no model at all, and a command instead (#1634).
         "model" => default_model_for(runtime),
         "runtime" => runtime,
         "skills" => [],
         "mcp_servers" => %{},
         "metadata" => %{}
-      },
+      }
+      |> Map.merge(default_command_for(runtime)),
       overrides
     )
   end
 
   defp default_model_for("codex"), do: "openai/gpt-5.3-codex"
   defp default_model_for("gemini"), do: "google/gemini-3.1-pro-preview"
+  defp default_model_for("acp"), do: nil
   defp default_model_for(_runtime), do: "anthropic/claude-sonnet-4-6"
+
+  defp default_command_for("acp"), do: %{"runtime_command" => "fixture-agent"}
+  defp default_command_for(_runtime), do: %{}
 
   def insert_agent(overrides \\ %{}) do
     overrides = to_string_map(overrides)

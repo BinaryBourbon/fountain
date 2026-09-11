@@ -2586,15 +2586,17 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            /** @description Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The provider must match the runtime — anthropic for claude, openai for codex, google for gemini; opencode accepts any of the three. Other providers are rejected: Fountain has no credentials to export for them. The model id is not checked against a list, so a newly released model works without a Fountain release. The isolated fountain-fixture runtime is the exception: it accepts only fixture/deterministic-v1. */
-            model: string;
+            /** @description Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The provider must match the runtime — anthropic for claude, openai for codex, google for gemini; opencode accepts any of the three. Other providers are rejected: Fountain has no credentials to export for them. The model id is not checked against a list, so a newly released model works without a Fountain release. The isolated fountain-fixture runtime is the exception: it accepts only fixture/deterministic-v1. Null on the acp runtime, which resolves no inference credential and reads no model. */
+            model: string | null;
             name: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
             permission_policy?: {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
             } | null;
             /** @enum {string} */
-            runtime: "claude" | "codex" | "gemini" | "opencode" | "fountain-fixture";
+            runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
+            /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
+            runtime_command?: string | null;
             /**
              * @description Where a conversation of this agent runs by default (ADR 0023). ephemeral: a sandbox per conversation, reclaimed with it. persistent: one sandbox per agent identity (agent, environment, vault) — the agent's computer — that every conversation of that identity lands on and shares; it survives a conversation ending and is parked, not destroyed, at the ceiling. A launch may name the other with sandbox_mode on POST /api/conversations.
              * @enum {string}
@@ -2640,14 +2642,16 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            model: string;
+            model?: string | null;
             name: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
             permission_policy?: {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
             } | null;
             /** @enum {string} */
-            runtime: "claude" | "codex" | "gemini" | "opencode" | "fountain-fixture";
+            runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
+            /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
+            runtime_command?: string | null;
             /**
              * @description Where a conversation of this agent runs by default (ADR 0023). ephemeral: a sandbox per conversation, reclaimed with it. persistent: one sandbox per agent identity (agent, environment, vault) — the agent's computer — that every conversation of that identity lands on and shares; it survives a conversation ending and is parked, not destroyed, at the ceiling. A launch may name the other with sandbox_mode on POST /api/conversations.
              * @enum {string}
@@ -2690,14 +2694,16 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            model?: string;
+            model?: string | null;
             name?: string;
             /** @description Per-tool permission policy: a map of key to verdict, plus an optional "default" key. A key is matched against the tool card's title first and then ACP's kind (execute, edit, read, fetch, …); prefer a kind, because claude titles a tool call with the command it is about to run. Unset keys fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. A runtime that never asks (opencode) refuses anything stricter than auto_allow with 422 permission_policy_unenforceable. */
             permission_policy?: {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
             } | null;
             /** @enum {string} */
-            runtime?: "claude" | "codex" | "gemini" | "opencode" | "fountain-fixture";
+            runtime?: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
+            /** @description The command the acp runtime launches inside the sandbox, as a shell line resolved there (for example `chant acp`). Required when runtime is acp, and rejected on every other runtime, which resolves its own executable. A free string by design: it runs under the same isolation as an environment's setup script. */
+            runtime_command?: string | null;
             /**
              * @description Where a conversation of this agent runs by default (ADR 0023). ephemeral: a sandbox per conversation, reclaimed with it. persistent: one sandbox per agent identity (agent, environment, vault) — the agent's computer — that every conversation of that identity lands on and shares; it survives a conversation ending and is parked, not destroyed, at the ceiling. A launch may name the other with sandbox_mode on POST /api/conversations.
              * @enum {string}
@@ -3510,7 +3516,7 @@ export interface components {
                 [key: string]: "auto_allow" | "ask" | "auto_deny";
             } | null;
             /** @enum {string} */
-            runtime: "claude" | "codex" | "gemini" | "opencode" | "fountain-fixture";
+            runtime: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             runtime_session_id?: string | null;
             sandbox?: components["schemas"]["Sandbox"] | null;
             /**
@@ -4174,7 +4180,7 @@ export interface components {
             /** @description True while this conversation is running a turn on the machine. */
             mid_turn: boolean;
             /** @enum {string} */
-            runtime?: "claude" | "codex" | "gemini" | "opencode" | "fountain-fixture";
+            runtime?: "claude" | "codex" | "gemini" | "opencode" | "acp" | "fountain-fixture";
             /** @enum {string} */
             status: "pending" | "running" | "idle" | "failed" | "terminated";
             title?: string | null;

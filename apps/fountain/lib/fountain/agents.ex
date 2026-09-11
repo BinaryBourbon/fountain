@@ -373,6 +373,7 @@ defmodule Fountain.Agents do
     :system,
     :model,
     :runtime,
+    :runtime_command,
     :sandbox_provider,
     :sandbox_mode,
     :skills,

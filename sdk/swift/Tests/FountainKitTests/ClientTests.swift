@@ -76,6 +76,61 @@ import Testing
     #expect(agent.insertedAt != nil)
   }
 
+  /// An `acp` agent carries no model, and the wire sends an explicit null
+  /// rather than dropping the key (#1634). A non-optional `model` made this
+  /// throw `valueNotFound`, and because a page is decoded whole, one such
+  /// agent in the account broke `agents.list()` for every caller.
+  @Test func decodesAnAgentWithNoModel() async throws {
+    let json = """
+      {"id":"a1","name":"converger","description":null,"system":null,
+       "model":null,"runtime":"acp","runtime_command":"chant acp --env prod",
+       "acp":true,"sandbox_provider":null,"sandbox_mode":"persistent",
+       "environment_id":null,"permission_policy":null,"skills":[],
+       "mcp_servers":{},"metadata":{},"allowed_vault_ids":null,
+       "allowed_environment_ids":null,"conversation_count":0,
+       "avatar_media_type":null,"inserted_at":"2026-09-10T09:00:00Z",
+       "updated_at":"2026-09-10T09:00:00Z"}
+      """
+    let transport = FakeTransport(json: #"{"data": \#(json)}"#)
+    let client = FountainClient.fake(transport)
+    let agent = try await client.agents.get("a1")
+
+    #expect(agent.model == nil)
+    #expect(agent.runtime == .acp)
+    #expect(agent.runtimeCommand == "chant acp --env prod")
+  }
+
+  /// The other half: a page with one acp agent beside a model-driven one.
+  @Test func decodesAPageMixingAcpAndModelAgents() async throws {
+    let acp = """
+      {"id":"a1","name":"converger","model":null,"runtime":"acp",
+       "runtime_command":"chant acp"}
+      """
+    let transport = FakeTransport(json: #"{"data": [\#(acp), \#(Self.agentJSON)]}"#)
+    let client = FountainClient.fake(transport)
+    let agents = try await client.agents.list()
+
+    #expect(agents.count == 2)
+    #expect(agents.first?.model == nil)
+    #expect(agents.last?.model == "anthropic/claude-sonnet-5")
+  }
+
+  /// A command is sent on create, and omitted entirely when there is none.
+  @Test func encodesRuntimeCommandOnInput() throws {
+    let input = AgentInput(name: "converger", runtime: .acp, runtimeCommand: "chant acp")
+    let body = try JSONEncoder().encode(input)
+    let wire = try #require(
+      JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(wire["runtime_command"] as? String == "chant acp")
+    #expect(wire["model"] == nil)
+
+    let plain = AgentInput(name: "c", model: "anthropic/claude-sonnet-5", runtime: .claude)
+    let plainBody = try JSONEncoder().encode(plain)
+    let plainWire = try #require(
+      JSONSerialization.jsonObject(with: plainBody) as? [String: Any])
+    #expect(plainWire["runtime_command"] == nil)
+  }
+
   @Test func unknownEnumValuesSurvive() throws {
     let json = Data(#"{"id":"x","name":"n","model":"m","runtime":"zed","status":"paused"}"#.utf8)
     struct Row: Decodable {
