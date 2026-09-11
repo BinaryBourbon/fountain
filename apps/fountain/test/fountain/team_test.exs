@@ -15,10 +15,24 @@ defmodule Fountain.TeamTest do
     )
   end
 
-  defp inert_start_child do
+  # Every test in this file that reaches a wake or a start would otherwise put
+  # a real `ConversationServer` under the shared Horde supervisor (#1862). It
+  # has no sandbox connection in an async test, so it raises on
+  # `handle_continue(:provision)`, and `restart: :transient` puts it straight
+  # back — a crash loop that churns the CRDT for every other test in the
+  # partition. One test forgetting the stub cost 155 of those in a single run.
+  #
+  # Stubbed for the whole file rather than per test: nothing here asserts on
+  # the real start, and the failure mode of forgetting is invisible locally
+  # and lands on somebody else's test in CI.
+  setup :inert_start_child
+
+  defp inert_start_child(_context \\ nil) do
     stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
       {:ok, spawn(fn -> Process.sleep(:infinity) end)}
     end)
+
+    :ok
   end
 
   describe "list_teammates/1" do
