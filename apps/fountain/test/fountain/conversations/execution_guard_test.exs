@@ -467,4 +467,83 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
       refute TurnExecution.changeset(execution, attrs).valid?
     end
   end
+
+  describe "an obligation nothing can resolve" do
+    test "an unknown spawn identity ages out instead of fencing forever", c do
+      {:ok, _} = ExecutionGuard._unsafe_claim_spawn(c.execution.id, now: c.now)
+      {:ok, _} = ExecutionGuard._unsafe_expire(c.execution.id, now: c.deadline)
+      assert Repo.get!(TurnExecution, c.execution.id).state == "awaiting_identity"
+
+      # Nothing else in the journal will ever revisit it.
+      assert ExecutionGuard._unsafe_due(DateTime.add(c.deadline, 86_400)) == []
+      assert ExecutionGuard._unsafe_recover_submissions(DateTime.add(c.deadline, 86_400)) == []
+
+      young = DateTime.add(DateTime.utc_now(), -3600, :second)
+      assert ExecutionGuard._unsafe_retire_unresolved(young) == []
+      assert ExecutionGuard._unsafe_fenced?(c.conversation.id)
+
+      assert [{:ok, retired}] =
+               ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1))
+
+      assert retired.state == "stopped"
+      assert retired.last_error == "unresolved_obligation_expired"
+      refute ExecutionGuard._unsafe_fenced?(c.conversation.id)
+
+      # Giving up is not a provider write, and not a second one either.
+      assert {:error, :not_ready} = ExecutionGuard._unsafe_claim_termination(c.execution.id)
+      assert ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1)) == []
+    end
+
+    test "an unconfirmed termination ages out and keeps saying why", c do
+      execution = submitted(c)
+
+      {:ok, _} =
+        ExecutionGuard._unsafe_record_termination(
+          execution.id,
+          execution.attempt_id,
+          {:error, :timeout}
+        )
+
+      assert Repo.get!(TurnExecution, execution.id).state == "uncertain"
+
+      assert [{:ok, retired}] =
+               ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1))
+
+      assert retired.state == "stopped"
+      # The original uncertainty survives; it is written off, not erased.
+      assert retired.last_error == "termination_unconfirmed"
+      assert retired.attempt_id == execution.attempt_id
+      refute ExecutionGuard._unsafe_fenced?(c.conversation.id)
+    end
+
+    test "ageing out releases the conversation for a new turn", c do
+      {:ok, _} = ExecutionGuard._unsafe_claim_spawn(c.execution.id, now: c.now)
+      {:ok, _} = ExecutionGuard._unsafe_expire(c.execution.id, now: c.deadline)
+      successor = insert_turn(c.conversation, status: "running")
+
+      assert {:error, :execution_fenced} =
+               ExecutionGuard._unsafe_register(
+                 successor.id,
+                 Ecto.UUID.generate(),
+                 DateTime.add(c.deadline, 600)
+               )
+
+      ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1))
+
+      assert {:ok, _} =
+               ExecutionGuard._unsafe_register(
+                 successor.id,
+                 Ecto.UUID.generate(),
+                 DateTime.add(c.deadline, 600)
+               )
+    end
+
+    test "a completed or stopped row is never touched by the sweep", c do
+      bind(c)
+      {:ok, _} = ExecutionGuard._unsafe_complete(c.execution.id, "completed", now: c.now)
+      assert Repo.get!(TurnExecution, c.execution.id).state == "completed"
+      assert ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1)) == []
+      assert Repo.get!(TurnExecution, c.execution.id).state == "completed"
+    end
+  end
 end

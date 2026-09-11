@@ -165,7 +165,18 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
-  @doc "Serialize the existing turn writer with deadline and termination state."
+  @doc """
+  Serialize the existing turn writer with deadline and termination state.
+
+  This runs on **every** turn write, bounded or not — `Pending` writes a
+  permission request through it on each ask, and `TurnMachine` writes a prompt
+  id, a model selection and the turn's end. The unbounded path therefore pays
+  one indexed lookup on `turn_executions.turn_id` (unique index) and nothing
+  else: no row, no transaction, straight through to `writer`. That cost is
+  deliberate, and it is the price of the guarantee being structural — a caller
+  that forgets to consult the journal cannot exist, because there is only one
+  turn writer and it consults the journal itself.
+  """
   def _unsafe_write_turn(%Turn{} = turn, attrs, writer) do
     case Repo.get_by(TurnExecution, turn_id: turn.id) do
       nil ->
@@ -336,6 +347,50 @@ defmodule Fountain.Conversations.ExecutionGuard do
             update!(execution, %{state: "uncertain", last_error: "termination_unconfirmed"})
 
           {updated, updated, "termination_uncertain"}
+        else
+          {execution, nil, nil}
+        end
+      end)
+    end)
+  end
+
+  @doc """
+  Write off an obligation nothing can resolve, without ever replaying it.
+
+  `awaiting_identity` and `uncertain` are reached when the provider never named
+  the session, named two, or left a termination unacknowledged. Nothing can move
+  them on its own: a claim needs `ready`, and an acknowledgment needs the
+  `attempt_id` of an attempt whose owner is gone. Left alone they fence their
+  conversation and their machine for good, which costs an owner the two
+  recoveries — a new turn, and `reset_sandbox/2` — that exist for exactly this.
+
+  So the fence is an obligation with an age, not a life sentence. Past `cutoff`
+  the row retires to `stopped` and keeps `last_error`, so the trail still says
+  the operation was never confirmed. This authorizes no provider write; it gives
+  up on one. A session that really did survive is the `SandboxReaper`'s to find,
+  the same as every unbounded turn's.
+  """
+  def _unsafe_retire_unresolved(%DateTime{} = cutoff, limit \\ 50) when limit in 1..100 do
+    ids =
+      Repo.all(
+        from e in TurnExecution,
+          where: e.state in ["awaiting_identity", "uncertain"] and e.updated_at <= ^cutoff,
+          order_by: [asc: e.updated_at, asc: e.id],
+          limit: ^limit,
+          select: e.id
+      )
+
+    Enum.map(ids, fn id ->
+      with_execution(id, fn execution ->
+        if execution.state in ["awaiting_identity", "uncertain"] and
+             DateTime.compare(execution.updated_at, cutoff) != :gt do
+          updated =
+            update!(execution, %{
+              state: "stopped",
+              last_error: execution.last_error || "unresolved_obligation_expired"
+            })
+
+          {updated, updated, "obligation_abandoned"}
         else
           {execution, nil, nil}
         end
@@ -523,6 +578,14 @@ defmodule Fountain.Conversations.ExecutionGuard do
           where: e.conversation_id == ^conversation_id and e.state not in ["completed", "stopped"]
       )
 
+  # A session id is interpolated into a provider termination request, so it is
+  # validated as an opaque token rather than trusted as a string: unreserved
+  # URL characters only (RFC 3986 minus `.` and `~`), bounded length. Every
+  # session id the pinned adapters issue is a UUID or a base62 token, and both
+  # fit. This is deliberately narrower than "what a provider might send" — a
+  # rejected identity fails loudly at bind time, where the turn is still the
+  # owner's to retry, and that is the better half of the trade against a
+  # separator reaching a URL path.
   defp valid_session_id?(id),
     do: is_binary(id) and byte_size(id) in 1..256 and Regex.match?(~r/\A[A-Za-z0-9_-]+\z/, id)
 
@@ -531,19 +594,21 @@ defmodule Fountain.Conversations.ExecutionGuard do
 
   defp update!(%Turn{} = row, attrs), do: row |> Turn.changeset(attrs) |> Repo.update!()
 
+  defp record_event(execution, event) do
+    Audit.record(%{
+      user_id: execution.user_id,
+      action: "conversation.execution_#{event}",
+      resource_type: "conversation",
+      resource_id: execution.conversation_id,
+      actor: "system:turn_deadline",
+      metadata: %{"turn_id" => execution.turn_id}
+    })
+  end
+
   defp transaction(fun) do
     case Repo.transaction(fun) do
       {:ok, {result, execution, event}} ->
-        if event do
-          Audit.record(%{
-            user_id: execution.user_id,
-            action: "conversation.execution_#{event}",
-            resource_type: "conversation",
-            resource_id: execution.conversation_id,
-            actor: "system:turn_deadline",
-            metadata: %{"turn_id" => execution.turn_id}
-          })
-        end
+        if event, do: record_event(execution, event)
 
         {:ok, result}
 

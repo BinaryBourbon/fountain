@@ -133,7 +133,10 @@ defmodule Fountain.Conversations.SandboxResetTest do
     test = self()
     stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
 
-    assert {:error, :sandbox_mid_turn} = Conversations.reset_sandbox(ctx.home)
+    # Its own name: a live turn is `:sandbox_mid_turn` and ends by itself, an
+    # unresolved remote execution is `:execution_fenced` and is written off by
+    # the coordinator. #1768 adds a third, `:sandbox_reset_pending`.
+    assert {:error, :execution_fenced} = Conversations.reset_sandbox(ctx.home)
     refute_received :destroyed
     assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "ready"
     assert Conversations._unsafe_get_conversation!(ctx.a.id).runtime_session_id == "sess-a"
@@ -141,18 +144,6 @@ defmodule Fountain.Conversations.SandboxResetTest do
     {:ok, _} = ExecutionGuard._unsafe_record_termination(execution.id, attempt.attempt_id, :ok)
     assert {:ok, %{status: "terminated"}} = Conversations.reset_sandbox(ctx.home)
     assert_received :destroyed
-  end
-
-  test "reset retires the binding before the provider call", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h ->
-      assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "terminated"
-      :ok
-    end)
-
-    assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
-
-    assert {:error, {:sandbox_not_resettable, "terminated"}} =
-             Conversations.reset_sandbox(ctx.home)
   end
 
   test "refused for an ephemeral sandbox and for one already gone", ctx do

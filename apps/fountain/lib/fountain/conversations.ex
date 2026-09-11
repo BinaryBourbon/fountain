@@ -12,7 +12,7 @@ defmodule Fountain.Conversations do
 
   alias Fountain.Audit
   alias Fountain.Conversations.{Blocks, Conversation, Labels, LogEvent, Sandbox, Turn, TurnImage}
-  alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
+  alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
@@ -1841,6 +1841,17 @@ defmodule Fountain.Conversations do
 
   defp maybe_put_reply_text(%Ecto.Changeset{valid?: false} = changeset, _turn), do: changeset
 
+  # `get_field`, not `get_change`: a turn fenced by `ExecutionGuard` has its
+  # `:status` dropped from `attrs` before the writer sees it, so the change is
+  # gone by here while the row is already terminal — and a turn that ends at a
+  # deadline would have kept a null `reply_text` forever.
+  #
+  # This does reach the unbounded path, where the two used to agree: a terminal
+  # turn whose text is still null is now re-derived on each later write rather
+  # than only on the write that ended it. That is the same work
+  # `_unsafe_backfill_reply_texts/0` below does, on the same rows, for the same
+  # reason — a turn whose assistant blocks landed after its status did. The
+  # guard is `reply_text: nil`, so a turn that has one is never revisited.
   defp maybe_put_reply_text(changeset, %Turn{reply_text: nil} = turn) do
     case Ecto.Changeset.get_field(changeset, :status) do
       status when status in @terminal_turn_statuses ->
@@ -3046,6 +3057,15 @@ defmodule Fountain.Conversations do
   # live one nobody can find. What happens to the conversations on the home
   # is the caller's decision — agent delete terminates them, a reset keeps
   # them.
+  #
+  # `terminated_at` is deliberately not passed. A caller that already retired
+  # the row under its machine lock — `do_reset_sandbox/2` does, so that a
+  # bounded registration cannot slip in behind the destroy — keeps the stamp it
+  # wrote, and `update_sandbox/2` sees no change to make. A caller that did not
+  # gets one from `stamp_terminated_at/1`. Passing `utc_now()` here instead
+  # moved the stamp to *after* the provider call, so it disagreed with the
+  # `duration_ms` on the `sandbox_terminated` usage row by the length of a
+  # destroy — and that row is what a provider bill is reconciled against.
   defp _unsafe_retire_home(%Sandbox{} = sandbox) do
     handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
@@ -3057,8 +3077,7 @@ defmodule Fountain.Conversations do
         Logger.warning("home #{sandbox.sprite_name} destroy failed: #{inspect(reason)}")
     end
 
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
+    {:ok, _} = update_sandbox(sandbox, %{status: "terminated"})
     :ok
   end
 

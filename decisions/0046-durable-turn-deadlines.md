@@ -9,7 +9,7 @@ adr_status: "Proposed"
 date: 2026-09-07
 generated: { by: process:codex, at: 2026-09-07T22:39:25Z }
 verified: { by: process:codex, at: 2026-09-07T22:39:25Z }
-stale_after: 2026-09-14
+stale_after: 2026-09-21
 ---
 
 # 0046 — Durable turn deadlines and remote execution identity
@@ -20,7 +20,10 @@ doctests, zero failures, two existing skips and seven exclusions. Thirty guard
 regressions cover the journal. The existing
 turn writer and ACP finisher preserve a registered deadline failure. Local
 failure/interruption retains a remote-stop obligation; reset refuses unfinished
-executions, and recovery marks lost termination owners uncertain without replay. Public
+executions, and recovery marks lost termination owners uncertain without replay.
+An obligation nothing can resolve ages out within two minutes, so neither state
+fences a machine forever; an operator can also reap a stuck row from
+`/admin/sandboxes` (#1768). Public
 limits, host/account policy, command transport, deadline scheduling, remaining
 lifecycle surfaces, SDK pins and production acceptance remain unbuilt. No API
 or scheduler activates bounded turns yet.
@@ -58,8 +61,8 @@ connection through the termination journal before another turn may use it.
 | `awaiting_identity` | Work stopped locally; remote spawn identity is still unknown. |
 | `ready` | Original session is known and requires termination. |
 | `submitted` | One persisted attempt has been authorized; its result is outstanding. |
-| `uncertain` | Result or ownership cannot be established; retain the fence. |
-| `stopped` | That attempt was confirmed, or no spawn was ever submitted. |
+| `uncertain` | Result or ownership cannot be established; retain the fence until it ages out. |
+| `stopped` | That attempt was confirmed, no spawn was ever submitted, or the obligation was written off. |
 | `completed` | The turn ended; a positively identified connection may be reused. |
 
 The journal retains identifiers and operation state independently of transcript
@@ -75,6 +78,34 @@ creates a new row and name. Interrupted provisioning can reuse a name; it must
 remain impossible to enter that path with an unresolved bounded execution.
 Provider-issued incarnation checks and all recovery/reprovision paths still need
 review before enabling termination in production.
+
+### A fence is an obligation with an age, not a life sentence
+
+`awaiting_identity` and `uncertain` are reached when the provider never named
+the session, named two, or left a termination unacknowledged. Nothing moves
+them on their own: a claim needs `ready`, and an acknowledgment needs the
+`attempt_id` of an attempt whose owner is gone. Left alone they fence their
+conversation and their machine for good, which costs the owner both recoveries
+that exist for this — a new turn, and `reset_sandbox/2` (#1071). That is a worse
+failure than the replay the fence prevents, so two bounded exits are part of the
+decision rather than left to integration:
+
+- **Age.** `_unsafe_retire_unresolved/2` retires a row that has sat in either
+  state past a cutoff. It keeps `last_error`, so the trail still says the
+  operation was never confirmed; it is written off, not erased. This authorizes
+  no provider write — it gives one up. A session that really did survive is the
+  `SandboxReaper`'s to find, the same as every unbounded turn's.
+- **The operator.** #1768's reset fence answers the same question for a reset
+  whose provider delete was never confirmed, and its answer is reaping from
+  `/admin/sandboxes` — a terminal write still passes the fence, so an operator
+  can always retire the row. ADR 0046 does **not** add a second lever for that.
+  An earlier draft of this ADR proposed `reset_sandbox(force: true)`, a
+  tenant-facing override; #1925 settled it against, because the age above
+  already gives the tenant a bounded wait without new public surface, and two
+  levers for one job is worse than one that is slightly slower.
+
+The scheduler that calls the first of these is part of the deadline supervisor
+below; the second needs no scheduler and ships with the journal.
 
 ## Required integration and acceptance
 
@@ -101,10 +132,12 @@ Integration surfaces already inspected:
 | `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
 | `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
-| Deadline supervisor | Expire due rows, claim one termination, recover abandoned submissions as uncertain, publish the persisted outcome. |
+| Deadline supervisor | Expire due rows, claim one termination, recover abandoned submissions as uncertain, age out obligations nothing can resolve, publish the persisted outcome. |
 
 Journal retention after confirmed cleanup and account deletion also needs an
-explicit policy. Uncertainty must never be erased by transcript deletion.
+explicit policy. Uncertainty must never be erased by transcript deletion — but
+it must not be permanent either, which is what the ageing exit above settles.
+The cutoff itself is the supervisor's to choose and is not fixed here.
 
 `managoat_sandbox 0.3.0` supplies confirmed remote termination. Provider identity
 notifications await [Sprites #33](https://github.com/superfly/sprites-ex/pull/33),
