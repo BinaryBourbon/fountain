@@ -226,4 +226,87 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorkerTest do
     await_state(fixture.row.id, "stopped")
     assert_received :recorded_target_stopped
   end
+
+  describe "the coordinator gives up on an obligation nothing can resolve" do
+    test "a lost termination stops fencing its conversation and its machine", c do
+      %{row: row, conv: conv} = execution(c.user, true)
+
+      # A provider that never answers: the claim is made, the write fails, and
+      # nothing can ever acknowledge that attempt again.
+      worker(:abandon, fn _attempt -> {:error, :timeout} end)
+      uncertain = await_state(row.id, "uncertain")
+      assert uncertain.last_error == "termination_unconfirmed"
+      assert ExecutionGuard._unsafe_fenced?(conv.id)
+      assert ExecutionGuard._unsafe_sandbox_open?(uncertain.sandbox_id)
+
+      # Age it past the abandon window the coordinator sweeps with.
+      Repo.update_all(
+        from(e in TurnExecution, where: e.id == ^row.id),
+        set: [updated_at: DateTime.add(DateTime.utc_now(), -300, :second)]
+      )
+
+      retired = await_state(row.id, "stopped")
+      # Written off, not rewritten: the trail still says it was never confirmed.
+      assert retired.last_error == "termination_unconfirmed"
+      refute ExecutionGuard._unsafe_fenced?(conv.id)
+      refute ExecutionGuard._unsafe_sandbox_open?(retired.sandbox_id)
+    end
+
+    test "a fresh uncertain row is left alone", c do
+      %{row: row, conv: conv} = execution(c.user, true)
+      worker(:fresh, fn _attempt -> {:error, :timeout} end)
+      await_state(row.id, "uncertain")
+
+      # Several ticks at 20ms: still fenced, because it is not old enough.
+      Process.sleep(200)
+      assert Repo.get!(TurnExecution, row.id).state == "uncertain"
+      assert ExecutionGuard._unsafe_fenced?(conv.id)
+    end
+
+    test "the same attempt is never submitted to the provider twice", c do
+      %{row: row} = execution(c.user, true)
+      test = self()
+
+      worker(:no_replay, fn attempt ->
+        send(test, {:submitted, attempt.attempt_id})
+        {:error, :timeout}
+      end)
+
+      await_state(row.id, "uncertain")
+      assert_receive {:submitted, attempt_id}
+
+      Repo.update_all(
+        from(e in TurnExecution, where: e.id == ^row.id),
+        set: [updated_at: DateTime.add(DateTime.utc_now(), -300, :second)]
+      )
+
+      await_state(row.id, "stopped")
+      # Giving up is not a second write. The journal never re-authorizes one.
+      refute_received {:submitted, ^attempt_id}
+    end
+  end
+
+  describe "supervision is off unless an operator asked for it" do
+    test "the supervisor's own child list is what the switch controls" do
+      prior = Application.get_env(:fountain, :execution_deadline_worker_enabled)
+      on_exit(fn -> Application.put_env(:fountain, :execution_deadline_worker_enabled, prior) end)
+
+      Application.put_env(:fountain, :execution_deadline_worker_enabled, false)
+      assert Fountain.Application.execution_deadline_children() == []
+
+      Application.put_env(:fountain, :execution_deadline_worker_enabled, true)
+
+      assert Fountain.Application.execution_deadline_children() == [
+               Fountain.Conversations.ExecutionDeadlineWorker
+             ]
+    end
+
+    test "an unset switch runs nothing, so a deployment that asked for nothing pays nothing" do
+      prior = Application.get_env(:fountain, :execution_deadline_worker_enabled)
+      on_exit(fn -> Application.put_env(:fountain, :execution_deadline_worker_enabled, prior) end)
+
+      Application.delete_env(:fountain, :execution_deadline_worker_enabled)
+      assert Fountain.Application.execution_deadline_children() == []
+    end
+  end
 end

@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Durable turn deadlines and remote execution identity"
-description: "Persist turn deadlines and provider-operation intent before I/O; the journal and its per-turn allowance are implemented, while transport and lifecycle enforcement remain unbuilt."
+description: "Persist turn deadlines and provider-operation intent before I/O; the journal, its per-turn allowance and the deadline coordinator are implemented, while transport and lifecycle integration remain."
 tags: [conversations, sandbox, reliability, limits]
 status: draft
 adr: "0046"
@@ -107,8 +107,16 @@ decision rather than left to integration:
   already gives the tenant a bounded wait without new public surface, and two
   levers for one job is worse than one that is slightly slower.
 
-The scheduler that calls the first of these is part of the deadline supervisor
-below; the second needs no scheduler and ships with the journal.
+`ExecutionDeadlineWorker` runs the first of these on its recovery tick; the
+second needs no scheduler and ships with the journal.
+
+A **retry** was the other candidate and is deliberately not what happens. The
+journal's rule is that one persisted attempt authorizes exactly one provider
+write, so re-arming a lost attempt would either replay an operation whose
+outcome is unknown or require assuming `terminate_session/3` is idempotent
+across a session that may already have been replaced. Ageing the obligation out
+gives up a cleanup Fountain cannot confirm, which is a smaller claim than
+either.
 
 ## Required integration and acceptance
 
@@ -146,7 +154,7 @@ Integration surfaces already inspected:
 | `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
 | `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
-| Deadline supervisor | Expire due rows, claim one termination, recover abandoned submissions as uncertain, age out obligations nothing can resolve, publish the persisted outcome. |
+| Deadline supervisor | Coordinator, bounded pools, recovery and the ageing sweep are implemented (`ExecutionDeadlineWorker`), off unless `FOUNTAIN_EXECUTION_LIMITS` sets a ceiling. Durable stage-event delivery and public acceptance remain. |
 
 Journal retention after confirmed cleanup and account deletion also needs an
 explicit policy. Uncertainty must never be erased by transcript deletion — but

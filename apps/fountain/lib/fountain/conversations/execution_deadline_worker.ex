@@ -8,6 +8,18 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
   task says nothing about remote termination: the journal retains submitted
   intent, and recovery marks an abandoned attempt uncertain without replaying it.
 
+  An obligation nothing can resolve is written off rather than retried. A lost
+  or failed termination leaves `uncertain`, and the journal deliberately never
+  authorizes a second provider write for the same attempt — so the exit is age,
+  not a retry: past `@abandon_after_seconds` the row retires to `stopped` with
+  its `last_error` intact. Without that, one slow `terminate_session` fenced a
+  conversation and its shared home for good, and took `reset_sandbox/2` with it.
+
+  Off unless configured. `runtime.exs` starts this only where
+  `FOUNTAIN_EXECUTION_LIMITS` sets a host ceiling, because the tick is a poll of
+  `turn_executions` on every node and a deployment that has not asked for
+  bounded turns should pay nothing for them.
+
   Public admission remains disabled until trusted identity and all lifecycle
   paths are integrated. This worker alone does not enable bounded execution.
   """
@@ -19,7 +31,31 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
   @batch_size 100
   @job_timeout_ms 10_000
   @recovery_after_seconds 60
-  @providers %{"sprites" => :sprites, "runner" => :runner, "e2b" => :e2b, "daytona" => :daytona}
+  # How long an obligation nothing can resolve keeps its fence. Past this a row
+  # in `awaiting_identity` or `uncertain` is written off with its `last_error`
+  # intact — see `ExecutionGuard._unsafe_retire_unresolved/2` for why giving up
+  # is the right answer and what it does not claim.
+  #
+  # Two minutes, measured rather than guessed (#1925). The last moment anything
+  # can still resolve one of these rows is the command transport's `:drain_end`,
+  # which it arms at `deadline + 30_000` — after that no late `bind_identity`
+  # and no late acknowledgment can arrive, because the process that held the
+  # attempt is gone. Two minutes clears that with margin, and it composes with
+  # `@recovery_after_seconds` because a row's clock starts when it *enters*
+  # `uncertain`, not when it was submitted.
+  #
+  # This is also the tenant's only exit: reset refuses while a bounded
+  # execution is unresolved, and #1925 settled that there is no
+  # `reset_sandbox(force: true)` to skip the wait — so the number is how long
+  # an owner can be locked out of their own machine. An hour was not a
+  # defensible answer to that; two minutes is.
+  @abandon_after_seconds 120
+
+  # `terminate_session/3` is only wired for Sprites (`ExecutionTransport` refuses
+  # every other provider, and admission rolls back `:provider_not_supported`), so
+  # this map says so rather than implying four backends work. A provider joins it
+  # in the PR that teaches the transport to spawn there.
+  @providers %{"sprites" => :sprites}
 
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
@@ -34,7 +70,12 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
     {:ok,
      %{
        jobs: %{},
-       interval: Keyword.get(opts, :interval_ms, 1_000),
+       interval:
+         Keyword.get(
+           opts,
+           :interval_ms,
+           Application.get_env(:fountain, :execution_deadline_interval_ms, 5_000)
+         ),
        timeout: Keyword.get(opts, :job_timeout_ms, @job_timeout_ms),
        supervisor: Keyword.get(opts, :task_supervisor, Fountain.TaskSupervisor),
        terminator: Keyword.get(opts, :terminator, &terminate_session/1)
@@ -48,9 +89,18 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
 
     state =
       start_single(state, :recovery, fn ->
-        cutoff = DateTime.add(DateTime.utc_now(), -@recovery_after_seconds, :second)
-        # ownership: system recovery of persisted intents; this grants no provider write.
-        ExecutionGuard._unsafe_recover_submissions(cutoff)
+        now = DateTime.utc_now()
+        # ownership: system recovery of persisted intents; neither call grants a
+        # provider write. The first hands an abandoned attempt back to the
+        # retry path below by marking it uncertain; the second gives up on one
+        # that has been uncertain long enough that nothing will ever resolve it.
+        ExecutionGuard._unsafe_recover_submissions(
+          DateTime.add(now, -@recovery_after_seconds, :second)
+        )
+
+        ExecutionGuard._unsafe_retire_unresolved(
+          DateTime.add(now, -@abandon_after_seconds, :second)
+        )
       end)
 
     {:noreply, state}
@@ -115,7 +165,11 @@ defmodule Fountain.Conversations.ExecutionDeadlineWorker do
 
     ids
     |> Enum.reject(&MapSet.member?(busy, &1))
-    |> Enum.take(@pool_size - used)
+    # `max(_, 0)`: a negative count makes `Enum.take/2` take from the END of the
+    # list rather than return `[]`, which would start the wrong jobs instead of
+    # none. `used` cannot exceed the pool today; this is so that staying true is
+    # not load-bearing.
+    |> Enum.take(max(@pool_size - used, 0))
     |> Enum.reduce(state, fn id, state ->
       fun =
         case kind do

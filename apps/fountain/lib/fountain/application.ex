@@ -191,8 +191,13 @@ defmodule Fountain.Application do
     :ok
   end
 
-  defp execution_deadline_children do
-    if Application.get_env(:fountain, :execution_deadline_worker_enabled, true),
+  # Off unless an operator turned execution limits on. `runtime.exs` derives the
+  # default from whether a host ceiling is configured, so a deployment that has
+  # not asked for bounded turns runs no journal poll at all — the same "inert
+  # until configured" posture the rest of ADR 0046 keeps.
+  @doc false
+  def execution_deadline_children do
+    if Application.get_env(:fountain, :execution_deadline_worker_enabled, false),
       do: [Fountain.Conversations.ExecutionDeadlineWorker],
       else: []
   end
