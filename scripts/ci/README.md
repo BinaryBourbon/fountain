@@ -71,20 +71,23 @@ tested it.
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full CI
-run now has 21 jobs, compared with the documented limit of 20 concurrent
+run now has 22 jobs, compared with the documented limit of 20 concurrent
 runners. The queue builds one group at a time and batches up to five PRs. Revisit
 `max_entries_to_build` when the concurrency limit changes.
 
 ## SDK jobs
 
-The Elixir and Python SDKs run in `elixir-sdk` and `python-sdk`, alongside
-the TypeScript, CLI and plugin job (`sdk-clients`). The Swift job (`swift-sdk`) runs on Linux and
+The Elixir, Python and TypeScript SDKs run in `elixir-sdk`, `python-sdk` and
+`typescript-sdk`. The Go CLI, Hermes plugin and deployed-runner checks run in
+`cli-plugins`. The Swift job (`swift-sdk`) runs on Linux and
 macOS. Each reads the committed contract; `release-and-contract` checks its
 generation.
 The Elixir job owns its toolchain, cache, formatting, compilation, tests, docs,
 package dry run, contract and conformance checks. The Python job owns its
-tests, compilation, contract and conformance checks. Both jobs validate
-fixtures before their tests. `CI required` requires both on every full plan, including main and
+tests, compilation, contract and conformance checks. The TypeScript job owns
+installation, type checks, tests, builds, browser bundling, contract and
+conformance checks. Each SDK job validates fixtures before its tests.
+`CI required` requires all SDK jobs on every full plan, including main and
 merge groups. A failed, cancelled or unexpectedly skipped job fails the gate.
 
 Per-language path routing remains tracked in #1413. Register a new job in

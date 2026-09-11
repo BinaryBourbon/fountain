@@ -792,7 +792,7 @@ jobs:
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
 
-      # `--no-audit --no-fund`: see the sdk-clients job, which carries the
+      # `--no-audit --no-fund`: see the typescript-sdk job, which carries the
       # measurement. Here it is only to make `npm run generate` runnable.
       - name: SDK install
         working-directory: sdk/typescript
@@ -920,8 +920,8 @@ jobs:
         working-directory: sdk/python
         run: python3 -m unittest discover -s tests -p "test_conformance.py" -v
 
-  sdk-clients:
-    name: TypeScript SDK, CLI and plugins
+  typescript-sdk:
+    name: TypeScript SDK
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
@@ -931,16 +931,85 @@ jobs:
     permissions:
       contents: read
 
-    # Standalone clients and Go modules read the committed wire contract.
-    # release-and-contract rebuilds it and checks for staleness.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: SDK conformance scenarios are well formed
+        run: python3 sdk/conformance/lint.py
+
+      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
+      # directly, so `npm test` needs nothing but the dev dependency on tsc —
+      # which is also what enforces `erasableSyntaxOnly`, the setting that
+      # keeps those sources runnable without a build step.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      # `--no-audit` is the whole reason this step is not the longest in CI.
+      # `npm ci` runs a vulnerability audit by default, which is one POST to
+      # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
+      # stalls from Actions runners rather than failing fast. Measured on this
+      # lockfile: 35 packages, every tarball fetched in 325ms from a warm
+      # cache, and then `reify:audit Completed in 300202ms`. The step was
+      # taking 88s to 302s depending on how far into npm's 5-minute timeout the
+      # request got, on every PR, and it made this job 426s against 171s for
+      # the slowest test partition. With the flag it is under 5s.
+      #
+      # Nothing is lost, because nothing was gated: `npm ci` does not fail on
+      # advisories, so this could only ever print "found 0 vulnerabilities"
+      # into a log. What DOES watch these packages is dependabot, which was
+      # given its two npm ecosystems in the same change that added this flag --
+      # before that the audit line was the only npm advisory signal in the
+      # repository, and it was one nobody could act on. `--no-fund` suppresses
+      # the funding notice for the same reason: it is output, not a check.
+      - name: SDK install
+        working-directory: sdk/typescript
+        run: npm ci --no-audit --no-fund
+
+      - name: SDK typecheck
+        working-directory: sdk/typescript
+        run: npm run typecheck
+
+      - name: SDK tests
+        working-directory: sdk/typescript
+        run: npm test
+
+      - name: SDK build
+        working-directory: sdk/typescript
+        run: npm run build
+
+      # Eleven browser applications are built on this API, so the SDK's default
+      # entry has to bundle for a browser — no Node built-ins reachable from it.
+      - name: SDK bundles for the browser
+        working-directory: sdk/typescript
+        run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
+
+      - name: TypeScript SDK contract
+        working-directory: sdk/typescript
+        run: npm run verify-contract
+
+      - name: TypeScript SDK conformance
+        working-directory: sdk/typescript
+        run: npm run conformance
+
+  cli-plugins:
+    name: CLI and plugins
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
+
+    permissions:
+      contents: read
+
+    # Go CLIs and plugins have no dependency on an SDK build.
     steps:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
-
-      # Validate fixtures before the TypeScript adapter runs. The other SDK
-      # jobs validate them independently.
-      - name: SDK conformance scenarios are well formed
-        run: python3 sdk/conformance/lint.py
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -1003,66 +1072,13 @@ jobs:
       - name: Hermes plugin tests
         run: python3 -m unittest discover -s integrations/hermes/tests -v
 
-      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
-      # directly, so `npm test` needs nothing but the dev dependency on tsc —
-      # which is also what enforces `erasableSyntaxOnly`, the setting that
-      # keeps those sources runnable without a build step.
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: sdk/typescript/package-lock.json
 
       - name: Deployed-instance runner tests
         run: node --test deployed/test/*.test.mjs
-
-      # `--no-audit` is the whole reason this step is not the longest in CI.
-      # `npm ci` runs a vulnerability audit by default, which is one POST to
-      # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
-      # stalls from Actions runners rather than failing fast. Measured on this
-      # lockfile: 35 packages, every tarball fetched in 325ms from a warm
-      # cache, and then `reify:audit Completed in 300202ms`. The step was
-      # taking 88s to 302s depending on how far into npm's 5-minute timeout the
-      # request got, on every PR, and it made this job 426s against 171s for
-      # the slowest test partition. With the flag it is under 5s.
-      #
-      # Nothing is lost, because nothing was gated: `npm ci` does not fail on
-      # advisories, so this could only ever print "found 0 vulnerabilities"
-      # into a log. What DOES watch these packages is dependabot, which was
-      # given its two npm ecosystems in the same change that added this flag --
-      # before that the audit line was the only npm advisory signal in the
-      # repository, and it was one nobody could act on. `--no-fund` suppresses
-      # the funding notice for the same reason: it is output, not a check.
-      - name: SDK install
-        working-directory: sdk/typescript
-        run: npm ci --no-audit --no-fund
-
-      - name: SDK typecheck
-        working-directory: sdk/typescript
-        run: npm run typecheck
-
-      - name: SDK tests
-        working-directory: sdk/typescript
-        run: npm test
-
-      - name: SDK build
-        working-directory: sdk/typescript
-        run: npm run build
-
-      # Eleven browser applications are built on this API, so the SDK's default
-      # entry has to bundle for a browser — no Node built-ins reachable from it.
-      - name: SDK bundles for the browser
-        working-directory: sdk/typescript
-        run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
-
-      - name: TypeScript SDK contract
-        working-directory: sdk/typescript
-        run: npm run verify-contract
-
-      - name: TypeScript SDK conformance
-        working-directory: sdk/typescript
-        run: npm run conformance
 
   docs-prose:
     name: Docs prose gates
@@ -1152,7 +1168,7 @@ jobs:
           cache: npm
           cache-dependency-path: scripts/destink/package-lock.json
 
-      # `--no-audit --no-fund`: see the sdk-clients job. The audit request
+      # `--no-audit --no-fund`: see the typescript-sdk job. The audit request
       # stalls for minutes from a runner and can only ever print.
       - name: Install the prose checker
         run: npm ci --prefix scripts/destink --no-audit --no-fund
@@ -1811,7 +1827,8 @@ jobs:
       - coverage
       - elixir-static
       - release-and-contract
-      - sdk-clients
+      - cli-plugins
+      - typescript-sdk
       - elixir-sdk
       - python-sdk
       - swift-sdk

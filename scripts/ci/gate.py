@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 FULL_JOBS = {
-    "test", "coverage", "elixir-static", "release-and-contract", "sdk-clients",
+    "test", "coverage", "elixir-static", "release-and-contract", "cli-plugins", "typescript-sdk",
     "elixir-sdk", "python-sdk", "swift-sdk", "core-distribution", "compose-fresh-clone", "compose-pinned-image-boot",
 }
 JOBS = FULL_JOBS | {"already-tested", "changes", "workflow-checks", "docs", "docs-prose"}
