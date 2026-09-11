@@ -9,8 +9,11 @@ defmodule FountainWeb.ConnectionsLive.Index do
   trip itself is `FountainWeb.ConnectionsController`; this page only links
   to it and shows what came back.
 
-  Only for accounts with the broker and Connections flag on: the nav link is hidden
-  otherwise, and a direct visit is sent to `/account`.
+  Only for accounts the broker is on for: the nav link is hidden otherwise,
+  and a direct visit is sent to `/account`. The `connections` rollout flag
+  decides whether this page can *add* anything. With it off the page still
+  lists what the account holds and still revokes and removes it, and every
+  control that would connect an account or define a provider is gone (#1693).
   """
 
   use FountainWeb, :live_view
@@ -89,11 +92,16 @@ defmodule FountainWeb.ConnectionsLive.Index do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
 
-    if Fountain.Connections.enabled_for?(user.id) do
+    # The page opens for any brokered account, so the connections an account
+    # holds can always be seen, revoked and removed. `may_connect?` carries
+    # the rollout flag: with it off the page keeps every door that takes a
+    # credential away and hides the ones that add one (#1693).
+    if Fountain.Connections.manageable_for?(user.id) do
       {:ok,
        socket
        |> assign(:page_title, "Connections")
        |> assign(:user_id, user.id)
+       |> assign(:may_connect?, Fountain.Connections.enabled_for?(user.id))
        |> assign(:provider_form, nil)
        |> assign(:editing_id, nil)
        |> assign(:provider_errors, [])
@@ -110,9 +118,25 @@ defmodule FountainWeb.ConnectionsLive.Index do
     end
   end
 
-  # ── connections ───────────────────────────────────────────────────────────
+  # Every event that would add a way of getting a credential, refused in one
+  # place for an account without the rollout flag. The template hides these
+  # controls; a hidden control is not a gate, so the event is refused too.
+  @adding ~w(new_provider preset edit_provider validate_provider save_provider
+             mcp_preset validate_mcp discover rediscover)
 
   @impl true
+  def handle_event(event, _params, %{assigns: %{may_connect?: false}} = socket)
+      when event in @adding do
+    {:noreply,
+     put_flash(
+       socket,
+       :error,
+       "Connections are not enabled for this account. You can still revoke and remove the ones you have."
+     )}
+  end
+
+  # ── connections ───────────────────────────────────────────────────────────
+
   def handle_event("revoke", %{"id" => id}, socket) do
     user_id = socket.assigns.user_id
 
@@ -421,6 +445,14 @@ defmodule FountainWeb.ConnectionsLive.Index do
           server of yours with the token attached by the egress broker, or an access token
           brokered to the provider's hosts. No token ever enters a sandbox.
         </p>
+        <p
+          :if={!@may_connect?}
+          data-role="connect-disabled"
+          class="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          Connecting a new account is off for this account. The connections you have keep
+          working, and you can revoke or remove any of them here.
+        </p>
       </div>
 
       <%!-- ── Providers ─────────────────────────────────────────────────── --%>
@@ -428,6 +460,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-medium">Providers</h2>
           <button
+            :if={@may_connect?}
             phx-click="new_provider"
             data-role="new-provider"
             class="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]"
@@ -488,7 +521,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
             </div>
             <div class="flex flex-col items-end gap-2 shrink-0">
               <a
-                :if={configured?(p) and not asks_label?(p)}
+                :if={@may_connect? and configured?(p) and not asks_label?(p)}
                 href={~p"/connections/#{p.id}/start"}
                 data-role={"connect-#{p.slug}"}
                 class="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700"
@@ -498,7 +531,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
                   else: "an account"}
               </a>
               <form
-                :if={configured?(p) and asks_label?(p)}
+                :if={@may_connect? and configured?(p) and asks_label?(p)}
                 method="get"
                 action={~p"/connections/#{p.id}/start"}
                 class="flex gap-1"
@@ -528,14 +561,19 @@ defmodule FountainWeb.ConnectionsLive.Index do
               </span>
               <div :if={!Provider.platform?(p)} class="flex gap-2">
                 <button
-                  :if={p.kind == "mcp"}
+                  :if={@may_connect? and p.kind == "mcp"}
                   phx-click="rediscover"
                   phx-value-id={p.id}
                   class="text-xs underline"
                 >
                   Re-discover
                 </button>
-                <button phx-click="edit_provider" phx-value-id={p.id} class="text-xs underline">
+                <button
+                  :if={@may_connect?}
+                  phx-click="edit_provider"
+                  phx-value-id={p.id}
+                  class="text-xs underline"
+                >
                   Edit
                 </button>
                 <button
@@ -725,6 +763,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
 
         <%!-- ── Remote MCP server ───────────────────────────────────────── --%>
         <form
+          :if={@may_connect?}
           id="mcp-discover-form"
           phx-change="validate_mcp"
           phx-submit="discover"
@@ -842,7 +881,7 @@ defmodule FountainWeb.ConnectionsLive.Index do
           </div>
           <div class="flex gap-2 shrink-0">
             <a
-              :if={c.status == "expired"}
+              :if={@may_connect? and c.status == "expired"}
               href={~p"/connections/#{c.provider_id || c.provider}/start?label=#{c.account_email}"}
               data-role="reconnect"
               class="rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700"

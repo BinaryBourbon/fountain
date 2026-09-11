@@ -16,6 +16,21 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
+  PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
+  took the feature away from every deployment that configures no flag service,
+  because a flag nobody can answer reads off. The flag now reads **on** where
+  `POSTHOG_PROJECT_API_KEY` is unset, so an upgrade keeps the Connections page
+  and the `/api/connections`, `/api/connection-providers` and
+  `/api/secret-bindings` routes. An operator who set
+  `FEATURE_FLAGS_ON=connections` to get the feature back can drop it, and
+  nothing changes where PostHog is configured: it answers the flag as before,
+  and `FEATURE_FLAGS_ON` still wins over both. The switch that turns
+  Connections off is the broker: an account is offered the feature only while
+  `BROKER_TENANTS` names it.
+
 ### Changed
 
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
@@ -108,6 +123,18 @@ upgrade, is in
   and the console's conversation lists render them as chips.
 
 ### Fixed
+
+- **An account whose `connections` flag is off can revoke what it already
+  holds** (#1693). The flag stood in front of every door, the ones that take a
+  credential away included, while the runtime kept brokering those same tokens
+  into sandboxes: revoking a connection, deleting a provider and unbinding a
+  secret each answered 404 for a credential that was still in use. The flag
+  now gates only the doors that add one, which are connecting an account,
+  defining or editing a provider, binding a secret and pointing a binding at a
+  different host. Listing, revoking, unbinding and deleting are open to every
+  account the egress broker is on for, in the console and over the API, and
+  the Gmail MCP endpoint serves a connection that already exists the way the
+  rest of the runtime does.
 
 - A teammate can be moved to a different environment or vault. Fountain retires
   the computer the old binding named, so the teammate's next message builds one

@@ -423,15 +423,26 @@ When PostHog is unreachable, Fountain reuses the last answer it gave. With no
 answer at all, each flag reads off, so an outage never turns a feature on.
 Without PostHog you can force a flag on for each user.
 
+A flag over a feature that shipped is the exception. The `connections` flag
+reads on where you set no `POSTHOG_PROJECT_API_KEY`. A deployment with no flag
+service keeps the feature, and an upgrade does not take it away. Where you
+configure PostHog, the answer from PostHog decides.
+
 | Variable | Default | Required | Effect |
 |---|---|---|---|
 | `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key. That is the public `phc_…` token, and not a personal key. Unset, Fountain looks up no flag remotely. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
-| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms`, `connections` or `openai_compat`. It wins over PostHog. |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms` or `openai_compat`. It wins over PostHog. |
 
 For a hosted Connections rollout, leave the global override unset. Enable
 `connections` for the intended test accounts in PostHog, with evaluation
-runtime set to `all`. Enable the credential broker too.
+runtime set to `all`. Enable the credential broker too. The broker is the
+switch that decides which accounts get the feature.
+
+The flag holds only the doors that add a credential. Those doors connect an
+account, define a provider and attach a secret to a host. An account that loses
+the flag keeps what it has. The console and the API still list it, revoke it
+and delete it.
 
 ## Product analytics
 

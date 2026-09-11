@@ -6,7 +6,10 @@ defmodule FountainWeb.SecretBindingsLive.Index do
   Only for accounts the broker is on for: the nav link is hidden otherwise,
   and a direct visit is sent to `/account`. The page never sees a value —
   it lists the names of the secrets the account holds anywhere, and the
-  bindings on each name.
+  bindings on each name. The `connections` rollout flag decides whether a
+  *new* binding can be made here. With it off the page still lists the
+  bindings, still turns one off and still unbinds it, and the form is gone
+  (#1693).
   """
 
   use FountainWeb, :live_view
@@ -20,11 +23,15 @@ defmodule FountainWeb.SecretBindingsLive.Index do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
 
-    if Fountain.Connections.enabled_for?(user.id) do
+    # Open for any brokered account. A binding that is attaching a credential
+    # right now has to be visible and removable whatever the rollout flag
+    # says; `may_bind?` is the flag, and it gates only the form (#1693).
+    if Fountain.Connections.manageable_for?(user.id) do
       {:ok,
        socket
        |> assign(:page_title, "Credential bindings")
        |> assign(:user_id, user.id)
+       |> assign(:may_bind?, Fountain.Connections.enabled_for?(user.id))
        |> assign(:proxy_host, Broker.proxy_host())
        |> assign(:presets, Catalog.presets())
        |> assign(:form_version, 0)
@@ -40,10 +47,26 @@ defmodule FountainWeb.SecretBindingsLive.Index do
 
   # ── events ───────────────────────────────────────────────────────────────
 
+  # The events that make a new binding, refused in one place for an account
+  # without the rollout flag. The template hides the form; a hidden form is
+  # not a gate. `toggle` and `delete` are not here: they take a binding away,
+  # and that is exactly what must keep working.
+  @binding_new ~w(draft pick_key preset save)
+
+  @impl true
+  def handle_event(event, _params, %{assigns: %{may_bind?: false}} = socket)
+      when event in @binding_new do
+    {:noreply,
+     put_flash(
+       socket,
+       :error,
+       "New bindings are off for this account. You can still disable or unbind the ones you have."
+     )}
+  end
+
   # Keeps the form's shape in step with the auth type and the preset pick,
   # so only the fields of the chosen type are shown and submitted — the
   # broker rejects a stale field from a previous choice.
-  @impl true
   def handle_event("draft", %{"binding" => attrs}, socket) do
     draft =
       Map.merge(
@@ -309,7 +332,7 @@ defmodule FountainWeb.SecretBindingsLive.Index do
         </div>
       </section>
 
-      <section :if={@unbound_keys != []} class="space-y-2">
+      <section :if={@may_bind? and @unbound_keys != []} class="space-y-2">
         <h2 class="text-lg font-medium">Secrets with no binding</h2>
         <p class="text-sm text-[var(--color-text-secondary)]">
           These reach the sandbox in the clear. Bind the ones that are credentials for a host.
@@ -329,7 +352,12 @@ defmodule FountainWeb.SecretBindingsLive.Index do
         </div>
       </section>
 
-      <section class="space-y-3">
+      <section :if={!@may_bind?} data-role="bind-disabled" class="text-sm text-amber-900">
+        New bindings are off for this account. The bindings above keep attaching their
+        secrets, and you can disable or unbind any of them.
+      </section>
+
+      <section :if={@may_bind?} class="space-y-3">
         <h2 class="text-lg font-medium">Bind a secret to a host</h2>
         <div class="flex flex-wrap gap-1 items-center text-xs">
           <span class="text-[var(--color-text-secondary)] mr-1">Start from a known service:</span>

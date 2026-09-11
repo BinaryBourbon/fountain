@@ -12,9 +12,11 @@ defmodule FountainWeb.ConnectionProviderController do
       DELETE /api/connection-providers/:id           — delete it and its connections
       POST   /api/connection-providers/:id/discover  — run MCP discovery again
 
-  Every route answers 404 `connections_not_enabled` for an account the
-  broker or Connections flag is not on for, like connections themselves. The client secret is
-  write-only.
+  Every route answers 404 `connections_not_enabled` for an account the broker
+  is not on for, like connections themselves. The three routes that define or
+  change a provider need the `connections` rollout flag as well; listing one
+  and deleting one do not, so an account that already has providers can always
+  see them and take them away (#1693). The client secret is write-only.
   """
 
   use FountainWeb, :controller
@@ -220,8 +222,21 @@ defmodule FountainWeb.ConnectionProviderController do
     })
   end
 
+  # Defining a provider, editing one and re-running discovery all add a way to
+  # get a credential, so they need the rollout flag. Listing and deleting are
+  # management of what is already there and ask the broker only — an action
+  # added here gets that weaker gate by default, never no gate at all (#1693).
+  @creating [:create, :update, :discover]
+
   defp require_connections(conn, _opts) do
-    if Fountain.Connections.enabled_for?(conn.assigns.current_user.id) do
+    user_id = conn.assigns.current_user.id
+
+    allowed? =
+      if action_name(conn) in @creating,
+        do: Fountain.Connections.enabled_for?(user_id),
+        else: Fountain.Connections.manageable_for?(user_id)
+
+    if allowed? do
       conn
     else
       conn

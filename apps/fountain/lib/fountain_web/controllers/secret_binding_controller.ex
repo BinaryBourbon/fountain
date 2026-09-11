@@ -9,9 +9,12 @@ defmodule FountainWeb.SecretBindingController do
       PATCH  /api/secret-bindings/:id        — change one
       DELETE /api/secret-bindings/:id        — unbind
 
-  Every route answers 404 `brokerage_not_enabled` for an account the broker
-  or Connections flag is not on for: the feature does not exist there, and the console does not
-  show it either.
+  Every route answers 404 `brokerage_not_enabled` for an account the broker is
+  not on for: the feature does not exist there, and the console does not show
+  it either. Binding a secret and changing a binding need the `connections`
+  rollout flag as well, because both point a credential at a host. Listing and
+  unbinding do not: `DELETE` is how an account turns off a binding that is
+  still attaching a credential, and that door stays open (#1693).
   """
 
   use FountainWeb, :controller
@@ -140,8 +143,22 @@ defmodule FountainWeb.SecretBindingController do
 
   defp binding_attrs(params), do: Map.take(params, @fields)
 
+  # Binding a secret and editing a binding both send a credential somewhere it
+  # was not going before, so they need the rollout flag. Listing and unbinding
+  # ask the broker only — an account that holds bindings can always see them
+  # and take them apart, which is the one thing the single gate made
+  # impossible (#1693).
+  @creating [:create, :update]
+
   defp require_brokerage(conn, _opts) do
-    if Fountain.Connections.enabled_for?(conn.assigns.current_user.id) do
+    user_id = conn.assigns.current_user.id
+
+    allowed? =
+      if action_name(conn) in @creating,
+        do: Fountain.Connections.enabled_for?(user_id),
+        else: Fountain.Connections.manageable_for?(user_id)
+
+    if allowed? do
       conn
     else
       conn
