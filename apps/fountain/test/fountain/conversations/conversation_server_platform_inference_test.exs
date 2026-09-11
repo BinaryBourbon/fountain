@@ -20,7 +20,9 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
             :broker_listen_port,
             :broker_proxy_url,
             :broker_tenants,
-            :platform_anthropic_api_key
+            :platform_anthropic_api_key,
+            :platform_openai_api_key,
+            :platform_gemini_api_key
           ],
           do: {key, Application.get_env(:fountain, key)}
 
@@ -258,10 +260,10 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
       refute stored(row).usage["inference"] == "platform"
     end
 
-    test "a deployment holding no platform key stamps nothing at all", %{machine: m, row: row} do
+    test "an own-credential turn without platform keys stamps nothing", %{machine: m, row: row} do
       Application.delete_env(:fountain, :platform_anthropic_api_key)
 
-      {_m, []} = select_model(m, platform_ctx())
+      {_m, []} = select_model(m, %{platform_ctx() | inference: :own})
       assert is_nil(stored(row).usage)
     end
 
@@ -296,6 +298,48 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
                "output" => 3
              }) == %{input: 5, output: 3}
     end
+  end
+
+  test "a grant-only deployment stamps the completed codex turn", %{user: user} do
+    for key <- [:platform_anthropic_api_key, :platform_openai_api_key, :platform_gemini_api_key],
+        do: Application.delete_env(:fountain, key)
+
+    Fountain.ChatGPTFixtures.connect!()
+    assert Fountain.PlatformChatGPT.active?()
+    refute Fountain.PlatformInference.enabled?()
+    model = "openai/gpt-6-astra"
+
+    assert {:ok, :platform = source, credentials} =
+             Fountain.InferenceCredentials.select(model, %{}, "codex", refresh: false)
+
+    assert Map.has_key?(credentials, :codex_chatgpt_access_token)
+    agent = insert_agent(user_id: user.id, runtime: "codex", model: model)
+    conv = insert_conversation(user_id: user.id, agent: agent)
+    row = insert_turn(conv, status: "running", started_at: DateTime.utc_now())
+
+    machine = %TurnMachine{
+      conversation_id: conv.id,
+      row: row,
+      metrics: TurnMachine.start_metrics("codex", :runner, System.monotonic_time(:millisecond))
+    }
+
+    ctx = %{inference: source, model: model}
+    {machine, []} = select_model(machine, ctx)
+    assert stored(row).usage == %{"inference" => "platform", "model" => model}
+
+    {machine, [{:finish, status, attrs, metadata}]} =
+      TurnMachine.handle(machine, {:done, "end_turn", %{"input" => 5, "output" => 3}}, ctx)
+
+    TurnMachine.finish(machine, status, attrs, metadata)
+
+    assert stored(row).status == "completed"
+
+    assert stored(row).usage == %{
+             "inference" => "platform",
+             "model" => model,
+             "input" => 5,
+             "output" => 3
+           }
   end
 
   defp platform_ctx, do: %{inference: :platform, model: "anthropic/claude-opus-5"}
