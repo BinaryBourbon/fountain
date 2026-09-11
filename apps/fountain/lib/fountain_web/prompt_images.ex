@@ -14,9 +14,7 @@ defmodule FountainWeb.PromptImages do
   `{:error, message}`.
   """
 
-  @max_image_bytes 10 * 1024 * 1024
-
-  def max_image_bytes, do: @max_image_bytes
+  def max_image_bytes, do: Fountain.Images.max_prompt_image_bytes()
 
   def decode(nil), do: {:ok, []}
   def decode([]), do: {:ok, []}
@@ -65,7 +63,7 @@ defmodule FountainWeb.PromptImages do
   defp decode_base64(_), do: {:error, "image data is required"}
 
   defp validate_size(data) do
-    if byte_size(data) > @max_image_bytes,
+    if byte_size(data) > max_image_bytes(),
       do: {:error, "image exceeds the 10MB limit"},
       else: :ok
   end
