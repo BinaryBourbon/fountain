@@ -3534,45 +3534,83 @@ defmodule Fountain.Conversations do
     with {:ok, {fenced, ids}} <- result,
          :ok <- record_reset_requested(fenced, ids, opts),
          {:ok, completed} <- finish_sandbox_reset(fenced) do
-      reason = Keyword.get(opts, :reason, "home_reset")
-      message = reset_message(reason)
-
-      # A conversation with a live server is told through it — the server
-      # cuts nothing (no turn is running), records the event on its own
-      # transcript and stops. One without a server gets the event recorded
-      # here, so every transcript on the home says the same thing.
-      Enum.each(ids, fn id ->
-        case ConversationServer.whereis(id) do
-          nil ->
-            publish_stage(id, "sandbox", "done", %{
-              event: "reset",
-              reason: reason,
-              by: "owner",
-              message: message
-            })
-
-          pid ->
-            GenServer.cast(pid, {:machine_gone, "reset", reason, message})
-        end
-      end)
-
-      Audit.record(%{
-        user_id: completed.user_id,
-        action: "sandbox.reset",
-        resource_type: "sandbox",
-        resource_id: completed.id,
-        actor: Keyword.get(opts, :actor, "self"),
-        request_ip: Keyword.get(opts, :request_ip),
-        metadata: %{
-          "agent_id" => completed.agent_id,
-          "provider" => completed.provider,
-          "conversations" => length(ids),
-          "reason" => reason
-        }
-      })
-
-      {:ok, completed}
+      record_reset_completed(completed, ids, opts)
     end
+  end
+
+  @doc """
+  Retry deletion of a pending reset, leaving its fence in place until confirmed.
+
+  Re-reads the owned row: missing rows return `:not_found`; an unfenced,
+  ephemeral or already terminal sandbox is skipped. Provider I/O runs outside
+  transactions, and a confirmed delete uses the normal retirement accounting,
+  transcript notifications and audit event. Repeating a completed retry does
+  not delete again. The caller supplies audit attribution through `opts`.
+  """
+  def retry_pending_sandbox_reset(%Sandbox{} = sandbox, opts \\ []) do
+    if Repo.in_transaction?() do
+      {:error, :provider_transaction_open}
+    else
+      case Repo.get_by(Sandbox, id: sandbox.id, user_id: sandbox.user_id) do
+        nil ->
+          {:error, :not_found}
+
+        %Sandbox{mode: "persistent", status: status, reset_requested_at: at} = current
+        when status in ["ready", "suspended"] and not is_nil(at) ->
+          with {:ok, completed} <- finish_sandbox_reset(current) do
+            opts =
+              opts
+              |> Keyword.put_new(:reason, "reset_reconciled")
+              |> Keyword.put_new(:by, "system")
+
+            record_reset_completed(completed, _unsafe_list_holder_ids(current.id), opts)
+          end
+
+        _ ->
+          {:ok, :skipped}
+      end
+    end
+  end
+
+  defp record_reset_completed(completed, ids, opts) do
+    reason = Keyword.get(opts, :reason, "home_reset")
+    message = reset_message(reason)
+
+    # A conversation with a live server is told through it — the server
+    # cuts nothing (no turn is running), records the event on its own
+    # transcript and stops. One without a server gets the event recorded
+    # here, so every transcript on the home says the same thing.
+    Enum.each(ids, fn id ->
+      case ConversationServer.whereis(id) do
+        nil ->
+          publish_stage(id, "sandbox", "done", %{
+            event: "reset",
+            reason: reason,
+            by: Keyword.get(opts, :by, "owner"),
+            message: message
+          })
+
+        pid ->
+          GenServer.cast(pid, {:machine_gone, "reset", reason, message})
+      end
+    end)
+
+    Audit.record(%{
+      user_id: completed.user_id,
+      action: "sandbox.reset",
+      resource_type: "sandbox",
+      resource_id: completed.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{
+        "agent_id" => completed.agent_id,
+        "provider" => completed.provider,
+        "conversations" => length(ids),
+        "reason" => reason
+      }
+    })
+
+    {:ok, completed}
   end
 
   # The fence has committed and the sessions on the machine are already gone,
@@ -3602,18 +3640,13 @@ defmodule Fountain.Conversations do
   end
 
   # Only a confirmed destroy releases capacity. Errors or caller loss leave
-  # the committed fence intact; neither a repeat reset nor the reaper retries it.
+  # the committed fence intact for a later explicit reconciliation retry.
   defp finish_sandbox_reset(sandbox) do
     handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
     case Managoat.Sandbox.destroy(handle) do
       :ok ->
-        changeset = sandbox |> Sandbox.changeset(%{status: "terminated"}) |> stamp_terminated_at()
-
-        with {:ok, completed} <- Repo.update(changeset) do
-          record_sandbox_usage(sandbox.status, completed)
-          {:ok, completed}
-        end
+        update_sandbox(sandbox, %{status: "terminated"})
 
       {:error, _} ->
         {:error, :sandbox_reset_pending}
@@ -3625,6 +3658,9 @@ defmodule Fountain.Conversations do
   # that is the part a reader needs; the head says whose decision it was.
   @reset_tail "The transcript is kept; the next prompt builds a fresh machine, " <>
                 "and the agent starts a new session there."
+
+  defp reset_message("reset_reconciled"),
+    do: "The provider confirmed deletion for a pending sandbox reset. " <> @reset_tail
 
   defp reset_message("environment_changed"),
     do:
