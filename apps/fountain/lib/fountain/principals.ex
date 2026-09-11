@@ -588,12 +588,12 @@ defmodule Fountain.Principals do
   defp revoke_claimed_credentials(user_id) do
     query =
       from k in ApiKey,
-        where: k.user_id == ^user_id and "principal" in k.scopes and is_nil(k.revoked_at)
+        where: k.user_id == ^user_id and "principal" in k.scopes and is_nil(k.revoked_at),
+        select: k
 
-    keys = Repo.all(query)
     now = DateTime.utc_now() |> truncate()
-    Repo.update_all(query, set: [revoked_at: now])
-    Enum.map(keys, &%{&1 | revoked_at: now})
+    {_count, keys} = Repo.update_all(query, set: [revoked_at: now])
+    keys
   end
 
   defp lock_claimable(id) do
