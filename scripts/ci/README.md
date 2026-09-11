@@ -72,7 +72,7 @@ tested it.
 ### Sizing
 
 `MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full mixed
-PR runs 25 jobs; a full merge group runs 26 because both probes run. The
+PR runs 26 jobs; a full merge group runs 27 because both probes run. The
 documented limit is 20 concurrent runners. The queue builds one group at a
 time and batches up to five PRs. Revisit
 `max_entries_to_build` when the concurrency limit changes.
@@ -85,7 +85,10 @@ The Elixir, Python and TypeScript SDKs run in `elixir-sdk`, `python-sdk` and
 macOS. Each reads the committed contract; `release-and-contract` checks its
 generation.
 The Elixir job owns its toolchain, cache, formatting, compilation, tests, docs,
-package dry run, contract and conformance checks. The Python job owns its
+package dry run, contract and conformance checks. It tests Elixir 1.15.8
+with OTP 26.2.5.21 and Elixir 1.19.2 with OTP 28.3. Formatting uses 1.19.2
+because formatter output differs between versions; all remaining checks run
+on both pairs. The Python job owns its
 tests, compilation, contract and conformance checks on Python 3.9 and 3.13.
 These cover the package minimum and newest declared runtime. Both legs must
 pass; a failure does not cancel the other leg. The TypeScript job owns

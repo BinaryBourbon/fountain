@@ -839,7 +839,7 @@ jobs:
           fi
 
   elixir-sdk:
-    name: Elixir SDK
+    name: Elixir SDK (${{ matrix.elixir }} / OTP ${{ matrix.otp }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
@@ -853,6 +853,15 @@ jobs:
     env:
       MIX_ENV: test
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: "1.15.8"
+            otp: "26.2.5.21"
+          - elixir: "1.19.2"
+            otp: "28.3"
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
@@ -863,8 +872,8 @@ jobs:
         id: beam
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19.2"
-          otp-version: "28.3"
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
 
       # The Elixir SDK is a standalone Mix project. Keep its dependency graph
       # and build artifacts separate from the umbrella's cache.
@@ -882,7 +891,10 @@ jobs:
         working-directory: sdk/elixir
         run: MIX_ENV=dev mix deps.get
 
+      # Formatter output changes across Elixir versions. The current
+      # toolchain owns style; both pairs check runtime compatibility.
       - name: Elixir SDK formatting
+        if: ${{ matrix.elixir == '1.19.2' }}
         working-directory: sdk/elixir
         run: mix format --check-formatted
 
