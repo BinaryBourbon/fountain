@@ -197,6 +197,15 @@ replacement the transcript's bytes do — never a wake (6), over `exec` with
 the path as a positional parameter (7), and bounded (8): at most 2,000
 entries, the same 30-second timeout, no audit and no `check_spend/1`.
 
+Confinement (4) covers the path the caller never names. Both git reads
+find their repository with `git rev-parse --show-toplevel`, which walks up
+the ancestors of the request path, so the root it lands on is checked
+against the same home and workspace and a root outside them is
+`not_a_repository` rather than a listing of it. On Sprites no ancestor of
+`/home/sprite` is a repository; on a self-hosted runner (ADR 0022) a
+sandbox is a directory under the operator's home, and an operator whose
+`$HOME` is a dotfiles repository is exactly the case this refuses.
+
 **What is new, and what it costs.**
 
 - The response is one entry per changed path, with git's two porcelain
