@@ -33,6 +33,20 @@ upgrade, is in
 
 ### Changed
 
+- **The claude runtime's ACP adapter moves to 0.75.1, and a fresh sandbox now
+  warms the CLI's model list before its first session** (`managoat_runtimes`
+  0.3.4). The adapter bundles the Claude Code binary that decides which models
+  a turn may select, and 0.66.0 bundled CLI 2.1.220; 0.75.1 bundles 2.1.257,
+  which also resolves a full model id onto the alias row the CLI advertises
+  rather than matching it exactly. Separately, that binary learns an org's
+  "additional models" from a fetch it makes *after* a session has started and
+  caches the answer for the next launch, so the first session in a fresh
+  sandbox saw a shorter list than the second one in the same sandbox — which
+  is what made a model refusal look intermittent. Provisioning now opens one
+  prompt-less session to fill that cache, under three seconds measured and
+  bounded at 30. It is best-effort: a cache that stays cold is logged and
+  provisioning continues.
+
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
   that named the old owner moved with it (`decisions/0048`). The container
   image is `ghcr.io/managoat/fountain`, the Homebrew tap is
