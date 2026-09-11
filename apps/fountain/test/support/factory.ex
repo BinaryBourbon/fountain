@@ -124,6 +124,36 @@ defmodule Fountain.Factory do
     insert_api_key(user, "sprite:#{uniq()}", Keyword.put_new(opts, :scopes, ["sprite"]))
   end
 
+  # ── OAuth clients (#1125) ─────────────────────────────────────────────────
+
+  def oauth_client_attrs(overrides \\ %{}) do
+    Map.merge(
+      %{"name" => "app-#{uniq()}", "redirect_uris" => ["https://app-#{uniq()}.test/callback"]},
+      to_string_map(overrides)
+    )
+  end
+
+  @doc """
+  A registered OAuth client. `published: true` is written straight to the row
+  because publishing is an operator flip with no self-serve path -- there is
+  no context function that would do it.
+  """
+  def insert_oauth_client(overrides \\ %{}) do
+    overrides = to_string_map(overrides)
+    {user_id, overrides} = Map.pop_lazy(overrides, "user_id", fn -> insert_verified_user().id end)
+    {published, overrides} = Map.pop(overrides, "published", false)
+
+    {:ok, client} = Fountain.OAuth.create_client(user_id, oauth_client_attrs(overrides))
+
+    if published do
+      client
+      |> Ecto.Changeset.change(published: true)
+      |> Fountain.Repo.update!()
+    else
+      client
+    end
+  end
+
   # ── connections (#1178) ───────────────────────────────────────────────────
 
   @doc """
