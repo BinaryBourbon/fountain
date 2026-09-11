@@ -12,10 +12,16 @@ defmodule Fountain.Conversations do
 
   alias Fountain.Audit
   alias Fountain.Conversations.{Blocks, Conversation, Labels, LogEvent, Sandbox, Turn, TurnImage}
+  alias Fountain.Conversations.Reapply
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
+
+  # Advisory-lock namespace for per-sandbox machine operations. Distinct from
+  # Quotas' per-user reservation (4315): this one is taken inside a turn
+  # start, and the two must never be mistaken for one another.
+  @sandbox_lock_namespace 4316
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
   #
@@ -1159,6 +1165,259 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Re-resolve the Agent, Environment and Vault for an existing conversation,
+  on the machine it is already running (#1565).
+
+  `conv` must come from `get_conversation/2`; the lookups below are
+  tenant-scoped to that owner. An omitted field keeps its current selection,
+  and an explicit nil clears the Environment override or the Vault. An empty
+  map is therefore a refresh of what is already selected.
+
+  The sandbox is kept. Environment variables, the system prompt, skills and
+  MCP servers are what a later link of this stack rewrites under it;
+  everything the agent has on disk survives either way.
+
+  A selection that would need the disk built again is refused as
+  `{:error, {:rebuild_required, field}}` rather than silently applied or
+  silently ignored. `Fountain.Conversations.Reapply` owns that rule and says
+  why for each field.
+  """
+  @spec reapply_conversation(Conversation.t(), map(), keyword()) ::
+          {:ok, Conversation.t()} | {:error, term()}
+  def reapply_conversation(%Conversation{} = conv, attrs \\ %{}, opts \\ [])
+      when is_map(attrs) do
+    with {:ok, {previous, updated}} <-
+           with_sandbox_lock(conv.sandbox_id, fn ->
+             # Ownership was established by the caller. Re-read under the lock
+             # so concurrent reapplications preserve each other's omitted
+             # fields rather than each writing from a stale copy.
+             current =
+               Repo.one!(from c in Conversation, where: c.id == ^conv.id, lock: "FOR UPDATE")
+
+             if current.sandbox_id == conv.sandbox_id,
+               do: do_reapply_conversation(current, attrs),
+               else: {:error, :provisioning}
+           end) do
+      # Outside the transaction: a failed audit insert would abort the
+      # enclosing one and take the reapply with it.
+      Audit.record(%{
+        user_id: updated.user_id,
+        action: "conversation.configuration_reapplied",
+        resource_type: "conversation",
+        resource_id: updated.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: reapply_metadata(previous, updated)
+      })
+
+      broadcast_sidebar_update(updated.user_id)
+      {:ok, updated}
+    end
+  end
+
+  defp do_reapply_conversation(conv, attrs) do
+    agent_id = reapply_value(attrs, "agent_id", conv.agent_id)
+    vault_selection = reapply_value(attrs, "vault_id", conv.vault_id)
+    environment_selection = reapply_value(attrs, "environment_id", conv.environment_id)
+
+    with :ok <- assert_reapplicable(conv),
+         {:ok, agent_id} <- reapply_agent_id(agent_id),
+         %Fountain.Agents.Agent{} = agent <-
+           Fountain.Agents.get_agent(agent_id, conv.user_id) || {:error, :not_found},
+         {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
+         {:ok, _provider} <- resolve_sandbox_provider(agent),
+         {:ok, vault_id} <- resolve_vault_id(vault_selection, conv.user_id, agent),
+         {:ok, environment_id} <-
+           resolve_environment_id(environment_selection, conv.user_id, agent),
+         {:ok, _permission_policy} <- resolve_permission_policy(conv.permission_policy, agent),
+         :ok <- assert_applicable_in_place(conv, agent, environment_id, vault_id),
+         {:ok, updated} <-
+           write_reapplied_configuration(conv,
+             agent_id: agent.id,
+             # Ownership: `agent` was fetched above by both id and conv.user_id.
+             agent_version_id: Fountain.Agents._unsafe_current_version_id(agent.id),
+             vault_id: vault_id,
+             environment_id: environment_id,
+             runtime: agent.runtime,
+             configuration_revision: conv.configuration_revision + 1
+           ),
+         :ok <- Reapply.update_identity(conv, agent, environment_id, vault_id) do
+      {:ok, {conv, updated}}
+    end
+  end
+
+  # An omitted key keeps what the row already says; a key present with an
+  # explicit nil clears it. Both spellings are accepted because the API hands
+  # string keys through and the context's own callers use atoms.
+  defp reapply_value(attrs, key, current) do
+    atom_key = String.to_existing_atom(key)
+
+    cond do
+      Map.has_key?(attrs, key) -> Map.get(attrs, key)
+      Map.has_key?(attrs, atom_key) -> Map.get(attrs, atom_key)
+      true -> current
+    end
+  end
+
+  # `conversations.agent_id` is `nilify_all`, so deleting an agent leaves the
+  # conversation naming nothing and an omitted `agent_id` inherits that nil.
+  # Ecto refuses to compare nil in a query, so the lookup would raise rather
+  # than answer; refuse the way a wake does instead. An id that was supplied
+  # and does not resolve is a different answer, and the lookup still gives it.
+  defp reapply_agent_id(id) when is_binary(id), do: {:ok, id}
+  defp reapply_agent_id(nil), do: {:error, :no_agent}
+  defp reapply_agent_id(_other), do: {:error, :not_found}
+
+  # Ownership: `conv` reached here from a tenant-scoped fetch, the sandbox is
+  # its own, and the environments are looked up scoped to the same owner.
+  defp assert_applicable_in_place(%Conversation{sandbox_id: nil}, _agent, _env_id, _vault_id),
+    do: :ok
+
+  defp assert_applicable_in_place(%Conversation{} = conv, agent, environment_id, vault_id) do
+    sandbox = _unsafe_get_sandbox(conv.sandbox_id)
+    target_environment_id = environment_id || agent.environment_id
+    target_identity = {agent.id, target_environment_id, vault_id}
+
+    with :ok <- assert_not_shared(sandbox, conv, target_identity) do
+      Reapply.check(sandbox,
+        current_runtime: conv.runtime,
+        target_runtime: agent.runtime,
+        target_environment: environment_for(target_environment_id, conv.user_id),
+        built_with: sandbox && environment_for(sandbox.environment_id, conv.user_id)
+      )
+    end
+  end
+
+  # Skills, instructions and MCP config live at per-machine paths, so
+  # reconfiguring a shared machine reconfigures it for its cotenants too.
+  # `check_attachable/4` pins every conversation on a machine to one identity,
+  # so a selection that still matches theirs is the refresh they would want
+  # anyway. Anything else is refused rather than imposed on them.
+  defp assert_not_shared(nil, _conv, _target), do: :ok
+
+  defp assert_not_shared(%Sandbox{} = sandbox, conv, target) do
+    if _unsafe_sandbox_held_by_other?(sandbox.id, conv.id) and
+         {sandbox.agent_id, sandbox.environment_id, sandbox.vault_id} != target do
+      {:error, {:rebuild_required, :shared_sandbox}}
+    else
+      :ok
+    end
+  end
+
+  defp environment_for(nil, _user_id), do: nil
+  defp environment_for(id, user_id), do: Fountain.Environments.get_environment(id, user_id)
+
+  # A prompt that arrives between the checks above and this write would wake
+  # the conversation and start a turn on the configuration being replaced.
+  # One guarded statement: the row moves only while no turn runs, and a caller
+  # that lost the race is told it is busy rather than silently overwritten.
+  defp write_reapplied_configuration(%Conversation{} = conv, fields) do
+    running_turn =
+      from(t in Turn,
+        where: t.conversation_id == parent_as(:conv).id and t.status == "running",
+        select: 1
+      )
+
+    fields = Keyword.put(fields, :updated_at, DateTime.utc_now() |> DateTime.truncate(:second))
+
+    {count, _} =
+      from(c in Conversation, as: :conv, where: c.id == ^conv.id and not exists(running_turn))
+      |> Repo.update_all(set: fields)
+
+    if count == 1,
+      do: {:ok, _unsafe_get_conversation!(conv.id)},
+      else: {:error, :conversation_busy}
+  end
+
+  defp assert_reapplicable(%Conversation{status: "idle", id: id}),
+    do: assert_no_running_turn(id)
+
+  defp assert_reapplicable(%Conversation{status: "running"}),
+    do: {:error, :conversation_busy}
+
+  # A conversation created without a prompt never leaves `pending`: provision
+  # success flips the *sandbox* row, and only a turn ending writes `idle`. So
+  # refusing every `pending` row would put "I picked the wrong agent before I
+  # sent anything" permanently out of reach, behind a Retry-After that never
+  # cleared. A provision genuinely in flight is still a retry.
+  defp assert_reapplicable(%Conversation{status: "pending"} = conv) do
+    if reapply_provision_in_flight?(conv),
+      do: {:error, :provisioning},
+      else: assert_no_running_turn(conv.id)
+  end
+
+  defp assert_reapplicable(%Conversation{status: status}) when status in ~w(failed terminated),
+    do: {:error, :gone}
+
+  # Ownership: `conv` reached here from a tenant-scoped fetch, and the row
+  # read below is its own machine.
+  defp reapply_provision_in_flight?(%Conversation{sandbox_id: nil}), do: false
+
+  defp reapply_provision_in_flight?(%Conversation{sandbox_id: sandbox_id}) do
+    case _unsafe_get_sandbox(sandbox_id) do
+      %Sandbox{status: status} when status in ["pending", "starting"] -> true
+      _ -> false
+    end
+  end
+
+  defp assert_no_running_turn(conversation_id) do
+    if Repo.exists?(
+         from t in Turn,
+           where: t.conversation_id == ^conversation_id and t.status == "running"
+       ) do
+      {:error, :conversation_busy}
+    else
+      :ok
+    end
+  end
+
+  # Names what moved, never a value: these are the conversation's own
+  # references to tenant resources, which is what "which selection" means.
+  defp reapply_metadata(previous, current) do
+    fields = [:agent_id, :agent_version_id, :environment_id, :vault_id, :runtime]
+
+    changed =
+      fields
+      |> Enum.filter(fn field -> Map.get(previous, field) != Map.get(current, field) end)
+      |> Enum.map(&Atom.to_string/1)
+
+    %{
+      "changed_fields" => changed,
+      "previous" => reapply_selection(previous),
+      "current" => reapply_selection(current),
+      "configuration_revision" => current.configuration_revision
+    }
+  end
+
+  defp reapply_selection(conv) do
+    %{
+      "agent_id" => conv.agent_id,
+      "agent_version_id" => conv.agent_version_id,
+      "environment_id" => conv.environment_id,
+      "vault_id" => conv.vault_id
+    }
+  end
+
+  # The lock turn admission takes, so a reapply and a turn start cannot
+  # interleave on one machine. `nil` is a conversation whose machine has not
+  # been minted yet; there is nothing to serialize against.
+  defp with_sandbox_lock(sandbox_id, fun) do
+    Repo.transaction(fn ->
+      if sandbox_id do
+        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+          @sandbox_lock_namespace,
+          :erlang.phash2(sandbox_id)
+        ])
+      end
+
+      case fun.() do
+        {:ok, value} -> value
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  @doc """
   Best-effort terminate the running ConversationServer (destroys the sprite
   if alive), then delete the conversation row. Cascades to turns and log
   events via the FK.
@@ -1301,11 +1560,6 @@ defmodule Fountain.Conversations do
       {:ok, turn}
     end
   end
-
-  # Advisory-lock namespace for per-sandbox machine operations. Distinct from
-  # Quotas' per-user reservation (4315): this one is taken inside a turn
-  # start, and the two must never be mistaken for one another.
-  @sandbox_lock_namespace 4316
 
   @doc """
   Create a turn on a sandbox that may be shared, refusing when the runtime's
