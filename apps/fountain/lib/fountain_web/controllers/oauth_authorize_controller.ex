@@ -8,7 +8,8 @@ defmodule FountainWeb.OAuthAuthorizeController do
   Browser route with the session and CSRF protection. Not signed in →
   remember this request and go to login; the login round-trips back here.
   A request whose client or redirect URI does not check out is **rendered**
-  as an error, never redirected — see `Fountain.OAuth.validate_request/1`.
+  as an error, never redirected — see `Fountain.OAuth.validate_request/2`.
+  That includes a development-mode client requested by anyone but its owner.
   """
   use FountainWeb, :controller
 
@@ -20,7 +21,7 @@ defmodule FountainWeb.OAuthAuthorizeController do
   plug :require_user
 
   def show(conn, params) do
-    case OAuth.validate_request(params) do
+    case OAuth.validate_request(params, conn.assigns.current_user.id) do
       {:ok, client} ->
         render(conn, :consent, client: client, params: request_params(params), error: nil)
 
@@ -32,7 +33,7 @@ defmodule FountainWeb.OAuthAuthorizeController do
   def create(conn, %{"decision" => decision} = params) do
     user = conn.assigns.current_user
 
-    case OAuth.validate_request(params) do
+    case OAuth.validate_request(params, user.id) do
       {:ok, _client} when decision == "allow" ->
         case OAuth.authorize(user.id, params, FountainWeb.Audited.attribution(conn)) do
           {:ok, code} ->

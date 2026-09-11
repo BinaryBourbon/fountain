@@ -25,14 +25,27 @@ defmodule Fountain.OAuth do
   Two registries. Application config holds the operator's — `config :fountain,
   Fountain.OAuth, clients: [%{id, name, redirect_uris}]`, which runtime.exs
   reads from `OAUTH_CLIENTS` as JSON — and the `oauth_clients` table holds
-  the ones a tenant registers for itself (#1125). Redirect URIs match
-  **exactly**.
+  the ones a tenant registers for itself (#1125). Config wins on a collision,
+  so a row can never shadow a first-party client.
 
-  The client functions at the bottom of this module own the second registry:
-  a tenant's own rows, scoped by `user_id`, audited, and capped. A row starts
-  unpublished, and the authorization flow does not read the table yet. The
-  next change makes it, under the development-mode rule that is what makes a
-  self-chosen redirect URI safe.
+  **Development mode is the security boundary, not the redirect allowlist.**
+  A row starts unpublished, and an unpublished client authorizes only its
+  owner: every other account is rendered an error page, never redirected.
+  That is what makes a self-chosen redirect URI safe — the only account such
+  a client can capture belongs to the person who registered it — and it is
+  why its owner may name any HTTPS redirect or an HTTP loopback one.
+  `published` is an operator flip with no self-serve path, and a published
+  client is an ordinary first-party client on config's terms.
+
+  Redirect URIs match **exactly**, except that an unpublished loopback
+  redirect matches on any port (RFC 8252 §7.3), because the port a local dev
+  server lands on is not a fact anybody registered.
+
+  `redirect_registered?/2` is the **only** redirect gate in the server.
+  `grant_client/2` hands the library a client whose registered list is the
+  requested URI, so `Managoat.OAuth.Clients.validate_request/2` always agrees
+  and is no longer a second opinion. Loosening the check here loosens
+  everything; there is nothing behind it.
 
   ## Tokens are API keys
 
@@ -48,13 +61,145 @@ defmodule Fountain.OAuth do
 
   use Managoat.OAuth, otp_app: :fountain, host: Fountain.OAuth.Host
 
+  defoverridable get_client: 1, validate_request: 1, authorize: 2, authorize: 3
+
   alias Fountain.{Accounts, Audit, Repo}
   alias Fountain.OAuth.Client
+  alias Managoat.OAuth.Clients
 
   # An abuse ceiling, not an allowance: every row here will widen the
   # deployment's CORS allowlist (ADR 0021), so registration must not be
   # unbounded.
   @max_clients_per_account 25
+
+  @type client :: %{
+          id: String.t(),
+          name: String.t(),
+          redirect_uris: [String.t()],
+          published: boolean(),
+          owner_id: String.t() | nil,
+          record_id: String.t() | nil
+        }
+
+  @doc """
+  Operator-configured clients, treated as published.
+
+  Configuration is still the authority for first-party apps. It wins over a
+  database row with the same id, so a tenant cannot shadow an operator app.
+  """
+  @spec config_clients() :: [client()]
+  def config_clients do
+    __managoat_oauth__()
+    |> Managoat.OAuth.clients()
+    |> Enum.map(&Map.merge(&1, %{published: true, owner_id: nil, record_id: nil}))
+  end
+
+  @doc "The client with `id`, or nil. Operator configuration wins."
+  @spec get_client(term()) :: client() | nil
+  def get_client(id) when is_binary(id) do
+    Enum.find(config_clients(), &(&1.id == id)) || db_client(id)
+  end
+
+  def get_client(_), do: nil
+
+  defp db_client(id) do
+    case Repo.get_by(Client, client_id: id) do
+      nil -> nil
+      %Client{} = row -> to_client(row)
+    end
+  end
+
+  defp to_client(%Client{} = row) do
+    %{
+      id: row.client_id,
+      name: row.name,
+      redirect_uris: row.redirect_uris,
+      published: row.published,
+      owner_id: row.user_id,
+      record_id: row.id
+    }
+  end
+
+  @doc """
+  Validate an authorization request with no resolved subject.
+
+  Kept so that a caller with only configured clients still has the instance
+  API the library defines. A development-mode client fails closed here, until
+  the caller supplies the signed-in subject to `validate_request/2`.
+  """
+  @spec validate_request(map()) :: {:ok, client()} | {:error, atom()}
+  def validate_request(params), do: validate_request(params, nil)
+
+  @doc """
+  Validate the client, the development-mode boundary, the redirect and PKCE.
+
+  The owner check deliberately comes before redirect matching. A different
+  account learns only that the client is in development mode, never which
+  redirects its owner registered.
+  """
+  @spec validate_request(map(), String.t() | nil) :: {:ok, client()} | {:error, atom()}
+  def validate_request(params, user_id) when is_map(params) do
+    with %{} = client <- get_client(params["client_id"]) || {:error, :unknown_client},
+         true <- authorizable_by?(client, user_id) || {:error, :development_mode},
+         true <-
+           redirect_registered?(client, params["redirect_uri"]) ||
+             {:error, :redirect_uri_mismatch},
+         {:ok, _} <- Clients.validate_request([grant_client(client, params)], params) do
+      {:ok, client}
+    end
+  end
+
+  @doc "Whether a subject may authorize through a client."
+  @spec authorizable_by?(client(), String.t() | nil) :: boolean()
+  def authorizable_by?(%{published: true}, _user_id), do: true
+
+  def authorizable_by?(%{owner_id: owner_id}, user_id)
+      when is_binary(owner_id) and is_binary(user_id),
+      do: owner_id == user_id
+
+  def authorizable_by?(_client, _user_id), do: false
+
+  defp redirect_registered?(client, uri) when is_binary(uri) do
+    cond do
+      uri in client.redirect_uris -> true
+      client.published -> false
+      true -> Enum.any?(client.redirect_uris, &loopback_match?(&1, uri))
+    end
+  end
+
+  defp redirect_registered?(_client, _uri), do: false
+
+  defp loopback_match?(registered, requested) do
+    registered = URI.parse(registered)
+    requested = URI.parse(requested)
+
+    Client.loopback?(registered.host) and Client.loopback?(requested.host) and
+      registered.scheme == requested.scheme and
+      String.downcase(registered.host) == String.downcase(requested.host) and
+      registered.userinfo == requested.userinfo and registered.path == requested.path and
+      registered.query == requested.query and registered.fragment == requested.fragment
+  end
+
+  # Managoat validates exact redirect matches. Once Fountain has accepted an
+  # RFC 8252 any-port loopback redirect, give the state machine the validated
+  # requested URI so its second validation reaches the same conclusion.
+  #
+  # This is what makes redirect_registered?/2 the only gate: the library's
+  # check cannot fail here, by construction. Never call this with a URI
+  # validate_request/2 has not already accepted.
+  defp grant_client(client, params) do
+    client
+    |> Map.take([:id, :name])
+    |> Map.put(:redirect_uris, [params["redirect_uri"]])
+  end
+
+  @doc "Issue an authorization code after applying Fountain's client policy."
+  def authorize(subject, params, opts \\ []) when is_binary(subject) and is_map(params) do
+    with {:ok, client} <- validate_request(params, subject) do
+      config = %{__managoat_oauth__() | clients: [grant_client(client, params)]}
+      Managoat.OAuth.authorize(config, subject, params, opts)
+    end
+  end
 
   @doc """
   Revoke the token (an API key) presented by an app that is signing out.

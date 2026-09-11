@@ -15,6 +15,11 @@ defmodule FountainWeb.OAuthAuthorizeHTML do
         <div class="space-y-1">
           <div class="text-xs uppercase tracking-wide text-zinc-500">{Fountain.Brand.name()}</div>
           <h1 class="text-xl font-semibold">Sign in to {@client.name}?</h1>
+          <p :if={not @client.published} class="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+            <span class="font-medium">In development.</span>
+            You registered this app yourself, and it signs in nobody but you. Nothing here has been
+            reviewed, so read the address it returns to before you allow it.
+          </p>
           <p class="text-sm text-zinc-600">
             <span class="font-medium">{@client.name}</span>
             is asking to use your {Fountain.Brand.name()} account. Allowing it issues an API key it will use to
@@ -65,6 +70,11 @@ defmodule FountainWeb.OAuthAuthorizeHTML do
 
   defp reason_text(:unknown_client),
     do: "The app is not registered with this Fountain (unknown client_id)."
+
+  defp reason_text(:development_mode),
+    do:
+      "This app is in development. Only the account that registered it can sign in, " <>
+        "and that is not the account you are signed in as."
 
   defp reason_text(:redirect_uri_mismatch),
     do: "The app asked to send you somewhere it is not registered for (redirect_uri)."

@@ -8,6 +8,22 @@ defmodule Fountain.OAuthClientsTest do
   alias Fountain.Audit
   alias Fountain.OAuth
 
+  defp pkce_challenge do
+    Base.url_encode64(:crypto.hash(:sha256, "verifier"), padding: false)
+  end
+
+  defp request(client_id, redirect, over \\ %{}) do
+    Map.merge(
+      %{
+        "client_id" => client_id,
+        "redirect_uri" => redirect,
+        "code_challenge" => pkce_challenge(),
+        "code_challenge_method" => "S256"
+      },
+      over
+    )
+  end
+
   describe "create_client/3" do
     test "caps how many clients one account may register" do
       user = insert_verified_user()
@@ -232,6 +248,216 @@ defmodule Fountain.OAuthClientsTest do
         |> Enum.map(& &1.id)
 
       assert ids == expected
+    end
+  end
+
+  describe "get_client/1" do
+    test "config wins, so a row can never shadow a first-party client" do
+      assert %{id: "test-app", published: true, owner_id: nil} = OAuth.get_client("test-app")
+    end
+
+    test "returns a row as an unpublished client owned by its registrant" do
+      client = insert_oauth_client()
+
+      assert %{id: id, published: false, owner_id: owner, record_id: record_id} =
+               OAuth.get_client(client.client_id)
+
+      assert id == client.client_id
+      assert owner == client.user_id
+      assert record_id == client.id
+    end
+
+    test "is nil for an id nobody registered" do
+      refute OAuth.get_client("app_nope")
+      refute OAuth.get_client(nil)
+    end
+
+    test "a deleted client stops being reachable by the flow" do
+      client = insert_oauth_client()
+      {:ok, _} = OAuth.delete_client(client)
+
+      refute OAuth.get_client(client.client_id)
+    end
+  end
+
+  describe "validate_request/2 — development mode" do
+    test "the owner may sign in to their own unpublished client" do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      assert {:ok, %{id: _}} =
+               OAuth.validate_request(
+                 request(client.client_id, "https://mine.test/c"),
+                 client.user_id
+               )
+    end
+
+    test "anyone else is refused, and told nothing about the redirect URI" do
+      stranger = insert_verified_user()
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      assert {:error, :development_mode} =
+               OAuth.validate_request(
+                 request(client.client_id, "https://mine.test/c"),
+                 stranger.id
+               )
+
+      # A wrong redirect from a stranger is still development_mode: the
+      # identity gate answers first so the error page leaks no registration.
+      assert {:error, :development_mode} =
+               OAuth.validate_request(
+                 request(client.client_id, "https://evil.test/c"),
+                 stranger.id
+               )
+    end
+
+    test "fails closed when there is no signed-in user" do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      assert {:error, :development_mode} =
+               OAuth.validate_request(request(client.client_id, "https://mine.test/c"))
+    end
+
+    test "a published client takes any account" do
+      stranger = insert_verified_user()
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"], published: true)
+
+      assert {:ok, _} =
+               OAuth.validate_request(
+                 request(client.client_id, "https://mine.test/c"),
+                 stranger.id
+               )
+    end
+
+    test "an id nobody registered is unknown_client" do
+      user = insert_verified_user()
+
+      assert {:error, :unknown_client} =
+               OAuth.validate_request(request("app_nope", "https://mine.test/c"), user.id)
+    end
+
+    test "the owner still gets an exact redirect check" do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      assert {:error, :redirect_uri_mismatch} =
+               OAuth.validate_request(
+                 request(client.client_id, "https://mine.test/other"),
+                 client.user_id
+               )
+    end
+
+    test "a missing redirect URI is a mismatch, not a crash" do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      assert {:error, :redirect_uri_mismatch} =
+               OAuth.validate_request(
+                 %{"client_id" => client.client_id},
+                 client.user_id
+               )
+    end
+
+    test "PKCE is still required once the client checks out" do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      assert {:error, _} =
+               OAuth.validate_request(
+                 %{"client_id" => client.client_id, "redirect_uri" => "https://mine.test/c"},
+                 client.user_id
+               )
+    end
+  end
+
+  describe "validate_request/2 — loopback ports" do
+    test "an unpublished loopback redirect matches on any port" do
+      client = insert_oauth_client(redirect_uris: ["http://localhost:5173/callback"])
+
+      assert {:ok, _} =
+               OAuth.validate_request(
+                 request(client.client_id, "http://localhost:5174/callback"),
+                 client.user_id
+               )
+    end
+
+    test "but not on another path, host or scheme" do
+      client = insert_oauth_client(redirect_uris: ["http://localhost:5173/callback"])
+
+      for uri <- [
+            "http://localhost:5174/other",
+            "http://evil.test:5174/callback",
+            "https://localhost:5174/callback",
+            "http://localhost:5174/callback#fragment"
+          ] do
+        assert {:error, :redirect_uri_mismatch} =
+                 OAuth.validate_request(request(client.client_id, uri), client.user_id)
+      end
+    end
+
+    test "a published client gets no port latitude" do
+      client =
+        insert_oauth_client(redirect_uris: ["http://localhost:5173/callback"], published: true)
+
+      assert {:error, :redirect_uri_mismatch} =
+               OAuth.validate_request(
+                 request(client.client_id, "http://localhost:5174/callback"),
+                 client.user_id
+               )
+    end
+  end
+
+  describe "authorize/3" do
+    test "the owner gets a code their own client can exchange" do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+      verifier = "verifier"
+
+      assert {:ok, code} =
+               OAuth.authorize(client.user_id, request(client.client_id, "https://mine.test/c"))
+
+      assert {:ok, %{access_token: _}} =
+               OAuth.exchange(%{
+                 "code" => code,
+                 "code_verifier" => verifier,
+                 "client_id" => client.client_id,
+                 "redirect_uri" => "https://mine.test/c"
+               })
+    end
+
+    test "a stranger gets no code at all" do
+      stranger = insert_verified_user()
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      assert {:error, :development_mode} =
+               OAuth.authorize(stranger.id, request(client.client_id, "https://mine.test/c"))
+    end
+
+    test "a loopback code is bound to the port that asked for it" do
+      client = insert_oauth_client(redirect_uris: ["http://localhost:5173/cb"])
+
+      assert {:ok, code} =
+               OAuth.authorize(
+                 client.user_id,
+                 request(client.client_id, "http://localhost:5200/cb")
+               )
+
+      assert {:ok, %{access_token: _}} =
+               OAuth.exchange(%{
+                 "code" => code,
+                 "code_verifier" => "verifier",
+                 "client_id" => client.client_id,
+                 "redirect_uri" => "http://localhost:5200/cb"
+               })
+    end
+
+    test "records the client row it authorized against" do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/c"])
+
+      {:ok, _} = OAuth.authorize(client.user_id, request(client.client_id, "https://mine.test/c"))
+
+      assert [event] =
+               client.user_id
+               |> Audit.list_recent_for_user(20)
+               |> Enum.filter(&(&1.action == "oauth.authorized"))
+
+      assert event.resource_id == client.id
+      assert event.metadata["client_id"] == client.client_id
     end
   end
 end
