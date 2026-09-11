@@ -86,6 +86,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
   @type t :: %__MODULE__{
           conversation_id: String.t() | nil,
+          sandbox_id: String.t() | nil,
           row: Conversations.Turn.t() | nil,
           span: term() | nil,
           metrics: map() | nil,
@@ -95,6 +96,7 @@ defmodule Fountain.Conversations.TurnMachine do
         }
 
   defstruct conversation_id: nil,
+            sandbox_id: nil,
             row: nil,
             span: nil,
             metrics: nil,
@@ -113,6 +115,7 @@ defmodule Fountain.Conversations.TurnMachine do
   def from_state(state) do
     %__MODULE__{
       conversation_id: state.conversation_id,
+      sandbox_id: Map.get(state, :sandbox_id),
       row: state.current_turn,
       span: state.current_turn_span,
       metrics: state.turn_metrics,
@@ -642,54 +645,49 @@ defmodule Fountain.Conversations.TurnMachine do
   the completion metric and the conversation back to idle. What the server
   resolves first (a held permission, parked caller tools, the quiet timer)
   is the server's; what it clears after (activity) is too. Returns the turn
-  with its bookkeeping cleared.
+  with its bookkeeping cleared. A stale completion clears local bookkeeping
+  without overwriting the persisted result or emitting another completion.
   """
   @spec finish(t(), String.t(), map(), map()) :: t()
   def finish(%__MODULE__{} = turn, status, span_attrs, stage_meta) do
     # Before the turn span ends: totals land on it, abandoned tool spans close.
     finalize_tracer(turn.tracer)
 
-    {:ok, row} =
-      Conversations._unsafe_update_turn(turn.row, %{
-        status: status,
-        ended_at: now()
-      })
+    # Ownership: the server supplies its binding, and the context locks and rechecks it.
+    case Conversations._unsafe_complete_turn(turn.row, turn.sandbox_id, status) do
+      {:ok, row} ->
+        stage_meta = Map.merge(stage_meta, %{turn_id: row.id, turn_number: row.turn_number})
 
-    stage_meta = Map.merge(stage_meta, %{turn_id: row.id, turn_number: row.turn_number})
+        # A service-enforced limit sets both: `limit_reason` names which limit,
+        # and `stop_reason` is the field every existing transcript reader
+        # already switches on. The conversations app and the team app live
+        # outside this repo (ADR 0034), so a new field alone would render as an
+        # unexplained failure in both until each one shipped.
+        stage_meta =
+          if row.limit_reason,
+            do:
+              stage_meta
+              |> Map.put(:limit_reason, row.limit_reason)
+              |> Map.put(:stop_reason, row.limit_reason),
+            else: stage_meta
 
-    # A service-enforced limit sets both: `limit_reason` names which limit, and
-    # `stop_reason` is the field every existing transcript reader already
-    # switches on. The conversations app and the team app live outside this
-    # repo (ADR 0034), so a new field alone would render as an unexplained
-    # failure in both until each one shipped.
-    stage_meta =
-      if row.limit_reason,
-        do:
-          stage_meta
-          |> Map.put(:limit_reason, row.limit_reason)
-          |> Map.put(:stop_reason, row.limit_reason),
-        else: stage_meta
+        publish_stage(
+          turn.conversation_id,
+          "turn",
+          # `row.status`, not `status`: a turn the execution journal fenced has
+          # had its requested status dropped, so the persisted row is the only
+          # honest source of what actually happened (ADR 0046). `stage_meta`
+          # already carries turn_id/turn_number from the merge above.
+          if(row.status == "completed", do: "done", else: "failed"),
+          Map.merge(stage_meta, waiting_meta(row))
+        )
 
-    publish_stage(
-      turn.conversation_id,
-      "turn",
-      # `row.status`, not `status`: a turn the execution journal fenced has had
-      # its requested status dropped, so the persisted row is the only honest
-      # source of what actually happened (ADR 0046). `stage_meta` already
-      # carries turn_id/turn_number from the merge above.
-      if(row.status == "completed", do: "done", else: "failed"),
-      Map.merge(stage_meta, waiting_meta(row))
-    )
+        end_span(turn.span, if(row.status == "completed", do: :ok, else: :error), span_attrs)
+        emit_completed(turn, row.status)
 
-    end_span(
-      turn.span,
-      if(row.status == "completed", do: :ok, else: :error),
-      span_attrs
-    )
-
-    emit_completed(turn, row.status)
-
-    {:ok, _} = Conversations._unsafe_idle_after_turn(row)
+      :noop ->
+        end_span(turn.span, :error, %{"outcome" => "completion_ignored"})
+    end
 
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
   end
