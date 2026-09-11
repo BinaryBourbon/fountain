@@ -23,10 +23,13 @@ failure/interruption retains a remote-stop obligation; reset refuses unfinished
 executions, and recovery marks lost termination owners uncertain without replay.
 An obligation nothing can resolve ages out within two minutes, so neither state
 fences a machine forever; an operator can also reap a stuck row from
-`/admin/sandboxes` (#1768). Public
-limits, host/account policy, command transport, deadline scheduling, remaining
-lifecycle surfaces, SDK pins and production acceptance remain unbuilt. No API
-or scheduler activates bounded turns yet.
+`/admin/sandboxes` (#1768).
+Host/account policy and typed-limit admission are built: the admission campaign
+(#1787-#1793) shipped them on `main` before this ADR, and `turns.limit_reason`
+publishes a bounded outcome. The request side of the public limit surface,
+command transport, deadline scheduling, remaining lifecycle surfaces, SDK pins
+and production acceptance remain unbuilt. No API or scheduler activates bounded
+turns yet.
 
 ## Context
 
@@ -117,10 +120,12 @@ below; the second needs no scheduler and ships with the journal.
   `turn_executions.execution_limits`: the allowance a turn was admitted under,
   frozen on registration and checked against the absolute deadline by
   `enforce_deadline_ceiling!/3`. A caller that asks for a deadline beyond the
-  allowance is refused rather than clamped. Recovery reads the frozen copy, so a
-  ceiling changed mid-turn neither narrows nor widens work already admitted.
-  Each limit's per-turn or per-session scope, and the fact that SDK cost is
-  estimated rather than billed, still need documenting for a reader.
+  allowance is refused rather than clamped. The column is written today and read
+  by nothing: the reader that honours the frozen copy, so that a ceiling changed
+  mid-turn neither narrows nor widens work already admitted, arrives with the
+  command transport that gives a recovered turn something to resume. Each limit's
+  per-turn or per-session scope, and the fact that SDK cost is estimated rather
+  than billed, still need documenting for a reader.
 - Record identity outside the conversation mailbox. Bind it to the command ref,
   original connection and turn; do not infer it from sandbox output or argv.
 - Route every bounded turn start/end, autonomous turn, interruption and restart

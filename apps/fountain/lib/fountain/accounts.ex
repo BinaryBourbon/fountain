@@ -1053,10 +1053,13 @@ defmodule Fountain.Accounts do
 
   `User.execution_limits_changeset/2` has existed since the admission campaign
   with nothing but tests calling it, which meant the only way to give an account
-  a ceiling was to write the column by hand. Like the sandbox-cap setter above
-  this belongs behind the admin boundary: no tenant profile or registration path
-  accepts these fields, and the audit row names the fields rather than a
-  policy nobody can reconstruct. `nil` clears the ceiling.
+  a ceiling was to write the column by hand. These ceilings are operator-owned
+  like the sandbox-cap setter above — no tenant profile or registration path
+  accepts these fields — but unlike that one there is no admin control for them
+  yet: this function has no caller outside its own test, and the `/admin/users`
+  surface beside the sandbox cap arrives with the PR that first enforces a
+  control. The audit row records the whole policy before and after, which is an
+  operator-set value rather than tenant data. `nil` clears the ceiling.
   """
   def update_execution_limits(%User{} = user, limits, opts \\ []) do
     user
