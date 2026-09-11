@@ -45,6 +45,27 @@ updates:
     groups:
       sdk-typescript:
         update-types: [minor, patch]
+    ignore:
+      # The SDK generates `src/generated/openapi.ts` with openapi-typescript,
+      # which builds its AST through the compiler API it imports directly
+      # (`import ts from 'typescript'`, dist/lib/ts.mjs:2) and so declares
+      # `peerDependencies: {"typescript": "^5.x"}`. Every published release
+      # carries that peer, 7.7.3 through 7.13.0 (`latest`); the `next` tag is
+      # the older 7.0.0-rc.1. A TypeScript major above 5 therefore makes the
+      # tree unresolvable and `npm ci` exits 1 on ERESOLVE before typecheck,
+      # tests, build, `verify-contract`, conformance or the generated-types
+      # freshness diff get to say whether the compiler itself is fine
+      # (ci.yml `SDK install`, and sdk-publish.yml runs the same install).
+      # `--legacy-peer-deps` is not the way out: it would run a TS-5-targeting
+      # generator against the newer compiler API, and the `SDK types match the
+      # spec` step fails on any diff in the regenerated output.
+      # Majors as a class, not 6.x alone: the peer pins the 5 line, so 6, 7 and
+      # anything after it break identically. Minors and patches still arrive,
+      # grouped above.
+      # Delete this entry when openapi-typescript declares support for a newer
+      # TypeScript major, and bump both together (#1759).
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /scripts/destink
