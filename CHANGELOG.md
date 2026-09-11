@@ -45,7 +45,10 @@ upgrade, is in
   carries this account's prefix still round-trips, so a name minted by the
   server keeps resolving to its own machine; an arbitrary legacy name does
   not, and the way back to that machine is `sandbox_id`, which attaches by row
-  rather than by name.
+  rather than by name. `sandbox_id` reaches the row while it is attachable
+  (ADR 0023), so a machine that was reaped, has a reset pending, or belongs to
+  a different agent, vault, environment or runtime than the launch answers 409
+  or 422 rather than attaching.
 
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
   that named the old owner moved with it (`decisions/0048`). The container
