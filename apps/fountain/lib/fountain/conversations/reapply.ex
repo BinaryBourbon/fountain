@@ -37,11 +37,41 @@ defmodule Fountain.Conversations.Reapply do
   is refused. Relaxing that is a one-line change to `fingerprint/1`, once
   somebody has shown the re-application is safe.
 
-  This module is built across the #1565 stack. This first part is the digest
-  alone: the rule that reads it lands next.
+  One gap is worth naming. A skill whose source is a GitHub repository is a
+  clone, and by the time a reapply runs the machine's network policy is
+  already in force. Bundled skills are file writes and always land; a remote
+  one may not, under a restrictive policy.
+
+  So a reapply that needs either of those is refused, and says which field
+  forced it. Start a new conversation for that, or build the machine under
+  the conversation again with `DELETE /api/sandboxes/:id` (#1071).
+
+  ## The cotenant rule
+
+  Skills, the instructions file and `.mcp.json` sit at per-sandbox paths
+  (`Managoat.Runtimes.Layout`), not per-conversation ones, so rewriting them
+  rewrites them for every conversation on that machine. Sharing only happens
+  on a persistent home or an explicit `sandbox_id` attach, and
+  `Conversations.check_attachable/4` already pins every conversation on a
+  machine to one `(user, agent, environment, vault)`. A conversation that has
+  the machine to itself can therefore be reconfigured freely; one that shares
+  it may only be reapplied to the selection its cotenants already have, which
+  is what a refresh is. The context applies that rule and reports it as the
+  `:shared_sandbox` blocker below.
   """
 
+  alias Fountain.Conversations.Sandbox
   alias Fountain.Environments.Environment
+
+  @typedoc "Why a selection cannot be applied to the machine that is already there."
+  @type blocker ::
+          :runtime
+          | :packages
+          | :repositories
+          | :setup_script
+          | :networking
+          | :environment
+          | :shared_sandbox
 
   @doc """
   The digest of the Environment fields that provisioning turns into disk
@@ -66,4 +96,95 @@ defmodule Fountain.Conversations.Reapply do
     |> Base.encode16(case: :lower)
     |> binary_part(0, 32)
   end
+
+  @doc """
+  Whether the machine `sandbox` already is can be reconfigured into the
+  requested selection, or the first reason it cannot.
+
+  `:built_with` is the Environment the sandbox records, used only when the row
+  predates `build_fingerprint` and so cannot answer for itself.
+
+  ## What the refusal can name
+
+  A refusal carries the build field that forced it only when the selection
+  moves to a *different* Environment, because naming the field means diffing
+  the one the machine was built from against the one being asked for.
+
+  A refresh of the same Environment, edited in place, is the case that cannot.
+  Both sides are the same row read fresh, so every field compares equal however
+  far the build inputs moved. The stored digest still catches the move — it was
+  computed before the edit — but nothing left on the row says *which* input
+  changed, so the refusal is the general `:environment`. Recovering the field
+  there needs the digest to be per-field rather than one string, which is a
+  column change and not worth it for the message alone.
+  """
+  @spec check(Sandbox.t() | nil, keyword()) :: :ok | {:error, {:rebuild_required, blocker()}}
+  def check(nil, _opts), do: :ok
+
+  def check(%Sandbox{} = sandbox, opts) do
+    current_runtime = Keyword.fetch!(opts, :current_runtime)
+    target_runtime = Keyword.fetch!(opts, :target_runtime)
+    target_env = Keyword.fetch!(opts, :target_environment)
+    built_with = Keyword.get(opts, :built_with)
+
+    cond do
+      target_runtime != current_runtime ->
+        {:error, {:rebuild_required, :runtime}}
+
+      built_fingerprint(sandbox, built_with) == fingerprint(target_env) ->
+        :ok
+
+      true ->
+        {:error, {:rebuild_required, build_field(built_with, target_env)}}
+    end
+  end
+
+  # A row written since #1565 answers for itself. An older one cannot, so the
+  # environment it records stands in: that catches a selection pointing at a
+  # different environment, and misses only an environment edited before this
+  # column existed.
+  defp built_fingerprint(%Sandbox{build_fingerprint: fp}, _built_with) when is_binary(fp), do: fp
+  defp built_fingerprint(_sandbox, built_with), do: fingerprint(built_with)
+
+  # Which field to name in the refusal. Falls back to `:environment` in two
+  # cases: the machine cannot say what it was built from, and both sides are
+  # the same Environment row, which is what a refresh of one edited in place
+  # looks like from here. See `check/2`.
+  defp build_field(%Environment{} = was, %Environment{} = now) do
+    cond do
+      was.packages != now.packages -> :packages
+      was.repositories != now.repositories -> :repositories
+      was.setup_script != now.setup_script -> :setup_script
+      was.networking_type != now.networking_type -> :networking
+      was.networking_config != now.networking_config -> :networking
+      true -> :environment
+    end
+  end
+
+  defp build_field(_was, _now), do: :environment
+
+  @doc """
+  A sentence naming what forced a rebuild, for the API error and the log.
+  """
+  @spec explain(blocker()) :: String.t()
+  def explain(:runtime),
+    do:
+      "the selected agent runs a different runtime, and the ACP adapter is installed " <>
+        "before the network policy that would now block installing another"
+
+  def explain(:packages), do: "the selected environment installs different packages"
+  def explain(:repositories), do: "the selected environment clones different repositories"
+  def explain(:setup_script), do: "the selected environment runs a different setup script"
+
+  def explain(:networking),
+    do:
+      "the selected environment applies a different network policy, and the egress rules " <>
+        "are written once, when the machine is built"
+
+  def explain(:environment), do: "the selected environment builds the machine differently"
+
+  def explain(:shared_sandbox),
+    do:
+      "other conversations share this machine, and its skills, instructions and MCP " <>
+        "configuration are per-machine rather than per-conversation"
 end
