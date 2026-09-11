@@ -62,8 +62,17 @@ updates:
       # Majors as a class, not 6.x alone: the peer pins the 5 line, so 6, 7 and
       # anything after it break identically. Minors and patches still arrive,
       # grouped above.
+      # `ignore` withholds security updates too, not just version updates, so a
+      # TypeScript advisory fixed only in 6.x or later would also be held back.
+      # Accepted: it is a devDependency, never shipped to SDK consumers, and the
+      # 5.x line still gets patches through the group.
       # Delete this entry when openapi-typescript declares support for a newer
-      # TypeScript major, and bump both together (#1759).
+      # TypeScript major, and bump both together (#1759). Deleting it does not
+      # restore 7.x on its own: #1557 used `@dependabot ignore this major
+      # version`, recording `typescript [>= 7.a, < 8]` in dependabot's central
+      # state, which no file here shows. Run
+      # `@dependabot show typescript ignore conditions` to see what is stored,
+      # then `@dependabot unignore typescript [>= 7.a, < 8]` to clear it.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
 
