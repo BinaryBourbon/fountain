@@ -300,4 +300,77 @@ defmodule FountainWeb.DashboardLiveTest do
     # And it does not ask for a conversation it has nowhere to start.
     refute html =~ "Start one"
   end
+
+  describe "conversation labels (#1637)" do
+    test "renders them as chips beside each conversation", %{conn: conn, user: user} do
+      insert_conversation(user_id: user.id, labels: %{"env" => "prod", "drift" => "true"})
+
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+      assert html =~ "env=prod"
+      assert html =~ "drift=true"
+    end
+
+    test "a conversation with no labels renders no chips", %{conn: conn, user: user} do
+      insert_conversation(user_id: user.id)
+
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+
+      refute has_element?(lv, "[data-label-chip]")
+    end
+
+    test "the URL filter narrows the list, repeatable and AND-combined", %{
+      conn: conn,
+      user: user
+    } do
+      drifted =
+        insert_conversation(user_id: user.id, labels: %{"env" => "prod", "drift" => "true"})
+
+      clean = insert_conversation(user_id: user.id, labels: %{"env" => "prod"})
+      staging = insert_conversation(user_id: user.id, labels: %{"env" => "staging"})
+
+      {:ok, _lv, one} = live(conn, "/dashboard?label=env:prod")
+      assert one =~ drifted.id
+      assert one =~ clean.id
+      refute one =~ staging.id
+
+      {:ok, _lv, both} = live(conn, "/dashboard?label=env:prod&label=drift:true")
+      assert both =~ drifted.id
+      refute both =~ clean.id
+    end
+
+    test "a filter nothing matches says so rather than showing everything", %{
+      conn: conn,
+      user: user
+    } do
+      insert_conversation(user_id: user.id, labels: %{"env" => "prod"})
+
+      {:ok, _lv, html} = live(conn, "/dashboard?label=env:qa")
+
+      assert html =~ "No conversation carries every one of those labels"
+    end
+
+    test "a chip links to the same list filtered by it", %{conn: conn, user: user} do
+      insert_conversation(user_id: user.id, labels: %{"env" => "prod"})
+
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+
+      assert lv
+             |> element("[data-label-chip='env']")
+             |> render_click() =~ "clear"
+
+      assert_patched(lv, "/dashboard?label=env%3Aprod")
+    end
+
+    test "an unparseable filter value filters nothing rather than erroring", %{
+      conn: conn,
+      user: user
+    } do
+      conv = insert_conversation(user_id: user.id, labels: %{"env" => "prod"})
+
+      {:ok, _lv, html} = live(conn, "/dashboard?label=prod")
+
+      assert html =~ conv.id
+    end
+  end
 end

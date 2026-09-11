@@ -211,6 +211,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
                   {String.slice(c.id, 0, 8)}
                 </.link>
                 <span :if={c.title} class="text-zinc-500 ml-1">{c.title}</span>
+                <.label_chips labels={c.labels} />
               </td>
               <td class="px-4 py-2">
                 <span class={[
