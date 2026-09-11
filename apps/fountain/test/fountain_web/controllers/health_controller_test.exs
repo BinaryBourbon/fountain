@@ -42,6 +42,23 @@ defmodule FountainWeb.HealthControllerTest do
 
       assert body["status"] == "ok"
       assert body["checks"]["database"] == "ok"
+      assert body["checks"]["broker_listener"] == "ok"
+    end
+
+    test "returns 503 when the broker listener is down", %{conn: conn} do
+      # #1726: the listener starts after the endpoint, so a fresh pod can
+      # serve HTTP with nothing bound to BROKER_LISTEN_PORT. Every provision
+      # routed there fails, because under BROKER_TENANTS=* there is no
+      # unbrokered path to fall back to.
+      stub(Fountain.Health, :broker_listener, fn -> :error end)
+
+      conn = get(conn, "/health/ready")
+
+      assert conn.status == 503
+      body = json_response(conn, 503)
+      assert body["status"] == "error"
+      assert body["checks"]["broker_listener"] == "error"
+      assert body["checks"]["database"] == "ok"
     end
 
     test "returns 503 when the database is unreachable", %{conn: conn} do
@@ -66,7 +83,7 @@ defmodule FountainWeb.HealthControllerTest do
 
       assert Jason.decode!(raw) == %{
                "status" => "error",
-               "checks" => %{"database" => "error"}
+               "checks" => %{"database" => "error", "broker_listener" => "ok"}
              }
 
       for leak <- ~w(Postgrex DBConnection postgres password hostname stacktrace) do

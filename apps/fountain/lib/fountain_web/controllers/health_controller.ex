@@ -54,7 +54,11 @@ defmodule FountainWeb.HealthController do
   )
 
   def ready(conn, _params) do
-    checks = %{"database" => Fountain.Health.database()}
+    checks = %{
+      "database" => Fountain.Health.database(),
+      "broker_listener" => Fountain.Health.broker_listener()
+    }
+
     ready? = Enum.all?(checks, fn {_name, result} -> result == :ok end)
 
     conn

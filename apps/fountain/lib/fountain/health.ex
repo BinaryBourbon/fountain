@@ -21,6 +21,21 @@ defmodule Fountain.Health do
     (`Fountain.Application`), so a pod that failed its migrations has no
     listening socket to probe — it crashes and restarts instead. A pending
     migration check would be code that can never fire.
+
+  * **The egress broker listener qualifies**, wherever one is configured. It
+    is a supervised child started *after* `FountainWeb.Endpoint`
+    (`Fountain.Application`), so a fresh pod answers HTTP for a moment with
+    nothing bound to `BROKER_LISTEN_PORT`. Under `BROKER_TENANTS=*` every
+    conversation is brokered and none can fall back, so a provision routed
+    into that window does not degrade — it fails outright with
+    `:listener_down` (#1726). Neither exclusion above reaches it. The
+    listener is our own in-process socket, not a third party's, so it puts
+    nobody else's uptime on our serving path; and where a failed migration
+    leaves no socket to probe, a late listener is the opposite case — the
+    pod *is* listening and *is not* ready, which is the only shape a
+    readiness probe can help with. The check is skipped where
+    `BROKER_LISTEN_PORT` is unset, so a deployment with brokerage off keeps
+    exactly the probe it had.
   """
 
   require Logger
@@ -49,18 +64,56 @@ defmodule Fountain.Health do
   def database(repo \\ Fountain.Repo) do
     case Ecto.Adapters.SQL.query(repo, "SELECT 1", [], @check_opts) do
       {:ok, _result} -> :ok
-      {:error, reason} -> unhealthy(reason)
+      {:error, reason} -> unhealthy("database", reason)
     end
   rescue
     # DBConnection raises when there is no connection to hand out at all.
-    e -> unhealthy(e)
+    e -> unhealthy("database", e)
   catch
     # A pool checkout that gives up exits rather than returning.
-    :exit, reason -> unhealthy(reason)
+    :exit, reason -> unhealthy("database", reason)
   end
 
-  defp unhealthy(reason) do
-    Logger.warning("readiness: database check failed: #{inspect(reason)}")
+  @doc """
+  Is the egress broker listener up on this node?
+
+  `:ok` where `BROKER_LISTEN_PORT` is unset: nothing listens, nothing is
+  brokered, and there is no dependency to wait for. Otherwise this is
+  `Fountain.Broker.preflight/0` — deliberately the *same* predicate a
+  provision fails on, rather than a second opinion about the listener. A pod
+  that would answer `:listener_down` to a provision answers 503 here, so the
+  two can never disagree about whether this pod can broker.
+
+  Returns `:ok` or `:error`, never a reason, for the reason `database/1`
+  does; the detail is logged.
+
+  `@check_opts` has no counterpart here because the predicate cannot block:
+  `Managoat.Broker.running?/0` is a `Process.whereis/1` and a
+  `Process.alive?/1`, microseconds with no socket and no pool behind them.
+  This check therefore adds nothing to the probe's worst case, and the
+  `timeoutSeconds` sized for a dead Postgres still covers it. The rescue is
+  cheap insurance for a backend that ever does more: a raise here would
+  render 500 from a public endpoint, which reads as a broken app rather than
+  an unready one.
+  """
+  @spec broker_listener() :: :ok | :error
+  def broker_listener do
+    if Fountain.Broker.configured?() do
+      case Fountain.Broker.preflight() do
+        :ok -> :ok
+        {:error, reason} -> unhealthy("broker listener", reason)
+      end
+    else
+      :ok
+    end
+  rescue
+    e -> unhealthy("broker listener", e)
+  catch
+    :exit, reason -> unhealthy("broker listener", reason)
+  end
+
+  defp unhealthy(check, reason) do
+    Logger.warning("readiness: #{check} check failed: #{inspect(reason)}")
     :error
   end
 end
