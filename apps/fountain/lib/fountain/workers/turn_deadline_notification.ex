@@ -7,18 +7,18 @@ defmodule Fountain.Workers.TurnDeadlineNotification do
   transcripts or changed ownership suppress notification without touching the
   remote execution journal.
   """
-  # `:maintenance`, not `:webhooks`. The webhook queue delivers to customers,
-  # and a deadline storm produces one of these per bounded turn — competing for
-  # that queue's concurrency exactly when outbound delivery matters most. The
-  # webhook job itself was already committed beside the event (see
-  # `DeadlineEvents`), so nothing here is customer-facing: this only notifies
-  # local subscribers.
+  # Its own queue. Not `:webhooks`, which delivers to customers and would see a
+  # deadline storm compete with real deliveries — the webhook job for this event
+  # was already committed beside it (see `DeadlineEvents`), so nothing here is
+  # customer-facing. And not `:maintenance`, which is concurrency 1 behind eight
+  # sweeps: a notification whose whole job is to be prompt must not queue behind
+  # the retention pruner.
   #
   # Three attempts, not twenty. The event is already durable, so a retry only
   # re-pushes it to live SSE subscribers; a subscriber that missed the first
   # three is not helped by the twentieth, and reads the outcome from the
   # transcript when it reconnects.
-  use Oban.Worker, queue: :maintenance, max_attempts: 3
+  use Oban.Worker, queue: :notifications, max_attempts: 3
 
   import Ecto.Query
 

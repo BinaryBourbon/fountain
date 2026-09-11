@@ -212,7 +212,7 @@ defmodule Fountain.Conversations.DeadlineEventsTest do
     # deadline storm would otherwise starve outbound delivery exactly when it
     # matters. Retries are bounded too: the event is durable, so re-pushing it
     # to live subscribers twenty times buys nothing.
-    assert notification.queue == "maintenance"
+    assert notification.queue == "notifications"
     assert notification.max_attempts == 3
     assert delivery.queue == "webhooks"
   end
