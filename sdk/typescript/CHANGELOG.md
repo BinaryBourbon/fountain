@@ -11,6 +11,16 @@ server releases.
 
 ---
 
+## [1.31.0] — 2026-09-11
+
+### Added
+
+- `Conversation.reapply()` calls `POST /api/conversations/{id}/reapply`: re-select a conversation's agent, environment and vault on the machine it is already running. The conversation, the transcript and the files on disk all stay. An omitted option keeps its selection, and `null` clears the environment override or the vault.
+
+### Changed
+
+- Generated types carry the new operation and its `ConversationReapplyRequest` body.
+
 ## [1.30.0] - 2026-09-11
 
 ### Added

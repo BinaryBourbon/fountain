@@ -422,6 +422,52 @@ removes a key. The notification never reaches the transcript, and it opens no
 turn of its own. A stamp that breaks a limit is logged and dropped, and the
 turn continues. Nothing in a stamp can end a run.
 
+### Reapply the configuration
+
+`POST /api/conversations/{id}/reapply` selects a different Agent, Environment
+or Vault for a conversation that exists. The machine stays, so the files on
+its disk stay with it. Fountain rewrites the variables, the system prompt, the
+skills and the MCP configuration. The next prompt starts a runtime that reads
+them.
+
+An empty body reapplies the current selection. A field that the body does not
+name keeps its selection. A field with a `null` value clears the Environment
+override or the Vault.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"YOUR_AGENT_ID","vault_id":null}' \
+  "$FOUNTAIN_URL/api/conversations/$CONVERSATION_ID/reapply"
+```
+
+The machine also takes the new identity. A later attachment must name the new
+Agent, Environment and Vault. A target identity that already has a persistent
+home fails the request and moves neither binding.
+
+A conversation that sleeps applies the change on its next wake. A
+configuration revision stops a prompt against a configuration that a live
+worker did not read yet. Fountain removes the managed skills that the Agent no
+longer names, and keeps the other files in the skills directory. On an older
+machine with no skill manifest, Fountain recovers the names from the recorded
+Agent version and from the installer's source lock. An entry with no ownership
+record stays where it is.
+
+Some selections need a new disk. Fountain refuses those with
+`409 rebuild_required` and a `field` that names the cause. A different runtime
+needs one, because Fountain installs the agent adapter before the network
+policy, and that policy now blocks a second install. A different set of
+packages, repositories, setup script or network policy needs one too. A
+machine that other conversations share accepts only the selection that those
+conversations have, because the skills and the instructions belong to the
+machine. For the rest, start a new conversation. You can also build this
+conversation's machine again with `DELETE /api/sandboxes/{id}`.
+
+Fountain refuses the request with `409 conversation_busy` while a turn runs,
+with `503` while it still builds the machine, and with `410` after the
+conversation ends.
+
 ### Workers without Fountain API access
 
 Set `sandbox_api_access` to `none` when the host must retain Fountain API

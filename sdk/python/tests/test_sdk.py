@@ -222,6 +222,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(
                 201, {"data": {"id": "c-1", "status": "running", "turn_count": 1}}
             )
+        if parsed.path == "/api/conversations/c-1/reapply":
+            return self._json(200, {"data": {"id": "c-1", **(body or {})}})
         return self._json(404, {"error": "not_found"})
 
 
@@ -390,6 +392,21 @@ class ClientTests(unittest.TestCase):
                 },
             )
             self.assertEqual(create[4]["User-Agent"], USER_AGENT)
+
+    # An omitted value keeps a binding and an explicit None clears it, so the
+    # two have to stay distinguishable all the way to the wire.
+    def test_reapply_sends_only_the_fields_it_was_given(self):
+        with FakeFountain() as fake:
+            client = fountain.Fountain(api_key="k", base_url=fake.base_url)
+            conversation = client.resume("c-1")
+
+            self.assertEqual(conversation.reapply(), {"id": "c-1"})
+            self.assertEqual(fake.state.requests[-1][3], {})
+
+            conversation.reapply(agent_id="a-1", vault_id=None)
+            self.assertEqual(
+                fake.state.requests[-1][3], {"agent_id": "a-1", "vault_id": None}
+            )
 
     def test_resolution_error_lists_available_names(self):
         with FakeFountain() as fake:
