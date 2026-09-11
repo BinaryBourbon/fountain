@@ -31,9 +31,21 @@ upgrade, is in
   than reaching a provider; and `sprite_name` is refused with
   `sandbox_api_access: "none"`, and on an agent that runs on a self-hosted
   runner (`422 sprite_name_not_supported`), where the name carries the runner
-  it is placed on. Existing sandbox rows are untouched. All four SDKs expose
-  the field and need no change; callers that passed a full name get the same
-  machine under an account-scoped name.
+  it is placed on. On that provider the name was also a routing decision with
+  no tenant check, because the runner adapter reads the runner id out of the
+  name and looks the connection up by that id alone, so a name shaped like
+  another account's runner sandbox sent the launch to their runner.
+  All four SDKs expose the field and need no change.
+  **Upgrade note for anyone who passed `sprite_name`:** existing sandbox rows
+  keep their old names and are not migrated, and passing the same value now
+  mints a *different* machine under the account-scoped name. A caller who
+  passed `my-box` has a row named `my-box`; passing `my-box` today provisions
+  `fountain-<account>-my-box` and answers 201, leaving the old row untouched
+  and no longer reachable by the name that created it. A name that already
+  carries this account's prefix still round-trips, so a name minted by the
+  server keeps resolving to its own machine; an arbitrary legacy name does
+  not, and the way back to that machine is `sandbox_id`, which attaches by row
+  rather than by name.
 
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
   that named the old owner moved with it (`decisions/0048`). The container

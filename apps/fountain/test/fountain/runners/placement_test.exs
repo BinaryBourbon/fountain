@@ -78,6 +78,29 @@ defmodule Fountain.Runners.PlacementTest do
     assert Fountain.Quotas.active_sandbox_count(user.id) == before
   end
 
+  test "an empty sprite_name on the runner provider mints rather than refusing" do
+    # Load-bearing on clause order: the `""` clause sits before the runner
+    # refusal, so an empty override is no override here too and placement
+    # still happens. Consistent with `sandbox_mode`, and worth pinning —
+    # reordering the two clauses would turn every empty string into a 422.
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id, sandbox_provider: "runner")
+    {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
+    {:ok, daemon} = FakeDaemon.start(runner.id, meta: %{user_id: user.id}, name: "mini")
+    on_exit(fn -> FakeDaemon.stop(daemon) end)
+
+    assert {:ok, conv} =
+             Conversations.start_conversation(%{
+               "agent_id" => agent.id,
+               "user_id" => user.id,
+               "sprite_name" => ""
+             })
+
+    sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    assert {:ok, runner_id} = Runners.parse_sandbox_name(sandbox.sprite_name)
+    assert runner_id == runner.id
+  end
+
   test "a runner sandbox's own name does not round-trip, it is refused" do
     # The reason the round-trip claim is scoped to the hosted providers: a
     # runner name is 48 characters and carries no account prefix, so handing

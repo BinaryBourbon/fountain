@@ -3542,9 +3542,15 @@ defmodule Fountain.Conversations do
   # and `Runners.parse_sandbox_name/1` reads it back out. An account-scoped
   # name cannot also be a runner name — prefixing `runner-<32 hex>-<8 hex>`
   # produces a name that no longer parses — so there is nothing to honor here
-  # and refusing plainly beats minting a sandbox nothing can locate. The
-  # override was never useful on this provider anyway: a verbatim one that did
-  # not carry a runner id detached the row from its machine just as silently.
+  # and refusing plainly beats minting a sandbox nothing can locate.
+  #
+  # The override was worse than useless on this provider: `Adapter.rpc/3` reads
+  # the runner id out of the name and hands it to `Connection.call/3`, which is
+  # `whereis(runner_id)` with no tenant argument, so a verbatim name shaped
+  # like another account's runner sandbox routed the launch to their runner.
+  # Account-scoped names already break that route (the prefixed name no longer
+  # parses), but they break it into a 201 over a row nothing can place; this
+  # clause is what makes it a plain refusal instead.
   defp mint_sprite_name(:runner, _user_id, name) when is_binary(name),
     do: {:error, :sprite_name_not_supported}
 
