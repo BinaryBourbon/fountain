@@ -20,7 +20,11 @@ defmodule Fountain.SandboxFilesScriptTest do
   # `exec/4` leaves `stderr_to_stdout: false` on every adapter, so a script's
   # stderr goes nowhere. Dropping it here keeps the test reading what a
   # caller reads — and keeps a deliberate `fatal:` out of the suite's output.
-  defp run(kind, args, env \\ []) do
+  defp run(kind, args, env \\ [], logical_roots \\ nil) do
+    {flags, roots} = Enum.split(args, if(kind == :status, do: 3, else: 4))
+    pairs = Enum.zip_with(roots, logical_roots || roots, &[&1, "sandbox:" <> &2])
+    args = flags ++ List.flatten(pairs)
+
     System.cmd(
       "bash",
       ["-c", "exec 2>/dev/null\n" <> SandboxFiles.script(kind), "fountain-files" | args],
@@ -157,6 +161,23 @@ defmodule Fountain.SandboxFilesScriptTest do
       assert [^root, encoded] = String.split(output, <<0>>, parts: 2)
       assert {:ok, diff} = Base.decode64(encoded, ignore: :whitespace)
       assert diff =~ "a/a.txt"
+    end
+  end
+
+  test "host roots become sandbox paths even through a symlinked home" do
+    host = TmpDir.mkdir!("sandbox-files-host")
+    alias_path = Path.join(TmpDir.mkdir!("sandbox-files-alias"), "home")
+    File.ln_s!(host, alias_path)
+    repo!(Path.join(host, "re\npo"))
+    nested = Path.join(alias_path, "re\npo/nested")
+    File.mkdir_p!(nested)
+
+    for kind <- [:diff, :status] do
+      flags = if kind == :status, do: [nested, @cap, "all"], else: [nested, @cap, "", "0"]
+      assert {output, 0} = run(kind, flags ++ [alias_path], [], ["/home/sprite"])
+      assert ["/home/sprite/re\npo" | _] = String.split(output, <<0>>)
+      refute output =~ host
+      refute output =~ alias_path
     end
   end
 
