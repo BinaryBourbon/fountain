@@ -510,6 +510,9 @@ defmodule Fountain.SandboxFiles do
   #
   # `roots/1` follows the arguments, and the discovered root has to be one of
   # them or under one — see `status_script/0` for why.
+  # Retain git's status, allowing SIGPIPE from the intentional byte cap. Keep
+  # encoded output private until success: on failure the catch-all redacts raw
+  # diagnostics, which cannot redact a partial base64-encoded diff.
   defp diff_script do
     ~S"""
     d=$1
@@ -534,10 +537,19 @@ defmodule Fountain.SandboxFiles do
     if [ -n "$ref" ]; then
       git rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || exit 7
     fi
-    printf '%s\0' "$root"
     if [ "$staged" = 1 ]; then set -- --cached; else set --; fi
     if [ -n "$ref" ]; then set -- "$@" "$ref"; fi
-    git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" | head -c "$n" | base64
+    encoded=$(
+      set -o pipefail
+      git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" | head -c "$n" | base64
+    )
+    case $? in
+      0|141) printf '%s\0%s' "$root" "$encoded" ;;
+      *)
+        git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" 2>&1 >/dev/null | head -c 4096
+        exit 8
+        ;;
+    esac
     """
   end
 

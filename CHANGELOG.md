@@ -147,6 +147,10 @@ upgrade, is in
 
 ### Fixed
 
+- Sandbox `/diff` returns 422 when Git fails after repository discovery,
+  instead of reporting an empty diff. Intentional byte-cap truncation still
+  succeeds (#1904).
+
 - **An account whose `connections` flag is off can revoke what it already
   holds** (#1693). The flag stood in front of every door, the ones that take a
   credential away included, while the runtime kept brokering those same tokens
