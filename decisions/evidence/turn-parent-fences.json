@@ -87,7 +87,7 @@
     },
     {
       "stage": "initial race",
-      "reason": "Unknown spawn recovery correctly returns failed with awaiting_identity and spawn_unconfirmed; corrected the expectation instead of weakening uncertainty policy.",
+      "reason": "Unknown spawn recovery returns failed with awaiting_identity and spawn_unconfirmed, which is the intended immediate outcome; corrected the expectation instead of weakening uncertainty policy. It is not the final state: awaiting_identity is an obligation with an age, and ExecutionGuard._unsafe_retire_unresolved/2 writes it off if no identity ever arrives (ADR 0046).",
       "log_sha256": "sha256:75953868977b003b0398b71babd62e13d9a02ec43f7ca5a29955133e06322282"
     },
     {

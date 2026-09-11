@@ -1796,6 +1796,22 @@ defmodule Fountain.Conversations do
               {:error, changeset} -> Repo.rollback(changeset)
             end
 
+          # The parent goes `running` here rather than in the launch, so a turn
+          # and the conversation status that explains it commit together. A
+          # reader used to be able to see a `running` turn under an `idle`
+          # parent for the width of the launch, and a launch that failed left
+          # the pair disagreeing. `update_all`, not `update_conversation/2`:
+          # that one audits, and an audit insert must not run inside a
+          # transaction (ADR 0013).
+          if Map.get(attrs, :status) == "running" do
+            Repo.update_all(
+              from(c in Conversation,
+                where: c.id == ^conv_id and c.status != "running"
+              ),
+              set: [status: "running", updated_at: DateTime.utc_now()]
+            )
+          end
+
           # Same transaction as the turn: a bounded turn that exists without a
           # journal row is a turn nothing can expire. `conv` is the row this
           # transaction locked.
