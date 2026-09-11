@@ -2,8 +2,9 @@
 
 An **Agent** is a named configuration for a single coding-agent CLI. It bundles together:
 
-- a **runtime** (`claude` / `codex` / `gemini` / `opencode`) — which binary runs in the sprite
-- a **model** (`anthropic/claude-sonnet-4-6`, `openai/gpt-5.3-codex`, `google/gemini-3.1-pro-preview`, etc.)
+- a **runtime** (`claude` / `codex` / `gemini` / `opencode`) — which binary runs in the sprite, or `acp` to run a command of your own
+- a **runtime_command** — the shell line the `acp` runtime launches, required there and rejected on the others
+- a **model** (`anthropic/claude-sonnet-4-6`, `openai/gpt-5.3-codex`, `google/gemini-3.1-pro-preview`, etc.); the `acp` runtime needs none
 - an optional **system prompt** (`system`)
 - an optional **environment** reference (`environment_id` or `environment` by name) — the sprite shape to provision
 - optional **skills** — names of bundled skills to mount into the sprite
