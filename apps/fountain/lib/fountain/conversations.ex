@@ -270,6 +270,11 @@ defmodule Fountain.Conversations do
     end
   end
 
+  # What a caller may contribute to a sandbox name — the part after this
+  # tenant's prefix. See `mint_sprite_name/3`. Deliberately narrow: the value
+  # becomes a machine name at a provider, and the old code accepted anything.
+  @sprite_name_suffix ~r/\A[A-Za-z0-9][A-Za-z0-9_-]{0,39}\z/
+
   defp prevent_sandbox_revival(changeset) do
     if changeset.data.status in @billable_terminal and
          Ecto.Changeset.get_field(changeset, :status) not in @billable_terminal do
@@ -2481,7 +2486,9 @@ defmodule Fountain.Conversations do
   ## Required attrs
     - `agent_id`              — agent to run
     - `prompt`                — optional first prompt (sends turn 1 immediately)
-    - `sprite_name`           — optional override; defaults to "fountain-<short-user-id>-<short-id>"
+    - `sprite_name`           — optional suffix for the sandbox name, which is always
+                                "fountain-<short-user-id>-<suffix>"; defaults to a random
+                                suffix. Refused with `sandbox_api_access: "none"` (#1632)
     - `vault_id`              — optional vault whose secrets override the env's
     - `environment_id`        — optional environment to provision from instead of the
                                 agent's own (#783); subject to `agent.allowed_environment_ids`
@@ -2513,6 +2520,7 @@ defmodule Fountain.Conversations do
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
          {:ok, api_access} <- resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
+         :ok <- check_sandbox_api_name(api_access, attrs["sprite_name"]),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
@@ -2744,6 +2752,17 @@ defmodule Fountain.Conversations do
 
   defp resolve_sandbox_api_access("none", "ephemeral"), do: {:ok, "none"}
   defp resolve_sandbox_api_access(_access, _mode), do: {:error, :invalid_sandbox_api_access}
+
+  # ADR 0045's machine isolation is a claim about a machine, not about a row:
+  # a `none` conversation must be alone on a fresh one. `check_sandbox_api_attach/2`
+  # answers that by asking which conversations point at `sandbox.id`, so it can
+  # only see machines Fountain knows it is sharing. A caller-supplied name can
+  # name a machine that already exists — the provider adopts it rather than
+  # failing — so the two cannot be asked for together (#1632).
+  defp check_sandbox_api_name("none", name) when is_binary(name) and name != "",
+    do: {:error, :invalid_sandbox_api_access}
+
+  defp check_sandbox_api_name(_access, _name), do: :ok
 
   defp check_sandbox_api_resume(_conv, nil), do: :ok
   defp check_sandbox_api_resume(%Conversation{sandbox_api_access: access}, access), do: :ok
@@ -3495,12 +3514,34 @@ defmodule Fountain.Conversations do
   # handed nothing else (ADR 0018), which is why the runner provider's names
   # carry the runner they live on (ADR 0022) — minting one is a placement
   # decision, made now, and fails plainly when the user has no runner online.
-  # A caller-supplied name (test seams) is honored as before.
+  #
+  # A caller-supplied name is a *suffix*, never the whole name (#1632). The
+  # name is the machine's identity at the provider, where names are unique per
+  # deployment token rather than per tenant, and the Sprites adapter adopts on
+  # 409 because it assumes Fountain minted every name it asks for. A verbatim
+  # override broke that assumption: two rows in two accounts could name one
+  # machine, and that machine holds a tenant's decrypted environment and vault
+  # values on disk. Keeping this tenant's prefix on every name makes the
+  # collision impossible rather than unlikely. A name that already carries the
+  # prefix — one an earlier launch handed back — is taken as it stands.
   defp mint_sprite_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
-  defp mint_sprite_name(_provider, _user_id, name) when is_binary(name), do: {:ok, name}
 
   defp mint_sprite_name(_provider, user_id, nil),
-    do: {:ok, "fountain-#{tenant_prefix(user_id)}-#{short_id()}"}
+    do: {:ok, sprite_name_prefix(user_id) <> short_id()}
+
+  # An empty override is no override, the way an empty sandbox_mode is.
+  defp mint_sprite_name(provider, user_id, ""), do: mint_sprite_name(provider, user_id, nil)
+
+  defp mint_sprite_name(_provider, user_id, name) when is_binary(name) do
+    prefix = sprite_name_prefix(user_id)
+    suffix = String.replace_prefix(name, prefix, "")
+
+    if Regex.match?(@sprite_name_suffix, suffix),
+      do: {:ok, prefix <> suffix},
+      else: {:error, :invalid_sprite_name}
+  end
+
+  defp sprite_name_prefix(user_id), do: "fountain-#{tenant_prefix(user_id)}-"
 
   defp tenant_prefix(user_id) when is_binary(user_id), do: binary_part(user_id, 0, 8)
 

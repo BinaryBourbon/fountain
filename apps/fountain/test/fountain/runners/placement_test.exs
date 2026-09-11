@@ -56,7 +56,7 @@ defmodule Fountain.Runners.PlacementTest do
     assert runner_id == runner.id
   end
 
-  test "an explicit sprite_name is honored regardless of provider" do
+  test "an explicit sprite_name is honored regardless of provider, under this account's prefix" do
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id)
 
@@ -64,10 +64,11 @@ defmodule Fountain.Runners.PlacementTest do
              Conversations.start_conversation(%{
                "agent_id" => agent.id,
                "user_id" => user.id,
-               "sprite_name" => "fountain-pinned-name"
+               "sprite_name" => "pinned-name"
              })
 
+    # The override still decides the name; it decides only the suffix (#1632).
     assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name ==
-             "fountain-pinned-name"
+             "fountain-" <> binary_part(user.id, 0, 8) <> "-pinned-name"
   end
 end

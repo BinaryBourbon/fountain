@@ -3626,7 +3626,7 @@ export interface components {
              * @enum {string|null}
              */
             sandbox_mode?: "ephemeral" | "persistent" | null;
-            /** @description Override the auto-generated sprite name. */
+            /** @description Name the conversation's machine instead of taking a generated name. The value is the suffix of an account-scoped name: the server keeps the fountain-<account>- prefix every generated name carries, so a name can never resolve to another account's machine. 1 to 40 characters of letters, digits, - and _, starting with a letter or digit; a name that already carries this account's prefix is taken as it stands. 422 invalid_sprite_name otherwise. Refused with sandbox_api_access none, which requires a machine no other conversation can reach. */
             sprite_name?: string;
             /** @description Optional display title. The team page names a teammate with it. */
             title?: string | null;
