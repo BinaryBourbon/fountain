@@ -158,6 +158,8 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `SANDBOX_CAP_FLOOR` | `2` | No. | The fewest sandboxes a tenant with a positive balance may run at once. |
 | `SANDBOX_CAP_CEILING` | `20` | No. | The most sandboxes one tenant may run at once, unless an admin override raises it. |
 | `SANDBOX_FLEET_CEILING` | `20` | No. | The most live sandboxes across every tenant. Set it to what your sandbox provider plan allows. A start beyond it gets `503 fleet_full`. |
+| `SANDBOX_QUEUE_MAX_DEPTH` | `10` | No. | The most sandbox requests one tenant holds at once. A request beyond it keeps the immediate capacity error. |
+| `SANDBOX_QUEUE_MAX_WAIT_SECONDS` | `3600` | No. | How long a sandbox request waits for capacity before Fountain expires it. |
 | `FOUNTAIN_EXECUTION_LIMITS` | `{}` | No. | JSON per-turn host ceiling: `wall_time_seconds`, `max_model_turns`, `max_estimated_cost_usd`. Each configured value must be positive; time and turns must be integers. Read at boot; invalid input refuses startup. Requests inherit the stricter host/account ceiling. Keep unset until runtime enforcement and later-turn/recovery checks are integrated: nonempty effective limits currently refuse launch with `422 execution_limits_unsupported`. This is not an aggregate spend cap. |
 | `CREDIT_OPENING_CENTS` | `500` | No. | The credit a new account starts with, in cents. |
 | `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |

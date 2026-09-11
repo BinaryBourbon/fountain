@@ -104,6 +104,13 @@ config :fountain, :sandboxes,
   cap_ceiling: 20,
   fleet_ceiling: 20
 
+# The bounded wait in front of those two ceilings (ADR 0042). Depth is per
+# tenant; the wait bound is what stops a queued start outliving the intent
+# behind its prompt.
+config :fountain,
+  sandbox_queue_max_depth: 10,
+  sandbox_queue_max_wait_seconds: 3600
+
 # Prepaid credits (ADR 0030). Cents. `turn_hour_cents` is the customer price
 # of one hour of turn time; the comms prices are nil until an operator sets
 # them, and nil burns nothing (#1042). runtime.exs overrides from CREDIT_*.
