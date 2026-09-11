@@ -201,4 +201,51 @@ defmodule Fountain.Conversations.DeadlineEventsTest do
     assert id == event.id
     assert [_] = jobs(WebhookDelivery)
   end
+
+  test "the notification does not compete with customer webhook delivery", c do
+    assert {:ok, _} = expire(c)
+    assert [notification] = jobs(TurnDeadlineNotification)
+    assert [delivery] = jobs(WebhookDelivery)
+
+    # The webhook job was already committed beside the event, so the local
+    # notification has no business on the queue that reaches customers — a
+    # deadline storm would otherwise starve outbound delivery exactly when it
+    # matters. Retries are bounded too: the event is durable, so re-pushing it
+    # to live subscribers twenty times buys nothing.
+    assert notification.queue == "maintenance"
+    assert notification.max_attempts == 3
+    assert delivery.queue == "webhooks"
+  end
+
+  test "a conversation that changed hands is not published on, and says so", c do
+    other = insert_verified_user()
+    c.conv |> change(user_id: other.id) |> Repo.update!()
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:ok, _} = expire(c)
+      end)
+
+    # Suppressing the outcome is right; doing it silently is not. Nothing else
+    # in the system knows a persisted deadline reached nobody.
+    assert log =~ "not recorded"
+    assert log =~ c.turn.id
+    assert Repo.get!(TurnExecution, c.execution.id).deadline_event_id == nil
+    assert jobs(TurnDeadlineNotification) == []
+    assert jobs(WebhookDelivery) == []
+  end
+
+  test "a deleted transcript makes the notification a logged no-op, not a crash", c do
+    assert {:ok, _} = expire(c)
+    assert [notification] = jobs(TurnDeadlineNotification)
+    Repo.delete_all(LogEvent)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert :ok = perform_job(TurnDeadlineNotification, notification.args)
+      end)
+
+    assert log =~ "skipped"
+    refute_received {:log_event, _}
+  end
 end

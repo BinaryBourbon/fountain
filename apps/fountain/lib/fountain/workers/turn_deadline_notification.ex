@@ -7,9 +7,22 @@ defmodule Fountain.Workers.TurnDeadlineNotification do
   transcripts or changed ownership suppress notification without touching the
   remote execution journal.
   """
-  use Oban.Worker, queue: :webhooks, max_attempts: 20
+  # `:maintenance`, not `:webhooks`. The webhook queue delivers to customers,
+  # and a deadline storm produces one of these per bounded turn — competing for
+  # that queue's concurrency exactly when outbound delivery matters most. The
+  # webhook job itself was already committed beside the event (see
+  # `DeadlineEvents`), so nothing here is customer-facing: this only notifies
+  # local subscribers.
+  #
+  # Three attempts, not twenty. The event is already durable, so a retry only
+  # re-pushes it to live SSE subscribers; a subscriber that missed the first
+  # three is not helped by the twentieth, and reads the outcome from the
+  # transcript when it reconnects.
+  use Oban.Worker, queue: :maintenance, max_attempts: 3
 
   import Ecto.Query
+
+  require Logger
 
   alias Fountain.{Conversations, Repo}
   alias Fountain.Conversations.{Conversation, LogEvent}
@@ -29,6 +42,14 @@ defmodule Fountain.Workers.TurnDeadlineNotification do
     if event do
       # ownership: the event query above scopes its conversation to the saved tenant.
       Conversations._unsafe_notify_stage(event)
+    else
+      # Deleted transcript, or a conversation that changed hands. Suppressing
+      # the notification is right, but doing it silently is not: this is the
+      # only place that knows a persisted deadline outcome reached nobody.
+      Logger.warning(
+        "deadline notification #{id} skipped: no event for conversation " <>
+          "#{conv_id} under its saved tenant"
+      )
     end
 
     :ok

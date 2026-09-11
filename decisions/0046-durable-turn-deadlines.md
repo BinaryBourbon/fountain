@@ -154,7 +154,7 @@ Integration surfaces already inspected:
 | `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
 | `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
-| Deadline supervisor | Coordinator, bounded pools, recovery and the ageing sweep are implemented (`ExecutionDeadlineWorker`), off unless `FOUNTAIN_EXECUTION_LIMITS` sets a ceiling. Durable stage-event delivery and public acceptance remain. |
+| Deadline supervisor | Coordinator, bounded pools, recovery and the ageing sweep are implemented (`ExecutionDeadlineWorker`), off unless `FOUNTAIN_EXECUTION_LIMITS` sets a ceiling. Stage event, webhook and notification intent commit with the turn (`DeadlineEvents`). Public acceptance remains. |
 
 Journal retention after confirmed cleanup and account deletion also needs an
 explicit policy. Uncertainty must never be erased by transcript deletion — but
