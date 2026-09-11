@@ -3,6 +3,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
   use FountainWeb, :live_view
 
   alias Fountain.Accounts
+  alias Fountain.Principals
 
   @impl true
   def mount(_params, _session, socket) do
@@ -14,6 +15,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
      |> assign(:page_title, "API keys")
      |> assign(:user_id, user.id)
      |> assign(:keys, keys)
+     |> assign(:principals, Principals.list_owned(user.id))
      |> assign(:new_key, nil)}
   end
 
@@ -35,6 +37,23 @@ defmodule FountainWeb.ApiKeysLive.Index do
 
       {:error, _cs} ->
         {:noreply, put_flash(socket, :error, "Failed to create API key")}
+    end
+  end
+
+  def handle_event("renew_principal_key", %{"principal_id" => id}, socket) do
+    with {:ok, principal_id} <- Ecto.UUID.cast(id),
+         {:ok, {key, raw_token}} <-
+           Principals.renew_owned_credential(
+             socket.assigns.user_id,
+             principal_id,
+             FountainWeb.Audited.attribution(socket)
+           ) do
+      {:noreply,
+       socket
+       |> assign(:keys, Accounts.list_managed_api_keys(socket.assigns.user_id))
+       |> assign(:new_key, %{key: key, raw_token: raw_token})}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Could not replace principal key")}
     end
   end
 
@@ -117,6 +136,32 @@ defmodule FountainWeb.ApiKeysLive.Index do
           />
         </div>
         <.button type="submit">Create key</.button>
+      </form>
+
+      <form
+        :if={@principals != []}
+        id="renew-principal-key"
+        phx-submit="renew_principal_key"
+        class="space-y-3 rounded border border-[var(--color-border)] p-4"
+      >
+        <label for="principal-id" class="block font-medium">Replace a principal key</label>
+        <p class="text-sm text-[var(--color-text-secondary)]">
+          Create a new key for a principal you own. Its previous key will stop working.
+          You can also replace an expired or revoked key here.
+        </p>
+        <select
+          id="principal-id"
+          name="principal_id"
+          class="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-1)] p-2 text-sm"
+        >
+          <option :for={id <- @principals} value={id}>{id}</option>
+        </select>
+        <.button
+          type="submit"
+          variant="secondary"
+        >
+          Replace principal key
+        </.button>
       </form>
 
       <div

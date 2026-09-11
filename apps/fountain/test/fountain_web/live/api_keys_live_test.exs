@@ -22,6 +22,59 @@ defmodule FountainWeb.ApiKeysLiveTest do
     refute render(view) =~ "principal:console-test"
   end
 
+  test "owners can replace revoked principal keys and see the new secret once", %{conn: conn} do
+    owner = insert_verified_user()
+    app = insert_verified_user()
+
+    {:ok, opened} =
+      Fountain.Principals.create_claimable(app, %{"application_id" => "renew-console"})
+
+    {:ok, claimed} = Fountain.Principals.claim(opened.claimable.id, opened.claim_token, owner)
+    {:ok, _, key} = Accounts.authenticate_api_key(claimed.api_key)
+    {:ok, _} = Accounts.revoke_managed_api_key(owner.id, key.id)
+    {:ok, view, _html} = conn |> login_user(owner) |> live(~p"/api-keys")
+    assert has_element?(view, "#renew-principal-key option[value='#{claimed.claimable.user_id}']")
+
+    view
+    |> form("#renew-principal-key", principal_id: claimed.claimable.user_id)
+    |> render_submit()
+
+    raw =
+      view
+      |> element("#new-api-key")
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.text()
+      |> String.trim()
+
+    assert {:ok, principal, new_key} = Accounts.authenticate_api_key(raw)
+    assert principal.id == claimed.claimable.user_id
+    assert new_key.scopes == ["principal"]
+    assert render(view) =~ new_key.key_prefix
+    view |> element("button[phx-click=dismiss_new_key]") |> render_click()
+    refute render(view) =~ raw
+
+    view |> form("#renew-principal-key", principal_id: principal.id) |> render_submit()
+    assert {:error, :revoked} = Accounts.authenticate_api_key(raw)
+  end
+
+  test "principal renewal rejects forged ownership and malformed ids", %{conn: conn} do
+    owner = insert_verified_user()
+    app = insert_verified_user()
+    {:ok, opened} = Fountain.Principals.create_claimable(app, %{"application_id" => "foreign"})
+    {:ok, claimed} = Fountain.Principals.claim(opened.claimable.id, opened.claim_token, owner)
+    {:ok, view, _html} = conn |> login_user(app) |> live(~p"/api-keys")
+    refute has_element?(view, "#renew-principal-key")
+
+    for id <- [claimed.claimable.user_id, "not-a-uuid"] do
+      html = render_submit(view, "renew_principal_key", %{"principal_id" => id})
+      assert html =~ "Could not replace principal key"
+      refute html =~ claimed.api_key
+    end
+
+    assert {:ok, _, _} = Accounts.authenticate_api_key(claimed.api_key)
+  end
+
   describe "ApiKeysLive.Index — rendering" do
     test "shows existing active keys", %{conn: conn} do
       user = insert_verified_user()
