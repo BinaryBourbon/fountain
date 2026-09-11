@@ -14,16 +14,16 @@ defmodule Fountain.Conversations.ConversationServer do
   require OpenTelemetry.Tracer
 
   alias Fountain.{
-    Accounts,
     Agents,
     Conversations,
     Environments,
     Vaults
   }
 
-  alias Fountain.Conversations.{CallbackKey, CodexChatGPT, Connection, Conversation, Egress}
+  alias Fountain.Conversations.{CallbackKey, Checkpoints, CodexChatGPT, Connection}
+  alias Fountain.Conversations.{Conversation, Egress}
   alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning}
-  alias Fountain.Conversations.{Reattachment, SpriteEnv, TurnMachine}
+  alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnMachine}
 
   # Absolute ceiling on provisioning (#329). Generous against the summed
   # default step timeouts (packages 300s + clone 600s + setup 120s). Setup
@@ -912,7 +912,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # Best-effort: snapshot the fully-provisioned state so subsequent
           # conversations on this env can warm-start from it. Async so it
           # doesn't block the user's first turn.
-          maybe_create_checkpoint_async(handle, env)
+          Checkpoints.maybe_create_async(handle, env)
 
           state = TurnMachine.forget_runtime_session(state, conv)
 
@@ -970,7 +970,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # unrestricted one, silently, and reported `provision/done`. It costs one
   # fast API call, so the warm start pays nothing for it.
   defp run_provisioning_pipeline(handle, env, sprite_env, secrets, conv_id, brokered?) do
-    case attempt_warm_start(handle, env, conv_id) do
+    case Checkpoints.attempt_warm_start(handle, env, conv_id) do
       :warm_started ->
         Egress.apply_policy(handle, env, conv_id, brokered?)
 
@@ -994,84 +994,6 @@ defmodule Fountain.Conversations.ConversationServer do
           Provisioning.run_setup_script(handle, env, sprite_env, conv_id)
         end
     end
-  end
-
-  defp attempt_warm_start(_handle, nil, _conv_id), do: :cold
-  defp attempt_warm_start(_handle, %{checkpoint_id: nil}, _conv_id), do: :cold
-  defp attempt_warm_start(_handle, %{checkpoint_id: ""}, _conv_id), do: :cold
-
-  defp attempt_warm_start(handle, %{checkpoint_id: id} = env, conv_id) do
-    Output.publish_stage(conv_id, "checkpoint_restore", "started", %{checkpoint_id: id})
-
-    # `restore_checkpoint/2` returns a bare `:ok` — `Fountain.Telemetry.span/3`
-    # unwraps the `{result, metadata}` pair it is given, so the `{:ok, _}` this
-    # used to match never occurred and a successful restore raised
-    # CaseClauseError. Latent only because #652 kept `checkpoint_id` nil, so
-    # this branch was unreachable.
-    case Fountain.Conversations.Provisioning.restore_checkpoint(handle, id) do
-      ok when ok == :ok or (is_tuple(ok) and elem(ok, 0) == :ok) ->
-        Output.publish_stage(conv_id, "checkpoint_restore", "done", %{checkpoint_id: id})
-        :warm_started
-
-      {:error, reason} ->
-        Logger.warning(
-          "checkpoint #{id} on env #{env.name} restore failed (#{inspect(reason)}); clearing + cold provisioning"
-        )
-
-        Output.publish_stage(conv_id, "checkpoint_restore", "failed", %{
-          checkpoint_id: id,
-          reason: inspect(reason)
-        })
-
-        # Clear the stale checkpoint so future runs don't keep retrying.
-        Fountain.Environments.update_environment(env, %{"checkpoint_id" => nil},
-          actor: "system:conversation_server"
-        )
-
-        :cold
-    end
-  end
-
-  defp maybe_create_checkpoint_async(_handle, nil), do: :ok
-
-  defp maybe_create_checkpoint_async(_handle, %{checkpoint_id: id})
-       when is_binary(id) and id != "",
-       do: :ok
-
-  defp maybe_create_checkpoint_async(handle, %Fountain.Environments.Environment{} = env) do
-    if checkpoint_creation_enabled?() do
-      Task.start(fn ->
-        try do
-          Fountain.Conversations.Provisioning.create_checkpoint(handle, env)
-        rescue
-          # Best-effort: if the env was deleted or the DB is gone (test
-          # teardown), don't crash the Task and pollute logs.
-          _ -> :ok
-        end
-      end)
-    end
-
-    :ok
-  end
-
-  # No catch-all clause: callers pass nil or an %Environment{}, both covered
-  # above. A new caller passing anything else should crash loudly here rather
-  # than silently skip checkpointing.
-
-  # Off by default since #654: a checkpoint id is scoped to the sprite that
-  # created it, and an environment's checkpoint is only ever restored into a
-  # *different* sprite (sandboxes are per-conversation, with a fresh name each
-  # time). Measured against the API — a fresh sprite lists only `Current`, and
-  # restoring another sprite's `v1` answers `checkpoint not found: checkpoint
-  # with path checkpoints/v1 not found`. So the warm start this feature exists
-  # for cannot happen, and creating checkpoints only spends time and storage to
-  # record an id that every later conversation will fail to restore.
-  #
-  # Left as a flag rather than deleted: if the platform grows a fork-from-
-  # checkpoint or create-sprite-from-checkpoint call, this becomes a one-line
-  # re-enable plus a restore that can finally work.
-  defp checkpoint_creation_enabled? do
-    Application.get_env(:fountain, :checkpoint_creation_enabled, false)
   end
 
   defp reattach(state, conv, sandbox, agent, env, secrets) do
@@ -1828,7 +1750,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # with the outgoing env, not a replacement: the refused OAuth token is
     # still sitting in the sprite's `/home/sprite/.env` until a wake rewrites
     # it, so it stays worth scrubbing.
-    Fountain.Conversations.Redaction.put(
+    Redaction.put(
       state.conversation_id,
       state.sprite_env ++ fallback_env
     )
@@ -2150,91 +2072,22 @@ defmodule Fountain.Conversations.ConversationServer do
   # Best-effort revoke of the per-conversation API key when this server
   # exits — clean termination (`:terminate_conv`), crash paths that hit
   # `{:stop, :normal, state}`, and (because init/1 traps exits, #322)
-  # supervisor shutdown on deploys and Horde rebalances.
-  #
-  # Revokes only the key THIS server minted, and only while the
-  # conversation row still points at it. Reading the row's id at call time
-  # made a dying duplicate (Horde's CRDT merge mass-terminates losers)
-  # revoke the SURVIVING server's live credential — its sprite then 401'd
-  # on every callback and sub-agent spawn, surfaced nowhere. If the row has
-  # moved past our key, a successor owns the live credential and ours is
-  # already dead or inert.
-  #
-  # If the BEAM crashes hard (SIGKILL — untrappable) the row in `api_keys`
-  # is left behind, but it is not dangerous: `CallbackKey.api_key_opts/0`
-  # sets an `expires_at`, so an un-revoked key stops authenticating on its
-  # own, and RetentionPruner deletes long-expired rows. See SandboxReaper
-  # for the sprite half, which does not self-heal.
+  # supervisor shutdown on deploys and Horde rebalances. `CallbackKey.revoke/2`
+  # owns the rule about whose key it is safe to take back.
   @impl true
   def terminate(reason, state) do
-    Fountain.Conversations.Redaction.delete(state.conversation_id)
+    Redaction.delete(state.conversation_id)
+    _ = CallbackKey.revoke(state.conversation_id, state.callback_api_key_id)
 
-    if state.conversation_id && state.callback_api_key_id do
-      case Conversations._unsafe_get_conversation(state.conversation_id) do
-        %Conversation{user_id: user_id, callback_api_key_id: row_id}
-        when is_binary(user_id) and row_id == state.callback_api_key_id ->
-          _ =
-            Accounts.revoke_api_key(user_id, state.callback_api_key_id,
-              actor: "system:conversation_server"
-            )
-
-        _ ->
-          :ok
-      end
-    end
-
-    # A normal stop is not restarted, and its quiet timer dies with it. Leave
-    # supervisor shutdowns and crashes running for reattach. This stays last
-    # and best-effort so it cannot skip callback-key revocation.
-    if reason == :normal and state.current_turn do
-      try do
-        _ =
-          Conversations._unsafe_orphan_turn(state.current_turn, "server_terminated_normally")
-      rescue
-        error ->
-          Logger.error(
-            "terminate/2: orphaning turn for conv #{inspect(state.conversation_id)} raised: " <>
-              Exception.format(:error, error, __STACKTRACE__)
-          )
-      end
-    end
-
+    # Last and best-effort, so it cannot skip the revocation above.
+    _ = TurnMachine.orphan_on_normal_stop(reason, state.current_turn, state.conversation_id)
     :ok
   end
 
-  # Redacts secrets from crash reports and :sys.get_status output (#315). An
-  # unhandled raise in any callback logs `State:` via inspect — without this,
-  # that meant plaintext env secrets, the raw tenant DEK, decrypted BYO
-  # inference credentials, the callback API key, and the platform Sprites
-  # token (inside sprite.client) on stdout and, with SENTRY_DSN set, in a
-  # Sentry event body. Sentry's PlugContext scrubbing never sees process
-  # crash reports, so the redaction has to happen here.
-  #
-  # Key names are kept (values replaced) so crash reports stay debuggable.
+  # Keeps secrets out of crash reports and :sys.get_status output (#315). The
+  # redactor itself is `Redaction.server_state/1`.
   @impl true
-  def format_status(status) do
-    Map.new(status, fn
-      {:state, %{conversation_id: _} = state} -> {:state, redact_state(state)}
-      other -> other
-    end)
-  end
-
-  defp redact_state(state) do
-    %{
-      state
-      | handle: state.handle && %{state.handle | private: nil},
-        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, "[REDACTED]"} end),
-        tenant_key: redact(state.tenant_key),
-        inference_credentials: redact_map(state.inference_credentials),
-        callback_token: redact(state.callback_token)
-    }
-  end
-
-  defp redact_map(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
-  defp redact_map(other), do: redact(other)
-
-  defp redact(nil), do: nil
-  defp redact(_present), do: "[REDACTED]"
+  def format_status(status), do: Redaction.server_status(status)
 
   # ── turns ─────────────────────────────────────────────────────────────────
 
