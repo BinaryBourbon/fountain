@@ -174,6 +174,33 @@ one account ceiling into "no schedules and no background follow-ups for this
 account" — a product decision, affecting a shipped feature, that nothing had
 written down.
 
+### Write authorization sits where writes happen
+
+The journal's locked check (`_unsafe_authorize_write/3`: a transaction with
+`FOR UPDATE` on the conversation, the journal row and the turn) guards a
+*provider write* or a *terminal outcome* — the command transport, and
+`_unsafe_complete/3`. It is deliberately not the per-message gate on the
+conversation actor. The inbound stream cannot reach the provider by itself, so
+running the locked check for every `{:stdout, ...}` chunk and `{:acp, ...}`
+report cost six queries and three row locks each, and holding the parent lock
+serialized the actor against admission, release, reset and the coordinator's
+own expire: the hotter the turn, the longer the coordinator queued behind the
+very turn it was supposed to expire.
+
+`_unsafe_actor_gate/3` is one unlocked read of three columns — state,
+connection, deadline — answering only "is this still mine, and still inside its
+deadline". Its `:retire` is not the durable decision either; the actor's
+retirement takes the locks a frame later, where `_unsafe_complete/3` arbitrates
+completion against expiry. Same argument as the coordinator's tick: bounded
+turns are inert today, so the shape that ships is the thing to get right.
+
+A bounded turn also generates no **title**. Titling is a second inference call
+the journal neither bounds nor prices, so spending it under a wall-clock
+ceiling would be usage the caller asked to cap and cannot see. The cost is a
+known gap rather than an oversight: titling runs once, on the first turn, so a
+conversation whose first turn is bounded has no title until an unbounded turn
+follows.
+
 ### Admission stays where it already was
 
 The journal registers *inside*

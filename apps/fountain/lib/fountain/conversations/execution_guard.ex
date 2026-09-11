@@ -92,6 +92,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
     transaction(fn ->
       lock_parent(conversation_id) || Repo.rollback(:not_found)
 
+      # `limit: 1` is exact rather than a guess: `turn_executions_open_conversation_index`
+      # is a unique index on `conversation_id` partial to
+      # `state NOT IN ('completed','stopped')`, so a conversation has at most
+      # one open journal by construction. The `order_by` only makes the choice
+      # deterministic if that invariant were ever dropped.
       execution =
         Repo.one(
           from e in TurnExecution,
@@ -274,6 +279,47 @@ defmodule Fountain.Conversations.ExecutionGuard do
           {%{permitted: true, execution: execution}, nil, nil}
       end
     end)
+  end
+
+  @doc """
+  May this actor still handle its own messages? One unlocked read.
+
+  Deliberately not `_unsafe_authorize_write/3`. That one is a transaction with
+  `FOR UPDATE` on the conversation, the journal row and the turn, and it belongs
+  where a provider write or a terminal outcome actually happens — the transport
+  (#1748) and `_unsafe_complete/3`. Running it per inbound message meant six
+  queries and three row locks for every `{:stdout, ...}` chunk and every
+  `{:acp, ...}` report of a chatty turn, and because it took the parent lock it
+  serialized against admission, release, reset and the coordinator's own expire:
+  the hotter the turn, the longer the coordinator queued behind the very turn it
+  was supposed to expire.
+
+  The inbound stream cannot reach the provider by itself, so it does not need
+  write authorization — only "is this still mine, and is it still inside its
+  deadline". Three columns answer that. `:retire` is not the durable decision
+  either: the caller's retirement takes the locks and `_unsafe_complete/3`
+  arbitrates completion against expiry there, so a missing row, a superseded
+  connection, a closed state and a passed deadline all converge on the same
+  authoritative write one frame later.
+  """
+  def _unsafe_actor_gate(id, connection_id, opts \\ []) do
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+
+    case Repo.one(
+           from e in TurnExecution,
+             where: e.id == ^id,
+             select: %{
+               state: e.state,
+               connection_id: e.connection_id,
+               deadline_at: e.deadline_at
+             }
+         ) do
+      %{state: "active", connection_id: ^connection_id, deadline_at: deadline} ->
+        if DateTime.compare(now, deadline) == :lt, do: :ok, else: :retire
+
+      _ ->
+        :retire
+    end
   end
 
   @doc "A completion after the absolute deadline becomes a failed, fenced turn."

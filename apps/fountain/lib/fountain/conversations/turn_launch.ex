@@ -228,6 +228,13 @@ defmodule Fountain.Conversations.TurnLaunch do
   # under. Nil for an unbounded turn, which asks the SDK for nothing.
   defp bounded_sdk_limits(%{turn_execution: nil}, _runtime), do: nil
 
+  # The hard match is safe at a distance, which is worth saying rather than
+  # leaving to be rediscovered: admission already called
+  # `Managoat.Runtimes.ACP.execution_limits/2` for this runtime and allowance
+  # inside `_unsafe_register_bounded/3`, through a `with` that rolls the turn
+  # back on `{:error, _}`. A journal row therefore cannot exist for a runtime
+  # that refuses its own limits, so reaching here with one is a bug in
+  # admission and crashing is the right answer to it.
   defp bounded_sdk_limits(state, runtime) do
     options = ExecutionLimits.sdk_options(state.turn_execution.execution_limits)
     {:ok, limits} = Managoat.Runtimes.ACP.execution_limits(runtime, options)

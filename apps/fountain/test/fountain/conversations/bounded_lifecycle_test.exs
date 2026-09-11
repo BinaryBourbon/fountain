@@ -421,4 +421,90 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
       wait_idle(pid, attempts - 1)
     end
   end
+
+  describe "the actor-side gate" do
+    test "is one plain SELECT: no transaction, no row locks", c do
+      {_turn, execution} = admit(c)
+
+      # The property the review is about, measured rather than argued. The old
+      # gate was `_unsafe_authorize_write/3` — a transaction with `FOR UPDATE`
+      # on the conversation, the journal row and the turn — running per inbound
+      # message. Holding the parent lock is what let a chatty turn starve the
+      # coordinator meant to expire it, so the gate must take none.
+      #
+      # Collected in the handler and asserted in the body: a raising telemetry
+      # handler is detached rather than failing anything (#1427).
+      test = self()
+      id = {:queries, System.unique_integer()}
+
+      :telemetry.attach(
+        id,
+        [:fountain, :repo, :query],
+        fn _event, _measure, meta, _ -> send(test, {:query, meta.query}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(id) end)
+
+      assert :ok = ExecutionGuard._unsafe_actor_gate(execution.id, execution.connection_id)
+
+      queries = drain_queries()
+
+      assert length(queries) == 1, "expected one query, got: #{inspect(queries)}"
+      [query] = queries
+      assert query =~ ~r/^SELECT/i
+      refute query =~ "FOR UPDATE"
+      refute query =~ "FOR SHARE"
+      refute Enum.any?(queries, &(&1 =~ ~r/^(begin|savepoint)/i))
+    end
+
+    defp drain_queries(acc \\ []) do
+      receive do
+        {:query, q} -> drain_queries([q | acc])
+      after
+        0 -> Enum.reverse(acc)
+      end
+    end
+
+    test "retires on a superseded connection, a closed state and a passed deadline", c do
+      {_turn, execution} = admit(c)
+
+      assert :retire =
+               ExecutionGuard._unsafe_actor_gate(execution.id, Ecto.UUID.generate())
+
+      assert :retire =
+               ExecutionGuard._unsafe_actor_gate(execution.id, execution.connection_id,
+                 now: DateTime.add(execution.deadline_at, 1)
+               )
+
+      # Exactly at the deadline is already past it, same as the journal's own
+      # arbitration.
+      assert :retire =
+               ExecutionGuard._unsafe_actor_gate(execution.id, execution.connection_id,
+                 now: execution.deadline_at
+               )
+
+      {:ok, _} = ExecutionGuard._unsafe_complete(execution.id, "interrupted")
+
+      assert :retire =
+               ExecutionGuard._unsafe_actor_gate(execution.id, execution.connection_id)
+    end
+
+    test "a journal that vanished retires the live actor instead of killing it", c do
+      {pid, _transport, _ref, execution} = start_bounded(c)
+      assert :sys.get_state(pid).turn_execution.id == execution.id
+
+      # The journal deliberately carries no foreign key to its parent, so a row
+      # can be gone while an actor is still draining its mailbox. The gate says
+      # retire, and retirement then finds no journal: a hard match there took
+      # the actor down with a MatchError instead of letting it put itself away.
+      Repo.delete_all(from e in TurnExecution, where: e.id == ^execution.id)
+
+      send(pid, :lifecycle_check)
+      wait_idle(pid)
+
+      assert Process.alive?(pid), "the actor died rather than retiring"
+      assert is_nil(:sys.get_state(pid).turn_execution)
+    end
+  end
 end

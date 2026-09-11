@@ -20,7 +20,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Vaults
   }
 
-  alias Fountain.Conversations.{CallbackKey, Checkpoints, Connection}
+  alias Fountain.Conversations.{BoundedTurn, CallbackKey, Checkpoints, Connection}
   alias Fountain.Conversations.{Conversation, DetachedRequest, Egress}
   alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnLaunch, TurnMachine}
@@ -1765,16 +1765,17 @@ defmodule Fountain.Conversations.ConversationServer do
   # their conversation, and a `session/load` replay is history we already hold.
   @impl true
   def handle_info(message, state) do
-    if execution = Map.get(state, :turn_execution) do
-      # ownership: this is the journal committed for this actor's current turn.
-      case Fountain.Conversations.ExecutionGuard._unsafe_authorize_write(
-             execution.id,
-             execution.connection_id
-           ) do
-        {:ok, %{permitted: true}} ->
+    if Map.get(state, :turn_execution) do
+      #
+      # One unlocked read. Write authorization belongs where a write happens
+      # (the transport, and `_unsafe_complete/3` through the retirement below);
+      # this runs per inbound message and must not hold the parent lock, or a
+      # chatty turn starves the coordinator meant to expire it.
+      case BoundedTurn.gate(state) do
+        :ok ->
           handle_execution_info(message, state)
 
-        _ ->
+        :retire ->
           if message == :lifecycle_check, do: Lifecycle.schedule_check()
           {:noreply, retire_bounded_turn(state)}
       end
@@ -2247,23 +2248,11 @@ defmodule Fountain.Conversations.ConversationServer do
   # one write and does not delay the kill, but it is the difference between
   # an agent that stops its tool calls and one that is shot mid-write. This is
   # the other reason stdin stays open on the ACP path.
-  defp retire_bounded_turn(state) do
-    execution = state.turn_execution
-    # ownership: retirement targets this actor's immutable original journal.
-    {:ok, decision} =
-      Fountain.Conversations.ExecutionGuard._unsafe_complete(execution.id, "interrupted")
-
-    state =
-      if state.current_turn && decision.turn do
-        finish_acp_turn(state, decision.turn.status, %{"outcome" => "retired"}, %{
-          reason: "execution_retired"
-        })
-      else
-        state
-      end
-
-    close_bounded_connection(state)
-  end
+  # Both halves live in `BoundedTurn` (see its moduledoc): journal logic the
+  # actor calls rather than actor logic. `finish_acp_turn/4` is passed in
+  # because ending a turn writes through this actor's transcript.
+  defp retire_bounded_turn(state),
+    do: BoundedTurn.retire(state, &finish_acp_turn(&1, &2, &3, &4))
 
   defp close_bounded_connection(state), do: Connection.close_bounded(state)
 
@@ -2365,6 +2354,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
     TurnMachine.store_images(turn, images)
 
+    # A bounded turn generates no title. Titling is a second inference call that
+    # the journal does not bound and the allowance does not price, so spending
+    # it under a wall-clock ceiling would be usage the caller asked to cap and
+    # cannot see. The cost is real and is a known gap, not an oversight: a
+    # conversation whose *first* turn is bounded has no title until an unbounded
+    # turn follows, because titling only ever runs once. ADR 0046 records it.
     unless execution,
       do: TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)
 
