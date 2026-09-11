@@ -2490,7 +2490,8 @@ defmodule Fountain.Conversations do
 
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
-    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+    with :ok <- require_provider_commit_boundary(),
+         %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
@@ -3108,7 +3109,8 @@ defmodule Fountain.Conversations do
          opts
        )
        when is_binary(user_id) do
-    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+    with :ok <- require_provider_commit_boundary(),
+         %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
@@ -3227,6 +3229,12 @@ defmodule Fountain.Conversations do
       record_execution_allowance_created(allowance, conv.user_id, opts)
       {:ok, conv}
     end
+  end
+
+  # A nested transaction does not commit: workers and provider calls must not
+  # escape a caller's transaction that can still roll back the accepted rows.
+  defp require_provider_commit_boundary do
+    if Repo.in_transaction?(), do: {:error, :provider_transaction_open}, else: :ok
   end
 
   defp deliver_attach_prompt(conv, attrs, opts) do
@@ -3667,7 +3675,8 @@ defmodule Fountain.Conversations do
     # Ownership is established by callers before reaching this internal wake
     # path. The agent fetched below is the conversation's own agent_id,
     # same tenant by construction.
-    with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
+    with :ok <- require_provider_commit_boundary(),
+         %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
          :ok <- assert_resumable(conv),
          # Preflight only: no database lock spans provider I/O. Turn admission
          # checks again under its transaction. Cancellation must remain reachable.
