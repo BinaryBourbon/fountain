@@ -433,10 +433,21 @@ defmodule Fountain.SandboxFiles do
       {:ok, _output, @exit_not_repository} -> {:error, :not_a_repository}
       {:ok, _output, @exit_ref_not_found} -> {:error, :ref_not_found}
       {:ok, output, @exit_wrong_kind} -> {:error, wrong_kind(script, output)}
-      {:ok, output, code} -> {:error, {:sandbox_command_failed, code, redact(sandbox, output)}}
+      {:ok, output, code} -> {:error, command_failed(sandbox, code, output)}
       {:error, reason} -> {:error, {:sandbox_unreachable, reason}}
     end
   end
+
+  # Git's own message, on its way to a 422 body. The scripts cap a failing
+  # command's diagnostic with `head -c`, which cuts on a byte and so can drop
+  # half of the character that straddles the cap — a filename in a non-Latin
+  # script, or a locale-translated message, is all it takes. `json/2` would
+  # refuse to encode that and the caller would read a 500 instead of the
+  # failure it describes, so the output is recoded like a path or a diff is.
+  # Redaction runs first, over the bytes the script produced, because a
+  # secret's own bytes are what `:binary.replace/4` is looking for.
+  defp command_failed(%Sandbox{} = sandbox, code, output),
+    do: {:sandbox_command_failed, code, to_text(redact(sandbox, output))}
 
   defp map_path(handle, "/" <> _ = path), do: Managoat.Sandbox.host_path(handle, path)
   defp map_path(_handle, other), do: other

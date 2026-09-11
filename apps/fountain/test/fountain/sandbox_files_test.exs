@@ -513,6 +513,53 @@ defmodule Fountain.SandboxFilesTest do
       assert {:error, {:sandbox_command_failed, 0, _}} = SandboxFiles.status(ctx.sandbox, nil)
     end
 
+    test "a diagnostic the byte cap split mid-character still encodes as JSON", ctx do
+      # The failure path caps git's message with `head -c 4096`, which cuts on
+      # a byte: a diagnostic that long in a non-Latin filename or a translated
+      # locale loses half of the character that straddles the cap. The 422
+      # this error renders as would be a 500 if the body would not encode.
+      cut = binary_part("fatal: unable to read '" <> String.duplicate("é", 3000), 0, 4096)
+      refute String.valid?(cut)
+
+      expect_script(fn _, _, _ -> {:ok, status_output("main", []) <> cut, 8} end)
+
+      assert {:error, {:sandbox_command_failed, 8, output}} =
+               SandboxFiles.status(ctx.sandbox, nil)
+
+      assert String.valid?(output)
+      assert {:ok, _} = Jason.encode(%{error: "sandbox_command_failed", output: output})
+      assert output =~ "fatal: unable to read"
+    end
+
+    test "a failing command's output is redacted before it is recoded", ctx do
+      {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
+      env = insert_env(user_id: ctx.user.id)
+      secret = "sk-live-café"
+
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => secret}, dek)
+
+      sandbox =
+        insert_sandbox(
+          user_id: ctx.user.id,
+          status: "ready",
+          environment_id: env.id,
+          agent_id: ctx.agent.id
+        )
+
+      # Recoding first would rewrite the secret's own bytes, and the search
+      # for them would then find nothing.
+      message = "fatal: unable to read '" <> secret <> "'" <> String.duplicate("é", 3000)
+      cut = binary_part(message, 0, 4096)
+      refute String.valid?(cut)
+
+      expect_script(fn _, _, _ -> {:ok, cut, 8} end)
+
+      assert {:error, {:sandbox_command_failed, 8, output}} = SandboxFiles.status(sandbox, nil)
+      assert String.valid?(output)
+      assert output =~ "[REDACTED]"
+      refute output =~ "café"
+    end
+
     test "a path is redacted the way file content is", ctx do
       {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
       env = insert_env(user_id: ctx.user.id)
