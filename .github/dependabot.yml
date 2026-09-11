@@ -22,9 +22,12 @@ updates:
       # down too, and a failed publish is invisible to every gate here (#1760).
       # Dependabot reads the floating `v3` tag as plain version 3, so it cannot
       # tell the beta from a future stable — this ignores the 3.x line whole.
+      # `github-actions` parses `versions` as a Bundler requirement, so the
+      # range is spelled `~> 3.0`; an npm-style `3.x` parses to `= 3.x`, which
+      # matches no version at all and silently ignores nothing.
       # Delete this entry when a stable v3.0.0 ships and re-test both jobs.
       - dependency-name: swift-actions/setup-swift
-        versions: ["3.x"]
+        versions: ["~> 3.0"]
 
   - package-ecosystem: mix
     directory: /
