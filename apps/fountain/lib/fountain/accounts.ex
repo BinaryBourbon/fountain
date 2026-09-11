@@ -921,6 +921,56 @@ defmodule Fountain.Accounts do
     |> Repo.all()
   end
 
+  @doc "Active keys the account manages: its own keys and its claimed principals' credentials."
+  def list_managed_api_keys(user_id) when is_binary(user_id) do
+    user_id
+    |> managed_api_keys()
+    |> where([k], is_nil(k.revoked_at))
+    |> order_by([k], desc: k.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc "Revoke an owned or claimed-principal credential, with a trail the managing owner can read."
+  def revoke_managed_api_key(user_id, key_id, opts \\ []) do
+    case user_id |> managed_api_keys() |> where([k], k.id == ^key_id) |> Repo.one() do
+      nil ->
+        {:error, :not_found}
+
+      key ->
+        with {:ok, revoked} <- revoke_api_key(key.user_id, key.id, opts) do
+          if key.user_id != user_id do
+            Audit.record(%{
+              user_id: user_id,
+              action: "api_key.revoked",
+              resource_type: "api_key",
+              resource_id: key.id,
+              actor: Keyword.get(opts, :actor, "self"),
+              request_ip: Keyword.get(opts, :request_ip),
+              metadata: %{
+                "name" => key.name,
+                "key_prefix" => key.key_prefix,
+                "principal_user_id" => key.user_id
+              }
+            })
+          end
+
+          {:ok, revoked}
+        end
+    end
+  end
+
+  defp managed_api_keys(user_id) do
+    principals =
+      from o in Fountain.Principals.Owner,
+        where: o.owner_user_id == ^user_id,
+        select: o.principal_user_id
+
+    from k in ApiKey,
+      where:
+        k.user_id == ^user_id or
+          ("principal" in k.scopes and k.user_id in subquery(principals))
+  end
+
   @doc "List all users, ordered by insertion date."
   def list_users do
     from(u in User, order_by: [asc: u.inserted_at]) |> Repo.all()

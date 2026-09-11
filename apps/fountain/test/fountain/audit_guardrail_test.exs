@@ -58,6 +58,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"vault delete", &__MODULE__.do_vault_delete/1, "vault.deleted"},
     {"api key mint", &__MODULE__.do_key_create/1, "api_key.created"},
     {"api key revoke", &__MODULE__.do_key_revoke/1, "api_key.revoked"},
+    {"managed principal key revoke", &__MODULE__.do_managed_key_revoke/1, "api_key.revoked"},
     {"inference credential write", &__MODULE__.do_cred_write/1, "inference_credential.write"},
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
@@ -413,6 +414,14 @@ defmodule Fountain.AuditGuardrailTest do
   def do_key_revoke(user) do
     {:ok, {key, _}} = Fountain.Accounts.create_api_key(user.id, "guard-revoke")
     {:ok, _} = Fountain.Accounts.revoke_api_key(user.id, key.id)
+  end
+
+  def do_managed_key_revoke(user) do
+    app = insert_verified_user()
+    {:ok, opened} = Principals.create_claimable(app, %{"application_id" => "audit-guard"})
+    {:ok, claimed} = Principals.claim(opened.claimable.id, opened.claim_token, user)
+    {:ok, _, key} = Fountain.Accounts.authenticate_api_key(claimed.api_key)
+    {:ok, _} = Fountain.Accounts.revoke_managed_api_key(user.id, key.id)
   end
 
   def do_cred_write(user) do
