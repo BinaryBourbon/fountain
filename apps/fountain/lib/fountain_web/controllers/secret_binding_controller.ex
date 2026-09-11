@@ -11,10 +11,12 @@ defmodule FountainWeb.SecretBindingController do
 
   Every route answers 404 `brokerage_not_enabled` for an account the broker is
   not on for: the feature does not exist there, and the console does not show
-  it either. Binding a secret and changing a binding need the `connections`
-  rollout flag as well, because both point a credential at a host. Listing and
-  unbinding do not: `DELETE` is how an account turns off a binding that is
-  still attaching a credential, and that door stays open (#1693).
+  it either. Binding a secret and changing one need the `connections` rollout
+  flag as well, because both point a credential at a host. The doors that take
+  a credential away do not, and an account whose flag is off keeps all of
+  them: `DELETE` unbinds, and `PATCH` with `enabled: false` and nothing else
+  disables. `enabled: true` is on the other side — it attaches the credential
+  again — as is any edit that carries another field (#1693).
   """
 
   use FountainWeb, :controller
@@ -148,13 +150,38 @@ defmodule FountainWeb.SecretBindingController do
   # ask the broker only — an account that holds bindings can always see them
   # and take them apart, which is the one thing the single gate made
   # impossible (#1693).
+  #
+  # The plug covers every action, so an action left off this list gets the
+  # weaker gate rather than no gate. That default is right for one that reads
+  # or removes and wrong for one that creates: an action that adds a way to a
+  # credential belongs here in the commit that adds it.
   @creating [:create, :update]
+
+  # `update` is the one action its name cannot classify. `enabled: false` on
+  # its own is the soft off switch, the same act as `delete` and not a new
+  # credential path, so it is the edit a flag-off account may still make. Any
+  # other field — a host, an auth shape, or `enabled: true` — points a
+  # credential at somewhere, and the console's Enable button is gated the same
+  # way (`FountainWeb.SecretBindingsLive.Index`).
+  defp creating?(conn) do
+    case action_name(conn) do
+      :update -> not disabling_only?(conn.params)
+      action -> action in @creating
+    end
+  end
+
+  defp disabling_only?(params) do
+    case Map.take(params, @fields) do
+      %{"enabled" => enabled} = attrs when map_size(attrs) == 1 -> enabled in [false, "false"]
+      _ -> false
+    end
+  end
 
   defp require_brokerage(conn, _opts) do
     user_id = conn.assigns.current_user.id
 
     allowed? =
-      if action_name(conn) in @creating,
+      if creating?(conn),
         do: Fountain.Connections.enabled_for?(user_id),
         else: Fountain.Connections.manageable_for?(user_id)
 

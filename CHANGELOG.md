@@ -130,11 +130,13 @@ upgrade, is in
   into sandboxes: revoking a connection, deleting a provider and unbinding a
   secret each answered 404 for a credential that was still in use. The flag
   now gates only the doors that add one, which are connecting an account,
-  defining or editing a provider, binding a secret and pointing a binding at a
-  different host. Listing, revoking, unbinding and deleting are open to every
-  account the egress broker is on for, in the console and over the API, and
-  the Gmail MCP endpoint serves a connection that already exists the way the
-  rest of the runtime does.
+  defining or editing a provider, binding a secret, pointing a binding at a
+  different host and enabling a binding that is disabled. Listing, revoking,
+  unbinding, deleting and disabling are open to every account the egress
+  broker is on for, in the console and over the API: `DELETE` unbinds and
+  `PATCH` with `enabled: false` and nothing else disables. The Gmail MCP
+  endpoint serves a connection that already exists the way the rest of the
+  runtime does.
 
 - A teammate can be moved to a different environment or vault. Fountain retires
   the computer the old binding named, so the teammate's next message builds one

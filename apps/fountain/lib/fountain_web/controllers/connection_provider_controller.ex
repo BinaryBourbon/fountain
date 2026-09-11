@@ -224,8 +224,12 @@ defmodule FountainWeb.ConnectionProviderController do
 
   # Defining a provider, editing one and re-running discovery all add a way to
   # get a credential, so they need the rollout flag. Listing and deleting are
-  # management of what is already there and ask the broker only — an action
-  # added here gets that weaker gate by default, never no gate at all (#1693).
+  # management of what is already there and ask the broker only (#1693).
+  #
+  # The plug covers every action, so an action left off this list gets the
+  # weaker gate rather than no gate. That default is right for one that reads
+  # or removes and wrong for one that creates: an action that adds a way to a
+  # credential belongs here in the commit that adds it.
   @creating [:create, :update, :discover]
 
   defp require_connections(conn, _opts) do

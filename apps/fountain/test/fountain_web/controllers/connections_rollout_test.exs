@@ -34,11 +34,14 @@ defmodule FountainWeb.ConnectionsRolloutTest do
     |> put_req_header("accept", "application/json")
   end
 
-  defp binding_for(user) do
+  defp binding_for(user, attrs \\ %{}) do
     {:ok, binding} =
       SecretBindings.create_binding(
         user.id,
-        %{"key" => "STRIPE_SECRET_KEY", "host" => "api.stripe.com", "auth_type" => "bearer"},
+        Map.merge(
+          %{"key" => "STRIPE_SECRET_KEY", "host" => "api.stripe.com", "auth_type" => "bearer"},
+          attrs
+        ),
         actor: "ui"
       )
 
@@ -144,6 +147,60 @@ defmodule FountainWeb.ConnectionsRolloutTest do
                |> json_response(404)
 
       assert %{host: "api.stripe.com"} = SecretBindings.get_binding(binding.id, ctx.user.id)
+    end
+
+    # `enabled` is the one field whose two values sit on different sides of the
+    # gate: false takes a credential off a host, true puts it back on.
+    test "a binding can be disabled but not enabled again, over the API", ctx do
+      binding = binding_for(ctx.user)
+      flag(false)
+      conn = api(ctx.raw)
+
+      assert %{"enabled" => false} =
+               conn
+               |> patch("/api/secret-bindings/#{binding.id}", %{enabled: false})
+               |> json_response(200)
+
+      assert %{"error" => "brokerage_not_enabled"} =
+               conn
+               |> patch("/api/secret-bindings/#{binding.id}", %{enabled: true})
+               |> json_response(404)
+
+      refute SecretBindings.get_binding(binding.id, ctx.user.id).enabled
+
+      # Not a loophole: a disabling that carries anything else is an edit.
+      assert %{"error" => "brokerage_not_enabled"} =
+               conn
+               |> patch("/api/secret-bindings/#{binding.id}", %{
+                 enabled: false,
+                 host: "api.attacker.example"
+               })
+               |> json_response(404)
+
+      assert %{host: "api.stripe.com"} = SecretBindings.get_binding(binding.id, ctx.user.id)
+    end
+
+    test "the console cannot enable a disabled binding either", ctx do
+      binding = binding_for(ctx.user, %{"enabled" => false})
+      flag(false)
+
+      {:ok, view, _html} = live(login_user(build_conn(), ctx.user), "/account/bindings")
+
+      # The button is gone, and the event behind it is refused.
+      refute has_element?(view, "[phx-click=toggle][phx-value-id='#{binding.id}']")
+
+      assert render_click(view, "toggle", %{"id" => binding.id}) =~ "New bindings are off"
+      refute SecretBindings.get_binding(binding.id, ctx.user.id).enabled
+    end
+
+    test "the console still disables an enabled binding", ctx do
+      binding = binding_for(ctx.user)
+      flag(false)
+
+      {:ok, view, _html} = live(login_user(build_conn(), ctx.user), "/account/bindings")
+      assert has_element?(view, "[phx-click=toggle][phx-value-id='#{binding.id}']")
+      assert render_click(view, "toggle", %{"id" => binding.id}) =~ "disabled"
+      refute SecretBindings.get_binding(binding.id, ctx.user.id).enabled
     end
 
     test "the OAuth round trip is refused and the console says so", ctx do
