@@ -12,15 +12,17 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
   #   3. :sys.get_status (ops tooling, remote console) renders state through
   #      the same callback.
   #
-  # #1690 covered four more fields that held plaintext and were not scrubbed:
-  # the brokered values, the proxy session, the env credentials and the
-  # resolved MCP document. The field guard at the bottom of this file is the
-  # part that stops the next one arriving unnoticed.
+  # #1690 covered seven more fields that held plaintext and were not scrubbed:
+  # the brokered values, the proxy session, the env credentials, the resolved
+  # MCP document, the sandbox command's adapter-owned client, the turn's prompt
+  # and reply, and the runner reattach buffer. The field guard at the bottom of
+  # this file is the part that stops the next one arriving unnoticed.
   use Fountain.ConversationServerCase
 
   import ExUnit.CaptureLog
 
   alias Fountain.Conversations.Redaction
+  alias Fountain.Conversations.Turn
 
   @secret_env_value "sprite-env-secret-value-315"
   @dek_value "raw-tenant-dek-bytes-315"
@@ -32,6 +34,10 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
   @env_credential_value "sk-ant-env-credential-1690"
   @mcp_header_value "mcp-resolved-header-token-1690"
   @mcp_env_value "mcp-resolved-env-token-1690"
+  @command_sprites_token "sprites-command-token-1690"
+  @turn_prompt "turn-prompt-tenant-text-1690"
+  @turn_reply "turn-reply-tenant-text-1690"
+  @replay_buffer_value "raw-sandbox-output-with-a-secret-1690"
 
   defp start_server_with_secrets do
     stub_happy_sprite()
@@ -70,6 +76,22 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
               "env" => %{"LINEAR_TOKEN" => @mcp_env_value}
             }
           },
+          current_command: %Managoat.Sandbox.Command{
+            provider: :sprites,
+            ref: make_ref(),
+            private: %Sprites.Sprite{
+              name: "test-sprite",
+              client: %Sprites.Client{token: @command_sprites_token}
+            }
+          },
+          current_turn: %Turn{
+            id: Ecto.UUID.generate(),
+            turn_number: 3,
+            status: "running",
+            prompt: @turn_prompt,
+            reply_text: @turn_reply
+          },
+          runner_replay: %{previous_id: 41, buffer: @replay_buffer_value},
           tenant_key: @dek_value,
           inference_credentials: %{"anthropic" => @inference_value},
           callback_token: @callback_value
@@ -92,6 +114,10 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     refute rendered =~ @env_credential_value
     refute rendered =~ @mcp_header_value
     refute rendered =~ @mcp_env_value
+    refute rendered =~ @command_sprites_token
+    refute rendered =~ @turn_prompt
+    refute rendered =~ @turn_reply
+    refute rendered =~ @replay_buffer_value
   end
 
   test "unknown calls and casts do not crash at the callback head" do
@@ -116,8 +142,15 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
 
     # Corrupt a lifecycle field so the next :lifecycle_check raises deep in
     # the callback body — the unhandled-crash shape the issue describes.
+    # `current_turn` has to go with it: a turn in flight makes the check
+    # "busy", and the busy branch never reaches the comparison that raises.
     :sys.replace_state(pid, fn state ->
-      %{state | sandbox_started_at: DateTime.utc_now(), last_activity_at: :corrupt}
+      %{
+        state
+        | sandbox_started_at: DateTime.utc_now(),
+          last_activity_at: :corrupt,
+          current_turn: nil
+      }
     end)
 
     log =
@@ -148,6 +181,13 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     assert rendered =~ "linear"
     assert rendered =~ "Authorization"
     assert rendered =~ "LINEAR_TOKEN"
+
+    # The turn still identifies itself, and a reattach crash still says how far
+    # the replay buffer had got.
+    assert rendered =~ "turn_number: 3"
+    assert rendered =~ ~s(status: "running")
+    assert rendered =~ "previous_id: 41"
+    assert rendered =~ "#{byte_size(@replay_buffer_value)} bytes"
   end
 
   # ── The field guard (#1690) ────────────────────────────────────────────────
@@ -200,19 +240,14 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     :current_turn_span,
     :stream_tracer,
     :runner_reconnect,
-    # The sandbox command handle. Its adapter-owned `private` (the SDK command,
-    # which embeds the platform client) is excluded from `inspect/1` by the
-    # struct's own `@derive {Inspect, only: [:provider, :ref]}`.
-    :current_command,
-    # Tenant data rather than credentials, and each has its own protection on
-    # the path that persists it: the turn row and its prompt, parked caller-tool
-    # arguments (#1202), and the two reattach buffers, which hold sandbox output
-    # bytes mid-parse — the transcript path is redacted at the single log writer
-    # by `Redaction.redact/2`, which is what this module mostly exists for.
-    :current_turn,
-    :caller_calls,
-    :runner_replay,
+    # Byte counts per stream, taken from rows already written. No content.
     :replay_skip,
+    # Parked caller-tool arguments (#1202) and the ACP lines already persisted
+    # for the in-flight turn. Tenant content rather than credential material,
+    # and what is in `replay_dedup` was read back from `log_events`, so it has
+    # been through `Redaction.redact/2` — unlike `runner_replay`, which is fed
+    # raw sandbox bytes and is therefore redacted.
+    :caller_calls,
     :replay_dedup
   ]
 
@@ -239,6 +274,23 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
           "args" => [@sentinel]
         }
       },
+      current_command: %Managoat.Sandbox.Command{
+        provider: :sprites,
+        ref: make_ref(),
+        private: %Sprites.Sprite{
+          name: "sentinel-sprite",
+          client: %Sprites.Client{token: @sentinel}
+        }
+      },
+      current_turn: %Turn{
+        id: Ecto.UUID.generate(),
+        turn_number: 1,
+        status: "running",
+        prompt: @sentinel,
+        reply_text: @sentinel,
+        pending_permission: %{"tool" => @sentinel}
+      },
+      runner_replay: %{previous_id: 41, buffer: @sentinel},
       tenant_key: @sentinel,
       inference_credentials: %{"sentinel" => @sentinel},
       callback_token: @sentinel

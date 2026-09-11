@@ -175,12 +175,13 @@ upgrade, is in
   runtime does.
 
 - A conversation server that crashes no longer prints its brokered secret
-  values, its egress proxy session, its inference credentials or its resolved
-  MCP configuration into the crash report and the Sentry event (#1690). Those
-  four fields held plaintext and were outside the redaction that covers the
-  sprite environment, the tenant key and the callback token. A guard now fails
-  for any new server state field until it is either redacted or recorded as
-  safe to print.
+  values, its egress proxy session, its inference credentials, its resolved MCP
+  configuration, the sandbox platform token behind the running command, the
+  turn's prompt and reply text or the runner reattach buffer into the crash
+  report and the Sentry event (#1690). Those fields held plaintext and were
+  outside the redaction that covers the sprite environment, the tenant key and
+  the callback token. A guard now fails for any new server state field until it
+  is either redacted or recorded as safe to print.
 
 - A teammate can be moved to a different environment or vault. Fountain retires
   the computer the old binding named, so the teammate's next message builds one
