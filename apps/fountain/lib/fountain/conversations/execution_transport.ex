@@ -11,6 +11,20 @@ defmodule Fountain.Conversations.ExecutionTransport do
   make an expired spawn cleanable; after a bounded drain, unresolved intent stays
   in the journal. Public admission remains disabled pending released identity
   support and complete lifecycle integration.
+
+  **Sprites only, and that is a real limit rather than a staging detail.**
+  `_unsafe_start/5` refuses any other provider with `:provider_not_supported`,
+  and admission rolls back the same way, because binding a provider-issued
+  session id from trusted control metadata is a per-adapter capability and only
+  the Sprites adapter has it. E2B, Daytona and self-hosted runners (ADR 0018,
+  ADR 0022) therefore cannot carry a bounded turn at all. They get a refusal at
+  admission, not a silently unbounded turn — a caller that asks for a limit and
+  is told no is fine; one that asks and is ignored is not.
+
+  The `:deadline` timer set in `init/1` is not the enforcement mechanism. It is
+  a local convenience for a process that happens to still be alive; the
+  guarantee is the absolute `deadline_at` on the journal row, which
+  `ExecutionDeadlineWorker` acts on whether or not this process survived.
   """
   use GenServer, restart: :temporary
 
@@ -47,13 +61,18 @@ defmodule Fountain.Conversations.ExecutionTransport do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
   def await_ready(pid, timeout \\ 30_000), do: call(pid, :ready, timeout)
-  def write(pid, data), do: call(pid, {:write, data}, 30_000)
+  def write(pid, data, timeout \\ 30_000), do: call(pid, {:write, data}, timeout)
   @doc "Acknowledge persisted retirement intent, not confirmed remote termination."
   def close(pid), do: call(pid, :close, 30_000)
 
+  # A dead transport and a transport that did not answer in time mean different
+  # things to the journal: the first cannot be mid-write, the second may be. Both
+  # used to arrive as `:transport_unavailable`, which reads as "nothing
+  # happened" and is only true of the first.
   defp call(pid, message, timeout) do
     GenServer.call(pid, message, timeout)
   catch
+    :exit, {:timeout, _} -> {:error, :transport_timeout}
     :exit, _ -> {:error, :transport_unavailable}
   end
 

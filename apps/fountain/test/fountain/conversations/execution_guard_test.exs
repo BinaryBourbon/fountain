@@ -583,12 +583,52 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
                )
     end
 
-    test "a completed or stopped row is never touched by the sweep", c do
+    test "a resolved row is never touched by the sweep", c do
+      bind(c)
+
+      # Since this PR every bounded connection owes remote cleanup, a
+      # successful reply included, so a completed turn lands in `ready` rather
+      # than `completed` — the sweep must not confuse "still owed" with
+      # "unresolvable", so drive it all the way to a confirmed stop.
+      {:ok, _} = ExecutionGuard._unsafe_complete(c.execution.id, "completed", now: c.now)
+      assert Repo.get!(TurnExecution, c.execution.id).state == "ready"
+
+      {:ok, %{execution: attempt}} = ExecutionGuard._unsafe_claim_termination(c.execution.id)
+
+      {:ok, _} =
+        ExecutionGuard._unsafe_record_termination(c.execution.id, attempt.attempt_id, :ok)
+
+      assert Repo.get!(TurnExecution, c.execution.id).state == "stopped"
+      assert ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1)) == []
+      assert Repo.get!(TurnExecution, c.execution.id).state == "stopped"
+    end
+
+    test "a successful turn whose cleanup never confirms still ages out", c do
+      # The corollary of this PR's change: the fence now reaches the happy path.
+      # A turn that answered correctly, whose remote cleanup is then lost, would
+      # otherwise fence its conversation and its machine as surely as a timeout.
       bind(c)
       {:ok, _} = ExecutionGuard._unsafe_complete(c.execution.id, "completed", now: c.now)
-      assert Repo.get!(TurnExecution, c.execution.id).state == "completed"
-      assert ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1)) == []
-      assert Repo.get!(TurnExecution, c.execution.id).state == "completed"
+      {:ok, %{execution: attempt}} = ExecutionGuard._unsafe_claim_termination(c.execution.id)
+
+      {:ok, _} =
+        ExecutionGuard._unsafe_record_termination(
+          c.execution.id,
+          attempt.attempt_id,
+          {:error, :timeout}
+        )
+
+      assert Repo.get!(Turn, c.turn.id).status == "completed"
+      assert ExecutionGuard._unsafe_fenced?(c.conversation.id)
+
+      assert [{:ok, retired}] =
+               ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1))
+
+      assert retired.state == "stopped"
+      assert retired.last_error == "termination_unconfirmed"
+      refute ExecutionGuard._unsafe_fenced?(c.conversation.id)
+      # The turn's own outcome is untouched: it did succeed.
+      assert Repo.get!(Turn, c.turn.id).status == "completed"
     end
   end
 end

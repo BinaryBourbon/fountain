@@ -299,4 +299,49 @@ defmodule Fountain.Conversations.ExecutionTransportTest do
     refute_received {:scripted_agent, :wrote, %{"method" => "session/prompt"}}
     assert Repo.get!(Turn, c.turn.id).status == "completed"
   end
+
+  test "a provider without trusted session identity is refused, not silently unbounded", c do
+    # Only the Sprites adapter reports a provider-issued session id from control
+    # metadata, and without one there is nothing to terminate by name. A caller
+    # that asks for a bound and is told no is fine; one that is ignored is not.
+    execution = register(c)
+
+    for provider <- ~w(e2b daytona runner) do
+      Repo.update_all(
+        from(e in TurnExecution, where: e.id == ^execution.id),
+        set: [provider: provider]
+      )
+
+      assert {:error, :provider_not_supported} =
+               ExecutionTransport._unsafe_start(execution.id, self(), "prog", [])
+
+      # Refusal is not a spawn: no intent is recorded, so the turn stays
+      # retryable rather than landing in the awaiting_identity fence.
+      assert row(execution).spawn_submitted_at == nil
+      assert row(execution).state == "active"
+    end
+  end
+
+  test "a timeout and a dead transport are different answers", c do
+    execution = register(c)
+
+    # A process that never replies: the caller must not be told "nothing
+    # happened", because a write may be in flight.
+    silent =
+      spawn(fn ->
+        receive do
+          :never -> :ok
+        end
+      end)
+
+    assert {:error, :transport_timeout} = ExecutionTransport.write(silent, "x", 50)
+
+    # A process that is gone cannot be mid-write, and that is a different fact.
+    dead = spawn(fn -> :ok end)
+    ref = Process.monitor(dead)
+    assert_receive {:DOWN, ^ref, :process, ^dead, _}
+    assert {:error, :transport_unavailable} = ExecutionTransport.write(dead, "x", 50)
+
+    assert row(execution).state == "active"
+  end
 end
