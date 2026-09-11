@@ -1,5 +1,6 @@
 defmodule Fountain.Conversations.ConversationReapplyTest do
   use Fountain.DataCase, async: true
+  use Mimic
 
   alias Fountain.{Agents, Conversations}
   alias Fountain.Conversations.Reapply
@@ -87,6 +88,40 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       # on its disk is still resumable until the server drops the connection.
       assert updated.runtime_session_id == "session-before-reapply"
       assert updated.configuration_revision == 1
+
+      [stage] =
+        Conversations._unsafe_list_log_events(updated.id)
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "configuration"))
+
+      assert stage.state == "done"
+    end
+
+    test "tells the live server to apply it", ctx do
+      test = self()
+
+      stub(Fountain.Conversations.ConversationServer, :refresh_configuration, fn id, revision ->
+        send(test, {:refreshed, id, revision})
+        :ok
+      end)
+
+      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+      assert_received {:refreshed, id, revision}
+      assert id == ctx.conv.id
+      assert revision == updated.configuration_revision
+    end
+
+    test "a refresh that fails is the answer, not a footnote", ctx do
+      Mimic.expect(Fountain.Conversations.ConversationServer, :refresh_configuration, fn _, _ ->
+        {:error, :conversation_busy}
+      end)
+
+      assert {:error, :conversation_busy} = Conversations.reapply_conversation(ctx.conv, %{})
+
+      # No successful lifecycle event over a server that never reloaded.
+      refute Enum.any?(
+               Conversations._unsafe_list_log_events(ctx.conv.id),
+               &(&1.stage == "configuration")
+             )
     end
 
     test "audits the change, naming the fields that moved", ctx do
@@ -371,6 +406,56 @@ defmodule Fountain.Conversations.ConversationReapplyTest do
       assert updated.vault_id == ctx.new_vault.id
       assert updated.environment_id == ctx.sibling_env.id
       assert updated.configuration_revision == 2
+    end
+
+    test "a stale server cannot open a turn after a reapply", ctx do
+      assert {:ok, updated} = Conversations.reapply_conversation(ctx.conv, %{})
+
+      for capacity <- [:unbounded, 1] do
+        assert {:error, :configuration_changed} =
+                 Conversations._unsafe_create_turn_on_sandbox(
+                   %{
+                     conversation_id: ctx.conv.id,
+                     turn_number: 1,
+                     prompt: "hello",
+                     status: "running"
+                   },
+                   ctx.sandbox.id,
+                   capacity,
+                   ctx.conv.configuration_revision
+                 )
+      end
+
+      assert Conversations._unsafe_list_turns(ctx.conv.id) == []
+
+      # The same call with the revision the reapply committed is admitted,
+      # and then the conversation is busy rather than reapplicable.
+      assert {:ok, _conv, _turn} =
+               Fountain.Conversations.TurnMachine.open(
+                 ctx.conv.id,
+                 ctx.sandbox.id,
+                 "hello",
+                 nil,
+                 updated.configuration_revision
+               )
+
+      assert {:error, :conversation_busy} = Conversations.reapply_conversation(updated, %{})
+    end
+
+    test "a caller with no revision to offer is not checked", ctx do
+      assert {:ok, _} = Conversations.reapply_conversation(ctx.conv, %{})
+
+      assert {:ok, _turn} =
+               Conversations._unsafe_create_turn_on_sandbox(
+                 %{
+                   conversation_id: ctx.conv.id,
+                   turn_number: 1,
+                   prompt: "hello",
+                   status: "running"
+                 },
+                 ctx.sandbox.id,
+                 :unbounded
+               )
     end
   end
 end

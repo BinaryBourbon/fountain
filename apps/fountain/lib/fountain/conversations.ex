@@ -1211,7 +1211,29 @@ defmodule Fountain.Conversations do
       })
 
       broadcast_sidebar_update(updated.user_id)
-      {:ok, updated}
+
+      # A refresh that fails is the answer, not a footnote: publishing a
+      # successful lifecycle event over a server that never reloaded would
+      # tell every follower the machine is configured when it is not.
+      with :ok <-
+             Fountain.Conversations.ConversationServer.refresh_configuration(
+               updated.id,
+               updated.configuration_revision
+             ) do
+        metadata = reapply_metadata(previous, updated)
+
+        publish_stage(updated.id, "configuration", "done", %{
+          event: "reapplied",
+          previous: metadata["previous"],
+          current: metadata["current"],
+          changed_fields: metadata["changed_fields"],
+          message:
+            "The configuration was reapplied on this machine. The transcript and the " <>
+              "files on disk are kept; the next prompt starts a new runtime session."
+        })
+
+        {:ok, updated}
+      end
     end
   end
 
@@ -1565,6 +1587,10 @@ defmodule Fountain.Conversations do
   Create a turn on a sandbox that may be shared, refusing when the runtime's
   capacity is used up by another conversation's running turn.
 
+  `revision` is the conversation's `configuration_revision` as the caller
+  understands it, or nil for a caller with none; a mismatch answers
+  `{:error, :configuration_changed}` (#1565).
+
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
   per-sandbox advisory lock and verify that the conversation still belongs
   to this nonterminal sandbox. An integer capacity also limits concurrent
@@ -1573,7 +1599,7 @@ defmodule Fountain.Conversations do
   nonempty allowance refuses the turn. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
   """
-  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
+  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity, revision \\ nil)
       when is_binary(sandbox_id) and
              (capacity == :unbounded or (is_integer(capacity) and capacity > 0)) do
     conv_id = Map.fetch!(attrs, :conversation_id)
@@ -1588,12 +1614,21 @@ defmodule Fountain.Conversations do
         # The allowance's FK takes KEY SHARE on this row when first inserted.
         # UPDATE also fences that first insert when there is no allowance row
         # to lock yet. Keep both locks through the turn insert.
-        Repo.one(
-          from c in Conversation,
-            where: c.id == ^conv_id,
-            select: c.id,
-            lock: "FOR UPDATE"
-        ) || Repo.rollback(:sandbox_unavailable)
+        conv =
+          Repo.one(
+            from c in Conversation,
+              where: c.id == ^conv_id,
+              select: %{id: c.id, configuration_revision: c.configuration_revision},
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:sandbox_unavailable)
+
+        # The server passes the revision it loaded. A reapply committed since
+        # then means this turn would run against settings the server has not
+        # read, so it is refused here rather than started wrong (#1565). A
+        # caller with no revision to offer is not checked.
+        if not is_nil(revision) and conv.configuration_revision != revision do
+          Repo.rollback(:configuration_changed)
+        end
 
         attached? =
           Repo.exists?(
