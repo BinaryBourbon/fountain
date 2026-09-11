@@ -3,13 +3,17 @@ from pathlib import Path
 import re
 import unittest
 
-from gate import FULL_JOBS, JOBS, PROBES, validate
+from gate import FULL_JOBS, JOBS, PROBES, SDK_JOBS, validate
 
 
 EVENTS = ("pull_request", "push", "merge_group")
 
 
-def plan(event="pull_request", docs=False, touched=False, reuse=False):
+def plan(event="pull_request", docs=False, touched=False, reuse=False, sdks=None):
+    if sdks is None:
+        sdks = set() if docs else SDK_JOBS
+    if event == "push":
+        sdks = SDK_JOBS
     jobs = {job: {"result": "skipped", "outputs": {}} for job in JOBS}
     jobs["workflow-checks"]["result"] = "success"
     jobs["sdk-checks"]["result"] = "success"
@@ -19,16 +23,19 @@ def plan(event="pull_request", docs=False, touched=False, reuse=False):
         jobs["changes"] = {"result": "success", "outputs": {
             "docs_only": str(docs).lower(), "docs_touched": str(touched).lower(),
             "cli_docs": "false", "tree": "a" * 40,
+            **{"sdk_" + job.removesuffix("-sdk"): str(job in sdks).lower() for job in SDK_JOBS},
         }}
     if reuse:
         return jobs
     if docs:
         jobs["docs"]["result"] = "success"
     else:
-        for job in FULL_JOBS:
+        for job in FULL_JOBS - SDK_JOBS:
             jobs[job]["result"] = "success"
         if touched or event == "push":
             jobs["docs-prose"]["result"] = "success"
+    for job in sdks:
+        jobs[job]["result"] = "success"
     return jobs
 
 

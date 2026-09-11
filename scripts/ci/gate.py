@@ -40,7 +40,14 @@ def _classification(needs):
     tree = outputs.get("tree")
     if not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree):
         raise ValueError("checkout tree is missing or invalid")
-    return outputs["docs_only"] == "true", outputs["docs_touched"] == "true"
+    selected = set()
+    for job in SDK_JOBS:
+        value = outputs.get("sdk_" + job.removesuffix("-sdk"))
+        if value not in ("true", "false"):
+            raise ValueError("SDK classification is missing or invalid")
+        if value == "true":
+            selected.add(job)
+    return outputs["docs_only"] == "true", outputs["docs_touched"] == "true", selected
 
 
 def _expected_plan(event, needs, jobs):
@@ -54,7 +61,12 @@ def _expected_plan(event, needs, jobs):
         expected[probe] = "success"
 
     reuse = _reuse(needs) if "already-tested" in PROBES[event] else False
-    docs_only, docs_touched = _classification(needs) if "changes" in PROBES[event] else (False, True)
+    docs_only, docs_touched, sdks = (
+        _classification(needs) if "changes" in PROBES[event] else (False, True, SDK_JOBS)
+    )
+    # SDK docs can select a language even when the server plan is docs-only.
+    if not reuse:
+        expected.update(dict.fromkeys(sdks, "success"))
 
     return expected, not reuse and not docs_only, docs_only, docs_touched, reuse
 
@@ -68,16 +80,14 @@ def validate(event, needs):
     if docs_only and not reuse:
         expected["docs"] = "success"
     if full:
-        expected.update(dict.fromkeys(FULL_JOBS, "success"))
+        expected.update(dict.fromkeys(FULL_JOBS - SDK_JOBS, "success"))
     if full and docs_touched:
         expected["docs-prose"] = "success"
     _check_results(needs, expected)
 
 
 def validate_sdks(event, needs):
-    expected, full, _, _, _ = _expected_plan(event, needs, SDK_GATE_JOBS)
-    if full:
-        expected.update(dict.fromkeys(SDK_JOBS, "success"))
+    expected, _, _, _, _ = _expected_plan(event, needs, SDK_GATE_JOBS)
     _check_results(needs, expected)
 
 

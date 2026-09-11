@@ -88,8 +88,9 @@ tests, compilation, contract and conformance checks. The TypeScript job owns
 installation, type checks, tests, builds, browser bundling, contract and
 conformance checks. These three extracted jobs lint fixtures before their
 tests. Swift retains its separate conformance test step.
-`CI required` requires all SDK jobs on every full plan, including main and
-merge groups. A failed, cancelled or unexpectedly skipped job fails the gate.
+`CI required` requires every selected SDK job. A failed, cancelled or
+unexpectedly skipped job fails the gate. Main runs all SDKs unless a verified
+tested tree authorizes reuse.
 
 `SDK checks` reports the SDK result even when docs-only classification or a
 previously tested tree skips every SDK leg. It validates the same probe
@@ -97,7 +98,7 @@ outputs as the full gate and rejects missing, failed or unexpectedly skipped
 jobs. `CI required` depends on this aggregate. Only the full gate publishes
 `tested-tree` evidence; passing the SDK gate cannot authorize reuse of a tree.
 
-Per-language path routing remains tracked in #1413. Register a new job in
+Register a new job in
 `gate.py`'s `FULL_JOBS` and the workflow gate's `needs` list together. For an
 SDK job, also update `SDK_JOBS` and the `sdk-checks` dependencies. Run
 `test_gate.py` and `test_sdk_gate.py` to verify their agreement and every
@@ -106,14 +107,22 @@ supported event plan.
 ## SDK path classification
 
 `changes` reports four `sdk_<language>` outputs from `sdk_changes.py`, using
-its existing PR merge base or merge-group base. Job conditions do not yet
-consume these outputs; SDK execution stays unchanged in this prerequisite.
+its existing PR merge base or merge-group base. Each SDK job consumes its
+own output. The two gates independently validate the selection and exact job
+results. Missing or malformed outputs fail both gates; only explicit `false`
+lets a job skip.
 
 The classifier selects an SDK for its directory, documentation page or
 registered release tooling. Shared contract and conformance files select all
 SDKs. So do API implementation, build configuration and unregistered paths.
 An explicit allowlist selects none for unrelated docs, console UI, server
-tests and telemetry. Mixed changes select the union of their SDKs.
+tests and telemetry. Mixed changes select the union of their SDKs. SDK docs
+select their language even on the server docs-only path.
+
+The release job installs TypeScript dependencies and checks generated types
+only when TypeScript is selected. Server wire-contract generation and its
+freshness check remain required on every full server plan. Shared contract
+changes select all SDKs, including that generated-type check.
 
 Invalid bases, failed or empty diffs, malformed paths and undecodable names
 select every SDK. The NUL-delimited Git diff disables rename detection, so a

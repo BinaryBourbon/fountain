@@ -798,6 +798,7 @@ jobs:
       # which is also what enforces `erasableSyntaxOnly`, the setting that
       # keeps those sources runnable without a build step.
       - name: Set up Node
+        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -807,6 +808,7 @@ jobs:
       # `--no-audit --no-fund`: see the typescript-sdk job, which carries the
       # measurement. Here it is only to make `npm run generate` runnable.
       - name: SDK install
+        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         working-directory: sdk/typescript
         run: npm ci --no-audit --no-fund
 
@@ -817,6 +819,7 @@ jobs:
       # API that drift apart. This is the arm that covers the WHOLE document;
       # the manifest checks below cover what each client reaches for by name.
       - name: SDK types match the spec
+        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         working-directory: sdk/typescript
         run: |
           npm run generate
@@ -833,7 +836,7 @@ jobs:
     timeout-minutes: 15
     needs: [already-tested, changes]
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.docs_only != 'true' }}
+         && needs.changes.outputs.sdk_elixir != 'false' }}
 
     permissions:
       contents: read
@@ -905,7 +908,7 @@ jobs:
     timeout-minutes: 15
     needs: [already-tested, changes]
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.docs_only != 'true' }}
+         && needs.changes.outputs.sdk_python != 'false' }}
 
     permissions:
       contents: read
@@ -938,7 +941,7 @@ jobs:
     timeout-minutes: 15
     needs: [already-tested, changes]
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.docs_only != 'true' }}
+         && needs.changes.outputs.sdk_typescript != 'false' }}
 
     permissions:
       contents: read
@@ -1202,7 +1205,7 @@ jobs:
     timeout-minutes: 10
     needs: [already-tested, changes]
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.docs_only != 'true' }}
+         && needs.changes.outputs.sdk_swift != 'false' }}
 
     permissions:
       contents: read
