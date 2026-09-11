@@ -96,7 +96,8 @@ defmodule FountainWeb.AdminLive.Shell do
       {:overview, "Overview", ~p"/admin"},
       {:users, "Users", ~p"/admin/users"},
       {:sandboxes, "Sandboxes", ~p"/admin/sandboxes"},
-      {:inference, "Inference", ~p"/admin/inference"}
+      {:inference, "Inference", ~p"/admin/inference"},
+      {:broker, "Broker", ~p"/admin/broker"}
     ] ++ billing ++ [{:activity, "Activity", ~p"/admin/activity"}]
   end
 end
