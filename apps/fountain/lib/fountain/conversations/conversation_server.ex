@@ -1460,17 +1460,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # another, so a second answer to the same request is "too late" rather
   # than an error in the caller.
   def handle_call({:answer_permission, request_id, option_id}, _from, state) do
-    {reply, turn, pending} =
-      Pending.answer_permission(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        state.acp_peer,
-        request_id,
-        option_id
-      )
-
-    {:reply, reply, %{Pending.into_state(state, pending) | current_turn: turn}}
+    {reply, state} = Pending.answer(state, request_id, option_id)
+    {:reply, reply, state}
   end
 
   # A call needs a turn to belong to, and the client following that turn is
@@ -1699,12 +1690,12 @@ defmodule Fountain.Conversations.ConversationServer do
           current_turn: %{pending_permission: %{"request_id" => request_id}}
         } = state
       ) do
-    state = resolve_permission(state, request_id, "timeout", nil)
+    state = Pending.resolve(state, request_id, "timeout", nil)
     fail_transport(state, :permission_timeout_during_runner_reconnect)
   end
 
   def handle_info({:permission_timeout, request_id}, state) do
-    {:noreply, resolve_permission(state, request_id, "timeout", nil)}
+    {:noreply, Pending.resolve(state, request_id, "timeout", nil)}
   end
 
   # The caller never answered a parked tool call (#1202). The agent gets an
@@ -1965,44 +1956,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  # `Pending.resolve_held/2` is the family's own (#1369); this call site came
+  # from the shared-sandbox reattach fix and moves with it.
   defp fail_transport(state, reason),
-    do: Reattachment.fail_transport(resolve_pending_permission(state, "turn_ended"), reason)
-
-  # The permission request's end: the turn row and timer are the server's to hold.
-  defp resolve_permission(state, request_id, outcome, option_id) do
-    {turn, pending} =
-      Pending.resolve_permission(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        state.acp_peer,
-        request_id,
-        outcome,
-        option_id
-      )
-
-    %{Pending.into_state(state, pending) | current_turn: turn}
-  end
-
-  # Resolve whatever is held, if anything, as the turn ends.
-  defp resolve_pending_permission(state, outcome) do
-    {turn, pending} =
-      Pending.resolve_pending_permission(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        state.acp_peer,
-        outcome
-      )
-
-    %{Pending.into_state(state, pending) | current_turn: turn}
-  end
-
-  # Everything still parked when the turn ends (`Pending.drop_calls/3`).
-  defp drop_caller_tools(state, outcome) do
-    pending = Pending.drop_calls(Pending.from_state(state), state.conversation_id, outcome)
-    Pending.into_state(state, pending)
-  end
+    do: Reattachment.fail_transport(Pending.resolve_held(state, "turn_ended"), reason)
 
   # The server's own clock stamp: the input `Lifecycle.check/4` reads. Nothing
   # but this process writes it.
@@ -2440,8 +2397,8 @@ defmodule Fountain.Conversations.ConversationServer do
     # Resolve a held permission request as the turn ends (#940): a card left
     # open is a client waiting on an answer that can never come, and the
     # turn's `pending_permission` would stay set on a turn that is over.
-    state = resolve_pending_permission(state, "turn_ended")
-    state = drop_caller_tools(state, "turn_ended")
+    state = Pending.resolve_held(state, "turn_ended")
+    state = Pending.drop(state, "turn_ended")
     state = cancel_autonomous_quiet(state)
 
     turn = TurnMachine.finish(TurnMachine.from_state(state), status, span_attrs, stage_meta)
@@ -2477,29 +2434,12 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp apply_effect(state, {:ask_permission, request_id, tool, options}),
-    do: ask_permission(state, request_id, tool, options)
+    do: Pending.ask(state, request_id, tool, options)
 
   defp apply_effect(state, {:finish, status, span_attrs, stage_meta}),
     do: finish_acp_turn(state, status, span_attrs, stage_meta)
 
   defp apply_effect(state, {:drop_connection, why}), do: drop_connection(state, why)
-
-  # `ask`: the agent is blocked and a human has to answer (#940). The request
-  # goes on the turn row first, then the stage, then the timeout
-  # (`Pending.ask/6`); the server holds the row and the timer.
-  defp ask_permission(state, request_id, tool, options) do
-    {turn, pending} =
-      Pending.ask(
-        Pending.from_state(state),
-        state.conversation_id,
-        state.current_turn,
-        request_id,
-        tool,
-        options
-      )
-
-    %{Pending.into_state(state, pending) | current_turn: turn}
-  end
 
   # ── the connection (#817) ─────────────────────────────────────────────────
 
