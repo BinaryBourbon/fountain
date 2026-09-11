@@ -42,6 +42,39 @@ defmodule Fountain.PermissionPolicyTest do
     end
   end
 
+  describe "seconds/1" do
+    test "reads a positive integer or a string of one" do
+      assert PermissionPolicy.seconds(3600) == 3600
+      assert PermissionPolicy.seconds("3600") == 3600
+      assert PermissionPolicy.seconds(1) == 1
+    end
+
+    test "the ceiling is a year, and it is inclusive" do
+      max = PermissionPolicy.max_ask_timeout_seconds()
+      assert max == 365 * 24 * 60 * 60
+
+      assert PermissionPolicy.seconds(max) == max
+      assert PermissionPolicy.seconds(to_string(max)) == max
+      assert PermissionPolicy.seconds(max + 1) == nil
+    end
+
+    test "a value past the ceiling would not fit in a timestamp, so it is not read" do
+      # The deadline a detached request gets is `now + value`, written to
+      # `turns.permission_deadline`. A `timestamp` stops at 294276 AD, and
+      # 1e15 seconds put it at year 31690765: Postgrex refused to encode it,
+      # raising inside the `handle_info` that detaches the request.
+      for value <- [999_999_999_999_999, 99_999_999_999, "999999999999999"] do
+        assert PermissionPolicy.seconds(value) == nil
+      end
+    end
+
+    test "anything that is not a number of seconds is nil, never zero" do
+      for value <- [0, -1, "", "soon", "60s", 1.5, nil, %{}, "-5"] do
+        assert PermissionPolicy.seconds(value) == nil
+      end
+    end
+  end
+
   describe "ask_timeout_seconds/1" do
     test "reads a positive integer or a string of one" do
       assert PermissionPolicy.ask_timeout_seconds(%{"ask_timeout" => 3600}) == 3600
@@ -55,6 +88,12 @@ defmodule Fountain.PermissionPolicyTest do
 
       assert PermissionPolicy.ask_timeout_seconds(%{}) == nil
       assert PermissionPolicy.ask_timeout_seconds(nil) == nil
+    end
+
+    test "a value past the ceiling reads as nil, so the global ceiling stands" do
+      over = PermissionPolicy.max_ask_timeout_seconds() + 1
+      assert PermissionPolicy.ask_timeout_seconds(%{"ask_timeout" => over}) == nil
+      refute PermissionPolicy.valid_ask_timeout?(over)
     end
   end
 
@@ -104,6 +143,17 @@ defmodule Fountain.PermissionPolicyTest do
     test "a launch that names none is never a widening" do
       assert PermissionPolicy.check_narrows(%{"ask_timeout" => 60}, %{}, 300) == :ok
       assert PermissionPolicy.check_narrows(%{}, %{}, 300) == :ok
+    end
+
+    test "an unreadable agent value falls to the ceiling rather than to no bound" do
+      # Nothing can store one now, but the narrowing rule must not read
+      # "the agent's value is nil" as "the launch may ask for anything".
+      over = %{"ask_timeout" => PermissionPolicy.max_ask_timeout_seconds() + 1}
+
+      assert PermissionPolicy.check_narrows(over, %{"ask_timeout" => 60}, 300) == :ok
+
+      assert PermissionPolicy.check_narrows(over, %{"ask_timeout" => 86_400}, 300) ==
+               {:error, {:permission_policy_widens, "ask_timeout"}}
     end
   end
 

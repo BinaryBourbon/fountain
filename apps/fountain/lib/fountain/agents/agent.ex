@@ -281,8 +281,11 @@ defmodule Fountain.Agents.Agent do
   end
 
   # `ask_timeout` names no tool, so it is validated on its own rather than as
-  # a verdict (#1635). Seconds, positive, and deliberately unbounded above:
-  # a request that outlives its turn is meant to be able to wait for days.
+  # a verdict (#1635). Seconds, positive, and bounded above by
+  # `PermissionPolicy.max_ask_timeout_seconds/0` — a year, which is not the
+  # idle bound in disguise but the point past which the deadline no longer
+  # fits in a `timestamp`. The message names the bound, because a refusal
+  # that only says "not a positive number" about 1e15 reads as a lie.
   defp reserved_errors(policy) do
     case Map.fetch(policy, "ask_timeout") do
       {:ok, value} ->
@@ -291,7 +294,8 @@ defmodule Fountain.Agents.Agent do
         else
           [
             permission_policy:
-              "ask_timeout: #{inspect(value)} is not a positive number of seconds"
+              "ask_timeout: #{inspect(value)} is not a positive number of seconds " <>
+                "no greater than #{PermissionPolicy.max_ask_timeout_seconds()}"
           ]
         end
 

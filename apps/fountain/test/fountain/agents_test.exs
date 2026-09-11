@@ -615,6 +615,39 @@ defmodule Fountain.AgentsTest do
       end
     end
 
+    test "an ask_timeout past the ceiling is refused at the door, not at the deadline" do
+      # Unbounded, this stored fine and then raised days later: the deadline
+      # is `now + ask_timeout` on `turns.permission_deadline`, and 1e15
+      # seconds put it at year 31690765, which Postgrex refused to encode
+      # inside the `handle_info` that detaches the request. The turn was left
+      # `running` with the request neither detached nor denied.
+      user = insert_verified_user()
+      max = Fountain.PermissionPolicy.max_ask_timeout_seconds()
+
+      for value <- [max + 1, 999_999_999_999_999, "999999999999999"] do
+        assert {:error, changeset} =
+                 Agents.create_agent(
+                   agent_attrs(%{
+                     "user_id" => user.id,
+                     "permission_policy" => %{"execute" => "ask", "ask_timeout" => value}
+                   })
+                 )
+
+        assert %{permission_policy: [msg]} = errors_on(changeset)
+        assert msg =~ "no greater than #{max}"
+      end
+
+      # And the ceiling itself is storable, so the refusal is a bound and not
+      # an off-by-one.
+      agent =
+        insert_agent(
+          user_id: user.id,
+          permission_policy: %{"execute" => "ask", "ask_timeout" => max}
+        )
+
+      assert agent.permission_policy["ask_timeout"] == max
+    end
+
     test "an ask_timeout alone asks nothing of the runtime" do
       # `needs_enforcement?/1` reads verdicts; a policy that names only the
       # timeout is still auto_allow everywhere, so a runtime that never asks

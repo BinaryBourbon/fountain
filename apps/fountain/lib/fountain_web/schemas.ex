@@ -356,6 +356,7 @@ defmodule FountainWeb.Schemas do
             ask_timeout: %Schema{
               type: :integer,
               minimum: 1,
+              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
@@ -364,7 +365,9 @@ defmodule FountainWeb.Schemas do
                   "may shorten it with `_meta.fountain.timeout` on its own " <>
                   "session/request_permission, and may not lengthen it. A launch may " <>
                   "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing."
+                  "the agent set nothing. Capped at a year, which is where the " <>
+                  "deadline stops fitting in a timestamp rather than a limit on how " <>
+                  "long a wait is useful."
             }
           },
           additionalProperties: %Schema{
@@ -539,6 +542,7 @@ defmodule FountainWeb.Schemas do
             ask_timeout: %Schema{
               type: :integer,
               minimum: 1,
+              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
@@ -547,7 +551,9 @@ defmodule FountainWeb.Schemas do
                   "may shorten it with `_meta.fountain.timeout` on its own " <>
                   "session/request_permission, and may not lengthen it. A launch may " <>
                   "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing."
+                  "the agent set nothing. Capped at a year, which is where the " <>
+                  "deadline stops fitting in a timestamp rather than a limit on how " <>
+                  "long a wait is useful."
             }
           },
           additionalProperties: %Schema{
@@ -865,6 +871,7 @@ defmodule FountainWeb.Schemas do
             ask_timeout: %Schema{
               type: :integer,
               minimum: 1,
+              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
@@ -873,7 +880,9 @@ defmodule FountainWeb.Schemas do
                   "may shorten it with `_meta.fountain.timeout` on its own " <>
                   "session/request_permission, and may not lengthen it. A launch may " <>
                   "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing."
+                  "the agent set nothing. Capped at a year, which is where the " <>
+                  "deadline stops fitting in a timestamp rather than a limit on how " <>
+                  "long a wait is useful."
             }
           },
           additionalProperties: %Schema{
@@ -1058,6 +1067,7 @@ defmodule FountainWeb.Schemas do
             ask_timeout: %Schema{
               type: :integer,
               minimum: 1,
+              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
@@ -1066,7 +1076,9 @@ defmodule FountainWeb.Schemas do
                   "may shorten it with `_meta.fountain.timeout` on its own " <>
                   "session/request_permission, and may not lengthen it. A launch may " <>
                   "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing."
+                  "the agent set nothing. Capped at a year, which is where the " <>
+                  "deadline stops fitting in a timestamp rather than a limit on how " <>
+                  "long a wait is useful."
             }
           },
           additionalProperties: %Schema{
@@ -1208,6 +1220,7 @@ defmodule FountainWeb.Schemas do
             ask_timeout: %Schema{
               type: :integer,
               minimum: 1,
+              maximum: Fountain.PermissionPolicy.max_ask_timeout_seconds(),
               description:
                 "Seconds a permission request that outlived its turn waits before it " <>
                   "is denied (#1635). Names no tool, so it is the one key whose value " <>
@@ -1216,7 +1229,9 @@ defmodule FountainWeb.Schemas do
                   "may shorten it with `_meta.fountain.timeout` on its own " <>
                   "session/request_permission, and may not lengthen it. A launch may " <>
                   "only shorten what the agent set, or the global ask timeout where " <>
-                  "the agent set nothing."
+                  "the agent set nothing. Capped at a year, which is where the " <>
+                  "deadline stops fitting in a timestamp rather than a limit on how " <>
+                  "long a wait is useful."
             }
           },
           additionalProperties: %Schema{

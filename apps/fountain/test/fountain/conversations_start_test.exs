@@ -431,6 +431,15 @@ defmodule Fountain.ConversationsStartTest do
       assert {:error, :permission_policy_invalid} = launch(ctx, agent, %{"ask_timeout" => "soon"})
     end
 
+    test "a launch ask_timeout past the ceiling is refused, not stored and raised on later",
+         ctx do
+      agent = insert_agent(user_id: ctx.user.id)
+      over = Fountain.PermissionPolicy.max_ask_timeout_seconds() + 1
+
+      assert {:error, :permission_policy_invalid} =
+               launch(ctx, agent, %{"ask_timeout" => over})
+    end
+
     test "an unknown verdict is refused", ctx do
       agent = insert_agent(user_id: ctx.user.id)
       assert {:error, :permission_policy_invalid} = launch(ctx, agent, %{"Bash" => "banana"})
