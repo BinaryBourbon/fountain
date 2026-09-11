@@ -164,6 +164,19 @@ explicit policy. Uncertainty must never be erased by transcript deletion — but
 it must not be permanent either, which is what the ageing exit above settles.
 The cutoff itself is the supervisor's to choose and is not fixed here.
 
+### The fence suppresses; it never rewrites
+
+A retired bounded turn's output events are not written and not broadcast:
+`log!/1` returns `nil` for `kind: "output"` behind the fence, and `Output`
+skips the PubSub publish rather than broadcasting a nil. No event changes
+*shape*, which matters because the two apps that read transcripts live outside
+this repo (ADR 0034) and cannot be updated in lockstep with the server.
+
+One change does reach the unbounded path, deliberately: a second usage delivery
+for a turn that already has usage is refused (`:already_recorded`) instead of
+overwriting it. A retried provider delivery used to double-count the
+conversation's token counters.
+
 ### Autonomous turns are bounded, not refused
 
 A configured allowance does not stop a conversation doing background work.

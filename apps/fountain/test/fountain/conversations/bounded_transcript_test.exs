@@ -169,4 +169,63 @@ defmodule Fountain.Conversations.BoundedTranscriptTest do
     assert {:error, :not_found} =
              Conversations._unsafe_record_turn_usage(c.turn, %{"input" => 99})
   end
+
+  describe "the unbounded path" do
+    test "an unbounded turn's output is published unchanged, in the same shape", c do
+      # The fence can only suppress; it never rewrites. So an unbounded turn's
+      # transcript is byte-for-byte what it was, which matters because the two
+      # apps that read it live outside this repo (ADR 0034) and nothing here
+      # can update them in lockstep.
+      plain_conv =
+        insert_conversation(user_id: c.ctx.user_id, sandbox: c.sandbox, status: "running")
+
+      plain_turn = insert_turn(plain_conv, status: "running")
+      refute ExecutionGuard._unsafe_for_turn(plain_turn.id)
+
+      Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{plain_conv.id}")
+
+      assert :ok =
+               Output.persist(
+                 %{
+                   conversation_id: plain_conv.id,
+                   turn_id: plain_turn.id,
+                   user_id: c.ctx.user_id
+                 },
+                 "stdout",
+                 "hello"
+               )
+
+      assert_receive {:log_event, %LogEvent{} = event}
+      assert event.conversation_id == plain_conv.id
+      assert event.turn_id == plain_turn.id
+      assert event.kind == "output"
+      assert event.stream == "stdout"
+      assert event.data == "hello"
+      assert is_integer(event.id)
+      assert_receive {:sidebar_update, _}
+    end
+
+    test "a duplicate usage delivery is refused rather than overwriting, bounded or not", c do
+      plain_conv =
+        insert_conversation(user_id: c.ctx.user_id, sandbox: c.sandbox, status: "running")
+
+      plain_turn = insert_turn(plain_conv, status: "running")
+
+      assert {:ok, _} =
+               Conversations._unsafe_record_turn_usage(plain_turn, %{"input" => 5, "output" => 7})
+
+      # The dedup reaches the unbounded path too: a retried provider delivery
+      # used to overwrite and double-count the conversation's counters.
+      assert {:error, :already_recorded} =
+               Conversations._unsafe_record_turn_usage(plain_turn, %{
+                 "input" => 500,
+                 "output" => 700
+               })
+
+      assert Repo.get!(Turn, plain_turn.id).usage == %{"input" => 5, "output" => 7}
+      reloaded = Conversations._unsafe_get_conversation!(plain_conv.id)
+      assert reloaded.usage_input_tokens == 5
+      assert reloaded.usage_output_tokens == 7
+    end
+  end
 end
