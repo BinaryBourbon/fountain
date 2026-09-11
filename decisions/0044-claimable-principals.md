@@ -95,7 +95,13 @@ abandoning what it already has.
    application, a `grant_application` on the principal), and writes
    `max_live_sandboxes` to `users.sandbox_limit_override`. So budget
    exhaustion is `Billing.check_spend/1` refusing at every door that spends
-   (ADR 0031), and concurrency is `Fountain.Quotas` unchanged. Releasing an
+   (ADR 0031), and concurrency is `Fountain.Quotas` unchanged. Both asks are
+   clamped to what the application itself has: `max_cost_usd` to
+   `max_grant_cents`, and `max_live_sandboxes` to the application's own
+   effective `Quotas.sandbox_limit/1` under `SANDBOX_CAP_CEILING`, never below
+   one. The override branch of `resolve_limit/3` answers before the balance
+   rule, so an unclamped cap would out-provision the account funding it and a
+   zero one would be a gate no later credit could reopen (#1687). Releasing an
    unclaimed principal expires its remaining lot and refunds the application.
 
 4. **After a claim, the owner's ledger funds the work.**
