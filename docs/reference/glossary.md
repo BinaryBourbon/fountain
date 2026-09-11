@@ -66,7 +66,7 @@ on. The docs say **sandbox**.
 | **MCP server** | A Model Context Protocol server that an Agent gives its runtime. You declare it in `mcp_servers`. |
 | **Reaper** | The background sweep that suspends an idle sandbox, and destroys one that passed a configured ceiling. |
 | **Runner** | A machine you own that runs `fountain runner` and acts as a sandbox provider. Read [Self-hosted runners](../integrations/runners.md). |
-| **Runtime** | The coding-agent CLI that a sandbox runs. One of `claude`, `codex`, `gemini`, `opencode`. |
+| **Runtime** | What a sandbox runs. One of `claude`, `codex`, `gemini`, `opencode`, which are coding-agent CLIs, or `acp`, which is a command the Agent names. |
 | **Sandbox** | The isolated machine that a Conversation runs in. Several Conversations can share one. Fountain provisions it at launch and reclaims it on the lifetime rules. `GET /api/sandboxes` lists them. |
 | **Sandbox provider** | A backend that Fountain provisions sandboxes on. Sprites, E2B, Daytona, or a self-hosted runner. Read [the sandbox contract](../integrations/sandbox-contract.md). |
 | **Skill** | A `SKILL.md` that Fountain writes into the sandbox, inline or from GitHub. |
