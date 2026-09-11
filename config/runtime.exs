@@ -269,6 +269,20 @@ broker_tenants =
       ids
   end
 
+# The same guard in the dangerous direction, and this one fails open rather
+# than loudly. `Fountain.Broker.enabled_for?/1` is `configured?() and ...`, so
+# naming tenants with no listener does not half-broker them: brokerage turns
+# itself off for everyone, and each sandbox gets plaintext GitHub, inference
+# and connection credentials instead, while the console and the connections
+# keep working. That is the `envFrom` drift of #1495 in reverse, and nothing
+# downstream can tell it from a deployment that meant to broker nobody, so
+# boot refuses it here (#1686).
+if broker_tenants != [] and is_nil(broker_listen_port) do
+  raise "BROKER_TENANTS names tenants to broker, so BROKER_LISTEN_PORT must be set too. " <>
+          "With no listener, brokerage is off for every tenant and their sandboxes hold " <>
+          "plaintext credentials; see docs/configuration.md."
+end
+
 broker_session_ttl =
   case System.get_env("BROKER_SESSION_TTL_SECONDS") do
     blank when blank in [nil, ""] ->
