@@ -3816,16 +3816,10 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # `ask_timeout` is seconds, not a verdict (#1635).
   defp validate_reserved_keys(policy) do
-    case Map.fetch(policy, "ask_timeout") do
-      {:ok, value} ->
-        if PermissionPolicy.valid_ask_timeout?(value),
-          do: :ok,
-          else: {:error, :permission_policy_invalid}
-
-      :error ->
-        :ok
+    case PermissionPolicy.reserved_errors(policy) do
+      [] -> :ok
+      _errors -> {:error, :permission_policy_invalid}
     end
   end
 
