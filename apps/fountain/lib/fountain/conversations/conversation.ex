@@ -56,10 +56,11 @@ defmodule Fountain.Conversations.Conversation do
     field :permission_policy, :map
     # The caller-defined tools of the bridge (#1202, `Fountain.CallerTools`).
     field :caller_tools, {:array, :map}, default: []
-    # Free-form `key => value` strings (#1637), set at launch.
-    # `Conversations.Labels` owns the limits and the merge; writes here go
-    # through `Labels.changeset/1` below, which is why every door enforces
-    # the same rule.
+    # Free-form `key => value` strings (#1637). Set at launch, merged by the
+    # labels route and by the agent's own `_fountain/labels` ACP notification,
+    # and filtered on with jsonb containment. `Conversations.Labels` owns the
+    # limits and the merge; writes here go through `Labels.changeset/1` below,
+    # which is why every door enforces the same rule.
     field :labels, :map, default: %{}
 
     # Populated by list_conversations_by_activity/1 — not persisted.

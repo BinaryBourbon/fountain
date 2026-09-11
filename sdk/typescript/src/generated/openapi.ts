@@ -1248,7 +1248,7 @@ export interface paths {
          *
          *     At most 32 labels survive the merge; a key is at most 64 bytes and a value at most 256 bytes. A 422 names the offending key.
          *
-         *     The account's own key may label any of its conversations. A sandbox callback token may label **only the conversation it was minted for**; another id is refused with 403 `sprite_may_not_label_another_conversation`.
+         *     The account's own key may label any of its conversations. A sandbox callback token may label **only the conversation it was minted for**; another id is refused with 403 `sprite_may_not_label_another_conversation`. An agent inside a turn does not need this route at all: it sends the `_fountain/labels` ACP extension update instead.
          */
         patch: operations["FountainWeb.ConversationController.labels"];
         trace?: never;

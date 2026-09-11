@@ -991,9 +991,9 @@ defmodule Fountain.Conversations do
   `:sprite_may_not_label_another_conversation`. Without that check a worker
   holding an account-scoped callback key could relabel every other run on the
   account, which is exactly the loop ADR 0045 describes. That is why the
-  check lives here and not in a controller: more than one request path will
-  write labels, and the rule has to hold on the door rather than on whichever
-  of them remembered.
+  check lives here and not in each controller: `PATCH .../labels`, the team
+  message and a `channel_id` resume all write labels, and the rule has to
+  hold on the door rather than on whichever of them remembered.
 
   `labels` that is not a map at all is a validation failure, not a silent
   no-op, so every door refuses `{"labels": "env=prod"}` the same way.
@@ -1027,10 +1027,12 @@ defmodule Fountain.Conversations do
   Merge `labels` into a conversation row, with no tenant scoping and no
   credential rule.
 
-  Unscoped, hence the prefix. The legitimate caller is
+  Unscoped, hence the prefix. The legitimate callers are
   `set_conversation_labels/4`, which scopes and applies the sandbox rule
-  before delegating here. A request path that calls this directly has skipped
-  the rule that stops one sandbox relabelling another, so do not add one.
+  before delegating here, and `Labels._unsafe_stamp/2`, which runs inside the
+  conversation's own server and holds the row that server was started for. A
+  request path that calls this directly has skipped the rule that stops one
+  sandbox relabelling another, so do not add one.
 
   A merge that changes nothing writes nothing and records nothing — a
   deterministic run re-stamping the same outcome on every tick is the normal

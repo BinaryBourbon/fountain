@@ -321,6 +321,24 @@ conversation returns 403 `sprite_may_not_label_another_conversation`. This
 applies to all three doors that write labels, which are the labels route, a
 team message, and a `channel_id` resume.
 
+### An agent that labels its own run
+
+An agent inside a turn does not need the route above. It sends an ACP
+extension notification on the session it already holds. ACP keeps names that
+start with `_` for extensions.
+
+```json
+{"jsonrpc":"2.0","method":"session/update","params":{
+  "sessionId":"sess_1",
+  "update":{"sessionUpdate":"_fountain/labels",
+            "labels":{"drift":"true","env":"prod"}}}}
+```
+
+Fountain merges the map with the same rules as the route. A `null` value
+removes a key. The notification never reaches the transcript, and it opens no
+turn of its own. A stamp that breaks a limit is logged and dropped, and the
+turn continues. Nothing in a stamp can end a run.
+
 ### Workers without Fountain API access
 
 Set `sandbox_api_access` to `none` when the host must retain Fountain API
