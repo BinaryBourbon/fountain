@@ -21,7 +21,7 @@ defmodule Fountain.Conversations.ConversationServer do
   }
 
   alias Fountain.Conversations.{CallbackKey, Checkpoints, CodexChatGPT, Connection}
-  alias Fountain.Conversations.{Conversation, Egress}
+  alias Fountain.Conversations.{Conversation, DetachedRequest, Egress}
   alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnMachine}
 
@@ -487,6 +487,10 @@ defmodule Fountain.Conversations.ConversationServer do
       acp_peer: nil,
       # Timer refusing an unanswered permission request (#940).
       permission_timer: nil,
+      # The last `session/request_permission` the peer relayed, as
+      # `DetachedRequest.request_line/2` reads it (#1635): the ask that follows
+      # carries no params, and the per-request timeout is in theirs.
+      acp_request_params: nil,
       # Caller-tool calls parked on the turn (#1202): id => %{name, arguments,
       # turn_id, waiter, timer, result}. `result` is nil while parked and the
       # answer once resolved; entries are dropped when the turn ends.
@@ -1456,9 +1460,14 @@ defmodule Fountain.Conversations.ConversationServer do
   # editor (#708) are peer clients of this door, not fallbacks for one
   # another, so a second answer to the same request is "too late" rather
   # than an error in the caller.
+  # `Pending.holds?/2` is the guard a detached request needs (#1635).
   def handle_call({:answer_permission, request_id, option_id}, _from, state) do
-    {reply, state} = Pending.answer(state, request_id, option_id)
-    {:reply, reply, state}
+    if Pending.holds?(state.current_turn, request_id) do
+      {reply, state} = Pending.answer(state, request_id, option_id)
+      {:reply, reply, state}
+    else
+      {:reply, {:error, :no_pending_permission}, state}
+    end
   end
 
   # A call needs a turn to belong to, and the client following that turn is
@@ -1692,7 +1701,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_info({:permission_timeout, request_id}, state) do
-    {:noreply, Pending.resolve(state, request_id, "timeout", nil)}
+    {:noreply, Pending.resolve_if_held(state, request_id, "timeout", nil)}
   end
 
   # The caller never answered a parked tool call (#1202). The agent gets an
@@ -2376,7 +2385,11 @@ defmodule Fountain.Conversations.ConversationServer do
         new_state.stream_tracer
       end
 
-    %{new_state | stream_tracer: tracer}
+    %{
+      new_state
+      | stream_tracer: tracer,
+        acp_request_params: DetachedRequest.request_line(stream, data) || state.acp_request_params
+    }
   end
 
   # Terminal path for an ACP turn. The order matters: stdin closes first so the
@@ -2394,7 +2407,14 @@ defmodule Fountain.Conversations.ConversationServer do
     # Resolve a held permission request as the turn ends (#940): a card left
     # open is a client waiting on an answer that can never come, and the
     # turn's `pending_permission` would stay set on a turn that is over.
-    state = Pending.resolve_held(state, "turn_ended")
+    # Unless the agent asked to keep it (#1635): `:detach_permission` marked
+    # the row first, the connection is dropped right after this (the peer is
+    # still holding the request), and the answer arrives as a new turn.
+    state =
+      if Pending.detached?(state.current_turn),
+        do: state,
+        else: Pending.resolve_held(state, "turn_ended")
+
     state = Pending.drop(state, "turn_ended")
     state = cancel_autonomous_quiet(state)
 
@@ -2432,6 +2452,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp apply_effect(state, {:ask_permission, request_id, tool, options}),
     do: Pending.ask(state, request_id, tool, options)
+
+  defp apply_effect(state, :detach_permission), do: Pending.detach(state)
 
   defp apply_effect(state, {:finish, status, span_attrs, stage_meta}),
     do: finish_acp_turn(state, status, span_attrs, stage_meta)
