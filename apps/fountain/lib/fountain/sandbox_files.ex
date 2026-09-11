@@ -21,10 +21,14 @@ defmodule Fountain.SandboxFiles do
       is refused with `{:sandbox_not_ready, status}`.
 
   Every path is confined to the sandbox home (`/home/sprite`) or the
-  runtime's workspace (`Managoat.Runtimes.ACP.cwd/1`), and every byte that
-  leaves goes through the same redaction the transcript gets: the values
-  of the identity's environment and vault, plus whatever a live
-  `ConversationServer` registered, replaced with `[REDACTED]`. The
+  runtime's workspace (`Managoat.Runtimes.ACP.cwd/1`) — including the one
+  the caller never names, the repository root `git rev-parse --show-toplevel`
+  finds by walking up. A root outside those is `not_a_repository`, not a
+  listing of it.
+
+  Every byte that leaves goes through the same redaction the transcript
+  gets: the values of the identity's environment and vault, plus whatever a
+  live `ConversationServer` registered, replaced with `[REDACTED]`. The
   `.env` file is on that disk in plaintext, so this is what keeps a
   third-party app holding the user's key from reading the user's secrets
   back through it.
@@ -278,12 +282,16 @@ defmodule Fountain.SandboxFiles do
          {:ok, absolute} <- resolve_path(sandbox, path),
          # One byte past the cap tells truncation from an exact fit.
          {:ok, output} <-
-           run(sandbox, diff_script(), [
-             absolute,
-             Integer.to_string(max_bytes + 1),
-             ref || "",
-             if(staged, do: "1", else: "0")
-           ]),
+           run(
+             sandbox,
+             diff_script(),
+             [
+               absolute,
+               Integer.to_string(max_bytes + 1),
+               ref || "",
+               if(staged, do: "1", else: "0")
+             ] ++ roots(sandbox)
+           ),
          {:ok, root, bytes} <- parse_diff(output) do
       truncated = byte_size(bytes) > max_bytes
 
@@ -335,11 +343,11 @@ defmodule Fountain.SandboxFiles do
          # One byte past the cap, like `diff/3`: it tells a stream that was
          # cut from one that ended on the boundary.
          {:ok, output} <-
-           run(sandbox, status_script(), [
-             absolute,
-             Integer.to_string(@max_status_bytes + 1),
-             untracked
-           ]),
+           run(
+             sandbox,
+             status_script(),
+             [absolute, Integer.to_string(@max_status_bytes + 1), untracked] ++ roots(sandbox)
+           ),
          {:ok, root, branch, body} <- parse_status(output) do
       {records, cut?} = status_records(body)
       changes = parse_changes(records)
@@ -480,16 +488,30 @@ defmodule Fountain.SandboxFiles do
   # The ref is verified first because a pipeline's status is `base64`'s,
   # which would turn an unknown ref into an empty diff. `--no-optional-locks`
   # keeps a read from contending with the agent's own git for the index.
+  #
+  # `roots/1` follows the arguments, and the discovered root has to be one of
+  # them or under one — see `status_script/0` for why.
   defp diff_script do
     ~S"""
     d=$1
     n=$2
     ref=$3
     staged=$4
+    shift 4
+    roots=("$@")
     [ -e "$d" ] || exit 3
     [ -d "$d" ] || exit 4
     cd -- "$d" 2>/dev/null || exit 5
     root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
+    inside=
+    for r in "${roots[@]}"; do
+      case $root in "$r"|"$r"/*) inside=1 ;; esac
+      p=$(cd -- "$r" 2>/dev/null && pwd -P)
+      if [ -n "$p" ]; then
+        case $root in "$p"|"$p"/*) inside=1 ;; esac
+      fi
+    done
+    [ -n "$inside" ] || exit 6
     if [ -n "$ref" ]; then
       git rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || exit 7
     fi
@@ -514,6 +536,19 @@ defmodule Fountain.SandboxFiles do
   # The mode chooses between fixed flags rather than reaching the command
   # line, so caller data is never adjacent to a `--`.
   #
+  # `roots/1` follows the three arguments, and the root `rev-parse` discovers
+  # has to be one of them or under one. `resolve_path/2` confines the
+  # *request*; `--show-toplevel` then walks up its ancestors, and without this
+  # check a repository above the sandbox answers instead — inert on Sprites,
+  # where no ancestor of `/home/sprite` is one, and on a runner (ADR 0022) an
+  # operator whose `$HOME` is a dotfiles repository, since a sandbox there is
+  # a directory under it. A root outside is `exit 6`, the same
+  # `not_a_repository` a caller gets for a plain directory: there is no
+  # repository *here*, and saying which one was found above would answer the
+  # question the check exists to refuse. The physical root goes in the
+  # comparison too, because `--show-toplevel` resolves symlinks and a root
+  # reached through one would otherwise read as outside.
+  #
   # The last command is a pipeline, so the script's own status is `head`'s and
   # is always 0. `${PIPESTATUS[0]}` is git's, and it is the difference between
   # a clean tree and a repository git could not read at all — a corrupt
@@ -532,10 +567,21 @@ defmodule Fountain.SandboxFiles do
     d=$1
     n=$2
     untracked=$3
+    shift 3
+    roots=("$@")
     [ -e "$d" ] || exit 3
     [ -d "$d" ] || exit 4
     cd -- "$d" 2>/dev/null || exit 5
     root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
+    inside=
+    for r in "${roots[@]}"; do
+      case $root in "$r"|"$r"/*) inside=1 ;; esac
+      p=$(cd -- "$r" 2>/dev/null && pwd -P)
+      if [ -n "$p" ]; then
+        case $root in "$p"|"$p"/*) inside=1 ;; esac
+      fi
+    done
+    [ -n "$inside" ] || exit 6
     branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
     printf '%s\n%s\n' "$root" "$branch"
     case $untracked in

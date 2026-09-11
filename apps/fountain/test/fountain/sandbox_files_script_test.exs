@@ -57,7 +57,7 @@ defmodule Fountain.SandboxFilesScriptTest do
     test "a healthy repository answers 0 with its two changes" do
       repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
 
-      assert {output, 0} = run(:status, [repo, @cap, "all"])
+      assert {output, 0} = run(:status, [repo, @cap, "all", repo])
       assert output =~ "M a.txt"
       assert output =~ "?? new.txt"
     end
@@ -69,7 +69,7 @@ defmodule Fountain.SandboxFilesScriptTest do
       # PATH); this one is reproducible without a second binary.
       File.write!(Path.join(repo, ".git/index"), "x")
 
-      assert {output, code} = run(:status, [repo, @cap, "all"])
+      assert {output, code} = run(:status, [repo, @cap, "all", repo])
 
       # Not 0: `entries: []` here is byte-for-byte what a clean tree returns,
       # and the tree is not clean.
@@ -86,8 +86,46 @@ defmodule Fountain.SandboxFilesScriptTest do
       long = String.duplicate("n", 240)
       for i <- 1..1_000, do: File.write!(Path.join(repo, "#{long}#{i}.txt"), "x")
 
-      assert {output, 0} = run(:status, [repo, "64", "all"])
+      assert {output, 0} = run(:status, [repo, "64", "all", repo])
       assert byte_size(output) < 1_000
+    end
+  end
+
+  describe "repository discovery is confined" do
+    setup do
+      # The shape a self-hosted runner has: the sandbox is a directory under
+      # a home that is itself a repository (ADR 0022, a dotfiles `$HOME`).
+      outside = TmpDir.mkdir!("sandbox-files-script")
+      repo!(outside)
+      File.write!(Path.join(outside, ".ssh_id_rsa_name"), "private\n")
+      sandbox = Path.join(outside, "sandbox")
+      File.mkdir_p!(sandbox)
+      {:ok, outside: outside, sandbox: sandbox}
+    end
+
+    test "a repository above the sandbox root is not a repository here", ctx do
+      # Confined as a request path — it is the root — and still an ancestor
+      # walk away from the operator's home.
+      assert {output, 6} = run(:status, [ctx.sandbox, @cap, "all", ctx.sandbox])
+      refute output =~ ".ssh_id_rsa_name"
+
+      assert {output, 6} = run(:diff, [ctx.sandbox, @cap, "", "0", ctx.sandbox])
+      assert output == ""
+    end
+
+    test "a repository at or under a root is answered", ctx do
+      # The same discovery, with the root that contains it declared: this is
+      # the ordinary case, where the agent's working directory is inside a
+      # clone the agent made.
+      assert {output, 0} = run(:status, [ctx.sandbox, @cap, "all", ctx.outside])
+      assert output =~ "?? .ssh_id_rsa_name"
+
+      assert {_output, 0} = run(:diff, [ctx.sandbox, @cap, "", "0", ctx.outside])
+    end
+
+    test "one of several roots is enough, the way `roots/1` passes them", ctx do
+      assert {_output, 0} = run(:status, [ctx.sandbox, @cap, "all", "/home/sprite", ctx.outside])
+      assert {_output, 6} = run(:status, [ctx.sandbox, @cap, "all", "/home/sprite", "/tmp/other"])
     end
   end
 end

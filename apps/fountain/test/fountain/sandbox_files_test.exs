@@ -234,7 +234,7 @@ defmodule Fountain.SandboxFilesTest do
 
       expect_script(fn _, script, args ->
         assert script =~ "git --no-pager --no-optional-locks diff --no-color --no-ext-diff"
-        assert args == [@home <> "/repo", "262145", "main", "1"]
+        assert args == [@home <> "/repo", "262145", "main", "1", @home]
         {:ok, "#{@home}/repo\n" <> b64(diff), 0}
       end)
 
@@ -251,7 +251,7 @@ defmodule Fountain.SandboxFilesTest do
 
     test "no ref and no staged flag pass as empty and 0", ctx do
       expect_script(fn _, _, args ->
-        assert args == [@home, "262145", "", "0"]
+        assert args == [@home, "262145", "", "0", @home]
         {:ok, "#{@home}\n" <> b64(""), 0}
       end)
 
@@ -266,12 +266,12 @@ defmodule Fountain.SandboxFilesTest do
     end
 
     test "the cap is one byte past max_bytes so an exact fit is not truncated", ctx do
-      expect_script(fn _, _, [_, "6", _, _] -> {:ok, "/r\n" <> b64("abcdefg"), 0} end)
+      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, "/r\n" <> b64("abcdefg"), 0} end)
 
       assert {:ok, %{diff: "abcde", truncated: true}} =
                SandboxFiles.diff(ctx.sandbox, nil, max_bytes: 5)
 
-      expect_script(fn _, _, [_, "6", _, _] -> {:ok, "/r\n" <> b64("abcde"), 0} end)
+      expect_script(fn _, _, [_, "6", _, _ | _] -> {:ok, "/r\n" <> b64("abcde"), 0} end)
 
       assert {:ok, %{diff: "abcde", truncated: false}} =
                SandboxFiles.diff(ctx.sandbox, nil, max_bytes: 5)
@@ -318,7 +318,7 @@ defmodule Fountain.SandboxFilesTest do
     test "reports an untracked file, the one state a diff cannot show", ctx do
       expect_script(fn _, script, args ->
         assert script =~ "git --no-pager --no-optional-locks status --porcelain=v1 -z"
-        assert args == [@home <> "/repo", "1048577", "normal"]
+        assert args == [@home <> "/repo", "1048577", "normal", @home]
 
         {:ok,
          status_output("main", [
@@ -378,7 +378,7 @@ defmodule Fountain.SandboxFilesTest do
 
     test "the untracked mode is one of three, and anything else reads as normal", ctx do
       for mode <- ~w(all no normal) do
-        expect_script(fn _, _, [_, _, passed] ->
+        expect_script(fn _, _, [_, _, passed | _] ->
           assert passed == mode
           {:ok, status_output("main", []), 0}
         end)
@@ -386,7 +386,7 @@ defmodule Fountain.SandboxFilesTest do
         assert {:ok, %{untracked: ^mode}} = SandboxFiles.status(ctx.sandbox, nil, untracked: mode)
       end
 
-      expect_script(fn _, _, [_, _, "normal"] -> {:ok, status_output("main", []), 0} end)
+      expect_script(fn _, _, [_, _, "normal" | _] -> {:ok, status_output("main", []), 0} end)
 
       assert {:ok, %{untracked: "normal", entries: []}} =
                SandboxFiles.status(ctx.sandbox, nil, untracked: "--ignored")
@@ -443,6 +443,26 @@ defmodule Fountain.SandboxFilesTest do
       end)
 
       assert {:ok, %{entries: [%{path: "café.md"}]}} = SandboxFiles.status(ctx.sandbox, nil)
+    end
+
+    test "the roots the script confines discovery to cross host_path too", ctx do
+      # They are compared against what `git rev-parse --show-toplevel` prints
+      # inside the sandbox, so an unmapped root would refuse every repository
+      # on a runner rather than confine one.
+      stub(Managoat.Sandbox, :host_path, fn _handle, path -> "/Users/me/box" <> path end)
+
+      expect_script(fn _, _, args ->
+        assert args == [
+                 "/Users/me/box/home/sprite",
+                 "1048577",
+                 "normal",
+                 "/Users/me/box/home/sprite"
+               ]
+
+        {:ok, status_output("main", [], "/Users/me/box/home/sprite"), 0}
+      end)
+
+      assert {:ok, %{path: @home}} = SandboxFiles.status(ctx.sandbox, nil)
     end
 
     test "not a repository, a missing directory and a file are named", ctx do

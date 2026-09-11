@@ -219,7 +219,7 @@ defmodule FountainWeb.SandboxFilesControllerTest do
         |> json_response(200)
         |> Map.fetch!("data")
 
-      assert_received {:exec_args, [@home, "262145", "main", "1"]}
+      assert_received {:exec_args, [@home, "262145", "main", "1", @home]}
 
       assert data == %{
                "path" => @home,
@@ -288,7 +288,9 @@ defmodule FountainWeb.SandboxFilesControllerTest do
         |> json_response(200)
         |> Map.fetch!("data")
 
-      assert_received {:exec_args, [@home, "1048577", "all"]}
+      # `roots/1` trails the arguments: the script confines the repository it
+      # discovers to them, not just the path the caller asked for.
+      assert_received {:exec_args, [@home, "1048577", "all", @home]}
 
       assert data == %{
                "path" => @home,
