@@ -2260,6 +2260,18 @@ defmodule Fountain.Conversations do
   """
   def _unsafe_complete_turn(%Turn{} = turn, sandbox_id, status)
       when status in ["completed", "failed", "interrupted"] do
+    end_running_turn(turn, sandbox_id, status, true)
+  end
+
+  @doc """
+  Mark an actor-owned turn interrupted while retaining the conversation's
+  status until the peer has stopped. Uses the same binding and terminal guards
+  as completion, with reply activation after commit.
+  """
+  def _unsafe_interrupt_turn(%Turn{} = turn, sandbox_id),
+    do: end_running_turn(turn, sandbox_id, "interrupted", false)
+
+  defp end_running_turn(turn, sandbox_id, status, idle?) do
     {:ok, result} =
       Repo.transaction(fn ->
         conversation_query =
@@ -2292,12 +2304,17 @@ defmodule Fountain.Conversations do
           # older turn cannot stop this one from idling it. The parent lock
           # above is the same one turn admission takes, so nothing can be
           # admitted between this read and the write.
-          conv =
-            if conv.status == "running" and ExecutionGuard.latest_turn?(conv.id, turn.id),
-              do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
-              else: conv
+          #
+          # The interrupt path passes `idle?: false` and idles later, through
+          # `_unsafe_idle_interrupted_turn/2`, which asks the same two
+          # questions once the peer has stopped.
+          updated_conv =
+            if idle? and conv.status == "running" and
+                 ExecutionGuard.latest_turn?(conv.id, turn.id),
+               do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+               else: conv
 
-          {updated, conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
+          {updated, updated_conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
         else
           _ -> :noop
         end
@@ -2309,8 +2326,59 @@ defmodule Fountain.Conversations do
 
       {updated, conv, reply_materialized?} ->
         if reply_materialized?, do: Fountain.Activation.turn_replied(updated)
-        broadcast_sidebar_update(conv.user_id)
+        if idle?, do: broadcast_sidebar_update(conv.user_id)
         {:ok, updated}
+    end
+  end
+
+  @doc """
+  Idle the interrupted turn's conversation after its peer has stopped.
+
+  The second half of the interrupt `TurnMachine.mark_interrupted/1` began.
+  That half deliberately left the parent `running` so the peer could stop
+  under it, which makes this the only writer that will idle it. Recheck the
+  actor's binding and the interrupted turn under the parent lock, then apply
+  the same two idle preconditions `_unsafe_complete_turn/3` applies:
+  `ExecutionGuard.latest_turn?/2` and a `running` parent. A turn superseded
+  while the peer was stopping keeps the conversation running; an abandoned
+  older turn left `running` does not stop this one idling it. The lock
+  matches turn admission, so a concurrent admission cannot slip between this
+  check and the idle write. No turn row is changed here.
+
+  Known gap: this refuses to write when the parent has been rebound to
+  another sandbox, and when the turn is no longer `interrupted`. Neither
+  leaves a `running` parent that nothing else will idle — see
+  `Fountain.Conversations.TurnMachine.close_interrupted/1`.
+  """
+  def _unsafe_idle_interrupted_turn(%Turn{} = turn, sandbox_id) do
+    {:ok, result} =
+      Repo.transaction(fn ->
+        conversation_query =
+          from(c in Conversation, where: c.id == ^turn.conversation_id, lock: "FOR UPDATE")
+
+        turn_query =
+          from(t in Turn,
+            where: t.id == ^turn.id and t.conversation_id == ^turn.conversation_id,
+            lock: "FOR UPDATE"
+          )
+
+        with %Conversation{} = conv <- Repo.one(conversation_query),
+             true <- conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"],
+             %Turn{status: "interrupted"} <- Repo.one(turn_query),
+             true <- conv.status == "running" and ExecutionGuard.latest_turn?(conv.id, turn.id) do
+          conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
+        else
+          _ -> :noop
+        end
+      end)
+
+    case result do
+      %Conversation{} = conv ->
+        broadcast_sidebar_update(conv.user_id)
+        :ok
+
+      :noop ->
+        :noop
     end
   end
 

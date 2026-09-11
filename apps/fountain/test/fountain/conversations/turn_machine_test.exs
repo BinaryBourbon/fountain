@@ -540,6 +540,8 @@ defmodule Fountain.Conversations.TurnMachineTest do
       {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
       marked = TurnMachine.mark_interrupted(m)
+      assert marked.interrupted?
+      assert Fountain.Repo.reload!(conv).status == "running"
       assert marked.row == row
       assert Fountain.Repo.get!(Conversations.Turn, row.id).status == "interrupted"
       assert [{"interrupted", %{"turn_id" => _}}] = stages(conv.id, "turn")
@@ -547,6 +549,98 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert %TurnMachine{row: nil, metrics: nil} = TurnMachine.close_interrupted(marked)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
       assert_receive {:telemetry, [:fountain, :turn, :completed], _, %{status: "interrupted"}}
+    end
+
+    # The interrupt is a second door onto the writer that materialises
+    # `reply_text`, and materialising it is what activates an account (#1392).
+    # `_unsafe_interrupt_turn/2` passes `idle?: false`, so the activation call
+    # must not be gated on the idle write the way the sidebar broadcast beside
+    # it is: an interrupted first reply is still a first reply, and nothing
+    # recovers it later. `_unsafe_backfill_reply_texts/0` writes the column
+    # without calling `Activation.turn_replied/1`, and `maybe_put_reply_text/2`
+    # only re-derives on a later write a terminal row may never get (#2055).
+    test "an interrupted first reply activates the account", ctx do
+      insert_log_event(ctx.conv, turn_id: ctx.row.id, stream: "acp", data: @update_line)
+      refute Fountain.Repo.reload!(ctx.user).onboarding_completed_at
+
+      TurnMachine.mark_interrupted(ctx.machine)
+
+      assert Fountain.Repo.reload!(ctx.row).reply_text == "hi"
+      assert Fountain.Repo.reload!(ctx.user).onboarding_completed_at
+    end
+
+    for stale <- [:reassigned, :terminated, :completed, :interrupted] do
+      @tag stale: stale
+      test "a #{stale} turn is not interrupted by the stale actor", ctx do
+        attach_telemetry([[:fountain, :turn, :completed]])
+
+        case ctx.stale do
+          :reassigned ->
+            replacement = insert_sandbox(user_id: ctx.user.id)
+
+            Conversations.update_conversation(ctx.conv, %{
+              sandbox_id: replacement.id,
+              status: "running"
+            })
+
+          :terminated ->
+            Conversations.update_conversation(ctx.conv, %{status: "terminated"})
+
+          status ->
+            ctx.row
+            |> Ecto.Changeset.change(status: Atom.to_string(status))
+            |> Fountain.Repo.update!()
+        end
+
+        persisted_turn = Fountain.Repo.reload!(ctx.row)
+        persisted_conv = Fountain.Repo.get!(Conversations.Conversation, ctx.conv.id)
+        marked = TurnMachine.mark_interrupted(ctx.machine)
+        refute marked.interrupted?
+
+        assert %TurnMachine{row: nil, metrics: nil, interrupted?: false} =
+                 TurnMachine.close_interrupted(marked)
+
+        assert Fountain.Repo.reload!(ctx.row) == persisted_turn
+        assert Fountain.Repo.get!(Conversations.Conversation, ctx.conv.id) == persisted_conv
+        assert stages(ctx.conv.id, "turn") == []
+        refute_receive {:telemetry, [:fountain, :turn, :completed], _, _}, 50
+      end
+    end
+
+    for change <- [:reassigned, :terminated, :new_turn, :deleted] do
+      @tag between: change
+      test "#{change} between interrupt halves keeps the newer conversation state", ctx do
+        attach_telemetry([[:fountain, :turn, :completed]])
+        Conversations.update_conversation(ctx.conv, %{status: "running"})
+        marked = TurnMachine.mark_interrupted(ctx.machine)
+        assert marked.interrupted?
+
+        case ctx.between do
+          :reassigned ->
+            replacement = insert_sandbox(user_id: ctx.user.id)
+            Conversations.update_conversation(ctx.conv, %{sandbox_id: replacement.id})
+
+          :terminated ->
+            Conversations.update_conversation(ctx.conv, %{status: "terminated"})
+
+          :new_turn ->
+            insert_turn(ctx.conv, status: "running")
+
+          :deleted ->
+            Fountain.Repo.delete!(ctx.conv)
+        end
+
+        persisted_conv = Fountain.Repo.get(Conversations.Conversation, ctx.conv.id)
+        prior_stages = stages(ctx.conv.id, "turn")
+
+        assert %TurnMachine{row: nil, metrics: nil, interrupted?: false} =
+                 TurnMachine.close_interrupted(marked)
+
+        assert Fountain.Repo.get(Conversations.Conversation, ctx.conv.id) == persisted_conv
+        assert stages(ctx.conv.id, "turn") == prior_stages
+        assert_receive {:telemetry, [:fountain, :turn, :completed], _, %{status: "interrupted"}}
+        refute_receive {:telemetry, [:fountain, :turn, :completed], _, _}, 50
+      end
     end
   end
 
