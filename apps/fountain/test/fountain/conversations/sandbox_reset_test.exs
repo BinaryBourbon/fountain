@@ -37,6 +37,18 @@ defmodule Fountain.Conversations.SandboxResetTest do
     {:ok, user: user, env: env, agent: agent, home: home, a: a, b: b}
   end
 
+  test "an enclosing transaction cannot start provider deletion or persist a reset fence", ctx do
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+    assert {:ok, {:error, :provider_transaction_open}} =
+             Repo.transaction(fn -> Conversations.reset_sandbox(ctx.home) end)
+
+    assert Repo.reload!(ctx.home).status == "ready"
+    refute Repo.reload!(ctx.home).reset_requested_at
+    assert Repo.reload!(ctx.a).runtime_session_id == "sess-a"
+    assert Conversations._unsafe_list_log_events(ctx.a.id) == []
+  end
+
   test "destroys the sprite, retires the row, keeps the conversations", ctx do
     test = self()
     stub(Managoat.Sandbox.Sprites, :destroy, fn h -> send(test, {:destroyed, h.name}) && :ok end)
@@ -119,10 +131,171 @@ defmodule Fountain.Conversations.SandboxResetTest do
              Conversations.reset_sandbox(gone)
   end
 
-  test "the row retires even when the provider refuses the destroy", ctx do
-    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> {:error, :boom} end)
-    assert {:ok, sandbox} = Conversations.reset_sandbox(ctx.home)
-    assert sandbox.status == "terminated"
+  for capacity <- [1, :unbounded] do
+    test "reset fences #{inspect(capacity)} admission before calling the provider", ctx do
+      expect(Managoat.Sandbox.Sprites, :destroy, fn _ ->
+        refute Repo.in_transaction?()
+        assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
+
+        assert {:error, :sandbox_unavailable} =
+                 Conversations._unsafe_create_turn_on_sandbox(
+                   %{
+                     conversation_id: ctx.a.id,
+                     turn_number: 1,
+                     status: "running",
+                     prompt: "late"
+                   },
+                   ctx.home.id,
+                   unquote(capacity)
+                 )
+
+        assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
+        :ok
+      end)
+
+      assert {:ok, %{status: "terminated"}} = Conversations.reset_sandbox(ctx.home)
+      assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 0
+    end
+  end
+
+  test "an uncertain destroy retains capacity and cannot be retried or swept", ctx do
+    expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :timeout} end)
+    assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
+    assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
+    assert {:error, :sandbox_reset_pending} = Conversations.wake_conversation(ctx.a.id)
+
+    # A write that would keep the machine alive is refused. A write that
+    # retires it is not, and is covered in the describe block below.
+    assert {:error, :sandbox_reset_pending} =
+             Conversations.update_sandbox(ctx.home, %{status: "suspended"})
+
+    Repo.update_all(from(s in Conversations.Sandbox, where: s.id == ^ctx.home.id),
+      set: [updated_at: DateTime.add(DateTime.utc_now(), -172_800, :second)]
+    )
+
+    assert {0, 0} = Fountain.Workers.SandboxReaper.sweep_abandoned_sandboxes()
+    assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
+    assert Repo.reload!(ctx.home).status == "ready"
+    refute Enum.any?(Fountain.Audit.list_for_user(ctx.user.id), &(&1.action == "sandbox.reset"))
+  end
+
+  describe "an unconfirmed reset is fenced, not a dead end" do
+    setup ctx do
+      expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :timeout} end)
+      assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
+      :ok
+    end
+
+    test "an operator reaps the row, which releases the slot", ctx do
+      assert {:ok, :released} = Conversations._unsafe_reap_sandbox(ctx.home.id)
+      assert Repo.reload!(ctx.home).status == "terminated"
+      assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 0
+    end
+
+    test "deleting the agent still retires its home", ctx do
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
+      assert {:ok, _} = Fountain.Agents.delete_agent(ctx.agent, actor: "ui")
+      assert Repo.reload!(ctx.home).status == "terminated"
+      assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 0
+    end
+
+    test "a server that gives up can still mark the machine failed", ctx do
+      assert {:ok, failed} = Conversations.update_sandbox(ctx.home, %{status: "failed"})
+      assert failed.status == "failed"
+      assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 0
+    end
+
+    test "a park is skipped rather than raised, and takes no checkpoint", ctx do
+      reject(Managoat.Sandbox.Sprites, :create_checkpoint, 2)
+
+      assert :skipped = Fountain.Conversations.HomeCheckpoint.on_park(Repo.reload!(ctx.home))
+      assert :ok = Fountain.Conversations.Lifecycle.park(ctx.a.id, ctx.home.id, nil, :idle)
+
+      held = Repo.reload!(ctx.home)
+      assert held.status == "ready"
+      refute is_nil(held.reset_requested_at)
+      assert Repo.reload!(ctx.a).status == "idle"
+    end
+
+    test "anything that would re-use the machine is still refused", ctx do
+      assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
+      assert {:error, :sandbox_reset_pending} = Conversations.wake_conversation(ctx.a.id)
+
+      assert {:error, :sandbox_reset_pending} =
+               Conversations.update_sandbox(ctx.home, %{status: "suspended"})
+
+      assert Repo.reload!(ctx.home).status == "ready"
+    end
+
+    test "the request is on the trail even though the reset is not", ctx do
+      actions =
+        ctx.user.id
+        |> Fountain.Audit.list_for_user()
+        |> Enum.map(& &1.action)
+
+      assert "sandbox.reset_requested" in actions
+      refute "sandbox.reset" in actions
+
+      assert [event] =
+               ctx.user.id
+               |> Fountain.Audit.list_for_user()
+               |> Enum.filter(&(&1.action == "sandbox.reset_requested"))
+
+      assert event.resource_id == ctx.home.id
+      assert event.metadata["reason"] == "home_reset"
+      assert event.metadata["conversations"] == 2
+    end
+  end
+
+  test "a confirmed reset records both the request and the reset", ctx do
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
+    assert {:ok, %{status: "terminated"}} = Conversations.reset_sandbox(ctx.home)
+
+    actions =
+      ctx.user.id |> Fountain.Audit.list_for_user() |> Enum.map(& &1.action) |> Enum.sort()
+
+    assert "sandbox.reset_requested" in actions
+    assert "sandbox.reset" in actions
+  end
+
+  test "a sandbox that is still building is not resettable", ctx do
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+    for status <- ["pending", "starting"] do
+      ctx.home |> Ecto.Changeset.change(status: status) |> Repo.update!()
+
+      assert {:error, {:sandbox_not_resettable, ^status}} = Conversations.reset_sandbox(ctx.home)
+      refute Repo.reload!(ctx.home).reset_requested_at
+    end
+  end
+
+  test "a parked reset holds capacity even through replacement exclusions", ctx do
+    {:ok, home} = Conversations.update_sandbox(ctx.home, %{status: "suspended"})
+    expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, :timeout} end)
+    assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(home)
+    assert Fountain.Quotas.active_sandbox_count(ctx.user.id, exclude: home.id) == 1
+    assert Fountain.Quotas.active_sandbox_counts()[ctx.user.id] == 1
+    assert Fountain.Quotas.fleet_count() == 1
+  end
+
+  test "a lost reset caller leaves the admission fence in place", ctx do
+    expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> raise "caller lost" end)
+    assert_raise RuntimeError, "caller lost", fn -> Conversations.reset_sandbox(ctx.home) end
+    assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
+
+    assert {:error, :sandbox_unavailable} =
+             Fountain.Conversations.Connection.open_autonomous_turn(
+               ctx.a.id,
+               ctx.user.id,
+               ctx.home.id
+             )
+  end
+
+  test "reset rechecks persisted mode instead of trusting the supplied struct", ctx do
+    ctx.home |> Ecto.Changeset.change(mode: "ephemeral") |> Repo.update!()
+
+    assert {:error, {:sandbox_not_resettable, "ephemeral"}} =
+             Conversations.reset_sandbox(ctx.home)
   end
 
   test "the next prompt builds a fresh home on the same identity", ctx do
