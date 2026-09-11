@@ -40,6 +40,14 @@ defmodule Fountain.ConversationsWakeTest do
       sandbox = insert_sandbox(user_id: user.id, status: "terminated")
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
+      # The wake succeeds here, so it starts a server. Without this it is a
+      # real one under the shared Horde supervisor, with no sandbox connection
+      # in an async test and `restart: :transient` to put it back after every
+      # raise (#1862).
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+      end)
+
       refute match?({:error, :gone}, Conversations.wake_conversation(conv.id))
     end
 
