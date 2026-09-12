@@ -793,10 +793,11 @@ defmodule Fountain.Conversations.TurnMachine do
   platform turn, `"model"`, which is what `Workers.CreditPricer` prices
   against the rate card.
 
-  **Only stamped on a deployment that holds a platform key at all.** With
-  none configured there is no question to answer, and an unstamped map is
-  byte-for-byte the map every turn has always carried, which is what keeps a
-  self-hosted install (and the tests that assert on it) unchanged.
+  Platform turns are stamped from the credential source selected for the
+  turn, including a ChatGPT grant without any platform API key. A later
+  configuration change cannot erase the source that served the turn.
+  Tenant-owned turns retain their legacy shape when no platform API key is
+  configured.
 
   The `"model"` key is deliberately absent on an `"own"` turn: nothing prices
   it, so recording it would put a configuration detail in a column that
@@ -805,14 +806,15 @@ defmodule Fountain.Conversations.TurnMachine do
   @spec with_inference(map() | nil, ctx()) :: map() | nil
   def with_inference(usage, ctx) when is_map(usage) do
     case Map.get(ctx, :inference) do
-      source when source in [:own, :platform] ->
-        if Fountain.PlatformInference.enabled?() do
-          usage
-          |> Map.put("inference", Atom.to_string(source))
-          |> put_model(source, Map.get(ctx, :model))
-        else
-          usage
-        end
+      :platform ->
+        usage
+        |> Map.put("inference", "platform")
+        |> put_model(:platform, Map.get(ctx, :model))
+
+      :own ->
+        if Fountain.PlatformInference.enabled?(),
+          do: Map.put(usage, "inference", "own"),
+          else: usage
 
       _ ->
         usage
@@ -857,9 +859,8 @@ defmodule Fountain.Conversations.TurnMachine do
   #
   # `with_inference/2` decides the source, exactly as the end-of-turn write
   # does — one derivation, so the two writes cannot disagree. What it returns
-  # for an empty map is the stamp alone, and `%{}` on a deployment holding no
-  # platform key, which is what keeps a self-hosted install's turn rows
-  # unchanged.
+  # for an empty map is the stamp alone, and `%{}` for tenant-owned turns on
+  # a deployment holding no platform API key, keeping those rows unchanged.
   #
   # The end-of-turn write merges its token figures over this (see
   # `Conversations._unsafe_record_turn_usage/2`), so a turn that does answer
