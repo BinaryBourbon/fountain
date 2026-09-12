@@ -482,7 +482,17 @@ defmodule Fountain.Conversations.Egress do
   def install_ca(nil, _handle, _conversation_id), do: :ok
 
   def install_ca(session, handle, conversation_id) do
-    with :ok <- Provisioning.install_broker_ca(handle, conversation_id) do
+    result = Provisioning.install_broker_ca(handle, conversation_id)
+
+    # Only a conversation's trust setup reaches this path. Broker health
+    # probes and session refreshes do not contribute to the failure ratio.
+    Fountain.Telemetry.event(
+      [:broker, :ca_install],
+      %{provider: handle.provider, outcome: ca_install_outcome(result)},
+      %{count: 1}
+    )
+
+    with :ok <- result do
       publish_stage(conversation_id, "broker", "done", %{
         vault: session.vault,
         expires_at: session.expires_at
@@ -491,6 +501,11 @@ defmodule Fountain.Conversations.Egress do
       :ok
     end
   end
+
+  defp ca_install_outcome(:ok), do: "ok"
+  defp ca_install_outcome({:error, {:broker, :ca_install_exit, _, _}}), do: "exit"
+  defp ca_install_outcome({:error, {:broker, :ca_install, _}}), do: "unreachable"
+  defp ca_install_outcome({:error, _}), do: "unavailable"
 
   # Every session of the conversation goes when its sandbox does. Still off
   # the caller's path: deleting rows is local and cannot fail the way a call
