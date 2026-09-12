@@ -22,8 +22,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
   alias Fountain.Conversations.{BoundedTurn, CallbackKey, Checkpoints, Connection}
   alias Fountain.Conversations.{Conversation, DetachedRequest, Egress}
-  alias Fountain.Conversations.{Lifecycle, McpServers, Output, Pending, Provisioning}
-  alias Fountain.Conversations.{ProvisionWatchdog, Reapply}
+  alias Fountain.Conversations.{Lifecycle, MachineEvents, McpServers, Output}
+  alias Fountain.Conversations.{Pending, Provisioning, ProvisionWatchdog, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnLaunch, TurnMachine}
 
   defguardp retired_or_resetting(reason)
@@ -1679,25 +1679,12 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  # Another conversation on this machine parked or destroyed it (see
-  # stop_cotenants/4). Record that on this transcript, cut a turn that has
-  # nothing left to run on, and stop: with no handle there is nothing this
-  # server can do, and the wake path is what brings the machine back.
+  def handle_cast({:sandbox_reset, sandbox_id, reason, by, message}, state) do
+    MachineEvents.reset(state, sandbox_id, reason, by, message, &drop_connection/2)
+  end
+
   def handle_cast({:machine_gone, event, reason, message}, state) do
-    state = if state.current_turn, do: interrupt_turn(state), else: state
-    state = drop_connection(state, event)
-
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
-
-    Output.publish_stage(state.conversation_id, "sandbox", "done", %{
-      event: event,
-      reason: reason,
-      by: "another_conversation",
-      message: message
-    })
-
-    {:stop, :normal, %{state | handle: nil}}
+    MachineEvents.gone(state, {event, reason, message}, &interrupt_turn/1, &drop_connection/2)
   end
 
   # Catch-all for the same reason as the handle_call one above (#315).
