@@ -204,9 +204,73 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
 
       assert Lifecycle.park(ctx.conv.id, sandbox.id, handle(), :idle) == :ok
       assert Repo.reload(sandbox).status == "failed"
-      # The conversation and the stream still get the news.
-      assert Repo.reload(ctx.conv).status == "idle"
-      assert [{"done", _}] = stages(ctx.conv.id, "sandbox")
+      assert Repo.reload(ctx.conv).status == "running"
+      assert stages(ctx.conv.id, "sandbox") == []
+    end
+
+    for terminal <- ["terminated", "failed"] do
+      @tag park_retirement: true
+      test "retirement to #{terminal} during checkpoint does not park the replacement", ctx do
+        {:ok, home} = Conversations.update_sandbox(ctx.sandbox, %{mode: "persistent"})
+        test = self()
+
+        stub(Managoat.Sandbox, :supports?, fn :sprites, :checkpoint -> true end)
+
+        stub(Managoat.Sandbox, :create_checkpoint, fn _handle, _opts ->
+          send(test, {:checkpoint_paused, self()})
+          receive do: (:resume_checkpoint -> {:ok, "checkpoint"})
+        end)
+
+        pid =
+          spawn(fn ->
+            receive do
+              :park ->
+                result =
+                  try do
+                    Lifecycle.park(ctx.conv.id, home.id, handle(), :idle)
+                  rescue
+                    error -> {:raised, error}
+                  end
+
+                send(test, {:park_result, result})
+            end
+          end)
+
+        on_exit(fn -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
+        Ecto.Adapters.SQL.Sandbox.allow(Repo, self(), pid)
+        Mimic.allow(Managoat.Sandbox, self(), pid)
+        send(pid, :park)
+        assert_receive {:checkpoint_paused, ^pid}, 5_000
+
+        {:ok, retired} = Conversations.update_sandbox(home, %{status: unquote(terminal)})
+        replacement = insert_sandbox(user_id: ctx.user.id, status: "ready")
+        {:ok, _} = Conversations.update_conversation(ctx.conv, %{sandbox_id: replacement.id})
+        send(pid, :resume_checkpoint)
+
+        assert_receive {:park_result, :ok}, 5_000
+        assert Repo.reload!(home).status == unquote(terminal)
+        assert Repo.reload!(home).terminated_at == retired.terminated_at
+        assert Repo.reload!(ctx.conv).sandbox_id == replacement.id
+        assert Repo.reload!(ctx.conv).status == "running"
+        assert Repo.reload!(replacement).status == "ready"
+        assert stages(ctx.conv.id, "sandbox") == []
+      end
+    end
+
+    test "unrelated park-write errors still raise", ctx do
+      rejection =
+        {:error,
+         Ecto.Changeset.change(ctx.sandbox) |> Ecto.Changeset.add_error(:status, "other failure")}
+
+      stub(Conversations, :update_sandbox, fn _row, _attrs -> rejection end)
+
+      assert_raise MatchError, fn ->
+        Lifecycle.park(ctx.conv.id, ctx.sandbox.id, handle(), :idle)
+      end
+
+      assert Repo.reload!(ctx.sandbox).status == "ready"
+      assert Repo.reload!(ctx.conv).status == "running"
+      assert stages(ctx.conv.id, "sandbox") == []
     end
 
     test "a conversation that is not running keeps its status", ctx do
