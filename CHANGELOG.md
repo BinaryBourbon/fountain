@@ -260,6 +260,10 @@ upgrade, is in
 
 ### Fixed
 
+- Sandbox `/diff` returns 422 when Git fails after repository discovery,
+  instead of reporting an empty diff. Intentional byte-cap truncation still
+  succeeds (#1904).
+
 - **A reset refused by a bounded execution says so** (ADR 0046). Deleting a
   sandbox while a bounded turn still owed a remote stop answered `422` with an
   empty body, because `:execution_fenced` had no `FallbackController` clause

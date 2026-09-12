@@ -20,11 +20,11 @@ defmodule Fountain.SandboxFilesScriptTest do
   # `exec/4` leaves `stderr_to_stdout: false` on every adapter, so a script's
   # stderr goes nowhere. Dropping it here keeps the test reading what a
   # caller reads — and keeps a deliberate `fatal:` out of the suite's output.
-  defp run(kind, args) do
+  defp run(kind, args, env \\ []) do
     System.cmd(
       "bash",
       ["-c", "exec 2>/dev/null\n" <> SandboxFiles.script(kind), "fountain-files" | args],
-      env: git_env()
+      env: git_env() ++ env
     )
   end
 
@@ -88,6 +88,52 @@ defmodule Fountain.SandboxFilesScriptTest do
 
       assert {output, 0} = run(:status, [repo, "64", "all", repo])
       assert byte_size(output) < 1_000
+    end
+  end
+
+  describe "diff_script/0 exit status" do
+    test "a clean tracked tree still returns an empty diff" do
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
+      git!(repo, ["checkout", "--", "a.txt"])
+
+      assert {output, 0} = run(:diff, [repo, @cap, "", "0", repo])
+      assert [_root, encoded] = String.split(output, <<0>>, parts: 2)
+      assert {:ok, ""} = Base.decode64(encoded, ignore: :whitespace)
+    end
+
+    test "a broken index fails both staged and unstaged diffs after discovery" do
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
+      File.write!(Path.join(repo, ".git/index"), "x")
+
+      for staged <- ["0", "1"] do
+        assert {output, 8} = run(:diff, [repo, @cap, "", staged, repo])
+        assert output =~ "fatal:"
+        refute output =~ <<0>>
+      end
+    end
+
+    test "an encoding failure does not become an empty diff" do
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
+      bin = TmpDir.mkdir!("sandbox-files-bin")
+      encoder = Path.join(bin, "base64")
+      File.write!(encoder, "#!/bin/sh\nexit 1\n")
+      File.chmod!(encoder, 0o755)
+
+      assert {_output, 8} =
+               run(:diff, [repo, @cap, "", "0", repo], [
+                 {"PATH", bin <> ":" <> System.fetch_env!("PATH")}
+               ])
+    end
+
+    test "the byte cap still permits SIGPIPE and returns a bounded diff" do
+      repo = repo!(Path.join(TmpDir.mkdir!("sandbox-files-script"), "repo"))
+      File.write!(Path.join(repo, "a.txt"), String.duplicate("changed\n", 25_000))
+
+      assert {output, 0} = run(:diff, [repo, "64", "", "0", repo])
+      assert [_root, encoded] = String.split(output, <<0>>, parts: 2)
+      assert {:ok, diff} = Base.decode64(encoded, ignore: :whitespace)
+      assert byte_size(diff) == 64
+      assert diff =~ "diff --git"
     end
   end
 
