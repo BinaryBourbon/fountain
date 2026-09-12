@@ -11,6 +11,10 @@ defmodule Fountain.PlatformChatGPT.Account do
   `"workspace_token"` is a static Business/Enterprise access token with no
   refresh token, which lapses on its admin-set expiry.
 
+  Reconnect changes `generation`. Normal refresh retains the generation and
+  increments `lock_version`, as do terminal lifecycle writes. These fields
+  fence stale writes; broker authorization is not yet generation-aware.
+
   There is no plaintext column and no `_unsafe_` reader: the deployment owns
   this, not a tenant, and the only writers are the admin surface and the
   refresher.
@@ -28,6 +32,8 @@ defmodule Fountain.PlatformChatGPT.Account do
   @type t :: %__MODULE__{}
   schema "platform_chatgpt_account" do
     field :user_id, :binary_id
+    field :generation, Ecto.UUID, autogenerate: true
+    field :lock_version, :integer, default: 1
     field :kind, :string
     field :refresh_token_ciphertext, :binary
     field :access_token_ciphertext, :binary
@@ -65,6 +71,8 @@ defmodule Fountain.PlatformChatGPT.Account do
     ])
     |> put_change(:status, "active")
     |> put_change(:revoked_reason, nil)
+    |> put_change(:generation, Ecto.UUID.generate())
+    |> version_existing()
     |> validate_required([:kind, :access_token_ciphertext, :last_refreshed_at])
     |> validate_inclusion(:kind, @kinds)
     |> unique_constraint(:user_id, name: :platform_chatgpt_account_platform_row)
@@ -99,4 +107,9 @@ defmodule Fountain.PlatformChatGPT.Account do
     |> change(status: "expired")
     |> validate_inclusion(:status, @statuses)
   end
+
+  defp version_existing(%{data: %{__meta__: %{state: :loaded}}} = changeset),
+    do: optimistic_lock(changeset, :lock_version)
+
+  defp version_existing(changeset), do: changeset
 end

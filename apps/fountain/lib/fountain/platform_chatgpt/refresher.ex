@@ -11,11 +11,11 @@ defmodule Fountain.PlatformChatGPT.Refresher do
   waiters queue here instead, holding nothing: the first call refreshes,
   the rest find the row fresh when their turn comes.
 
-  Across nodes the row is the arbiter: `Fountain.PlatformChatGPT` writes the
-  rotated tokens with a compare-and-swap on the refresh token it started
-  from, and a node that loses the race serves what the winner wrote. The
-  auth server tolerates the loser's abandoned chain (measured 2026-09-08: a
-  reused refresh token forks rather than revokes).
+  Across nodes, generation/version checks prevent stale success and failure
+  writes. A loser can serve a winner from the same grant generation; it
+  cannot serve or revoke a replacement account. This still permits duplicate
+  upstream calls: deployment-wide refresh coordination is follow-up work
+  under ADR 0052, not a guarantee of this local queue.
   """
 
   use GenServer
