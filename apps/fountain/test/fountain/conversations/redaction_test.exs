@@ -145,4 +145,58 @@ defmodule Fountain.Conversations.RedactionTest do
       refute received.data =~ "streamed-secret-value"
     end
   end
+
+  # The resolved MCP document comes from an Ecto `:map`, so today it is only
+  # maps, lists, strings and numbers. The shapes below are what a change to
+  # that field would bring, and each hid a value from an earlier version of the
+  # walk (#1690). The rest of `server_state/1` is covered against a live server
+  # in `ConversationServerRedactionTest`.
+  @mcp_secret "mcp-document-secret-value-1690"
+
+  defp rendered_mcp(resolved) do
+    %{
+      conversation_id: Ecto.UUID.generate(),
+      handle: nil,
+      sprite_env: [],
+      brokered: %{},
+      broker: nil,
+      env_credentials: %{},
+      resolved_mcp_servers: resolved,
+      current_command: nil,
+      current_turn: nil,
+      acp_request_params: nil,
+      turn_execution: nil,
+      runner_replay: nil,
+      tenant_key: nil,
+      inference_credentials: %{},
+      callback_token: nil
+    }
+    |> Redaction.server_state()
+    |> Map.fetch!(:resolved_mcp_servers)
+    |> inspect(limit: :infinity, printable_limit: :infinity)
+  end
+
+  describe "server_state/1 over the resolved MCP document" do
+    test "a value inside a tuple is redacted, and the tuple keeps its shape" do
+      rendered = rendered_mcp(%{"svc" => %{"auth" => {:bearer, @mcp_secret}}})
+
+      refute rendered =~ @mcp_secret
+      assert rendered =~ "svc"
+      assert rendered =~ ":bearer"
+    end
+
+    test "a value in a keyword list is redacted and its key survives" do
+      rendered = rendered_mcp(%{"svc" => [headers: "Bearer #{@mcp_secret}"]})
+
+      refute rendered =~ @mcp_secret
+      assert rendered =~ "headers:"
+    end
+
+    test "a charlist is redacted rather than printed as text" do
+      rendered = rendered_mcp(%{"svc" => String.to_charlist(@mcp_secret)})
+
+      refute rendered =~ @mcp_secret
+      assert rendered =~ Redaction.placeholder()
+    end
+  end
 end
