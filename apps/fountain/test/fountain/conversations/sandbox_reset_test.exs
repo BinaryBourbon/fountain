@@ -172,7 +172,8 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert {:ok, ^fake} = ConversationServer.await_registered(ctx.a.id)
 
     assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
-    assert_receive {:cast, {:machine_gone, "reset", "home_reset", message}}, 1_000
+    assert_receive {:cast, {:sandbox_reset, sandbox_id, "home_reset", "owner", message}}, 1_000
+    assert sandbox_id == ctx.home.id
     assert message =~ "reset by its owner"
 
     # The server records the event on A's transcript itself; the reset does
@@ -189,6 +190,34 @@ defmodule Fountain.Conversations.SandboxResetTest do
     insert_turn(ctx.a, status: "running")
     assert {:error, :sandbox_mid_turn} = Conversations.reset_sandbox(ctx.home)
     assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "ready"
+  end
+
+  test "refused after a local timeout while remote termination remains uncertain", ctx do
+    alias Fountain.Conversations.ExecutionGuard
+    turn = insert_turn(ctx.a, status: "running")
+    now = DateTime.utc_now()
+    deadline = DateTime.add(now, 60)
+    connection = Ecto.UUID.generate()
+    {:ok, execution} = ExecutionGuard._unsafe_register(turn.id, connection, deadline)
+    {:ok, _} = ExecutionGuard._unsafe_claim_spawn(execution.id)
+    {:ok, _} = ExecutionGuard._unsafe_bind_identity(execution.id, connection, "19")
+    {:ok, _} = ExecutionGuard._unsafe_expire(execution.id, now: deadline)
+    {:ok, %{execution: attempt}} = ExecutionGuard._unsafe_claim_termination(execution.id)
+    {:ok, _} = ExecutionGuard._unsafe_record_termination(execution.id, attempt.attempt_id, :lost)
+    test = self()
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+    # Its own name: a live turn is `:sandbox_mid_turn` and ends by itself, an
+    # unresolved remote execution is `:execution_fenced` and is written off by
+    # the coordinator. #1768 adds a third, `:sandbox_reset_pending`.
+    assert {:error, :execution_fenced} = Conversations.reset_sandbox(ctx.home)
+    refute_received :destroyed
+    assert Conversations._unsafe_get_sandbox!(ctx.home.id).status == "ready"
+    assert Conversations._unsafe_get_conversation!(ctx.a.id).runtime_session_id == "sess-a"
+
+    {:ok, _} = ExecutionGuard._unsafe_record_termination(execution.id, attempt.attempt_id, :ok)
+    assert {:ok, %{status: "terminated"}} = Conversations.reset_sandbox(ctx.home)
+    assert_received :destroyed
   end
 
   test "refused for an ephemeral sandbox and for one already gone", ctx do

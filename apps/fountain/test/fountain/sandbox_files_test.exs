@@ -46,6 +46,49 @@ defmodule Fountain.SandboxFilesTest do
   # A diff's header: the root, NUL-terminated, then the base64 body.
   defp diff_output(root, bytes), do: root <> <<0>> <> b64(bytes)
 
+  test "git roots and entry paths round-trip through file reads on a runner", ctx do
+    host = Fountain.TmpDir.mkdir!("sandbox-files-runner")
+    repo = Path.join(host, "repo")
+    File.mkdir_p!(Path.join(repo, "nested"))
+    env = [{"GIT_CONFIG_GLOBAL", "/dev/null"}, {"GIT_CONFIG_SYSTEM", "/dev/null"}]
+
+    for args <- [
+          ["init", "-q"],
+          [
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "init"
+          ]
+        ] do
+      assert {_, 0} = System.cmd("git", args, cd: repo, env: env, stderr_to_stdout: true)
+    end
+
+    File.write!(Path.join(repo, "new.txt"), "from the sandbox\n")
+
+    stub(Managoat.Sandbox, :host_path, fn _handle, path ->
+      String.replace_prefix(path, @home, host)
+    end)
+
+    stub(Managoat.Sandbox, :exec, fn _handle, command, args, _opts ->
+      {output, code} = System.cmd(command, args, env: env)
+      {:ok, output, code}
+    end)
+
+    assert {:ok, %{repo_root: root, entries: [%{path: entry}]}} =
+             SandboxFiles.status(ctx.sandbox, "repo/nested", untracked: "all")
+
+    assert root == @home <> "/repo"
+    assert {:ok, %{repo_root: ^root}} = SandboxFiles.diff(ctx.sandbox, "repo/nested")
+
+    assert {:ok, %{content: "from the sandbox\n"}} =
+             SandboxFiles.read(ctx.sandbox, Path.join(root, entry))
+  end
+
   describe "resolve_path/2" do
     test "nil and relative paths resolve from the agent's working directory", ctx do
       assert {:ok, @home} = SandboxFiles.resolve_path(ctx.sandbox, nil)
@@ -245,7 +288,7 @@ defmodule Fountain.SandboxFilesTest do
 
       expect_script(fn _, script, args ->
         assert script =~ "git --no-pager --no-optional-locks diff --no-color --no-ext-diff"
-        assert args == [@home <> "/repo", "262145", "main", "1", @home]
+        assert args == [@home <> "/repo", "262145", "main", "1", @home, "sandbox:" <> @home]
         {:ok, diff_output(@home <> "/repo", diff), 0}
       end)
 
@@ -262,7 +305,7 @@ defmodule Fountain.SandboxFilesTest do
 
     test "no ref and no staged flag pass as empty and 0", ctx do
       expect_script(fn _, _, args ->
-        assert args == [@home, "262145", "", "0", @home]
+        assert args == [@home, "262145", "", "0", @home, "sandbox:" <> @home]
         {:ok, diff_output(@home, ""), 0}
       end)
 
@@ -342,7 +385,7 @@ defmodule Fountain.SandboxFilesTest do
     test "reports an untracked file, the one state a diff cannot show", ctx do
       expect_script(fn _, script, args ->
         assert script =~ "git --no-pager --no-optional-locks status --porcelain=v1 -z"
-        assert args == [@home <> "/repo", "1048577", "normal", @home]
+        assert args == [@home <> "/repo", "1048577", "normal", @home, "sandbox:" <> @home]
 
         {:ok,
          status_output("main", [
@@ -496,7 +539,8 @@ defmodule Fountain.SandboxFilesTest do
                  "/Users/me/box/home/sprite",
                  "1048577",
                  "normal",
-                 "/Users/me/box/home/sprite"
+                 "/Users/me/box/home/sprite",
+                 "sandbox:/home/sprite"
                ]
 
         {:ok, status_output("main", [], "/Users/me/box/home/sprite"), 0}

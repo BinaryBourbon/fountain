@@ -143,6 +143,60 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     prompt_id
   end
 
+  describe "Claude model confirmation aliases (#1710)" do
+    for {model, confirmed, accepted?} <- [
+          {"claude-opus-5", "opus", true},
+          {"claude-sonnet-5", "sonnet", true},
+          {"claude-opus-5", "haiku", false}
+        ] do
+      test "#{model} confirmed as #{confirmed}", %{} do
+        model = unquote(model)
+        confirmed = unquote(confirmed)
+        user = insert_verified_user()
+        agent = insert_agent(user_id: user.id, runtime: "claude", model: "anthropic/" <> model)
+        conv = insert_conversation(agent: agent, user_id: user.id)
+        {pid, ref} = start_acp_turn(conv)
+
+        %{"id" => init_id, "method" => "initialize"} = next_write()
+        reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+        %{"id" => new_id, "method" => "session/new"} = next_write()
+
+        reply(pid, ref, new_id, %{
+          "sessionId" => "sess_1",
+          "configOptions" => [%{"id" => "model", "currentValue" => "default"}]
+        })
+
+        assert %{
+                 "id" => set_id,
+                 "method" => "session/set_config_option",
+                 "params" => %{"configId" => "model", "value" => ^model}
+               } = next_write()
+
+        reply(pid, ref, set_id, %{
+          "configOptions" => [%{"id" => "model", "currentValue" => confirmed}]
+        })
+
+        if unquote(accepted?) do
+          %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+          reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+          assert [turn] = Conversations._unsafe_list_turns(conv.id)
+          assert turn.status == "completed"
+          assert turn.model_selection["requested_model"] == model
+          assert turn.model_selection["effective_model"] == confirmed
+          assert turn.model_selection["source"] == "runtime"
+          %{data: [wire]} = FountainWeb.ConversationJSON.turns(%{turns: [turn]})
+          assert wire.model_selection == turn.model_selection
+        else
+          refute_receive {:wrote, _}, 50
+          assert [turn] = Conversations._unsafe_list_turns(conv.id)
+          assert turn.status == "failed"
+          assert is_nil(turn.acp_prompt_id)
+          assert turn.model_selection["error"] =~ "Runtime confirmed a different model: haiku"
+        end
+      end
+    end
+  end
+
   describe "the decision" do
     test "every shippable runtime speaks ACP; the retired flag routes nothing" do
       user = insert_verified_user()
@@ -642,7 +696,12 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
         case unquote(input) do
           :prompt ->
-            assert :ok = GenServer.call(ctx.pid, {:send_prompt, "late prompt", []})
+            # The refusal now reaches the caller. It used to reply `:ok` and
+            # drop the connection, which told a client its prompt was accepted
+            # when no turn would ever run — the state assertions below were
+            # always the real subject of this test, and they are unchanged.
+            assert {:error, :sandbox_unavailable} =
+                     GenServer.call(ctx.pid, {:send_prompt, "late prompt", []})
 
           :permission ->
             send(ctx.pid, {:acp, ctx.ref, {:permission_ask, "late-request", "Bash", []}})

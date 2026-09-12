@@ -44,7 +44,7 @@ curl -s -X POST "$FOUNTAIN_BASE_URL/api/agents" \
   -d '{
     "name":"hello",
     "runtime":"claude",
-    "model":"anthropic/claude-sonnet-4-6"
+    "model":"anthropic/claude-sonnet-5"
   }'
 ```
 

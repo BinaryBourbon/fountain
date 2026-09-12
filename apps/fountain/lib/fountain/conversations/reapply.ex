@@ -247,4 +247,33 @@ defmodule Fountain.Conversations.Reapply do
       version -> version.config["skills"] || []
     end
   end
+
+  @doc """
+  Reconcile the machine's skills with the conversation's current selection,
+  then record what is now on it.
+
+  Run on every wake, not only after a live reapply: a sleeping conversation
+  whose selection changed applies it when it next comes up, and a machine
+  built before the manifest existed gets one on its first pass. The recorded
+  set is only advanced when the reconciliation succeeded, so a failed pass
+  leaves the next one the same work rather than a wrong picture of the disk.
+  """
+  @spec mount_skills(Managoat.Sandbox.Handle.t(), map(), map() | nil) :: :ok | {:error, term()}
+  def mount_skills(handle, conv, agent) do
+    # ownership: conv came from the tenant-scoped API fetch or its own server.
+    sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+    skills = (agent && agent.skills) || []
+    runtime = conv.runtime || (agent && agent.runtime) || "claude"
+
+    with :ok <-
+           Fountain.SandboxSkills.reconcile(
+             handle,
+             runtime,
+             skills,
+             sandbox.applied_skills || previous_skills(conv)
+           ),
+         {:ok, _} <- Conversations.update_sandbox(sandbox, %{applied_skills: skills}) do
+      :ok
+    end
+  end
 end

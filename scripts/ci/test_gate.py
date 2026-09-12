@@ -3,31 +3,41 @@ from pathlib import Path
 import re
 import unittest
 
-from gate import FULL_JOBS, JOBS, PROBES, validate
+from gate import FULL_JOBS, JOBS, PROBES, SDK_JOBS, validate
 
 
-EVENTS = ("pull_request", "push", "merge_group")
+EVENTS = ("pull_request", "push", "merge_group", "workflow_dispatch")
 
 
-def plan(event="pull_request", docs=False, touched=False, reuse=False):
+def plan(event="pull_request", docs=False, touched=False, reuse=False, sdks=None):
+    if event == "workflow_dispatch":
+        docs, touched, sdks = False, True, SDK_JOBS
+    if sdks is None:
+        sdks = set() if docs else SDK_JOBS
+    if event == "push":
+        sdks = SDK_JOBS
     jobs = {job: {"result": "skipped", "outputs": {}} for job in JOBS}
     jobs["workflow-checks"]["result"] = "success"
+    jobs["sdk-checks"]["result"] = "success"
     if "already-tested" in PROBES[event]:
         jobs["already-tested"] = {"result": "success", "outputs": {"skip": str(reuse).lower()}}
     if "changes" in PROBES[event]:
         jobs["changes"] = {"result": "success", "outputs": {
             "docs_only": str(docs).lower(), "docs_touched": str(touched).lower(),
             "cli_docs": "false", "tree": "a" * 40,
+            **{"sdk_" + job.removesuffix("-sdk"): str(job in sdks).lower() for job in SDK_JOBS},
         }}
     if reuse:
         return jobs
     if docs:
         jobs["docs"]["result"] = "success"
     else:
-        for job in FULL_JOBS:
+        for job in FULL_JOBS - SDK_JOBS:
             jobs[job]["result"] = "success"
         if touched or event == "push":
             jobs["docs-prose"]["result"] = "success"
+    for job in sdks:
+        jobs[job]["result"] = "success"
     return jobs
 
 
@@ -53,7 +63,7 @@ class GateTest(unittest.TestCase):
         self.assertEqual(declared, set(PROBES))
 
     def test_all_supported_plans(self):
-        for event, options in [("pull_request", {}), ("pull_request", {"docs": True}),
+        for event, options in [("workflow_dispatch", {}), ("pull_request", {}), ("pull_request", {"docs": True}),
                                ("pull_request", {"touched": True}), ("push", {}),
                                ("push", {"reuse": True}), ("merge_group", {}),
                                ("merge_group", {"docs": True}), ("merge_group", {"touched": True}),
@@ -62,7 +72,7 @@ class GateTest(unittest.TestCase):
                 validate(event, plan(event, **options))
 
     def test_every_required_job_rejects_failure_cancel_and_skip(self):
-        for event, options in [("pull_request", {"touched": True}), ("pull_request", {"docs": True}),
+        for event, options in [("workflow_dispatch", {}), ("pull_request", {"touched": True}), ("pull_request", {"docs": True}),
                                ("push", {}), ("push", {"reuse": True}),
                                ("merge_group", {"touched": True}), ("merge_group", {"docs": True}),
                                ("merge_group", {"reuse": True})]:
@@ -87,7 +97,7 @@ class GateTest(unittest.TestCase):
                         validate(event, jobs)
 
     def test_missing_classification_or_tree_is_not_a_docs_skip(self):
-        for event in ("pull_request", "merge_group"):
+        for event in ("pull_request", "merge_group", "workflow_dispatch"):
             for key in ("docs_only", "docs_touched", "cli_docs", "tree"):
                 jobs = plan(event, docs=True)
                 del jobs["changes"]["outputs"][key]
@@ -122,4 +132,4 @@ class GateTest(unittest.TestCase):
 
     def test_unsupported_event_is_rejected(self):
         with self.assertRaises(ValueError):
-            validate("workflow_dispatch", plan("pull_request"))
+            validate("unknown_event", plan("pull_request"))

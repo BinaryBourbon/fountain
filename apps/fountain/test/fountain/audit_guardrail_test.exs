@@ -70,6 +70,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"allowance narrowing", &__MODULE__.do_allowance_narrowing/1,
      "conversation.execution_allowance_narrowed"},
     {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
+    {"pending sandbox reset retry", &__MODULE__.do_pending_reset_retry/1, "sandbox.reset"},
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
     {"suspend", &__MODULE__.do_suspend/1, "account.suspended"},
@@ -483,6 +484,16 @@ defmodule Fountain.AuditGuardrailTest do
 
     stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(home)
+  end
+
+  def do_pending_reset_retry(user) do
+    home =
+      insert_sandbox(user_id: user.id, status: "ready", mode: "persistent", provider: "sprites")
+
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, {:unavailable, :timeout}} end)
+    {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(home)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
+    {:ok, _} = Conversations.retry_pending_sandbox_reset(home)
   end
 
   def do_team_add(user) do

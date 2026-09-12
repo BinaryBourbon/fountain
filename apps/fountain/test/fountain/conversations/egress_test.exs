@@ -297,7 +297,7 @@ defmodule Fountain.Conversations.EgressTest do
   end
 
   describe "the session" do
-    test "prepare/4 publishes the broker stage around the mint", %{user: user} do
+    test "the broker stage completes only after CA installation", %{user: user} do
       broker_on([user.id])
       conv = insert_conversation(user_id: user.id)
 
@@ -315,7 +315,36 @@ defmodule Fountain.Conversations.EgressTest do
                  user_id: user.id
                )
 
-      assert [{"started", %{"keys" => ["GITHUB_TOKEN"]}}, {"done", %{"vault" => "c-test"}}] =
+      assert [{"started", %{"keys" => ["GITHUB_TOKEN"]}}] = stages(conv.id, "broker")
+      handle = %Handle{provider: :sprites, name: "s"}
+
+      stub(Fountain.Conversations.Provisioning, :install_broker_ca, fn ^handle, id ->
+        assert id == conv.id
+        assert [{"started", _}] = stages(conv.id, "broker")
+        :ok
+      end)
+
+      assert :ok = Egress.install_ca(@session, handle, conv.id)
+      assert [{"started", _}, {"done", %{"vault" => "c-test"}}] = stages(conv.id, "broker")
+    end
+
+    test "a failed CA command never leaves a completed broker stage", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      handle = %Handle{provider: :sprites, name: "s"}
+      stub(Broker, :prepare, fn _id, _b, _bi, _o -> {:ok, @session} end)
+      stub(Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      stub(Managoat.Sandbox.Sprites, :write_file, fn _h, _p, _data, _opts -> :ok end)
+
+      stub(Managoat.Sandbox.Sprites, :exec, fn _h, "bash", _args, _opts ->
+        {:ok, "trust installation failed", 1}
+      end)
+
+      assert {:ok, session} = Egress.prepare(conv.id, %{}, %{}, user_id: user.id)
+
+      assert {:error, {:broker, :ca_install_exit, 1, _}} =
+               Egress.install_ca(session, handle, conv.id)
+
+      assert [{"started", _}, {"failed", %{"reason" => "ca_install_exit", "exit_code" => 1}}] =
                stages(conv.id, "broker")
     end
 
@@ -389,13 +418,54 @@ defmodule Fountain.Conversations.EgressTest do
       assert Egress.sandbox_env(@session) == Broker.sandbox_env(@session)
     end
 
-    test "install_ca/3 installs only when there is a session" do
-      handle = %Handle{provider: :sprites, name: "s"}
-      assert :ok = Egress.install_ca(nil, handle, "c")
+    test "the exported CA counter records one bounded outcome per conversation setup", %{
+      user: user
+    } do
+      metric =
+        Enum.find(FountainWeb.Telemetry.prometheus_metrics(), fn metric ->
+          metric.name == [:fountain, :broker, :ca_install, :count]
+        end)
 
-      stub(Fountain.Conversations.Provisioning, :install_broker_ca, fn ^handle, "c" -> :ok end)
-      assert :ok = Egress.install_ca(@session, handle, "c")
+      assert metric.tags == [:provider, :outcome]
+      broker_on([user.id])
+      handler = {__MODULE__, make_ref()}
+      :ok = :telemetry.attach(handler, metric.event_name, &__MODULE__.forward_ca_metric/4, self())
+      on_exit(fn -> :telemetry.detach(handler) end)
+      conv = insert_conversation(user_id: user.id)
+      handle = %Handle{provider: :sprites, name: "s"}
+
+      assert :ok = Egress.install_ca(nil, handle, conv.id)
+      stub(Broker, :prepare, fn _id, _b, _bi, _o -> {:ok, @session} end)
+      assert {:ok, @session} = Egress.prepare(conv.id, %{}, %{}, user_id: user.id)
+      assert {:ok, @session, _} = Egress.reprepare(conv.id, %{}, %{}, [], user_id: user.id)
+      refute_received {:ca_metric, _, _}
+
+      for {result, outcome} <- [
+            {:ok, "ok"},
+            {{:error, {:broker, :ca_install_exit, 1, "sensitive output"}}, "exit"},
+            {{:error, {:broker, :ca_install, :timeout}}, "unreachable"},
+            {{:error, :ca_unavailable}, "unavailable"}
+          ] do
+        stub(Fountain.Conversations.Provisioning, :install_broker_ca, fn ^handle, _id ->
+          result
+        end)
+
+        assert Egress.install_ca(@session, handle, conv.id) == result
+        assert_received {:ca_metric, %{count: 1}, %{provider: :sprites, outcome: ^outcome}}
+        refute_received {:ca_metric, _, _}
+      end
     end
+
+    test "install_ca/3 emits no broker stage without a session", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      handle = %Handle{provider: :sprites, name: "s"}
+      assert :ok = Egress.install_ca(nil, handle, conv.id)
+      assert stages(conv.id, "broker") == []
+    end
+  end
+
+  def forward_ca_metric(_event, measurements, metadata, pid) do
+    send(pid, {:ca_metric, measurements, metadata})
   end
 
   describe "release/2" do

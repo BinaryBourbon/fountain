@@ -377,6 +377,51 @@ defmodule FountainWeb.TeamCommsControllerTest do
       refute inspect(event.metadata) =~ "+15550001111"
     end
 
+    @tag :unidentified_send
+    test "an unidentified send reaches the audit and usage trail without a fabricated charge", %{
+      conn: conn,
+      raw_key: key,
+      conv: conv,
+      user: user,
+      contact: contact
+    } do
+      Req.Test.stub(AgentPhone, fn conn ->
+        Req.Test.json(conn, %{"status" => "queued", "unexpected" => "private-provider-response"})
+      end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          body =
+            rpc(conn, key, conv.id, %{
+              "id" => 3,
+              "method" => "tools/call",
+              "params" => %{
+                "name" => "sms_send",
+                "arguments" => %{"to" => "+15550001111", "body" => "private body"}
+              }
+            })
+            |> json_response(200)
+
+          assert body["result"]["isError"]
+        end)
+
+      assert log =~ "returned no provider message id"
+      assert log =~ "it will not be billed"
+      refute log =~ "private-provider-response"
+
+      [audit] =
+        user.id
+        |> Fountain.Audit.list_recent_for_user(20)
+        |> Enum.filter(&(&1.action == "team.contact.sent"))
+
+      assert audit.resource_id == contact.id
+      assert audit.metadata["outcome"] == "unidentified"
+      refute inspect(audit.metadata) =~ "private"
+      [usage] = usage_events(user.id, "comms_sms_sent")
+      assert usage.metadata["outcome"] == "unidentified"
+      refute Fountain.Repo.get_by(Fountain.Team.CommsMessage, contact_id: contact.id)
+    end
+
     test "a read is not metered — only messages on the wire cost", %{
       conn: conn,
       raw_key: key,

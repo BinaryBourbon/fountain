@@ -108,6 +108,12 @@ defmodule FountainWeb.Telemetry do
         tags: [:stage, :status],
         description: "Conversation stage transitions by stage and status"
       ),
+      counter("fountain.broker.ca_install.count",
+        event_name: [:fountain, :broker, :ca_install],
+        tags: [:provider, :outcome],
+        description:
+          "Conversation CA installations by provider and outcome (ok, exit, unreachable, unavailable)"
+      ),
       # Any non-zero value here means a privilege-trail row was silently
       # dropped (#451) — alert-worthy, not informational.
       counter("fountain.audit.admin_record_rejected.count",

@@ -194,6 +194,9 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :sandboxes],
         [:fountain, :sandboxes_by_provider],
         [:fountain, :oban_queue],
+        # Conversations.Egress.install_ca/3; all outcomes and non-install
+        # paths are exercised by EgressTest.
+        [:fountain, :broker, :ca_install],
         # Fountain.Broker.Native.emit_telemetry/0 (#1170) — exercised
         # directly by Fountain.BrokerNativeTest, since the poller is off in
         # test and these are emitted only on the native backend

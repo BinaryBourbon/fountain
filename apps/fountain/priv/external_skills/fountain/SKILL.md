@@ -225,7 +225,7 @@ metadata:
   name: researcher
 spec:
   runtime: claude
-  model: anthropic/claude-sonnet-4-6
+  model: anthropic/claude-sonnet-5
   environment: my-project            # resolved to environment_id at apply time
   system: "You are a research assistant. Cite primary sources."
   skills: [fountain]                 # mounts an additional skill into the sprite

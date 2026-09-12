@@ -90,6 +90,28 @@ defmodule Fountain.PermissionPolicy do
   @spec reserved_keys() :: [String.t()]
   def reserved_keys, do: @reserved
 
+  @doc "Validation errors for every reserved key present in a policy."
+  @spec reserved_errors(map()) :: [{String.t(), String.t()}]
+  def reserved_errors(policy) when is_map(policy) do
+    policy
+    |> Map.take(@reserved)
+    |> Enum.flat_map(fn {key, value} ->
+      case reserved_error(key, value) do
+        nil -> []
+        message -> [{key, message}]
+      end
+    end)
+  end
+
+  # Every reserved key needs a clause here. No catch-all: adding a key without
+  # its validator must fail the reserved-key guardrail, never accept its value.
+  defp reserved_error(@ask_timeout, value) do
+    unless valid_ask_timeout?(value) do
+      "#{inspect(value)} is not a positive number of seconds " <>
+        "no greater than #{max_ask_timeout_seconds()}"
+    end
+  end
+
   @doc "Whether `key` names something other than a tool."
   @spec reserved?(term()) :: boolean()
   def reserved?(key), do: key in @reserved
