@@ -1126,39 +1126,46 @@ defmodule Fountain.Conversations.ConversationServer do
         {:error, reason} -> Logger.warning("runtime prepare on wake: #{inspect(reason)}")
       end
 
-      # Normally the wake path already flipped suspended → ready under the
-      # quota reservation; this covers the reaper parking the row mid-wake.
-      # Without it the row would stay `suspended` under a live server —
-      # invisible to the quota and unreachable by any reaper pass.
-      sandbox =
+      # Validate even a cached ready row: retirement may have won while the
+      # provider was waking. Only a suspended wake resets the lifetime clock.
+      attrs =
         if sandbox.status == "suspended" do
-          {:ok, s} =
-            Conversations.update_sandbox(sandbox, %{
-              status: "ready",
-              last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-            })
-
-          s
+          %{
+            status: "ready",
+            last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          }
         else
-          sandbox
+          %{status: "ready"}
         end
 
-      new_state = %{
-        state
-        | handle: handle,
-          sprite_env: sprite_env,
-          sandbox_started_at: Lifecycle.clock_start(sandbox)
-      }
+      case Conversations.update_sandbox(sandbox, attrs) do
+        {:ok, sandbox} ->
+          new_state = %{
+            state
+            | handle: handle,
+              sprite_env: sprite_env,
+              sandbox_started_at: Lifecycle.clock_start(sandbox)
+          }
 
-      new_state = reattach_running_turn(%{new_state | current_turn: nil})
+          new_state = reattach_running_turn(%{new_state | current_turn: nil})
 
-      new_state =
-        Reattachment.finish_runner_reconnect(
-          new_state,
-          if(new_state.current_turn, do: "reattached", else: "turn_ended")
-        )
+          new_state =
+            Reattachment.finish_runner_reconnect(
+              new_state,
+              if(new_state.current_turn, do: "reattached", else: "turn_ended")
+            )
 
-      {:noreply, new_state}
+          {:noreply, new_state}
+
+        {:error, %Ecto.Changeset{errors: [status: {"sandbox is retired", []}]}} ->
+          # Wake owns this connection's credentials, not the existing disk or
+          # another connection's session. Never destroy the machine here.
+          Egress.release_prepared({:ok, state})
+          {:stop, :normal, state}
+
+        error ->
+          raise MatchError, term: error
+      end
     else
       {:error, :not_found} ->
         # The provider says the sandbox is gone. That is the one answer that
