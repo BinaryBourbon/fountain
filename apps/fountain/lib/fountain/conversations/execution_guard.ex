@@ -971,13 +971,6 @@ defmodule Fountain.Conversations.ExecutionGuard do
   # must still prove its tenant/name/provider binding; a surviving conversation
   # must also remain bound to it. Missing or changed sandbox identity stays
   # uncertain. Reset cannot reuse this row while its journal remains open.
-  defp rebound?(opts, conv) do
-    case Keyword.fetch(opts, :expected_sandbox_id) do
-      {:ok, expected} -> expected != conv.sandbox_id
-      :error -> false
-    end
-  end
-
   defp cleanup_binding?(execution) do
     sandbox_matches =
       Repo.exists?(
@@ -994,6 +987,28 @@ defmodule Fountain.Conversations.ExecutionGuard do
       end
 
     sandbox_matches and parent_matches
+  end
+
+  # The other half of the same question, for a turn that has no journal row to
+  # ask it of. `cleanup_binding?/1` above compares the *journal's* recorded
+  # sandbox identity; this compares the *actor's* — the only record that exists
+  # when there is no `TurnExecution`.
+  #
+  # That is not a corner case. Whether a journal row exists is decided by
+  # execution limits (`resolve_turn_limits/1`), not by turn capacity, and limits
+  # ship inert: `host_ceiling/0` is `%{}` and `enforced_controls/1` is `[]`
+  # (#1773-#1793). So today every production turn takes the no-journal path and
+  # this guard is the only thing standing between a stale actor and another
+  # machine's turn. Do not delete it as exotic.
+  #
+  # An explicit `nil` is an expectation of "no sandbox" and fences; only an
+  # absent key means the caller is recovering on nobody's behalf, which is why
+  # this is `Keyword.fetch/2` and not `Keyword.get/2`.
+  defp rebound?(opts, conv) do
+    case Keyword.fetch(opts, :expected_sandbox_id) do
+      {:ok, expected} -> expected != conv.sandbox_id
+      :error -> false
+    end
   end
 
   defp current_binding?(execution) do
