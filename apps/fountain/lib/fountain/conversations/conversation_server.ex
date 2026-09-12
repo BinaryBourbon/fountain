@@ -786,7 +786,18 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp do_fresh_provision(state, conv, sandbox, agent, env, secrets) do
     try do
-      do_fresh_provision_inner(state, conv, sandbox, agent, env, secrets)
+      case Conversations.update_sandbox(sandbox, %{status: "starting"}) do
+        {:ok, _} ->
+          do_fresh_provision_inner(state, conv, sandbox, agent, env, secrets)
+
+        {:error, %Ecto.Changeset{errors: [status: {"sandbox is retired", []}]}} ->
+          # No resources were created yet. Leave the winning retirement and
+          # any replacement conversation alone, without announcing a start.
+          {:stop, :normal, state}
+
+        error ->
+          raise MatchError, term: error
+      end
     rescue
       exception ->
         stack = __STACKTRACE__
@@ -805,13 +816,11 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp do_fresh_provision_inner(state, conv, sandbox, agent, env, secrets) do
-    # The row only ever becomes `starting` right here, so finding it already
-    # `starting` means an earlier attempt was interrupted mid-provision — a
+    # Finding the original snapshot already `starting` means an earlier
+    # attempt was interrupted mid-provision — a
     # deploy or a Horde rebalance killed the server while it was blocked in
     # this function. The sprite it was building is most likely still there.
     interrupted? = sandbox.status == "starting"
-
-    {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "starting"})
 
     Output.publish_stage(
       state.conversation_id,
