@@ -1,5 +1,5 @@
 # The directory Mix will write compiled artifacts to.
-/_build/
+/_build
 
 # If you run "mix test --cover", coverage assets end up here. Unanchored: in an
 # umbrella the reports land in apps/*/cover/ as well as at the root, and while
@@ -8,13 +8,16 @@
 cover/
 
 # Local build outputs (CLI binaries in CI, `mix openapi.export` locally).
-/dist/
+/dist
 
-# The directory Mix downloads your dependencies sources to.
-/deps/
+# The directory Mix downloads your dependencies sources to. No trailing slash
+# on these: a `dir/` pattern matches a directory only, so a SYMLINK named
+# `deps` was not ignored and a `git add -A` in a worktree staged one onto
+# main, pointing at a local scratchpad path (#2035).
+/deps
 
 # Where 3rd-party dependencies like ExDoc output generated docs.
-/doc/
+/doc
 
 # Ignore .fetch files in case you like to edit your project deps locally.
 /.fetch
@@ -26,7 +29,7 @@ erl_crash.dump
 *.ez
 
 # Temporary files, for example, from tests.
-/tmp/
+/tmp
 
 # ExUnit's `@tag :tmp_dir` writes under the app that runs the test, not the
 # umbrella root, and the behavioural CA install test uses one.
