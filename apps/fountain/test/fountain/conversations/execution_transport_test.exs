@@ -276,7 +276,19 @@ defmodule Fountain.Conversations.ExecutionTransportTest do
         execution_limits: limits
       )
 
-    on_exit(fn -> if Process.alive?(peer), do: GenServer.stop(peer) end)
+    # Not `if Process.alive?(peer)`: this test drives the peer into a failed
+    # state on purpose, so teardown races its exit. The check-then-act version
+    # saw it alive, it exited, and `GenServer.stop/1` then died with `no
+    # process` — a green test body with a red teardown. Tolerating the exit is
+    # what the rest of the suite does (`ConversationServerCase`).
+    on_exit(fn ->
+      try do
+        GenServer.stop(peer)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
     :ok = Managoat.ACP.Testing.ScriptedAgent.connect(agent, peer)
     assert_receive {:acp, ^ref, {:done, "end_turn", _}}, 2_000
     assert_received {:scripted_agent, :wrote, %{"method" => "session/prompt"}}
