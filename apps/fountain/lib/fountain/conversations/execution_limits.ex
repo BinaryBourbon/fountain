@@ -34,6 +34,29 @@ defmodule Fountain.Conversations.ExecutionLimits do
   def keys, do: @keys
   def max_wall_seconds, do: @max_wall_seconds
 
+  @doc """
+  The deployment-wide ceiling every account and launch is intersected with.
+
+  Read from application env on each call rather than cached, so an operator
+  raising or lowering it reaches a running node's next turn instead of its next
+  restart. `%{}` — the default — is no ceiling, not a zero allowance.
+  """
+  @spec host_ceiling() :: t()
+  def host_ceiling, do: Application.get_env(:fountain, :execution_limit_ceiling, %{})
+
+  @doc """
+  Controls the integrated runtime transport actually enforces, per runtime.
+
+  Empty, deliberately, and this is the single place that says so. Admission
+  passes it to `require_controls/2`, which is what turns a configured ceiling
+  into `422 execution_limits_unsupported` rather than a promise nothing keeps.
+  Naming it here means the PR that first enforces a control changes one
+  function, and every door follows — rather than three call sites each passing
+  their own `[]` and one of them being forgotten.
+  """
+  @spec enforced_controls(String.t() | nil) :: [String.t()]
+  def enforced_controls(_runtime), do: []
+
   @doc "Parse the operator's JSON environment setting without echoing its input."
   def from_json_env(value) when value in [nil, ""], do: {:ok, %{}}
 

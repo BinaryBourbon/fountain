@@ -67,6 +67,7 @@ defmodule Fountain.Application do
         # module the release might not carry.
         {Oban, Fountain.Extensions.oban_options(Application.fetch_env!(:fountain, Oban))}
       ] ++
+        execution_deadline_children() ++
         cluster_children(cluster_topologies) ++
         [
           # Horde.Registry + Horde.DynamicSupervisor are CRDT-backed
@@ -188,5 +189,16 @@ defmodule Fountain.Application do
     end
 
     :ok
+  end
+
+  # Off unless an operator turned execution limits on. `runtime.exs` derives the
+  # default from whether a host ceiling is configured, so a deployment that has
+  # not asked for bounded turns runs no journal poll at all — the same "inert
+  # until configured" posture the rest of ADR 0046 keeps.
+  @doc false
+  def execution_deadline_children do
+    if Application.get_env(:fountain, :execution_deadline_worker_enabled, false),
+      do: [Fountain.Conversations.ExecutionDeadlineWorker],
+      else: []
   end
 end

@@ -454,14 +454,40 @@ defmodule Fountain.Principals do
   # the claim token's hash is rewritten, so a replayed create hands back a
   # usable pair rather than two values the caller can do nothing with.
   defp issue_credentials(%ClaimableUser{} = claimable, opts) do
-    token = new_token()
+    # Claim and expiry revoke keys under this same lock. The earlier replay
+    # lookup is only a snapshot: recheck after the lock, and hold it through
+    # both credential writes so a claim cannot miss a newly minted key.
+    result =
+      Repo.transaction(fn ->
+        token = new_token()
 
-    with {:ok, {_key, raw}} <- mint_principal_key(claimable, opts),
-         {:ok, claimable} <-
-           claimable
-           |> Ecto.Changeset.change(claim_token_hash: hash_token(token))
-           |> Repo.update() do
-      {:ok, %{claimable: claimable, api_key: raw, claim_token: token}}
+        with %ClaimableUser{} = current <- lock_claimable(claimable.id),
+             {:ok, current} <- still_open(current),
+             {changeset, raw} =
+               Accounts.build_api_key(
+                 current.user_id,
+                 key_name(current),
+                 principal_key_opts(current, opts)
+               ),
+             {:ok, key} <- Repo.insert(changeset),
+             {:ok, current} <-
+               current
+               |> Ecto.Changeset.change(claim_token_hash: hash_token(token))
+               |> Repo.update() do
+          {%{claimable: current, api_key: raw, claim_token: token}, key}
+        else
+          nil -> Repo.rollback(:not_found)
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+    case result do
+      {:ok, {credentials, key}} ->
+        Accounts.record_api_key_created(key, principal_key_opts(claimable, opts))
+        {:ok, credentials}
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -471,14 +497,20 @@ defmodule Fountain.Principals do
   # ordinary tenant of the account that owns it — and a key that expired at it
   # would take a live machine away from its new owner, usually within hours.
   defp mint_principal_key(%ClaimableUser{} = claimable, opts) do
-    expires_at = if claimable.status == "claimed", do: nil, else: claimable.expires_at
+    Accounts.create_api_key(
+      claimable.user_id,
+      key_name(claimable),
+      principal_key_opts(claimable, opts)
+    )
+  end
 
-    Accounts.create_api_key(claimable.user_id, key_name(claimable),
+  defp principal_key_opts(claimable, opts) do
+    [
       scopes: ["principal"],
-      expires_at: expires_at,
+      expires_at: if(claimable.status == "claimed", do: nil, else: claimable.expires_at),
       actor: Keyword.get(opts, :actor, "api"),
       request_ip: Keyword.get(opts, :request_ip)
-    )
+    ]
   end
 
   defp key_name(%ClaimableUser{status: "claimed", application_id: app}), do: "principal:#{app}"

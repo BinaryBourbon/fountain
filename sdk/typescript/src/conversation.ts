@@ -9,6 +9,15 @@ export interface SendOptions extends RunOptions {
   images?: unknown[];
 }
 
+export interface ReapplyOptions {
+  /** Change the agent; omit to keep the current one. */
+  agentId?: string;
+  /** Change the environment, pass null to clear it, or omit it to keep it. */
+  environmentId?: string | null;
+  /** Change the vault, pass null to clear it, or omit it to keep it. */
+  vaultId?: string | null;
+}
+
 /**
  * A conversation you already have — the sandbox is still there, and so is
  * everything the agent learned in it.
@@ -167,6 +176,23 @@ export class Conversation {
   /** The conversations this one spawned, as a tree. */
   async tree(): Promise<unknown> {
     return this.http.data("GET", `/api/conversations/${this.id}/tree`);
+  }
+
+  /**
+   * Re-select this conversation's agent, environment and vault on the machine
+   * it is already running. The conversation, the transcript and the files on
+   * disk all stay; the next prompt starts a runtime that reads the new
+   * selection. Call it with nothing to refresh what is already selected.
+   *
+   * A selection that would need the machine built again is refused with 409
+   * `rebuild_required`, naming the field that forced it.
+   */
+  async reapply(options: ReapplyOptions = {}): Promise<ConversationRecord> {
+    const body: Record<string, unknown> = {};
+    if (options.agentId !== undefined) body.agent_id = options.agentId;
+    if (options.environmentId !== undefined) body.environment_id = options.environmentId;
+    if (options.vaultId !== undefined) body.vault_id = options.vaultId;
+    return this.http.data("POST", `/api/conversations/${this.id}/reapply`, { body });
   }
 
   /** Ask the agent to stop the turn it is on. The sandbox stays up. */

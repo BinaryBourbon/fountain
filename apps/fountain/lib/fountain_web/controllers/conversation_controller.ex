@@ -252,8 +252,18 @@ defmodule FountainWeb.ConversationController do
     # last_active_at, as the plain fetch would, is worse than not serving
     # the fields at all.
     case Conversations.get_conversation_with_activity(id, user.id) do
-      nil -> {:error, :not_found}
-      conv -> render(conn, :show, conversation: conv)
+      nil ->
+        {:error, :not_found}
+
+      conv ->
+        # Ownership: established by the tenant-scoped fetch above. Requests
+        # that outlived a turn (#1635) are served here rather than on the
+        # list, because a conversation is idle while one waits and the card
+        # has to survive a client reload.
+        render(conn, :show,
+          conversation: conv,
+          pending_requests: Conversations._unsafe_list_pending_requests(conv.id)
+        )
     end
   end
 
@@ -492,6 +502,9 @@ defmodule FountainWeb.ConversationController do
       conflict: {"Conflicting state", "application/json", Schemas.Error},
       service_unavailable: {"Sandbox or fleet unavailable", "application/json", Schemas.Error},
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
+      accepted:
+        {"Queued for sandbox capacity", "application/json", Schemas.SandboxRequestResponse},
+      too_many_requests: {"Tenant concurrency cap reached", "application/json", Schemas.Error},
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
       forbidden:
@@ -548,6 +561,121 @@ defmodule FountainWeb.ConversationController do
       conn
       |> put_status(if(outcome == :created, do: :created, else: :ok))
       |> render(:show, conversation: conv, resumed: outcome == :resumed)
+    else
+      {:error, {:sandbox_quota_exceeded, _} = reason} ->
+        maybe_enqueue(conn, params, user, reason)
+
+      {:error, :fleet_full = reason} ->
+        maybe_enqueue(conn, params, user, reason)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Exactly the launch keys `Conversations.start_conversation/2` reads, minus
+  # the ones this path sets itself (`user_id`, `agent_id`, `source`) and the
+  # two it refuses to queue. An allow list rather than a drop list:
+  # `ConversationCreateRequest` does not set `additionalProperties: false`, so
+  # dropping the keys we know would park whatever else a caller sent in
+  # `attrs` until the request expired.
+  @queued_attr_keys ~w(prompt title vault_id environment_id permission_policy
+                       sandbox_mode sandbox_api_access sprite_name channel_id
+                       fresh parent_conversation_id caller_tools labels
+                       execution_limits)
+
+  # Queueing is opt-in (ADR 0042 decision 2). A caller that did not ask keeps
+  # the immediate 429 or 503 its client already handles.
+  #
+  # Images never queue: the server does not hold image bytes for an hour. An
+  # explicit `sandbox_id` never queues either — that is an attach to a machine
+  # the caller already has, not a request for capacity. That arm is belt and
+  # braces rather than a path with a test: `attach_conversation/4` takes no
+  # sandbox reservation, so it cannot raise either capacity error for this
+  # clause to intercept. It is here so a future attach that *does* reserve
+  # cannot start queueing by accident.
+  defp maybe_enqueue(conn, params, user, reason) do
+    if params["queue"] == true and params["images"] in [nil, []] and
+         params["sandbox_id"] in [nil, ""] do
+      enqueue_params = %{
+        user_id: user.id,
+        agent_id: params["agent_id"],
+        kind: "start",
+        source: params["source"],
+        # The restriction this request arrived under, carried so the replay is
+        # held to it an hour later. Without it a `sprite` token could queue a
+        # `channel_id` start with `labels` and have the drainer merge them into
+        # a conversation the token does not own, which is the write
+        # `Conversations.set_conversation_labels/4` refuses at this door
+        # (ADR 0045). `nil` for any other credential, which every rule reads as
+        # "no sandbox restriction applies".
+        sandbox_key_id: SandboxKey.id(conn),
+        attrs: Map.take(params, @queued_attr_keys)
+      }
+
+      case Fountain.SandboxQueue.enqueue(enqueue_params, Audited.attribution(conn)) do
+        {:ok, request} ->
+          conn
+          |> put_status(:accepted)
+          |> put_view(FountainWeb.SandboxQueueJSON)
+          |> render(:show, request: request, position: Fountain.SandboxQueue.position(request))
+
+        # At the depth bound the caller gets the capacity error it was about
+        # to get anyway. The queue delays the cap; it never raises it.
+        {:error, :queue_full} ->
+          {:error, reason}
+
+        {:error, _} = error ->
+          error
+      end
+    else
+      {:error, reason}
+    end
+  end
+
+  operation(:reapply,
+    summary: "Reapply a conversation's Agent, Environment and Vault",
+    description:
+      "Applies a selection to the machine this conversation already runs on, so its files " <>
+        "stay where the agent left them. Variables, the system prompt, skills and MCP " <>
+        "configuration are rewritten, and the next prompt reads them. An omitted field keeps " <>
+        "its current selection; null clears the Environment override or the Vault; an empty " <>
+        "object reapplies what is already selected.\n\n" <>
+        "Refused with 409 `conversation_busy` while a turn runs, 409 `rebuild_required` when " <>
+        "the selection would need the machine built again (the `field` says which one forced " <>
+        "it), 503 while the machine is still being built, and 410 once the conversation has " <>
+        "ended.",
+    parameters: [conversation_id: [in: :path, type: :string, required: true]],
+    request_body:
+      {"Configuration selection", "application/json", Schemas.ConversationReapplyRequest},
+    responses: [
+      ok: {"Reapplied conversation", "application/json", Schemas.ConversationResponse},
+      forbidden:
+        {"Sprite keys may not reapply a conversation", "application/json", Schemas.Error},
+      not_found:
+        {"Conversation or selected resource not found", "application/json", Schemas.Error},
+      conflict:
+        {"The conversation has a running turn, or the selection needs the machine built again",
+         "application/json", Schemas.Error},
+      gone: {"Conversation has ended", "application/json", Schemas.Error},
+      unprocessable_entity: {"Selection is not allowed", "application/json", Schemas.Error},
+      service_unavailable: {"The machine is still being built", "application/json", Schemas.Error}
+    ]
+  )
+
+  def reapply(conn, %{"conversation_id" => id} = params) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      conv ->
+        # Ownership was established by the scoped fetch above.
+        with {:ok, updated} <-
+               Conversations.reapply_conversation(conv, params, Audited.attribution(conn)) do
+          render(conn, :show, conversation: updated)
+        end
     end
   end
 
@@ -560,7 +688,12 @@ defmodule FountainWeb.ConversationController do
         "that block carried. Never send an option the agent did not offer.\n\n" <>
         "First answer wins: another attached client, the timeout, or the turn ending " <>
         "may already have resolved it, and all of those return 409. The resolution " <>
-        "appears on the stream as a `request` stage event with state `done`.",
+        "appears on the stream as a `request` stage event with state `done`.\n\n" <>
+        "A request that outlived its turn (#1635) is answered here too. The agent " <>
+        "ended that turn with stop reason `waiting`, so the conversation is idle and " <>
+        "the sandbox may be suspended; GET /api/conversations/{id} lists such " <>
+        "requests as `pending_requests`. Answering one resolves it and opens a new " <>
+        "turn carrying the request id and the option, which wakes the sandbox.",
     parameters: [
       conversation_id: [in: :path, type: :string, required: true],
       request_id: [in: :path, type: :string, required: true]
@@ -569,8 +702,12 @@ defmodule FountainWeb.ConversationController do
     responses: [
       ok: {"Answered", "application/json", Schemas.PermissionAnswerResponse},
       not_found: {"Not found", "application/json", Schemas.Error},
-      conflict: {"Already resolved", "application/json", Schemas.Error},
-      unprocessable_entity: {"Unknown option", "application/json", Schemas.Error}
+      conflict:
+        {"Already resolved, or resolved but not delivered", "application/json", Schemas.Error},
+      unprocessable_entity: {"Unknown option", "application/json", Schemas.Error},
+      bad_request: {"Busy", "application/json", Schemas.Error},
+      payment_required: {"Insufficient credits", "application/json", Schemas.Error},
+      forbidden: {"The sandbox may not answer", "application/json", Schemas.Error}
     ]
   )
 
@@ -618,6 +755,31 @@ defmodule FountainWeb.ConversationController do
   defp answer_response({:error, :not_found}, conn) do
     conn |> put_status(:not_found) |> json(%{error: "not_found"})
   end
+
+  # A turn is running, so the resume turn a detached answer opens cannot queue
+  # behind it (#1635). The request is untouched; try again when it is idle.
+  defp answer_response({:error, :busy}, _conn), do: {:error, "conversation_busy"}
+
+  # The request was resolved and the turn that carries it back could not be
+  # opened. Its own code, because the 409 above tells a client to give up on a
+  # request somebody else took, and this one has to say the opposite: the
+  # answer landed, the agent has not heard it, and a prompt is what wakes it.
+  defp answer_response({:error, :answer_not_delivered}, conn) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "permission_answer_not_delivered",
+      message:
+        "The answer was recorded and the request is resolved, but the turn that " <>
+          "carries it to the agent could not be opened. Send a prompt to the " <>
+          "conversation to wake it."
+    })
+  end
+
+  # Everything else renders through the FallbackController, for the reason
+  # `do_prompt/5` gives: an error shape this function has not learned used to
+  # be a FunctionClauseError 500.
+  defp answer_response({:error, _} = err, _conn), do: err
 
   @doc """
   Infer the conversation's `source` and `parent_conversation_id` from

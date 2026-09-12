@@ -7,6 +7,10 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
   Updates `last_used_at` in an unlinked task under `Fountain.TaskSupervisor`,
   so the stamp never blocks the request and cannot take it down.
 
+  Authentication refusals share a 600/minute per-address budget, separately
+  from the pipeline's coarse pre-auth ceiling and authenticated per-key quota.
+  A full refusal budget returns 429 without blocking a valid key.
+
   Returns 401 JSON on failure. The response body includes a machine-readable
   `reason` so clients (especially in-sprite agents holding a rotated
   `$FOUNTAIN_TOKEN`) can tell a revoked key apart from one that never existed:
@@ -25,6 +29,7 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
   require Logger
 
   alias Fountain.Accounts
+  alias FountainWeb.Plugs.RateLimit
 
   def init(opts), do: opts
 
@@ -69,23 +74,30 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
       # the same answer it would get from asking for a new one. Nothing is
       # leaked by being specific — the holder owns the key.
       {:error, :unverified} ->
-        conn
-        |> put_status(:forbidden)
-        |> json(%{
-          error: "Verify your email address before using the API",
-          reason: "email_unverified"
-        })
-        |> halt()
+        refuse(
+          conn,
+          :forbidden,
+          "Verify your email address before using the API",
+          "email_unverified"
+        )
 
       _ ->
         unauthorized(conn, "Invalid or missing API key", "api_key_invalid")
     end
   end
 
-  defp unauthorized(conn, message, reason) do
-    conn
-    |> put_status(:unauthorized)
-    |> json(%{error: message, reason: reason})
-    |> halt()
+  defp unauthorized(conn, message, reason), do: refuse(conn, :unauthorized, message, reason)
+
+  defp refuse(conn, status, message, reason) do
+    conn = RateLimit.call(conn, RateLimit.init(bucket: "api-auth-failure", max: 600))
+
+    if conn.halted do
+      conn
+    else
+      conn
+      |> put_status(status)
+      |> json(%{error: message, reason: reason})
+      |> halt()
+    end
   end
 end

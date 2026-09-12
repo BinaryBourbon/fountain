@@ -143,6 +143,60 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     prompt_id
   end
 
+  describe "Claude model confirmation aliases (#1710)" do
+    for {model, confirmed, accepted?} <- [
+          {"claude-opus-5", "opus", true},
+          {"claude-sonnet-5", "sonnet", true},
+          {"claude-opus-5", "haiku", false}
+        ] do
+      test "#{model} confirmed as #{confirmed}", %{} do
+        model = unquote(model)
+        confirmed = unquote(confirmed)
+        user = insert_verified_user()
+        agent = insert_agent(user_id: user.id, runtime: "claude", model: "anthropic/" <> model)
+        conv = insert_conversation(agent: agent, user_id: user.id)
+        {pid, ref} = start_acp_turn(conv)
+
+        %{"id" => init_id, "method" => "initialize"} = next_write()
+        reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+        %{"id" => new_id, "method" => "session/new"} = next_write()
+
+        reply(pid, ref, new_id, %{
+          "sessionId" => "sess_1",
+          "configOptions" => [%{"id" => "model", "currentValue" => "default"}]
+        })
+
+        assert %{
+                 "id" => set_id,
+                 "method" => "session/set_config_option",
+                 "params" => %{"configId" => "model", "value" => ^model}
+               } = next_write()
+
+        reply(pid, ref, set_id, %{
+          "configOptions" => [%{"id" => "model", "currentValue" => confirmed}]
+        })
+
+        if unquote(accepted?) do
+          %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+          reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+          assert [turn] = Conversations._unsafe_list_turns(conv.id)
+          assert turn.status == "completed"
+          assert turn.model_selection["requested_model"] == model
+          assert turn.model_selection["effective_model"] == confirmed
+          assert turn.model_selection["source"] == "runtime"
+          %{data: [wire]} = FountainWeb.ConversationJSON.turns(%{turns: [turn]})
+          assert wire.model_selection == turn.model_selection
+        else
+          refute_receive {:wrote, _}, 50
+          assert [turn] = Conversations._unsafe_list_turns(conv.id)
+          assert turn.status == "failed"
+          assert is_nil(turn.acp_prompt_id)
+          assert turn.model_selection["error"] =~ "Runtime confirmed a different model: haiku"
+        end
+      end
+    end
+  end
+
   describe "the decision" do
     test "every shippable runtime speaks ACP; the retired flag routes nothing" do
       user = insert_verified_user()
@@ -1672,6 +1726,35 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     # cannot see them. A detached answer goes through `send_prompt/4`, which
     # asks the registry first, so the resume turn has to be able to find this
     # server rather than waking a second one.
+    defp register(pid, conv_id) do
+      Mimic.stub(Horde.Registry, :lookup, fn
+        Fountain.ConversationRegistry, ^conv_id -> [{pid, nil}]
+        _registry, _key -> []
+      end)
+    end
+
+    # The detach closes the connection, so a resume turn re-handshakes:
+    # `initialize`, `session/resume` (the caps advertise it), the model pin,
+    # then the prompt. Returns the prompt's params.
+    #
+    # `models` on the session response is not decoration: a runtime that
+    # exposes no model selection fails the turn, so a resume turn has to be
+    # answered the way `drive_to_prompt/2` answers `session/new`.
+    defp drive_to_resume_prompt(pid, ref) do
+      %{"id" => init_id, "method" => "initialize"} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      %{"id" => session_id, "method" => "session/resume"} = next_write()
+      reply(pid, ref, session_id, %{"models" => %{}})
+
+      %{"id" => set_id, "method" => "session/set_model"} = next_write()
+      reply(pid, ref, set_id, %{})
+
+      %{"method" => "session/prompt", "params" => params} = next_write()
+      settle(pid)
+      params
+    end
+
     defp stages(conv_id, stage, state) do
       conv_id
       |> Conversations._unsafe_list_log_events()
@@ -1866,6 +1949,240 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert after_turn.pending_permission["request_id"] == request_id
       assert after_turn.permission_deadline == turn.permission_deadline
       assert stages(conv.id, "request", "done") == []
+    end
+
+    test "answering opens a new turn whose prompt carries the request and the option" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 408, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+      register(pid, conv.id)
+
+      assert :ok =
+               Conversations.answer_permission_request(conv.id, user.id, request_id, "yes",
+                 actor: "api"
+               )
+
+      settle(pid)
+
+      # A fresh connection: the old one went with the detach, so the resume
+      # turn handshakes and resumes the session on the same disk.
+      params = drive_to_resume_prompt(pid, ref)
+      assert [%{"type" => "text", "text" => text}] = params["prompt"]
+
+      assert %{"fountain/permission_answer" => answer} = Jason.decode!(text)
+      assert answer["request_id"] == request_id
+      assert answer["option_id"] == "yes"
+      assert answer["outcome"] == "answered"
+      assert answer["tool"] == "Bash"
+    end
+
+    test "a colliding request id in the resume turn is reported, carded and timed" do
+      # claude-agent-acp and codex number their requests from 0 per turn, so
+      # the resume turn's first request arrives under the id the detached one
+      # used. Against a kept peer it matched the stale hold and vanished.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      first_id = raise_permission_with(pid, ref, 0, %{})
+      assert first_id =~ ~r/^0\./
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+      register(pid, conv.id)
+
+      assert :ok = Conversations.answer_permission_request(conv.id, user.id, first_id, "yes")
+      settle(pid)
+      _params = drive_to_resume_prompt(pid, ref)
+
+      # The same JSON-RPC id the detached request used.
+      second_id = raise_permission_with(pid, ref, 0, %{})
+
+      assert second_id =~ ~r/^0\./
+      refute second_id == first_id
+
+      turn = :sys.get_state(pid).current_turn
+      assert turn.pending_permission["request_id"] == second_id
+      assert turn.pending_permission["tool"] == "Bash"
+
+      started =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "request" and &1.state == "started"))
+        |> Enum.map(&Jason.decode!(&1.data))
+
+      assert Enum.map(started, & &1["request_id"]) == [first_id, second_id]
+
+      # And it is timed, so nobody answering still ends it.
+      assert :sys.get_state(pid).permission_timer
+      send(pid, {:permission_timeout, second_id})
+      settle(pid)
+
+      assert %{"id" => 0, "result" => %{"outcome" => %{"optionId" => "no"}}} = next_write()
+    end
+
+    test "a restart between the detach and the answer changes nothing: the row drives it" do
+      # Nothing about a detached request lives in a process. The server that
+      # raised it is gone by the time it is answered in the normal case
+      # (the sandbox parked), so a deploy in the middle has to be the same
+      # thing happening sooner.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 413, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+
+      # The BEAM this was raised on goes away.
+      GenServer.stop(pid)
+
+      # Ownership: the tenant-scoped answer door below establishes it; this is
+      # the assertion that the row alone still describes the request.
+      assert [%{request_id: ^request_id, tool: "Bash"}] =
+               Conversations._unsafe_list_pending_requests(conv.id)
+
+      # No server, so the answer takes the wake path.
+      test = self()
+
+      Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+      end)
+
+      Mimic.stub(ConversationServer, :queue_initial_prompt, fn _pid, prompt ->
+        send(test, {:resume_prompt, prompt})
+        :ok
+      end)
+
+      assert :ok = Conversations.answer_permission_request(conv.id, user.id, request_id, "yes")
+
+      assert_receive {:resume_prompt, prompt}
+
+      assert %{
+               "fountain/permission_answer" => %{
+                 "request_id" => ^request_id,
+                 "option_id" => "yes"
+               }
+             } =
+               Jason.decode!(prompt)
+    end
+
+    test "answering is refused for the sandbox's own token" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 412, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+
+      assert {:error, :sprite_may_not_answer} =
+               Conversations.answer_permission_request(conv.id, user.id, request_id, "yes",
+                 actor: "sprite"
+               )
+
+      assert waiting_turn(conv.id).pending_permission["request_id"] == request_id
+    end
+
+    test "the resolution is audited with the answerer, not the sandbox" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 409, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+      register(pid, conv.id)
+
+      assert :ok =
+               Conversations.answer_permission_request(conv.id, user.id, request_id, "yes",
+                 actor: "ui",
+                 request_ip: "198.51.100.7"
+               )
+
+      assert answered =
+               user.id
+               |> Fountain.Audit.list_recent_for_user(50)
+               |> Enum.find(&(&1.action == "conversation.permission_answered"))
+
+      assert answered.actor == "ui"
+      assert answered.request_ip == "198.51.100.7"
+      assert answered.metadata["request_id"] == request_id
+    end
+
+    test "the expiry opens the same resume turn, with the denial" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 410, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+      register(pid, conv.id)
+
+      # Age the deadline past, as a sweep an hour later would find it.
+      turn = waiting_turn(conv.id)
+
+      {:ok, _} =
+        Fountain.Repo.update(
+          Ecto.Changeset.change(turn,
+            permission_deadline:
+              DateTime.utc_now() |> DateTime.add(-60) |> DateTime.truncate(:second)
+          )
+        )
+
+      assert Fountain.Workers.DetachedRequestSweeper.sweep_expired_requests() == 1
+      settle(pid)
+
+      params = drive_to_resume_prompt(pid, ref)
+      assert [%{"text" => text}] = params["prompt"]
+
+      assert %{"fountain/permission_answer" => answer} = Jason.decode!(text)
+      assert answer["request_id"] == request_id
+      assert answer["outcome"] == "timeout"
+      # The agent's own rejection, never an invented id.
+      assert answer["option_id"] == "no"
+    end
+
+    test "the request webhooks fire on the ask and on the resolution" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: waiting_agent(user))
+
+      {:ok, {endpoint, _secret}} =
+        Fountain.Webhooks.create_endpoint(user.id, %{
+          "url" => "https://hooks.example.com/f",
+          "event_types" => ["conversation.request.started", "conversation.request.done"]
+        })
+
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      request_id = raise_permission_with(pid, ref, 411, %{})
+      reply(pid, ref, prompt_id, %{"stopReason" => "waiting"})
+      register(pid, conv.id)
+
+      assert [started] = webhook_types(endpoint)
+      assert started == "conversation.request.started"
+
+      assert :ok = Conversations.answer_permission_request(conv.id, user.id, request_id, "yes")
+
+      assert webhook_types(endpoint) == [
+               "conversation.request.started",
+               "conversation.request.done"
+             ]
+    end
+
+    defp webhook_types(endpoint) do
+      Fountain.Repo.all(
+        from(j in Oban.Job,
+          where: fragment("?->>'endpoint_id' = ?", j.args, ^endpoint.id),
+          order_by: j.id,
+          select: fragment("?->'payload'->>'type'", j.args)
+        )
+      )
     end
   end
 
