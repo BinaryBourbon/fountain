@@ -1150,6 +1150,10 @@ defmodule Fountain.Conversations.ConversationServer do
         Fountain.Conversations.Identity.disk_env(sprite_env)
       )
 
+      # An agent's skills reach the existing computer on its next wake too,
+      # and a skill it no longer names is taken off the disk (#1565).
+      Reapply.mount_skills(handle, conv, agent)
+
       # Same for the agent's system prompt: an edit reaches the existing
       # computer on its next wake (#848).
       runtime = conv.runtime || (agent && agent.runtime) || "claude"
