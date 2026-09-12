@@ -569,18 +569,78 @@ defmodule Fountain.Principals do
       {claimable, replay?} = decide_claim(current, claim_token, claimer, opts)
       revoked = if replay?, do: revoke_claimed_credentials(claimable.user_id), else: []
 
-      {changeset, raw} =
-        Accounts.build_api_key(
-          claimable.user_id,
-          key_name(claimable),
-          principal_key_opts(claimable, opts)
-        )
-
-      case Repo.insert(changeset) do
-        {:ok, key} -> {claimable, replay?, key, raw, revoked}
-        {:error, changeset} -> Repo.rollback(changeset)
-      end
+      {key, raw} = insert_principal_key(claimable, opts)
+      {claimable, replay?, key, raw, revoked}
     end)
+  end
+
+  @doc """
+  Replace a claimed principal's credential using its current owner's authority.
+
+  Works without the original claim token or idempotency key, including after
+  expiry or revocation. The claim lock serializes renewal with claim replay.
+  Revocation and minting commit together; runtime callback keys are untouched.
+  Returns `:not_found` for a principal the account does not own.
+  """
+  @spec renew_owned_credential(binary(), binary(), keyword()) ::
+          {:ok, {ApiKey.t(), String.t()}} | {:error, term()}
+  def renew_owned_credential(owner_user_id, principal_user_id, opts \\ []) do
+    result =
+      Repo.transaction(fn ->
+        owned =
+          from o in Owner,
+            where: o.owner_user_id == ^owner_user_id,
+            select: o.principal_user_id
+
+        claimable =
+          Repo.one(
+            from c in ClaimableUser,
+              where:
+                c.user_id == ^principal_user_id and c.user_id in subquery(owned) and
+                  c.status == "claimed",
+              lock: "FOR UPDATE"
+          ) || Repo.rollback(:not_found)
+
+        revoked = revoke_claimed_credentials(claimable.user_id)
+        {key, raw} = insert_principal_key(claimable, opts)
+        {claimable, key, raw, revoked}
+      end)
+
+    with {:ok, {claimable, key, raw, revoked}} <- result do
+      key_opts = principal_key_opts(claimable, opts)
+      Enum.each(revoked, &Accounts.record_api_key_revoked(&1, key_opts))
+      Accounts.record_api_key_created(key, key_opts)
+
+      Audit.record(%{
+        user_id: owner_user_id,
+        action: "api_key.created",
+        resource_type: "api_key",
+        resource_id: key.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{
+          "principal_user_id" => principal_user_id,
+          "key_prefix" => key.key_prefix,
+          "revoked_key_ids" => Enum.map(revoked, & &1.id)
+        }
+      })
+
+      {:ok, {key, raw}}
+    end
+  end
+
+  defp insert_principal_key(claimable, opts) do
+    {changeset, raw} =
+      Accounts.build_api_key(
+        claimable.user_id,
+        key_name(claimable),
+        principal_key_opts(claimable, opts)
+      )
+
+    case Repo.insert(changeset) do
+      {:ok, key} -> {key, raw}
+      {:error, changeset} -> Repo.rollback(changeset)
+    end
   end
 
   # A claimed replay rotates the caller's credential, not the runtime's

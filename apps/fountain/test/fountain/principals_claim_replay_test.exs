@@ -139,6 +139,14 @@ defmodule Fountain.PrincipalsClaimReplayTest do
   end
 
   test "concurrent claim replays leave one principal credential" do
+    assert_one_credential_after_rotation(:replay)
+  end
+
+  test "owner renewal and claim replay serialize their credential replacement" do
+    assert_one_credential_after_rotation(:renewal)
+  end
+
+  defp assert_one_credential_after_rotation(second_operation) do
     {application, owner, opened, first} =
       Sandbox.unboxed_run(Repo, fn ->
         application = insert_verified_user()
@@ -186,12 +194,22 @@ defmodule Fountain.PrincipalsClaimReplayTest do
     assert_receive :locked, 5_000
 
     replays =
-      for _ <- 1..2 do
+      for operation <- [:replay, second_operation] do
         Task.async(fn ->
           Sandbox.unboxed_run(Repo, fn ->
             %{rows: [[backend]]} = Repo.query!("SELECT pg_backend_pid()")
             send(parent, {:rotation_backend, backend})
-            Principals.claim(opened.claimable.id, "", owner, idempotency_key: "rotate")
+
+            case operation do
+              :replay ->
+                Principals.claim(opened.claimable.id, "", owner, idempotency_key: "rotate")
+
+              :renewal ->
+                with {:ok, {_key, raw}} <-
+                       Principals.renew_owned_credential(owner.id, opened.claimable.user_id) do
+                  {:ok, %{api_key: raw}}
+                end
+            end
           end)
         end)
       end
