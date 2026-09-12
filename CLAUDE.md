@@ -491,7 +491,7 @@ retarget is now GitHub's job rather than yours, which removes the trap where a
 stale base merged cleanly into a branch that no longer existed. Land a feature
 as a stack of small chained PRs exactly as before.
 
-`scripts/ci/README.md` documents the three CI events and the queue's sizing;
+`scripts/ci/README.md` documents the four CI events and the queue's sizing;
 `gate.py`'s `PROBES` table is the authority on what each event owes.
 
 ### Coverage
