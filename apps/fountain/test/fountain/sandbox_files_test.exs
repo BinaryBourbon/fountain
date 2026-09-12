@@ -8,6 +8,12 @@ defmodule Fountain.SandboxFilesTest do
 
   @home "/home/sprite"
 
+  # A value that shares not one character with the text around it or with
+  # `[REDACTED]`, so "no fragment of it survived" can be asserted byte by
+  # byte rather than by eye.
+  @straddled "QQWWZZ11223344556677"
+  @straddle_body "p=" <> @straddled <> "|xyz|"
+
   setup do
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "claude")
@@ -178,7 +184,9 @@ defmodule Fountain.SandboxFilesTest do
 
       expect_script(fn _, script, args ->
         assert script =~ "head -c"
-        assert args == ["262144", @home <> "/.env"]
+        # The cap plus the overlap: one byte less than the longest value,
+        # `sk-live-abcdef`, so a value lying across the cap arrives whole.
+        assert args == ["#{262_144 + 13}", @home <> "/.env"]
         {:ok, "#{byte_size(body)}\n" <> b64(body), 0}
       end)
 
@@ -597,6 +605,171 @@ defmodule Fountain.SandboxFilesTest do
                   %{path: "dump-[REDACTED].json", renamed_from: "old-[REDACTED].json"}
                 ]
               }} = SandboxFiles.status(sandbox, nil)
+    end
+  end
+
+  # Redaction matches a value's own bytes, so a cut through one leaves a
+  # prefix that matches nothing. The cut `head -c` makes is at `max_bytes`,
+  # which the caller picks, so a caller that could move it across a value
+  # could read the value out a piece at a time (#1907).
+  describe "the caller's cap runs after redaction, not before (#1907)" do
+    setup ctx do
+      {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
+      env = insert_env(user_id: ctx.user.id)
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => @straddled}, dek)
+
+      sandbox =
+        insert_sandbox(
+          user_id: ctx.user.id,
+          status: "ready",
+          environment_id: env.id,
+          agent_id: ctx.agent.id
+        )
+
+      {:ok, secret_sandbox: sandbox}
+    end
+
+    test "read/3: no max_bytes anywhere across the value yields a fragment of it", ctx do
+      body = @straddle_body
+
+      for max_bytes <- 1..byte_size(body) do
+        expect_script(fn _, _, [n, _] ->
+          n = String.to_integer(n)
+          # The script is asked past the cap; it still cuts at what it is asked.
+          assert n == max_bytes + byte_size(@straddled) - 1
+          {:ok, "#{byte_size(body)}\n" <> b64(binary_part(body, 0, min(n, byte_size(body)))), 0}
+        end)
+
+        assert {:ok, %{content: content, encoding: "utf-8"}} =
+                 SandboxFiles.read(ctx.secret_sandbox, "f", max_bytes: max_bytes)
+
+        assert byte_size(content) <= max_bytes,
+               "max_bytes=#{max_bytes} answered #{byte_size(content)} bytes"
+
+        for k <- 1..byte_size(@straddled) do
+          fragment = binary_part(@straddled, 0, k)
+
+          refute String.contains?(content, fragment),
+                 "max_bytes=#{max_bytes} leaked #{inspect(fragment)} in #{inspect(content)}"
+        end
+      end
+    end
+
+    test "read/3: a cap past the value replaces it whole", ctx do
+      body = @straddle_body
+      expect_script(fn _, _, _ -> {:ok, "#{byte_size(body)}\n" <> b64(body), 0} end)
+
+      assert {:ok, %{content: "p=[REDACTED]|xyz|", truncated: false}} =
+               SandboxFiles.read(ctx.secret_sandbox, "f")
+    end
+
+    test "diff/3: the same walk, one byte further out for the exact-fit probe", ctx do
+      conv =
+        insert_conversation(
+          user_id: ctx.user.id,
+          agent: ctx.agent,
+          sandbox: ctx.sandbox,
+          status: "running"
+        )
+
+      Fountain.Conversations.Redaction.put(conv.id, [{"TOKEN", @straddled}])
+      on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
+
+      body = @straddle_body
+
+      for max_bytes <- 1..byte_size(body) do
+        expect_script(fn _, _, [_, n, _, _ | _] ->
+          n = String.to_integer(n)
+          assert n == max_bytes + 1 + byte_size(@straddled) - 1
+          {:ok, diff_output("/r", binary_part(body, 0, min(n, byte_size(body)))), 0}
+        end)
+
+        assert {:ok, %{diff: diff}} = SandboxFiles.diff(ctx.sandbox, nil, max_bytes: max_bytes)
+
+        assert byte_size(diff) <= max_bytes,
+               "max_bytes=#{max_bytes} answered #{byte_size(diff)} bytes"
+
+        for k <- 1..byte_size(@straddled) do
+          fragment = binary_part(@straddled, 0, k)
+
+          refute String.contains?(diff, fragment),
+                 "max_bytes=#{max_bytes} leaked #{inspect(fragment)} in #{inspect(diff)}"
+        end
+      end
+    end
+
+    test "a value replaced earlier does not pull a fragment back inside the cap", ctx do
+      {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
+      env = insert_env(user_id: ctx.user.id)
+      long = String.duplicate("L", 30)
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "LONG", "value" => long}, dek)
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => @straddled}, dek)
+
+      sandbox =
+        insert_sandbox(
+          user_id: ctx.user.id,
+          status: "ready",
+          environment_id: env.id,
+          agent_id: ctx.agent.id
+        )
+
+      # `long` comes first and is three times the placeholder, so replacing
+      # it moves everything behind it twenty bytes closer to the cap. That is
+      # why the cut is taken in the bytes the script produced and not in the
+      # redacted text: redacting the whole overlap and cutting afterwards
+      # would carry an unmatched piece of the second value back inside.
+      body = long <> "|" <> @straddled <> "|xyz|"
+
+      for max_bytes <- 1..byte_size(body) do
+        expect_script(fn _, _, [n, _] ->
+          n = String.to_integer(n)
+          assert n == max_bytes + byte_size(long) - 1
+          {:ok, "#{byte_size(body)}\n" <> b64(binary_part(body, 0, min(n, byte_size(body)))), 0}
+        end)
+
+        assert {:ok, %{content: content}} = SandboxFiles.read(sandbox, "f", max_bytes: max_bytes)
+
+        assert byte_size(content) <= max_bytes,
+               "max_bytes=#{max_bytes} answered #{byte_size(content)} bytes"
+
+        for k <- 1..byte_size(@straddled) do
+          fragment = binary_part(@straddled, 0, k)
+
+          refute String.contains?(content, fragment),
+                 "max_bytes=#{max_bytes} leaked #{inspect(fragment)} in #{inspect(content)}"
+        end
+      end
+    end
+
+    test "the cap holds when the placeholder is longer than the value it replaces", ctx do
+      {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
+      env = insert_env(user_id: ctx.user.id)
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "T", "value" => "12345678"}, dek)
+
+      sandbox =
+        insert_sandbox(
+          user_id: ctx.user.id,
+          status: "ready",
+          environment_id: env.id,
+          agent_id: ctx.agent.id
+        )
+
+      # Exactly `max_bytes` on disk, so the only thing that can push the
+      # answer past the cap is `[REDACTED]` being longer than the value.
+      body = "ab12345678cd"
+
+      expect_script(fn _, _, [n, _] ->
+        assert n == "#{12 + 7}"
+        {:ok, "#{byte_size(body)}\n" <> b64(body), 0}
+      end)
+
+      assert {:ok, %{content: content, truncated: truncated}} =
+               SandboxFiles.read(sandbox, "f", max_bytes: 12)
+
+      assert content == "ab[REDACTED]"
+      assert byte_size(content) == 12
+      # The file fits the cap, so only the cut back down makes this true.
+      assert truncated
     end
   end
 end

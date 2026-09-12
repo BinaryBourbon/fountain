@@ -222,7 +222,12 @@ defmodule Fountain.SandboxFiles do
   #{@default_max_bytes}, at most #{@max_max_bytes}). `content` is the text
   itself when it is valid UTF-8 (`encoding: "utf-8"`) and base64 otherwise
   (`encoding: "base64"`); `size` is the whole file and `truncated` says
-  whether `content` stopped short of it.
+  whether `content` is short of it — because the file is longer than
+  `max_bytes`, or because redaction grew what was read past the cap.
+
+  Redaction runs before the cap, never after: `max_bytes` is the caller's to
+  choose, so a cut taken first would let them place it inside a value and
+  read the piece in front of it (#1907).
   """
   @spec read(Sandbox.t(), String.t(), keyword()) ::
           {:ok,
@@ -239,16 +244,23 @@ defmodule Fountain.SandboxFiles do
 
     with :ok <- ready?(sandbox),
          {:ok, absolute} <- resolve_path(sandbox, path),
-         {:ok, output} <- run(sandbox, read_script(), [Integer.to_string(max_bytes), absolute]),
+         values = secret_values(sandbox),
+         # `overlap/1` bytes past the cap, so a secret lying across it is
+         # whole when redaction runs; `redact_to_cap/3` cuts back down.
+         {:ok, output} <-
+           run(sandbox, read_script(), [
+             Integer.to_string(max_bytes + overlap(values)),
+             absolute
+           ]),
          {:ok, size, bytes} <- parse_read(output) do
-      bytes = redact(sandbox, bytes)
+      {bytes, capped?} = redact_to_cap(values, bytes, max_bytes)
       {encoding, content} = encode(bytes)
 
       {:ok,
        %{
          path: absolute,
          size: size,
-         truncated: size > max_bytes,
+         truncated: size > max_bytes or capped?,
          encoding: encoding,
          content: content
        }}
@@ -280,27 +292,23 @@ defmodule Fountain.SandboxFiles do
     with :ok <- ready?(sandbox),
          {:ok, ref} <- validate_ref(ref),
          {:ok, absolute} <- resolve_path(sandbox, path),
-         # One byte past the cap tells truncation from an exact fit.
+         values = secret_values(sandbox),
+         # One byte past the cap tells truncation from an exact fit, and
+         # `overlap/1` past that is what lets redaction see a secret lying
+         # across the cap whole.
          {:ok, output} <-
            run(
              sandbox,
              diff_script(),
              [
                absolute,
-               Integer.to_string(max_bytes + 1),
+               Integer.to_string(max_bytes + 1 + overlap(values)),
                ref || "",
                if(staged, do: "1", else: "0")
              ] ++ roots(sandbox)
            ),
          {:ok, root, bytes} <- parse_diff(output) do
-      truncated = byte_size(bytes) > max_bytes
-
-      values = secret_values(sandbox)
-
-      text =
-        bytes
-        |> binary_part(0, min(byte_size(bytes), max_bytes))
-        |> then(&redact_with(values, &1))
+      {text, capped?} = redact_to_cap(values, bytes, max_bytes)
 
       {:ok,
        %{
@@ -312,7 +320,7 @@ defmodule Fountain.SandboxFiles do
          staged: staged,
          ref: ref,
          diff: to_text(text),
-         truncated: truncated
+         truncated: byte_size(bytes) > max_bytes or capped?
        }}
     end
   end
@@ -766,8 +774,8 @@ defmodule Fountain.SandboxFiles do
   defp redact(%Sandbox{} = sandbox, bytes) when is_binary(bytes),
     do: redact_with(secret_values(sandbox), bytes)
 
-  # `secret_values/1` reads the vault and the environment, so a caller with
-  # many strings to redact looks them up once and replaces many times.
+  # `secret_values/1` reads the vault and the environment, so a caller that
+  # needs the values for something else too looks them up once.
   defp redact_with([], bytes), do: bytes
 
   defp redact_with(values, bytes),
@@ -783,6 +791,53 @@ defmodule Fountain.SandboxFiles do
         renamed_from: change.renamed_from && to_text(redact_with(values, change.renamed_from))
     }
   end
+
+  # Redaction has to see a secret whole: `:binary.replace/4` matches the
+  # value's own bytes, so a cut through one leaves a prefix that matches
+  # nothing and travels on in the clear. The scripts cut first, with
+  # `head -c`, and on `read/3` the cut lands at `max_bytes` — which the
+  # caller chooses, making an incidental boundary case a repeatable one
+  # (#1907). So the scripts are asked for `overlap/1` bytes past the cap,
+  # redaction runs over that, and only then is the result cut to the cap.
+  #
+  # Returns the bytes and whether that last cut dropped anything, which it
+  # can when a value is shorter than the placeholder standing in for it.
+  defp redact_to_cap(values, bytes, max_bytes) do
+    kept = binary_part(bytes, 0, cut_at(values, bytes, max_bytes))
+    redacted = redact_with(values, kept)
+
+    if byte_size(redacted) > max_bytes,
+      do: {binary_part(redacted, 0, max_bytes), true},
+      else: {redacted, false}
+  end
+
+  # How much of `bytes` survives into redaction: the cap, carried forward to
+  # the end of a value lying across it. At most one value can, because
+  # matches do not overlap, and `:binary.matches/2` picks the same ones
+  # `:binary.replace/4` will.
+  #
+  # Cutting at the cap instead is the defect. Cutting *after* redacting is
+  # not the fix either: an earlier value replaced by a shorter placeholder
+  # shifts the bytes behind it, which can pull an unmatched fragment out of
+  # the overlap and back inside the cap.
+  defp cut_at([], bytes, max_bytes), do: min(byte_size(bytes), max_bytes)
+
+  defp cut_at(values, bytes, max_bytes) do
+    limit = min(byte_size(bytes), max_bytes)
+
+    bytes
+    |> :binary.matches(values)
+    |> Enum.find_value(limit, fn {start, length} ->
+      if start < limit and start + length > limit, do: start + length
+    end)
+  end
+
+  # How far past the cap a value can lie across it: one byte less than the
+  # longest, which `secret_values/1` sorts to the front. Ask a script for
+  # that many bytes more and any value with a byte inside the cap arrives
+  # whole.
+  defp overlap([]), do: 0
+  defp overlap([longest | _]), do: byte_size(longest) - 1
 
   # The identity's own values (what `.env` on that disk holds) plus what any
   # live server registered — the latter covers the inference credential and

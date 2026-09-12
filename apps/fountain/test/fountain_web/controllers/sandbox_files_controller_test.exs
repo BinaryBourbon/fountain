@@ -166,7 +166,9 @@ defmodule FountainWeb.SandboxFilesControllerTest do
         |> json_response(200)
         |> Map.fetch!("data")
 
-      assert_received {:exec_args, ["1000", @home <> "/.git/config"]}
+      # 1000 plus the overlap, one byte less than `ghp_0123456789`, so a value
+      # lying across the cap is whole when redaction runs (#1907).
+      assert_received {:exec_args, ["1013", @home <> "/.git/config"]}
 
       assert data == %{
                "path" => @home <> "/.git/config",
