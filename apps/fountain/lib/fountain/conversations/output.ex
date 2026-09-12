@@ -214,7 +214,8 @@ defmodule Fountain.Conversations.Output do
   losing them is how a client stops being able to tell a stuck agent from a
   finished one.
   """
-  @spec publish_stage(String.t(), String.t(), String.t(), map()) :: Conversations.LogEvent.t()
+  @spec publish_stage(String.t(), String.t(), String.t(), map()) ::
+          Conversations.LogEvent.t() | nil
   def publish_stage(conv_id, stage, status, meta \\ %{}) do
     Conversations.publish_stage(conv_id, stage, status, meta)
   end

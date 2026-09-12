@@ -24,7 +24,7 @@ defmodule Fountain.Conversations do
   }
 
   alias Fountain.Conversations.Reapply
-  alias Fountain.Conversations.{ExecutionAllowance, ExecutionLimits}
+  alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
@@ -1869,7 +1869,7 @@ defmodule Fountain.Conversations do
 
       %ExecutionAllowance{limits: limits} when is_map(limits) ->
         with {:ok, normalized} <- ExecutionLimits.normalize(limits) do
-          ExecutionLimits.require_controls(normalized, [])
+          ExecutionLimits.require_controls(normalized, ExecutionLimits.enforced_controls(nil))
         end
 
       _ ->
@@ -2051,22 +2051,28 @@ defmodule Fountain.Conversations do
   same best-effort contract — it cannot fail this update.
   """
   def _unsafe_update_turn(%Turn{} = turn, attrs) do
-    changeset =
-      turn
-      |> Turn.changeset(attrs)
-      |> maybe_put_reply_text(turn)
+    # ownership: this is the already-owned actor's turn or a system recovery write.
+    result =
+      Fountain.Conversations.ExecutionGuard._unsafe_write_turn(turn, attrs, fn current, allowed ->
+        changeset = current |> Turn.changeset(allowed) |> maybe_put_reply_text(current)
 
-    result = Repo.update(changeset)
+        case Repo.update(changeset) do
+          {:ok, updated} -> {:ok, {updated, changeset}}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
 
-    # The write that *materialises* the reply, not every later update to a
-    # turn that already has one — a turn is written again after it ends, and
-    # activation happens once.
-    with {:ok, updated} <- result,
-         text when is_binary(text) <- Ecto.Changeset.get_change(changeset, :reply_text) do
-      Fountain.Activation.turn_replied(updated)
+    case result do
+      {:ok, {updated, changeset}} ->
+        if is_binary(Ecto.Changeset.get_change(changeset, :reply_text)) do
+          Fountain.Activation.turn_replied(updated)
+        end
+
+        {:ok, updated}
+
+      {:error, reason} ->
+        {:error, reason}
     end
-
-    result
   end
 
   @doc """
@@ -2213,8 +2219,19 @@ defmodule Fountain.Conversations do
 
   defp maybe_put_reply_text(%Ecto.Changeset{valid?: false} = changeset, _turn), do: changeset
 
+  # `get_field`, not `get_change`: a turn fenced by `ExecutionGuard` has its
+  # `:status` dropped from `attrs` before the writer sees it, so the change is
+  # gone by here while the row is already terminal — and a turn that ends at a
+  # deadline would have kept a null `reply_text` forever.
+  #
+  # This does reach the unbounded path, where the two used to agree: a terminal
+  # turn whose text is still null is now re-derived on each later write rather
+  # than only on the write that ended it. That is the same work
+  # `_unsafe_backfill_reply_texts/0` below does, on the same rows, for the same
+  # reason — a turn whose assistant blocks landed after its status did. The
+  # guard is `reply_text: nil`, so a turn that has one is never revisited.
   defp maybe_put_reply_text(changeset, %Turn{reply_text: nil} = turn) do
-    case Ecto.Changeset.get_change(changeset, :status) do
+    case Ecto.Changeset.get_field(changeset, :status) do
       status when status in @terminal_turn_statuses ->
         Ecto.Changeset.put_change(changeset, :reply_text, _unsafe_turn_reply_text(turn))
 
@@ -2315,14 +2332,14 @@ defmodule Fountain.Conversations do
   conversation's PubSub topic, and emit a `[:fountain, :stage]` telemetry
   event.
 
-  Every operationally meaningful outcome flows through here — provision
-  done/failed, reattach, turn done/failed — so the Prometheus stage counter
-  (and the alert on it) cannot drift from what clients see on the stream.
+  Deadline outcomes are persisted by the journal and notified by a durable job.
+  A late terminal stage reuses that event, or returns nil if retention deleted
+  it. Notifications are at-least-once; clients deduplicate by the log event id.
   `stage` and `status` are the metric's only tags; both value sets are small
   and fixed. `conv_id` stays in metadata and must never become a tag.
   """
   def publish_stage(conv_id, stage, status, meta \\ %{}) do
-    event =
+    writer = fn ->
       log!(%{
         conversation_id: conv_id,
         kind: "stage",
@@ -2330,6 +2347,47 @@ defmodule Fountain.Conversations do
         state: status,
         data: Jason.encode!(meta)
       })
+    end
+
+    turn_id = Map.get(meta, :turn_id) || Map.get(meta, "turn_id")
+
+    result =
+      if stage == "turn" and status in ["done", "failed", "interrupted"] and
+           match?({:ok, _}, Ecto.UUID.cast(turn_id)) do
+        # ownership: lifecycle caller owns conv_id; the journal query binds this
+        # turn to that conversation and serializes it with deadline expiration.
+        {:ok, result} = ExecutionGuard._unsafe_terminal_stage(conv_id, turn_id, writer)
+        result
+      else
+        {:new, writer.()}
+      end
+
+    case result do
+      {:existing, event} ->
+        event
+
+      {:new, event} ->
+        notify_stage(event, meta)
+        Fountain.Webhooks.dispatch_stage(event)
+        event
+    end
+  end
+
+  @doc "Notify subscribers of an existing stage; deadline jobs may repeat its id."
+  def _unsafe_notify_stage(%LogEvent{kind: "stage"} = event) do
+    meta =
+      case Jason.decode(event.data) do
+        {:ok, meta} when is_map(meta) -> meta
+        _ -> %{}
+      end
+
+    notify_stage(event, meta)
+  end
+
+  defp notify_stage(event, meta) do
+    conv_id = event.conversation_id
+    stage = event.stage
+    status = event.state
 
     Fountain.Telemetry.event(
       [:stage],
@@ -2339,12 +2397,6 @@ defmodule Fountain.Conversations do
 
     Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, event})
 
-    # Webhook dispatch hangs off the same call for the same reason the stage
-    # counter does (#700): a new lifecycle outcome cannot be added without
-    # subscribers seeing it. Best-effort by construction — `dispatch_stage/1`
-    # rescues everything, because a webhook that is not sent is a degraded
-    # integration and a stage transition that raises is a stuck agent.
-    Fountain.Webhooks.dispatch_stage(event)
     mirror_stage_to_analytics(event, meta)
 
     event
@@ -2663,12 +2715,12 @@ defmodule Fountain.Conversations do
   defp resolve_admission_limits(user_id, request) do
     # Ownership: each caller just fetched the agent by this authenticated user.
     # Read the current account policy, never a request-supplied or cached map.
-    case {Fountain.Accounts.get_user(user_id),
-          Application.get_env(:fountain, :execution_limit_ceiling, %{})} do
+    case {Fountain.Accounts.get_user(user_id), ExecutionLimits.host_ceiling()} do
       {%Fountain.Accounts.User{execution_limits: ceiling}, host}
       when is_map(ceiling) and is_map(host) ->
         with {:ok, limits} <- ExecutionLimits.resolve(host, ceiling, request),
-             :ok <- ExecutionLimits.require_controls(limits, []) do
+             :ok <-
+               ExecutionLimits.require_controls(limits, ExecutionLimits.enforced_controls(nil)) do
           {:ok, limits}
         end
 
@@ -3418,6 +3470,15 @@ defmodule Fountain.Conversations do
   # live one nobody can find. What happens to the conversations on the home
   # is the caller's decision — agent delete terminates them, a reset keeps
   # them.
+  #
+  # `terminated_at` is deliberately not passed. A caller that already retired
+  # the row under its machine lock — `do_reset_sandbox/2` does, so that a
+  # bounded registration cannot slip in behind the destroy — keeps the stamp it
+  # wrote, and `update_sandbox/2` sees no change to make. A caller that did not
+  # gets one from `stamp_terminated_at/1`. Passing `utc_now()` here instead
+  # moved the stamp to *after* the provider call, so it disagreed with the
+  # `duration_ms` on the `sandbox_terminated` usage row by the length of a
+  # destroy — and that row is what a provider bill is reconciled against.
   defp _unsafe_retire_home(%Sandbox{} = sandbox) do
     handle = Managoat.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
@@ -3429,8 +3490,7 @@ defmodule Fountain.Conversations do
         Logger.warning("home #{sandbox.sprite_name} destroy failed: #{inspect(reason)}")
     end
 
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
+    {:ok, _} = update_sandbox(sandbox, %{status: "terminated"})
     :ok
   end
 
@@ -3465,6 +3525,15 @@ defmodule Fountain.Conversations do
 
   Two audit rows, not one: `sandbox.reset_requested` when the fence commits,
   and `sandbox.reset` only when the provider confirms the destroy.
+
+  Also refused with `:execution_fenced` while a bounded turn on this machine
+  has remote work Fountain cannot account for (ADR 0046). That is a third,
+  distinct fact: `:sandbox_mid_turn` is a live turn and ends by itself,
+  `:sandbox_reset_pending` is a delete this function asked for and has not had
+  confirmed, and `:execution_fenced` is a command that may still be running
+  under a deadline whose termination was never acknowledged. It is bounded —
+  the deadline coordinator writes an unresolvable obligation off — so this
+  refusal clears on its own without needing the reaping the other one does.
 
   `opts[:reason]` says *why*, and reaches every transcript on the machine and
   the audit row: `"home_reset"` (the owner asked — the default),
@@ -3509,6 +3578,16 @@ defmodule Fountain.Conversations do
 
           _unsafe_running_turns_elsewhere(current.id, nil) > 0 ->
             Repo.rollback(:sandbox_mid_turn)
+
+          # ownership: `current` is the caller's scoped sandbox, re-read under
+          # this transaction's lock.
+          #
+          # A turn that has ended locally can still owe a remote termination
+          # (ADR 0046), so this outlives the running-turn check above and is a
+          # different answer. Destroying the machine would drop the journal row
+          # that says the command was never confirmed stopped.
+          ExecutionGuard._unsafe_sandbox_open?(current.id) ->
+            Repo.rollback(:execution_fenced)
 
           true ->
             :ok
@@ -4262,6 +4341,48 @@ defmodule Fountain.Conversations do
     end
   end
 
+  @doc """
+  Deny a detached request whose deadline has passed, and tell the agent
+  (#1635).
+
+  The denial picks from the options the agent itself offered, never an id it
+  did not send. Recorded as `conversation.permission_denied` with the sweep as
+  the actor, because no human was at the keyboard and saying otherwise would
+  be a lie about who decided.
+  """
+  @spec _unsafe_expire_detached_request(Turn.t(), keyword()) ::
+          :ok | {:error, term()}
+  def _unsafe_expire_detached_request(%Turn{} = turn, opts \\ []) do
+    request = turn.pending_permission
+    option_id = DetachedRequest.deny_option_id(request)
+    actor = Keyword.get(opts, :actor, "system:detached_request_sweeper")
+
+    # The gate first, for the same reason the answer door applies it first: a
+    # request resolved into a prompt nobody can deliver is gone, the agent is
+    # never told, and there is no second copy to retry from. The deadline has
+    # passed either way, so leaving the row is the safe half of the trade —
+    # the sweep is back in a minute.
+    #
+    # A conversation that is over is the exception: no turn will ever carry
+    # the denial, so the request is resolved and the card stops waiting.
+    case _unsafe_resume_gate(turn.conversation_id) do
+      :ok ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          resume_after_request(turn, request, "timeout", option_id, actor: actor)
+        end
+
+      {:error, :gone} ->
+        with :ok <- _unsafe_resolve_detached_request(turn, "timeout", option_id) do
+          record_permission_denied(turn.conversation_id, request["tool"], "timeout", actor: actor)
+          :ok
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
   # The resolution reaches the agent as a new turn, because the peer that
   # raised the request is gone and its JSON-RPC id with it. `send_prompt/4`
   # wakes a suspended sandbox on the way, which is the whole point of letting
@@ -4296,17 +4417,19 @@ defmodule Fountain.Conversations do
   Record that the permission policy withheld a tool from a running agent.
 
   Called by the `ConversationServer` when its peer reports a refusal (#939).
-  The actor is `sprite`: the agent asked, the policy answered, and no human was
-  involved — attributing it to the person who happened to write the policy
-  would be a lie about who was at the keyboard.
+  The actor defaults to `sprite`: the agent asked, the policy answered, and no
+  human was involved — attributing it to the person who happened to write the
+  policy would be a lie about who was at the keyboard. A detached request that
+  ran out of time (#1635) passes the sweep instead, for the same reason.
 
   Only refusals are recorded. A turn makes dozens of tool calls and a row per
   allow would make the trail a second copy of the transcript, which 0013
   forbids for exactly this reason. The tool's *input* is never recorded, only
   its name and the verdict.
   """
-  @spec record_permission_denied(binary(), String.t() | nil, String.t()) :: :ok
-  def record_permission_denied(conversation_id, tool, verdict) when is_binary(conversation_id) do
+  @spec record_permission_denied(binary(), String.t() | nil, String.t(), keyword()) :: :ok
+  def record_permission_denied(conversation_id, tool, verdict, opts \\ [])
+      when is_binary(conversation_id) do
     case _unsafe_get_conversation(conversation_id) do
       nil ->
         :ok
@@ -4317,7 +4440,7 @@ defmodule Fountain.Conversations do
           action: "conversation.permission_denied",
           resource_type: "conversation",
           resource_id: conv.id,
-          actor: "sprite",
+          actor: Keyword.get(opts, :actor, "sprite"),
           metadata: %{"tool" => tool, "verdict" => verdict}
         })
 
@@ -4395,16 +4518,10 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # `ask_timeout` is seconds, not a verdict (#1635).
   defp validate_reserved_keys(policy) do
-    case Map.fetch(policy, "ask_timeout") do
-      {:ok, value} ->
-        if PermissionPolicy.valid_ask_timeout?(value),
-          do: :ok,
-          else: {:error, :permission_policy_invalid}
-
-      :error ->
-        :ok
+    case PermissionPolicy.reserved_errors(policy) do
+      [] -> :ok
+      _errors -> {:error, :permission_policy_invalid}
     end
   end
 

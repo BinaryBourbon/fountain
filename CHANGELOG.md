@@ -31,7 +31,31 @@ upgrade, is in
   Connections off is the broker: an account is offered the feature only while
   `BROKER_TENANTS` names it.
 
+### Added
+
+- `POST /api/conversations/:id/reapply` re-selects a conversation's Agent,
+  Environment and Vault on the machine it is already running, keeping the
+  conversation, its transcript and the files on its disk. A selection that would
+  need the machine built again is refused, naming what forced it. Adds the
+  `configuration` webhook stage and three columns
+  (`conversations.configuration_revision`, `sandboxes.build_fingerprint`,
+  `sandboxes.applied_skills`) (#1565).
+
 ### Changed
+
+- **The claude runtime's ACP adapter moves to 0.75.1, and a fresh sandbox now
+  warms the CLI's model list before its first session** (`managoat_runtimes`
+  0.3.4). The adapter bundles the Claude Code binary that decides which models
+  a turn may select, and 0.66.0 bundled CLI 2.1.220; 0.75.1 bundles 2.1.257,
+  which also resolves a full model id onto the alias row the CLI advertises
+  rather than matching it exactly. Separately, that binary learns an org's
+  "additional models" from a fetch it makes *after* a session has started and
+  caches the answer for the next launch, so the first session in a fresh
+  sandbox saw a shorter list than the second one in the same sandbox — which
+  is what made a model refusal look intermittent. Provisioning now opens one
+  prompt-less session to fill that cache, under three seconds measured and
+  bounded at 30. It is best-effort: a cache that stays cold is logged and
+  provisioning continues.
 
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
   that named the old owner moved with it (`decisions/0048`). The container
@@ -86,6 +110,54 @@ upgrade, is in
 
 ### Added
 
+- **An account registers its own OAuth clients** (#1125, ADR 0021 amended).
+  "Sign in with Fountain" no longer needs an operator to edit `OAUTH_CLIENTS`
+  and redeploy. Register an app in the console under Account, then OAuth apps,
+  with `fountain oauth-client create`, or over `/api/oauth/clients`, and the
+  response carries the generated `client_id` the app sends. The registration
+  also admits the app's redirect origins to `/api`, so one registration covers
+  both the sign-in and the calls that follow it and `API_CORS_ORIGINS` needs
+  no entry.
+
+  A new client is in **development mode**: it signs in only the account that
+  registered it, and every other account gets an error page rather than a
+  redirect. That is what makes a self-chosen redirect URI safe, and it is why
+  an owner may name a sandbox's HTTPS URL or an `http://localhost` one. A
+  loopback URI matches on any port (RFC 8252). Only an operator publishes a
+  client for other accounts to use, and only an operator changes or removes it
+  afterwards. One account holds at most 25. Registration needs a full-scope
+  key, because a client is a standing route to a full-scope key after consent.
+
+  The consent page's `form-action` header now names the one redirect origin
+  this request asked for rather than every registered client's.
+
+- **A start that meets a capacity ceiling can wait instead of failing**
+  (#1033, `decisions/0042`). Set `queue: true` on `POST /api/conversations`:
+  at the tenant sandbox cap or the fleet ceiling, Fountain answers `202` with
+  a sandbox request and its position rather than `429` or `503`, and starts
+  the conversation when a slot frees. Callers that do not ask keep the error
+  they handle today. A teammate schedule's cron firing uses the queue on its
+  own, because nobody is there to retry it; the page's and the API's "Run
+  now" still gets the refusal. `GET /api/sandbox-queue`,
+  `GET /api/sandbox-queue/:id` and `DELETE /api/sandbox-queue/:id` list, read
+  and cancel that work. The queue delays the cap and never raises it: ten
+  requests per tenant (`SANDBOX_QUEUE_MAX_DEPTH`), one hour each
+  (`SANDBOX_QUEUE_MAX_WAIT_SECONDS`), every replay back through the same
+  reservation, credit and inference gates, and a full queue keeps the
+  immediate error. Starts carrying images or naming a `sandbox_id` never
+  queue.
+
+- Commit deadline failure events and delivery jobs with the failed turn. Late
+  completion and interruption reuse the original event, and notification retries
+  retain its id. Public bounded execution remains disabled.
+
+- Add a supervised execution-deadline coordinator with separate expiration and
+  termination task pools. Local task timeouts and restarts retain uncertain
+  remote operations. It starts only where `FOUNTAIN_EXECUTION_LIMITS` configures
+  a host ceiling, and `FOUNTAIN_EXECUTION_DEADLINE_WORKER=false` turns it off
+  anywhere. Public bounded execution remains disabled until session identity,
+  event delivery, and lifecycle integration are complete.
+
 - **An `acp` runtime launches a named command, so a deterministic program can
   run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
   `runtime_command` field carries the command it runs. The field is required
@@ -116,10 +188,28 @@ upgrade, is in
   assumed a string needs a null check. Nothing else on the wire changed
   shape.
 
+- Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
+  dependency set for typed execution limits and confirmed session termination.
+  Fountain deadline enforcement remains disabled pending transport and lifecycle
+  integration.
+
+
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
   toolchain setup run within an explicit bound. It persists through API/spec
   round trips and invalidates checkpoints when changed. The overall provisioning
   deadline and failed-setup handling remain in force.
+
+- `claude-fable-5-1` is suggested for anthropic again, so `GET /api/catalog`
+  lists it. It was removed on 2026-09-07 because the claude adapter refused
+  it; the refusal was not the adapter version but a cold cache. The Claude
+  Code binary learns an org's "additional models" (Fable among them) from a
+  fetch it makes after a session starts and caches for the next launch, so
+  the first session in a fresh sandbox never listed Fable on any adapter
+  version. Two `managoat_runtimes` releases fix that: 0.3.3 moves the adapter
+  pin to 0.75.1 (the bundled CLI must be 2.1.255 or later for Fable 5.1), and
+  0.3.4 warms the cache at provisioning. Verified with a real turn on the new
+  pin. `claude-fable-5` stays unsuggested: the adapter refuses it even with
+  the cache warm.
 
 - Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
 - Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
@@ -157,8 +247,27 @@ upgrade, is in
   and `GET /api/team/:agent_id/conversations` take a repeatable `label=key:value`
   filter, combined with AND. `conversation.*` webhook payloads carry `labels`,
   and the console's conversation lists render them as chips.
+- Permission requests can outlive the turn that raised them. An agent that ends
+  a turn with stop reason `waiting` keeps its request open, the conversation
+  goes idle and the sandbox suspends as usual. `GET /api/conversations/{id}`
+  lists such requests as `pending_requests`, and answering one opens a new turn
+  carrying the request id and the chosen option, which wakes the sandbox. The
+  wait is bounded by `_meta.fountain.timeout` on the request and by an
+  `ask_timeout` in the permission policy, the shorter of the two, else the
+  existing 5 minute ceiling, and at most a year either way. An answer is
+  refused, and the request kept, when the conversation cannot take the turn
+  that carries it.
 
 ### Fixed
+
+- **A reset refused by a bounded execution says so** (ADR 0046). Deleting a
+  sandbox while a bounded turn still owed a remote stop answered `422` with an
+  empty body, because `:execution_fenced` had no `FallbackController` clause
+  and fell through to the unmapped-atom net, logging a warning on every
+  refusal. It now answers `409 execution_fenced` with a message, beside the
+  two refusals it sits next to — and unlike `sandbox_mid_turn` (wait for the
+  turn) and `sandbox_reset_pending` (contact the operator), this one clears on
+  its own once the obligation ages out, which the message says.
 
 - **An account whose `connections` flag is off can revoke what it already
   holds** (#1693). The flag stood in front of every door, the ones that take a

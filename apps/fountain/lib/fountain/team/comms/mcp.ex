@@ -21,7 +21,7 @@ defmodule Fountain.Team.Comms.Mcp do
     * `:phone`   — the AgentPhone client module (default
                    `Fountain.Team.Comms.AgentPhone`)
     * `:audit`   — optional `(tool_name, summary_map) -> any` called after a
-                   successful send, for the audit trail
+                   provider-accepted send, including unidentified responses
   """
 
   alias Fountain.Team.Contact
@@ -231,12 +231,8 @@ defmodule Fountain.Team.Comms.Mcp do
         |> put_present("html", present(args["html"]))
 
       case mail(ctx).send_message(c.email_inbox_id, body) do
-        {:ok, %{"message_id" => mid} = resp} ->
-          audit(ctx, "email_send", %{"recipients" => length(to), "provider_message_id" => mid})
-          ok(id, %{message_id: mid, thread_id: resp["thread_id"]})
-
-        {:ok, other} ->
-          ok(id, other)
+        {:ok, resp} ->
+          finish_send(id, "email_send", ctx, resp, %{"recipients" => length(to)})
 
         {:error, reason} ->
           tool_error(id, "email_send failed: #{describe(reason)}")
@@ -256,16 +252,8 @@ defmodule Fountain.Team.Comms.Mcp do
         |> put_present("reply_all", if(args["reply_all"] == true, do: true))
 
       case mail(ctx).reply_to_message(c.email_inbox_id, message_id, body) do
-        {:ok, %{"message_id" => mid} = resp} ->
-          audit(ctx, "email_reply", %{
-            "reply_all" => args["reply_all"] == true,
-            "provider_message_id" => mid
-          })
-
-          ok(id, %{message_id: mid, thread_id: resp["thread_id"]})
-
-        {:ok, other} ->
-          ok(id, other)
+        {:ok, resp} ->
+          finish_send(id, "email_reply", ctx, resp, %{"reply_all" => args["reply_all"] == true})
 
         {:error, reason} ->
           tool_error(id, "email_reply failed: #{describe(reason)}")
@@ -321,12 +309,8 @@ defmodule Fountain.Team.Comms.Mcp do
       payload = %{"number_id" => c.phone_number_id, "to_number" => to, "body" => body}
 
       case phone(ctx).send_message(payload) do
-        {:ok, %{"id" => mid} = resp} ->
-          audit(ctx, "sms_send", %{"provider_message_id" => mid})
-          ok(id, %{message_id: mid, status: resp["status"], channel: resp["channel"]})
-
-        {:ok, other} ->
-          ok(id, other)
+        {:ok, resp} ->
+          finish_send(id, "sms_send", ctx, resp, %{})
 
         {:error, reason} ->
           tool_error(id, "sms_send failed: #{describe(reason)}")
@@ -417,6 +401,35 @@ defmodule Fountain.Team.Comms.Mcp do
 
   defp phone_contact(%{contact: %Contact{} = c}) do
     if Contact.phone?(c), do: {:ok, c}, else: {:error, "this teammate has no phone number"}
+  end
+
+  # Acceptance without an identifier is an ambiguous external effect. Keep
+  # the audit/metering callback informed, but never invent an id or invite a
+  # blind retry: the provider may already have delivered the message (#1520).
+  defp finish_send(id, tool, ctx, response, summary) do
+    id_field = if tool == "sms_send", do: "id", else: "message_id"
+    mid = if is_map(response), do: response[id_field]
+
+    if is_binary(mid) and String.trim(mid) != "" do
+      audit(ctx, tool, Map.put(summary, "provider_message_id", mid))
+
+      payload =
+        if tool == "sms_send" do
+          %{message_id: mid, status: response["status"], channel: response["channel"]}
+        else
+          %{message_id: mid, thread_id: response["thread_id"]}
+        end
+
+      ok(id, payload)
+    else
+      audit(ctx, tool, Map.put(summary, "outcome", "unidentified"))
+
+      tool_error(
+        id,
+        "#{tool}: the message may have been sent, but the provider returned no usable message ID. " <>
+          "Do not retry automatically; check the provider's records first."
+      )
+    end
   end
 
   defp audit(%{audit: audit}, tool, summary) when is_function(audit, 2), do: audit.(tool, summary)

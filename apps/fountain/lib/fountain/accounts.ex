@@ -668,45 +668,46 @@ defmodule Fountain.Accounts do
   @spec create_api_key(binary(), String.t(), keyword()) ::
           {:ok, {ApiKey.t(), String.t()}} | {:error, Ecto.Changeset.t()}
   def create_api_key(user_id, name, opts \\ []) when is_binary(user_id) and is_binary(name) do
-    raw = "ftn_" <> Base.encode16(:crypto.strong_rand_bytes(32), case: :lower)
-    key_hash = hash_key(raw)
-    key_prefix = String.slice(raw, 0, 8)
+    {changeset, raw} = build_api_key(user_id, name, opts)
 
-    %ApiKey{}
-    |> ApiKey.changeset(%{
-      user_id: user_id,
-      name: name,
-      key_hash: key_hash,
-      key_prefix: key_prefix,
-      scopes: Keyword.get(opts, :scopes, ["full"]),
-      expires_at: Keyword.get(opts, :expires_at)
-    })
-    |> Repo.insert()
-    |> case do
-      {:ok, key} ->
-        Audit.record(%{
-          user_id: user_id,
-          action: "api_key.created",
-          resource_type: "api_key",
-          resource_id: key.id,
-          actor: Keyword.get(opts, :actor, "self"),
-          request_ip: Keyword.get(opts, :request_ip),
-          # Name, scopes and prefix identify *which* key without being the
-          # key: the prefix is already stored in the clear and is what the
-          # settings UI shows, so it is the handle a reader can match a
-          # trail row against a listed key by.
-          metadata: %{
-            "name" => key.name,
-            "scopes" => key.scopes,
-            "key_prefix" => key.key_prefix
-          }
-        })
-
-        {:ok, {key, raw}}
-
-      {:error, cs} ->
-        {:error, cs}
+    with {:ok, key} <- Repo.insert(changeset) do
+      record_api_key_created(key, opts)
+      {:ok, {key, raw}}
     end
+  end
+
+  @doc "Build a key changeset and plaintext without persistence; transactional callers audit after commit."
+  def build_api_key(user_id, name, opts \\ []) do
+    raw = "ftn_" <> Base.encode16(:crypto.strong_rand_bytes(32), case: :lower)
+
+    changeset =
+      ApiKey.changeset(%ApiKey{}, %{
+        user_id: user_id,
+        name: name,
+        key_hash: hash_key(raw),
+        key_prefix: String.slice(raw, 0, 8),
+        scopes: Keyword.get(opts, :scopes, ["full"]),
+        expires_at: Keyword.get(opts, :expires_at)
+      })
+
+    {changeset, raw}
+  end
+
+  @doc "Record a committed key mint; call outside the transaction that inserted it."
+  def record_api_key_created(%ApiKey{} = key, opts \\ []) do
+    Audit.record(%{
+      user_id: key.user_id,
+      action: "api_key.created",
+      resource_type: "api_key",
+      resource_id: key.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{
+        "name" => key.name,
+        "scopes" => key.scopes,
+        "key_prefix" => key.key_prefix
+      }
+    })
   end
 
   @doc """
@@ -1045,6 +1046,28 @@ defmodule Fountain.Accounts do
     |> Repo.update()
     |> audited_account("account.sandbox_limit_changed", "user", opts, fn updated ->
       %{"from" => user.sandbox_limit_override, "to" => updated.sandbox_limit_override}
+    end)
+  end
+
+  @doc """
+  Set the operator-owned per-turn execution ceilings for an account.
+
+  `User.execution_limits_changeset/2` has existed since the admission campaign
+  with nothing but tests calling it, which meant the only way to give an account
+  a ceiling was to write the column by hand. These ceilings are operator-owned
+  like the sandbox-cap setter above — no tenant profile or registration path
+  accepts these fields — but unlike that one there is no admin control for them
+  yet: this function has no caller outside its own test, and the `/admin/users`
+  surface beside the sandbox cap arrives with the PR that first enforces a
+  control. The audit row records the whole policy before and after, which is an
+  operator-set value rather than tenant data. `nil` clears the ceiling.
+  """
+  def update_execution_limits(%User{} = user, limits, opts \\ []) do
+    user
+    |> User.execution_limits_changeset(limits)
+    |> Repo.update()
+    |> audited_account("account.execution_limits_changed", "user", opts, fn updated ->
+      %{"from" => user.execution_limits, "to" => updated.execution_limits}
     end)
   end
 
