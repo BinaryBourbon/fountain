@@ -305,7 +305,7 @@ defmodule Fountain.SandboxFiles do
                Integer.to_string(max_bytes + 1 + overlap(values)),
                ref || "",
                if(staged, do: "1", else: "0")
-             ] ++ roots(sandbox)
+             ] ++ git_roots(sandbox)
            ),
          {:ok, root, bytes} <- parse_diff(output) do
       {text, capped?} = redact_to_cap(values, bytes, max_bytes)
@@ -361,7 +361,7 @@ defmodule Fountain.SandboxFiles do
            run(
              sandbox,
              status_script(),
-             [absolute, Integer.to_string(@max_status_bytes + 1), untracked] ++ roots(sandbox)
+             [absolute, Integer.to_string(@max_status_bytes + 1), untracked] ++ git_roots(sandbox)
            ),
          {:ok, root, branch, body} <- parse_status(output) do
       {records, cut?} = status_records(body)
@@ -457,6 +457,11 @@ defmodule Fountain.SandboxFiles do
   defp command_failed(%Sandbox{} = sandbox, code, output),
     do: {:sandbox_command_failed, code, to_text(redact(sandbox, output))}
 
+  # Pair each mapped host root with its sandbox spelling. The tag keeps
+  # run/3 from mapping that spelling too; both remain literal argv values.
+  defp git_roots(sandbox),
+    do: Enum.flat_map(roots(sandbox), &[&1, "sandbox:" <> &1])
+
   defp map_path(handle, "/" <> _ = path), do: Managoat.Sandbox.host_path(handle, path)
   defp map_path(_handle, other), do: other
 
@@ -510,13 +515,41 @@ defmodule Fountain.SandboxFiles do
     """
   end
 
+  # Discover and confine in the execution namespace, then return the matched
+  # root in the caller's namespace. Physical roots cover symlinked runner
+  # homes without exposing their host paths in /diff or /git-status.
+  defp git_root_script do
+    ~S"""
+    [ -e "$d" ] || exit 3
+    [ -d "$d" ] || exit 4
+    cd -- "$d" 2>/dev/null || exit 5
+    root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
+    inside=
+    while [ "$#" -ge 2 ]; do
+      r=$1
+      logical=${2#sandbox:}
+      shift 2
+      case $root in
+        "$r"|"$r"/*) root="$logical${root#"$r"}"; inside=1; break ;;
+      esac
+      p=$(cd -- "$r" 2>/dev/null && pwd -P)
+      if [ -n "$p" ]; then
+        case $root in
+          "$p"|"$p"/*) root="$logical${root#"$p"}"; inside=1; break ;;
+        esac
+      fi
+    done
+    [ -n "$inside" ] || exit 6
+    """
+  end
+
   # The repository root, NUL-terminated, then the diff base64-encoded. A
   # newline would not do: a directory name may contain one.
   # The ref is verified first because a pipeline's status is `base64`'s,
   # which would turn an unknown ref into an empty diff. `--no-optional-locks`
   # keeps a read from contending with the agent's own git for the index.
   #
-  # `roots/1` follows the arguments, and the discovered root has to be one of
+  # `git_roots/1` follows the arguments, and the discovered root has to be one of
   # them or under one — see `status_script/0` for why.
   # Retain git's status, allowing SIGPIPE from the intentional byte cap. Keep
   # encoded output private until success: on failure the catch-all redacts raw
@@ -528,37 +561,26 @@ defmodule Fountain.SandboxFiles do
     ref=$3
     staged=$4
     shift 4
-    roots=("$@")
-    [ -e "$d" ] || exit 3
-    [ -d "$d" ] || exit 4
-    cd -- "$d" 2>/dev/null || exit 5
-    root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
-    inside=
-    for r in "${roots[@]}"; do
-      case $root in "$r"|"$r"/*) inside=1 ;; esac
-      p=$(cd -- "$r" 2>/dev/null && pwd -P)
-      if [ -n "$p" ]; then
-        case $root in "$p"|"$p"/*) inside=1 ;; esac
+    """ <>
+      git_root_script() <>
+      ~S"""
+      if [ -n "$ref" ]; then
+        git rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || exit 7
       fi
-    done
-    [ -n "$inside" ] || exit 6
-    if [ -n "$ref" ]; then
-      git rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || exit 7
-    fi
-    if [ "$staged" = 1 ]; then set -- --cached; else set --; fi
-    if [ -n "$ref" ]; then set -- "$@" "$ref"; fi
-    encoded=$(
-      set -o pipefail
-      git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" | head -c "$n" | base64
-    )
-    case $? in
-      0|141) printf '%s\0%s' "$root" "$encoded" ;;
-      *)
-        git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" 2>&1 >/dev/null | head -c 4096
-        exit 8
-        ;;
-    esac
-    """
+      if [ "$staged" = 1 ]; then set -- --cached; else set --; fi
+      if [ -n "$ref" ]; then set -- "$@" "$ref"; fi
+      encoded=$(
+        set -o pipefail
+        git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" | head -c "$n" | base64
+      )
+      case $? in
+        0|141) printf '%s\0%s' "$root" "$encoded" ;;
+        *)
+          git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" 2>&1 >/dev/null | head -c 4096
+          exit 8
+          ;;
+      esac
+      """
   end
 
   # The repository root and the branch NUL-terminated, then the porcelain
@@ -577,7 +599,7 @@ defmodule Fountain.SandboxFiles do
   # The mode chooses between fixed flags rather than reaching the command
   # line, so caller data is never adjacent to a `--`.
   #
-  # `roots/1` follows the three arguments, and the root `rev-parse` discovers
+  # `git_roots/1` follows the three arguments, and the root `rev-parse` discovers
   # has to be one of them or under one. `resolve_path/2` confines the
   # *request*; `--show-toplevel` then walks up its ancestors, and without this
   # check a repository above the sandbox answers instead — inert on Sprites,
@@ -609,37 +631,26 @@ defmodule Fountain.SandboxFiles do
     n=$2
     untracked=$3
     shift 3
-    roots=("$@")
-    [ -e "$d" ] || exit 3
-    [ -d "$d" ] || exit 4
-    cd -- "$d" 2>/dev/null || exit 5
-    root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
-    inside=
-    for r in "${roots[@]}"; do
-      case $root in "$r"|"$r"/*) inside=1 ;; esac
-      p=$(cd -- "$r" 2>/dev/null && pwd -P)
-      if [ -n "$p" ]; then
-        case $root in "$p"|"$p"/*) inside=1 ;; esac
-      fi
-    done
-    [ -n "$inside" ] || exit 6
-    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
-    printf '%s\0%s\0' "$root" "$branch"
-    case $untracked in
-      all) set -- --untracked-files=all ;;
-      no) set -- --untracked-files=no ;;
-      *) set -- --untracked-files=normal ;;
-    esac
-    git --no-pager --no-optional-locks status --porcelain=v1 -z "$@" | head -c "$n"
-    st=${PIPESTATUS[0]}
-    case $st in
-      0|141) ;;
-      *)
-        git --no-pager --no-optional-locks status --porcelain=v1 "$@" 2>&1 >/dev/null | head -c 4096
-        exit 8
-        ;;
-    esac
-    """
+    """ <>
+      git_root_script() <>
+      ~S"""
+      branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
+      printf '%s\0%s\0' "$root" "$branch"
+      case $untracked in
+        all) set -- --untracked-files=all ;;
+        no) set -- --untracked-files=no ;;
+        *) set -- --untracked-files=normal ;;
+      esac
+      git --no-pager --no-optional-locks status --porcelain=v1 -z "$@" | head -c "$n"
+      st=${PIPESTATUS[0]}
+      case $st in
+        0|141) ;;
+        *)
+          git --no-pager --no-optional-locks status --porcelain=v1 "$@" 2>&1 >/dev/null | head -c 4096
+          exit 8
+          ;;
+      esac
+      """
   end
 
   # ── parsing ────────────────────────────────────────────────────────────
