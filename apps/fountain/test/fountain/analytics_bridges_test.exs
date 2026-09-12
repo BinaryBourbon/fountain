@@ -319,10 +319,11 @@ defmodule Fountain.AnalyticsBridgesTest do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
       conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+      turn = insert_turn(conv, status: "completed", exit_code: 0)
       forget_setup()
 
       Conversations.publish_stage(conv.id, "turn", "done", %{
-        turn_id: Ecto.UUID.generate(),
+        turn_id: turn.id,
         turn_number: 1,
         exit_code: 0
       })

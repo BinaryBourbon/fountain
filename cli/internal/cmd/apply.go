@@ -15,14 +15,18 @@ import (
 )
 
 func init() {
+	rootCmd.AddCommand(newApplyCmd())
+}
+
+func newApplyCmd() *cobra.Command {
 	applyCmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply resource definitions from a YAML file or directory",
 		RunE:  runApply,
 	}
 	applyCmd.Flags().StringP("file", "f", "", "path to YAML file or directory")
-	applyCmd.Flags().StringSlice("var", nil, "extra variable for ${VAR} substitution (KEY=VAL, repeatable)")
-	rootCmd.AddCommand(applyCmd)
+	applyCmd.Flags().StringArray("var", nil, "extra variable for ${VAR} substitution (KEY=VAL, repeatable)")
+	return applyCmd
 }
 
 func runApply(cmd *cobra.Command, args []string) error {
@@ -34,7 +38,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 		Fatal("usage: fountain apply -f <path-to-yaml> [--var KEY=VAL ...]")
 	}
 
-	varFlags, _ := cmd.Flags().GetStringSlice("var")
+	varFlags, _ := cmd.Flags().GetStringArray("var")
 	applyVars := buildApplyVars(varFlags)
 
 	docs, err := manifest.Read(path)

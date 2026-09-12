@@ -850,6 +850,41 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule ConversationReapplyRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConversationReapplyRequest",
+      description:
+        "A selection of Agent, Environment and Vault to apply to the machine an existing " <>
+          "conversation already runs on. An omitted field keeps its current selection. An " <>
+          "explicit null clears the Environment override or the Vault. An empty object " <>
+          "reapplies the current selection.",
+      type: :object,
+      properties: %{
+        agent_id: %Schema{
+          type: :string,
+          format: :uuid,
+          description: "Agent to use; omitted keeps the current Agent."
+        },
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Environment override to use; null returns to the selected Agent's Environment."
+        },
+        vault_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "Vault to use; null detaches the current Vault."
+        }
+      }
+    })
+  end
+
   defmodule PromptRequest do
     @moduledoc false
     require OpenApiSpex
@@ -948,6 +983,12 @@ defmodule FountainWeb.Schemas do
               "request is on the conversation as a `pending_requests` entry."
         },
         exit_code: %Schema{type: :integer, nullable: true},
+        limit_reason: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The service-enforced limit that ended this turn, or null. Set independently of exit_code: a runtime that exits zero after its deadline is still an incomplete turn, so a client must read this before treating a turn as successful."
+        },
         started_at: %Schema{type: :string, format: :"date-time", nullable: true},
         ended_at: %Schema{type: :string, format: :"date-time", nullable: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
@@ -997,7 +1038,7 @@ defmodule FountainWeb.Schemas do
         model: %Schema{
           type: :string,
           description:
-            "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The " <>
+            "Canonical provider/model_id (e.g. anthropic/claude-sonnet-5). The " <>
               "provider must match the runtime — anthropic for claude, openai for " <>
               "codex, google for gemini; opencode accepts any of the three. Other " <>
               "providers are rejected: Fountain has no credentials to export for " <>

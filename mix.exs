@@ -208,6 +208,7 @@ defmodule Fountain.Umbrella.MixProject do
       "ecto.migrate": [&migrate_in_app/1],
       "ecto.rollback": [&rollback_in_app/1],
       precommit: [
+        &conflict_markers_absent/1,
         "compile --warnings-as-errors",
         &deps_unlock_unused_changes_nothing/1,
         "format --check-formatted",
@@ -218,6 +219,11 @@ defmodule Fountain.Umbrella.MixProject do
         "test"
       ]
     ]
+  end
+
+  defp conflict_markers_absent(_args) do
+    {_, status} = System.cmd("python3", ["scripts/conflict-markers.py"], into: IO.stream())
+    if status != 0, do: Mix.raise("Conflict-marker check failed")
   end
 
   # Parity with CI's `mix deps.unlock --unused && git diff --exit-code

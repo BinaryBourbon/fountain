@@ -42,6 +42,35 @@ defmodule Fountain.PermissionPolicyTest do
     end
   end
 
+  describe "reserved_errors/1" do
+    test "every reserved key has a validator that rejects an invalid value" do
+      for key <- PermissionPolicy.reserved_keys() do
+        assert [{^key, message}] = PermissionPolicy.reserved_errors(%{key => nil})
+        assert is_binary(message) and message != ""
+      end
+    end
+
+    test "omitted keys and tool verdicts belong to their own validation" do
+      assert PermissionPolicy.reserved_errors(%{}) == []
+      assert PermissionPolicy.reserved_errors(%{"execute" => "not a verdict"}) == []
+    end
+
+    test "ask_timeout accepts bounded seconds and preserves its error message" do
+      max = PermissionPolicy.max_ask_timeout_seconds()
+
+      for value <- [1, "60", max, to_string(max)] do
+        assert PermissionPolicy.reserved_errors(%{"ask_timeout" => value}) == []
+      end
+
+      for value <- [nil, 0, -1, "soon", 1.5, %{}, max + 1] do
+        assert PermissionPolicy.reserved_errors(%{"ask_timeout" => value}) == [
+                 {"ask_timeout",
+                  "#{inspect(value)} is not a positive number of seconds no greater than #{max}"}
+               ]
+      end
+    end
+  end
+
   describe "seconds/1" do
     test "reads a positive integer or a string of one" do
       assert PermissionPolicy.seconds(3600) == 3600

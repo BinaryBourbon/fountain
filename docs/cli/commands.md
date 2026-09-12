@@ -105,8 +105,8 @@ fountain apply [flags]
 Options:
 
 ```
-  -f, --file string   path to YAML file or directory
-      --var strings   extra variable for ${VAR} substitution (KEY=VAL, repeatable)
+  -f, --file string       path to YAML file or directory
+      --var stringArray   extra variable for ${VAR} substitution (KEY=VAL, repeatable)
 ```
 
 ## `fountain auth login`

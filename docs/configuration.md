@@ -161,6 +161,8 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `SANDBOX_QUEUE_MAX_DEPTH` | `10` | No. | The most sandbox requests one tenant holds at once. A request beyond it keeps the immediate capacity error. |
 | `SANDBOX_QUEUE_MAX_WAIT_SECONDS` | `3600` | No. | How long a sandbox request waits for capacity before Fountain expires it. |
 | `FOUNTAIN_EXECUTION_LIMITS` | `{}` | No. | JSON per-turn host ceiling: `wall_time_seconds`, `max_model_turns`, `max_estimated_cost_usd`. Each configured value must be positive; time and turns must be integers. Read at boot; invalid input refuses startup. Requests inherit the stricter host/account ceiling. Keep unset until runtime enforcement and later-turn/recovery checks are integrated: nonempty effective limits currently refuse launch with `422 execution_limits_unsupported`. This is not an aggregate spend cap. |
+| `FOUNTAIN_EXECUTION_DEADLINE_WORKER` | on when `FOUNTAIN_EXECUTION_LIMITS` gives a ceiling | No. | If this node runs the deadline coordinator. The coordinator polls `turn_executions`, so it stays off where no host ceiling applies. Set `true` if you give an account a ceiling but no host ceiling. Set `false` to stop the poll on any node. A change needs a restart. |
+| `FOUNTAIN_EXECUTION_DEADLINE_INTERVAL_MS` | `5000` | No. | The interval at which the coordinator looks for due deadlines. Each deadline is absolute and durable, so a larger value costs precision and not safety. |
 | `CREDIT_OPENING_CENTS` | `500` | No. | The credit a new account starts with, in cents. |
 | `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |
 | `TEAM_CONTACT_CEILING` | `10` | No. | The most teammate contacts one account may hold at once. |

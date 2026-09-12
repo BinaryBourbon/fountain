@@ -77,6 +77,14 @@ defmodule Fountain.SurfaceTest do
     assert {:ok, 2} = Conversation.cursor(conversation)
     assert :ok = Conversation.answer(conversation, "req/1", "allow")
     assert :ok = Conversation.mark_read(conversation)
+
+    # Omitted keeps a binding, an explicit nil clears it, and the two have to
+    # stay distinguishable all the way to the wire.
+    assert {:ok, %{"id" => "thread"}} = Conversation.reapply(conversation)
+
+    assert {:ok, %{"id" => "thread"}} =
+             Conversation.reapply(conversation, agent_id: "a1", vault_id: nil)
+
     assert :ok = Conversation.interrupt(conversation)
     assert :ok = Conversation.terminate(conversation)
     assert :ok = Conversation.delete(conversation)
@@ -110,6 +118,12 @@ defmodule Fountain.SurfaceTest do
                     %{path: "/api/conversations/thread/requests/req%2F1", body: permission_body}}
 
     assert Jason.decode!(permission_body) == %{"option_id" => "allow"}
+
+    assert_receive {:seen, %{path: "/api/conversations/thread/reapply", body: refresh_body}}
+    assert Jason.decode!(refresh_body) == %{}
+
+    assert_receive {:seen, %{path: "/api/conversations/thread/reapply", body: select_body}}
+    assert Jason.decode!(select_body) == %{"agent_id" => "a1", "vault_id" => nil}
   end
 
   test "root run sends all options and channel continuation uses the next turn" do
@@ -347,6 +361,9 @@ defmodule Fountain.SurfaceTest do
 
       {"POST", "/api/conversations/thread/read"} ->
         {204, [], ""}
+
+      {"POST", "/api/conversations/thread/reapply"} ->
+        json(200, %{"data" => %{"id" => "thread"}})
 
       {"POST", "/api/conversations/thread/interrupt"} ->
         {204, [], ""}

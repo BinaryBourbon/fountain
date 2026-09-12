@@ -11,7 +11,22 @@ config :fountain, Oban,
   # webhooks is its own queue so a tenant's slow receiver never sits in front
   # of a maintenance sweep or an email, and so its concurrency can be tuned
   # against outbound HTTP rather than against database work (#700).
-  queues: [maintenance: 1, credits: 5, exports: 1, mailer: 5, schedules: 5, webhooks: 10],
+  # notifications carries work whose whole value is being prompt — a turn
+  # outcome reaching a live subscriber. It is not on webhooks, because that
+  # queue is for outbound HTTP to tenants and a deadline storm would compete
+  # with real deliveries; and not on maintenance, because that one is
+  # concurrency 1 behind eight sweeps, so a notification would queue single
+  # file behind whichever one is mid-run. Same argument as exports and
+  # webhooks above, one more time.
+  queues: [
+    maintenance: 1,
+    credits: 5,
+    exports: 1,
+    mailer: 5,
+    notifications: 5,
+    schedules: 5,
+    webhooks: 10
+  ],
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
