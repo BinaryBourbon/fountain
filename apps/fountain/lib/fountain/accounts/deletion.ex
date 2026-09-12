@@ -16,7 +16,10 @@ defmodule Fountain.Accounts.Deletion do
      cascade takes `conversations` with it, and after that nothing links a
      sandbox to the user who was paying for it. Failures here are logged rather
      than fatal: `SandboxReaper` reconciles anything missed on its next run,
-     which is exactly the case it exists for.
+     which is exactly the case it exists for. An enclosing transaction is the
+     one thing that refuses, and it refuses before any teardown starts
+     (`delete_user/2`); a single machine's fence being refused mid-run is
+     logged and the run carries on.
 
   2. **Record the audit event.** Before the delete, and carrying the email and
      user id in `metadata` — `audit_events.user_id` is `SET NULL` on delete, so
@@ -93,8 +96,14 @@ defmodule Fountain.Accounts.Deletion do
 
   defp do_delete_user(user, opts) do
     delete_owned_principals(user, opts)
-    sprites = destroy_sprites(user)
 
+    with sprites when is_integer(sprites) <-
+           destroy_sprites(user, Keyword.put_new(opts, :reason, "account_deleted")) do
+      delete_user_row(user, sprites, opts)
+    end
+  end
+
+  defp delete_user_row(user, sprites, opts) do
     Audit.record(%{
       user_id: user.id,
       action: "account.deleted",
@@ -141,7 +150,13 @@ defmodule Fountain.Accounts.Deletion do
   defp delete_owned_principals(%User{id: owner_id}, opts) do
     for principal_id <- Fountain.Principals.list_owned(owner_id),
         %User{} = principal <- [Repo.get(User, principal_id)] do
-      delete_user(principal, Keyword.put(opts, :actor, "system:owner_deleted"))
+      case delete_user(principal, Keyword.put(opts, :actor, "system:owner_deleted")) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("account deletion: owned principal #{principal_id}: #{inspect(reason)}")
+      end
     end
 
     :ok
@@ -154,7 +169,10 @@ defmodule Fountain.Accounts.Deletion do
   @doc """
   Stop every sandbox a tenant is running, and return how many sprites were
   destroyed. Refuses an enclosing database transaction before stopping actors
-  or calling a provider.
+  or calling a provider. Known machines are admission-fenced before actor
+  shutdown; machines found afterward are fenced before provider deletion.
+  Forced cleanup may interrupt already-admitted turns. Options carry actor,
+  request_ip and a reason for the committed teardown request.
 
   Ask a live ConversationServer to tear itself down where one exists, so the
   sprite goes through the same path as a user-initiated terminate. Otherwise
@@ -165,18 +183,54 @@ defmodule Fountain.Accounts.Deletion do
   keeps the rows. Duplicating this would be duplicating the part that costs
   money when it is wrong.
   """
-  @spec destroy_sprites(User.t() | binary()) :: non_neg_integer() | {:error, term()}
-  def destroy_sprites(%User{id: user_id}), do: destroy_sprites(user_id)
+  @spec destroy_sprites(User.t() | binary(), keyword()) :: non_neg_integer() | {:error, term()}
+  def destroy_sprites(user, opts \\ [])
+  def destroy_sprites(%User{id: user_id}, opts), do: destroy_sprites(user_id, opts)
 
-  def destroy_sprites(user_id) when is_binary(user_id) do
+  def destroy_sprites(user_id, opts) when is_binary(user_id) do
     if Repo.in_transaction?() do
       {:error, :provider_transaction_open}
     else
-      do_destroy_sprites(user_id)
+      opts = Keyword.put_new(opts, :reason, "compute_stopped")
+
+      # `audit_events.user_id` and `sandboxes.user_id` are both nilified by the
+      # delete that follows, so an event carrying only the column would survive
+      # as an anonymous row pointing at an anonymous sandbox. Denormalise the
+      # tenant into the metadata, as `account.deleted` already does (step 2).
+      opts = Keyword.put_new(opts, :metadata, %{"user_id" => user_id})
+
+      with :ok <- fence_sprites(user_id, opts) do
+        do_destroy_sprites(user_id, opts)
+      end
     end
   end
 
-  defp do_destroy_sprites(user_id) do
+  # A refused fence is logged and the run continues, because the alternative
+  # strands the row it refused on: a halt here leaves `reset_requested_at` set
+  # on a `ready` sandbox whose account is still there, and every `SandboxReaper`
+  # pass filters that row out — `release_stuck_sandboxes/0` and
+  # `sweep_abandoned_sandboxes/0` both require `is_nil(reset_requested_at)`, the
+  # dead-sprite pass wants a terminal status, and the untracked sweep counts the
+  # sprite as known. It would keep burning a `Quotas.active_sandboxes/0` slot
+  # and the fleet ceiling with nothing left able to reclaim it. ADR 0009
+  # decision 2 makes sprite teardown best-effort for this reason, and #1767
+  # asks that failed cleanup stay recoverable by reconciliation.
+  defp fence_sprites(user_id, opts) do
+    # ownership: live_sandboxes/1 scopes every row to this caller-owned user_id.
+    user_id
+    |> live_sandboxes()
+    |> Enum.each(fn sandbox ->
+      case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("account deletion: fencing #{sandbox.id} refused: #{inspect(reason)}")
+      end
+    end)
+  end
+
+  defp do_destroy_sprites(user_id, opts) do
     conv_ids =
       Conversations.list_conversations(user_id)
       |> Enum.filter(&(ConversationServer.whereis(&1.id) != nil))
@@ -194,10 +248,30 @@ defmodule Fountain.Accounts.Deletion do
       end
     end)
 
+    # Actors may have retired a row or created another machine while stopping.
+    # Re-read and fence each remaining row before touching its provider.
+    # ownership: live_sandboxes/1 scopes these fresh rows to the same user_id.
+    user_id
+    |> live_sandboxes()
+    |> Enum.reduce_while(0, fn sandbox, count ->
+      case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
+        {:ok, %{status: status} = fenced} when status in @non_terminal ->
+          {:cont, count + if(destroy_sprite(fenced), do: 1, else: 0)}
+
+        {:ok, _retired} ->
+          {:cont, count}
+
+        {:error, reason} ->
+          Logger.warning("account deletion: late fence refused: #{inspect(reason)}")
+          {:cont, count}
+      end
+    end)
+  end
+
+  defp live_sandboxes(user_id) do
     Sandbox
     |> where([s], s.user_id == ^user_id and s.status in ^@non_terminal)
     |> Repo.all()
-    |> Enum.count(&destroy_sprite/1)
   end
 
   defp destroy_sprite(%Sandbox{sprite_name: name} = sandbox) when is_binary(name) do

@@ -75,6 +75,8 @@ defmodule Fountain.AuditGuardrailTest do
     {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
     {"pending sandbox reset retry", &__MODULE__.do_pending_reset_retry/1, "sandbox.reset"},
     {"sandbox teardown fence", &__MODULE__.do_teardown_fence/1, "sandbox.teardown_requested"},
+    {"account compute teardown", &__MODULE__.do_account_compute_teardown/1,
+     "sandbox.teardown_requested"},
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
     {"suspend", &__MODULE__.do_suspend/1, "account.suspended"},
@@ -231,6 +233,7 @@ defmodule Fountain.AuditGuardrailTest do
           {InferenceCredentials, :put_credential, 5},
           {Conversations, :start_conversation, 2},
           {Conversations, :_unsafe_fence_sandbox_for_teardown, 2},
+          {Fountain.Accounts.Deletion, :destroy_sprites, 2},
           {Conversations, :delete_conversation, 2},
           {Fountain.Team.Comms, :provision_contact, 4},
           {Fountain.Team.Comms, :update_contact, 4},
@@ -488,6 +491,12 @@ defmodule Fountain.AuditGuardrailTest do
     agent = insert_agent(user_id: user.id)
     conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
     {:ok, _} = Conversations.reapply_conversation(conv)
+  end
+
+  def do_account_compute_teardown(user) do
+    insert_sandbox(user_id: user.id, status: "ready")
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
+    1 = Fountain.Accounts.Deletion.destroy_sprites(user)
   end
 
   def do_teardown_fence(user) do

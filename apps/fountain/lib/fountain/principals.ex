@@ -786,7 +786,7 @@ defmodule Fountain.Principals do
       end)
 
     with {:ok, closed} <- result do
-      stop_compute(closed.user_id)
+      stop_compute(closed.user_id, opts)
       settle_grant(closed, opts)
 
       record(closed, action, opts, %{
@@ -928,9 +928,14 @@ defmodule Fountain.Principals do
 
   # ── helpers ─────────────────────────────────────────────────────────────────
 
-  defp stop_compute(user_id) do
-    Deletion.destroy_sprites(user_id)
-    :ok
+  defp stop_compute(user_id, opts) do
+    case Deletion.destroy_sprites(user_id, Keyword.put_new(opts, :reason, "principal_closed")) do
+      {:error, reason} ->
+        Logger.warning("stopping compute for principal #{user_id} refused: #{inspect(reason)}")
+
+      _count ->
+        :ok
+    end
   rescue
     e ->
       Logger.warning("stopping compute for principal #{user_id} failed: #{inspect(e)}")
