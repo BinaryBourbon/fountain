@@ -81,8 +81,7 @@ defmodule Fountain.Conversations.ExecutionTransport do
     Process.flag(:trap_exit, true)
     execution = Keyword.fetch!(opts, :execution)
     owner = Keyword.fetch!(opts, :owner)
-    remaining = max(DateTime.diff(execution.deadline_at, DateTime.utc_now(), :millisecond), 0)
-    Process.send_after(self(), :deadline, remaining)
+    remaining = schedule_deadline(execution)
     Process.send_after(self(), :drain_end, remaining + 30_000)
 
     {:ok,
@@ -200,10 +199,28 @@ defmodule Fountain.Conversations.ExecutionTransport do
   end
 
   def handle_info(:retire, state), do: {:noreply, retire(state)}
-  def handle_info(:deadline, state), do: {:noreply, retire(state)}
+
+  def handle_info(:deadline, state) do
+    # A relative timer is only a wakeup hint. Rounding or a clock adjustment
+    # must not retire a still-valid journal as an ordinary interruption.
+    if DateTime.compare(DateTime.utc_now(), state.execution.deadline_at) == :lt do
+      schedule_deadline(state.execution)
+      {:noreply, state}
+    else
+      {:noreply, retire(state)}
+    end
+  end
+
   def handle_info(:retry_retire, state), do: {:noreply, request_retirement(state)}
   def handle_info(:drain_end, state), do: {:stop, :normal, state}
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp schedule_deadline(execution) do
+    microseconds = DateTime.diff(execution.deadline_at, DateTime.utc_now(), :microsecond)
+    milliseconds = max(div(microseconds + 999, 1_000), 0)
+    Process.send_after(self(), :deadline, milliseconds)
+    milliseconds
+  end
 
   defp complete_job(%{kind: :spawn}, {:ok, %Command{provider: :sprites} = command}, state) do
     buffered = Enum.reverse(state.buffer)

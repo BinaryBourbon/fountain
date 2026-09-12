@@ -303,6 +303,10 @@ upgrade, is in
 
 ### Fixed
 
+- Bounded execution transports recheck their absolute deadline before retiring
+  a turn. A timer that wakes early no longer interrupts a valid turn or hides
+  its eventual wall-time-limit outcome.
+
 - Sandbox `/diff` returns 422 when Git fails after repository discovery,
   instead of reporting an empty diff. Intentional byte-cap truncation still
   succeeds (#1904).
