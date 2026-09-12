@@ -366,24 +366,34 @@ defmodule Fountain.Conversations.Lifecycle do
   """
   @spec park(String.t(), String.t() | nil, Handle.t() | nil, :idle | :max_lifetime) :: :ok
   def park(conversation_id, sandbox_id, handle, reason) do
-    if sandbox_id do
-      # Ownership: as home?/1 above.
-      sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+    case park_row(sandbox_id) do
+      :ok -> finish_park(conversation_id, sandbox_id, handle, reason)
+      :skipped -> :ok
+    end
+  end
 
-      # A machine whose reset is unconfirmed is on its way out, not parking.
-      # `update_sandbox/2` lets a retiring write through the fence but refuses
-      # `suspended`, and this clause matches `{:ok, _}`. The reaper's own park
-      # pass filters the same rows; there is no checkpoint worth taking of a
-      # disk that is meant to be gone.
-      if sandbox.status not in ["terminated", "failed"] and
-           is_nil(sandbox.reset_requested_at) do
-        # A home's disk is kept at its quietest moment, where the provider
-        # can (ADR 0023, #1073). Best-effort: the park goes ahead either way.
-        HomeCheckpoint.on_park(sandbox)
-        {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+  defp park_row(nil), do: :ok
+
+  defp park_row(sandbox_id) do
+    # Ownership: as home?/1 above. Recheck after the provider checkpoint:
+    # retirement or a reset fence can win while that call is in flight.
+    sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
+
+    if sandbox.status in ["terminated", "failed"] or not is_nil(sandbox.reset_requested_at) do
+      :skipped
+    else
+      HomeCheckpoint.on_park(sandbox)
+
+      case Conversations.update_sandbox(sandbox, %{status: "suspended"}) do
+        {:ok, _} -> :ok
+        {:error, %Ecto.Changeset{errors: [status: {"sandbox is retired", []}]}} -> :skipped
+        {:error, :sandbox_reset_pending} -> :skipped
+        error -> raise MatchError, term: error
       end
     end
+  end
 
+  defp finish_park(conversation_id, sandbox_id, handle, reason) do
     # The conversation stays idle and resumable; the sprite stays parked.
     conv = Conversations._unsafe_get_conversation!(conversation_id)
     if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})

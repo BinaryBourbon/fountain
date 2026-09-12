@@ -28,7 +28,8 @@ def conversation_cases(rules):
         })
 
     names = ("FountainStageFailures", "FountainTurnFailureRate",
-             "FountainReattachFailures", "FountainTurnFirstOutputSlow")
+             "FountainReattachFailures", "FountainTurnFirstOutputSlow",
+             "FountainBrokerCAInstallFailureRate")
     for alert in names:
         case(alert + ": no series", alert, [])
 
@@ -42,6 +43,29 @@ def conversation_cases(rules):
         case("reattach fails=" + str(fails), "FountainReattachFailures", [
             series("fountain_stage_count", 'stage="reattach",status="failed"',
                    "0+0x30 1+0x89" if fails else "0+0x120")], "{}" if fails else None)
+
+    for name, failed, done, unavailable, fires in (
+        ("healthy, no failure series", None, "0+1x120", None, False),
+        ("idle", "0+0x120", "0+0x120", None, False),
+        ("too little traffic", "0+0.02x120", None, None, False),
+        ("exactly 10 percent", "0+1x120", "0+9x120", None, False),
+        ("18 percent fail", "0+0.18x120", "0+0.82x120", None, True),
+        ("all fail, no success series", "0+1x120", None, None, True),
+        ("transport failure is not an installer exit", None, None, "0+1x120", False),
+        ("counter reset", "0+0.18x29 0+0.18x90", "0+0.82x29 0+0.82x90", None, True),
+    ):
+        inputs = [series("fountain_broker_ca_install_count",
+                         f'provider="sprites",outcome="{outcome}"', values)
+                  for outcome, values in (("exit", failed), ("ok", done),
+                                          ("unreachable", unavailable)) if values is not None]
+        # A busy healthy provider and proxy/health request traffic cannot
+        # dilute the failing provider's conversation setup ratio.
+        inputs.append(series("fountain_broker_ca_install_count",
+                             'provider="e2b",outcome="ok"', "0+1000x120"))
+        inputs.append(series("fountain_broker_request_count",
+                             'outcome="passthrough"', "0+1000x120"))
+        case("broker CA: " + name, "FountainBrokerCAInstallFailureRate", inputs,
+             '{provider="sprites"}' if fires else None)
 
     count = "fountain_turn_completed_duration_ms_count"
     for name, failed, done, fires in (

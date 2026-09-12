@@ -199,6 +199,26 @@ spec:
             summary: "Fountain conversation stages are failing"
             description: "Stage {{ $labels.stage }} failed more than twice in 30 minutes. Inspect conversation stages and provider health."
 
+        - alert: FountainBrokerCAInstallFailureRate
+          # Actual conversation trust setup only: proxy requests and health
+          # probes never emit this metric. Five attempts suppress idle noise.
+          expr: |
+            (
+              round(
+                sum by (provider) (increase(fountain_broker_ca_install_count{namespace="fountain", outcome="exit"}[1h]))
+                / sum by (provider) (increase(fountain_broker_ca_install_count{namespace="fountain"}[1h])),
+                0.000001
+              ) > 0.10
+            )
+            and
+            sum by (provider) (increase(fountain_broker_ca_install_count{namespace="fountain"}[1h])) >= 5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Broker CA installation failures exceed 10% for {{ $labels.provider }}'
+            description: 'More than 10% of at least five conversation CA setup attempts failed with a nonzero installer exit over the last hour. Inspect broker stage failures and sandbox provider/base-image changes.'
+
         - alert: FountainTurnFailureRate
           # Histogram counts are events, so sum across replicas. Require ten
           # terminal turns per provider to avoid paging on one failed attempt.
