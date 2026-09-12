@@ -243,9 +243,10 @@ defmodule Fountain.Conversations.Egress do
   def sandbox_env(session), do: Broker.sandbox_env(session)
 
   @doc """
-  Mint (or re-mint) the conversation's proxy session, publishing the
-  `broker` stage around it. The caller decides whether the conversation is
-  brokered at all (`brokered?/1`) and holds the session that comes back.
+  Mint the conversation's proxy session and start the `broker` stage.
+  The stage completes only after `install_ca/3` establishes trust in the
+  sandbox. The caller decides whether the conversation is brokered at all
+  (`brokered?/1`) and holds the session that comes back.
   """
   @spec prepare(String.t(), map(), Broker.bindings(), keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -256,11 +257,6 @@ defmodule Fountain.Conversations.Egress do
 
     case Broker.prepare(conversation_id, brokered, bindings, opts) do
       {:ok, session} ->
-        publish_stage(conversation_id, "broker", "done", %{
-          vault: session.vault,
-          expires_at: session.expires_at
-        })
-
         {:ok, session}
 
       {:error, reason} ->
@@ -485,8 +481,16 @@ defmodule Fountain.Conversations.Egress do
   @spec install_ca(session(), Managoat.Sandbox.Handle.t(), String.t()) :: :ok | {:error, term()}
   def install_ca(nil, _handle, _conversation_id), do: :ok
 
-  def install_ca(_session, handle, conversation_id),
-    do: Provisioning.install_broker_ca(handle, conversation_id)
+  def install_ca(session, handle, conversation_id) do
+    with :ok <- Provisioning.install_broker_ca(handle, conversation_id) do
+      publish_stage(conversation_id, "broker", "done", %{
+        vault: session.vault,
+        expires_at: session.expires_at
+      })
+
+      :ok
+    end
+  end
 
   # Every session of the conversation goes when its sandbox does. Still off
   # the caller's path: deleting rows is local and cannot fail the way a call
