@@ -295,6 +295,37 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # A reapply that would need the machine built again (#1565). 409 rather than
+  # 422: the selection is valid, it just cannot be applied to the computer
+  # this conversation is already on. `field` says which one forced it, so a
+  # client can tell "your agent runs a different runtime" from "your
+  # environment installs different packages".
+  def call(conn, {:error, {:rebuild_required, field}}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "rebuild_required",
+      field: to_string(field),
+      message:
+        "this conversation's machine cannot be reconfigured in place because " <>
+          Fountain.Conversations.Reapply.explain(field) <>
+          "; start a new conversation, or build this one's machine again with " <>
+          "DELETE /api/sandboxes/:id"
+    })
+  end
+
+  # A conversation is reconfigured between turns, never during one. 409 and
+  # not 503: waiting does not help by itself, the caller either waits for the
+  # turn to end or interrupts it.
+  def call(conn, {:error, :conversation_busy}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "conversation_busy",
+      message: "the conversation has a running turn; wait for it to finish or interrupt it"
+    })
+  end
+
   # A turn refused because another conversation is running one on the same
   # sandbox and the runtime takes one at a time (ADR 0023 step 4). Not a
   # queue: the caller sends again when the other turn ends, or interrupts it.
@@ -372,6 +403,27 @@ defmodule FountainWeb.FallbackController do
     |> json(%{
       error: "sandbox_reset_pending",
       message: "reset is pending confirmation; contact the operator before retrying"
+    })
+  end
+
+  # A third reason a reset is refused, distinct from the two above (ADR 0046).
+  # `:sandbox_mid_turn` is a turn that is running and ends by itself;
+  # `:sandbox_reset_pending` is a delete this server asked for and never had
+  # confirmed; this is a bounded turn whose remote command was never confirmed
+  # stopped. Unlike the other two it clears on its own — the deadline
+  # coordinator writes an obligation nothing can resolve off after a cutoff —
+  # so the caller is told to wait rather than to fetch an operator.
+  #
+  # Without this clause the atom reached the unmapped-atom safety net: a 422
+  # carrying no message at all, plus a warning log on every refusal.
+  def call(conn, {:error, :execution_fenced}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "execution_fenced",
+      message:
+        "a bounded turn on this sandbox has remote work that was never confirmed " <>
+          "stopped; this clears on its own once the obligation ages out, then send again"
     })
   end
 

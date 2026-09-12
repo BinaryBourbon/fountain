@@ -33,6 +33,8 @@ config :fountain, FountainWeb.Endpoint,
   server: false
 
 config :fountain, :skip_rehydrate, true
+# Tests start the coordinator explicitly with owned database fixtures.
+config :fountain, :execution_deadline_worker_enabled, false
 config :fountain, :checkpoint_creation_enabled, false
 config :managoat_sandbox, Managoat.Sandbox.Sprites, checkpoint_creation_enabled: false
 

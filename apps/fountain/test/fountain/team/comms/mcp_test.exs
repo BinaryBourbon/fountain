@@ -101,6 +101,17 @@ defmodule Fountain.Team.Comms.McpTest do
     end
   end
 
+  defmodule UnidentifiedProvider do
+    def send_message(_), do: response()
+    def send_message(_, _), do: response()
+    def reply_to_message(_, _, _), do: response()
+
+    defp response do
+      send(self(), :provider_send)
+      {:ok, Process.get(:unidentified_comms_response)}
+    end
+  end
+
   @contact %Contact{
     id: "c1",
     email_address: "ada@agentmail.to",
@@ -173,6 +184,53 @@ defmodule Fountain.Team.Comms.McpTest do
       assert :noreply = handle(%{"method" => "notifications/initialized"}, ctx())
       assert %{"error" => %{"code" => -32_601}} = handle(%{"id" => 3, "method" => "nope"}, ctx())
       assert %{"result" => %{}} = handle(%{"id" => 4, "method" => "ping"}, ctx())
+    end
+  end
+
+  for {tool, args} <- [
+        {"email_send",
+         %{"to" => "private@example.com", "subject" => "private", "text" => "body"}},
+        {"email_reply", %{"message_id" => "original", "text" => "body"}},
+        {"sms_send", %{"to" => "+15550001111", "body" => "body"}}
+      ] do
+    @tag :unidentified_send
+    test "#{tool} audits unidentified acceptance and refuses to report success" do
+      tool = unquote(tool)
+      args = unquote(Macro.escape(args))
+      test = self()
+
+      ctx =
+        ctx(%{
+          mail: UnidentifiedProvider,
+          phone: UnidentifiedProvider,
+          audit: fn name, summary -> send(test, {:audit, name, summary}) end
+        })
+
+      for response <- [
+            nil,
+            [],
+            %{},
+            %{"message_id" => nil, "id" => nil},
+            %{"message_id" => "", "id" => ""},
+            %{"message_id" => "  ", "id" => "  "},
+            %{"message_id" => 123, "id" => 123},
+            %{"unexpected" => "private-provider-response"}
+          ] do
+        Process.put(:unidentified_comms_response, response)
+        result = call(tool, args, ctx)["result"]
+        assert result["isError"]
+        assert [%{"text" => message}] = result["content"]
+        assert message =~ "may have been sent"
+        assert message =~ "Do not retry automatically"
+        refute message =~ "private-provider-response"
+        assert_received :provider_send
+        refute_received :provider_send
+        assert_received {:audit, ^tool, summary}
+        assert summary["outcome"] == "unidentified"
+        refute Map.has_key?(summary, "provider_message_id")
+        refute inspect(summary) =~ "private"
+        refute_received {:audit, _, _}
+      end
     end
   end
 

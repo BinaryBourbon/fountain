@@ -8,6 +8,10 @@ from .http import HttpClient
 from .run import Run
 from .sse import stream_events
 
+# Distinguishes "not given" from an explicit None, which the reapply body
+# needs: the first keeps a binding and the second clears it.
+_UNSET = object()
+
 
 class Conversation:
     def __init__(self, http: HttpClient, conversation_id: str, cursor: int = 0) -> None:
@@ -101,6 +105,31 @@ class Conversation:
 
     def tree(self) -> Any:
         return self._http.data("GET", "/api/conversations/%s/tree" % self.id)
+
+    def reapply(
+        self,
+        *,
+        agent_id: Optional[str] = None,
+        environment_id: Any = _UNSET,
+        vault_id: Any = _UNSET,
+    ) -> Dict[str, Any]:
+        """Reapply this conversation's agent, environment and vault in place.
+
+        The machine, the transcript and the files on disk all stay. An omitted
+        value keeps its current selection; pass ``None`` for the environment or
+        the vault to clear it. Calling with no arguments reapplies what is
+        already selected.
+        """
+        body: Dict[str, Any] = {}
+        if agent_id is not None:
+            body["agent_id"] = agent_id
+        if environment_id is not _UNSET:
+            body["environment_id"] = environment_id
+        if vault_id is not _UNSET:
+            body["vault_id"] = vault_id
+        return self._http.data(
+            "POST", "/api/conversations/%s/reapply" % self.id, body=body
+        )
 
     def interrupt(self) -> None:
         self._http.request("POST", "/api/conversations/%s/interrupt" % self.id)

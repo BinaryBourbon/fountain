@@ -104,6 +104,10 @@ defmodule FountainWeb.TeamCommsMcpController do
   # is no longer what anything prices from, which is the whole point — that
   # conflation is what made a dropped event a free message.
   defp record_message(user, contact, channel, event_type, summary, metadata) do
+    # Unidentified acceptance still reaches the product trail, explicitly
+    # labeled so it can be reconciled without fabricating a billable id.
+    metadata = Map.merge(metadata, Map.take(summary, ["outcome"]))
+
     case summary["provider_message_id"] do
       id when is_binary(id) and id != "" ->
         case Fountain.Team.Comms.record_message(%{

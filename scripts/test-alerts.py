@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Evaluate the shipped alert expressions with promtool (requires PyYAML)."""
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -79,10 +80,36 @@ def conversation_cases(rules):
     return cases
 
 
+def email_dashboard_cases():
+    dashboard = json.loads((ROOT / "deploy/grafana/fountain-finance.json").read_text())
+    expression = next(target["expr"] for panel in dashboard["panels"]
+                      for target in panel.get("targets", [])
+                      if "fountain_email_delivery_exception" in target.get("expr", ""))
+    expression = expression.replace("$namespace", "fountain")
+    cases = []
+    for errors, exceptions in ((False, False), (True, False), (False, True), (True, True)):
+        inputs = []
+        for present, metric in (
+            (errors, 'fountain_email_delivery_count{namespace="fountain",outcome="error"}'),
+            (exceptions, 'fountain_email_delivery_exception{namespace="fountain"}'),
+        ):
+            if present:
+                inputs.append({"series": metric, "values": "0+0x30 1+0x90"})
+        cases.append({
+            "name": f"email dashboard: errors={errors}, exceptions={exceptions}",
+            "interval": "1m", "input_series": inputs,
+            "promql_expr_test": [{
+                "expr": expression, "eval_time": "60m",
+                "exp_samples": [{"labels": "{}", "value": int(errors) + int(exceptions)}],
+            }],
+        })
+    return cases
+
+
 def main():
     spec = yaml.safe_load((ROOT / "deploy/k8s/prometheusrule.yaml").read_text())["spec"]
     rules = {r["alert"]: r for g in spec["groups"] for r in g["rules"]}
-    cases = conversation_cases(rules)
+    cases = conversation_cases(rules) + email_dashboard_cases()
     for replicas in (1, 2, 3):
         for alert, metric, statuses in (
             ("FountainSandboxBudgetExceeded", "fountain_sandboxes_count", ("pending", "ready")),

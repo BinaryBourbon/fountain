@@ -124,6 +124,21 @@ The [generated reference](/api/docs) defines required scopes and refusals.
 
 ## Rate limiting
 
+The resource API uses fixed one-minute windows, independently on each server
+replica:
+
+- Each authenticated API key has a 600-request allowance.
+- Failed authentication has a separate 600-request allowance per client address.
+- A coarse ceiling allows 6,000 total attempts per client address before
+  authentication. It includes failed authentication and requests over a key's
+  quota. Exhausting it blocks every key at that address until its window resets.
+
+Each key retains its individual allowance behind a shared ingress. All keys
+count toward the coarse ceiling. Forwarded client addresses are accepted only from configured
+`TRUSTED_PROXIES`; a direct caller cannot choose an address through headers.
+These counters are per replica, so distributing requests across replicas can
+multiply an allowance. Individual operations can impose additional limits.
+
 Honor `Retry-After` when a request is rate limited. Avoid immediate retry
 loops. A lost response to a mutation does not prove that the mutation failed;
 reconcile the resource before you repeat an operation that could spend money.
@@ -267,6 +282,11 @@ attachments save their initial allowance with the conversation before worker
 startup or prompt delivery. Fresh launches also reserve the sandbox in that
 transaction; a failed insert leaves no sandbox or conversation.
 
+A turn that a limit ended carries `limit_reason`. Read it before you read
+`exit_code`. A runtime that answers after its deadline can exit zero. A client
+that reads only `exit_code` then shows a stopped turn as a success. The
+transcript event for that turn puts the same value in `stop_reason`.
+
 ```bash
 curl --fail-with-body \
   -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
@@ -401,6 +421,57 @@ Fountain merges the map with the same rules as the route. A `null` value
 removes a key. The notification never reaches the transcript, and it opens no
 turn of its own. A stamp that breaks a limit is logged and dropped, and the
 turn continues. Nothing in a stamp can end a run.
+
+### Reapply the configuration
+
+`POST /api/conversations/{id}/reapply` selects a different Agent, Environment
+or Vault for a conversation that exists. The machine stays, so the files on
+its disk stay with it. Fountain rewrites the variables, the system prompt, the
+skills and the MCP configuration. The next prompt starts a runtime that reads
+them.
+
+An empty body reapplies the current selection. A field that the body does not
+name keeps its selection. A field with a `null` value clears the Environment
+override or the Vault.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"YOUR_AGENT_ID","vault_id":null}' \
+  "$FOUNTAIN_URL/api/conversations/$CONVERSATION_ID/reapply"
+```
+
+The machine also takes the new identity. A later attachment must name the new
+Agent, Environment and Vault. A target identity that already has a persistent
+home fails the request and moves neither binding.
+
+A conversation that sleeps applies the change on its next wake. A
+configuration revision stops a prompt against a configuration that a live
+worker did not read yet. The `configuration` stage event reports which of the
+two happened. The status is `done` when a machine holds the new selection, and
+`failed` when the selection stands and the machine has yet to read it. The
+request succeeds in both cases. Fountain removes the managed skills that the Agent no
+longer names, and keeps the other files in the skills directory. On an older
+machine with no skill manifest, Fountain recovers the names from the recorded
+Agent version and from the installer's source lock. An entry with no ownership
+record stays where it is.
+
+Some selections need a new disk. Fountain refuses those with
+`409 rebuild_required` and a `field` that names the cause. Fountain answers
+`environment` when you edit one Environment in place. The machine records one
+digest of its build inputs, not a digest for each field. A different runtime
+needs one, because Fountain installs the agent adapter before the network
+policy, and that policy now blocks a second install. A different set of
+packages, repositories, setup script or network policy needs one too. A
+machine that other conversations share accepts only the selection that those
+conversations have, because the skills and the instructions belong to the
+machine. For the rest, start a new conversation. You can also build this
+conversation's machine again with `DELETE /api/sandboxes/{id}`.
+
+Fountain refuses the request with `409 conversation_busy` while a turn runs,
+with `503` while it still builds the machine, and with `410` after the
+conversation ends.
 
 ### Workers without Fountain API access
 

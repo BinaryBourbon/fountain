@@ -42,6 +42,16 @@ public struct ConversationsResource: Sendable {
     try await client.send(.delete, "/api/conversations/\(id)")
   }
 
+  /// Reapply a conversation's agent, environment and vault on the machine it
+  /// is already running. The conversation, its transcript and the files on
+  /// disk all stay. An empty request reapplies what is already selected.
+  public func reapply(
+    _ id: String,
+    _ request: ConversationReapplyRequest = ConversationReapplyRequest()
+  ) async throws -> Conversation {
+    try await client.data(.post, "/api/conversations/\(id)/reapply", body: request)
+  }
+
   /// Queue a follow-up turn. The 200 is not the answer — the words arrive
   /// on the stream. Throws `.conversationBusy` mid-turn; queue and retry
   /// on turn end.

@@ -31,7 +31,31 @@ upgrade, is in
   Connections off is the broker: an account is offered the feature only while
   `BROKER_TENANTS` names it.
 
+### Added
+
+- `POST /api/conversations/:id/reapply` re-selects a conversation's Agent,
+  Environment and Vault on the machine it is already running, keeping the
+  conversation, its transcript and the files on its disk. A selection that would
+  need the machine built again is refused, naming what forced it. Adds the
+  `configuration` webhook stage and three columns
+  (`conversations.configuration_revision`, `sandboxes.build_fingerprint`,
+  `sandboxes.applied_skills`) (#1565).
+
 ### Changed
+
+- **The claude runtime's ACP adapter moves to 0.75.1, and a fresh sandbox now
+  warms the CLI's model list before its first session** (`managoat_runtimes`
+  0.3.4). The adapter bundles the Claude Code binary that decides which models
+  a turn may select, and 0.66.0 bundled CLI 2.1.220; 0.75.1 bundles 2.1.257,
+  which also resolves a full model id onto the alias row the CLI advertises
+  rather than matching it exactly. Separately, that binary learns an org's
+  "additional models" from a fetch it makes *after* a session has started and
+  caches the answer for the next launch, so the first session in a fresh
+  sandbox saw a shorter list than the second one in the same sandbox — which
+  is what made a model refusal look intermittent. Provisioning now opens one
+  prompt-less session to fill that cache, under three seconds measured and
+  bounded at 30. It is best-effort: a cache that stays cold is logged and
+  provisioning continues.
 
 - **The project moved to `github.com/managoat/fountain`** and every coordinate
   that named the old owner moved with it (`decisions/0048`). The container
@@ -123,6 +147,17 @@ upgrade, is in
   immediate error. Starts carrying images or naming a `sandbox_id` never
   queue.
 
+- Commit deadline failure events and delivery jobs with the failed turn. Late
+  completion and interruption reuse the original event, and notification retries
+  retain its id. Public bounded execution remains disabled.
+
+- Add a supervised execution-deadline coordinator with separate expiration and
+  termination task pools. Local task timeouts and restarts retain uncertain
+  remote operations. It starts only where `FOUNTAIN_EXECUTION_LIMITS` configures
+  a host ceiling, and `FOUNTAIN_EXECUTION_DEADLINE_WORKER=false` turns it off
+  anywhere. Public bounded execution remains disabled until session identity,
+  event delivery, and lifecycle integration are complete.
+
 - **An `acp` runtime launches a named command, so a deterministic program can
   run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
   `runtime_command` field carries the command it runs. The field is required
@@ -153,10 +188,28 @@ upgrade, is in
   assumed a string needs a null check. Nothing else on the wire changed
   shape.
 
+- Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
+  dependency set for typed execution limits and confirmed session termination.
+  Fountain deadline enforcement remains disabled pending transport and lifecycle
+  integration.
+
+
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
   toolchain setup run within an explicit bound. It persists through API/spec
   round trips and invalidates checkpoints when changed. The overall provisioning
   deadline and failed-setup handling remain in force.
+
+- `claude-fable-5-1` is suggested for anthropic again, so `GET /api/catalog`
+  lists it. It was removed on 2026-09-07 because the claude adapter refused
+  it; the refusal was not the adapter version but a cold cache. The Claude
+  Code binary learns an org's "additional models" (Fable among them) from a
+  fetch it makes after a session starts and caches for the next launch, so
+  the first session in a fresh sandbox never listed Fable on any adapter
+  version. Two `managoat_runtimes` releases fix that: 0.3.3 moves the adapter
+  pin to 0.75.1 (the bundled CLI must be 2.1.255 or later for Fable 5.1), and
+  0.3.4 warms the cache at provisioning. Verified with a real turn on the new
+  pin. `claude-fable-5` stays unsuggested: the adapter refuses it even with
+  the cache warm.
 
 - Vault secret expiry can be edited in the console or with a metadata-only PATCH, without replacing the encrypted value.
 - Conversation lists accept a `sandbox_id` filter, including through the TypeScript SDK.
@@ -206,6 +259,15 @@ upgrade, is in
   that carries it.
 
 ### Fixed
+
+- **A reset refused by a bounded execution says so** (ADR 0046). Deleting a
+  sandbox while a bounded turn still owed a remote stop answered `422` with an
+  empty body, because `:execution_fenced` had no `FallbackController` clause
+  and fell through to the unmapped-atom net, logging a warning on every
+  refusal. It now answers `409 execution_fenced` with a message, beside the
+  two refusals it sits next to — and unlike `sandbox_mid_turn` (wait for the
+  turn) and `sandbox_reset_pending` (contact the operator), this one clears on
+  its own once the obligation ages out, which the message says.
 
 - **An account whose `connections` flag is off can revoke what it already
   holds** (#1693). The flag stood in front of every door, the ones that take a
