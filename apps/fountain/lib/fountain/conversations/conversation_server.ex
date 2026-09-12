@@ -26,6 +26,11 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.Conversations.{Pending, Provisioning, ProvisionWatchdog, Reapply}
   alias Fountain.Conversations.{Reattachment, Redaction, SpriteEnv, TurnLaunch, TurnMachine}
 
+  defguardp retired_or_resetting(reason)
+            when reason == :sandbox_reset_pending or
+                   (is_struct(reason, Ecto.Changeset) and
+                      reason.errors == [status: {"sandbox is retired", []}])
+
   # ── public api ────────────────────────────────────────────────────────────
 
   def start_link(args) do
@@ -1166,7 +1171,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
           {:noreply, new_state}
 
-        {:error, %Ecto.Changeset{errors: [status: {"sandbox is retired", []}]}} ->
+        {:error, reason} when retired_or_resetting(reason) ->
           # Wake owns this connection's credentials, not the existing disk or
           # another connection's session. Never destroy the machine here.
           Egress.release_prepared({:ok, state})

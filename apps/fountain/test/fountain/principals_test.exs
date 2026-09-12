@@ -8,6 +8,7 @@ defmodule Fountain.PrincipalsTest do
   """
 
   use Fountain.DataCase, async: true
+  use Mimic
 
   alias Fountain.Accounts
   alias Fountain.Credits
@@ -334,14 +335,45 @@ defmodule Fountain.PrincipalsTest do
       opts = [idempotency_key: "claim_1"]
 
       {:ok, first} = Principals.claim(ctx.claimable.id, ctx.token, claimer, opts)
+      {:ok, _, first_key} = Accounts.authenticate_api_key(first.api_key)
+
+      {:ok, {callback, _}} =
+        Accounts.create_api_key(first.claimable.user_id, "callback", scopes: ["sprite"])
+
       {:ok, second} = Principals.claim(ctx.claimable.id, ctx.token, claimer, opts)
 
+      assert {:error, :revoked} = Accounts.authenticate_api_key(first.api_key)
+      assert {:ok, _, _} = Accounts.authenticate_api_key(second.api_key)
+      assert is_nil(Repo.reload!(callback).revoked_at)
+
+      assert [audit] =
+               Repo.all(
+                 from a in Fountain.Audit.Event,
+                   where: a.resource_id == ^first_key.id and a.action == "api_key.revoked"
+               )
+
+      assert audit.user_id == first.claimable.user_id
       assert first.claimable.id == second.claimable.id
       refute first.api_key == second.api_key
 
       # A different key from the same account is not a replay.
       assert {:error, :already_claimed} =
                Principals.claim(ctx.claimable.id, ctx.token, claimer, idempotency_key: "other")
+    end
+
+    test "a failed credential mint rolls back the owner attachment and anonymous-key revocation",
+         ctx do
+      claimer = insert_verified_user()
+
+      stub(Accounts, :build_api_key, fn user_id, name, opts ->
+        {changeset, raw} = Mimic.call_original(Accounts, :build_api_key, [user_id, name, opts])
+        {Ecto.Changeset.add_error(changeset, :name, "mint refused"), raw}
+      end)
+
+      assert {:error, %Ecto.Changeset{}} = Principals.claim(ctx.claimable.id, ctx.token, claimer)
+      assert Repo.get!(ClaimableUser, ctx.claimable.id).status == "unclaimed"
+      assert is_nil(Principals.owner_id(ctx.claimable.user_id))
+      assert {:ok, _, _} = Accounts.authenticate_api_key(ctx.anon_key)
     end
 
     test "an account that cannot fund future work is refused without mutating", ctx do
@@ -368,6 +400,110 @@ defmodule Fountain.PrincipalsTest do
 
       assert {:error, :ineligible} =
                Principals.claim(ctx.claimable.id, ctx.token, other_principal)
+    end
+  end
+
+  describe "renew_owned_credential/3" do
+    setup do
+      owner = insert_verified_user()
+      opened = open(application_account())
+      {:ok, claimed} = Principals.claim(opened.claimable.id, opened.claim_token, owner)
+      {:ok, _, key} = Accounts.authenticate_api_key(claimed.api_key)
+      %{owner: owner, opened: opened, claimed: claimed, key: key}
+    end
+
+    test "the owner renews without the claim token, rotating only principal credentials", ctx do
+      principal_id = ctx.claimed.claimable.user_id
+      {:ok, {callback, _}} = Accounts.create_api_key(principal_id, "callback", scopes: ["sprite"])
+
+      assert {:ok, {key, raw}} =
+               Principals.renew_owned_credential(ctx.owner.id, principal_id,
+                 actor: "ui",
+                 request_ip: "127.0.0.1"
+               )
+
+      assert key.user_id == principal_id
+      assert key.scopes == ["principal"]
+      assert {:ok, _, _} = Accounts.authenticate_api_key(raw)
+      assert {:error, :revoked} = Accounts.authenticate_api_key(ctx.claimed.api_key)
+      assert is_nil(Repo.reload!(callback).revoked_at)
+      assert Principals.owner_id(principal_id) == ctx.owner.id
+
+      assert [audit] =
+               Repo.all(
+                 from a in Fountain.Audit.Event,
+                   where: a.user_id == ^ctx.owner.id and a.action == "api_key.created"
+               )
+
+      assert audit.resource_id == key.id
+      assert audit.actor == "ui"
+      assert audit.metadata["principal_user_id"] == principal_id
+      assert audit.metadata["revoked_key_ids"] == [ctx.key.id]
+      refute inspect(audit.metadata) =~ raw
+    end
+
+    test "expired and then explicitly revoked credentials can be replaced", ctx do
+      past = DateTime.utc_now() |> DateTime.add(-60) |> DateTime.truncate(:second)
+      ctx.key |> Ecto.Changeset.change(expires_at: past) |> Repo.update!()
+      assert {:error, :expired} = Accounts.authenticate_api_key(ctx.claimed.api_key)
+      principal_id = ctx.claimed.claimable.user_id
+
+      assert {:ok, {key, raw}} = Principals.renew_owned_credential(ctx.owner.id, principal_id)
+      assert {:ok, _, _} = Accounts.authenticate_api_key(raw)
+      {:ok, _} = Accounts.revoke_managed_api_key(ctx.owner.id, key.id)
+
+      assert {:ok, {_, replacement}} =
+               Principals.renew_owned_credential(ctx.owner.id, principal_id)
+
+      assert {:ok, _, _} = Accounts.authenticate_api_key(replacement)
+    end
+
+    test "renewal does not require a spending balance", ctx do
+      owner = ctx.owner
+
+      {:ok, _} =
+        Credits.debit(owner.id, Credits.balance(owner.id), "burn_turn",
+          idempotency_key: "renewal-drain:#{owner.id}"
+        )
+
+      assert {:error, :insufficient_credits} = Fountain.Billing.check_spend(owner.id)
+      assert {:ok, _} = Principals.renew_owned_credential(owner.id, ctx.claimed.claimable.user_id)
+    end
+
+    test "the application, another account and the principal cannot renew", ctx do
+      principal_id = ctx.claimed.claimable.user_id
+      other = insert_verified_user()
+
+      for viewer_id <- [ctx.opened.claimable.application_user_id, other.id, principal_id] do
+        assert {:error, :not_found} = Principals.renew_owned_credential(viewer_id, principal_id)
+      end
+
+      unclaimed = open(application_account())
+
+      assert {:error, :not_found} =
+               Principals.renew_owned_credential(ctx.owner.id, unclaimed.claimable.user_id)
+
+      assert {:error, :not_found} =
+               Principals.renew_owned_credential(ctx.owner.id, Ecto.UUID.generate())
+
+      assert {:ok, _, _} = Accounts.authenticate_api_key(ctx.claimed.api_key)
+    end
+
+    test "a failed mint keeps the previous credential and emits no owner creation event", ctx do
+      stub(Accounts, :build_api_key, fn user_id, name, opts ->
+        {changeset, raw} = Mimic.call_original(Accounts, :build_api_key, [user_id, name, opts])
+        {Ecto.Changeset.add_error(changeset, :name, "mint refused"), raw}
+      end)
+
+      assert {:error, %Ecto.Changeset{}} =
+               Principals.renew_owned_credential(ctx.owner.id, ctx.claimed.claimable.user_id)
+
+      assert {:ok, _, _} = Accounts.authenticate_api_key(ctx.claimed.api_key)
+
+      refute Repo.exists?(
+               from a in Fountain.Audit.Event,
+                 where: a.user_id == ^ctx.owner.id and a.action == "api_key.created"
+             )
     end
   end
 

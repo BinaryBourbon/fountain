@@ -505,7 +505,30 @@ defmodule FountainWeb.FallbackController do
     |> json(%{
       error: "invalid_sandbox_api_access",
       message:
-        "sandbox_api_access must be owner or none; none requires a fresh ephemeral sandbox and cannot change on resume"
+        "sandbox_api_access must be owner or none; none requires a fresh ephemeral sandbox, " <>
+          "cannot name a sprite_name, and cannot change on resume"
+    })
+  end
+
+  def call(conn, {:error, :invalid_sprite_name}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "invalid_sprite_name",
+      message:
+        "sprite_name is the suffix of an account-scoped sandbox name: 1 to 40 characters " <>
+          "of letters, digits, - and _, starting with a letter or digit"
+    })
+  end
+
+  def call(conn, {:error, :sprite_name_not_supported}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "sprite_name_not_supported",
+      message:
+        "this agent runs on a self-hosted runner, where the sandbox name carries the " <>
+          "runner it is placed on; omit sprite_name and let the server mint it"
     })
   end
 

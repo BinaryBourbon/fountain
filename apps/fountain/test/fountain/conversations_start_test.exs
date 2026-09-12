@@ -54,6 +54,143 @@ defmodule Fountain.ConversationsStartTest do
     end
   end
 
+  describe "start_conversation/1 sprite_name scoping (#1632)" do
+    # The bug this closes: a sandbox name is the machine's identity at the
+    # provider, and provider names are unique per deployment token rather than
+    # per tenant. A verbatim caller-supplied name let two rows in two accounts
+    # name one machine — and that machine holds a tenant's decrypted
+    # environment and vault values on disk.
+    test "one account cannot name the machine another account's sandbox already names" do
+      victim = insert_active_user()
+      attacker = insert_active_user()
+      agent = insert_agent(user_id: attacker.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      # Named the way Fountain names one, so this is the collision a caller
+      # can actually mount: read a name off your own transcript, hand it back.
+      target =
+        insert_sandbox(
+          user_id: victim.id,
+          status: "ready",
+          sprite_name: "fountain-" <> binary_part(victim.id, 0, 8) <> "-deadbeef"
+        )
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{
+                 "agent_id" => agent.id,
+                 "user_id" => attacker.id,
+                 "sprite_name" => target.sprite_name
+               })
+
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name !=
+               target.sprite_name
+    end
+
+    test "a supplied name becomes the suffix of this account's prefix" do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{
+                 "agent_id" => agent.id,
+                 "user_id" => user.id,
+                 "sprite_name" => "review-loop-7"
+               })
+
+      prefix = "fountain-" <> binary_part(user.id, 0, 8) <> "-"
+
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name ==
+               prefix <> "review-loop-7"
+    end
+
+    test "a name that already carries this account's prefix is not prefixed twice" do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      full = "fountain-" <> binary_part(user.id, 0, 8) <> "-again"
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{
+                 "agent_id" => agent.id,
+                 "user_id" => user.id,
+                 "sprite_name" => full
+               })
+
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name == full
+    end
+
+    test "a suffix outside the allowed shape is refused before any row is allocated" do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+      before = Fountain.Quotas.active_sandbox_count(user.id)
+
+      for name <- ["has a space", "slash/es", "-leading-dash", String.duplicate("x", 41)] do
+        assert {:error, :invalid_sprite_name} =
+                 Conversations.start_conversation(%{
+                   "agent_id" => agent.id,
+                   "user_id" => user.id,
+                   "sprite_name" => name
+                 })
+      end
+
+      assert Fountain.Quotas.active_sandbox_count(user.id) == before
+    end
+
+    test "an empty sprite_name is no override rather than an error" do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{
+                 "agent_id" => agent.id,
+                 "user_id" => user.id,
+                 "sprite_name" => ""
+               })
+
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).sprite_name =~
+               ~r/\Afountain-#{binary_part(user.id, 0, 8)}-[0-9a-f]{8}\z/
+    end
+
+    # ADR 0045 promises a `none` conversation a machine no other conversation
+    # can reach, and checks it by counting rows that point at the sandbox.
+    # Naming the machine is how a caller reaches one that check cannot see.
+    test "sandbox_api_access none refuses a caller-supplied name" do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+      before = Fountain.Quotas.active_sandbox_count(user.id)
+
+      assert {:error, :invalid_sandbox_api_access} =
+               Conversations.start_conversation(%{
+                 "agent_id" => agent.id,
+                 "user_id" => user.id,
+                 "sandbox_mode" => "ephemeral",
+                 "sandbox_api_access" => "none",
+                 "sprite_name" => "worker-1"
+               })
+
+      assert Fountain.Quotas.active_sandbox_count(user.id) == before
+    end
+
+    test "sandbox_api_access none is still fine without a name" do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{
+                 "agent_id" => agent.id,
+                 "user_id" => user.id,
+                 "sandbox_mode" => "ephemeral",
+                 "sandbox_api_access" => "none"
+               })
+
+      assert conv.sandbox_api_access == "none"
+    end
+  end
+
   describe "start_conversation/1" do
     test "the sandbox row is stamped with the resolved provider" do
       user = insert_active_user()

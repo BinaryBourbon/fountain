@@ -43,6 +43,38 @@ upgrade, is in
 
 ### Changed
 
+- **`sprite_name` on `POST /api/conversations` is now a suffix, not the whole
+  machine name.** The server keeps the `fountain-<account>-` prefix every
+  generated name already carried, so a name a caller chooses lands in their own
+  namespace instead of anywhere in the provider's. Provider names are unique
+  per deployment token rather than per tenant, and the Sprites adapter adopts a
+  name that already exists, so the previous verbatim behavior let two sandbox
+  rows in two accounts point at one machine. Three changes go with it: a name
+  that already carries this account's prefix is taken as it stands (a name from
+  an earlier launch still resolves to the same machine); a suffix outside
+  `[A-Za-z0-9][A-Za-z0-9_-]{0,39}` answers `422 invalid_sprite_name` rather
+  than reaching a provider; and `sprite_name` is refused with
+  `sandbox_api_access: "none"`, and on an agent that runs on a self-hosted
+  runner (`422 sprite_name_not_supported`), where the name carries the runner
+  it is placed on. On that provider the name was also a routing decision with
+  no tenant check, because the runner adapter reads the runner id out of the
+  name and looks the connection up by that id alone, so a name shaped like
+  another account's runner sandbox sent the launch to their runner.
+  All four SDKs expose the field and need no change.
+  **Upgrade note for anyone who passed `sprite_name`:** existing sandbox rows
+  keep their old names and are not migrated, and passing the same value now
+  mints a *different* machine under the account-scoped name. A caller who
+  passed `my-box` has a row named `my-box`; passing `my-box` today provisions
+  `fountain-<account>-my-box` and answers 201, leaving the old row untouched
+  and no longer reachable by the name that created it. A name that already
+  carries this account's prefix still round-trips, so a name minted by the
+  server keeps resolving to its own machine; an arbitrary legacy name does
+  not, and the way back to that machine is `sandbox_id`, which attaches by row
+  rather than by name. `sandbox_id` reaches the row while it is attachable
+  (ADR 0023), so a machine that was reaped, has a reset pending, or belongs to
+  a different agent, vault, environment or runtime than the launch answers 409
+  or 422 rather than attaching.
+
 - **The claude runtime's ACP adapter moves to 0.75.1, and a fresh sandbox now
   warms the CLI's model list before its first session** (`managoat_runtimes`
   0.3.4). The adapter bundles the Claude Code binary that decides which models

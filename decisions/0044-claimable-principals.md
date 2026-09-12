@@ -123,7 +123,12 @@ abandoning what it already has.
    unique per application; the claim key is stored on success. Replaying either
    with the same key returns the same principal and mints a **fresh**
    credential, because the secret from the first response was never stored.
-   That is also the rotation path for a claimed principal's credential.
+   Claim replay revokes the previous principal credential atomically with the
+   new mint. An owner can also renew by principal id without the original
+   token or idempotency key, even after credential expiry or revocation.
+   Renewal takes the same claim-row lock and leaves runtime callback keys
+   alone. It records the new key and replaced key ids in the owner's audit
+   trail after commit.
 
 **The API is four routes**, all behind `:require_full_scope`:
 `POST /api/claimable-users`, `GET /api/claimable-users/:id`,

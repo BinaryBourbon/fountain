@@ -10,6 +10,18 @@ defmodule FountainWeb.FallbackControllerTest do
     assert %{"error" => "sandbox_reset_pending"} = json_response(conn, 409)
   end
 
+  # Driven directly rather than through the route: reaching this refusal needs
+  # an agent on the runner provider, and `runners_enabled` is global
+  # application env this async module must not write (#1214). The `message` is
+  # the assertion that matters — the terminal safety net answers 422 with the
+  # bare atom, so a status-only check would pass with no clause at all (#1632).
+  test "a sprite_name on the runner provider is refused with a reason", %{conn: conn} do
+    conn = FountainWeb.FallbackController.call(conn, {:error, :sprite_name_not_supported})
+    body = json_response(conn, 422)
+    assert body["error"] == "sprite_name_not_supported"
+    assert body["message"] =~ "self-hosted runner"
+  end
+
   test "unusable opening input names itself rather than falling to the safety net", %{conn: conn} do
     for {reason, error} <- [invalid_prompt: "invalid_prompt", invalid_images: "invalid_images"] do
       body =
