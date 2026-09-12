@@ -199,6 +199,7 @@ defmodule Fountain.SandboxQueue do
     case swap(request.id, "queued", %{status: "cancelled", attrs: %{}}) do
       {:ok, cancelled} ->
         audited(cancelled, "sandbox_request.cancelled", opts)
+        note_schedule_outcome(cancelled)
         emit_depth(cancelled.user_id)
         {:ok, cancelled}
 
@@ -402,6 +403,17 @@ defmodule Fountain.SandboxQueue do
   defp put_unless_nil(attrs, _key, nil), do: attrs
   defp put_unless_nil(attrs, key, value), do: Map.put(attrs, key, value)
 
+  # A `schedule_run` that ended without running has to tell its schedule, or
+  # that row keeps reporting a wait that is over. `started` and `failed` went
+  # through `run_schedule/2`, which wrote the row itself; `expired` and
+  # `cancelled` never reach it.
+  defp note_schedule_outcome(%Request{kind: "schedule_run", schedule_id: id} = request)
+       when is_binary(id) do
+    Fountain.Team.Schedules.note_queued_run_ended(id, request.user_id, request.status)
+  end
+
+  defp note_schedule_outcome(%Request{}), do: :ok
+
   defp expire_overdue(user_id) do
     cutoff = DateTime.add(DateTime.utc_now(), -max_wait_seconds(), :second)
 
@@ -415,6 +427,7 @@ defmodule Fountain.SandboxQueue do
       case swap(request.id, "queued", %{status: "expired", attrs: %{}}) do
         {:ok, expired} ->
           audited(expired, "sandbox_request.expired", actor: @system_actor)
+          note_schedule_outcome(expired)
           emit_completed(expired, request.inserted_at)
           true
 

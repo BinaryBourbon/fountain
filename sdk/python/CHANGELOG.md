@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- Add `Conversation.reapply()` for `POST /api/conversations/{id}/reapply`: re-select a conversation's agent, environment and vault on the machine it is already running.
+
 ## 0.1.1
 
 - Bound idle stream reads to five seconds so cancellation completes behind a silent proxy.

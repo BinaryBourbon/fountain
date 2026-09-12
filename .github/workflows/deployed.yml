@@ -41,6 +41,9 @@ jobs:
     if: github.event_name != 'schedule' || (github.event.schedule == '23 */6 * * *' && vars.DEPLOYED_CANARY_ENABLED == 'true') || (github.event.schedule == '43 4 * * 6' && vars.DEPLOYED_MATRIX_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Require approved target and main checkout
         env:
@@ -51,6 +54,14 @@ jobs:
             staging|production) ;;
             *) echo 'Target is not approved'; exit 1 ;;
           esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+      - name: Require an existing environment with reviewers
+        env:
+          REQUESTED_TARGET: ${{ inputs.target || 'production' }}
+          GH_TOKEN: ${{ github.token }}
+        run: node deployed/validate-environment.mjs
   verify:
     needs: validate
     runs-on: ubuntu-latest

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.0] - 2026-09-10
+
+- Add `Fountain.Conversation.reapply/2` for `POST /api/conversations/{id}/reapply`: re-select a conversation's agent, environment and vault on the machine it is already running.
+
 ## [0.1.0] - 2026-09-02
 
 - Initial Elixir SDK release.

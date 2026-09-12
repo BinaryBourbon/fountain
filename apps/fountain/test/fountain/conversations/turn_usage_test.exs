@@ -46,6 +46,23 @@ defmodule Fountain.Conversations.TurnUsageTest do
              Conversations._unsafe_get_conversation!(conv.id)
   end
 
+  test "a delayed duplicate holding a stale turn struct is refused", %{conv: conv} do
+    t = insert_turn(conv, prompt: "one", status: "completed")
+
+    assert {:ok, _} =
+             Conversations._unsafe_record_turn_usage(t, %{"input" => 100, "output" => 20})
+
+    # `t` still carries usage: nil, so the unlocked clause lets this through and
+    # only the locked re-read can refuse it — which is why the re-read exists.
+    # Rebinding to the returned struct would route the second call into the
+    # unlocked clause and test nothing.
+    assert {:error, :already_recorded} =
+             Conversations._unsafe_record_turn_usage(t, %{"input" => 100, "output" => 20})
+
+    assert %{usage_input_tokens: 100, usage_output_tokens: 20} =
+             Conversations._unsafe_get_conversation!(conv.id)
+  end
+
   describe "over the turn-start inference stamp (#1685)" do
     test "the end-of-turn figure merges over the stamp instead of being refused", %{conv: conv} do
       t = insert_turn(conv, prompt: "one", status: "completed")
@@ -77,6 +94,25 @@ defmodule Fountain.Conversations.TurnUsageTest do
 
       assert {:error, :already_recorded} =
                Conversations._unsafe_record_turn_usage(recorded, %{"input" => 100, "output" => 20})
+    end
+
+    test "a duplicate holding the pre-figure stamped struct is refused", %{conv: conv} do
+      t = insert_turn(conv, prompt: "one", status: "completed")
+      stamp = %{"inference" => "platform", "model" => "anthropic/claude-opus-5"}
+      {:ok, stamped} = Conversations._unsafe_update_turn(t, %{usage: stamp})
+
+      assert {:ok, _} =
+               Conversations._unsafe_record_turn_usage(stamped, %{"input" => 100, "output" => 20})
+
+      # The only shape that reaches the locked read's refusal from a struct the
+      # unlocked clause believes is stamp-only: it sees a stamp on `stamped`
+      # and merges happily, and only the row read under the lock knows a real
+      # figure already landed.
+      assert {:error, :already_recorded} =
+               Conversations._unsafe_record_turn_usage(stamped, %{"input" => 100, "output" => 20})
+
+      assert %{usage_input_tokens: 100, usage_output_tokens: 20} =
+               Conversations._unsafe_get_conversation!(conv.id)
     end
 
     test "an accounting-only map is an end-of-turn record, not a stamp", %{conv: conv} do

@@ -37,13 +37,44 @@ for administrative workflows.
 ### Sign in with Fountain (OAuth 2.0 for browser apps)
 
 Browser apps use the authorization code flow with PKCE. The returned token
-is a Fountain API key. Register the client and its exact redirect URIs with
-the instance operator before you start the flow.
+is a Fountain API key. Register the client and its exact redirect URIs
+before you start the flow.
 
 Keep the verifier in the app that initiated sign-in, and validate `state`
 on return. See [Build a team chat](build/team-chat.md) for an application
 example and the OAuth operations in the [generated reference](/api/docs)
 for the token exchange.
+
+### Register your own app
+
+Register a client in the console under **Account**, then **OAuth apps**, with
+`fountain oauth-client create`, or through the API.
+
+```
+GET    /api/oauth/clients        # the account's clients
+POST   /api/oauth/clients        # {name, redirect_uris} -> {client_id, ...}
+GET    /api/oauth/clients/:id
+PATCH  /api/oauth/clients/:id    # rename it, or replace the redirect URIs
+DELETE /api/oauth/clients/:id
+```
+
+These routes need a full-scope key. A sandbox token cannot register a client.
+A registered client leads to a full-scope key after consent.
+
+Your client starts in **development mode**. It signs in only the account that
+registered it. Every other account gets an error page instead of a redirect.
+Only an operator publishes a client for other accounts. After that, only an
+operator changes or removes the registration. Every other account signs in
+through it, and the `client_id` is random, so a deletion breaks them all.
+
+One account registers a maximum of 25 apps.
+
+A redirect URI must match exactly and must use `https`. A URI on `localhost`
+or `127.0.0.1` can use `http` and matches on any port.
+
+The redirect origins also call `/api` from a browser. One registration covers
+both sign-in and CORS. It needs no `OAUTH_CLIENTS` or `API_CORS_ORIGINS`
+change.
 
 ## Account state
 
@@ -92,6 +123,21 @@ request can return a fresh credential, so keep the latest successful result.
 The [generated reference](/api/docs) defines required scopes and refusals.
 
 ## Rate limiting
+
+The resource API uses fixed one-minute windows, independently on each server
+replica:
+
+- Each authenticated API key has a 600-request allowance.
+- Failed authentication has a separate 600-request allowance per client address.
+- A coarse ceiling allows 6,000 total attempts per client address before
+  authentication. It includes failed authentication and requests over a key's
+  quota. Exhausting it blocks every key at that address until its window resets.
+
+Each key retains its individual allowance behind a shared ingress. All keys
+count toward the coarse ceiling. Forwarded client addresses are accepted only from configured
+`TRUSTED_PROXIES`; a direct caller cannot choose an address through headers.
+These counters are per replica, so distributing requests across replicas can
+multiply an allowance. Individual operations can impose additional limits.
 
 Honor `Retry-After` when a request is rate limited. Avoid immediate retry
 loops. A lost response to a mutation does not prove that the mutation failed;
@@ -236,6 +282,11 @@ attachments save their initial allowance with the conversation before worker
 startup or prompt delivery. Fresh launches also reserve the sandbox in that
 transaction; a failed insert leaves no sandbox or conversation.
 
+A turn that a limit ended carries `limit_reason`. Read it before you read
+`exit_code`. A runtime that answers after its deadline can exit zero. A client
+that reads only `exit_code` then shows a stopped turn as a success. The
+transcript event for that turn puts the same value in `stop_reason`.
+
 ```bash
 curl --fail-with-body \
   -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
@@ -263,6 +314,26 @@ Use history for a durable transcript and SSE for live delivery. Persist the
 event cursor so a reconnect can resume after the last event processed.
 Request structured blocks to render runtime output; clients should not
 parse each runtime's native dialect.
+
+### Wait for capacity
+
+A start can reach the tenant sandbox cap or the fleet ceiling. Fountain then
+answers `429` or `503`. Set `queue: true` to wait instead. Fountain answers
+`202` with a sandbox request and its one-based `position`. The request becomes
+a conversation when capacity is free.
+
+`GET /api/sandbox-queue` lists your requests in position order.
+`GET /api/sandbox-queue/{id}` reports the status of one request. It carries
+`conversation_id` after the start. `DELETE /api/sandbox-queue/{id}` cancels a
+request that still has the `queued` status.
+
+Each tenant holds ten requests at once. A request waits one hour at most. A
+full queue keeps the immediate `429` or `503` answer. A start with images does
+not wait. A start with an explicit `sandbox_id` does not wait. A queued start
+must pass the credit gate and the inference gate again.
+
+A teammate schedule uses the queue without the flag. No person is present
+when its cron fires, so Fountain must not lose the run.
 
 ### Labels
 
@@ -351,6 +422,57 @@ removes a key. The notification never reaches the transcript, and it opens no
 turn of its own. A stamp that breaks a limit is logged and dropped, and the
 turn continues. Nothing in a stamp can end a run.
 
+### Reapply the configuration
+
+`POST /api/conversations/{id}/reapply` selects a different Agent, Environment
+or Vault for a conversation that exists. The machine stays, so the files on
+its disk stay with it. Fountain rewrites the variables, the system prompt, the
+skills and the MCP configuration. The next prompt starts a runtime that reads
+them.
+
+An empty body reapplies the current selection. A field that the body does not
+name keeps its selection. A field with a `null` value clears the Environment
+override or the Vault.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"YOUR_AGENT_ID","vault_id":null}' \
+  "$FOUNTAIN_URL/api/conversations/$CONVERSATION_ID/reapply"
+```
+
+The machine also takes the new identity. A later attachment must name the new
+Agent, Environment and Vault. A target identity that already has a persistent
+home fails the request and moves neither binding.
+
+A conversation that sleeps applies the change on its next wake. A
+configuration revision stops a prompt against a configuration that a live
+worker did not read yet. The `configuration` stage event reports which of the
+two happened. The status is `done` when a machine holds the new selection, and
+`failed` when the selection stands and the machine has yet to read it. The
+request succeeds in both cases. Fountain removes the managed skills that the Agent no
+longer names, and keeps the other files in the skills directory. On an older
+machine with no skill manifest, Fountain recovers the names from the recorded
+Agent version and from the installer's source lock. An entry with no ownership
+record stays where it is.
+
+Some selections need a new disk. Fountain refuses those with
+`409 rebuild_required` and a `field` that names the cause. Fountain answers
+`environment` when you edit one Environment in place. The machine records one
+digest of its build inputs, not a digest for each field. A different runtime
+needs one, because Fountain installs the agent adapter before the network
+policy, and that policy now blocks a second install. A different set of
+packages, repositories, setup script or network policy needs one too. A
+machine that other conversations share accepts only the selection that those
+conversations have, because the skills and the instructions belong to the
+machine. For the rest, start a new conversation. You can also build this
+conversation's machine again with `DELETE /api/sandboxes/{id}`.
+
+Fountain refuses the request with `409 conversation_busy` while a turn runs,
+with `503` while it still builds the machine, and with `410` after the
+conversation ends.
+
 ### Workers without Fountain API access
 
 Set `sandbox_api_access` to `none` when the host must retain Fountain API
@@ -428,6 +550,10 @@ A schedule runs work without a person at the keyboard. Choose the intended
 timezone and verify the next execution before you enable unattended work.
 See [Teammates](concepts/teammates.md) for how schedules relate to a teammate.
 The [generated reference](/api/docs) defines timing fields and run history.
+
+A browser client on another origin needs a registered OAuth client or an
+`API_CORS_ORIGINS` entry. Read [configuration](configuration.md). A bearer
+key is the one credential that crosses an origin.
 
 ## Support
 

@@ -620,25 +620,41 @@ defmodule Fountain.Conversations.TurnMachine do
         ended_at: now()
       })
 
+    stage_meta = Map.merge(stage_meta, %{turn_id: row.id, turn_number: row.turn_number})
+
+    # A service-enforced limit sets both: `limit_reason` names which limit, and
+    # `stop_reason` is the field every existing transcript reader already
+    # switches on. The conversations app and the team app live outside this
+    # repo (ADR 0034), so a new field alone would render as an unexplained
+    # failure in both until each one shipped.
+    stage_meta =
+      if row.limit_reason,
+        do:
+          stage_meta
+          |> Map.put(:limit_reason, row.limit_reason)
+          |> Map.put(:stop_reason, row.limit_reason),
+        else: stage_meta
+
     publish_stage(
       turn.conversation_id,
       "turn",
-      if(status == "completed", do: "done", else: "failed"),
-      %{turn_id: row.id, turn_number: row.turn_number}
-      |> Map.merge(stage_meta)
-      |> Map.merge(waiting_meta(row))
+      # `row.status`, not `status`: a turn the execution journal fenced has had
+      # its requested status dropped, so the persisted row is the only honest
+      # source of what actually happened (ADR 0046). `stage_meta` already
+      # carries turn_id/turn_number from the merge above.
+      if(row.status == "completed", do: "done", else: "failed"),
+      Map.merge(stage_meta, waiting_meta(row))
     )
 
     end_span(
       turn.span,
-      if(status == "completed", do: :ok, else: :error),
+      if(row.status == "completed", do: :ok, else: :error),
       span_attrs
     )
 
     emit_completed(turn, row.status)
 
-    conv = Conversations._unsafe_get_conversation!(turn.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+    {:ok, _} = Conversations._unsafe_idle_after_turn(row)
 
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
   end
@@ -690,8 +706,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
     emit_completed(turn, "interrupted")
 
-    conv = Conversations._unsafe_get_conversation!(turn.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+    {:ok, _} = Conversations._unsafe_idle_after_turn(turn.row)
 
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
   end
@@ -776,10 +791,11 @@ defmodule Fountain.Conversations.TurnMachine do
   platform turn, `"model"`, which is what `Workers.CreditPricer` prices
   against the rate card.
 
-  **Only stamped on a deployment that holds a platform key at all.** With
-  none configured there is no question to answer, and an unstamped map is
-  byte-for-byte the map every turn has always carried, which is what keeps a
-  self-hosted install (and the tests that assert on it) unchanged.
+  Platform turns are stamped from the credential source selected for the
+  turn, including a ChatGPT grant without any platform API key. A later
+  configuration change cannot erase the source that served the turn.
+  Tenant-owned turns retain their legacy shape when no platform API key is
+  configured.
 
   The `"model"` key is deliberately absent on an `"own"` turn: nothing prices
   it, so recording it would put a configuration detail in a column that
@@ -788,14 +804,15 @@ defmodule Fountain.Conversations.TurnMachine do
   @spec with_inference(map() | nil, ctx()) :: map() | nil
   def with_inference(usage, ctx) when is_map(usage) do
     case Map.get(ctx, :inference) do
-      source when source in [:own, :platform] ->
-        if Fountain.PlatformInference.enabled?() do
-          usage
-          |> Map.put("inference", Atom.to_string(source))
-          |> put_model(source, Map.get(ctx, :model))
-        else
-          usage
-        end
+      :platform ->
+        usage
+        |> Map.put("inference", "platform")
+        |> put_model(:platform, Map.get(ctx, :model))
+
+      :own ->
+        if Fountain.PlatformInference.enabled?(),
+          do: Map.put(usage, "inference", "own"),
+          else: usage
 
       _ ->
         usage
@@ -840,9 +857,8 @@ defmodule Fountain.Conversations.TurnMachine do
   #
   # `with_inference/2` decides the source, exactly as the end-of-turn write
   # does — one derivation, so the two writes cannot disagree. What it returns
-  # for an empty map is the stamp alone, and `%{}` on a deployment holding no
-  # platform key, which is what keeps a self-hosted install's turn rows
-  # unchanged.
+  # for an empty map is the stamp alone, and `%{}` for tenant-owned turns on
+  # a deployment holding no platform API key, keeping those rows unchanged.
   #
   # The end-of-turn write merges its token figures over this (see
   # `Conversations._unsafe_record_turn_usage/2`), so a turn that does answer
@@ -991,16 +1007,17 @@ defmodule Fountain.Conversations.TurnMachine do
   same reason capacity is: there is no run to record, and the stage event says
   what happened.
   """
-  @spec open(String.t(), String.t(), String.t(), map() | nil) ::
+  @spec open(String.t(), String.t(), String.t(), map() | nil, integer() | nil) ::
           {:ok, Conversation.t(), Conversations.Turn.t()}
           | :at_capacity
           | :no_command
+          | :configuration_changed
           | {:error, term()}
-  def open(conversation_id, sandbox_id, prompt, agent \\ nil) do
+  def open(conversation_id, sandbox_id, prompt, agent \\ nil, revision \\ nil) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
 
     if runnable?(conv, agent),
-      do: open_turn(conv, sandbox_id, prompt),
+      do: open_turn(conv, sandbox_id, prompt, revision),
       else: refuse_no_command(conv)
   end
 
@@ -1024,7 +1041,7 @@ defmodule Fountain.Conversations.TurnMachine do
     :no_command
   end
 
-  defp open_turn(conv, sandbox_id, prompt) do
+  defp open_turn(conv, sandbox_id, prompt, revision) do
     conversation_id = conv.id
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
 
@@ -1038,9 +1055,15 @@ defmodule Fountain.Conversations.TurnMachine do
 
     capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 
-    case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity) do
+    case Conversations._unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity, revision) do
       {:ok, turn} ->
         {:ok, conv, turn}
+
+      # The server asked for a revision that is no longer current: a reapply
+      # landed and this server has not read it. Not a refusal — the caller
+      # reloads and starts the turn on the configuration that is now there.
+      {:error, :configuration_changed} ->
+        :configuration_changed
 
       {:error, :sandbox_at_capacity} ->
         publish_stage(conversation_id, "sandbox", "done", %{
@@ -1117,35 +1140,19 @@ defmodule Fountain.Conversations.TurnMachine do
   `session/load` over `session/new`; with none, one is generated and
   persisted immediately so a server restart can resume.
   """
-  @spec session_plan(Conversation.t(), String.t() | nil) :: {:run | :continue, String.t()}
-  def session_plan(conv, runtime_session_id) do
-    mode =
-      cond do
-        is_nil(runtime_session_id) -> :run
-        true -> :continue
-      end
+  @spec session_plan(Conversations.Turn.t(), String.t() | nil) ::
+          {:ok, {:run | :continue, String.t()}} | {:error, term()}
+  def session_plan(turn, runtime_session_id) do
+    mode = if is_nil(runtime_session_id), do: :run, else: :continue
+    id = runtime_session_id || Ecto.UUID.generate()
 
-    runtime_session_id =
-      case runtime_session_id do
-        nil ->
-          # Generate one and persist immediately so a server restart can resume.
-          # Under ACP this value is a placeholder, not an identity: the spec
-          # makes the *agent* mint the session id, so `session/new` proposes
-          # nothing and the id that comes back overwrites this one (see the
-          # `{:acp, ref, {:session, id}}` handler). What the row still buys is
-          # the `mode` decision above — a persisted id means "a turn has
-          # happened", which is what picks `session/resume` or `session/load`
-          # over `session/new`. It used to buy gemini's legacy `--resume` the
-          # same signal; that argv is gone with #941.
-          new_id = Ecto.UUID.generate()
-          {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: new_id})
-          new_id
-
-        existing ->
-          existing
-      end
-
-    {mode, runtime_session_id}
+    # A placeholder chooses run/resume, not ACP identity. Preparing even that
+    # placeholder must remain tied to the admitted turn across cancellation.
+    case Conversations._unsafe_set_turn_session(turn, id) do
+      {:ok, %{applied: true}} -> {:ok, {mode, id}}
+      {:ok, %{applied: false}} -> {:error, :execution_fenced}
+      {:error, _} = error -> error
+    end
   end
 
   @doc """
@@ -1222,7 +1229,7 @@ defmodule Fountain.Conversations.TurnMachine do
       Managoat.ACP.Peer.start(
         owner: self(),
         # See reattach_acp_peer/3 for the writer's contract.
-        writer: fn iodata -> Managoat.Sandbox.write_stdin(command, iodata) end,
+        writer: command_writer(command, opts),
         ref: command.ref,
         prompt: prompt,
         mode: mode,
@@ -1235,7 +1242,8 @@ defmodule Fountain.Conversations.TurnMachine do
         # A codex spawn on the deployment's ChatGPT grant must not be
         # authenticated with codex-acp's api-key method (ADR 0047); see
         # `Fountain.Conversations.CodexChatGPT.peer_auth/2`.
-        auth: Keyword.get(opts, :auth, :api_key)
+        auth: Keyword.get(opts, :auth, :api_key),
+        execution_limits: Keyword.get(opts, :execution_limits)
       )
 
     {peer, Process.monitor(peer)}
@@ -1247,6 +1255,16 @@ defmodule Fountain.Conversations.TurnMachine do
 
   def acp_model(conv, agent),
     do: Fountain.RuntimeDispatch.acp_model(conv.runtime || agent.runtime, agent.model)
+
+  defp command_writer(command, opts) do
+    case Keyword.get(opts, :execution_transport) do
+      nil ->
+        fn data -> Managoat.Sandbox.write_stdin(command, data) end
+
+      pid when is_pid(pid) ->
+        fn data -> Fountain.Conversations.ExecutionTransport.write(pid, data) end
+    end
+  end
 
   # The permission policy in force for this turn (#939): the agent's own,
   # clamped by whatever narrowing the launch asked for. Resolved per turn from
@@ -1324,11 +1342,7 @@ defmodule Fountain.Conversations.TurnMachine do
     # without this it stays "running" in the API and UI until some later turn
     # completes, even though nothing is executing. The :exit and :interrupt
     # handlers both do the same reset.
-    failed_conv = Conversations._unsafe_get_conversation!(conversation_id)
-
-    if failed_conv.status == "running" do
-      {:ok, _} = Conversations.update_conversation(failed_conv, %{status: "idle"})
-    end
+    {:ok, _} = Conversations._unsafe_idle_after_turn(turn)
 
     # The turn never started; close the span we just opened so it doesn't leak.
     if exit_code, do: OpenTelemetry.Tracer.set_attribute("exit_code", exit_code)
@@ -1447,6 +1461,52 @@ defmodule Fountain.Conversations.TurnMachine do
     })
 
     :ok
+  end
+
+  @doc "Persist a worker session report only while its exact turn remains current."
+  def accept_runtime_session(%{current_turn: %{} = turn} = state, id) do
+    case Conversations._unsafe_set_turn_session(turn, id) do
+      {:ok, %{applied: true}} -> %{state | runtime_session_id: id}
+      _ -> state
+    end
+  end
+
+  def accept_runtime_session(state, _id), do: state
+
+  @doc "Clear a worker's lost session through the same generation fence as session reports."
+  def forget_turn_session(%{current_turn: %{} = turn} = state, reason, detail) do
+    case Conversations._unsafe_set_turn_session(turn, nil) do
+      {:ok, %{applied: true}} ->
+        publish_stage(state.conversation_id, "session", "done", %{
+          turn_id: turn.id,
+          event: "reset",
+          reason: reason,
+          detail: detail
+        })
+
+        %{state | runtime_session_id: nil}
+
+      _ ->
+        state
+    end
+  end
+
+  def forget_turn_session(%{runtime_session_id: nil} = state, _reason, _detail), do: state
+
+  def forget_turn_session(state, reason, detail) do
+    case Conversations._unsafe_clear_idle_session(state.conversation_id, state.runtime_session_id) do
+      {:ok, %{applied: true}} ->
+        publish_stage(state.conversation_id, "session", "done", %{
+          event: "reset",
+          reason: reason,
+          detail: detail
+        })
+
+        %{state | runtime_session_id: nil}
+
+      _ ->
+        state
+    end
   end
 
   @doc """

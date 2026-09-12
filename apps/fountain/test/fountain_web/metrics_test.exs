@@ -173,6 +173,11 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :sandbox, :suspended],
         [:fountain, :reaper, :run],
         [:fountain, :reaper, :untracked],
+        # SandboxQueue emits depth after every mutation and completion at each
+        # terminal transition; OpsGauges emits the live row counts (#1033).
+        [:fountain, :sandbox_queue, :tenant_depth],
+        [:fountain, :sandbox_queue, :completed],
+        [:fountain, :sandbox_queue, :requests],
         # Audit.record_admin/1 rejection path (#451) — exercised by
         # Fountain.AuditTest's rejected-write telemetry test
         [:fountain, :audit, :admin_record_rejected],
@@ -189,6 +194,9 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :sandboxes],
         [:fountain, :sandboxes_by_provider],
         [:fountain, :oban_queue],
+        # Conversations.Egress.install_ca/3; all outcomes and non-install
+        # paths are exercised by EgressTest.
+        [:fountain, :broker, :ca_install],
         # Fountain.Broker.Native.emit_telemetry/0 (#1170) — exercised
         # directly by Fountain.BrokerNativeTest, since the poller is off in
         # test and these are emitted only on the native backend

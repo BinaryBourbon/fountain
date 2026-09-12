@@ -378,6 +378,50 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule PendingPermissionRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PendingPermissionRequest",
+      description:
+        "A permission request that outlived its turn (#1635). The agent ended the " <>
+          "turn with stop reason `waiting` while this request was open, so the " <>
+          "conversation is idle, the sandbox may be suspended, and the request is " <>
+          "still waiting for an answer. Answer it at " <>
+          "POST /api/conversations/{id}/requests/{request_id}, which resolves it and " <>
+          "opens a new turn carrying the outcome to the agent.",
+      type: :object,
+      properties: %{
+        request_id: %Schema{type: :string},
+        tool: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The tool the agent asked about, as the transcript labels it."
+        },
+        options: %Schema{
+          type: :array,
+          items: %Schema{type: :object, additionalProperties: true},
+          description:
+            "The options the agent offered, verbatim. `option_id` must be one of " <>
+              "these `optionId` values; an id from another runtime is refused."
+        },
+        asked_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        deadline: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description:
+            "When the request is denied for want of an answer. Set from the " <>
+              "request's own `_meta.fountain.timeout`, else the policy's " <>
+              "`ask_timeout`, else the global ask timeout."
+        },
+        turn_id: %Schema{type: :string, format: :uuid}
+      },
+      required: [:request_id, :options]
+    })
+  end
+
   defmodule Conversation do
     @moduledoc false
     require OpenApiSpex
@@ -520,7 +564,15 @@ defmodule FountainWeb.Schemas do
         },
         usage_total: UsageTotal,
         inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
+        updated_at: %Schema{type: :string, format: :"date-time"},
+        pending_requests: %Schema{
+          type: :array,
+          items: PendingPermissionRequest,
+          description:
+            "Permission requests that outlived a turn and are still waiting for an " <>
+              "answer (#1635). Served on GET /api/conversations/{id} only; absent " <>
+              "from the list and from the create response."
+        }
       },
       required: [:id, :runtime, :status]
     })
@@ -724,11 +776,55 @@ defmodule FountainWeb.Schemas do
               "at most 64 bytes and a value at most 256 bytes, and a 422 names the offending " <>
               "key under `errors.labels`. With channel_id, a resume merges these into the " <>
               "conversation it hands back rather than dropping them."
+        },
+        queue: %Schema{
+          type: :boolean,
+          nullable: true,
+          description:
+            "When a fresh start reaches the tenant or the fleet concurrency ceiling, wait " <>
+              "in the bounded sandbox queue and return 202 with a SandboxRequest instead " <>
+              "of 429 or 503 (ADR 0042). Starts carrying images or an explicit sandbox_id " <>
+              "are never queued, and a full queue keeps the immediate error."
         }
       },
       required: [:agent_id]
     })
   end
+
+  defmodule SandboxRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxRequest",
+      description: "Work waiting for sandbox capacity (ADR 0042).",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        agent_id: %Schema{type: :string, format: :uuid},
+        kind: %Schema{type: :string, enum: Fountain.SandboxQueue.Request.kinds()},
+        status: %Schema{type: :string, enum: Fountain.SandboxQueue.Request.statuses()},
+        source: %Schema{type: :string, nullable: true},
+        conversation_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "The conversation the request became, once it started."
+        },
+        error: %Schema{type: :string, nullable: true},
+        position: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "One-based place in the tenant's queue; null once it stops waiting."
+        },
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :agent_id, :kind, :status]
+    })
+  end
+
+  item_response(SandboxRequestResponse, of: SandboxRequest)
+  list_response(SandboxRequestListResponse, of: SandboxRequest)
 
   defmodule ConversationLabelsRequest do
     @moduledoc false
@@ -751,6 +847,41 @@ defmodule FountainWeb.Schemas do
         }
       },
       required: [:labels]
+    })
+  end
+
+  defmodule ConversationReapplyRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConversationReapplyRequest",
+      description:
+        "A selection of Agent, Environment and Vault to apply to the machine an existing " <>
+          "conversation already runs on. An omitted field keeps its current selection. An " <>
+          "explicit null clears the Environment override or the Vault. An empty object " <>
+          "reapplies the current selection.",
+      type: :object,
+      properties: %{
+        agent_id: %Schema{
+          type: :string,
+          format: :uuid,
+          description: "Agent to use; omitted keeps the current Agent."
+        },
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Environment override to use; null returns to the selected Agent's Environment."
+        },
+        vault_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "Vault to use; null detaches the current Vault."
+        }
+      }
     })
   end
 
@@ -844,7 +975,20 @@ defmodule FountainWeb.Schemas do
               "for a turn the server opened for a background cycle the agent ran " <>
               "after its prompt was answered (#817)."
         },
+        waiting: %Schema{
+          type: :boolean,
+          description:
+            "The turn ended with a permission request still open (#1635): the agent " <>
+              "answered with stop reason `waiting`, the turn is `completed` and the " <>
+              "request is on the conversation as a `pending_requests` entry."
+        },
         exit_code: %Schema{type: :integer, nullable: true},
+        limit_reason: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The service-enforced limit that ended this turn, or null. Set independently of exit_code: a runtime that exits zero after its deadline is still an incomplete turn, so a client must read this before treating a turn as successful."
+        },
         started_at: %Schema{type: :string, format: :"date-time", nullable: true},
         ended_at: %Schema{type: :string, format: :"date-time", nullable: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
@@ -894,7 +1038,7 @@ defmodule FountainWeb.Schemas do
         model: %Schema{
           type: :string,
           description:
-            "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The " <>
+            "Canonical provider/model_id (e.g. anthropic/claude-sonnet-5). The " <>
               "provider must match the runtime — anthropic for claude, openai for " <>
               "codex, google for gemini; opencode accepts any of the three. Other " <>
               "providers are rejected: Fountain has no credentials to export for " <>
