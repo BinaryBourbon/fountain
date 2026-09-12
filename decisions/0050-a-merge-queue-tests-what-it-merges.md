@@ -45,8 +45,9 @@ Two constraints shaped the design more than the volume did:
   what this repository runs out of. (Since #1413 split the SDK job per language
   and added three runtime matrices, a full mixed PR is 26 jobs and a merge group
   27 — a single run now exceeds the ceiling on its own, which strengthens rather
-  than changes the sizing below. `scripts/ci/require-checks.py` carries the
-  current count.)
+  than changes the sizing below. `scripts/ci/require-checks.py` restates the
+  count in its own comment, which can drift the same way this one did; count
+  the legs in `ci.yml` if it matters.)
 - **72% of open PRs are stacked** — 31 of 43 target another PR's branch rather
   than main. GitHub only queues a PR based on the protected branch.
 
