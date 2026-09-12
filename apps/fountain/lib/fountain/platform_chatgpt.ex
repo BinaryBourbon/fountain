@@ -117,8 +117,10 @@ defmodule Fountain.PlatformChatGPT do
   # the row goes `expired`.
   defp expire_or_serve(row) do
     if lapsed?(row) do
-      _ = mark_expired(row)
-      {:error, :expired}
+      case mark_expired(row) do
+        :ok -> {:error, :expired}
+        :stale -> current_result(row)
+      end
     else
       decrypt(row.access_token_ciphertext)
     end
@@ -288,6 +290,11 @@ defmodule Fountain.PlatformChatGPT do
     end
   end
 
+  # `locked_platform_row/0` holds `FOR UPDATE` for the whole transaction, so
+  # the optimistic lock in `connect_changeset/2` cannot lose a race; it is
+  # there to advance `lock_version` on a reconnect, not to detect one. Two
+  # concurrent connects onto an empty table meet
+  # `platform_chatgpt_account_platform_row` instead and one is refused.
   defp store(attrs, method, actor_user_id) do
     result =
       Repo.transaction(fn ->
@@ -318,8 +325,6 @@ defmodule Fountain.PlatformChatGPT do
       {:error, _changeset} ->
         {:error, :invalid_grant}
     end
-  rescue
-    Ecto.StaleEntryError -> {:error, :stale_grant}
   end
 
   # ── refresh ──────────────────────────────────────────────────────────────
@@ -440,6 +445,7 @@ defmodule Fountain.PlatformChatGPT do
           "active" -> decrypt(current.access_token_ciphertext)
           "revoked" -> {:error, :revoked}
           "expired" -> {:error, :expired}
+          other -> {:error, {:unknown_status, other}}
         end
 
       %Account{} ->
@@ -506,6 +512,12 @@ defmodule Fountain.PlatformChatGPT do
     )
   end
 
+  # `:stale` is narrow here in a way it is not on the refresh path: nothing
+  # blocks between the read in `access_token/0` and this write, so only a
+  # reconnect landing inside those microseconds loses the fence. It is still
+  # routed through `current_result/1` rather than assumed away, because
+  # reporting `:expired` for a grant that is now active is the same class of
+  # wrong answer the fence exists to prevent.
   defp mark_expired(row) do
     {count, _} =
       current_query(row)
@@ -517,6 +529,10 @@ defmodule Fountain.PlatformChatGPT do
         event_type: "admin.platform_chatgpt.expired",
         metadata: %{"actor" => @system_actor, "kind" => row.kind, "account_id" => row.account_id}
       })
+
+      :ok
+    else
+      :stale
     end
   end
 

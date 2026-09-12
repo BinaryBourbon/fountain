@@ -129,6 +129,24 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
     end
   end
 
+  test "expiry advances the write version without replacing the generation" do
+    {:ok, first} =
+      PlatformChatGPT.connect_workspace_token("wst_static", nil, account_id: "acct_ws")
+
+    Repo.get!(Account, first.id)
+    |> Ecto.Changeset.change(access_expires_at: seconds_from_now(-60))
+    |> Repo.update!()
+
+    assert {:error, :expired} = PlatformChatGPT.access_token()
+    current = Repo.get!(Account, first.id)
+    assert current.status == "expired"
+    assert current.generation == first.generation
+    assert current.lock_version == first.lock_version + 1
+  end
+
+  defp seconds_from_now(n),
+    do: DateTime.utc_now() |> DateTime.add(n, :second) |> DateTime.truncate(:second)
+
   defp revoked_events do
     Repo.all(from(e in AdminEvent, where: e.event_type == "admin.platform_chatgpt.revoked"))
   end
