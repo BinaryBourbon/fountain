@@ -131,6 +131,23 @@ import Testing
     #expect(plainWire["runtime_command"] == nil)
   }
 
+  /// Omitted keeps a binding, `.clear` removes it, and the two have to stay
+  /// distinguishable all the way to the wire.
+  @Test func encodesTheThreeBindingStatesOnReapply() throws {
+    let refresh = try JSONEncoder().encode(ConversationReapplyRequest())
+    let refreshWire = try #require(
+      JSONSerialization.jsonObject(with: refresh) as? [String: Any])
+    #expect(refreshWire.isEmpty)
+
+    let selection = ConversationReapplyRequest(
+      agentID: "a-1", environment: .use("e-1"), vault: .clear)
+    let body = try JSONEncoder().encode(selection)
+    let wire = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(wire["agent_id"] as? String == "a-1")
+    #expect(wire["environment_id"] as? String == "e-1")
+    #expect(wire["vault_id"] is NSNull)
+  }
+
   @Test func unknownEnumValuesSurvive() throws {
     let json = Data(#"{"id":"x","name":"n","model":"m","runtime":"zed","status":"paused"}"#.utf8)
     struct Row: Decodable {

@@ -11,7 +11,22 @@ config :fountain, Oban,
   # webhooks is its own queue so a tenant's slow receiver never sits in front
   # of a maintenance sweep or an email, and so its concurrency can be tuned
   # against outbound HTTP rather than against database work (#700).
-  queues: [maintenance: 1, credits: 5, exports: 1, mailer: 5, schedules: 5, webhooks: 10],
+  # notifications carries work whose whole value is being prompt — a turn
+  # outcome reaching a live subscriber. It is not on webhooks, because that
+  # queue is for outbound HTTP to tenants and a deadline storm would compete
+  # with real deliveries; and not on maintenance, because that one is
+  # concurrency 1 behind eight sweeps, so a notification would queue single
+  # file behind whichever one is mid-run. Same argument as exports and
+  # webhooks above, one more time.
+  queues: [
+    maintenance: 1,
+    credits: 5,
+    exports: 1,
+    mailer: 5,
+    notifications: 5,
+    schedules: 5,
+    webhooks: 10
+  ],
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
@@ -28,6 +43,12 @@ config :fountain, Oban,
        # A server's autonomous quiet timer is in memory. Sweep old, silent
        # running turns whose server disappeared before that timer fired.
        {"*/5 * * * *", Fountain.Workers.AutonomousTurnReaper},
+       # Every minute: deny permission requests that outlived their turn and
+       # then ran out of time (#1635). Their deadline is on the turn row
+       # rather than in a process timer, because the sandbox parks and the
+       # server stops while such a request waits. One indexed query, usually
+       # empty.
+       {"* * * * *", Fountain.Workers.DetachedRequestSweeper},
        # Every 5 minutes: expire claimable principals nobody claimed (ADR
        # 0044). Latency here is money — an expired principal is a sprite still
        # running for a visitor who has gone — so the sweep runs on the same
@@ -66,7 +87,11 @@ config :fountain, Oban,
        # 06:47 UTC daily: rent for numbers and inboxes, the grace reminders,
        # and the release on day seven (ADR 0030 decision 4). No-ops until a
        # rent price is set.
-       {"47 6 * * *", Fountain.Workers.CreditRentCollector}
+       {"47 6 * * *", Fountain.Workers.CreditRentCollector},
+       # Five-minute backstop for the event-driven sandbox queue (ADR 0042).
+       # Normal drains come from a sandbox leaving a cap-counting status; this
+       # catches a lost poke and expires work that waited too long.
+       {"*/5 * * * *", Fountain.Workers.SandboxQueueDrainer}
      ]}
   ]
 

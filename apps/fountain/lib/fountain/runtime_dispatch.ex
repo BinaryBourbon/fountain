@@ -51,6 +51,9 @@ defmodule Fountain.RuntimeDispatch do
   def command("fountain-fixture", _agent), do: {"node", [".fountain-acp-fixture.mjs"]}
   def command(runtime, _agent), do: ACP.command(runtime)
 
+  def bootstrap_command("fountain-fixture", cmd, args), do: {cmd, args}
+  def bootstrap_command(runtime, cmd, args), do: ACP.bootstrap_command(runtime, cmd, args)
+
   def cwd("fountain-fixture"), do: "/home/sprite"
   def cwd(runtime), do: ACP.cwd(runtime)
 

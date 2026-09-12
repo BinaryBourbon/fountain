@@ -75,7 +75,7 @@ class RequiredChecksTest(unittest.TestCase):
         self.assertEqual(contexts, ["CI required", "Detect secrets"])
 
     def test_the_queue_cannot_outrun_the_free_plan_job_ceiling(self):
-        """One full CI run is 19 of the 20 concurrent jobs a free org gets.
+        """A full merge group has 27 jobs; the documented concurrency limit is 20.
 
         Building more than one group at a time cannot run them in parallel; it
         only starves every open PR of runners.

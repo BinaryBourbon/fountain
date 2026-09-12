@@ -62,6 +62,21 @@ defmodule Fountain.FeatureFlagsTest do
     test "an unknown flag atom is a KeyError, not a silent off" do
       assert_raise KeyError, fn -> FeatureFlags.enabled?(:no_such_flag, @user_id) end
     end
+
+    # A flag over a shipped feature reads on where there is nobody to ask, or
+    # a self-host loses the feature on the upgrade that added the flag (#1693).
+    test "a flag that gates a shipped feature reads on" do
+      posthog_off()
+      assert FeatureFlags.enabled?(:connections, @user_id)
+      assert FeatureFlags.enabled?(:connections, nil)
+      refute FeatureFlags.enabled?(:team_comms, @user_id)
+    end
+
+    test "a static override still decides, in both directions" do
+      posthog_off()
+      Application.put_env(:fountain, :feature_flag_overrides, %{"connections" => false})
+      refute FeatureFlags.enabled?(:connections, @user_id)
+    end
   end
 
   describe "with PostHog" do
@@ -82,6 +97,17 @@ defmodule Fountain.FeatureFlagsTest do
     test "a flag PostHog does not mention is off" do
       stub_flags(%{"something_else" => true})
       refute FeatureFlags.enabled?(:team_comms, @user_id)
+    end
+
+    # The default is for a deployment with no flag service. Where there is one,
+    # its answer decides, including for a flag it does not mention.
+    test "PostHog's answer beats the no-PostHog default" do
+      stub_flags(%{"connections" => false})
+      refute FeatureFlags.enabled?(:connections, @user_id)
+
+      stub_flags(%{"something_else" => true})
+      FeatureFlags.reset()
+      refute FeatureFlags.enabled?(:connections, @user_id)
     end
 
     test "also reads the older /decide shape" do

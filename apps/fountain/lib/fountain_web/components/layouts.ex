@@ -99,9 +99,11 @@ defmodule FountainWeb.Layouts do
                 current={@current_path}
               />
               <.nav_link href={~p"/account/runners"} label="Runners" current={@current_path} />
+              <.nav_link href={~p"/account/oauth-apps"} label="OAuth apps" current={@current_path} />
               <.nav_link
                 :if={
-                  assigns[:current_user] && Fountain.Connections.enabled_for?(assigns.current_user.id)
+                  assigns[:current_user] &&
+                    Fountain.Connections.manageable_for?(assigns.current_user.id)
                 }
                 href={~p"/account/bindings"}
                 label="Credential bindings"
@@ -109,7 +111,8 @@ defmodule FountainWeb.Layouts do
               />
               <.nav_link
                 :if={
-                  assigns[:current_user] && Fountain.Connections.enabled_for?(assigns.current_user.id)
+                  assigns[:current_user] &&
+                    Fountain.Connections.manageable_for?(assigns.current_user.id)
                 }
                 href={~p"/account/connections"}
                 label="Connections"

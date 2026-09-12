@@ -421,7 +421,13 @@ build tells you which toolchain to go and look at:
 | **test** (×6) | The suite, as six partitions (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold |
 | **elixir-static** | `mix deps.unlock --unused`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `scripts/hex-audit-gate.exs`, `scripts/sobelow.sh`, `MIX_ENV=dev mix dialyzer` |
 | **release-and-contract** | `mix ecto.create && mix ecto.migrate`, the prod release boot check (probes `/health` and `/health/ready`, runs a release task beside the live server), `mix openapi.spec.json` + `jq empty`, and `scripts/sdk-contract/build.sh --check` |
-| **sdk-clients** | The four SDKs (Elixir, TypeScript, Python, and Swift in its own `swift-sdk` job), their contract and conformance checks, both Go modules (`cli/` and `apps/fountain_buzz/cli`), and the Hermes plugin |
+| **changes** | Classifies the diff and emits the plan every other job reads: `docs_only` (which gates the server jobs), `docs_touched`, `cli_docs`, `tree`, and one `sdk_*` per language (`scripts/ci/sdk_changes.py`). Fail-open: an unreadable diff, an unregistered path or a shared file selects every SDK. Runs on `pull_request`, `merge_group` and `workflow_dispatch` — never on `push`, where the outputs are empty, so every `!=`-gated job runs and only `docs` (which tests `docs_only == 'true'`) stays skipped |
+| **elixir-sdk** (×2) | The Elixir SDK on its declared minimum (1.15.8 / OTP 26.2.5.21) and the pinned current pair, plus conformance fixtures |
+| **python-sdk** (×2) | The Python SDK on its declared boundaries (3.9 and 3.13), conformance fixtures, and a built wheel installed into a fresh venv outside the source tree |
+| **typescript-sdk** (×2) | The TypeScript SDK on the minimum Node in `engines.node` (20.19.0) and on 24, conformance fixtures, and the packed tarball installed into a throwaway consumer project |
+| **swift-sdk** (×2) | The Swift SDK on ubuntu-24.04 and macos-15, with its own conformance step. It runs no `sdk/conformance/lint.py` |
+| **cli-plugins** | Both Go modules (`cli/` and `apps/fountain_buzz/cli`) with vet and gofmt, the Hermes plugin, and the deployed-instance runner tests under `deployed/test/` |
+| **sdk-checks** | A stable aggregate over the four SDK jobs. A selected SDK is expected to *succeed* even when the server plan is docs-only, because an SDK's own docs page selects it (`gate.py`'s `_expected_plan`). Legs skip only for a reused tree or a language the classifier did not select, and green then means *correctly skipped*, not *SDKs tested* |
 | **docs-prose** | Advisory wording reports when docs, prose configuration or the workflow changes, and on a full main run. Docs-only PRs get them from `docs`; structural checks still block |
 | **gate** | `CI required`: validates all expected job results and records a successful PR checkout tree |
 
@@ -491,7 +497,7 @@ retarget is now GitHub's job rather than yours, which removes the trap where a
 stale base merged cleanly into a branch that no longer existed. Land a feature
 as a stack of small chained PRs exactly as before.
 
-`scripts/ci/README.md` documents the three CI events and the queue's sizing;
+`scripts/ci/README.md` documents the four CI events and the queue's sizing;
 `gate.py`'s `PROBES` table is the authority on what each event owes.
 
 ### Coverage

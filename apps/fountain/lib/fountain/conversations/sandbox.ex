@@ -37,9 +37,22 @@ defmodule Fountain.Conversations.Sandbox do
     field :provider, :string, default: "sprites"
     # Adapter-opaque state (e.g. a server-assigned id). Never tenant-visible.
     field :provider_meta, :map, default: %{}
+    # Trusted control-plane identity; general sandbox attributes cannot set it.
+    field :provider_instance_id, :string
     field :mode, :string, default: "ephemeral"
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime
+    # Internal reset fence; retained after completion as operation evidence.
+    field :reset_requested_at, :utc_datetime_usec
+    # A digest of the Environment fields provisioning turned into disk state:
+    # packages, repositories, the setup script and the network policy. Written
+    # when the machine reaches `ready`, so a later reapply can tell whether the
+    # selection it is asked for would need the disk built again, rather than
+    # assuming it would. See `Fountain.Conversations.Reapply` (#1565).
+    field :build_fingerprint, :string
+    # The skill selection this machine was last reconciled to, so the next
+    # reconciliation knows which entries under the skills root are ours.
+    field :applied_skills, {:array, :map}
     belongs_to :environment, Environment
     # The identity the disk was materialized from, with the environment
     # (ADR 0023): env vars, packages, repos and setup scripts are written at
@@ -69,6 +82,8 @@ defmodule Fountain.Conversations.Sandbox do
       :mode,
       :terminated_at,
       :last_resumed_at,
+      :build_fingerprint,
+      :applied_skills,
       :environment_id,
       :agent_id,
       :vault_id,

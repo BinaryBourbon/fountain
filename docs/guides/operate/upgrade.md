@@ -54,6 +54,24 @@ a bundled image made, so a move back finds your rows where you left them.
 Releases v0.2.1 and earlier are older than the image tags. They exist as
 `sha-` tags alone.
 
+## Build your own image
+
+`BUNDLE_EXTENSIONS` is a build argument, defaulting to `true`. It selects the
+release's applications and extension executables when Docker builds the image.
+Setting it on a running container does not change its distribution.
+
+```bash
+# Bundled: Fountain, Buzz and Support.
+docker build --build-arg BUNDLE_EXTENSIONS=true -t fountain:bundled .
+
+# Core: Fountain without first-party extensions.
+docker build --build-arg BUNDLE_EXTENSIONS=false -t fountain:core .
+```
+
+For a release built directly from the source tree, use
+`BUNDLE_EXTENSIONS=false MIX_ENV=prod mix release fountain_server` to select
+core. Omit the variable, or set it to `true`, to bundle the extensions.
+
 ## Take a new version
 
 The compose file reads `FOUNTAIN_IMAGE_TAG` from `.env`, and

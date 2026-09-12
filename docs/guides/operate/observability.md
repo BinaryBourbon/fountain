@@ -41,8 +41,7 @@ They are optional: enable the file in your Kustomization and install the
 PrometheusRule CRD and the scrapes its expressions need. A rule file alone
 does not collect metrics.
 
-The hosted instance adds rules in the
-[home-cloud overlay](https://github.com/jhgaylor/home-cloud/blob/main/platform/fountain-site/prometheusrule.yaml).
+The hosted instance adds the rules [listed below](#added-by-the-hosted-overlay).
 Those rules are specific to that deployment. They do not arrive with the
 portable manifest artifact. Shared rule names can also have different
 thresholds or selectors in the overlay.

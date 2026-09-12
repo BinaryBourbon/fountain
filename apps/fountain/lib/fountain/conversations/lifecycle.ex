@@ -105,6 +105,11 @@ defmodule Fountain.Conversations.Lifecycle do
   to cost a turn rather than the agent's memory; `lifecycle_test.exs` pins
   the bound.
 
+  This is the bound for a request **held inside a turn**. A request that
+  outlived its turn (#1635) holds nothing open, so the reasoning above does
+  not reach it and its deadline may be days out; see
+  `Fountain.Conversations.DetachedRequest`.
+
   Lived on `Fountain.Runtimes.ACP` until that module left for
   `Managoat.Runtimes` (#1368); it is the one thing there that read Fountain's
   configuration, and it belongs with the bound it has to stay under.
@@ -365,7 +370,13 @@ defmodule Fountain.Conversations.Lifecycle do
       # Ownership: as home?/1 above.
       sandbox = Conversations._unsafe_get_sandbox!(sandbox_id)
 
-      if sandbox.status not in ["terminated", "failed"] do
+      # A machine whose reset is unconfirmed is on its way out, not parking.
+      # `update_sandbox/2` lets a retiring write through the fence but refuses
+      # `suspended`, and this clause matches `{:ok, _}`. The reaper's own park
+      # pass filters the same rows; there is no checkpoint worth taking of a
+      # disk that is meant to be gone.
+      if sandbox.status not in ["terminated", "failed"] and
+           is_nil(sandbox.reset_requested_at) do
         # A home's disk is kept at its quietest moment, where the provider
         # can (ADR 0023, #1073). Best-effort: the park goes ahead either way.
         HomeCheckpoint.on_park(sandbox)

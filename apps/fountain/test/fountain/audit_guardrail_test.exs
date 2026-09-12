@@ -62,6 +62,8 @@ defmodule Fountain.AuditGuardrailTest do
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
     {"conversation caller tools", &__MODULE__.do_caller_tools/1, "conversation.caller_tools_set"},
+    {"conversation configuration reapply", &__MODULE__.do_conv_reapply/1,
+     "conversation.configuration_reapplied"},
     {"conversation labels", &__MODULE__.do_labels/1, "conversation.labels_set"},
     {"allowance creation", &__MODULE__.do_allowance_creation/1,
      "conversation.execution_allowance_created"},
@@ -459,6 +461,12 @@ defmodule Fountain.AuditGuardrailTest do
     conv = insert_conversation(user_id: user.id, agent: insert_agent(user_id: user.id))
 
     {:ok, _} = Conversations._unsafe_merge_labels(conv, %{"env" => "prod"})
+  end
+
+  def do_conv_reapply(user) do
+    agent = insert_agent(user_id: user.id)
+    conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+    {:ok, _} = Conversations.reapply_conversation(conv)
   end
 
   def do_sandbox_reset(user) do

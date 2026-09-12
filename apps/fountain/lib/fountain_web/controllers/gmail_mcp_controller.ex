@@ -34,8 +34,13 @@ defmodule FountainWeb.GmailMcpController do
   end
 
   defp build_ctx(conv_id, connection_id, user) do
+    # A runtime path, so it gates on the broker, the way every other one does
+    # (`Fountain.Conversations.Egress`). The rollout flag decides who may
+    # connect an account, not whether a connection that exists still works:
+    # gating this on the flag stopped the tools for a tenant whose flag went
+    # off while their token kept being brokered elsewhere (#1693).
     with true <-
-           Fountain.Connections.enabled_for?(user.id) ||
+           Fountain.Broker.enabled_for?(user.id) ||
              {:error, 403, "connections are not available here"},
          %Conversations.Conversation{} = conv <- get_conv(conv_id, user),
          :ok <- agent_names?(conv, connection_id),

@@ -49,11 +49,32 @@ defmodule Fountain.ApplicationChildrenTest do
     test "the listener starts before Oban, so it outlives every job" do
       # The same trap one layer down from the endpoint. Reverse termination
       # would otherwise stop the listener while jobs still ran in the tail of
-      # a drain. Nothing under lib/fountain/workers/ launches or provisions
-      # today; this is here so that stays a choice rather than an accident.
+      # a drain. SandboxQueueDrainer can start waiting turns during that tail.
       ids = ids()
 
       assert before?(ids, Managoat.Broker, Oban)
+    end
+
+    test "the listener outlives bounded transports and the deadline worker" do
+      previous = Application.fetch_env(:fountain, :execution_deadline_worker_enabled)
+      Application.put_env(:fountain, :execution_deadline_worker_enabled, true)
+
+      on_exit(fn ->
+        case previous do
+          {:ok, value} ->
+            Application.put_env(:fountain, :execution_deadline_worker_enabled, value)
+
+          :error ->
+            Application.delete_env(:fountain, :execution_deadline_worker_enabled)
+        end
+      end)
+
+      ids = ids()
+
+      assert before?(ids, Managoat.Broker, Fountain.ExecutionTransportSupervisor)
+      assert before?(ids, Managoat.Broker, Fountain.Conversations.ExecutionDeadlineWorker)
+      assert before?(ids, Fountain.ExecutionTransportSupervisor, FountainWeb.Endpoint)
+      assert before?(ids, Fountain.Conversations.ExecutionDeadlineWorker, FountainWeb.Endpoint)
     end
 
     test "the migrator starts before the broker, so its tables exist" do
@@ -99,6 +120,7 @@ defmodule Fountain.ApplicationChildrenTest do
 
   defp ids, do: Enum.map(Fountain.Application.children(), &id/1)
 
+  defp id({DynamicSupervisor, opts}), do: Keyword.fetch!(opts, :name)
   defp id({module, _opts}), do: module
   defp id(module) when is_atom(module), do: module
 

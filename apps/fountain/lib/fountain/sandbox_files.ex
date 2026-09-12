@@ -1,11 +1,12 @@
 defmodule Fountain.SandboxFiles do
   @moduledoc """
   Read-only views of a sandbox's disk for the apps that watch an agent work:
-  a directory listing, one file's bytes and `git diff` (ADR 0039).
+  a directory listing, one file's bytes, `git status` and `git diff`
+  (ADR 0039).
 
   Three things this deliberately is not:
 
-    * **Not exec.** The three operations are fixed scripts; the caller
+    * **Not exec.** The four operations are fixed scripts; the caller
       chooses a path and a few flags, never a command. Exec over the API
       would be a second I/O path beside ACP, unmetered (credits burn on
       turns), unredacted and, on a self-hosted runner, a shell on the
@@ -20,10 +21,14 @@ defmodule Fountain.SandboxFiles do
       is refused with `{:sandbox_not_ready, status}`.
 
   Every path is confined to the sandbox home (`/home/sprite`) or the
-  runtime's workspace (`Managoat.Runtimes.ACP.cwd/1`), and every byte that
-  leaves goes through the same redaction the transcript gets: the values
-  of the identity's environment and vault, plus whatever a live
-  `ConversationServer` registered, replaced with `[REDACTED]`. The
+  runtime's workspace (`Managoat.Runtimes.ACP.cwd/1`) — including the one
+  the caller never names, the repository root `git rev-parse --show-toplevel`
+  finds by walking up. A root outside those is `not_a_repository`, not a
+  listing of it.
+
+  Every byte that leaves goes through the same redaction the transcript
+  gets: the values of the identity's environment and vault, plus whatever a
+  live `ConversationServer` registered, replaced with `[REDACTED]`. The
   `.env` file is on that disk in plaintext, so this is what keeps a
   third-party app holding the user's key from reading the user's secrets
   back through it.
@@ -47,19 +52,55 @@ defmodule Fountain.SandboxFiles do
   @default_max_bytes 262_144
   @max_max_bytes 4_194_304
   @max_entries 2_000
+  # Status is listing-shaped, so the caller's bound is `@max_entries`, not a
+  # byte count. This is the guard behind it: `-uall` on a repository with an
+  # unignored build tree can emit far more than the entry cap will keep, and
+  # the whole stream is read into memory before anything counts it.
+  @max_status_bytes 1_048_576
   @timeout 30_000
   @ref_pattern ~r|\A[A-Za-z0-9][A-Za-z0-9._/~^@{}-]*\z|
 
   # Exit codes the scripts reserve. Anything else nonzero is the command
   # itself failing, surfaced with its output.
+  #
+  # 8 is the one nonzero code a script produces that is *not* named here:
+  # git failing after the repository was found. It is deliberately left to
+  # the catch-all, so the caller gets `{:sandbox_command_failed, 8, output}`
+  # with git's own message rather than an error word this module invented.
   @exit_missing 3
   @exit_wrong_kind 4
   @exit_unreadable 5
   @exit_not_repository 6
   @exit_ref_not_found 7
 
+  # The porcelain v1 status letters, one per side. `change_states/0` is these
+  # values, so the vocabulary is written once.
+  @states %{
+    " " => "unchanged",
+    "M" => "modified",
+    "T" => "type_changed",
+    "A" => "added",
+    "D" => "deleted",
+    "R" => "renamed",
+    "C" => "copied",
+    "U" => "unmerged",
+    "?" => "untracked",
+    "!" => "ignored"
+  }
+
   @typedoc "A directory entry."
   @type entry :: %{name: String.t(), type: String.t(), size: non_neg_integer() | nil}
+
+  @typedoc """
+  One path `git status` reports, with the index and the working tree read
+  separately. `renamed_from` is set only when that side is a rename or a copy.
+  """
+  @type change :: %{
+          path: String.t(),
+          index: String.t(),
+          worktree: String.t(),
+          renamed_from: String.t() | nil
+        }
 
   @type error ::
           {:sandbox_not_ready, String.t()}
@@ -82,6 +123,23 @@ defmodule Fountain.SandboxFiles do
   @doc "How a file's bytes travel: the text itself, or base64 when not UTF-8."
   @spec encodings() :: [String.t()]
   def encodings, do: ~w(utf-8 base64)
+
+  @doc """
+  How `git status` describes one side of a path, its porcelain letter in
+  words. An untracked path reads `untracked` on both sides, because that is
+  what git reports for it (`??`), and it is the one state `diff/3` cannot
+  show at all.
+  """
+  @spec change_states() :: [String.t()]
+  def change_states, do: @states |> Map.values() |> Enum.sort()
+
+  @doc """
+  What a caller may ask `git status` to do about untracked paths: collapse an
+  untracked directory to one entry (`normal`), list every file under it
+  (`all`), or leave them out (`no`).
+  """
+  @spec untracked_modes() :: [String.t()]
+  def untracked_modes, do: ~w(normal all no)
 
   @doc "The largest `max_bytes` a read accepts."
   @spec max_max_bytes() :: pos_integer()
@@ -164,7 +222,12 @@ defmodule Fountain.SandboxFiles do
   #{@default_max_bytes}, at most #{@max_max_bytes}). `content` is the text
   itself when it is valid UTF-8 (`encoding: "utf-8"`) and base64 otherwise
   (`encoding: "base64"`); `size` is the whole file and `truncated` says
-  whether `content` stopped short of it.
+  whether `content` is short of it — because the file is longer than
+  `max_bytes`, or because redaction grew what was read past the cap.
+
+  Redaction runs before the cap, never after: `max_bytes` is the caller's to
+  choose, so a cut taken first would let them place it inside a value and
+  read the piece in front of it (#1907).
   """
   @spec read(Sandbox.t(), String.t(), keyword()) ::
           {:ok,
@@ -181,16 +244,23 @@ defmodule Fountain.SandboxFiles do
 
     with :ok <- ready?(sandbox),
          {:ok, absolute} <- resolve_path(sandbox, path),
-         {:ok, output} <- run(sandbox, read_script(), [Integer.to_string(max_bytes), absolute]),
+         values = secret_values(sandbox),
+         # `overlap/1` bytes past the cap, so a secret lying across it is
+         # whole when redaction runs; `redact_to_cap/3` cuts back down.
+         {:ok, output} <-
+           run(sandbox, read_script(), [
+             Integer.to_string(max_bytes + overlap(values)),
+             absolute
+           ]),
          {:ok, size, bytes} <- parse_read(output) do
-      bytes = redact(sandbox, bytes)
+      {bytes, capped?} = redact_to_cap(values, bytes, max_bytes)
       {encoding, content} = encode(bytes)
 
       {:ok,
        %{
          path: absolute,
          size: size,
-         truncated: size > max_bytes,
+         truncated: size > max_bytes or capped?,
          encoding: encoding,
          content: content
        }}
@@ -222,28 +292,90 @@ defmodule Fountain.SandboxFiles do
     with :ok <- ready?(sandbox),
          {:ok, ref} <- validate_ref(ref),
          {:ok, absolute} <- resolve_path(sandbox, path),
-         # One byte past the cap tells truncation from an exact fit.
+         values = secret_values(sandbox),
+         # One byte past the cap tells truncation from an exact fit, and
+         # `overlap/1` past that is what lets redaction see a secret lying
+         # across the cap whole.
          {:ok, output} <-
-           run(sandbox, diff_script(), [
-             absolute,
-             Integer.to_string(max_bytes + 1),
-             ref || "",
-             if(staged, do: "1", else: "0")
-           ]),
+           run(
+             sandbox,
+             diff_script(),
+             [
+               absolute,
+               Integer.to_string(max_bytes + 1 + overlap(values)),
+               ref || "",
+               if(staged, do: "1", else: "0")
+             ] ++ git_roots(sandbox)
+           ),
          {:ok, root, bytes} <- parse_diff(output) do
-      truncated = byte_size(bytes) > max_bytes
-
-      text =
-        bytes |> binary_part(0, min(byte_size(bytes), max_bytes)) |> then(&redact(sandbox, &1))
+      {text, capped?} = redact_to_cap(values, bytes, max_bytes)
 
       {:ok,
        %{
          path: absolute,
-         repo_root: root,
+         # A root is a path the agent chose, so it travels like the entry
+         # paths beside it: through the same replacement and the same
+         # recoding, not raw.
+         repo_root: to_text(redact_with(values, root)),
          staged: staged,
          ref: ref,
          diff: to_text(text),
-         truncated: truncated
+         truncated: byte_size(bytes) > max_bytes or capped?
+       }}
+    end
+  end
+
+  @doc """
+  `git status` of the repository at `path`, one entry per changed path.
+
+  This is the view that shows a file the agent made and never staged:
+  `diff/3` compares tracked content, so an untracked file is invisible to it
+  whatever flags it is given. A deletion is visible to both.
+
+  Entries cover the whole repository whatever `path` names inside it, and
+  each entry's `path` is relative to `repo_root` — that is what git's
+  porcelain reports, and it is not the shape `list/2` and `read/3` use.
+  `index` and `worktree` are the two porcelain columns read separately, so a
+  file staged and then edited again reports both. `opts[:untracked]` is one
+  of `untracked_modes/0`; anything else reads as the default, `"normal"`.
+  """
+  @spec status(Sandbox.t(), String.t() | nil, keyword()) ::
+          {:ok,
+           %{
+             path: String.t(),
+             repo_root: String.t(),
+             branch: String.t() | nil,
+             untracked: String.t(),
+             entries: [change()],
+             truncated: boolean()
+           }}
+          | {:error, error()}
+  def status(%Sandbox{} = sandbox, path, opts \\ []) do
+    untracked = untracked_mode(Keyword.get(opts, :untracked))
+
+    with :ok <- ready?(sandbox),
+         {:ok, absolute} <- resolve_path(sandbox, path),
+         # One byte past the cap, like `diff/3`: it tells a stream that was
+         # cut from one that ended on the boundary.
+         {:ok, output} <-
+           run(
+             sandbox,
+             status_script(),
+             [absolute, Integer.to_string(@max_status_bytes + 1), untracked] ++ git_roots(sandbox)
+           ),
+         {:ok, root, branch, body} <- parse_status(output) do
+      {records, cut?} = status_records(body)
+      changes = parse_changes(records)
+      values = secret_values(sandbox)
+
+      {:ok,
+       %{
+         path: absolute,
+         repo_root: to_text(redact_with(values, root)),
+         branch: branch && to_text(redact_with(values, branch)),
+         untracked: untracked,
+         entries: changes |> Enum.take(@max_entries) |> Enum.map(&redact_change(values, &1)),
+         truncated: cut? or length(changes) > @max_entries
        }}
     end
   end
@@ -254,6 +386,15 @@ defmodule Fountain.SandboxFiles do
   defp ready?(%Sandbox{status: status}), do: {:error, {:sandbox_not_ready, status}}
 
   defp under?(path, root), do: path == root or String.starts_with?(path, root <> "/")
+
+  # Like `clamp_max_bytes/1`: an unknown value reads as the default rather
+  # than as an error. The API's own enum refuses a typo before this, so the
+  # fallback only serves a direct caller of the context.
+  defp untracked_mode(mode) when is_binary(mode) do
+    if mode in untracked_modes(), do: mode, else: "normal"
+  end
+
+  defp untracked_mode(_), do: "normal"
 
   defp clamp_max_bytes(nil), do: @default_max_bytes
   defp clamp_max_bytes(n) when is_integer(n) and n > 0, do: min(n, @max_max_bytes)
@@ -300,10 +441,26 @@ defmodule Fountain.SandboxFiles do
       {:ok, _output, @exit_not_repository} -> {:error, :not_a_repository}
       {:ok, _output, @exit_ref_not_found} -> {:error, :ref_not_found}
       {:ok, output, @exit_wrong_kind} -> {:error, wrong_kind(script, output)}
-      {:ok, output, code} -> {:error, {:sandbox_command_failed, code, redact(sandbox, output)}}
+      {:ok, output, code} -> {:error, command_failed(sandbox, code, output)}
       {:error, reason} -> {:error, {:sandbox_unreachable, reason}}
     end
   end
+
+  # Git's own message, on its way to a 422 body. The scripts cap a failing
+  # command's diagnostic with `head -c`, which cuts on a byte and so can drop
+  # half of the character that straddles the cap — a filename in a non-Latin
+  # script, or a locale-translated message, is all it takes. `json/2` would
+  # refuse to encode that and the caller would read a 500 instead of the
+  # failure it describes, so the output is recoded like a path or a diff is.
+  # Redaction runs first, over the bytes the script produced, because a
+  # secret's own bytes are what `:binary.replace/4` is looking for.
+  defp command_failed(%Sandbox{} = sandbox, code, output),
+    do: {:sandbox_command_failed, code, to_text(redact(sandbox, output))}
+
+  # Pair each mapped host root with its sandbox spelling. The tag keeps
+  # run/3 from mapping that spelling too; both remain literal argv values.
+  defp git_roots(sandbox),
+    do: Enum.flat_map(roots(sandbox), &[&1, "sandbox:" <> &1])
 
   defp map_path(handle, "/" <> _ = path), do: Managoat.Sandbox.host_path(handle, path)
   defp map_path(_handle, other), do: other
@@ -312,6 +469,16 @@ defmodule Fountain.SandboxFiles do
   defp wrong_kind(script, _output) do
     if script == read_script(), do: :is_a_directory, else: :not_a_directory
   end
+
+  # The scripts themselves, for the suite. A mocked `exec` proves what parses
+  # the output and nothing about what produces it, and all three defects
+  # #1596 found were in the shell rather than in the parsing.
+  @doc false
+  @spec script(:list | :read | :diff | :status) :: String.t()
+  def script(:list), do: list_script()
+  def script(:read), do: read_script()
+  def script(:diff), do: diff_script()
+  def script(:status), do: status_script()
 
   # `type \t size \t name \0` per entry; the name goes last so a tab in it
   # survives, and NUL ends it so a newline does too.
@@ -348,28 +515,142 @@ defmodule Fountain.SandboxFiles do
     """
   end
 
-  # The repository root on the first line, then the diff base64-encoded.
+  # Discover and confine in the execution namespace, then return the matched
+  # root in the caller's namespace. Physical roots cover symlinked runner
+  # homes without exposing their host paths in /diff or /git-status.
+  defp git_root_script do
+    ~S"""
+    [ -e "$d" ] || exit 3
+    [ -d "$d" ] || exit 4
+    cd -- "$d" 2>/dev/null || exit 5
+    root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
+    inside=
+    while [ "$#" -ge 2 ]; do
+      r=$1
+      logical=${2#sandbox:}
+      shift 2
+      case $root in
+        "$r"|"$r"/*) root="$logical${root#"$r"}"; inside=1; break ;;
+      esac
+      p=$(cd -- "$r" 2>/dev/null && pwd -P)
+      if [ -n "$p" ]; then
+        case $root in
+          "$p"|"$p"/*) root="$logical${root#"$p"}"; inside=1; break ;;
+        esac
+      fi
+    done
+    [ -n "$inside" ] || exit 6
+    """
+  end
+
+  # The repository root, NUL-terminated, then the diff base64-encoded. A
+  # newline would not do: a directory name may contain one.
   # The ref is verified first because a pipeline's status is `base64`'s,
   # which would turn an unknown ref into an empty diff. `--no-optional-locks`
   # keeps a read from contending with the agent's own git for the index.
+  #
+  # `git_roots/1` follows the arguments, and the discovered root has to be one of
+  # them or under one — see `status_script/0` for why.
+  # Retain git's status, allowing SIGPIPE from the intentional byte cap. Keep
+  # encoded output private until success: on failure the catch-all redacts raw
+  # diagnostics, which cannot redact a partial base64-encoded diff.
   defp diff_script do
     ~S"""
     d=$1
     n=$2
     ref=$3
     staged=$4
-    [ -e "$d" ] || exit 3
-    [ -d "$d" ] || exit 4
-    cd -- "$d" 2>/dev/null || exit 5
-    root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 6
-    if [ -n "$ref" ]; then
-      git rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || exit 7
-    fi
-    printf '%s\n' "$root"
-    if [ "$staged" = 1 ]; then set -- --cached; else set --; fi
-    if [ -n "$ref" ]; then set -- "$@" "$ref"; fi
-    git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" | head -c "$n" | base64
-    """
+    shift 4
+    """ <>
+      git_root_script() <>
+      ~S"""
+      if [ -n "$ref" ]; then
+        git rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || exit 7
+      fi
+      if [ "$staged" = 1 ]; then set -- --cached; else set --; fi
+      if [ -n "$ref" ]; then set -- "$@" "$ref"; fi
+      encoded=$(
+        set -o pipefail
+        git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" | head -c "$n" | base64
+      )
+      case $? in
+        0|141) printf '%s\0%s' "$root" "$encoded" ;;
+        *)
+          git --no-pager --no-optional-locks diff --no-color --no-ext-diff "$@" 2>&1 >/dev/null | head -c 4096
+          exit 8
+          ;;
+      esac
+      """
+  end
+
+  # The repository root and the branch NUL-terminated, then the porcelain
+  # records as they come: `-z` already frames them with NUL, so unlike a
+  # file's bytes they need no base64 to survive a transport. The header is
+  # framed the same way for the same reason — a path may hold a newline and
+  # cannot hold a NUL.
+  #
+  # The branch is asked for separately rather than parsed out of the `-b`
+  # header, whose one line has to carry "no branch", "no commits yet" and an
+  # ahead/behind suffix; an empty second line is a detached HEAD.
+  # `--no-optional-locks` matters more here than for a diff, because a plain
+  # `git status` refreshes the index: without it a read takes `index.lock`
+  # and breaks the agent's own commit.
+  #
+  # The mode chooses between fixed flags rather than reaching the command
+  # line, so caller data is never adjacent to a `--`.
+  #
+  # `git_roots/1` follows the three arguments, and the root `rev-parse` discovers
+  # has to be one of them or under one. `resolve_path/2` confines the
+  # *request*; `--show-toplevel` then walks up its ancestors, and without this
+  # check a repository above the sandbox answers instead — inert on Sprites,
+  # where no ancestor of `/home/sprite` is one, and on a runner (ADR 0022) an
+  # operator whose `$HOME` is a dotfiles repository, since a sandbox there is
+  # a directory under it. A root outside is `exit 6`, the same
+  # `not_a_repository` a caller gets for a plain directory: there is no
+  # repository *here*, and saying which one was found above would answer the
+  # question the check exists to refuse. The physical root goes in the
+  # comparison too, because `--show-toplevel` resolves symlinks and a root
+  # reached through one would otherwise read as outside.
+  #
+  # The last command is a pipeline, so the script's own status is `head`'s and
+  # is always 0. `${PIPESTATUS[0]}` is git's, and it is the difference between
+  # a clean tree and a repository git could not read at all — a corrupt
+  # `.git/index`, or an LFS clone with no `git-lfs` on PATH, otherwise answers
+  # a rewritten tree with `entries: []`. `set -o pipefail` is the wrong
+  # instrument: `head -c` closes the pipe at the byte cap, git dies of SIGPIPE
+  # with status 141, and the truncation this script asks for would read as a
+  # failure. So 141 passes with 0, and everything else exits 8 carrying git's
+  # own message — collected by a second run that reads only stderr, because
+  # `exec/4` leaves `stderr_to_stdout: false` and the first run's went
+  # nowhere. Merging stderr into stdout instead would interleave a git warning
+  # into the NUL-framed records on the *success* path, which is a worse trade
+  # than a second invocation on a path that has already failed.
+  defp status_script do
+    ~S"""
+    d=$1
+    n=$2
+    untracked=$3
+    shift 3
+    """ <>
+      git_root_script() <>
+      ~S"""
+      branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
+      printf '%s\0%s\0' "$root" "$branch"
+      case $untracked in
+        all) set -- --untracked-files=all ;;
+        no) set -- --untracked-files=no ;;
+        *) set -- --untracked-files=normal ;;
+      esac
+      git --no-pager --no-optional-locks status --porcelain=v1 -z "$@" | head -c "$n"
+      st=${PIPESTATUS[0]}
+      case $st in
+        0|141) ;;
+        *)
+          git --no-pager --no-optional-locks status --porcelain=v1 "$@" 2>&1 >/dev/null | head -c 4096
+          exit 8
+          ;;
+      esac
+      """
   end
 
   # ── parsing ────────────────────────────────────────────────────────────
@@ -407,14 +688,84 @@ defmodule Fountain.SandboxFiles do
     end
   end
 
+  # The header is framed with NUL like the records are, not with a newline:
+  # a directory name may contain a newline and may not contain a NUL, so a
+  # repository at `<home>/re\npo` otherwise reported `repo_root` as
+  # `<home>/re` and read the rest of its own path as the payload.
   defp parse_diff(output) do
-    with [root, encoded] <- String.split(output, "\n", parts: 2),
+    with [root, encoded] <- String.split(output, <<0>>, parts: 2),
          {:ok, bytes} <- Base.decode64(encoded, ignore: :whitespace) do
-      {:ok, String.trim(root), bytes}
+      {:ok, root, bytes}
     else
       _ -> {:error, {:sandbox_command_failed, 0, "unparseable diff output"}}
     end
   end
+
+  # NUL-framed for the reason `parse_diff/1` gives, and here it cost an entry
+  # as well as the header: the branch read as the tail of the root's own path,
+  # and the one real record decoded from bytes that were never a record and
+  # was dropped — `entries: []` for a repository with a change.
+  defp parse_status(output) do
+    case String.split(output, <<0>>, parts: 3) do
+      [root, branch, body] -> {:ok, root, blank_to_nil(branch), body}
+      _ -> {:error, {:sandbox_command_failed, 0, "unparseable status output"}}
+    end
+  end
+
+  defp blank_to_nil(branch) do
+    case String.trim(branch) do
+      "" -> nil
+      name -> name
+    end
+  end
+
+  # Only a NUL-terminated record is whole, so the last element of the split is
+  # either the empty string (the stream ended on a boundary) or a record the
+  # byte cap cut in half. Either way it is not an entry. A body one byte past
+  # the cap is a cut that landed on a boundary, which the tail cannot show.
+  defp status_records(body) do
+    {tail, records} = body |> :binary.split(<<0>>, [:global]) |> List.pop_at(-1)
+    {records, tail != "" or byte_size(body) > @max_status_bytes}
+  end
+
+  # `XY <path>`, and for a rename or a copy the origin follows as its own
+  # record: `-z` drops git's arrow and reverses the pair, so the destination
+  # comes first and the origin second.
+  defp parse_changes(records), do: records |> parse_changes([]) |> Enum.sort_by(& &1.path)
+
+  defp parse_changes([], acc), do: acc
+
+  defp parse_changes([record | rest], acc) do
+    case decode_record(record) do
+      {:ok, change, :with_origin} ->
+        case rest do
+          # The origin was past the byte cap. Keep the destination and lose
+          # the origin rather than read the next entry as one.
+          [] -> parse_changes([], [change | acc])
+          [origin | rest] -> parse_changes(rest, [%{change | renamed_from: origin} | acc])
+        end
+
+      {:ok, change, :plain} ->
+        parse_changes(rest, [change | acc])
+
+      :error ->
+        parse_changes(rest, acc)
+    end
+  end
+
+  defp decode_record(<<index::binary-1, worktree::binary-1, " ", path::binary>>)
+       when path != "" do
+    with {:ok, index_state} <- decode_state(index),
+         {:ok, worktree_state} <- decode_state(worktree) do
+      change = %{path: path, index: index_state, worktree: worktree_state, renamed_from: nil}
+      origin? = index in ~w(R C) or worktree in ~w(R C)
+      {:ok, change, if(origin?, do: :with_origin, else: :plain)}
+    end
+  end
+
+  defp decode_record(_record), do: :error
+
+  defp decode_state(letter), do: Map.fetch(@states, letter)
 
   # ── output ─────────────────────────────────────────────────────────────
 
@@ -431,12 +782,73 @@ defmodule Fountain.SandboxFiles do
 
   # ── redaction ──────────────────────────────────────────────────────────
 
-  defp redact(%Sandbox{} = sandbox, bytes) when is_binary(bytes) do
-    case secret_values(sandbox) do
-      [] -> bytes
-      values -> :binary.replace(bytes, values, Redaction.placeholder(), [:global])
-    end
+  defp redact(%Sandbox{} = sandbox, bytes) when is_binary(bytes),
+    do: redact_with(secret_values(sandbox), bytes)
+
+  # `secret_values/1` reads the vault and the environment, so a caller that
+  # needs the values for something else too looks them up once.
+  defp redact_with([], bytes), do: bytes
+
+  defp redact_with(values, bytes),
+    do: :binary.replace(bytes, values, Redaction.placeholder(), [:global])
+
+  # A path is data the agent chose, so it goes through redaction like file
+  # content does, and through `to_text/1` because git reports a name verbatim
+  # and a byte sequence that is not UTF-8 would fail to encode as JSON.
+  defp redact_change(values, change) do
+    %{
+      change
+      | path: to_text(redact_with(values, change.path)),
+        renamed_from: change.renamed_from && to_text(redact_with(values, change.renamed_from))
+    }
   end
+
+  # Redaction has to see a secret whole: `:binary.replace/4` matches the
+  # value's own bytes, so a cut through one leaves a prefix that matches
+  # nothing and travels on in the clear. The scripts cut first, with
+  # `head -c`, and on `read/3` the cut lands at `max_bytes` — which the
+  # caller chooses, making an incidental boundary case a repeatable one
+  # (#1907). So the scripts are asked for `overlap/1` bytes past the cap,
+  # redaction runs over that, and only then is the result cut to the cap.
+  #
+  # Returns the bytes and whether that last cut dropped anything, which it
+  # can when a value is shorter than the placeholder standing in for it.
+  defp redact_to_cap(values, bytes, max_bytes) do
+    kept = binary_part(bytes, 0, cut_at(values, bytes, max_bytes))
+    redacted = redact_with(values, kept)
+
+    if byte_size(redacted) > max_bytes,
+      do: {binary_part(redacted, 0, max_bytes), true},
+      else: {redacted, false}
+  end
+
+  # How much of `bytes` survives into redaction: the cap, carried forward to
+  # the end of a value lying across it. At most one value can, because
+  # matches do not overlap, and `:binary.matches/2` picks the same ones
+  # `:binary.replace/4` will.
+  #
+  # Cutting at the cap instead is the defect. Cutting *after* redacting is
+  # not the fix either: an earlier value replaced by a shorter placeholder
+  # shifts the bytes behind it, which can pull an unmatched fragment out of
+  # the overlap and back inside the cap.
+  defp cut_at([], bytes, max_bytes), do: min(byte_size(bytes), max_bytes)
+
+  defp cut_at(values, bytes, max_bytes) do
+    limit = min(byte_size(bytes), max_bytes)
+
+    bytes
+    |> :binary.matches(values)
+    |> Enum.find_value(limit, fn {start, length} ->
+      if start < limit and start + length > limit, do: start + length
+    end)
+  end
+
+  # How far past the cap a value can lie across it: one byte less than the
+  # longest, which `secret_values/1` sorts to the front. Ask a script for
+  # that many bytes more and any value with a byte inside the cap arrives
+  # whole.
+  defp overlap([]), do: 0
+  defp overlap([longest | _]), do: byte_size(longest) - 1
 
   # The identity's own values (what `.env` on that disk holds) plus what any
   # live server registered — the latter covers the inference credential and

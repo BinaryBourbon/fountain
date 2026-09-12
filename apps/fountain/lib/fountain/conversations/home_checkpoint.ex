@@ -35,6 +35,11 @@ defmodule Fountain.Conversations.HomeCheckpoint do
   it has been recorded.
   """
   @spec on_park(Sandbox.t()) :: {:ok, String.t()} | :skipped | {:error, term()}
+  # A machine whose reset is unconfirmed keeps no checkpoint: the disk is meant
+  # to be gone, and `record/2` writes through `update_sandbox/2`, which refuses
+  # a non-retiring write to a fenced row while this clause matches `{:ok, _}`.
+  def on_park(%Sandbox{reset_requested_at: at}) when not is_nil(at), do: :skipped
+
   def on_park(%Sandbox{mode: "persistent", sprite_name: name} = sandbox) when is_binary(name) do
     provider = Conversations.sandbox_provider_atom(sandbox)
 

@@ -209,9 +209,12 @@ defmodule FountainWeb.AgentsLive.Form do
   end
 
   # The active connections the form can offer, only where connections exist
-  # (accounts with the Connections flag and broker on). Elsewhere the select is not rendered.
+  # (a brokered account). Elsewhere the select is not rendered. The rollout
+  # flag is not asked: naming a connection the account already holds is not
+  # connecting a new one, and an agent must stay editable after the flag goes
+  # off (#1693).
   defp connections_for(user_id) do
-    if Fountain.Connections.enabled_for?(user_id),
+    if Fountain.Connections.manageable_for?(user_id),
       do: Fountain.Connections.active_connections(user_id),
       else: []
   end
@@ -726,7 +729,14 @@ defmodule FountainWeb.AgentsLive.Form do
         </.link>
       </div>
 
+      <.missing_credential_card
+        :if={@missing_credential}
+        missing={@missing_credential}
+        message={@credential_message}
+      />
+
       <form
+        id="agent-form"
         phx-change="validate"
         phx-submit="submit"
         class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
@@ -800,11 +810,6 @@ defmodule FountainWeb.AgentsLive.Form do
         >
           Not one of the models Fountain lists — it will be passed to the runtime as-is.
         </p>
-        <.missing_credential_card
-          :if={@missing_credential}
-          missing={@missing_credential}
-          message={@credential_message}
-        />
 
         <div :if={length(@sandbox_providers) > 1} class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Sandbox provider</label>
