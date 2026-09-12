@@ -5,6 +5,23 @@ defmodule FountainWeb.ApiKeysLiveTest do
 
   alias Fountain.Accounts
 
+  test "the owner can revoke a claimed principal from the console", %{conn: conn} do
+    owner = insert_verified_user()
+    app = insert_verified_user()
+
+    {:ok, opened} =
+      Fountain.Principals.create_claimable(app, %{"application_id" => "console-test"})
+
+    {:ok, claimed} = Fountain.Principals.claim(opened.claimable.id, opened.claim_token, owner)
+    {:ok, _, key} = Accounts.authenticate_api_key(claimed.api_key)
+    {:ok, view, html} = conn |> login_user(owner) |> live(~p"/api-keys")
+    assert html =~ "principal:console-test"
+    assert html =~ "Principal"
+    view |> element("button[phx-click=revoke][phx-value-id='#{key.id}']") |> render_click()
+    assert {:error, :revoked} = Accounts.authenticate_api_key(claimed.api_key)
+    refute render(view) =~ "principal:console-test"
+  end
+
   describe "ApiKeysLive.Index — rendering" do
     test "shows existing active keys", %{conn: conn} do
       user = insert_verified_user()
