@@ -58,6 +58,9 @@ defmodule Fountain.AuditGuardrailTest do
     {"vault delete", &__MODULE__.do_vault_delete/1, "vault.deleted"},
     {"api key mint", &__MODULE__.do_key_create/1, "api_key.created"},
     {"api key revoke", &__MODULE__.do_key_revoke/1, "api_key.revoked"},
+    {"owned principal credential renewal", &__MODULE__.do_principal_key_renewal/1,
+     "api_key.created"},
+    {"managed principal key revoke", &__MODULE__.do_managed_key_revoke/1, "api_key.revoked"},
     {"inference credential write", &__MODULE__.do_cred_write/1, "inference_credential.write"},
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
@@ -70,6 +73,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"allowance narrowing", &__MODULE__.do_allowance_narrowing/1,
      "conversation.execution_allowance_narrowed"},
     {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
+    {"pending sandbox reset retry", &__MODULE__.do_pending_reset_retry/1, "sandbox.reset"},
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
     {"suspend", &__MODULE__.do_suspend/1, "account.suspended"},
@@ -415,6 +419,21 @@ defmodule Fountain.AuditGuardrailTest do
     {:ok, _} = Fountain.Accounts.revoke_api_key(user.id, key.id)
   end
 
+  def do_principal_key_renewal(user) do
+    app = insert_verified_user()
+    {:ok, opened} = Principals.create_claimable(app, %{"application_id" => "audit-renewal"})
+    {:ok, claimed} = Principals.claim(opened.claimable.id, opened.claim_token, user)
+    {:ok, _} = Principals.renew_owned_credential(user.id, claimed.claimable.user_id)
+  end
+
+  def do_managed_key_revoke(user) do
+    app = insert_verified_user()
+    {:ok, opened} = Principals.create_claimable(app, %{"application_id" => "audit-guard"})
+    {:ok, claimed} = Principals.claim(opened.claimable.id, opened.claim_token, user)
+    {:ok, _, key} = Fountain.Accounts.authenticate_api_key(claimed.api_key)
+    {:ok, _} = Fountain.Accounts.revoke_managed_api_key(user.id, key.id)
+  end
+
   def do_cred_write(user) do
     {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
     {:ok, _} = InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-guard")
@@ -483,6 +502,16 @@ defmodule Fountain.AuditGuardrailTest do
 
     stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     {:ok, _} = Conversations.reset_sandbox(home)
+  end
+
+  def do_pending_reset_retry(user) do
+    home =
+      insert_sandbox(user_id: user.id, status: "ready", mode: "persistent", provider: "sprites")
+
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, {:unavailable, :timeout}} end)
+    {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(home)
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
+    {:ok, _} = Conversations.retry_pending_sandbox_reset(home)
   end
 
   def do_team_add(user) do

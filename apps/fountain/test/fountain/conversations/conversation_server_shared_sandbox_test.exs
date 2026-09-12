@@ -191,6 +191,68 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
              end)
     end
 
+    test "a delayed reset notification leaves a replacement's live turn running" do
+      %{sandbox: replacement, b: b} = shared_machine("claude")
+      stub_happy_sprite()
+      stub_turn_boundary()
+      {pid, _ref} = start(b)
+      assert :ok = GenServer.call(pid, {:send_prompt, "keep running", []})
+      before = :sys.get_state(pid)
+      stages_before = sandbox_stages(b.id)
+      assert before.current_turn
+      old_sandbox_id = Ecto.UUID.generate()
+
+      GenServer.cast(
+        pid,
+        {:sandbox_reset, old_sandbox_id, "reset_reconciled", "system", "old reset"}
+      )
+
+      after_reset = :sys.get_state(pid)
+      assert after_reset.current_turn == before.current_turn
+      assert after_reset.sandbox_id == replacement.id
+      assert Repo.reload!(b).status == "running"
+      assert sandbox_stages(b.id) == stages_before
+    end
+
+    test "a reset notification cannot retire an unfenced live actor" do
+      %{sandbox: sandbox, b: b} = shared_machine("claude")
+      stub_happy_sprite()
+      {pid, _ref} = start(b)
+      before = :sys.get_state(pid)
+      stages_before = sandbox_stages(b.id)
+
+      GenServer.cast(
+        pid,
+        {:sandbox_reset, sandbox.id, "reset_reconciled", "system", "unconfirmed"}
+      )
+
+      assert :sys.get_state(pid) == before
+      assert sandbox_stages(b.id) == stages_before
+    end
+
+    test "a matching reset tells the old server and keeps reconciliation attribution" do
+      %{sandbox: sandbox, b: b} = shared_machine("claude")
+      stub_happy_sprite()
+      {pid, ref} = start(b)
+      Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{b.user_id}")
+
+      Repo.update!(
+        Ecto.Changeset.change(sandbox,
+          status: "terminated",
+          reset_requested_at: DateTime.utc_now()
+        )
+      )
+
+      GenServer.cast(pid, {:sandbox_reset, sandbox.id, "reset_reconciled", "system", "confirmed"})
+      assert :normal = assert_stopped(ref)
+
+      assert [%{"event" => "reset", "by" => "system"}] =
+               Enum.filter(sandbox_stages(b.id), &(&1["event"] == "reset"))
+
+      assert_receive {:sidebar_update, user_id}
+      assert user_id == b.user_id
+    end
+
     test "a co-tenant told the machine is gone records it and stops" do
       %{b: b} = shared_machine("claude")
       stub_happy_sprite()

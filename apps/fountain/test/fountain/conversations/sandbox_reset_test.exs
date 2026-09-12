@@ -66,6 +66,79 @@ defmodule Fountain.Conversations.SandboxResetTest do
     end
   end
 
+  test "a pending reset retains capacity until a retry confirms deletion", ctx do
+    stub(Managoat.Sandbox.Sprites, :destroy, fn _ -> {:error, {:unavailable, :timeout}} end)
+    assert {:error, :sandbox_reset_pending} = Conversations.reset_sandbox(ctx.home)
+    fenced = Repo.reload!(ctx.home)
+    assert fenced.reset_requested_at
+    assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
+
+    assert {:error, :sandbox_reset_pending} = Conversations.retry_pending_sandbox_reset(ctx.home)
+    assert Repo.reload!(ctx.home).reset_requested_at == fenced.reset_requested_at
+    assert Repo.reload!(ctx.home).status == "ready"
+    assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 1
+
+    expect(Managoat.Sandbox.Sprites, :destroy, fn h ->
+      assert h.name == ctx.home.sprite_name
+      refute Repo.in_transaction?()
+      :ok
+    end)
+
+    assert {:ok, completed} =
+             Conversations.retry_pending_sandbox_reset(ctx.home, actor: "system:reset_retry")
+
+    assert completed.status == "terminated"
+    assert completed.reset_requested_at == fenced.reset_requested_at
+    assert completed.terminated_at
+    assert Fountain.Quotas.active_sandbox_count(ctx.user.id) == 0
+    assert {:ok, :skipped} = Conversations.retry_pending_sandbox_reset(ctx.home)
+
+    for conv <- [ctx.a, ctx.b] do
+      assert Repo.reload!(conv).status == "idle"
+
+      assert [event] =
+               Enum.filter(
+                 Conversations._unsafe_list_log_events(conv.id),
+                 &(&1.stage == "sandbox")
+               )
+
+      assert %{"event" => "reset", "reason" => "reset_reconciled", "by" => "system"} =
+               Jason.decode!(event.data)
+    end
+
+    assert [audit] =
+             Repo.all(
+               from a in Fountain.Audit.Event,
+                 where: a.resource_id == ^ctx.home.id and a.action == "sandbox.reset"
+             )
+
+    assert audit.actor == "system:reset_retry"
+  end
+
+  test "retry re-reads the owned row and skips unfenced or terminal machines", ctx do
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+    stale = %{ctx.home | reset_requested_at: DateTime.utc_now()}
+    assert {:ok, :skipped} = Conversations.retry_pending_sandbox_reset(stale)
+
+    assert {:error, :not_found} =
+             Conversations.retry_pending_sandbox_reset(%{stale | user_id: Ecto.UUID.generate()})
+
+    assert {:error, :not_found} =
+             Conversations.retry_pending_sandbox_reset(%{stale | id: Ecto.UUID.generate()})
+
+    {:ok, _} = Conversations.update_sandbox(ctx.home, %{status: "terminated"})
+    assert {:ok, :skipped} = Conversations.retry_pending_sandbox_reset(stale)
+  end
+
+  test "an enclosing transaction cannot retry a pending provider delete", ctx do
+    reject(Managoat.Sandbox.Sprites, :destroy, 1)
+
+    assert {:ok, {:error, :provider_transaction_open}} =
+             Repo.transaction(fn ->
+               Conversations.retry_pending_sandbox_reset(ctx.home)
+             end)
+  end
+
   test "every conversation's transcript says the machine was reset", ctx do
     stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
     assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
@@ -99,7 +172,8 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert {:ok, ^fake} = ConversationServer.await_registered(ctx.a.id)
 
     assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
-    assert_receive {:cast, {:machine_gone, "reset", "home_reset", message}}, 1_000
+    assert_receive {:cast, {:sandbox_reset, sandbox_id, "home_reset", "owner", message}}, 1_000
+    assert sandbox_id == ctx.home.id
     assert message =~ "reset by its owner"
 
     # The server records the event on A's transcript itself; the reset does

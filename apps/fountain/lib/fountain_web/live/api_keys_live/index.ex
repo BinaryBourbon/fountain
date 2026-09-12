@@ -7,7 +7,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
-    keys = Accounts.list_api_keys(user.id)
+    keys = Accounts.list_managed_api_keys(user.id)
 
     {:ok,
      socket
@@ -30,7 +30,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
       {:ok, {key, raw_token}} ->
         {:noreply,
          socket
-         |> assign(:keys, Accounts.list_api_keys(socket.assigns.user_id))
+         |> assign(:keys, Accounts.list_managed_api_keys(socket.assigns.user_id))
          |> assign(:new_key, %{key: key, raw_token: raw_token})}
 
       {:error, _cs} ->
@@ -46,7 +46,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
     # `revoke_api_key/3` records `api_key.revoked` itself now (#552), the same
     # move the mint made in #542 — so this surface owes the trail only who was
     # on the socket, and its own `from_socket` call had to go with it.
-    case Accounts.revoke_api_key(
+    case Accounts.revoke_managed_api_key(
            socket.assigns.user_id,
            id,
            FountainWeb.Audited.attribution(socket)
@@ -54,7 +54,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
       {:ok, _revoked} ->
         {:noreply,
          socket
-         |> assign(:keys, Accounts.list_api_keys(socket.assigns.user_id))
+         |> assign(:keys, Accounts.list_managed_api_keys(socket.assigns.user_id))
          |> put_flash(:info, "Key revoked")}
 
       {:error, :not_found} ->
@@ -144,7 +144,12 @@ defmodule FountainWeb.ApiKeysLive.Index do
             :for={k <- @keys}
             class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)]"
           >
-            <td class="px-4 py-2 font-medium">{k.name}</td>
+            <td class="px-4 py-2 font-medium">
+              {k.name}
+              <span :if={k.user_id != @user_id} class="text-xs text-[var(--color-text-muted)]">
+                Principal
+              </span>
+            </td>
             <td class="px-4 py-2 font-mono text-[var(--color-text-muted)] text-xs">
               {k.key_prefix}···
             </td>
