@@ -1713,8 +1713,8 @@ defmodule Fountain.Conversations.ConversationServer do
         state = close_autonomous_turn(state, "superseded_by_prompt")
         agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
 
-        # Admission can refuse under its row locks after these preflights
-        # pass. Same answer as the `else` below, and for the same reason.
+        # Admission can refuse under its row locks after these preflights pass.
+        # Unlike the `else` below, the connection is already dropped by here.
         case kick_turn(state, prompt, agent, images) do
           {:error, reason, next} -> {:noreply, log_initial_refusal(next, reason)}
           cast_shape -> cast_shape
