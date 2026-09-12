@@ -2253,7 +2253,13 @@ defmodule Fountain.Conversations do
           true -> Repo.rollback(:already_recorded)
         end
 
-      # After the merge, so a stamp that ever grows a counter still debits it.
+      # Read from the merged map because that is what gets stored; the two
+      # agree either way, since the only map the merge folds in is a stamp and
+      # a stamp carries no counter. Do not read this as defending against a
+      # stamp that grows one — if that were possible the merge would debit it
+      # here and again when the real figure landed, so the ordering would be
+      # the bug rather than the guard.
+      #
       # `usage` is whatever the runtime reported. The map is stored as it came,
       # but the counters it increments are bigints: a string or an object here
       # used to raise inside the transaction and take the turn's usage
