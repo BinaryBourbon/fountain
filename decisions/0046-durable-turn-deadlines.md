@@ -167,11 +167,36 @@ publish a control the server cannot honour, and an SDK version bump publishes
 on merge. That surface belongs in the PR that first enforces a control, which
 is also the PR that deletes this paragraph.
 
-`managoat_sandbox 0.3.0` supplies confirmed remote termination. Provider identity
-notifications await [Sprites #33](https://github.com/superfly/sprites-ex/pull/33),
-tracked through release and exact pinning in
+`managoat_sandbox 0.3.0` supplies confirmed remote termination.
+[Sprites #33](https://github.com/superfly/sprites-ex/pull/33) supplies provider
+identity notifications; it merged on 2026-09-08, so this is no longer an
+outstanding external dependency. Release and exact pinning are tracked in
 [Review Loop #109](https://github.com/managoat/review-loop/issues/109).
 Do not activate deadline claims using an unpublished or floating SDK dependency.
+
+### Activation is global, and that is what blocks turning this on
+
+The only lever that makes a turn bounded is `FOUNTAIN_EXECUTION_LIMITS`, a
+single host-wide ceiling, plus the per-account `users.execution_limits`. There
+is no per-provider scope for either. `_unsafe_register_bounded/3` rolls back
+`:provider_not_supported` for any sandbox whose provider is not `sprites`, and
+it does so **inside the admission transaction** — so the turn does not open at
+all. `bounded_lifecycle_test`'s "an unsupported provider cannot retain an
+admitted turn" is the statement of it: zero turns created.
+
+A deployment running E2B, Daytona or self-hosted runners alongside Sprites
+therefore cannot set the host ceiling without breaking turn admission for every
+conversation not on Sprites, and `config/runtime.exs` validates only the JSON
+shape, so nothing warns the operator. The per-account ceiling is usable only
+for an account that never touches another provider, and nothing checks that
+either.
+
+**Consequence: the feature cannot safely be activated on a mixed-provider
+deployment.** Per-provider activation granularity is tracked as follow-up under
+[#1864](https://github.com/managoat/fountain/issues/1864) and is not in scope
+for the PRs that build the journal. Until it exists, treat the host ceiling as
+unsettable in production and the per-account ceiling as Sprites-only. The PR
+that adds the granularity deletes this section.
 
 ## Validation scope
 
