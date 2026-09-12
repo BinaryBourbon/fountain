@@ -4,7 +4,7 @@ An **Agent** is a named configuration for a single coding-agent CLI. It bundles 
 
 - a **runtime** (`claude` / `codex` / `gemini` / `opencode`) — which binary runs in the sprite, or `acp` to run a command of your own
 - a **runtime_command** — the shell line the `acp` runtime launches, required there and rejected on the others
-- a **model** (`anthropic/claude-sonnet-4-6`, `openai/gpt-5.3-codex`, `google/gemini-3.1-pro-preview`, etc.); the `acp` runtime needs none
+- a **model** (`anthropic/claude-sonnet-5`, `openai/gpt-6-astra`, `google/gemini-3.1-pro-preview`, etc.); the `acp` runtime needs none
 - an optional **system prompt** (`system`)
 - an optional **environment** reference (`environment_id` or `environment` by name) — the sprite shape to provision
 - optional **skills** — names of bundled skills to mount into the sprite
@@ -20,7 +20,7 @@ curl -s -X POST "$FOUNTAIN_BASE_URL/api/agents" \
   -d '{
     "name": "researcher",
     "runtime": "claude",
-    "model": "anthropic/claude-sonnet-4-6",
+    "model": "anthropic/claude-sonnet-5",
     "system": "You are a research assistant. Cite primary sources.",
     "skills": ["fountain"],
     "mcp_servers": {
@@ -75,8 +75,8 @@ Use `$${VAR}` only when the MCP server (or some downstream process the runtime s
 
 | runtime | CLI | model format | auth |
 | --- | --- | --- | --- |
-| claude | `claude` | `anthropic/claude-sonnet-4-6` | `CLAUDE_CODE_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY` |
-| codex | `codex` | `openai/gpt-5.3-codex` | `OPENAI_API_KEY` (consumed via `codex login --with-api-key` at provision time) |
+| claude | `claude` | `anthropic/claude-sonnet-5` | `CLAUDE_CODE_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY` |
+| codex | `codex` | `openai/gpt-6-astra` | `OPENAI_API_KEY` (consumed via `codex login --with-api-key` at provision time) |
 | gemini | `gemini` | `google/gemini-3.1-pro-preview` | `GEMINI_API_KEY` |
 | opencode | `opencode` | `provider/model` (anthropic / openai / google) | per provider |
 

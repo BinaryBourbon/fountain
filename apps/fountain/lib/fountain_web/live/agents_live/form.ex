@@ -729,7 +729,14 @@ defmodule FountainWeb.AgentsLive.Form do
         </.link>
       </div>
 
+      <.missing_credential_card
+        :if={@missing_credential}
+        missing={@missing_credential}
+        message={@credential_message}
+      />
+
       <form
+        id="agent-form"
         phx-change="validate"
         phx-submit="submit"
         class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
@@ -803,11 +810,6 @@ defmodule FountainWeb.AgentsLive.Form do
         >
           Not one of the models Fountain lists — it will be passed to the runtime as-is.
         </p>
-        <.missing_credential_card
-          :if={@missing_credential}
-          missing={@missing_credential}
-          message={@credential_message}
-        />
 
         <div :if={length(@sandbox_providers) > 1} class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Sandbox provider</label>

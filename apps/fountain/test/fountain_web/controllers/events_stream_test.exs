@@ -177,6 +177,41 @@ defmodule FountainWeb.EventsStreamTest do
       assert conn.resp_body =~ "from-new"
     end
 
+    @tag :filtered_cursor_regression
+    test "filtered rows advance the durable cursor and stale notifications do not rescan them", %{
+      user: user,
+      raw_key: key
+    } do
+      conv = insert_conversation(user_id: user.id, status: "idle")
+      old = insert_log_event(conv, %{kind: "output", stream: "stdout", data: "old"})
+      await_stream_start(user.id)
+      task = stream_async(key, "/api/events/stream?streams=stage")
+      allow(Fountain.Conversations, self(), task.pid)
+      assert_receive {:stream_discovery, pid}, 2_000
+      hidden = insert_log_event(conv, %{kind: "output", stream: "stderr", data: "filtered-out"})
+      parent = self()
+
+      expect(Fountain.Conversations, :list_user_log_events, fn user_id, after_id ->
+        assert user_id == user.id
+        assert after_id == old.id
+        Mimic.call_original(Fountain.Conversations, :list_user_log_events, [user_id, after_id])
+      end)
+
+      expect(Fountain.Conversations, :list_user_log_events, fn user_id, after_id ->
+        assert user_id == user.id
+        assert after_id == hidden.id
+        send(parent, :advanced_filtered_cursor)
+        Mimic.call_original(Fountain.Conversations, :list_user_log_events, [user_id, after_id])
+      end)
+
+      send(pid, :continue_discovery)
+      assert_receive :advanced_filtered_cursor, 2_000
+      send(pid, {:log_event, hidden})
+      conn = Task.await(task, 5_000)
+      refute conn.resp_body =~ "filtered-out"
+      refute conn.resp_body =~ "event: log"
+    end
+
     @tag :discovery_regression
     test "a fast failure before discovery is replayed before a newer followed event", %{
       user: user,

@@ -179,7 +179,7 @@ jobs:
           # without a special case — it used to be mkdocs.yml at the repo root,
           # which needed naming twice (#1008).
           docs_touched=false
-          if printf '%s\n' "${changed}" | grep -qE '^docs/|^apps/[^/]+/docs/|^scripts/(docs-style|destink/|ci/prose-advice\.sh$)|^\.vale|^\.github/workflows/ci\.yml$'; then
+          if printf '%s\n' "${changed}" | grep -qE '^docs/|^apps/[^/]+/docs/|^scripts/(docs-style|destink/|ci/(prose-advice\.sh|check_external_links\.py|test_external_links\.py)$)|^CLAUDE\.md$|^\.vale|^\.github/workflows/ci\.yml$'; then
             docs_touched=true
           fi
 
@@ -1092,6 +1092,9 @@ jobs:
       # docs_test.exs and runs in the Elixir suite, so it needs nothing here.
       # That is what `mkdocs build --strict` used to carry, and the test is the
       # stronger of the two: MkDocs never checked anchors (#1008).
+      - name: Check public GitHub documentation links
+        run: python3 scripts/ci/check_external_links.py
+
       - name: Docs style
         run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
 
@@ -1698,6 +1701,9 @@ jobs:
       # The style sheet in standards/voice-and-style.md, as wording advice. It
       # skips the backlog in scripts/docs-style-allow.txt, so a file NOT on
       # that list is checked and every new page is covered by default.
+      - name: Check public GitHub documentation links
+        run: python3 scripts/ci/check_external_links.py
+
       - name: Docs style
         run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
 
@@ -1779,15 +1785,23 @@ jobs:
         run: go test -count=1 ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented|TestGeneratedCLIReferenceIsCurrent'
 
   workflow-checks:
-    name: CI policy tests
+    name: CI policy and alert tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
           persist-credentials: false
+      - name: Reject conflict markers
+        run: python3 scripts/conflict-markers.py
       - name: Test CI decisions
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+      # This job is required even for docs-only changes and reused trees.
+      # The path-filtered Alert rules workflow alone cannot gate a merge.
+      - name: Install the alert rule evaluator
+        run: sudo apt-get update && sudo apt-get install -y prometheus python3-yaml
+      - name: Evaluate shipped alert fixtures
+        run: /usr/bin/python3 scripts/test-alerts.py
 
   gate:
     name: CI required

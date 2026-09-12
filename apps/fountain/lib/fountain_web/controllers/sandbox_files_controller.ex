@@ -79,7 +79,8 @@ defmodule FountainWeb.SandboxFilesController do
         "vault is replaced with `[REDACTED]`, as in the transcript. `content` is the text " <>
         "when it is valid UTF-8 (`encoding: utf-8`) and base64 otherwise " <>
         "(`encoding: base64`). `size` is the whole file; `truncated` says whether `content` " <>
-        "stopped at `max_bytes`. Full scope.",
+        "is short of it, which happens when the file is longer than `max_bytes` and also " <>
+        "when redaction grows what was read past that cap. Full scope.",
     parameters: [
       sandbox_id: [in: :path, type: :string, required: true],
       path: Keyword.put(@path_param, :required, true),

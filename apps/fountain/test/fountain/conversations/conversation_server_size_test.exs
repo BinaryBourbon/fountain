@@ -13,9 +13,16 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   The shape is the docs-style allowlist that only shrinks (#911): the number
   is not a target, it is a record of where the file is, and the only edit it
   accepts is downward. Lower it when you move something out; never raise it.
+
+  **A stack in flight does not move it.** The pin is the length on `main`, and
+  a number measured against a branch is stale the moment any link below it
+  grows the file, which is what review rounds do. #1565 lowered it mid-stack to
+  the tip's exact length, left zero headroom, and went red two rounds later
+  when a fix four PRs down added lines. Land the shrink first, then lower the
+  pin in a follow-up, when the number has stopped moving.
   """
 
-  @pin 2762
+  @pin 2652
 
   @server "apps/fountain/lib/fountain/conversations/conversation_server.ex"
 

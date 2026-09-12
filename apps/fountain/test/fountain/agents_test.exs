@@ -217,6 +217,25 @@ defmodule Fountain.AgentsTest do
       assert length(Agents.list_agent_versions(agent.id, user.id)) == 2
     end
 
+    test "an edit from a stale agent snapshots the persisted configuration" do
+      user = insert_verified_user()
+      original = insert_agent(user_id: user.id, system: "original instructions")
+
+      assert {:ok, _} = Agents.update_agent(original, %{system: "revised instructions"})
+      assert {:ok, updated} = Agents.update_agent(original, %{description: "a second edit"})
+
+      persisted = Agents.get_agent(original.id, user.id)
+      assert persisted.system == "revised instructions"
+      assert persisted.description == "a second edit"
+      assert Agents.snapshot_config(updated) == Agents.snapshot_config(persisted)
+
+      assert [v3, v2, v1] = Agents.list_agent_versions(original.id, user.id)
+      assert {v3.version, v2.version, v1.version} == {3, 2, 1}
+      assert v3.config == Agents.snapshot_config(persisted)
+      assert v2.config["system"] == "revised instructions"
+      assert v1.config["system"] == "original instructions"
+    end
+
     test "a rejected update writes no version" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)

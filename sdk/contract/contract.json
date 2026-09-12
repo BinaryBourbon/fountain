@@ -552,6 +552,40 @@
         }
       }
     },
+    "DELETE /api/sandbox-queue/{id}": {
+      "operation_id": "FountainWeb.SandboxQueueController.delete",
+      "path_params": [
+        "id"
+      ],
+      "responses": {
+        "204": {},
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "DELETE /api/sandboxes/{id}": {
       "operation_id": "FountainWeb.SandboxController.delete",
       "path_params": [
@@ -2587,6 +2621,75 @@
         "409": {
           "application/json": {
             "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "GET /api/sandbox-queue": {
+      "operation_id": "FountainWeb.SandboxQueueController.index",
+      "path_params": [],
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "SandboxRequestListResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
+    "GET /api/sandbox-queue/{id}": {
+      "operation_id": "FountainWeb.SandboxQueueController.show",
+      "path_params": [
+        "id"
+      ],
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "SandboxRequestResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
           }
         },
         "429": {
@@ -5947,6 +6050,11 @@
             "ref": "ConversationResponse"
           }
         },
+        "202": {
+          "application/json": {
+            "ref": "SandboxRequestResponse"
+          }
+        },
         "400": {
           "application/json": {
             "ref": "Error"
@@ -6158,6 +6266,72 @@
         }
       }
     },
+    "POST /api/conversations/{conversation_id}/reapply": {
+      "operation_id": "FountainWeb.ConversationController.reapply",
+      "path_params": [
+        "conversation_id"
+      ],
+      "request_body": {
+        "content": {
+          "application/json": {
+            "ref": "ConversationReapplyRequest"
+          }
+        },
+        "required": false
+      },
+      "responses": {
+        "200": {
+          "application/json": {
+            "ref": "ConversationResponse"
+          }
+        },
+        "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "403": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "404": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "406": {
+          "application/json": {
+            "ref": "NegotiationError"
+          }
+        },
+        "409": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "410": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "422": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "429": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "503": {
+          "application/json": {
+            "ref": "Error"
+          }
+        }
+      }
+    },
     "POST /api/conversations/{conversation_id}/requests/{request_id}": {
       "operation_id": "FountainWeb.ConversationController.answer_request",
       "path_params": [
@@ -6178,7 +6352,17 @@
             "ref": "PermissionAnswerResponse"
           }
         },
+        "400": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
         "401": {
+          "application/json": {
+            "ref": "Error"
+          }
+        },
+        "402": {
           "application/json": {
             "ref": "Error"
           }
@@ -10383,6 +10567,13 @@
           "required": false,
           "type": "string"
         },
+        "pending_requests": {
+          "items": {
+            "ref": "PendingPermissionRequest"
+          },
+          "required": false,
+          "type": "array"
+        },
         "permission_policy": {
           "additionalProperties": {
             "oneOf": [
@@ -10569,6 +10760,11 @@
           "required": false,
           "type": "string"
         },
+        "queue": {
+          "nullable": true,
+          "required": false,
+          "type": "boolean"
+        },
         "sandbox_api_access": {
           "enum": [
             "none",
@@ -10631,6 +10827,28 @@
           },
           "required": true,
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ConversationReapplyRequest": {
+      "properties": {
+        "agent_id": {
+          "format": "uuid",
+          "required": false,
+          "type": "string"
+        },
+        "environment_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "vault_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
         }
       },
       "type": "object"
@@ -11672,6 +11890,45 @@
       },
       "type": "object"
     },
+    "PendingPermissionRequest": {
+      "properties": {
+        "asked_at": {
+          "format": "date-time",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "deadline": {
+          "format": "date-time",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "required": true,
+          "type": "array"
+        },
+        "request_id": {
+          "required": true,
+          "type": "string"
+        },
+        "tool": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "turn_id": {
+          "format": "uuid",
+          "required": false,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "PermissionAnswerRequest": {
       "properties": {
         "option_id": {
@@ -12385,6 +12642,88 @@
       "properties": {
         "data": {
           "ref": "SandboxListing",
+          "required": true
+        }
+      },
+      "type": "object"
+    },
+    "SandboxRequest": {
+      "properties": {
+        "agent_id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
+        "conversation_id": {
+          "format": "uuid",
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "error": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "required": true,
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "required": false,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "schedule_run",
+            "start"
+          ],
+          "required": true,
+          "type": "string"
+        },
+        "position": {
+          "nullable": true,
+          "required": false,
+          "type": "integer"
+        },
+        "source": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "cancelled",
+            "expired",
+            "failed",
+            "queued",
+            "started",
+            "starting"
+          ],
+          "required": true,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SandboxRequestListResponse": {
+      "properties": {
+        "data": {
+          "items": {
+            "ref": "SandboxRequest"
+          },
+          "required": true,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SandboxRequestResponse": {
+      "properties": {
+        "data": {
+          "ref": "SandboxRequest",
           "required": true
         }
       },
@@ -13432,6 +13771,11 @@
           "required": false,
           "type": "string"
         },
+        "limit_reason": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "model_selection": {
           "nullable": true,
           "properties": {
@@ -13511,6 +13855,10 @@
             }
           ],
           "required": false
+        },
+        "waiting": {
+          "required": false,
+          "type": "boolean"
         }
       },
       "type": "object"
