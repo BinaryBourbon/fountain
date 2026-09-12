@@ -137,6 +137,13 @@ upgrade, is in
   immediate error. Starts carrying images or naming a `sandbox_id` never
   queue.
 
+- Add a supervised execution-deadline coordinator with separate expiration and
+  termination task pools. Local task timeouts and restarts retain uncertain
+  remote operations. It starts only where `FOUNTAIN_EXECUTION_LIMITS` configures
+  a host ceiling, and `FOUNTAIN_EXECUTION_DEADLINE_WORKER=false` turns it off
+  anywhere. Public bounded execution remains disabled until session identity,
+  event delivery, and lifecycle integration are complete.
+
 - **An `acp` runtime launches a named command, so a deterministic program can
   run as an agent** (#1634). `agents.runtime` accepts `"acp"`, and a new
   `runtime_command` field carries the command it runs. The field is required
@@ -166,6 +173,12 @@ upgrade, is in
   `AgentUpdate["model"]` are `string | null` and optional. A client that
   assumed a string needs a null check. Nothing else on the wire changed
   shape.
+
+- Prepare the released ACP 0.4, Runtimes 0.4.1, Runner 0.2.2, and Sandbox 0.3
+  dependency set for typed execution limits and confirmed session termination.
+  Fountain deadline enforcement remains disabled pending transport and lifecycle
+  integration.
+
 
 - Environment `setup_timeout_seconds` (1–900, default 120) lets cold repository
   toolchain setup run within an explicit bound. It persists through API/spec
