@@ -24,6 +24,102 @@ defmodule Fountain.Conversations.ExecutionGuard do
   @fenced ~w(awaiting_identity ready submitted uncertain)
   @terminal_turns ~w(completed failed interrupted)
 
+  @doc """
+  Register a bounded turn's journal inside the caller's admission transaction.
+
+  Deliberately a step rather than a replacement for
+  `Conversations._unsafe_create_turn_on_sandbox/3`. That function already holds
+  the per-sandbox advisory lock, takes `FOR UPDATE` on the parent so the
+  allowance's foreign key cannot deadlock against it (#1790), proves the
+  conversation is still attached to a **non-terminal** sandbox owned by the same
+  tenant (#1761, #1764), and rechecks the saved allowance under those locks.
+  Re-implementing admission here would drop every one of those; adding a step to
+  it keeps them and still commits the journal with the turn.
+
+  A turn with no configured allowance registers nothing: the journal is for
+  bounded turns, and an unbounded turn has nothing to expire.
+  """
+  def _unsafe_register_bounded(turn, sandbox_id, conv) do
+    limits = resolve_turn_limits(conv)
+
+    if map_size(limits) == 0 do
+      :unbounded
+    else
+      # A journal row needs an absolute deadline. A request carrying only SDK
+      # controls cannot be admitted by inventing an allowance nobody asked for.
+      unless Map.has_key?(limits, "wall_time_seconds"),
+        do: Repo.rollback({:execution_limits_invalid, "wall_time_seconds_required"})
+
+      sandbox = Repo.get(Sandbox, sandbox_id) || Repo.rollback(:sandbox_not_found)
+      if sandbox.provider != "sprites", do: Repo.rollback(:provider_not_supported)
+
+      case Managoat.Runtimes.ACP.execution_limits(
+             conv.runtime,
+             ExecutionLimits.sdk_options(limits)
+           ) do
+        {:ok, _} -> :ok
+        {:error, reason} -> Repo.rollback(reason)
+      end
+
+      if is_nil(turn.started_at), do: Repo.rollback(:turn_not_started)
+      deadline = DateTime.add(turn.started_at, limits["wall_time_seconds"], :second)
+
+      case _unsafe_register(turn.id, Ecto.UUID.generate(), deadline) do
+        {:ok, execution} -> {:bounded, execution}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end
+  end
+
+  @doc "Whether an unresolved bounded execution fences this conversation. Caller holds the parent lock."
+  def _unsafe_open_execution?(conversation_id), do: open_execution?(conversation_id)
+
+  @doc "Refuse a new prompt or wake while an earlier bounded execution is unresolved."
+  def _unsafe_admission_gate(conversation_id) do
+    transaction(fn ->
+      lock_parent(conversation_id) || Repo.rollback(:not_found)
+      if open_execution?(conversation_id), do: Repo.rollback(:execution_fenced)
+      {:ok, nil, nil}
+    end)
+    |> case do
+      {:ok, :ok} -> :ok
+      error -> error
+    end
+  end
+
+  @doc "Persist cancellation without waiting for the conversation actor or provider."
+  def _unsafe_interrupt(conversation_id) do
+    transaction(fn ->
+      lock_parent(conversation_id) || Repo.rollback(:not_found)
+
+      # `limit: 1` is exact rather than a guess: `turn_executions_open_conversation_index`
+      # is a unique index on `conversation_id` partial to
+      # `state NOT IN ('completed','stopped')`, so a conversation has at most
+      # one open journal by construction. The `order_by` only makes the choice
+      # deterministic if that invariant were ever dropped.
+      execution =
+        Repo.one(
+          from e in TurnExecution,
+            where:
+              e.conversation_id == ^conversation_id and e.state not in ["completed", "stopped"],
+            order_by: [desc: e.inserted_at],
+            limit: 1,
+            lock: "FOR UPDATE"
+        )
+
+      if execution do
+        lock_turn(execution.turn_id)
+        {decision, changed, event} = complete(execution, "interrupted", DateTime.utc_now())
+        {{:bounded, decision.execution.id}, changed, event}
+      else
+        {:unbounded, nil, nil}
+      end
+    end)
+  end
+
+  @doc "Find the immutable journal for an already-owned actor's turn."
+  def _unsafe_for_turn(turn_id), do: Repo.get_by(TurnExecution, turn_id: turn_id)
+
   def _unsafe_register(turn_id, connection_id, %DateTime{} = deadline_at, opts \\ []) do
     transaction(fn ->
       turn = Repo.get(Turn, turn_id) || Repo.rollback(:not_found)
@@ -185,6 +281,47 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
+  @doc """
+  May this actor still handle its own messages? One unlocked read.
+
+  Deliberately not `_unsafe_authorize_write/3`. That one is a transaction with
+  `FOR UPDATE` on the conversation, the journal row and the turn, and it belongs
+  where a provider write or a terminal outcome actually happens — the transport
+  (#1748) and `_unsafe_complete/3`. Running it per inbound message meant six
+  queries and three row locks for every `{:stdout, ...}` chunk and every
+  `{:acp, ...}` report of a chatty turn, and because it took the parent lock it
+  serialized against admission, release, reset and the coordinator's own expire:
+  the hotter the turn, the longer the coordinator queued behind the very turn it
+  was supposed to expire.
+
+  The inbound stream cannot reach the provider by itself, so it does not need
+  write authorization — only "is this still mine, and is it still inside its
+  deadline". Three columns answer that. `:retire` is not the durable decision
+  either: the caller's retirement takes the locks and `_unsafe_complete/3`
+  arbitrates completion against expiry there, so a missing row, a superseded
+  connection, a closed state and a passed deadline all converge on the same
+  authoritative write one frame later.
+  """
+  def _unsafe_actor_gate(id, connection_id, opts \\ []) do
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+
+    case Repo.one(
+           from e in TurnExecution,
+             where: e.id == ^id,
+             select: %{
+               state: e.state,
+               connection_id: e.connection_id,
+               deadline_at: e.deadline_at
+             }
+         ) do
+      %{state: "active", connection_id: ^connection_id, deadline_at: deadline} ->
+        if DateTime.compare(now, deadline) == :lt, do: :ok, else: :retire
+
+      _ ->
+        :retire
+    end
+  end
+
   @doc "A completion after the absolute deadline becomes a failed, fenced turn."
   def _unsafe_complete(id, status, opts \\ []) when status in @terminal_turns do
     with_execution(id, fn execution ->
@@ -252,8 +389,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
     turn = lock_turn(execution.turn_id)
 
     cond do
-      is_nil(turn) ->
+      is_nil(turn) and execution.state == "active" ->
         missing_turn(execution)
+
+      is_nil(turn) ->
+        {%{execution: execution, turn: nil}, nil, nil}
 
       execution.state == "active" and DateTime.compare(now, execution.deadline_at) != :lt ->
         expire(execution, now)
@@ -338,7 +478,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
         execution.state != "ready" ->
           Repo.rollback(:not_ready)
 
-        not current_binding?(execution) ->
+        not cleanup_binding?(execution) ->
           updated = update!(execution, %{state: "uncertain", last_error: "ownership_changed"})
           {%{permitted: false, execution: updated}, updated, "termination_uncertain"}
 
@@ -606,6 +746,28 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end
   end
 
+  # A persisted retirement survives parent deletion. The original sandbox row
+  # must still prove its tenant/name/provider binding; a surviving conversation
+  # must also remain bound to it. Missing or changed sandbox identity stays
+  # uncertain. Reset cannot reuse this row while its journal remains open.
+  defp cleanup_binding?(execution) do
+    sandbox_matches =
+      Repo.exists?(
+        from s in Sandbox,
+          where:
+            s.id == ^execution.sandbox_id and s.user_id == ^execution.user_id and
+              s.sprite_name == ^execution.sandbox_name and s.provider == ^execution.provider
+      )
+
+    parent_matches =
+      case Repo.get(Conversation, execution.conversation_id) do
+        nil -> true
+        conv -> conv.user_id == execution.user_id and conv.sandbox_id == execution.sandbox_id
+      end
+
+    sandbox_matches and parent_matches
+  end
+
   defp current_binding?(execution) do
     Repo.exists?(
       from c in Conversation,
@@ -674,16 +836,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
   defp resolve_turn_limits(conv) do
     user = Repo.get!(Fountain.Accounts.User, conv.user_id)
 
-    saved =
-      case Repo.one(
-             from a in Fountain.Conversations.ExecutionAllowance,
-               where: a.conversation_id == ^conv.id,
-               select: a.limits
-           ) do
-        nil -> %{}
-        limits when is_map(limits) -> limits
-        _ -> Repo.rollback({:execution_limits_invalid, "object_required"})
-      end
+    saved = saved_allowance(conv.id)
 
     case ExecutionLimits.for_new_turn(
            ExecutionLimits.host_ceiling(),
@@ -692,6 +845,18 @@ defmodule Fountain.Conversations.ExecutionGuard do
          ) do
       {:ok, limits} -> limits
       {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp saved_allowance(conversation_id) do
+    case Repo.one(
+           from a in Fountain.Conversations.ExecutionAllowance,
+             where: a.conversation_id == ^conversation_id,
+             select: a.limits
+         ) do
+      nil -> %{}
+      limits when is_map(limits) -> limits
+      _ -> Repo.rollback({:execution_limits_invalid, "object_required"})
     end
   end
 

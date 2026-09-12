@@ -199,6 +199,7 @@ defmodule Fountain.Conversations.ExecutionTransport do
     {:noreply, accept_frame(frame, state)}
   end
 
+  def handle_info(:retire, state), do: {:noreply, retire(state)}
   def handle_info(:deadline, state), do: {:noreply, retire(state)}
   def handle_info(:retry_retire, state), do: {:noreply, request_retirement(state)}
   def handle_info(:drain_end, state), do: {:stop, :normal, state}
@@ -228,6 +229,7 @@ defmodule Fountain.Conversations.ExecutionTransport do
   end
 
   defp complete_job(%{kind: :retire}, {:ok, _}, state) do
+    send(state.owner, {:execution_retired, state.execution.id})
     if state.close_waiter, do: GenServer.reply(state.close_waiter, :ok)
     Process.send_after(self(), :drain_end, 30_000)
     %{state | retired: true, close_waiter: nil}

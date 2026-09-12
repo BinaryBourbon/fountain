@@ -147,10 +147,16 @@ upgrade, is in
   immediate error. Starts carrying images or naming a `sandbox_id` never
   queue.
 
+- Wire the prepared bounded execution journal into atomic turn admission,
+  tracked adapter setup, guarded ACP callbacks, durable cancellation, recovery
+  retirement and parent deletion. Bounded turns skip separate title inference,
+  cannot reuse a warm process, and require an ACP reply for success. Public
+  enforcement remains disabled pending provider release and complete acceptance.
+
 - Prepare a supervised bounded-command transport that binds provider identity
   before stdin, rechecks journal authority for each write, and retains uncertain
   operations. Successful bounded replies now require connection retirement before
-  a fresh successor. Actor/spawn integration and public activation remain gated.
+  a fresh successor. Public activation remains gated.
 
 - Commit deadline failure events and delivery jobs with the failed turn. Late
   completion and interruption reuse the original event, and notification retries

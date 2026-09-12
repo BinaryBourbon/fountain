@@ -11,7 +11,9 @@ defmodule Fountain.Conversations.Connection do
   the connection ends when the sandbox stops being this server's. Between the
   two, an idle adapter stays on the machine. The next turn selects its model
   and sends its prompt without a spawn, handshake or `session/resume`.
-  Background tasks and the runtime's per-session grants survive. `Fountain.Conversations.TurnMachine` owns the turn itself and
+  Background tasks and the runtime's per-session grants survive for unbounded
+  turns. Bounded turns use a fresh tracked command and retire it after every
+  outcome; they cannot inherit that warm connection. `Fountain.Conversations.TurnMachine` owns the turn itself and
   answers `autonomous_turn?/1`; what a turn ends with is the server's, because
   ending one resolves what is pending and stamps the row.
 
@@ -153,7 +155,60 @@ defmodule Fountain.Conversations.Connection do
     end
   end
 
+  @doc "Launch one already registered bounded turn, including adapter setup."
+  def _unsafe_spawn_bounded(state, runtime, cmd, args, opts) do
+    alias Fountain.Conversations.{ExecutionLimits, ExecutionTransport}
+
+    execution = state.turn_execution
+
+    with {:ok, _} <-
+           Managoat.Runtimes.ACP.execution_limits(
+             runtime,
+             ExecutionLimits.sdk_options(execution.execution_limits)
+           ),
+         {:ok, opts} <- Fountain.Conversations.CodexTransport.spawn_opts(state, runtime, opts) do
+      {cmd, args} =
+        Fountain.Conversations.CodexSandbox.command(state.handle.provider, runtime, cmd, args)
+
+      {cmd, args} = Fountain.RuntimeDispatch.bootstrap_command(runtime, cmd, args)
+
+      # ownership: the actor's turn was registered against its persisted tenant
+      # and sandbox; the transport claims that immutable execution before I/O.
+      with {:ok, transport} <-
+             ExecutionTransport._unsafe_start(execution.id, self(), cmd, args, opts) do
+        case ExecutionTransport.await_ready(transport) do
+          {:ok, command} ->
+            {:ok, command, transport}
+
+          {:error, _} = error ->
+            ExecutionTransport.close(transport)
+            error
+        end
+      end
+    end
+  end
+
   # ── letting it go ─────────────────────────────────────────────────────────
+
+  @doc "Close local bounded connection state after its durable outcome retains cleanup."
+  def close_bounded(%{turn_execution: nil} = state), do: state
+
+  def close_bounded(state) do
+    # The durable outcome already retains cleanup; local peer/socket shutdown
+    # must neither block cancellation acknowledgment nor stand in for confirmation.
+    if state.execution_transport, do: send(state.execution_transport, :retire)
+    stop_peer(from_state(state))
+
+    %{
+      state
+      | turn_execution: nil,
+        execution_transport: nil,
+        current_command: nil,
+        current_command_ref: nil,
+        acp_peer: nil,
+        acp_peer_mon: nil
+    }
+  end
 
   @doc "Stop a verified idle adapter left behind by a previous owner."
   @spec reap_session(Managoat.Sandbox.Handle.t(), String.t()) :: :ok

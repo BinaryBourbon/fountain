@@ -22,7 +22,7 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   pin in a follow-up, when the number has stopped moving.
   """
 
-  @pin 2762
+  @pin 2652
 
   @server "apps/fountain/lib/fountain/conversations/conversation_server.ex"
 

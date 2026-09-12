@@ -696,7 +696,12 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
         case unquote(input) do
           :prompt ->
-            assert :ok = GenServer.call(ctx.pid, {:send_prompt, "late prompt", []})
+            # The refusal now reaches the caller. It used to reply `:ok` and
+            # drop the connection, which told a client its prompt was accepted
+            # when no turn would ever run — the state assertions below were
+            # always the real subject of this test, and they are unchanged.
+            assert {:error, :sandbox_unavailable} =
+                     GenServer.call(ctx.pid, {:send_prompt, "late prompt", []})
 
           :permission ->
             send(ctx.pid, {:acp, ctx.ref, {:permission_ask, "late-request", "Bash", []}})
