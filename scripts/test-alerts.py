@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Evaluate the shipped alert expressions with promtool (requires PyYAML)."""
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -27,7 +28,8 @@ def conversation_cases(rules):
         })
 
     names = ("FountainStageFailures", "FountainTurnFailureRate",
-             "FountainReattachFailures", "FountainTurnFirstOutputSlow")
+             "FountainReattachFailures", "FountainTurnFirstOutputSlow",
+             "FountainBrokerCAInstallFailureRate")
     for alert in names:
         case(alert + ": no series", alert, [])
 
@@ -41,6 +43,29 @@ def conversation_cases(rules):
         case("reattach fails=" + str(fails), "FountainReattachFailures", [
             series("fountain_stage_count", 'stage="reattach",status="failed"',
                    "0+0x30 1+0x89" if fails else "0+0x120")], "{}" if fails else None)
+
+    for name, failed, done, unavailable, fires in (
+        ("healthy, no failure series", None, "0+1x120", None, False),
+        ("idle", "0+0x120", "0+0x120", None, False),
+        ("too little traffic", "0+0.02x120", None, None, False),
+        ("exactly 10 percent", "0+1x120", "0+9x120", None, False),
+        ("18 percent fail", "0+0.18x120", "0+0.82x120", None, True),
+        ("all fail, no success series", "0+1x120", None, None, True),
+        ("transport failure is not an installer exit", None, None, "0+1x120", False),
+        ("counter reset", "0+0.18x29 0+0.18x90", "0+0.82x29 0+0.82x90", None, True),
+    ):
+        inputs = [series("fountain_broker_ca_install_count",
+                         f'provider="sprites",outcome="{outcome}"', values)
+                  for outcome, values in (("exit", failed), ("ok", done),
+                                          ("unreachable", unavailable)) if values is not None]
+        # A busy healthy provider and proxy/health request traffic cannot
+        # dilute the failing provider's conversation setup ratio.
+        inputs.append(series("fountain_broker_ca_install_count",
+                             'provider="e2b",outcome="ok"', "0+1000x120"))
+        inputs.append(series("fountain_broker_request_count",
+                             'outcome="passthrough"', "0+1000x120"))
+        case("broker CA: " + name, "FountainBrokerCAInstallFailureRate", inputs,
+             '{provider="sprites"}' if fires else None)
 
     count = "fountain_turn_completed_duration_ms_count"
     for name, failed, done, fires in (
@@ -79,10 +104,36 @@ def conversation_cases(rules):
     return cases
 
 
+def email_dashboard_cases():
+    dashboard = json.loads((ROOT / "deploy/grafana/fountain-finance.json").read_text())
+    expression = next(target["expr"] for panel in dashboard["panels"]
+                      for target in panel.get("targets", [])
+                      if "fountain_email_delivery_exception" in target.get("expr", ""))
+    expression = expression.replace("$namespace", "fountain")
+    cases = []
+    for errors, exceptions in ((False, False), (True, False), (False, True), (True, True)):
+        inputs = []
+        for present, metric in (
+            (errors, 'fountain_email_delivery_count{namespace="fountain",outcome="error"}'),
+            (exceptions, 'fountain_email_delivery_exception{namespace="fountain"}'),
+        ):
+            if present:
+                inputs.append({"series": metric, "values": "0+0x30 1+0x90"})
+        cases.append({
+            "name": f"email dashboard: errors={errors}, exceptions={exceptions}",
+            "interval": "1m", "input_series": inputs,
+            "promql_expr_test": [{
+                "expr": expression, "eval_time": "60m",
+                "exp_samples": [{"labels": "{}", "value": int(errors) + int(exceptions)}],
+            }],
+        })
+    return cases
+
+
 def main():
     spec = yaml.safe_load((ROOT / "deploy/k8s/prometheusrule.yaml").read_text())["spec"]
     rules = {r["alert"]: r for g in spec["groups"] for r in g["rules"]}
-    cases = conversation_cases(rules)
+    cases = conversation_cases(rules) + email_dashboard_cases()
     for replicas in (1, 2, 3):
         for alert, metric, statuses in (
             ("FountainSandboxBudgetExceeded", "fountain_sandboxes_count", ("pending", "ready")),

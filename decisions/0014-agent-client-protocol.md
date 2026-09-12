@@ -745,6 +745,58 @@ bound suspends while the ceiling **destroys**. Left alone, an unanswered
 prompt does not hang forever; it burns the maximum lifetime and then takes the
 agent's memory with it (#649).
 
+> **Amendment, 2026-09-07 (#1635). A request may outlive its turn, and then
+> this bound does not apply to it.** The paragraph above is right about a
+> request held inside a running turn, and that is still the only shape an LLM
+> blocked mid-thought produces. A deterministic operation waits on something
+> else: approve a production apply, confirm a DNS delegation, sign off a set of
+> deletes. Those take hours or days, and nothing in the sandbox needs to run
+> while they do.
+>
+> So an agent may send `session/request_permission` and then answer
+> `session/prompt` with the stop reason **`waiting`**. The turn ends
+> `completed` with `turns.waiting` set, the request row stays pending, the
+> conversation goes `idle` and the sandbox parks on the idle bound exactly as
+> it would have anyway. No sandbox is held open, so the cost rule this ADR
+> keeps is untouched: what changes is that the *card* outlives the turn, not
+> the machine.
+>
+> The answer cannot go back down the connection that raised the request — the
+> sandbox may be suspended and the JSON-RPC id died with the peer. It opens a
+> **new turn** instead, whose `session/prompt` is one line of JSON under
+> `fountain/permission_answer` carrying the request id, the option and the
+> outcome. That is the shape a `_meta` key would carry, under the same name;
+> `Managoat.ACP.Peer.prompt/3` has no hook for protocol extensions, so it
+> travels in the prompt text until the library grows one.
+>
+> The deadline is per request (`_meta.fountain.timeout`) and per policy
+> (`ask_timeout`), the shorter of the two where both are set, else this
+> five-minute ceiling. The request half comes from inside the sandbox, so it
+> may bound its own wait and may not extend the tenant's; a launch policy may
+> shorten the agent's, or the five-minute ceiling where the agent set none,
+> because a longer wait is more time for the tool to be approved and so is the
+> looser direction. The deadline lives on the turn row rather than in a
+> process timer, because a two-day wait outlives every process involved, and
+> `Fountain.Workers.DetachedRequestSweeper` is what fires it. Expiry is still
+> a deny, and it opens the same resume turn.
+>
+> **The connection does not survive the detach**, which is the one place this
+> departs from #817's sandbox-scoped rule. The peer holds the request it
+> raised in a single slot that only an answer or a denial clears, and the
+> detached path sends neither; both shippable adapters number their requests
+> from 0 per turn, so the resume turn's first request would collide with the
+> stale hold and be swallowed — no response, no card, no timeout, and an
+> agent blocked with the ceiling off by default. The turn's end therefore
+> closes the connection, and the resume turn pays one handshake. That is what
+> the idle park would have done minutes later regardless.
+>
+> **Nothing is resolved that cannot be delivered.** The gates the wake runs —
+> a turn already in flight, a suspended account, a spent balance — run before
+> the request row is touched, by the answer door and by the sweep alike. A
+> request resolved into a prompt nobody delivers is gone with the agent never
+> told and no second copy to retry from, so the row stays and the sweep comes
+> back a minute later.
+
 **Survival across a restart.** The JSON-RPC request id lives in the peer and
 dies with it, so a request minted before a deploy cannot be answered after one
 unless the id is persisted the way `acp_prompt_id` already is — the same trap

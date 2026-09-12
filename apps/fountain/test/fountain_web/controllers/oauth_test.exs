@@ -66,6 +66,77 @@ defmodule FountainWeb.OAuthControllerTest do
       assert csp =~ "form-action 'self' https://app.test"
     end
 
+    # The header used to name every registered client's origin. With
+    # tenant-registered apps that would hand the whole registry to any
+    # visitor, and grow without bound.
+    test "the form-action CSP names this request's origin and no other", %{conn: conn} do
+      insert_oauth_client(redirect_uris: ["https://someone-else.test/callback"])
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/callback"])
+      owner = Accounts.get_user!(client.user_id)
+      {_v, c} = pkce()
+
+      conn =
+        conn
+        |> login_user(owner)
+        |> get(
+          "/oauth/authorize?" <>
+            authorize_qs(c, %{
+              "client_id" => client.client_id,
+              "redirect_uri" => "https://mine.test/callback"
+            })
+        )
+
+      [csp] = get_resp_header(conn, "content-security-policy")
+      assert csp =~ "form-action 'self' https://mine.test"
+      refute csp =~ "someone-else.test"
+      refute csp =~ "https://app.test"
+    end
+
+    # Found by driving Chrome, not by an HTTP assertion: a loopback client
+    # registered against :5199 and legally asked for :5200 got a header naming
+    # :5199, so Chrome blocked a redirect the server had approved. The header
+    # follows the request, not the registration.
+    test "the form-action CSP follows a loopback request to another port", %{conn: conn} do
+      client = insert_oauth_client(redirect_uris: ["http://localhost:5199/callback"])
+      owner = Accounts.get_user!(client.user_id)
+      {_v, c} = pkce()
+
+      conn =
+        conn
+        |> login_user(owner)
+        |> get(
+          "/oauth/authorize?" <>
+            authorize_qs(c, %{
+              "client_id" => client.client_id,
+              "redirect_uri" => "http://localhost:5200/callback"
+            })
+        )
+
+      assert html_response(conn, 200) =~ "In development"
+      [csp] = get_resp_header(conn, "content-security-policy")
+      assert csp =~ "form-action 'self' http://localhost:5200"
+      refute csp =~ "5199"
+    end
+
+    # A rejected request never reaches a redirect, so the header must stay at
+    # the base policy rather than naming an origin nobody validated.
+    test "an invalid request widens nothing", %{conn: conn} do
+      user = insert_verified_user()
+      {_v, c} = pkce()
+
+      conn =
+        conn
+        |> login_user(user)
+        |> get(
+          "/oauth/authorize?" <>
+            authorize_qs(c, %{"client_id" => "nope", "redirect_uri" => "https://evil.test/cb"})
+        )
+
+      assert html_response(conn, 400)
+      [csp] = get_resp_header(conn, "content-security-policy")
+      refute csp =~ "evil.test"
+    end
+
     test "an unregistered client or redirect renders, never redirects", %{conn: conn} do
       user = insert_verified_user()
       {_v, c} = pkce()
@@ -85,6 +156,122 @@ defmodule FountainWeb.OAuthControllerTest do
         |> html_response(400)
 
       assert html =~ "redirect_uri"
+    end
+  end
+
+  # #1125: a client an account registered for itself is in development mode,
+  # which is the boundary that lets its owner name any redirect URI at all.
+  describe "GET /oauth/authorize — a tenant-registered client" do
+    test "the owner sees a consent page badged as in development", %{conn: conn} do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/callback"])
+      owner = Accounts.get_user!(client.user_id)
+      {_v, c} = pkce()
+
+      html =
+        conn
+        |> login_user(owner)
+        |> get(
+          "/oauth/authorize?" <>
+            authorize_qs(c, %{
+              "client_id" => client.client_id,
+              "redirect_uri" => "https://mine.test/callback"
+            })
+        )
+        |> html_response(200)
+
+      assert html =~ "In development"
+      assert html =~ ~s(name="decision" value="allow")
+    end
+
+    test "anybody else is rendered an error, never redirected", %{conn: conn} do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/callback"])
+      stranger = insert_verified_user()
+      {_v, c} = pkce()
+
+      conn =
+        conn
+        |> login_user(stranger)
+        |> get(
+          "/oauth/authorize?" <>
+            authorize_qs(c, %{
+              "client_id" => client.client_id,
+              "redirect_uri" => "https://mine.test/callback"
+            })
+        )
+
+      assert html_response(conn, 400) =~ "in development"
+      assert get_resp_header(conn, "location") == []
+    end
+
+    test "a loopback client may be asked for on another port", %{conn: conn} do
+      client = insert_oauth_client(redirect_uris: ["http://localhost:5199/callback"])
+      owner = Accounts.get_user!(client.user_id)
+      {_v, c} = pkce()
+
+      html =
+        conn
+        |> login_user(owner)
+        |> get(
+          "/oauth/authorize?" <>
+            authorize_qs(c, %{
+              "client_id" => client.client_id,
+              "redirect_uri" => "http://localhost:5200/callback"
+            })
+        )
+        |> html_response(200)
+
+      assert html =~ "In development"
+    end
+
+    test "allow issues a code and lands on the owner's own redirect", %{conn: conn} do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/callback"])
+      owner = Accounts.get_user!(client.user_id)
+      {verifier, c} = pkce()
+
+      conn =
+        conn
+        |> login_user(owner)
+        |> post("/oauth/authorize", %{
+          "decision" => "allow",
+          "client_id" => client.client_id,
+          "redirect_uri" => "https://mine.test/callback",
+          "code_challenge" => c,
+          "code_challenge_method" => "S256",
+          "state" => "xyz"
+        })
+
+      location = redirected_to(conn)
+      assert location =~ "https://mine.test/callback?"
+      code = location |> URI.parse() |> Map.get(:query) |> URI.decode_query() |> Map.get("code")
+
+      assert {:ok, %{access_token: _}} =
+               OAuth.exchange(%{
+                 "code" => code,
+                 "code_verifier" => verifier,
+                 "client_id" => client.client_id,
+                 "redirect_uri" => "https://mine.test/callback"
+               })
+    end
+
+    test "a stranger cannot get a code by POSTing straight to the decision", %{conn: conn} do
+      client = insert_oauth_client(redirect_uris: ["https://mine.test/callback"])
+      stranger = insert_verified_user()
+      {_v, c} = pkce()
+
+      conn =
+        conn
+        |> login_user(stranger)
+        |> post("/oauth/authorize", %{
+          "decision" => "allow",
+          "client_id" => client.client_id,
+          "redirect_uri" => "https://mine.test/callback",
+          "code_challenge" => c,
+          "code_challenge_method" => "S256",
+          "state" => "xyz"
+        })
+
+      assert html_response(conn, 400) =~ "in development"
+      assert get_resp_header(conn, "location") == []
     end
   end
 

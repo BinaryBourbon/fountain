@@ -243,9 +243,10 @@ defmodule Fountain.Conversations.Egress do
   def sandbox_env(session), do: Broker.sandbox_env(session)
 
   @doc """
-  Mint (or re-mint) the conversation's proxy session, publishing the
-  `broker` stage around it. The caller decides whether the conversation is
-  brokered at all (`brokered?/1`) and holds the session that comes back.
+  Mint the conversation's proxy session and start the `broker` stage.
+  The stage completes only after `install_ca/3` establishes trust in the
+  sandbox. The caller decides whether the conversation is brokered at all
+  (`brokered?/1`) and holds the session that comes back.
   """
   @spec prepare(String.t(), map(), Broker.bindings(), keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -256,11 +257,6 @@ defmodule Fountain.Conversations.Egress do
 
     case Broker.prepare(conversation_id, brokered, bindings, opts) do
       {:ok, session} ->
-        publish_stage(conversation_id, "broker", "done", %{
-          vault: session.vault,
-          expires_at: session.expires_at
-        })
-
         {:ok, session}
 
       {:error, reason} ->
@@ -304,7 +300,7 @@ defmodule Fountain.Conversations.Egress do
   hour into the conversation rather than at provisioning.
 
   There is no arm here for a list that carries no CA defaults:
-  `broker_prepare/1` runs before `build_sprite_env/5` on both entry paths
+  `prepare_state/1` runs before `build_sprite_env/5` on both entry paths
   (`ConversationServer` lines 863 and 1114), so a brokered conversation's env
   has always been assembled with them.
   """
@@ -460,12 +456,56 @@ defmodule Fountain.Conversations.Egress do
     end
   end
 
+  @doc "Keep the minted proxy session in server state; unbrokered state is unchanged."
+  def prepare_state(state) do
+    if brokered?(state.user_id) do
+      case prepare(state.conversation_id, state.brokered, state.broker_bindings,
+             network: state.broker_network,
+             user_id: state.user_id
+           ) do
+        {:ok, session} -> {:ok, %{state | broker: session}}
+        {:error, _} = error -> error
+      end
+    else
+      {:ok, state}
+    end
+  end
+
+  @doc "Revoke only the session this preparation returned; a failed mint owns no token."
+  def release_prepared({:ok, %{broker: %{token: token}} = state}),
+    do: Broker.release_session(state.user_id, state.conversation_id, token)
+
+  def release_prepared(_result), do: :ok
+
   @doc "Install the broker's CA into the sandbox; nothing to install without a session."
   @spec install_ca(session(), Managoat.Sandbox.Handle.t(), String.t()) :: :ok | {:error, term()}
   def install_ca(nil, _handle, _conversation_id), do: :ok
 
-  def install_ca(_session, handle, conversation_id),
-    do: Provisioning.install_broker_ca(handle, conversation_id)
+  def install_ca(session, handle, conversation_id) do
+    result = Provisioning.install_broker_ca(handle, conversation_id)
+
+    # Only a conversation's trust setup reaches this path. Broker health
+    # probes and session refreshes do not contribute to the failure ratio.
+    Fountain.Telemetry.event(
+      [:broker, :ca_install],
+      %{provider: handle.provider, outcome: ca_install_outcome(result)},
+      %{count: 1}
+    )
+
+    with :ok <- result do
+      publish_stage(conversation_id, "broker", "done", %{
+        vault: session.vault,
+        expires_at: session.expires_at
+      })
+
+      :ok
+    end
+  end
+
+  defp ca_install_outcome(:ok), do: "ok"
+  defp ca_install_outcome({:error, {:broker, :ca_install_exit, _, _}}), do: "exit"
+  defp ca_install_outcome({:error, {:broker, :ca_install, _}}), do: "unreachable"
+  defp ca_install_outcome({:error, _}), do: "unavailable"
 
   # Every session of the conversation goes when its sandbox does. Still off
   # the caller's path: deleting rows is local and cannot fail the way a call

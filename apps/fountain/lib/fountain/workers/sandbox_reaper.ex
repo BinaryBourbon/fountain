@@ -120,7 +120,10 @@ defmodule Fountain.Workers.SandboxReaper do
     cutoff = DateTime.utc_now() |> DateTime.add(-@stuck_after_minutes * 60, :second)
 
     Sandbox
-    |> where([s], s.status in ^@active_statuses and s.updated_at < ^cutoff)
+    |> where(
+      [s],
+      s.status in ^@active_statuses and is_nil(s.reset_requested_at) and s.updated_at < ^cutoff
+    )
     |> Repo.all()
     |> Repo.preload(:conversations)
     |> Enum.reject(&server_alive?/1)
@@ -220,7 +223,10 @@ defmodule Fountain.Workers.SandboxReaper do
 
       verdicts =
         Sandbox
-        |> where([s], s.status == "ready" and s.updated_at < ^grace_cutoff)
+        |> where(
+          [s],
+          s.status == "ready" and is_nil(s.reset_requested_at) and s.updated_at < ^grace_cutoff
+        )
         |> Repo.all()
         |> Repo.preload(:conversations)
         |> Enum.reject(&server_alive?/1)

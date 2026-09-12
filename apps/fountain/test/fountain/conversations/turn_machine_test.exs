@@ -316,8 +316,8 @@ defmodule Fountain.Conversations.TurnMachineTest do
     # set — `session_plan/2` persisted it before the turn ran — and no rollout
     # under it, so every later prompt resumed a session that was never opened.
     # Nothing was asked of the model, so the turn is restarted rather than
-    # failed: the id is cleared, the dead connection dropped, and the same row
-    # runs again on a fresh session.
+    # failed: the id is cleared and the same peer opens a fresh session before
+    # sending the original input.
     test "a resume against a session that is not there restarts the turn", %{machine: m} do
       error = %{
         "code" => -32_603,
@@ -330,7 +330,6 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert {restarted,
               [
                 {:forget_runtime_session, "session_gone", ^detail},
-                {:drop_connection, "session_gone"},
                 {:restart_session, ^detail}
               ]} = TurnMachine.handle(m, {:failed, {:acp_error, :resume_session, error}})
 
@@ -369,7 +368,6 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert {%{session_retry: "Resource not found"},
               [
                 {:forget_runtime_session, "session_gone", _},
-                {:drop_connection, "session_gone"},
                 {:restart_session, _}
               ]} =
                TurnMachine.handle(
@@ -476,6 +474,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
       row: row
     } do
       attach_telemetry([[:fountain, :turn, :completed]])
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
       marked = TurnMachine.mark_interrupted(m)
       assert marked.row == row
@@ -546,10 +545,11 @@ defmodule Fountain.Conversations.TurnMachineTest do
     end
 
     test "session_plan/2 runs fresh with a persisted placeholder, and continues an existing id",
-         %{conv: conv} do
-      assert {:run, id} = TurnMachine.session_plan(conv, nil)
+         %{conv: conv, row: row} do
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
+      assert {:ok, {:run, id}} = TurnMachine.session_plan(row, nil)
       assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == id
-      assert {:continue, "keep"} = TurnMachine.session_plan(conv, "keep")
+      assert {:ok, {:continue, "keep"}} = TurnMachine.session_plan(row, "keep")
     end
 
     test "command/7 is the ACP adapter with the sandbox's cwd, or the runtime's own argv",

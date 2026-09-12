@@ -29,7 +29,8 @@ defmodule Fountain.Quotas do
   ~nothing (decisions/0017) — which means this set is narrower than the admin
   sandbox view's "anything non-terminal": the admin table will list a suspended
   sandbox that the per-user counter ignores. Waking one re-runs the quota gate
-  (`Conversations.wake_suspended_sandbox/2`).
+  (`Conversations.wake_suspended_sandbox/2`). Unconfirmed resets also count,
+  even on parked machines, and cannot use the replacement exclusion.
   """
 
   import Ecto.Query
@@ -51,14 +52,14 @@ defmodule Fountain.Quotas do
   @spec active_sandbox_count(binary(), keyword()) :: non_neg_integer()
   def active_sandbox_count(user_id, opts \\ []) when is_binary(user_id) do
     query =
-      from s in Sandbox,
-        where: s.user_id == ^user_id and s.status in @active_statuses,
+      from s in active_sandboxes(),
+        where: s.user_id == ^user_id,
         select: count(s.id)
 
     query =
       case Keyword.get(opts, :exclude) do
         nil -> query
-        excluded -> from s in query, where: s.id != ^excluded
+        excluded -> from s in query, where: s.id != ^excluded or not is_nil(s.reset_requested_at)
       end
 
     Repo.one(query) || 0
@@ -73,8 +74,7 @@ defmodule Fountain.Quotas do
   """
   @spec active_sandbox_counts() :: %{optional(binary()) => non_neg_integer()}
   def active_sandbox_counts do
-    from(s in Sandbox,
-      where: s.status in @active_statuses,
+    from(s in active_sandboxes(),
       group_by: s.user_id,
       select: {s.user_id, count(s.id)}
     )
@@ -133,7 +133,16 @@ defmodule Fountain.Quotas do
   @doc "Live sandboxes across every tenant, against the fleet ceiling."
   @spec fleet_count() :: non_neg_integer()
   def fleet_count do
-    Repo.one(from(s in Sandbox, where: s.status in @active_statuses, select: count(s.id))) || 0
+    Repo.one(from(s in active_sandboxes(), select: count(s.id))) || 0
+  end
+
+  # A reset holds its slot until deletion is confirmed, including a reset
+  # requested while parked. Replacement exclusions cannot spend that slot.
+  defp active_sandboxes do
+    from s in Sandbox,
+      where:
+        s.status in @active_statuses or
+          (not is_nil(s.reset_requested_at) and s.status not in ["terminated", "failed"])
   end
 
   @doc "The reserve, floor, ceiling and fleet ceiling in force."
@@ -169,8 +178,8 @@ defmodule Fountain.Quotas do
 
         excluded ->
           Repo.one(
-            from(s in Sandbox,
-              where: s.status in @active_statuses and s.id != ^excluded,
+            from(s in active_sandboxes(),
+              where: s.id != ^excluded or not is_nil(s.reset_requested_at),
               select: count(s.id)
             )
           ) || 0

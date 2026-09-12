@@ -28,7 +28,11 @@ defmodule Fountain.Principals do
 
     * `max_live_sandboxes` is written to `users.sandbox_limit_override`, so
       `Fountain.Quotas` needs no knowledge of principals: the override branch
-      answers before the balance rule is ever consulted.
+      answers before the balance rule is ever consulted. Because it answers
+      first, it is clamped at creation to the application's own effective cap
+      under the deployment ceiling, so a principal can never out-provision the
+      account funding it — and never below one, because a zero written there is
+      a gate that funding cannot reopen (#1687).
     * `max_cost_usd` is a credit grant moved from the application's balance
       into the principal's, so budget exhaustion is `Billing.check_spend/1`
       refusing at every door that spends (ADR 0031). With credits off nothing
@@ -191,13 +195,19 @@ defmodule Fountain.Principals do
           {:ok, %{claimable: ClaimableUser.t(), api_key: String.t(), claim_token: String.t()}}
           | {:error, term()}
   def create_claimable(%User{} = application, params, opts \\ []) do
-    with {:ok, attrs} <- cast_create(params),
+    with {:ok, attrs} <- cast_create(application, params),
          {:ok, claimable} <- upsert_claimable(application, attrs, opts) do
       issue_credentials(claimable, opts)
     end
   end
 
-  defp cast_create(params) do
+  # A third ceiling in the spirit of the two in `check_application_allowed/2`,
+  # bounding a leaked application key: `max_live_sandboxes` lands on
+  # `users.sandbox_limit_override`, which `Quotas.resolve_limit/3` answers with
+  # *before* the balance rule and the cap ceiling are ever consulted. Unclamped,
+  # a full-scope key could mint principals on a cent each that out-provision the
+  # account funding them, up to `SANDBOX_FLEET_CEILING` (#1687).
+  defp cast_create(%User{} = application, params) do
     %{max_ttl_seconds: max_ttl, default_ttl_seconds: default_ttl, max_grant_cents: max_grant} =
       settings()
 
@@ -227,10 +237,44 @@ defmodule Fountain.Principals do
            expires_at: DateTime.utc_now() |> DateTime.add(ttl, :second) |> truncate(),
            grant_cents:
              limits |> Map.get("max_cost_usd") |> usd_to_cents() |> clamp(0, max_grant),
-           max_live_sandboxes: limits |> Map.get("max_live_sandboxes") |> as_integer(1) |> max(0),
+           max_live_sandboxes:
+             limits
+             |> Map.get("max_live_sandboxes")
+             |> as_integer(1)
+             |> clamp(0, application_cap(application)),
            metadata: Map.get(params, "metadata", %{})
          }}
     end
+  end
+
+  # What the application may hand a principal: its own effective cap, itself
+  # held to the deployment ceiling, and never below one.
+  #
+  # Read by **id**, for the reason `check_application_allowed/2` gives about
+  # the balance: the `%User{}` the caller loaded carries a cached cap input
+  # that may predate its own opening credit.
+  #
+  # `min(cap_ceiling)` because `resolve_limit/3` returns an application's *own*
+  # `sandbox_limit_override` unclamped — an admin lever of 50 under a ceiling
+  # of 20 would otherwise be inherited by every principal it opens.
+  #
+  # `max(1)` because an application with an empty balance has an effective cap
+  # of zero, and a zero written here is durable: `resolve_limit/3` answers with
+  # the override before the balance rule, no claim clears it, and only an
+  # operator can undo it. That is the 0/0 quota `Fountain.Quotas` says never to
+  # show, on a principal that funding cannot reopen. The gate is the balance
+  # (ADR 0031) — `check_spend/1` refuses a principal with no credit at every
+  # door that spends, and stops refusing the moment it has some — so a cap of
+  # one on a broke application's principal costs nothing and heals itself. An
+  # *explicit* zero is still honoured: that is an application asking for a
+  # principal that runs nothing, which the schema has always allowed.
+  defp application_cap(%User{} = application) do
+    %{cap_ceiling: ceiling} = Fountain.Quotas.settings()
+
+    application.id
+    |> Fountain.Quotas.sandbox_limit()
+    |> min(ceiling)
+    |> max(1)
   end
 
   # The application funds its principals out of its own balance, so it must
@@ -410,14 +454,40 @@ defmodule Fountain.Principals do
   # the claim token's hash is rewritten, so a replayed create hands back a
   # usable pair rather than two values the caller can do nothing with.
   defp issue_credentials(%ClaimableUser{} = claimable, opts) do
-    token = new_token()
+    # Claim and expiry revoke keys under this same lock. The earlier replay
+    # lookup is only a snapshot: recheck after the lock, and hold it through
+    # both credential writes so a claim cannot miss a newly minted key.
+    result =
+      Repo.transaction(fn ->
+        token = new_token()
 
-    with {:ok, {_key, raw}} <- mint_principal_key(claimable, opts),
-         {:ok, claimable} <-
-           claimable
-           |> Ecto.Changeset.change(claim_token_hash: hash_token(token))
-           |> Repo.update() do
-      {:ok, %{claimable: claimable, api_key: raw, claim_token: token}}
+        with %ClaimableUser{} = current <- lock_claimable(claimable.id),
+             {:ok, current} <- still_open(current),
+             {changeset, raw} =
+               Accounts.build_api_key(
+                 current.user_id,
+                 key_name(current),
+                 principal_key_opts(current, opts)
+               ),
+             {:ok, key} <- Repo.insert(changeset),
+             {:ok, current} <-
+               current
+               |> Ecto.Changeset.change(claim_token_hash: hash_token(token))
+               |> Repo.update() do
+          {%{claimable: current, api_key: raw, claim_token: token}, key}
+        else
+          nil -> Repo.rollback(:not_found)
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+    case result do
+      {:ok, {credentials, key}} ->
+        Accounts.record_api_key_created(key, principal_key_opts(claimable, opts))
+        {:ok, credentials}
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -427,14 +497,20 @@ defmodule Fountain.Principals do
   # ordinary tenant of the account that owns it — and a key that expired at it
   # would take a live machine away from its new owner, usually within hours.
   defp mint_principal_key(%ClaimableUser{} = claimable, opts) do
-    expires_at = if claimable.status == "claimed", do: nil, else: claimable.expires_at
+    Accounts.create_api_key(
+      claimable.user_id,
+      key_name(claimable),
+      principal_key_opts(claimable, opts)
+    )
+  end
 
-    Accounts.create_api_key(claimable.user_id, key_name(claimable),
+  defp principal_key_opts(claimable, opts) do
+    [
       scopes: ["principal"],
-      expires_at: expires_at,
+      expires_at: if(claimable.status == "claimed", do: nil, else: claimable.expires_at),
       actor: Keyword.get(opts, :actor, "api"),
       request_ip: Keyword.get(opts, :request_ip)
-    )
+    ]
   end
 
   defp key_name(%ClaimableUser{status: "claimed", application_id: app}), do: "principal:#{app}"

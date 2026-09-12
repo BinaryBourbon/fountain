@@ -269,6 +269,20 @@ broker_tenants =
       ids
   end
 
+# The same guard in the dangerous direction, and this one fails open rather
+# than loudly. `Fountain.Broker.enabled_for?/1` is `configured?() and ...`, so
+# naming tenants with no listener does not half-broker them: brokerage turns
+# itself off for everyone, and each sandbox gets plaintext GitHub, inference
+# and connection credentials instead, while the console and the connections
+# keep working. That is the `envFrom` drift of #1495 in reverse, and nothing
+# downstream can tell it from a deployment that meant to broker nobody, so
+# boot refuses it here (#1686).
+if broker_tenants != [] and is_nil(broker_listen_port) do
+  raise "BROKER_TENANTS names tenants to broker, so BROKER_LISTEN_PORT must be set too. " <>
+          "With no listener, brokerage is off for every tenant and their sandboxes hold " <>
+          "plaintext credentials; see docs/configuration.md."
+end
+
 broker_session_ttl =
   case System.get_env("BROKER_SESSION_TTL_SECONDS") do
     blank when blank in [nil, ""] ->
@@ -993,6 +1007,28 @@ execution_limit_ceiling =
   end
 
 config :fountain, :execution_limit_ceiling, execution_limit_ceiling
+
+# The deadline coordinator polls `turn_executions` on every node, so it starts
+# only where there is something for it to expire: a configured host ceiling.
+# An operator who sets a per-account ceiling without the host one sets this
+# explicitly, which is the case the docs row names. `false` turns it off
+# anywhere, without a rebuild, which is what an incident needs.
+execution_deadline_worker =
+  case System.get_env("FOUNTAIN_EXECUTION_DEADLINE_WORKER") do
+    nil -> map_size(execution_limit_ceiling) > 0
+    value when value in ~w(1 true TRUE yes) -> true
+    value when value in ~w(0 false FALSE no) -> false
+    value -> raise "FOUNTAIN_EXECUTION_DEADLINE_WORKER must be true or false, got: #{value}"
+  end
+
+config :fountain, :execution_deadline_worker_enabled, execution_deadline_worker
+
+# How often it looks. Deadlines are absolute and durable, so lateness costs
+# accuracy rather than correctness, and a second of it is not worth a poll per
+# second per replica on a hot table.
+config :fountain,
+       :execution_deadline_interval_ms,
+       String.to_integer(System.get_env("FOUNTAIN_EXECUTION_DEADLINE_INTERVAL_MS") || "5000")
 
 # Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
 # the per-account floor and ceiling the balance rule is clamped to, and the

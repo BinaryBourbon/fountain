@@ -197,6 +197,67 @@ defmodule FountainWeb.ConversationControllerTest do
       end
     end
 
+    # #1635. The conversation is idle while such a request waits, so a client
+    # that reloads has nowhere else to learn that the card is still up.
+    test "lists the permission requests that outlived a turn", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+
+      turn =
+        insert_turn(conv, %{
+          status: "completed",
+          waiting: true,
+          pending_permission: %{
+            "request_id" => "7.abc",
+            "tool" => "Bash",
+            "options" => [%{"optionId" => "yes", "kind" => "allow_once"}],
+            "asked_at" => "2026-09-07T09:00:00Z"
+          },
+          permission_deadline: ~U[2026-09-09 09:00:00Z]
+        })
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}")
+        |> json_response(200)
+
+      assert [request] = body["data"]["pending_requests"]
+      assert request["request_id"] == "7.abc"
+      assert request["tool"] == "Bash"
+      assert request["options"] == [%{"optionId" => "yes", "kind" => "allow_once"}]
+      assert request["turn_id"] == turn.id
+      assert request["deadline"] == "2026-09-09T09:00:00Z"
+
+      turns =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/turns")
+        |> json_response(200)
+
+      assert [%{"waiting" => true}] = turns["data"]
+    end
+
+    test "serves an empty list when nothing is waiting", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      _turn = insert_turn(conv, %{status: "completed"})
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}")
+        |> json_response(200)
+
+      assert body["data"]["pending_requests"] == []
+    end
+
     test "returns 404 when the conversation belongs to a different user", %{
       conn: conn,
       raw_key: raw_key
@@ -474,6 +535,201 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "queue: true at a capacity ceiling (#1033)" do
+    defp fill_cap(user) do
+      limit = Fountain.Quotas.sandbox_limit(user.id)
+      for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
+      limit
+    end
+
+    test "202 with the request and its position instead of 429", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "prompt" => "later is fine",
+          "queue" => true
+        })
+
+      body = json_response(conn, 202)["data"]
+      assert body["status"] == "queued"
+      assert body["kind"] == "start"
+      assert body["agent_id"] == agent.id
+      assert body["position"] == 1
+      assert body["conversation_id"] == nil
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.id == body["id"]
+      assert request.attrs["prompt"] == "later is fine"
+    end
+
+    test "the queued attrs carry only launch keys, never whatever else was sent", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/conversations", %{
+        "agent_id" => agent.id,
+        "prompt" => "hi",
+        "title" => "nightly",
+        "labels" => %{"team" => "ops"},
+        "queue" => true,
+        "junk" => String.duplicate("x", 64)
+      })
+      |> json_response(202)
+
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.attrs["title"] == "nightly"
+      assert request.attrs["labels"] == %{"team" => "ops"}
+      # `ConversationCreateRequest` allows unknown properties, so an allow
+      # list is the only thing standing between the table and arbitrary JSON.
+      refute Map.has_key?(request.attrs, "junk")
+      refute Map.has_key?(request.attrs, "queue")
+      refute Map.has_key?(request.attrs, "user_id")
+    end
+
+    test "a caller that did not ask still gets 429", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 429)["error"] == "sandbox_quota_exceeded"
+      assert Fountain.SandboxQueue.list_queued(user.id) == []
+    end
+
+    test "a start carrying images is never queued", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "queue" => true,
+          # Images need opening text of their own (#1840); without it the launch
+          # is refused 422 before it ever reaches the capacity decision this
+          # test is about.
+          "prompt" => "look at this",
+          "images" => [
+            %{"media_type" => "image/png", "data" => Base.encode64("fake-image-bytes")}
+          ]
+        })
+
+      # The server does not hold image bytes for an hour, so this keeps the
+      # immediate refusal rather than accepting work it cannot replay.
+      assert json_response(conn, 429)["error"] == "sandbox_quota_exceeded"
+      assert Fountain.SandboxQueue.list_queued(user.id) == []
+    end
+
+    test "a full queue keeps the immediate refusal", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      for _ <- 1..10 do
+        {:ok, _} =
+          Fountain.SandboxQueue.enqueue(%{
+            user_id: user.id,
+            agent_id: agent.id,
+            kind: "start",
+            attrs: %{}
+          })
+      end
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+
+      assert json_response(conn, 429)["error"] == "sandbox_quota_exceeded"
+      assert length(Fountain.SandboxQueue.list_queued(user.id)) == 10
+    end
+
+    test "a sprite token's queued start carries its ADR 0045 restriction", %{
+      conn: conn,
+      user: user
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+      {key, raw_sprite_key} = insert_sprite_api_key(user)
+
+      conn
+      |> authed_with_key(raw_sprite_key)
+      |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+      |> json_response(202)
+
+      # Stored, not consulted here: the drainer is what has to be held to it an
+      # hour later, and a replay that dropped it could merge this request's
+      # labels into a conversation the token does not own.
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.sandbox_key_id == key.id
+    end
+
+    test "an owner's own key queues with no restriction attached", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      fill_cap(user)
+
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+      |> json_response(202)
+
+      # `nil` is what every rule reads as "no sandbox restriction applies", so
+      # a full-scope caller must not pick one up by accident.
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert is_nil(request.sandbox_key_id)
+    end
+
+    test "a start that succeeds is unaffected by the flag", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id, "queue" => true})
+
+      assert json_response(conn, 201)
+      assert Fountain.SandboxQueue.list_queued(user.id) == []
+    end
+  end
+
   describe "DELETE /api/conversations/:id" do
     test "deletes the conversation and returns 204", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
@@ -714,6 +970,142 @@ defmodule FountainWeb.ConversationControllerTest do
         |> post_json("/api/conversations/#{other_conv.id}/prompts", %{"prompt" => "hello"})
 
       assert json_response(conn, 404)
+    end
+  end
+
+  describe "POST /api/conversations/:conversation_id/requests/:request_id" do
+    defp waiting_conv(user) do
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite", status: "suspended")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+
+      insert_turn(conv, %{
+        status: "completed",
+        waiting: true,
+        pending_permission: %{
+          "request_id" => "7.abc",
+          "tool" => "Bash",
+          "options" => [
+            %{"optionId" => "yes", "kind" => "allow_once"},
+            %{"optionId" => "no", "kind" => "reject_once"}
+          ]
+        },
+        permission_deadline: DateTime.add(DateTime.utc_now(), 3600) |> DateTime.truncate(:second)
+      })
+
+      conv
+    end
+
+    test "answers a request that outlived its turn", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = waiting_conv(user)
+
+      # The wake is what carries the answer to the agent; only that it was
+      # asked for matters here.
+      stub(Fountain.Conversations, :wake_conversation, fn id, prompt ->
+        send(self(), {:woken, id, prompt})
+        {:ok, %{}}
+      end)
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/7.abc", %{"option_id" => "yes"})
+        |> json_response(200)
+
+      assert body == %{"ok" => true}
+      assert_received {:woken, _id, prompt}
+      assert %{"fountain/permission_answer" => %{"option_id" => "yes"}} = Jason.decode!(prompt)
+    end
+
+    test "refuses an option the agent never offered", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = waiting_conv(user)
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/7.abc", %{"option_id" => "made-up"})
+        |> json_response(422)
+
+      assert body["error"] == "unknown_option"
+    end
+
+    test "refuses the sandbox's own token", %{conn: conn, user: user} do
+      # The sprite holds a FOUNTAIN_TOKEN and could otherwise approve the tool
+      # it just asked about, detached or not.
+      conv = waiting_conv(user)
+      {_record, sprite_key} = insert_sprite_api_key(user)
+
+      body =
+        conn
+        |> authed_with_key(sprite_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/7.abc", %{"option_id" => "yes"})
+        |> json_response(403)
+
+      assert body["error"] == "sprite_may_not_answer"
+    end
+
+    test "a running turn is a 400, and the request is still there", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = waiting_conv(user)
+      {:ok, _} = Fountain.Conversations.update_conversation(conv, %{status: "running"})
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/7.abc", %{"option_id" => "yes"})
+        |> json_response(400)
+
+      assert body["error"] == "conversation_busy"
+
+      assert [%{request_id: "7.abc"}] =
+               Fountain.Conversations._unsafe_list_pending_requests(conv.id)
+    end
+
+    test "a resolved-but-undelivered answer says so in its own words", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      # Distinct from the 409 below, which tells a client somebody else
+      # answered. Here the answer landed and the agent has not heard it.
+      conv = waiting_conv(user)
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+        {:error, :busy}
+      end)
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/7.abc", %{"option_id" => "yes"})
+        |> json_response(409)
+
+      assert body["error"] == "permission_answer_not_delivered"
+      assert body["message"] =~ "Send a prompt"
+    end
+
+    test "a request nobody is waiting on is a 409", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = waiting_conv(user)
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations/#{conv.id}/requests/nope", %{"option_id" => "yes"})
+        |> json_response(409)
+
+      assert body["error"] == "permission_request_resolved"
     end
   end
 
@@ -1427,12 +1819,12 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "POST /api/conversations with images" do
-    test "returns 201 with conversation when images array is provided (decode_images non-empty branch)",
+    test "delivers opening text and image bytes when returning 201",
          %{conn: conn, user: user, raw_key: raw_key} do
       agent = insert_agent(user_id: user.id)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
-        {:ok, spawn(fn -> :ok end)}
+        {:ok, self()}
       end)
 
       image_data = Base.encode64("fake-image-bytes")
@@ -1442,10 +1834,34 @@ defmodule FountainWeb.ConversationControllerTest do
         |> authed_with_key(raw_key)
         |> post_json("/api/conversations", %{
           "agent_id" => agent.id,
+          "prompt" => "Review",
           "images" => [%{"media_type" => "image/png", "data" => image_data}]
         })
 
       assert json_response(conn, 201)
+      assert_received {:"$gen_cast", {:initial_prompt, "Review", [image]}}
+      assert image == %{media_type: "image/png", data: "fake-image-bytes"}
+    end
+
+    test "images without opening text are refused before reserving a sandbox", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      reject(Horde.DynamicSupervisor, :start_child, 2)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "images" => [%{"media_type" => "image/png", "data" => Base.encode64("bytes")}]
+        })
+
+      assert json_response(conn, 422)["error"] == "invalid_prompt"
+      assert Fountain.Repo.aggregate(Fountain.Conversations.Conversation, :count) == 0
+      assert Fountain.Repo.aggregate(Fountain.Conversations.Sandbox, :count) == 0
     end
 
     test "returns 201 with conversation when no images provided (decode_images [] branch)", %{

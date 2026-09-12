@@ -84,11 +84,19 @@ export class FakeFountain {
   providers: Record<string, unknown>[] = [];
   /** Sandboxes (ADR 0023), as `GET /api/sandboxes` lists them. */
   sandboxes: Record<string, unknown>[] = [];
-  /** What the disk reads answer (ADR 0039), keyed by `files` / `file` / `diff`. */
+  /** What the disk reads answer (ADR 0039), keyed by `files` / `file` / `git-status` / `diff`. */
   readonly disk: Record<string, Record<string, unknown>> = {
     files: { path: "/home/sprite", entries: [], truncated: false },
     file: { path: "/home/sprite/x", size: 0, truncated: false, encoding: "utf-8", content: "" },
     diff: { path: "/home/sprite", repo_root: "/home/sprite", staged: false, ref: null, diff: "", truncated: false },
+    "git-status": {
+      path: "/home/sprite",
+      repo_root: "/home/sprite",
+      branch: "main",
+      untracked: "normal",
+      entries: [],
+      truncated: false,
+    },
   };
   /** Secrets by `${collection}:${parentId}` → key → value. Never read back out. */
   readonly secrets = new Map<string, Map<string, string>>();
@@ -117,6 +125,8 @@ export class FakeFountain {
   readonly busyTeammates = new Set<string>();
   /** Every permission answer that arrived, in order. */
   readonly answers: { conversationId: string; requestId: string; optionId: string }[] = [];
+  /** Every reapply body the server was sent, in order. */
+  readonly reapplies: { conversationId: string; body: Record<string, unknown> }[] = [];
   /** Called when one lands — script the rest of the held turn from here. */
   onAnswer: ((conversationId: string, requestId: string, optionId: string) => void) | null = null;
 
@@ -274,7 +284,7 @@ export class FakeFountain {
     // Sandboxes and their disks (ADR 0039). A read of an unknown sandbox
     // is 404 like the real one; the disk answers are whatever the test set.
     if (path === "/api/sandboxes") return json(res, 200, { data: this.sandboxes });
-    const sandbox = /^\/api\/sandboxes\/([^/]+)(?:\/(files|file|diff))?$/.exec(path);
+    const sandbox = /^\/api\/sandboxes\/([^/]+)(?:\/(files|file|git-status|diff))?$/.exec(path);
     if (sandbox) {
       const found = this.sandboxes.find((s) => s.id === sandbox[1]);
       if (!found) return json(res, 404, { error: "not_found" });
@@ -352,6 +362,11 @@ export class FakeFountain {
 
       if (rest === "/interrupt" || rest === "/terminate") return json(res, 200, { status: "ok" });
       if (rest === "/read" && req.method === "POST") return json(res, 204, null);
+      if (rest === "/reapply" && req.method === "POST") {
+        const selection = (body ?? {}) as Record<string, unknown>;
+        this.reapplies.push({ conversationId: conversation.id, body: selection });
+        return json(res, 200, { data: { ...summary(conversation), ...selection } });
+      }
       if (rest === "/tree") return json(res, 200, { data: { id: conversation.id, children: [] } });
       if (rest === "/events") return this.eventPage(res, conversation, url);
       if (rest === "/stream") return this.stream(req, res, conversation, url);

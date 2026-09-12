@@ -62,6 +62,11 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     # as, and how a file's bytes travel.
     {FountainWeb.Schemas.SandboxEntry, "type"} => {Fountain.SandboxFiles, :entry_types},
     {FountainWeb.Schemas.SandboxFile, "encoding"} => {Fountain.SandboxFiles, :encodings},
+    # `git status`: the porcelain letters in words, and what a caller may ask
+    # about untracked paths.
+    {FountainWeb.Schemas.SandboxChange, "index"} => {Fountain.SandboxFiles, :change_states},
+    {FountainWeb.Schemas.SandboxChange, "worktree"} => {Fountain.SandboxFiles, :change_states},
+    {FountainWeb.Schemas.SandboxStatus, "untracked"} => {Fountain.SandboxFiles, :untracked_modes},
     # Connection providers (#1186): the kinds, the client-auth methods and
     # where a client came from are the provider schema's own lists.
     {FountainWeb.Schemas.ConnectionProvider, "kind"} => {Fountain.Connections.Provider, :kinds},
@@ -122,6 +127,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.LogEvent, "state"} => {LogEvent, :states},
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
     {FountainWeb.Schemas.Sandbox, "status"} => {Sandbox, :statuses},
+    {FountainWeb.Schemas.SandboxRequest, "kind"} => {Fountain.SandboxQueue.Request, :kinds},
+    {FountainWeb.Schemas.SandboxRequest, "status"} => {Fountain.SandboxQueue.Request, :statuses},
     # The sandbox mode (ADR 0023 gate 6): on the agent as a default, on a
     # launch as the choice, on the sandbox row as what it is.
     {FountainWeb.Schemas.Sandbox, "mode"} => {Sandbox, :modes},

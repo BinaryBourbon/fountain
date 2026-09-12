@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
   # The merge queue. Every required check must name this event or the queue
   # waits for a check that never arrives, times out and ejects the PR.
   merge_group:
@@ -67,7 +68,7 @@ jobs:
         run: bash scripts/ci/already-tested.sh
 
   changes:
-    name: Decide whether this is a docs-only change
+    name: Classify documentation and SDK changes
     # Never on push, and deliberately so. There, `already-tested` above
     # already collapses a rebased squash-merge to a few seconds, and a main
     # push that is NOT already-tested is precisely the case that must run
@@ -78,7 +79,8 @@ jobs:
     # The queue classifies its group for the same reason a PR does: without
     # this, every docs-only merge would run the full Elixir suite on the way
     # in, which is 11% of what lands here.
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group'
+         || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -90,6 +92,10 @@ jobs:
       docs_touched: ${{ steps.filter.outputs.docs_touched }}
       cli_docs: ${{ steps.filter.outputs.cli_docs }}
       tree: ${{ steps.tree.outputs.tree }}
+      sdk_elixir: ${{ steps.sdks.outputs.sdk_elixir }}
+      sdk_python: ${{ steps.sdks.outputs.sdk_python }}
+      sdk_typescript: ${{ steps.sdks.outputs.sdk_typescript }}
+      sdk_swift: ${{ steps.sdks.outputs.sdk_swift }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
@@ -120,14 +126,22 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -u
+          base=""
           decide() {
             {
+              echo "diff_base=${base:-}"
               echo "docs_only=$1"
               echo "cli_docs=$2"
               echo "docs_touched=$3"
             } >> "$GITHUB_OUTPUT"
             exit 0
           }
+
+          # A manual run requests complete validation, without a diff or
+          # tree-reuse shortcut. An empty base selects every SDK too.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            decide false false true
+          fi
 
           # A merge group already knows the commit it was stacked onto, and
           # there is no base *ref* to fetch: the group branch is transient and
@@ -179,7 +193,7 @@ jobs:
           # without a special case — it used to be mkdocs.yml at the repo root,
           # which needed naming twice (#1008).
           docs_touched=false
-          if printf '%s\n' "${changed}" | grep -qE '^docs/|^apps/[^/]+/docs/|^scripts/(docs-style|destink/|ci/prose-advice\.sh$)|^\.vale|^\.github/workflows/ci\.yml$'; then
+          if printf '%s\n' "${changed}" | grep -qE '^docs/|^apps/[^/]+/docs/|^scripts/(docs-style|destink/|ci/(prose-advice\.sh|check_external_links\.py|test_external_links\.py)$)|^CLAUDE\.md$|^\.vale|^\.github/workflows/ci\.yml$'; then
             docs_touched=true
           fi
 
@@ -192,6 +206,12 @@ jobs:
 
           echo "docs-only — running the docs job instead of the Elixir suite"
           decide true "${cli_docs}" false
+
+      - name: Select SDKs from the same diff
+        id: sdks
+        env:
+          DIFF_BASE: ${{ steps.filter.outputs.diff_base }}
+        run: python3 scripts/ci/sdk_changes.py "$DIFF_BASE" >> "$GITHUB_OUTPUT"
 
   test:
     name: Build and Test (partition ${{ matrix.partition }})
@@ -786,15 +806,17 @@ jobs:
       # which is also what enforces `erasableSyntaxOnly`, the setting that
       # keeps those sources runnable without a build step.
       - name: Set up Node
+        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
 
-      # `--no-audit --no-fund`: see the sdk-clients job, which carries the
+      # `--no-audit --no-fund`: see the typescript-sdk job, which carries the
       # measurement. Here it is only to make `npm run generate` runnable.
       - name: SDK install
+        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         working-directory: sdk/typescript
         run: npm ci --no-audit --no-fund
 
@@ -805,6 +827,7 @@ jobs:
       # API that drift apart. This is the arm that covers the WHOLE document;
       # the manifest checks below cover what each client reaches for by name.
       - name: SDK types match the spec
+        if: ${{ needs.changes.outputs.sdk_typescript != 'false' }}
         working-directory: sdk/typescript
         run: |
           npm run generate
@@ -815,42 +838,45 @@ jobs:
             exit 1
           fi
 
-  sdk-clients:
-    name: SDK clients, CLI and plugins
+  elixir-sdk:
+    name: Elixir SDK (${{ matrix.elixir }} / OTP ${{ matrix.otp }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [already-tested, changes]
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.docs_only != 'true' }}
+         && needs.changes.outputs.sdk_elixir != 'false' }}
 
     permissions:
       contents: read
 
-    # No umbrella deps/_build cache and no Postgres. Everything here either is
-    # a standalone project (sdk/elixir has its own cache below, cli/ and
-    # apps/fountain_buzz/cli are Go modules) or reads the COMMITTED
-    # sdk/contract/contract.json rather than rebuilding it -- which is the
-    # whole reason that projection is committed. The one job that does rebuild
-    # it is `release-and-contract`, and it fails there if it is stale.
+    # Independent from the umbrella, Postgres and the other SDK toolchains.
     env:
       MIX_ENV: test
 
-    steps:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: "1.15.8"
+            otp: "26.2.5.21"
+          - elixir: "1.19.2"
+            otp: "28.3"
 
+    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: SDK conformance scenarios are well formed
+        run: python3 sdk/conformance/lint.py
 
       - name: Set up Elixir
         id: beam
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
-          elixir-version: "1.19.2"
-          otp-version: "28.3"
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
 
       # The Elixir SDK is a standalone Mix project. Keep its dependency graph
-      # and build artifacts separate from this umbrella's -- which also puts
-      # them outside the two caches above, so they need their own entry or
-      # every PR recompiles finch, mint, hpax, ex_doc and makeup from scratch
-      # on the critical path.
+      # and build artifacts separate from the umbrella's cache.
       - name: Restore Elixir SDK cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
@@ -865,7 +891,10 @@ jobs:
         working-directory: sdk/elixir
         run: MIX_ENV=dev mix deps.get
 
+      # Formatter output changes across Elixir versions. The current
+      # toolchain owns style; both pairs check runtime compatibility.
       - name: Elixir SDK formatting
+        if: ${{ matrix.elixir == '1.19.2' }}
         working-directory: sdk/elixir
         run: mix format --check-formatted
 
@@ -885,30 +914,6 @@ jobs:
         working-directory: sdk/elixir
         run: MIX_ENV=dev mix hex.build
 
-      # The behavioural half (#1412). sdk/contract pins the shape of the wire;
-      # these scenarios pin what a client does with it — SSE framing, cursor
-      # resume, error mapping, terminal run states. They are one set of JSON
-      # files run by four adapters.
-      #
-      # The lint is not only a format check: it validates every fixture body
-      # against the schema sdk/contract/contract.json declares for that
-      # operation, which is what stops a scenario going green against a
-      # response the real server would never send.
-      #
-      # It runs FIRST, before any adapter. In the job this was split out of it
-      # sat directly above the three conformance runs, which is the same thing
-      # when the order is Elixir, Python, TypeScript throughout. Here the steps
-      # are grouped by language instead, so a malformed fixture would otherwise
-      # fail two adapters with a confusing message before the step that names
-      # the real problem ever ran.
-      - name: SDK conformance scenarios are well formed
-        run: python3 sdk/conformance/lint.py
-
-      # Four separate contract checks rather than a loop, so a failing log line
-      # names the client a contributor has to go and fix. Each reads the
-      # committed contract and its own manifest; none rebuilds the spec, which
-      # `release-and-contract` does. The Swift equivalent runs inside
-      # `swift test` in the swift-sdk job.
       - name: Elixir SDK contract
         working-directory: sdk/elixir
         run: mix test test/contract_test.exs
@@ -916,6 +921,166 @@ jobs:
       - name: Elixir SDK conformance
         working-directory: sdk/elixir
         run: mix test test/conformance_test.exs
+
+  python-sdk:
+    name: Python SDK (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.sdk_python != 'false' }}
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: SDK conformance scenarios are well formed
+        run: python sdk/conformance/lint.py
+
+      # The SDK has no runtime dependencies. Check source syntax and wire
+      # assumptions, then exercise the built distribution below.
+      - name: Python SDK compiles
+        run: python -m compileall -q sdk/python/src sdk/python/scripts
+
+      - name: Python SDK contract
+        working-directory: sdk/python
+        run: python scripts/verify_contract.py
+
+      - name: Python SDK conformance
+        working-directory: sdk/python
+        run: python -m unittest discover -s tests -p "test_conformance.py" -v
+
+      - name: Python SDK build tool
+        run: python -m pip install --disable-pip-version-check build
+
+      - name: Python SDK package dry run
+        run: python -m build --outdir "$RUNNER_TEMP/python-sdk-dist" sdk/python
+
+      - name: Python SDK installed wheel
+        run: python sdk/python/scripts/verify_wheel.py "$RUNNER_TEMP"/python-sdk-dist/*.whl
+
+  typescript-sdk:
+    name: TypeScript SDK (${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.sdk_typescript != 'false' }}
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20.19.0", "24"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: SDK conformance scenarios are well formed
+        run: python3 sdk/conformance/lint.py
+
+      # Node 24 runs the TypeScript test sources directly. The minimum
+      # runtime runs JavaScript compiled from those same tests. Both legs
+      # typecheck, build and verify the SDK contract and browser bundle.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      # `--no-audit` is the whole reason this step is not the longest in CI.
+      # `npm ci` runs a vulnerability audit by default, which is one POST to
+      # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
+      # stalls from Actions runners rather than failing fast. Measured on this
+      # lockfile: 35 packages, every tarball fetched in 325ms from a warm
+      # cache, and then `reify:audit Completed in 300202ms`. The step was
+      # taking 88s to 302s depending on how far into npm's 5-minute timeout the
+      # request got, on every PR, and it made this job 426s against 171s for
+      # the slowest test partition. With the flag it is under 5s.
+      #
+      # Nothing is lost, because nothing was gated: `npm ci` does not fail on
+      # advisories, so this could only ever print "found 0 vulnerabilities"
+      # into a log. What DOES watch these packages is dependabot, which was
+      # given its two npm ecosystems in the same change that added this flag --
+      # before that the audit line was the only npm advisory signal in the
+      # repository, and it was one nobody could act on. `--no-fund` suppresses
+      # the funding notice for the same reason: it is output, not a check.
+      - name: SDK install
+        working-directory: sdk/typescript
+        run: npm ci --no-audit --no-fund
+
+      - name: SDK typecheck
+        working-directory: sdk/typescript
+        run: npm run typecheck
+
+      - name: SDK tests on the minimum runtime
+        if: ${{ matrix.node == '20.19.0' }}
+        working-directory: sdk/typescript
+        run: node scripts/test-compiled.mjs
+
+      - name: SDK tests
+        if: ${{ matrix.node == '24' }}
+        working-directory: sdk/typescript
+        run: npm test
+
+      - name: SDK build
+        working-directory: sdk/typescript
+        run: npm run build
+
+      # Eleven browser applications are built on this API, so the SDK's default
+      # entry has to bundle for a browser — no Node built-ins reachable from it.
+      - name: SDK bundles for the browser
+        working-directory: sdk/typescript
+        run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
+
+      - name: SDK packed artifact
+        working-directory: sdk/typescript
+        run: node scripts/verify-package.mjs
+
+      - name: TypeScript SDK contract
+        working-directory: sdk/typescript
+        run: npm run verify-contract
+
+      - name: TypeScript SDK conformance on the minimum runtime
+        if: ${{ matrix.node == '20.19.0' }}
+        working-directory: sdk/typescript
+        run: node scripts/test-compiled.mjs --conformance
+
+      - name: TypeScript SDK conformance
+        if: ${{ matrix.node == '24' }}
+        working-directory: sdk/typescript
+        run: npm run conformance
+
+  cli-plugins:
+    name: CLI and plugins
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
+
+    permissions:
+      contents: read
+
+    # Go CLIs and plugins have no dependency on an SDK build.
+    steps:
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -978,82 +1143,13 @@ jobs:
       - name: Hermes plugin tests
         run: python3 -m unittest discover -s integrations/hermes/tests -v
 
-      # The Python SDK is deliberately stdlib-only, so its source tests run
-      # on the same interpreter without an install step.
-      - name: Python SDK tests
-        run: python3 -m unittest discover -s sdk/python/tests -v
-
-      - name: Python SDK compiles
-        run: python3 -m compileall -q sdk/python/src sdk/python/scripts
-
-      - name: Python SDK contract
-        working-directory: sdk/python
-        run: python3 scripts/verify_contract.py
-
-      - name: Python SDK conformance
-        working-directory: sdk/python
-        run: python3 -m unittest discover -s tests -p "test_conformance.py" -v
-
-      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
-      # directly, so `npm test` needs nothing but the dev dependency on tsc —
-      # which is also what enforces `erasableSyntaxOnly`, the setting that
-      # keeps those sources runnable without a build step.
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: sdk/typescript/package-lock.json
 
       - name: Deployed-instance runner tests
         run: node --test deployed/test/*.test.mjs
-
-      # `--no-audit` is the whole reason this step is not the longest in CI.
-      # `npm ci` runs a vulnerability audit by default, which is one POST to
-      # registry.npmjs.org/-/npm/v1/security/advisories/bulk — and that request
-      # stalls from Actions runners rather than failing fast. Measured on this
-      # lockfile: 35 packages, every tarball fetched in 325ms from a warm
-      # cache, and then `reify:audit Completed in 300202ms`. The step was
-      # taking 88s to 302s depending on how far into npm's 5-minute timeout the
-      # request got, on every PR, and it made this job 426s against 171s for
-      # the slowest test partition. With the flag it is under 5s.
-      #
-      # Nothing is lost, because nothing was gated: `npm ci` does not fail on
-      # advisories, so this could only ever print "found 0 vulnerabilities"
-      # into a log. What DOES watch these packages is dependabot, which was
-      # given its two npm ecosystems in the same change that added this flag --
-      # before that the audit line was the only npm advisory signal in the
-      # repository, and it was one nobody could act on. `--no-fund` suppresses
-      # the funding notice for the same reason: it is output, not a check.
-      - name: SDK install
-        working-directory: sdk/typescript
-        run: npm ci --no-audit --no-fund
-
-      - name: SDK typecheck
-        working-directory: sdk/typescript
-        run: npm run typecheck
-
-      - name: SDK tests
-        working-directory: sdk/typescript
-        run: npm test
-
-      - name: SDK build
-        working-directory: sdk/typescript
-        run: npm run build
-
-      # Eleven browser applications are built on this API, so the SDK's default
-      # entry has to bundle for a browser — no Node built-ins reachable from it.
-      - name: SDK bundles for the browser
-        working-directory: sdk/typescript
-        run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
-
-      - name: TypeScript SDK contract
-        working-directory: sdk/typescript
-        run: npm run verify-contract
-
-      - name: TypeScript SDK conformance
-        working-directory: sdk/typescript
-        run: npm run conformance
 
   docs-prose:
     name: Docs prose gates
@@ -1092,6 +1188,9 @@ jobs:
       # docs_test.exs and runs in the Elixir suite, so it needs nothing here.
       # That is what `mkdocs build --strict` used to carry, and the test is the
       # stronger of the two: MkDocs never checked anchors (#1008).
+      - name: Check public GitHub documentation links
+        run: python3 scripts/ci/check_external_links.py
+
       - name: Docs style
         run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
 
@@ -1143,7 +1242,7 @@ jobs:
           cache: npm
           cache-dependency-path: scripts/destink/package-lock.json
 
-      # `--no-audit --no-fund`: see the sdk-clients job. The audit request
+      # `--no-audit --no-fund`: see the typescript-sdk job. The audit request
       # stalls for minutes from a runner and can only ever print.
       - name: Install the prose checker
         run: npm ci --prefix scripts/destink --no-audit --no-fund
@@ -1165,7 +1264,7 @@ jobs:
     timeout-minutes: 10
     needs: [already-tested, changes]
     if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
-         && needs.changes.outputs.docs_only != 'true' }}
+         && needs.changes.outputs.sdk_swift != 'false' }}
 
     permissions:
       contents: read
@@ -1698,6 +1797,9 @@ jobs:
       # The style sheet in standards/voice-and-style.md, as wording advice. It
       # skips the backlog in scripts/docs-style-allow.txt, so a file NOT on
       # that list is checked and every new page is covered by default.
+      - name: Check public GitHub documentation links
+        run: python3 scripts/ci/check_external_links.py
+
       - name: Docs style
         run: bash scripts/ci/prose-advice.sh style python3 scripts/docs-style.py
 
@@ -1779,15 +1881,44 @@ jobs:
         run: go test -count=1 ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented|TestGeneratedCLIReferenceIsCurrent'
 
   workflow-checks:
-    name: CI policy tests
+    name: CI policy and alert tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
           persist-credentials: false
+      - name: Reject conflict markers
+        run: python3 scripts/conflict-markers.py
       - name: Test CI decisions
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+      # This job is required even for docs-only changes and reused trees.
+      # The path-filtered Alert rules workflow alone cannot gate a merge.
+      - name: Install the alert rule evaluator
+        run: sudo apt-get update && sudo apt-get install -y prometheus python3-yaml
+      - name: Evaluate shipped alert fixtures
+        run: /usr/bin/python3 scripts/test-alerts.py
+
+  sdk-checks:
+    name: SDK checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: ${{ always() }}
+    needs:
+      - already-tested
+      - changes
+      - elixir-sdk
+      - python-sdk
+      - typescript-sdk
+      - swift-sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          persist-credentials: false
+      - name: Every selected SDK check passed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/gate.py --sdk
 
   gate:
     name: CI required
@@ -1798,11 +1929,15 @@ jobs:
       - already-tested
       - changes
       - workflow-checks
+      - sdk-checks
       - test
       - coverage
       - elixir-static
       - release-and-contract
-      - sdk-clients
+      - cli-plugins
+      - typescript-sdk
+      - elixir-sdk
+      - python-sdk
       - swift-sdk
       - core-distribution
       - compose-fresh-clone
