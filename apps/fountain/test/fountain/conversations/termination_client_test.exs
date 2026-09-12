@@ -125,8 +125,27 @@ defmodule Fountain.Conversations.TerminationClientTest do
 
   defp probe(conv_id, reply) do
     pid = start_supervised!({Probe, {self(), reply, conv_id}})
-    assert ConversationServer.whereis(conv_id) == pid
+    await_registered(conv_id, pid)
     pid
+  end
+
+  # `Probe.init/1` registers in the cluster-wide Horde registry, and a CRDT
+  # registry does not guarantee the write is visible to `lookup/2` the instant
+  # `start_supervised!/1` returns. Asserting on the first read makes every test
+  # in this file a coin flip on registry propagation, which is how partition 6
+  # went red on an unrelated PR. Wait for the thing being asserted.
+  defp await_registered(conv_id, pid, remaining \\ 200) do
+    cond do
+      ConversationServer.whereis(conv_id) == pid ->
+        :ok
+
+      remaining == 0 ->
+        flunk("probe #{inspect(pid)} never became visible in the registry for #{conv_id}")
+
+      true ->
+        Process.sleep(10)
+        await_registered(conv_id, pid, remaining - 1)
+    end
   end
 
   defp events(ctx), do: Audit.list_for_user(ctx.user.id, action_prefix: "conversation.terminated")
