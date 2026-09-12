@@ -51,6 +51,27 @@ defmodule FountainWeb.SandboxApiAccessTest do
     assert Fountain.Repo.aggregate(Conversations.Sandbox, :count) == before_count
   end
 
+  test "none refuses a caller-supplied sprite_name (#1632)", c do
+    # `none` promises a machine no other conversation can reach. That check
+    # counts conversation rows pointing at the sandbox, so it cannot see a
+    # machine reached by naming it — the provider adopts an existing name.
+    before_count = Fountain.Repo.aggregate(Conversations.Sandbox, :count)
+
+    body =
+      c.conn
+      |> authed_with_key(c.raw)
+      |> post_json("/api/conversations", %{
+        "agent_id" => c.agent.id,
+        "sandbox_mode" => "ephemeral",
+        "sandbox_api_access" => "none",
+        "sprite_name" => "worker-1"
+      })
+      |> json_response(422)
+
+    assert body["error"] == "invalid_sandbox_api_access"
+    assert Fountain.Repo.aggregate(Conversations.Sandbox, :count) == before_count
+  end
+
   test "a channel cannot silently resume a different credential policy", c do
     sandbox = insert_sandbox(user_id: c.user.id, status: "ready")
 
