@@ -33,6 +33,7 @@ defmodule Fountain.Conversations do
   # Quotas' per-user reservation (4315): this one is taken inside a turn
   # start, and the two must never be mistaken for one another.
   @sandbox_lock_namespace 4316
+  @log_event_lock_namespace 4332
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
   #
@@ -2317,8 +2318,31 @@ defmodule Fountain.Conversations do
 
     %LogEvent{}
     |> LogEvent.changeset(attrs)
-    |> Repo.insert!()
+    |> insert_ordered_log_event!()
   end
+
+  defp insert_ordered_log_event!(%Ecto.Changeset{valid?: true} = changeset) do
+    conversation_id = Ecto.Changeset.get_field(changeset, :conversation_id)
+
+    {:ok, event} =
+      Repo.transaction(fn ->
+        # Account SSE cursors advance by id. Allocate that id only after all
+        # earlier writes for this account commit, including other conversations
+        # and outer transactions. Otherwise N+1 can commit first and hide N
+        # forever behind the cursor (#1706). Other accounts have separate locks.
+        Repo.query!(
+          "SELECT pg_advisory_xact_lock($1, hashtext(user_id::text)) " <>
+            "FROM conversations WHERE id = $2",
+          [@log_event_lock_namespace, Ecto.UUID.dump!(conversation_id)]
+        )
+
+        Repo.insert!(changeset)
+      end)
+
+    event
+  end
+
+  defp insert_ordered_log_event!(changeset), do: Repo.insert!(changeset)
 
   defp redact_attrs(%{conversation_id: conv_id, data: data} = attrs)
        when is_binary(conv_id) and is_binary(data) do
