@@ -109,20 +109,29 @@ and `scope`, which says where the value came from: `:credential` an
 `TurnMachine` context, and the usage stamp is derived from it rather than
 from a bare atom.
 
-The struct carries only what something reads. `set_id` arrives with decision
-1, where there is a set to name. **A `kind` field naming the credential atom
-that served the turn is deliberately absent**: the runtime picks between an
-account's credentials by its own rule — `Managoat.Runtimes.Claude` prefers
-`CLAUDE_CODE_OAUTH_TOKEN` and `Managoat.Runtimes.OpenCode` reads only the API
-key for the same provider — so a `kind` derived here would state the wrong
-credential for an account holding both. It belongs to whichever change first
-needs to bill or report per credential, together with a derivation that
-matches the runtime.
+The initial carrier refactor may preserve today's selection behavior with
+only `origin` and `scope`. It is plumbing, not completion of ADR 0052 decision
+4. The shared resolver then identifies the credential kind the runtime will
+actually use. Claude prefers OAuth while OpenCode's Anthropic path accepts
+only an API key; provider eligibility alone cannot identify that source.
+Billing and the runtime's auth inputs must derive from the same resolution,
+including removal of conflicting inference auth inputs (decision 5).
 
-This is ADR 0052 decision 4's requirement, built once. The grant work adds
-`grant_id` and `generation` to the same struct instead of re-cutting the
-plumbing, and its rule that token and account metadata come from one scoped
-read is unaffected: a set supplies no metadata.
+`scope` describes provenance, not tenant authority. Add `set_id` with named
+sets, and owner scope, `grant_id`, `generation` and matching provider-account
+metadata with managed grants. Token and account metadata come from one
+scoped read/version; bearer material stays in a separate internal credential
+object. Never compare bearer strings to infer identity or ownership.
+
+Before allowing different sources in a shared sandbox, persist a non-secret
+resolved source reference with the peer and snapshot it for turn accounting.
+The reference must distinguish credential replacements within one set or
+environment/vault source, not merely identify the containing row. Resume and
+reattach recover that binding rather than resolve the account's current
+default again. A changed default applies to new selections. A deleted,
+ineligible or replaced source cannot silently reroute an existing peer:
+require an explicit new selection or reauthentication before another turn.
+Normal managed-token refresh preserves the pinned grant generation.
 
 ### 3. An agent names a set; a launch may override it
 
@@ -140,61 +149,111 @@ account has today, so nothing about an existing agent changes.
 version."** That call was made about a rotating grant, where an account holds
 one link and switching accounts is reconnect; per-agent selection over a
 lifecycle nobody had asked to fork was scope with no demand behind it. A
-static API key has no lifecycle to coordinate, and per-agent is the entire
-request here. The grant half of 0052 is untouched: an account still links one
-ChatGPT subscription, the preference for which source a Codex agent takes
+tenant-supplied credential does not require Fountain's managed-grant refresh
+machinery, and per-agent is the entire request here. Replacement and deletion
+still follow decision 2's source-binding rules. The grant half of 0052 is
+untouched: an account still links one ChatGPT subscription, the preference
+for which source a Codex agent takes
 stays user-level, and a set may name a grant only once 0052 decision 4 lands.
 
-### 4. Inference credentials travel in process environment, not on disk
+### 4. Inference auth inputs leave the shared environment file
 
-Add the four static credential variable names to
+Add every supported runtime's inference credential variable name and alias to
 `Conversations.Identity.@process_only`, so `disk_env/1` strips them before
-`/home/sprite/.env` is written. Every spawn still receives them through `env:`,
+`/home/sprite/.env` is written. Four credential columns do not mean four env
+names: OpenCode emits `GOOGLE_GENERATIVE_AI_API_KEY` for the same Gemini
+credential that the Gemini runtime receives as `GEMINI_API_KEY`. Keep the
+resolver's alias inventory and disk filtering consistent with the pinned
+runtime adapters, with compatibility coverage for each runtime/provider.
+Every spawn still receives its resolved auth inputs through `env:`,
 which is how the runtime, its tools and an environment's `setup_script`
 already get `FOUNTAIN_TOKEN`. What is lost is `source .env` inside a script
 that wants the key in a *later* shell; the variable is in the script's own
 environment when Fountain runs it.
 
-This is the change that makes decision 3 safe on a shared sandbox, and it is
-worth making on its own: a machine's disk should not hold a credential that
-belongs to one conversation on it.
+This prevents shared-file overwrites and stale credential persistence; it is
+not a security boundary between processes able to inspect each other. Audit
+runtime-owned auth files and caches before enabling multiple sources on one
+machine, and isolate mutable auth state as decision 6 requires. Upgrade and
+reuse paths must remove old inference entries from an existing `.env`, not
+only omit them when creating a new machine. Principals remain the customer
+isolation boundary.
 
 ### 5. A tenant secret resolves the source; it does not silently override
 
-When the conversation's merged environment and vault secrets carry a name that
-is one of the four static credentials, and the model's provider accepts it,
-the source is `:own` with `scope: :tenant_secret`, whether or not a set
-supplies one. The gate, the stamp, the pricer and the ceiling then agree with
-what the sandbox actually runs on.
+Use one runtime-aware resolver for admission, provisioning and usage
+attribution. Its precedence is explicit:
+
+1. Resolve the launch's allowed set override, then the agent's set, then the
+   account default. Missing or forbidden explicit selections fail; they do
+   not become a different set.
+2. For a Codex run with a selected user ChatGPT subscription, keep ADR 0052's
+   subscription preference and no-fallback rule. Failed runtime/broker or
+   grant eligibility checks return an actionable error. Conflicting
+   inference auth inputs must not override it during provisioning. Selecting
+   an API source requires an explicit preference change.
+3. Otherwise combine tenant credentials with the resolved environment/vault
+   inputs. Vault wins over environment on the same name; those overrides
+   win over the set's value for the same credential kind. Normalize supported
+   aliases, reject conflicting values for aliases of one kind within the
+   same layer, then apply the runtime's credential-kind precedence. Claude's
+   OAuth preference and OpenCode's API-key-only Anthropic path remain intact.
+4. Use the existing platform policy only when no tenant source is selected
+   or supplied for that runtime/provider. An unusable explicit tenant source
+   returns an actionable error instead of silently using platform inference.
+
+When the winning credential comes from environment/vault inputs, the source
+is `:own` with `scope: :tenant_secret`. Remove competing inference auth inputs
+from the runtime launch so a second variable cannot change authentication
+after selection. This filtering targets inference auth for the selected
+runtime/provider, not unrelated tool secrets. The gate, usage stamp, pricer,
+ceiling and emitted auth inputs all consume that same resolved source.
 
 The secret is neither reserved nor rejected. Overriding a static key is
 documented, live behavior that tenants rely on; what was wrong with it was
 that it was invisible, not that it existed. Managed ChatGPT grants keep ADR
-0052 decision 6's reservation, because a rotating grant cannot be overridden
-without breaking custody. **Reserve what rotates, resolve what is static.**
+0052 decision 6's reservation to preserve managed custody. That reservation
+also covers static workspace
+ChatGPT tokens on the managed path. Rotation is not the boundary:
+**protect managed credentials; resolve ordinary tenant overrides.**
 
 `PlatformInference.gate/3` runs at `start_conversation` before anything is
 provisioned and today receives only the user, the model and the runtime. It
 gains the launch's resolved environment and vault so that it asks the question
-the provision-time selection answers. Where the two can still disagree — an
-environment edited between the door and the provision — the provision wins,
-and the door never refuses a turn the provision would have run on the tenant's
-own credential.
+the provision-time selection answers. Admission checks a resolved snapshot;
+it cannot promise an outcome based on future configuration edits. Before
+provisioning writes auth state or starts a peer, validate the source revision
+and eligibility again. A changed source requires fresh resolution and all
+applicable admission checks before committing a new peer binding. In
+particular, a tenant key disappearing after admission cannot select platform
+inference without checking platform eligibility and its ceiling. Serialize
+the binding with source changes; release database locks before sandbox or
+provider I/O. Usage records keep the binding that actually served the turn.
 
 ### 6. A set is not part of sandbox identity
 
 The home identity tuple stays `(user_id, agent_id, environment_id, vault_id)`
-(ADR 0023). Decision 4 is what permits this: two conversations on one machine
-with different sets differ only in process environment. Putting the set in the
-tuple would fork a persistent home per credential, which is the opposite of
-what a tenant juggling subscriptions wants — one computer, two subscriptions.
+(ADR 0023). Different sources share the workspace while process environment
+and runtime auth state are bound to their respective peers. Putting the set
+in the tuple would fork a persistent home per credential, which is the
+opposite of what a tenant juggling subscriptions wants — one computer, two
+subscriptions.
 
 One runtime does not fit. Codex writes an account file into `$CODEX_HOME`, so
 two peers with different sources on one machine overwrite each other. ADR 0052
 decision 5 already requires separate auth locations for exactly this, and that
-requirement is inherited rather than re-solved here: until it lands, a codex
-agent whose set differs from another live codex peer's on the same machine is
-refused at admission rather than served the wrong account.
+requirement is inherited rather than re-solved here. It covers API-key peers
+as well as subscription peers, and preparation, execution, configuration,
+skills and resume must use the same per-peer auth location.
+
+Until that isolation lands, an admission guard must compare resolved source
+identities and revisions/generations, not set IDs. A key edit, environment
+override or grant replacement can change the source without changing the
+set. Atomically reserve compatibility on the machine before any auth-file
+write, including peers still preparing; two concurrent starts cannot both
+observe no live peer and proceed with incompatible sources. Failed starts
+must release their reservation. If this cannot be proved, keep multi-source
+Codex admission disabled until separate auth locations are available.
 
 ### 7. A business with many customers gets principals, not sets
 
@@ -212,6 +271,38 @@ its customer's credential on the principal it just opened. The owner of a
 principal gets an owner-authenticated route to write a credential on a
 principal it owns. The principal's own key gains nothing.
 
+## Implementation order and acceptance
+
+This is a shared implementation plan for the overlapping parts of ADRs 0052
+and 0053, not a second selection stack. The existing grant lifecycle,
+encryption, refresh and keepalive PRs (#2011–#2015), and the inactive protected
+compiler (#2017), remain prerequisites for managed grants and need no
+credential-set refactor. Broker releases through 0.14 provide library
+capabilities; Fountain's durable authorization and activation remain unbuilt.
+
+| Stage | Deliverable | Required proof before its consumers activate |
+|---|---|---|
+| Shared selection | Source carrier, effective runtime resolver and env/vault billing fix | OAuth/API conflicts; every runtime alias; set/env/vault precedence; tenant overrides at the platform ceiling; no subscription fallback; source changes between admission and provisioning |
+| Shared auth binding | Durable peer/turn source references, process-only inputs, existing-file cleanup and per-peer runtime auth locations | Concurrent incompatible starts; edits within one set; mixed API/subscription peers; preparation and setup scripts; restart, resume and reattach; defaults/deletion without silent source changes |
+| Credential sets | Named/default rows, agent default and allowlist, conversation override, API/OpenAPI/SDK and console | Tenant-scoped references; allowlist denial; default migration; replacement/deletion semantics; shared-home compatibility |
+| Managed execution | Durable broker source authorization, issuance/update fences, invalidation and legacy connection drain; then protected platform adoption | Disconnect versus issuance/update/admission; stale generations; missed invalidation on existing CONNECT; unavailable store denies; pinned client compatibility |
+| User grants | Subscription selection consuming the shared resolver, durable linking attempts/settings/API, accounting and controlled acceptance | Scoped token/account pair; cancellation/reconnect/deletion races; no platform debit for user inference; real link/turn/refresh/restart/disconnect evidence |
+| Principal management | Owner-authenticated credential writes for an owned principal, contracts and docs | Foreign-principal denial; no new rights for principal-scoped keys; owner billing attribution |
+
+Build shared selection before its feature consumers. Shared auth binding is
+required before multi-source execution; schema/API slices may be reviewed
+earlier without enabling that behavior. Managed broker authorization and
+draining can proceed independently of the selection refactor. User linking
+depends on the shared selection/auth contract and protected managed execution,
+not on the entire credential-set console or principal-management stack.
+
+Keep PRs bounded by these contracts and their consumers. Tests should force
+configuration and lifecycle races with barriers, not rely on timing. This
+sequence does not authorize activation: a release plan must separately cover
+data preflight, existing `.env` cleanup, compatible serving nodes, legacy
+socket drain, rollout evidence and rollback. User linking remains disabled
+until the managed path meets ADR 0052's acceptance requirements.
+
 ## Consequences
 
 Selection stops being a boolean over one row and becomes a resolved source
@@ -228,9 +319,9 @@ in a later shell to recover a provider key must take it from its own
 environment instead. This is a real break for anyone doing that, and the
 release note has to say so.
 
-The four static credentials and a managed ChatGPT grant now follow different
-rules for the same question, and the rule is stated once as "reserve what
-rotates, resolve what is static". Someone will have to be told this twice.
+Ordinary tenant credentials retain configurable overrides. Managed ChatGPT
+credentials, including static workspace tokens, retain protected custody.
+Both paths use the same source resolver and billing attribution contract.
 
 Automatic failover when a subscription is exhausted is **not** part of this.
 It needs per-runtime quota-error detection, per-credential cooldown state, and
@@ -250,7 +341,8 @@ and it is what ships; the pool is a later decision with evidence behind it.
   `Managoat.Runtimes.Claude.default_env/2` exists to prevent.
 - **Reserve the four static names the way ADR 0052 decision 6 reserves the
   managed one.** Consistent, and it breaks a documented behavior tenants use
-  today to no benefit: a static key has no custody boundary to protect.
+  today to no benefit: these ordinary tenant credentials do not enter the
+  managed ChatGPT custody path merely because they supply inference.
 - **A user-level preference only, as ADR 0052 decision 4 has it.** Serves
   neither request. The juggler divides work per project, which is per agent.
 - **Teams or sub-accounts.** The reseller's shape, and out of scope until the
