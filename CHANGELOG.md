@@ -233,6 +233,15 @@ upgrade, is in
 
 ### Fixed
 
+- **A reset refused by a bounded execution says so** (ADR 0046). Deleting a
+  sandbox while a bounded turn still owed a remote stop answered `422` with an
+  empty body, because `:execution_fenced` had no `FallbackController` clause
+  and fell through to the unmapped-atom net, logging a warning on every
+  refusal. It now answers `409 execution_fenced` with a message, beside the
+  two refusals it sits next to — and unlike `sandbox_mid_turn` (wait for the
+  turn) and `sandbox_reset_pending` (contact the operator), this one clears on
+  its own once the obligation ages out, which the message says.
+
 - **An account whose `connections` flag is off can revoke what it already
   holds** (#1693). The flag stood in front of every door, the ones that take a
   credential away included, while the runtime kept brokering those same tokens
