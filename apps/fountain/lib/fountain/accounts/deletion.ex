@@ -71,9 +71,10 @@ defmodule Fountain.Accounts.Deletion do
       an admin path should pass something identifying.
     * `:request_ip` — passed through to the audit event.
 
-  Returns `{:ok, summary}`. Nothing aborts before destruction: there is no
-  subscription to cancel first (ADR 0031), and the Stripe customer stays for
-  the refund trail.
+  Returns `{:ok, summary}` or an error. An enclosing database transaction is
+  refused before any teardown: actor and provider calls must run outside its
+  locks. There is no subscription to cancel first (ADR 0031), and the Stripe
+  customer stays for the refund trail.
 
   A claimable principal this account owns (ADR 0044) goes with it. The
   ownership row cascades either way, so the alternative is not "keep it" but
@@ -83,6 +84,14 @@ defmodule Fountain.Accounts.Deletion do
   """
   @spec delete_user(User.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def delete_user(%User{} = user, opts \\ []) do
+    if Repo.in_transaction?() do
+      {:error, :provider_transaction_open}
+    else
+      do_delete_user(user, opts)
+    end
+  end
+
+  defp do_delete_user(user, opts) do
     delete_owned_principals(user, opts)
     sprites = destroy_sprites(user)
 
@@ -144,7 +153,8 @@ defmodule Fountain.Accounts.Deletion do
 
   @doc """
   Stop every sandbox a tenant is running, and return how many sprites were
-  destroyed.
+  destroyed. Refuses an enclosing database transaction before stopping actors
+  or calling a provider.
 
   Ask a live ConversationServer to tear itself down where one exists, so the
   sprite goes through the same path as a user-initiated terminate. Otherwise
@@ -155,10 +165,18 @@ defmodule Fountain.Accounts.Deletion do
   keeps the rows. Duplicating this would be duplicating the part that costs
   money when it is wrong.
   """
-  @spec destroy_sprites(User.t() | binary()) :: non_neg_integer()
+  @spec destroy_sprites(User.t() | binary()) :: non_neg_integer() | {:error, term()}
   def destroy_sprites(%User{id: user_id}), do: destroy_sprites(user_id)
 
   def destroy_sprites(user_id) when is_binary(user_id) do
+    if Repo.in_transaction?() do
+      {:error, :provider_transaction_open}
+    else
+      do_destroy_sprites(user_id)
+    end
+  end
+
+  defp do_destroy_sprites(user_id) do
     conv_ids =
       Conversations.list_conversations(user_id)
       |> Enum.filter(&(ConversationServer.whereis(&1.id) != nil))
