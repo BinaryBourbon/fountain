@@ -7,7 +7,7 @@ status: draft
 adr: "0052"
 adr_status: "Proposed"
 date: 2026-09-11
-generated: { by: "process:codex", at: 2026-09-11T20:51:05-04:00 }
+generated: { by: "process:codex", at: 2026-09-11T21:03:56-04:00 }
 stale_after: 2026-10-11
 ---
 
@@ -242,6 +242,25 @@ database lock through the upstream response or stream. A broker incapable
 of enforcing this per-request gate cannot serve managed grants; include a
 `managoat_broker` change, release, and pin update if needed.
 
+Managed grants support HTTP request/response traffic, including streamed
+responses, only in the first version. The protected broker policy must
+reject WebSocket and other protocol-upgrade attempts before injecting a
+managed bearer or forwarding the request upstream, even on an allowed
+Codex route. Check the effective outgoing request, including headers
+produced by rule processing. `supports_websockets: false` configures Codex;
+it is not enforcement against a raw sandbox client. An unexpected upstream
+`101` must fail closed without switching to an opaque bidirectional pipe.
+Ordinary TLS-intercepted proxy CONNECT remains supported, with the HTTP
+requests inside it subject to these checks.
+
+A completed upgrade handshake never authorizes future provider operations
+as already-admitted work. Before enabling this policy, invalidate and drain
+legacy managed-grant sessions and upgraded connections on every serving
+node; no old socket is grandfathered into the HTTP-only path. Nodes that
+cannot enforce the policy must not serve managed grants. Supporting upgraded
+sessions later requires a separate design for authorizing subsequent
+operations against grant revocation, independently of cleanup notifications.
+
 After committing the fence, evict cached credentials and close affected
 tunnels across serving nodes, retrying cleanup failures and exposing pending
 status until cleanup completes. Correct authorization must not depend on
@@ -280,6 +299,8 @@ wildcard bindings, network policy, and custom headers cannot widen that
 policy. Match the actual upstream destination with verified TLS and do not
 forward an injected bearer to another destination on redirect. Never
 substitute managed values into tenant-selected headers, paths, or queries.
+This policy includes section 5's upgrade rejection, not just a destination
+allowlist; a tenant-controlled client cannot opt into another protocol.
 
 Reject new binding writes targeting the reserved managed credential or
 referencing it in custom templates. Before enabling this path, detect
@@ -318,8 +339,9 @@ email labels.
    Test two users plus the platform concurrently, API/subscription peers in
    one sandbox, refresh between prompts, restart/reattach, account replacement,
    unbrokered backends, env overrides, and non-Codex/direct-API consumers.
-   Add protected grant-rule compilation and per-request generation checks,
-   releasing and pinning broker/runtime library changes where required.
+   Add protected grant-rule compilation, protocol-upgrade rejection, and
+   per-request generation checks, releasing and pinning broker/runtime
+   library changes where required.
 3. **Account API and console.** Add attempts, status, preference, reconnect,
    and disconnect to the shared context and both surfaces. Add OpenAPI/SDK
    contracts as appropriate. Test ownership and full-scope authorization,
@@ -336,6 +358,16 @@ email labels.
      after the fence. Deny it even if the node missed invalidation messages;
      also deny it when the authorization store is unavailable. A request
      admitted before the fence follows the documented in-flight semantics.
+   - Use a raw sandbox client to request a WebSocket upgrade on an allowed
+     Codex route, including inside an existing CONNECT tunnel. Reject it
+     before bearer injection or upstream forwarding. Cover upgrade headers
+     introduced by rule processing and unexpected upstream `101` responses;
+     neither may establish a bidirectional pipe. Normal HTTP streaming works.
+   - Attempt upgrade before disconnect, suppress invalidation notifications
+     on that broker node, disconnect, and send subsequent traffic. The
+     upgrade must already have been rejected and later HTTP requests must
+     fail admission. A rollout fixture with a legacy upgraded connection
+     must prove it is drained before that node serves the protected path.
    - Try a direct managed-key binding to an echo host and a custom binding
      for an ordinary secret containing
      `{"Authorization":"Bearer {{ CODEX_CHATGPT_ACCESS_TOKEN }}"}`. Neither
