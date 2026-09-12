@@ -13683,6 +13683,11 @@
           "required": false,
           "type": "string"
         },
+        "limit_reason": {
+          "nullable": true,
+          "required": false,
+          "type": "string"
+        },
         "model_selection": {
           "nullable": true,
           "properties": {

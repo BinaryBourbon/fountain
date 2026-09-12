@@ -622,9 +622,17 @@ defmodule Fountain.Conversations.TurnMachine do
 
     stage_meta = Map.merge(stage_meta, %{turn_id: row.id, turn_number: row.turn_number})
 
+    # A service-enforced limit sets both: `limit_reason` names which limit, and
+    # `stop_reason` is the field every existing transcript reader already
+    # switches on. The conversations app and the team app live outside this
+    # repo (ADR 0034), so a new field alone would render as an unexplained
+    # failure in both until each one shipped.
     stage_meta =
       if row.limit_reason,
-        do: Map.put(stage_meta, :limit_reason, row.limit_reason),
+        do:
+          stage_meta
+          |> Map.put(:limit_reason, row.limit_reason)
+          |> Map.put(:stop_reason, row.limit_reason),
         else: stage_meta
 
     publish_stage(
