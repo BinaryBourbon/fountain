@@ -1276,6 +1276,45 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert ["started", "done"] = turn_stage_states(conv.id)
     end
 
+    test "a missing-session reply cannot restart a superseded legacy turn", ctx do
+      %{conv: conv, pid: pid, ref: ref} = ctx
+      [original] = Conversations._unsafe_list_turns(conv.id)
+
+      original
+      |> Ecto.Changeset.change(
+        status: "completed",
+        ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      )
+      |> Repo.update!()
+
+      successor = insert_turn(conv, %{turn_number: original.turn_number + 1, status: "running"})
+
+      {:ok, _} =
+        Conversations.update_conversation(conv, %{
+          status: "running",
+          runtime_session_id: "successor-session"
+        })
+
+      assert_receive {:spawned, _, _, _}
+
+      reply_error(pid, ref, ctx.resume_id, %{"code" => -32_002, "message" => "gone"})
+      refute_receive {:wrote, _}
+      refute_receive {:spawned, _, _, _}
+      assert :sys.get_state(pid).acp_peer == nil
+      assert :sys.get_state(pid).current_turn == nil
+      assert Repo.get!(Fountain.Conversations.Turn, original.id).status == "completed"
+      assert Repo.get!(Fountain.Conversations.Turn, successor.id).status == "running"
+      current = Conversations._unsafe_get_conversation!(conv.id)
+      assert current.runtime_session_id == "successor-session"
+      assert current.status == "running"
+
+      assert [] ==
+               Enum.filter(
+                 Conversations._unsafe_list_log_events(conv.id),
+                 &(&1.stage == "session")
+               )
+    end
+
     # Recovery must not carry the one-retry guard into a later turn.
     test "a later turn announces itself again — the restart flag does not latch", ctx do
       %{conv: conv, pid: pid, ref: ref} = ctx
@@ -1331,6 +1370,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
                restarted
 
       assert restarted["turn_id"]
+      assert String.starts_with?(message, "The agent's memory was lost.")
       assert message =~ "running on a fresh session"
       assert message =~ "does not remember the turns before this one"
     end

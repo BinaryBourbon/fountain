@@ -329,7 +329,6 @@ defmodule Fountain.Conversations.TurnMachineTest do
 
       assert {restarted,
               [
-                {:forget_runtime_session, "session_gone", ^detail},
                 {:restart_session, ^detail}
               ]} = TurnMachine.handle(m, {:failed, {:acp_error, :resume_session, error}})
 
@@ -367,7 +366,6 @@ defmodule Fountain.Conversations.TurnMachineTest do
     test "the -32002 a replaced disk answers with is the same restart", %{machine: m} do
       assert {%{session_retry: "Resource not found"},
               [
-                {:forget_runtime_session, "session_gone", _},
                 {:restart_session, _}
               ]} =
                TurnMachine.handle(

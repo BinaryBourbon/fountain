@@ -20,6 +20,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
   @inference_value "sk-ant-byo-credential-315"
   @callback_value "fnt_callback_key_315"
   @sprites_token "sprites-platform-token-315"
+  @retry_detail "runtime-error-with-secret-session-detail-1913"
 
   defp start_server_with_secrets do
     stub_happy_sprite()
@@ -46,7 +47,8 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
           sprite_env: [{"MY_SECRET", @secret_env_value}, {"OTHER", "other-value-315"}],
           tenant_key: @dek_value,
           inference_credentials: %{"anthropic" => @inference_value},
-          callback_token: @callback_value
+          callback_token: @callback_value,
+          turn_session_retry: @retry_detail
       }
     end)
 
@@ -60,6 +62,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     refute rendered =~ @inference_value
     refute rendered =~ @callback_value
     refute rendered =~ @sprites_token
+    refute rendered =~ @retry_detail
   end
 
   test "unknown calls and casts do not crash at the callback head" do

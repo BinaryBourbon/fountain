@@ -562,7 +562,7 @@ defmodule Fountain.Conversations.TurnMachine do
       is_nil(turn.session_retry) ->
         log_session_gone(turn, tag, detail, "clearing it and running this turn on a new one")
 
-        {%{turn | session_retry: detail}, [forget, {:restart_session, detail}]}
+        {%{turn | session_retry: detail}, [{:restart_session, detail}]}
 
       true ->
         # The fresh session is gone too. Something is wrong that a third
@@ -743,6 +743,14 @@ defmodule Fountain.Conversations.TurnMachine do
 
     {:ok, _} = Conversations._unsafe_idle_after_turn(turn.row)
 
+    %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
+  end
+
+  @doc "Release local measurements for a fenced worker without changing its persisted turn."
+  @spec abandon_fenced(t()) :: t()
+  def abandon_fenced(%__MODULE__{} = turn) do
+    finalize_tracer(turn.tracer)
+    end_span(turn.span, :error, %{"outcome" => "execution_fenced"})
     %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
   end
 
@@ -1528,21 +1536,9 @@ defmodule Fountain.Conversations.TurnMachine do
   def accept_runtime_session(state, _id), do: state
 
   @doc "Clear a worker's lost session through the same generation fence as session reports."
-  def forget_turn_session(%{current_turn: %{} = turn} = state, reason, detail) do
-    case Conversations._unsafe_set_turn_session(turn, nil) do
-      {:ok, %{applied: true}} ->
-        publish_stage(state.conversation_id, "session", "done", %{
-          turn_id: turn.id,
-          event: "reset",
-          reason: reason,
-          detail: detail
-        })
-
-        %{state | runtime_session_id: nil}
-
-      _ ->
-        state
-    end
+  def forget_turn_session(%{current_turn: %{}} = state, reason, detail) do
+    {_result, state} = try_forget_turn_session(state, reason, detail)
+    state
   end
 
   def forget_turn_session(%{runtime_session_id: nil} = state, _reason, _detail), do: state
@@ -1560,6 +1556,24 @@ defmodule Fountain.Conversations.TurnMachine do
 
       _ ->
         state
+    end
+  end
+
+  @doc "Clear a current turn's session, retaining the fence result for recovery."
+  def try_forget_turn_session(%{current_turn: %{} = turn} = state, reason, detail) do
+    case Conversations._unsafe_set_turn_session(turn, nil) do
+      {:ok, %{applied: true}} ->
+        publish_stage(state.conversation_id, "session", "done", %{
+          turn_id: turn.id,
+          event: "reset",
+          reason: reason,
+          detail: detail
+        })
+
+        {:ok, %{state | runtime_session_id: nil}}
+
+      _ ->
+        {:error, state}
     end
   end
 
@@ -1646,10 +1660,9 @@ defmodule Fountain.Conversations.TurnMachine do
   """
   @spec session_restarted_message(String.t()) :: String.t()
   def session_restarted_message(detail) do
-    "The runtime session for this conversation was no longer on its sandbox: " <>
-      "#{String.trim(detail)} Your prompt is running on a fresh session on this same " <>
+    "The agent's memory was lost. Your prompt is running on a fresh session on this same " <>
       "conversation. Its history is kept, but the agent does not remember the turns " <>
-      "before this one."
+      "before this one. The runtime reported: #{String.trim(detail)}"
   end
 
   # The provider's own sentence is the useful half, and it usually names the

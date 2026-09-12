@@ -271,6 +271,11 @@ upgrade, is in
 
 ### Fixed
 
+- A prompt automatically continues once on a fresh session when the runtime's
+  saved session is missing. The transcript announces the lost agent memory;
+  the conversation history, original turn and execution deadline are preserved
+  (#1667).
+
 - Sandbox `/diff` returns 422 when Git fails after repository discovery,
   instead of reporting an empty diff. Intentional byte-cap truncation still
   succeeds (#1904).
