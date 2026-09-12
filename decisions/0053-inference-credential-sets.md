@@ -98,12 +98,26 @@ not ordinary configuration, and a set is the static half of the same idea.
 
 ### 2. Selection returns a source, not an atom
 
-`select/4` returns `{:ok, %InferenceCredentials.Source{}, creds}` where the
-source carries `origin` (`:own` | `:platform`), `kind` (the credential atom
-that served it), `scope` (`:set` | `:tenant_secret` | `:platform`) and
-`set_id`. The source threads through `SpriteEnv.select_inference/3`,
-`ConversationServer` state and the `TurnMachine` context, and the usage stamp
-is derived from it rather than from a bare atom.
+`select/4` returns `{:ok, %InferenceCredentials.Source{}, creds}` instead of
+`{:ok, :own | :platform, creds}`. The source carries `origin`
+(`:own` | `:platform`, the billing question, with today's vocabulary intact)
+and `scope`, which says where the value came from: `:credential` an
+`inference_credentials` row, `:tenant_secret` an environment or vault secret
+(decision 5), `:platform` a platform key or the deployment's ChatGPT grant,
+`:none` a provider that needs no credential. It threads through
+`SpriteEnv.select_inference/3`, `ConversationServer` state and the
+`TurnMachine` context, and the usage stamp is derived from it rather than
+from a bare atom.
+
+The struct carries only what something reads. `set_id` arrives with decision
+1, where there is a set to name. **A `kind` field naming the credential atom
+that served the turn is deliberately absent**: the runtime picks between an
+account's credentials by its own rule — `Managoat.Runtimes.Claude` prefers
+`CLAUDE_CODE_OAUTH_TOKEN` and `Managoat.Runtimes.OpenCode` reads only the API
+key for the same provider — so a `kind` derived here would state the wrong
+credential for an account holding both. It belongs to whichever change first
+needs to bill or report per credential, together with a derivation that
+matches the runtime.
 
 This is ADR 0052 decision 4's requirement, built once. The grant work adds
 `grant_id` and `generation` to the same struct instead of re-cutting the
