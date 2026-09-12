@@ -420,6 +420,36 @@ defmodule Fountain.Conversations.Lifecycle do
   end
 
   @doc """
+  Fence admission before the server closes its adapter or destroys the machine.
+  The caller owns the sandbox through its conversation, as in `home?/1`.
+  Refuses an enclosing transaction; a successful fence commits before returning.
+  Already-admitted turns may still be interrupted by this forced reclaim.
+  """
+  @spec prepare_destroy(String.t() | nil, :idle | :max_lifetime) :: :ok | {:error, term()}
+  def prepare_destroy(sandbox_id, reason) do
+    cond do
+      Fountain.Repo.in_transaction?() ->
+        {:error, :provider_transaction_open}
+
+      is_nil(sandbox_id) ->
+        :ok
+
+      true ->
+        with %Conversations.Sandbox{} = sandbox <- Conversations._unsafe_get_sandbox(sandbox_id),
+             {:ok, _} <-
+               Conversations._unsafe_fence_sandbox_for_teardown(sandbox,
+                 actor: "system:conversation_server",
+                 reason: to_string(reason)
+               ) do
+          :ok
+        else
+          nil -> {:error, :not_found}
+          {:error, _} = error -> error
+        end
+    end
+  end
+
+  @doc """
   Tear down the sandbox; the conversation stays `idle` and resumable (setting
   it `terminated` here would make a cost control into data loss). Serves both
   the max-lifetime ceiling and the idle bound on a provider that cannot park.
@@ -430,8 +460,16 @@ defmodule Fountain.Conversations.Lifecycle do
           String.t(),
           Handle.t() | nil,
           :idle | :max_lifetime
-        ) :: :ok
+        ) :: :ok | {:error, term()}
   def destroy(conversation_id, sandbox_id, user_id, handle, reason) do
+    # The server prepares before closing its adapter. Check again here for
+    # direct callers; an existing fence adds no second request event.
+    with :ok <- prepare_destroy(sandbox_id, reason) do
+      do_destroy(conversation_id, sandbox_id, user_id, handle, reason)
+    end
+  end
+
+  defp do_destroy(conversation_id, sandbox_id, user_id, handle, reason) do
     if handle, do: _ = Managoat.Sandbox.destroy(handle)
     Egress.release(user_id, conversation_id)
 
