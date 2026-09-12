@@ -1775,6 +1775,9 @@ defmodule Fountain.Conversations do
           Repo.rollback(:configuration_changed)
         end
 
+        # Row-only retirement writers do not take the admission advisory
+        # lock. Hold their row through insertion too: a committed retirement
+        # refuses admission, while a later forced retirement follows the turn.
         attached? =
           Repo.exists?(
             from c in Conversation,
@@ -1782,7 +1785,8 @@ defmodule Fountain.Conversations do
               on: s.id == c.sandbox_id,
               where:
                 c.id == ^conv_id and s.id == ^sandbox_id and c.user_id == s.user_id and
-                  s.status not in ["terminated", "failed"] and is_nil(s.reset_requested_at)
+                  s.status not in ["terminated", "failed"] and is_nil(s.reset_requested_at),
+              lock: "FOR SHARE"
           )
 
         unless attached?, do: Repo.rollback(:sandbox_unavailable)
