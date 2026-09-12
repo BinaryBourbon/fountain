@@ -30,14 +30,23 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   only fails at the moment the last one lands.
   """
 
-  # 2646 → 2641. `start_provision_watchdog/2` moved out to
-  # `Fountain.Conversations.ProvisionWatchdog`, taking 81 lines with it and
-  # putting the file at 2565. The pin is not lowered to 2565: the number has
-  # not stopped moving. The #1766/#1767 campaign is measured at +68 across
-  # its 26 open PRs, landing the file at 2633, and the remaining 8 lines are
-  # for the two of them still in review rounds. Tighten this to the file's
-  # real length in a follow-up once that campaign has landed.
-  @pin 2641
+  # 2641 → 2549. The reattachment family — `reattach_running_turn/1`,
+  # `reap_orphan_sessions/1`, `attempt_session_attach/4`, `mark_orphan/3` and
+  # `find_running_turn/1` — moved to `Fountain.Conversations.Reattachment`,
+  # which already owned the ACP half of the same path. That takes 163 lines
+  # out and puts the file at 2466.
+  #
+  # The pin is not lowered to 2466: the #1766/#1767 campaign is still in
+  # flight below it. Measured today across its 18 open PRs, by diffing each
+  # chain tip against the base it forks from rather than summing per-PR
+  # counts, its remaining net is **+73** to this file — #1975 +10, the
+  # #1978→#2007 chain +58, #1977 +5, #1979 +0 — landing the file at 2539.
+  # (#2037 measured +68 a day ago; two review rounds on #1981 and #1982 have
+  # moved it since, which is exactly the drift this moduledoc warns about.)
+  #
+  # 2549 is that 2539 plus 10 lines for the rounds still to come. Tighten it
+  # to the file's real length in a follow-up once the campaign has landed.
+  @pin 2549
 
   @server "apps/fountain/lib/fountain/conversations/conversation_server.ex"
 
