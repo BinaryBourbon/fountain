@@ -207,17 +207,34 @@ node deployed/cleanup-replay.mjs --config /tmp/fountain-target.json \
 
 The output directory must be new and outside the source results. Replay checks
 up to seventeen manifests, continues after a failed manifest, and records each
-outcome in `replay.json`. After three minutes, replay attempts no more manifests;
+outcome in `replay.json`. After two minutes, replay attempts no more manifests;
 the current runner retains its separate cleanup deadline. Any failed or
 unattempted manifest keeps the batch nonzero. Keep the original target file,
 credentials and receiver sidecars with the manifests for recovery.
 
-In CI, verification has a 52-minute step timeout within the 60-minute job.
+SIGINT, SIGTERM and the admission deadline immediately record a stop reason and
+mark the active entry `interrupted`. The active cleanup retains its own deadline;
+later entries remain `not_run`. If cleanup finishes, its final result replaces
+the interrupted entry, but the batch remains unsuccessful. A forced process
+kill can still prevent completion; an interrupted entry is not proof of cleanup.
+
+In CI, verification has a 52-minute step timeout within a 75-minute job.
 After a failed or interrupted suite step, the workflow uploads the original
-evidence, then starts a fresh cleanup process with a four-minute step timeout.
+evidence, then starts a fresh cleanup process with a six-minute step timeout.
+Replay admits work for two minutes; a CI manifest can then need its 90-second
+fixture cleanup and a separate 90-second receiver cleanup. The six-minute cap
+leaves another minute for process and evidence overhead. Setup, monitors and both
+artifact uploads have explicit step limits; all step limits total 71 minutes,
+leaving four minutes of job overhead. Increasing the job limit does not increase
+the verification step or inference budgets.
 It uploads updated manifests and replay evidence under a separate
 `deployed-cleanup-...` artifact, preserving the original `deployed-...` artifact.
 A successful retry does not change the failed verification verdict.
+CI passes `--allow-empty`: a setup failure before any manifest was written
+produces a successful replay step with `status: "no_manifests"` and no API calls,
+even when the target file or results directory was never created. This records
+that no cleanup was attempted. Invalid evidence still fails; manual replay
+without this flag rejects missing or empty results.
 [GitHub cancellation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation)
 can terminate the job before these final steps finish. A hard job timeout or
 runner loss can prevent upload and replay. This step cannot recover journals
