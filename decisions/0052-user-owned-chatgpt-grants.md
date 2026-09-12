@@ -1,13 +1,13 @@
 ---
 type: ADR
 title: "Users link a ChatGPT subscription and Fountain manages the grant"
-description: "Proposed, not built: tenant-owned ChatGPT grants reuse the Codex broker path, with tenant encryption, coordinated refresh, explicit credential selection, and no automatic paid fallback."
+description: "Proposed, not built: tenant-owned ChatGPT grants use tenant encryption, coordinated refresh, revocation-fenced broker authorization, protected provider destinations, and no automatic paid fallback."
 tags: [inference, codex, oauth, security, billing]
 status: draft
 adr: "0052"
 adr_status: "Proposed"
 date: 2026-09-11
-generated: { by: "process:codex", at: 2026-09-11T20:37:30-04:00 }
+generated: { by: "process:codex", at: 2026-09-11T20:51:05-04:00 }
 stale_after: 2026-10-11
 ---
 
@@ -45,6 +45,15 @@ The existing implementation provides most of the transport:
   refresh requests reaching OpenAI. Terminal-error writes also need fencing.
 - Codex writes a shared `$CODEX_HOME/auth.json`. Adding a second account
   source requires explicit handling of concurrent peers and account changes.
+- `Broker.Native.Sessions` stores materialized credential rules without
+  grant ownership or generation checks. A tunnel caches its initial lookup;
+  deleting session rows alone does not revoke that tunnel's credentials.
+- `Broker.split_inference/2` permits tenant binding overrides, and
+  `Broker.Native.binding_rules/4` exposes the whole brokered credential map
+  to custom templates. These inherited behaviors can export a managed
+  bearer to a tenant-controlled host, including a platform bearer. The
+  full-scope binding API restricts who can configure this, not where the
+  configured rule can send a token.
 
 This is more than exposing the admin button: a user token must never be
 paired with platform identity metadata, refreshed from the wrong row, or
@@ -186,8 +195,10 @@ subscription later during provisioning.
 
 Use the selected grant to build Codex's placeholder `auth.json`; eliminate
 the global `PlatformChatGPT.sandbox_auth/0` lookup from the user path.
-Refresh broker rules from that exact grant. Preserve the existing
-ChatGPT HTTP transport and ACP authentication behavior.
+Refresh broker rules from that exact grant. Preserve the ChatGPT HTTP
+transport and ACP authentication behavior, subject to the new authorization
+and destination restrictions below. Existing broker behavior alone does
+not meet these requirements.
 
 Give peers with different credential sources/generations separate
 `CODEX_HOME` auth locations so an existing platform conversation and a new
@@ -202,19 +213,85 @@ new peers; reconnecting to a different account invalidates old-generation
 peers and requires reauthentication before another turn. Do not swap only
 the bearer beneath an old account ID.
 
-Disconnect invalidates all broker sessions using that grant, removes cached
-credentials, and fences refresh/link completion across nodes. Do not report
-completion while known sessions can still start authenticated requests;
-retry invalidation failures and expose pending status. Already-forwarded
-requests cannot be recalled. Where upstream revocation is supported, attempt
-it; local unlink does not promise that the upstream token itself was revoked.
+Persist owner scope, grant ID, and generation as broker authorization data
+associated with each managed credential rule. This is server-controlled
+state, not merely request-log metadata. A session ID or copied encrypted
+rule set is not sufficient authority to use a managed grant.
+
+Session creation, rule updates, disconnect, and account replacement must
+serialize on the same grant row in short database transactions. Before
+persisting managed rules, recheck ownership, active state, and generation
+under that lock. Disconnect commits the inactive state/generation fence
+and invalidates existing sessions in the same transaction; replacement
+advances generation and invalidates the old generation atomically. Missing
+grants deny authorization, and a deleted grant ID/generation is never reused.
+A provision that selected G before disconnect cannot create a session for G
+afterward; a delayed rule update cannot restore it either. This extends
+section 3's fencing to every broker issuance path, including reprepare and
+reattach. Broker TTL and refresh-token version are not substitutes for the
+grant generation check.
+
+The broker must also authorize each credential-bearing upstream request
+against the durable active generation, including every HTTP request inside
+an already-open CONNECT tunnel. Do not authorize the entire tunnel from its
+first lookup. Define request admission as the grant-state check serialized
+with the disconnect transaction: requests admitted before that fence are
+in flight and may complete; no request admitted after it may use G. A stale
+cache or unavailable authorization store must fail closed. Do not hold the
+database lock through the upstream response or stream. A broker incapable
+of enforcing this per-request gate cannot serve managed grants; include a
+`managoat_broker` change, release, and pin update if needed.
+
+After committing the fence, evict cached credentials and close affected
+tunnels across serving nodes, retrying cleanup failures and exposing pending
+status until cleanup completes. Correct authorization must not depend on
+delivery of an invalidation notification: a disconnected node cannot keep
+admitting requests from cached state. Already-admitted requests cannot be
+recalled. Attempt upstream revocation where supported; local unlink does
+not promise that the upstream token itself was revoked.
 
 The first version retains ADR 0047's limitation for a turn that outlives its
 access token: report the upstream failure without automatic prompt replay
 or paid fallback. The app-server refresh callback is a possible follow-up,
 not assumed to work through the present ACP bridge.
 
-### 6. Billing and audit follow the owner
+### 6. Managed grant destinations cannot be overridden by tenant bindings
+
+Managed ChatGPT access tokens are non-exportable through the broker, even
+to a full-scope account owner. This restriction covers both user and
+platform grants, including static workspace tokens on the same path.
+Other tenant-owned secrets retain their existing configurable bindings.
+
+Keep managed grant values in a separate, typed credential input available
+only to Fountain's protected Codex rule builder. Never merge these values
+into the ordinary `brokered` map supplied to custom templates, catalog
+rules, or generic substitution. Reserving `CODEX_CHATGPT_ACCESS_TOKEN`
+alone is insufficient: a template for another key must not be able to
+reference the managed bearer either. Reserve the managed key and its
+placeholder so environment, vault, and binding configuration cannot alias
+or replace a protected rule.
+
+Only the protected builder may inject the bearer, in the Authorization
+header, with the matching account ID from the same source/generation. Its
+destination is the fixed HTTPS Codex backend on `chatgpt.com:443`, limited
+to the required Codex backend routes. Pin and validate the exact allowed
+routes against the supported client before rollout. Tenant base URLs,
+wildcard bindings, network policy, and custom headers cannot widen that
+policy. Match the actual upstream destination with verified TLS and do not
+forward an injected bearer to another destination on redirect. Never
+substitute managed values into tenant-selected headers, paths, or queries.
+
+Reject new binding writes targeting the reserved managed credential or
+referencing it in custom templates. Before enabling this path, detect
+existing conflicts and report their keys/rules without secret values.
+Rule compilation must independently enforce the same restrictions on
+persisted configurations and fail closed for the managed credential;
+write-time validation alone does not protect older rows. Apply these
+restrictions to the existing platform path before enabling user grants.
+This intentionally removes inherited managed-bearer export behavior; it
+does not claim that the current broker already provides this custody boundary.
+
+### 7. Billing and audit follow the owner
 
 A user grant produces `inference_origin: :own`: no platform inference debit
 or platform inference daily-ceiling consumption. Normal sandbox/runtime
@@ -241,13 +318,33 @@ email labels.
    Test two users plus the platform concurrently, API/subscription peers in
    one sandbox, refresh between prompts, restart/reattach, account replacement,
    unbrokered backends, env overrides, and non-Codex/direct-API consumers.
+   Add protected grant-rule compilation and per-request generation checks,
+   releasing and pinning broker/runtime library changes where required.
 3. **Account API and console.** Add attempts, status, preference, reconnect,
    and disconnect to the shared context and both surfaces. Add OpenAPI/SDK
    contracts as appropriate. Test ownership and full-scope authorization,
    cancellation/expiry/replay, late completion, redaction, and page reload.
 4. **Accounting and rollout.** Test BYO versus platform debits and ceilings,
    deletion/export, keepalive scheduling, and broker invalidation on every
-   serving node. Exercise a real link, Codex turn, forced refresh between
+   serving node. The following adversarial cases are required for both
+   platform and user grants:
+   - Pause node A after it selects G; disconnect G on node B and wait for
+     success; resume A's session creation. No request may authenticate with G.
+   - Pause a credential-rule update, replace or disconnect G, then resume
+     the update. It must neither restore G nor overwrite the new generation.
+   - Open a CONNECT tunnel before disconnect, then send another HTTP request
+     after the fence. Deny it even if the node missed invalidation messages;
+     also deny it when the authorization store is unavailable. A request
+     admitted before the fence follows the documented in-flight semantics.
+   - Try a direct managed-key binding to an echo host and a custom binding
+     for an ordinary secret containing
+     `{"Authorization":"Bearer {{ CODEX_CHATGPT_ACCESS_TOKEN }}"}`. Neither
+     may expose or send the bearer. Cover new writes and pre-existing rows,
+     wildcard/alias overrides, and redirects away from the allowed backend.
+   - Confirm ordinary tenant-secret templates still work and the protected
+     Codex rule sends the correct bearer/account pair only to allowed routes.
+
+   Exercise a real link, Codex turn, forced refresh between
    turns, restart, and disconnect in a controlled environment. Record the
    pinned versions and evidence; then enable the user surface gradually.
 
@@ -267,6 +364,12 @@ only. Provider account/workspace switching is reconnect, not a multi-account
 router. The extra coordination and source tracking are required to make
 token custody safe and billing predictable, even though the exchange and
 broker already exist.
+
+Managed-grant brokerage now requires a per-request authorization check and
+protected rule compilation, including for the platform grant. This adds a
+database availability dependency to request admission and may require a
+broker library release. Existing bindings that export managed bearers must
+be corrected; they do not get a compatibility exception.
 
 ## Alternatives considered
 
