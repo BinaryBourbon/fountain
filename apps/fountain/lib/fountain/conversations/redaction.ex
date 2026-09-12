@@ -183,6 +183,12 @@ defmodule Fountain.Conversations.Redaction do
         # change, not a property this server can rely on.
         current_command: state.current_command && %{state.current_command | private: nil},
         current_turn: turn(state.current_turn),
+        # The cached permission request includes raw tool input. Keep the
+        # request id and parameter keys, but not tenant-supplied text.
+        acp_request_params: deep_redact(state.acp_request_params),
+        # The bounded execution journal can carry provider error text. The
+        # current turn above retains the identity needed to find its journal.
+        turn_execution: secrets(state.turn_execution),
         runner_replay: replay(state.runner_replay),
         tenant_key: secret(state.tenant_key),
         inference_credentials: secrets(state.inference_credentials),

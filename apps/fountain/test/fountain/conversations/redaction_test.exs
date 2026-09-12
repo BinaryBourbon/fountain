@@ -164,6 +164,8 @@ defmodule Fountain.Conversations.RedactionTest do
       resolved_mcp_servers: resolved,
       current_command: nil,
       current_turn: nil,
+      acp_request_params: nil,
+      turn_execution: nil,
       runner_replay: nil,
       tenant_key: nil,
       inference_credentials: %{},

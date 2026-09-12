@@ -23,6 +23,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
 
   alias Fountain.Conversations.Redaction
   alias Fountain.Conversations.Turn
+  alias Fountain.Conversations.TurnExecution
 
   @secret_env_value "sprite-env-secret-value-315"
   @dek_value "raw-tenant-dek-bytes-315"
@@ -38,6 +39,8 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
   @turn_prompt "turn-prompt-tenant-text-1690"
   @turn_reply "turn-reply-tenant-text-1690"
   @replay_buffer_value "raw-sandbox-output-with-a-secret-1690"
+  @request_secret "permission-request-tool-secret-1690"
+  @execution_secret "provider-error-with-a-secret-1690"
 
   defp start_server_with_secrets do
     stub_happy_sprite()
@@ -92,6 +95,15 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
             reply_text: @turn_reply
           },
           runner_replay: %{previous_id: 41, buffer: @replay_buffer_value},
+          acp_request_params:
+            {17,
+             %{
+               "toolCall" => %{
+                 "rawInput" => %{"token" => @request_secret},
+                 "content" => [%{"text" => @request_secret}]
+               }
+             }},
+          turn_execution: %TurnExecution{last_error: @execution_secret},
           tenant_key: @dek_value,
           inference_credentials: %{"anthropic" => @inference_value},
           callback_token: @callback_value
@@ -118,6 +130,8 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     refute rendered =~ @turn_prompt
     refute rendered =~ @turn_reply
     refute rendered =~ @replay_buffer_value
+    refute rendered =~ @request_secret
+    refute rendered =~ @execution_secret
   end
 
   test "unknown calls and casts do not crash at the callback head" do
@@ -144,15 +158,33 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     # the callback body — the unhandled-crash shape the issue describes.
     # `current_turn` has to go with it: a turn in flight makes the check
     # "busy", and the busy branch never reaches the comparison that raises.
+    # Remove the synthetic journal too so the bounded gate does not run first.
     :sys.replace_state(pid, fn state ->
       %{
         state
         | sandbox_started_at: DateTime.utc_now(),
           last_activity_at: :corrupt,
-          current_turn: nil
+          current_turn: nil,
+          turn_execution: nil
       }
     end)
 
+    log =
+      capture_log(fn ->
+        send(pid, :lifecycle_check)
+        assert_stopped(ref)
+      end)
+
+    assert log =~ "terminating"
+    refute_secrets(log)
+  end
+
+  test "a bounded callback crash scrubs the journal and permission request" do
+    {pid, ref} = start_server_with_secrets()
+
+    # The synthetic journal has no id. Its actor gate raises on the repository
+    # lookup, before handling this message, with both sensitive fields still
+    # present in state. This exercises the real OTP crash-report callback.
     log =
       capture_log(fn ->
         send(pid, :lifecycle_check)
@@ -181,6 +213,9 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     assert rendered =~ "linear"
     assert rendered =~ "Authorization"
     assert rendered =~ "LINEAR_TOKEN"
+    assert rendered =~ "toolCall"
+    assert rendered =~ "rawInput"
+    assert rendered =~ "acp_request_params: {17,"
 
     # The turn still identifies itself, and a reattach crash still says how far
     # the replay buffer had got.
@@ -223,6 +258,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     :broker_network,
     :inference_source,
     :inference_model,
+    :configuration_revision,
     # Names and provenance, never values: the env var names brokered for the
     # tenant's connections, the tenant's own brokered key names, the row ids
     # the secrets came from, and the bindings — key, host, auth type and
@@ -240,6 +276,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     :current_turn_span,
     :stream_tracer,
     :runner_reconnect,
+    :execution_transport,
     # Byte counts per stream, taken from rows already written. No content.
     :replay_skip,
     # Parked caller-tool arguments (#1202) and the ACP lines already persisted
@@ -291,6 +328,8 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
         pending_permission: %{"tool" => @sentinel}
       },
       runner_replay: %{previous_id: 41, buffer: @sentinel},
+      acp_request_params: {17, %{"toolCall" => %{"rawInput" => %{"token" => @sentinel}}}},
+      turn_execution: %TurnExecution{last_error: @sentinel},
       tenant_key: @sentinel,
       inference_credentials: %{"sentinel" => @sentinel},
       callback_token: @sentinel
