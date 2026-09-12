@@ -491,15 +491,17 @@ defmodule Fountain.Principals do
     end
   end
 
-  # The anonymous credential expires with the grant, so a leaked one dies on
-  # the same schedule as the machine it reaches. The claimed one must not:
-  # after a claim the grant's deadline describes nothing — the principal is an
-  # ordinary tenant of the account that owns it — and a key that expired at it
-  # would take a live machine away from its new owner, usually within hours.
+  # Anonymous credentials follow the grant. Claimed credentials get 30 days
+  # from issuance, independently of that old deadline. The owner can replace
+  # them from API keys in the console, including after expiry.
   defp principal_key_opts(claimable, opts) do
     [
       scopes: ["principal"],
-      expires_at: if(claimable.status == "claimed", do: nil, else: claimable.expires_at),
+      expires_at:
+        if(claimable.status == "claimed",
+          do: DateTime.utc_now() |> DateTime.add(30, :day) |> truncate(),
+          else: claimable.expires_at
+        ),
       actor: Keyword.get(opts, :actor, "api"),
       request_ip: Keyword.get(opts, :request_ip)
     ]

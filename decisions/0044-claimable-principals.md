@@ -128,7 +128,9 @@ abandoning what it already has.
    token or idempotency key, even after credential expiry or revocation.
    Renewal takes the same claim-row lock and leaves runtime callback keys
    alone. It records the new key and replaced key ids in the owner's audit
-   trail after commit.
+   trail after commit. Claimed credentials expire 30 days after each issuance,
+   independently of the anonymous grant deadline. The owner's API keys page
+   can replace them before or after expiry.
 
 **The API is four routes**, all behind `:require_full_scope`:
 `POST /api/claimable-users`, `GET /api/claimable-users/:id`,

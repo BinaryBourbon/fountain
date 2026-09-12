@@ -3487,7 +3487,7 @@ export interface components {
          * @description The result of a claim. The principal's resources are untouched: the same sandbox, agent, environment, vault and conversations, under the same ids.
          */
         ClaimedPrincipal: {
-            /** @description A fresh `principal`-scoped key for the claimed principal, with no expiry. The credential the application held is revoked by the claim. */
+            /** @description A fresh `principal`-scoped key that expires 30 days after issuance. The claim revokes the application credential. Owners can replace the key from API keys in the console, including after expiry. */
             api_key: string;
             /** Format: date-time */
             claimed_at?: string;

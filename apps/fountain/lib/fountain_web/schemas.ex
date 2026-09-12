@@ -4108,8 +4108,9 @@ defmodule FountainWeb.Schemas do
         api_key: %Schema{
           type: :string,
           description:
-            "A fresh `principal`-scoped key for the claimed principal, with no expiry. " <>
-              "The credential the application held is revoked by the claim."
+            "A fresh `principal`-scoped key that expires 30 days after issuance. " <>
+              "The claim revokes the application credential. Owners can replace the key " <>
+              "from API keys in the console, including after expiry."
         }
       },
       required: [:user, :principal_id, :status, :api_key]
