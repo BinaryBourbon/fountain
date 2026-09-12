@@ -74,6 +74,79 @@ defmodule Fountain.Workers.SandboxResetReconcilerTest do
     assert event.actor == "system:sandbox_reset_reconciler"
   end
 
+  test "worker completion wins over an original reset still awaiting its provider" do
+    Mimic.set_mimic_global()
+
+    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
+      user = insert_verified_user()
+      home = insert_sandbox(user_id: user.id, mode: "persistent", status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: home, status: "idle")
+      owner = self()
+
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _ ->
+        refute Repo.in_transaction?()
+
+        if Process.get(:hold_original_reset) do
+          send(owner, :original_deleting)
+
+          receive do
+            :confirmed -> :ok
+          after
+            5_000 -> flunk("original provider barrier timed out")
+          end
+        else
+          :ok
+        end
+      end)
+
+      original =
+        Task.async(fn ->
+          Process.put(:hold_original_reset, true)
+
+          Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
+            Conversations.reset_sandbox(home)
+          end)
+        end)
+
+      try do
+        assert_receive :original_deleting, 5_000
+        assert :ok = perform_job(SandboxResetReconciler, %{})
+        assert [job] = all_enqueued(worker: SandboxResetReconciler)
+        assert job.args == %{"sandbox_id" => home.id}
+        assert :ok = perform_job(SandboxResetReconciler, job.args)
+        assert Repo.reload!(home).status == "terminated"
+
+        replacement = insert_sandbox(user_id: user.id, status: "ready")
+        {:ok, _} = Conversations.update_conversation(conv, %{sandbox_id: replacement.id})
+        {:ok, _} = Horde.Registry.register(Fountain.ConversationRegistry, conv.id, nil)
+        send(original.pid, :confirmed)
+        assert {:ok, :skipped} = Task.await(original, 5_000)
+        refute_received {:"$gen_cast", _}
+
+        assert [event] =
+                 Repo.all(
+                   from a in Fountain.Audit.Event,
+                     where: a.resource_id == ^home.id and a.action == "sandbox.reset"
+                 )
+
+        assert event.actor == "system:sandbox_reset_reconciler"
+      after
+        Horde.Registry.unregister(Fountain.ConversationRegistry, conv.id)
+        Task.shutdown(original, :brutal_kill)
+
+        Repo.delete_all(
+          from j in Oban.Job, where: fragment("?->>'sandbox_id' = ?", j.args, ^home.id)
+        )
+
+        Repo.delete_all(from c in Conversations.Conversation, where: c.user_id == ^user.id)
+        Repo.delete_all(from s in Conversations.Sandbox, where: s.user_id == ^user.id)
+        Repo.delete_all(from a in Fountain.Audit.Event, where: a.user_id == ^user.id)
+        Repo.delete_all(from a in Fountain.Agents.Agent, where: a.user_id == ^user.id)
+        Repo.delete_all(from u in Fountain.Accounts.User, where: u.id == ^user.id)
+      end
+    end)
+  end
+
   test "disabled providers wait; stale jobs never delete an unfenced or missing machine" do
     sandbox = pending_reset()
     Application.delete_env(:managoat_sandbox, Managoat.Sandbox.Sprites)
