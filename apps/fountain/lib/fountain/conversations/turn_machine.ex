@@ -1693,10 +1693,16 @@ defmodule Fountain.Conversations.TurnMachine do
   reattach. Best-effort by design: the caller runs this on the way out of
   `terminate/2`, and a raise here must not take the rest of that callback
   with it.
+
+  The stopping server is an actor, so it passes the sandbox it was bound to:
+  a parent rebound underneath it belongs to a successor and this recovery
+  writes nothing. `opts` is required rather than defaulted, because a caller
+  that forgets it silently recovers a turn it no longer owns.
   """
-  @spec orphan_on_normal_stop(term(), Conversations.Turn.t() | nil, String.t() | nil) :: :ok
-  def orphan_on_normal_stop(:normal, turn, conversation_id) when not is_nil(turn) do
-    _ = Conversations._unsafe_orphan_turn(turn, "server_terminated_normally")
+  @spec orphan_on_normal_stop(term(), Conversations.Turn.t() | nil, String.t() | nil, keyword()) ::
+          :ok
+  def orphan_on_normal_stop(:normal, turn, conversation_id, opts) when not is_nil(turn) do
+    _ = Conversations._unsafe_orphan_turn(turn, "server_terminated_normally", opts)
     :ok
   rescue
     error ->
@@ -1708,5 +1714,5 @@ defmodule Fountain.Conversations.TurnMachine do
       :ok
   end
 
-  def orphan_on_normal_stop(_reason, _turn, _conversation_id), do: :ok
+  def orphan_on_normal_stop(_reason, _turn, _conversation_id, _opts), do: :ok
 end

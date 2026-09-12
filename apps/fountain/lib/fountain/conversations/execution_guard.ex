@@ -387,14 +387,27 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
-  @doc "Retire an orphan's execution before recovery writes, in parent/journal/turn lock order."
-  def _unsafe_recover_turn(%Turn{} = observed, writer) do
+  @doc """
+  Retire an orphan's execution before recovery writes, in parent/journal/turn lock order.
+
+  `:expected_sandbox_id` is the recovering actor's own binding. `cleanup_binding?/1`
+  already refuses a bounded turn whose journal names a sandbox the parent no
+  longer points at, but an unbounded turn has no journal row and nothing else
+  records which machine was driving it. An actor that supplies the option and
+  finds the locked parent reassigned recovers nothing: the rollback happens
+  before `retire_orphan/2`, so a stale actor writes neither the turn nor the
+  journal. Supplying `nil` is an expectation of "no sandbox", not an absent one;
+  omitting the key entirely is what the system reaper does, because it is
+  recovering on nobody's behalf.
+  """
+  def _unsafe_recover_turn(%Turn{} = observed, writer, opts \\ []) do
     transaction(fn ->
       conv = lock_parent(observed.conversation_id) || Repo.rollback(:not_found)
       execution = lock_execution_by_turn(observed.id)
       turn = lock_turn(observed.id) || Repo.rollback(:turn_missing)
       if turn.conversation_id != conv.id, do: Repo.rollback(:ownership_changed)
 
+      if rebound?(opts, conv), do: Repo.rollback(:ownership_changed)
       if execution && not cleanup_binding?(execution), do: Repo.rollback(:ownership_changed)
       running? = turn.status == "running"
       {turn, changed, event} = retire_orphan(execution, turn)
@@ -974,6 +987,28 @@ defmodule Fountain.Conversations.ExecutionGuard do
       end
 
     sandbox_matches and parent_matches
+  end
+
+  # The other half of the same question, for a turn that has no journal row to
+  # ask it of. `cleanup_binding?/1` above compares the *journal's* recorded
+  # sandbox identity; this compares the *actor's* — the only record that exists
+  # when there is no `TurnExecution`.
+  #
+  # That is not a corner case. Whether a journal row exists is decided by
+  # execution limits (`resolve_turn_limits/1`), not by turn capacity, and limits
+  # ship inert: `host_ceiling/0` is `%{}` and `enforced_controls/1` is `[]`
+  # (#1773-#1793). So today every production turn takes the no-journal path and
+  # this guard is the only thing standing between a stale actor and another
+  # machine's turn. Do not delete it as exotic.
+  #
+  # An explicit `nil` is an expectation of "no sandbox" and fences; only an
+  # absent key means the caller is recovering on nobody's behalf, which is why
+  # this is `Keyword.fetch/2` and not `Keyword.get/2`.
+  defp rebound?(opts, conv) do
+    case Keyword.fetch(opts, :expected_sandbox_id) do
+      {:ok, expected} -> expected != conv.sandbox_id
+      :error -> false
+    end
   end
 
   defp current_binding?(execution) do

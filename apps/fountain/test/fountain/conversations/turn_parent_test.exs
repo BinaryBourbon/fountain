@@ -235,6 +235,40 @@ defmodule Fountain.Conversations.TurnParentTest do
     assert Repo.get!(Turn, next.id).status == "running"
   end
 
+  test "an actor cannot recover an unbounded turn whose parent was rebound" do
+    user = insert_verified_user()
+    old = insert_sandbox(user_id: user.id, status: "ready")
+    replacement = insert_sandbox(user_id: user.id, status: "ready")
+    conv = insert_conversation(user_id: user.id, sandbox: old, status: "running")
+    turn = insert_turn(conv, status: "running")
+
+    {:ok, _} = Conversations.update_conversation(conv, %{sandbox_id: replacement.id})
+
+    # No journal row, so `cleanup_binding?/1` has nothing to compare: the
+    # actor's own `:expected_sandbox_id` is the only record of the binding.
+    assert {:error, :ownership_changed} =
+             Conversations._unsafe_orphan_turn(turn, "rebound", expected_sandbox_id: old.id)
+
+    assert Repo.get!(Turn, turn.id).status == "running"
+    assert Repo.get!(Conversation, conv.id).status == "running"
+  end
+
+  test "an actor expecting no sandbox cannot recover a bound parent" do
+    user = insert_verified_user()
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+    conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "running")
+    turn = insert_turn(conv, status: "running")
+
+    # An explicit nil is an expectation of "no sandbox", not an absent one.
+    assert {:error, :ownership_changed} =
+             Conversations._unsafe_orphan_turn(turn, "unbound_actor", expected_sandbox_id: nil)
+
+    assert Repo.get!(Turn, turn.id).status == "running"
+
+    # The reaper omits the key entirely and still recovers.
+    assert {:ok, %{status: "interrupted"}, _} = Conversations._unsafe_orphan_turn(turn, "reaper")
+  end
+
   test "legacy recovery closes its old turn without idling a newer running generation" do
     conv = insert_conversation(user_id: insert_verified_user().id, status: "running")
     old = insert_turn(conv, status: "running")

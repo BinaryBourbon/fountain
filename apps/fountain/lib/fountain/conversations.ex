@@ -2224,33 +2224,44 @@ defmodule Fountain.Conversations do
 
   This function is unscoped because it is called by a conversation's own
   server and by the system reaper. Callers may supply audit attribution.
+
+  An actor recovering its own turn passes `:expected_sandbox_id`; the locked
+  parent having been rebound to another sandbox answers
+  `{:error, :ownership_changed}` and writes nothing. The reaper omits the key,
+  because it recovers on nobody's behalf.
   """
   def _unsafe_orphan_turn(%Turn{} = turn, why, opts \\ []) do
     # ownership: this is the existing actor's turn or a system recovery candidate.
+    recover_opts = Keyword.take(opts, [:expected_sandbox_id])
+
     result =
-      ExecutionGuard._unsafe_recover_turn(turn, fn current, conv, latest?, bounded? ->
-        now = DateTime.utc_now() |> DateTime.truncate(:second)
-        reply_text = current.reply_text || _unsafe_turn_reply_text(current)
+      ExecutionGuard._unsafe_recover_turn(
+        turn,
+        fn current, conv, latest?, bounded? ->
+          now = DateTime.utc_now() |> DateTime.truncate(:second)
+          reply_text = current.reply_text || _unsafe_turn_reply_text(current)
 
-        updates =
-          if current.status == "running",
-            do: [status: "interrupted", ended_at: now, orphaned_at: now],
-            else: [orphaned_at: now]
+          updates =
+            if current.status == "running",
+              do: [status: "interrupted", ended_at: now, orphaned_at: now],
+              else: [orphaned_at: now]
 
-        updated =
-          current
-          |> Turn.changeset(Map.new(maybe_set_reply_text(updates, reply_text)))
-          |> Repo.update!()
+          updated =
+            current
+            |> Turn.changeset(Map.new(maybe_set_reply_text(updates, reply_text)))
+            |> Repo.update!()
 
-        conversation_changed? = latest? and conv.status == "running"
+          conversation_changed? = latest? and conv.status == "running"
 
-        conv =
-          if conversation_changed?,
-            do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
-            else: conv
+          conv =
+            if conversation_changed?,
+              do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+              else: conv
 
-        {updated, conv, conversation_changed?, bounded?}
-      end)
+          {updated, conv, conversation_changed?, bounded?}
+        end,
+        recover_opts
+      )
 
     case result do
       {:ok, :noop} ->
