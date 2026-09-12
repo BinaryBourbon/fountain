@@ -3756,7 +3756,10 @@ defmodule Fountain.Conversations do
             action: "sandbox.teardown_requested",
             resource_type: "sandbox",
             resource_id: fenced.id,
-            actor: Keyword.get(opts, :actor, "self"),
+            # ADR 0013 keeps `admin:<operator_id>` for account deletion alone,
+            # so an operator reaping a machine from /admin/sandboxes records
+            # the plain `admin` the vocabulary allows here.
+            actor: teardown_actor(Keyword.get(opts, :actor, "self")),
             request_ip: Keyword.get(opts, :request_ip),
             metadata:
               Map.merge(
@@ -3778,6 +3781,9 @@ defmodule Fountain.Conversations do
       end
     end
   end
+
+  defp teardown_actor("admin:" <> _), do: "admin"
+  defp teardown_actor(actor), do: actor
 
   defp do_fence_sandbox_for_teardown(sandbox, ending_id) do
     Repo.transaction(fn ->

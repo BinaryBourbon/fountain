@@ -150,7 +150,13 @@ defmodule Fountain.Accounts.Deletion do
   defp delete_owned_principals(%User{id: owner_id}, opts) do
     for principal_id <- Fountain.Principals.list_owned(owner_id),
         %User{} = principal <- [Repo.get(User, principal_id)] do
-      delete_user(principal, Keyword.put(opts, :actor, "system:owner_deleted"))
+      case delete_user(principal, Keyword.put(opts, :actor, "system:owner_deleted")) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("account deletion: owned principal #{principal_id}: #{inspect(reason)}")
+      end
     end
 
     :ok

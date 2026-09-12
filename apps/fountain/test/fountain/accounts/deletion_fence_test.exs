@@ -210,6 +210,14 @@ defmodule Fountain.Accounts.DeletionFenceTest do
     assert event.metadata["reason"] == "account_deleted"
   end
 
+  test "an operator's teardown records the plain admin actor (ADR 0013)", ctx do
+    expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
+
+    assert Deletion.destroy_sprites(ctx.user, actor: "admin:operator-7") == 1
+    assert [event] = events(ctx.user.id)
+    assert event.actor == "admin"
+  end
+
   defp admit(ctx, capacity) do
     Conversations._unsafe_create_turn_on_sandbox(
       %{conversation_id: ctx.conv.id, turn_number: 1, status: "running", prompt: "late"},
