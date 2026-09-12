@@ -150,12 +150,46 @@ defmodule Fountain.Conversations.Redaction do
 
   Key names are kept and only values are replaced, so crash reports stay
   debuggable.
+
+  The list is the whole point, and it has fallen behind the state twice
+  (#1690): `brokered` and `broker` arrived with the egress broker
+  (#1136/#1150), `resolved_mcp_servers` with the one-substitution-pass fix
+  (#1511), and none of them were scrubbed. Reviewing that fix found three
+  more — the sandbox command's adapter-owned client, the turn's prompt and
+  reply text, and the runner reattach buffer, which is fed raw sandbox bytes
+  that never pass a log writer. `ConversationServerRedactionTest`'s field
+  guard now fails for a new state field until it is either redacted here or
+  classified as plaintext there, so the next one cannot arrive quietly.
   """
   def server_state(state) do
     %{
       state
       | handle: state.handle && %{state.handle | private: nil},
-        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, "[REDACTED]"} end),
+        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, @placeholder} end),
+        # ADR 0019: `Broker.split/2` leaves placeholders in the sandbox env and
+        # puts the real values here, so this map — not `sprite_env` — is where
+        # a brokered GITHUB_TOKEN, connection token or inference key lives.
+        brokered: secrets(state.brokered),
+        # The minted proxy session: `%{vault, token, expires_at}`. Every value
+        # goes rather than the token alone, so a field added to the session
+        # shape is redacted the day it appears; the vault and the expiry are
+        # already published on the `broker` stage event.
+        broker: secrets(state.broker),
+        env_credentials: secrets(state.env_credentials),
+        resolved_mcp_servers: deep_redact(state.resolved_mcp_servers),
+        # The same adapter-owned `private` that `handle` carries — for Sprites,
+        # the client struct holding the platform bearer token. Both structs
+        # `@derive` a narrow `Inspect`, but that is the dependency's choice to
+        # change, not a property this server can rely on.
+        current_command: state.current_command && %{state.current_command | private: nil},
+        current_turn: turn(state.current_turn),
+        # The cached permission request includes raw tool input. Keep the
+        # request id and parameter keys, but not tenant-supplied text.
+        acp_request_params: deep_redact(state.acp_request_params),
+        # The bounded execution journal can carry provider error text. The
+        # current turn above retains the identity needed to find its journal.
+        turn_execution: secrets(state.turn_execution),
+        runner_replay: replay(state.runner_replay),
         tenant_key: secret(state.tenant_key),
         inference_credentials: secrets(state.inference_credentials),
         callback_token: secret(state.callback_token),
@@ -173,9 +207,91 @@ defmodule Fountain.Conversations.Redaction do
     end)
   end
 
-  defp secrets(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
+  # A struct is not enumerable, so it cannot be walked key by key. Replacing it
+  # whole is the safe reading: `format_status/1` raising is itself a leak, since
+  # OTP then reports the unredacted state.
+  defp secrets(%_{}), do: @placeholder
+  defp secrets(%{} = map), do: Map.new(map, fn {k, _v} -> {k, @placeholder} end)
   defp secrets(other), do: secret(other)
 
   defp secret(nil), do: nil
-  defp secret(_present), do: "[REDACTED]"
+  defp secret(_present), do: @placeholder
+
+  # `resolved_mcp_servers` is the agent's MCP document with `${VAR}` already
+  # substituted (#1404/#1511): a header written `Bearer ${GITHUB_TOKEN}` holds
+  # the token itself, and so does a server's `env`. Which servers were resolved
+  # is exactly the debugging signal worth keeping, so every key and the shape of
+  # the document survive and only the leaves go.
+  #
+  # Tuples and charlists cannot appear in an Ecto `:map` decoded from JSON, so
+  # the last two clauses are for the day the field's shape changes: a keyword
+  # list is a list of tuples, and a charlist is a list of integers that a
+  # crash report prints as text.
+  defp deep_redact(nil), do: nil
+  defp deep_redact(%_{}), do: @placeholder
+  defp deep_redact(%{} = map), do: Map.new(map, fn {k, v} -> {k, deep_redact(v)} end)
+
+  defp deep_redact([_ | _] = list),
+    do: if(charlist?(list), do: @placeholder, else: redact_each(list))
+
+  defp deep_redact(list) when is_list(list), do: list
+  defp deep_redact(value) when is_binary(value), do: @placeholder
+
+  defp deep_redact(tuple) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> redact_each() |> List.to_tuple()
+
+  defp deep_redact(other), do: other
+
+  defp redact_each(list), do: Enum.map(list, &deep_redact/1)
+
+  defp charlist?(list), do: List.ascii_printable?(list)
+
+  # Everything a `%Turn{}` holds that is not on this list — the prompt, the
+  # reply text, the pending permission request, the usage map — is tenant
+  # content, and a crash report goes to a third-party processor when
+  # `SENTRY_DSN` is set. Keeping the list of identity fields rather than
+  # naming the content fields means a text field added to the schema is
+  # redacted the day it appears.
+  @turn_identity_fields [
+    :id,
+    :conversation_id,
+    :turn_number,
+    :status,
+    :origin,
+    :exit_code,
+    :acp_prompt_id,
+    :started_at,
+    :ended_at,
+    :orphaned_at,
+    :inserted_at
+  ]
+
+  defp turn(nil), do: nil
+
+  defp turn(%_{} = turn) do
+    turn
+    |> Map.from_struct()
+    |> Enum.reduce(turn, fn
+      # Nothing to redact, and both read better left alone in a report.
+      {_key, nil}, acc -> acc
+      {_key, %Ecto.Association.NotLoaded{}}, acc -> acc
+      {:__meta__, _value}, acc -> acc
+      {key, _value}, acc when key in @turn_identity_fields -> acc
+      {key, _value}, acc -> Map.put(acc, key, @placeholder)
+    end)
+  end
+
+  defp turn(other), do: secrets(other)
+
+  # The runner reattach buffer is fed raw sandbox bytes before anything reaches
+  # a log writer, so `redact/2` — which protects every persisted byte — never
+  # sees them. Up to 4 MiB of agent output can be sitting here when a callback
+  # raises. The boundary id and the buffer's size are what a reattach crash is
+  # diagnosed from, so both survive.
+  defp replay(nil), do: nil
+
+  defp replay(%{buffer: buffer} = replay) when is_binary(buffer),
+    do: %{replay | buffer: "#{@placeholder} #{byte_size(buffer)} bytes"}
+
+  defp replay(other), do: secrets(other)
 end
