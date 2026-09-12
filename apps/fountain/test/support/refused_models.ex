@@ -61,16 +61,18 @@ defmodule Fountain.RefusedModels do
     # claude-agent-acp 0.66.0 — "Invalid value for config option model".
     # 289 refusals for claude-sonnet-4-6 alone, 2026-08-16..2026-09-06.
     "anthropic/claude-sonnet-4-6" => "2026-09-06",
-    # Both observed refused on real turns, one turn each, minutes apart:
-    # claude-fable-5-1 at 11:42:46 UTC and claude-fable-5 at 11:45:46 UTC, both
-    # "Invalid value for config option model" (#1669). claude-fable-5-1 was
-    # suggested for one day (#1659); claude-fable-5 never was, and reached a
-    # turn only because one agent is pinned to it by hand.
+    # Observed refused on a real turn at 11:45:46 UTC on 2026-09-06, "Invalid
+    # value for config option model" (#1669); never suggested, reached a turn
+    # only because one agent is pinned to it by hand. Still refused by
+    # claude-agent-acp 0.75.1 with the model cache warm (2026-09-07): the
+    # org's additional-models list carries Fable 5.1 only, so this id has no
+    # row to resolve onto. A live published Anthropic id, so this row bars a
+    # current model rather than a retired one — deliberate while the adapter
+    # refuses it.
     #
-    # Both are live published Anthropic ids, so these two rows bar a current
-    # model rather than a retired one. Deliberate while the adapter refuses
-    # them, and the pair the "drive one real turn" clause above exists for.
-    "anthropic/claude-fable-5-1" => "2026-09-06",
+    # `claude-fable-5-1` sat beside it from 2026-09-06 to 2026-09-07. Its
+    # refusal was the cold model cache (see `ModelCatalog`), not the version;
+    # cleared by the "drive one real turn" clause above on the 0.75.1 pin.
     "anthropic/claude-fable-5" => "2026-09-06",
     "anthropic/claude-opus-4-7" => "2026-08-27",
     "anthropic/claude-opus-4-8" => "2026-08-23",
