@@ -2390,19 +2390,17 @@ defmodule Fountain.Conversations do
     # or its events can commit out from behind the cursor and never be seen.
     writer = fn -> %LogEvent{} |> LogEvent.changeset(attrs) |> insert_ordered_log_event!() end
 
+    # LOCK ORDER, before the call below: on the bounded path
+    # `_unsafe_write_event/3` already holds the conversation, journal and turn
+    # rows `FOR UPDATE`, so the advisory lock inside
+    # `insert_ordered_log_event!/1` is taken *after* those rows, while every
+    # other log-event write takes it *before* touching the conversation (its
+    # insert needs `KEY SHARE` on that row through the foreign key). Two
+    # writers on one account can therefore take these in opposite orders.
+    # Postgres aborts one rather than hanging, and the path is unreachable
+    # while no execution ceiling can be set, but the inversion is real.
     if attrs[:kind] == "output" do
       # ownership: callers supply the owned conversation and exact output turn.
-      #
-      # LOCK ORDER, and the one thing to know before touching this: on the
-      # bounded path `_unsafe_write_event/3` already holds the conversation,
-      # journal and turn rows `FOR UPDATE`, so the advisory lock inside
-      # `insert_ordered_log_event!/1` is taken *after* those rows, while every
-      # other log-event write takes it *before* touching the conversation (its
-      # insert needs `KEY SHARE` on that row through the foreign key). Two
-      # writers on one account can therefore take these in opposite orders.
-      # Postgres would abort one rather than hang, and the path is unreachable
-      # while no execution ceiling can be set, but it is a real inversion and
-      # not something the rebase introduced deliberately.
       {:ok, event} =
         ExecutionGuard._unsafe_write_event(attrs[:conversation_id], attrs[:turn_id], writer)
 
