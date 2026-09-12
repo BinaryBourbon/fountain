@@ -60,6 +60,7 @@ thresholds or selectors in the overlay.
 | `FountainDatabasePoolSaturated` | Requests wait for database connections. |
 | `FountainProvisionFailures` | Sandbox provision attempts fail. |
 | `FountainStageFailures` | A stage after provisioning fails more than twice in 30 minutes. |
+| `FountainBrokerCAInstallFailureRate` | More than 10% of at least five conversation CA setups fail with an installer exit per provider over one hour, sustained for ten minutes. |
 | `FountainTurnFailureRate` | More than 25% of at least ten terminal turns fail per provider over 30 minutes. |
 | `FountainReattachFailures` | A conversation reattach fails within the last hour. |
 | `FountainTurnFirstOutputSlow` | Observed first-output p95 exceeds 30 seconds for 15 minutes, with at least ten samples per window. |
