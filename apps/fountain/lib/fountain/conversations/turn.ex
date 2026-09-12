@@ -97,6 +97,12 @@ defmodule Fountain.Conversations.Turn do
   An `"accounting"`-only map (a runtime that reported its scope but no counts)
   is *not* a stamp: that is a real end-of-turn record, and a second one must
   still be refused.
+
+  An **empty** map is a stamp by this test, because every key it has is in the
+  set. That is a widening rather than a decision, and it is safe twice over:
+  `Managoat.ACP.Usage.normalize/1` returns `nil` or a map carrying both
+  counters, so no runtime produces one; and a row holding `%{}` debited
+  nothing, so accepting a later figure over it debits exactly once.
   """
   @spec inference_stamp_only?(map()) :: boolean()
   def inference_stamp_only?(%{} = usage), do: Map.keys(usage) -- @inference_stamp_keys == []
