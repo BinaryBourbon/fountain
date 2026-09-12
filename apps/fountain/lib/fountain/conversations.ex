@@ -242,7 +242,10 @@ defmodule Fountain.Conversations do
   # `prevent_sandbox_revival/1` does, so it is declared here rather than beside it.
   @billable_terminal ~w(terminated failed)
 
-  def update_sandbox(%Sandbox{} = sandbox, attrs) do
+  def update_sandbox(%Sandbox{} = sandbox, attrs),
+    do: update_sandbox_if(sandbox, attrs, fn _ -> :ok end)
+
+  defp update_sandbox_if(sandbox, attrs, check) do
     # A provider callback may still hold a starting/ready struct after reset,
     # cancellation or the provision watchdog retired the persisted row. Read
     # and validate under the row lock; checking the caller's struct would let
@@ -252,6 +255,11 @@ defmodule Fountain.Conversations do
         current =
           Repo.one(from s in Sandbox, where: s.id == ^sandbox.id, lock: "FOR UPDATE") ||
             Repo.rollback(:not_found)
+
+        case check.(current) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
 
         changeset =
           current
@@ -3750,6 +3758,9 @@ defmodule Fountain.Conversations do
   `"teammate_rebound"` when the identity moved out from under the home
   (#1084, #1636).
 
+  If a retry retires the row while this call awaits the provider, this caller
+  returns `{:ok, :skipped}` without repeating completion notifications.
+
   See `create_agent/2` for the rest of `opts` (`:actor`, `:request_ip`).
   """
   def reset_sandbox(%Sandbox{} = sandbox, opts \\ []) do
@@ -3821,7 +3832,7 @@ defmodule Fountain.Conversations do
 
     with {:ok, {fenced, ids}} <- result,
          :ok <- record_reset_requested(fenced, ids, opts),
-         {:ok, completed} <- finish_sandbox_reset(fenced) do
+         {:ok, %Sandbox{} = completed} <- finish_sandbox_reset(fenced) do
       record_reset_completed(completed, ids, opts)
     end
   end
@@ -3832,8 +3843,10 @@ defmodule Fountain.Conversations do
   Re-reads the owned row: missing rows return `:not_found`; an unfenced,
   ephemeral or already terminal sandbox is skipped. Provider I/O runs outside
   transactions, and a confirmed delete uses the normal retirement accounting,
-  transcript notifications and audit event. Repeating a completed retry does
-  not delete again. The caller supplies audit attribution through `opts`.
+  transcript notifications and audit event. Concurrent finalizers return
+  `{:ok, :skipped}` after another caller retires the row; only the winner
+  publishes completion. Repeating a completed retry does not delete again.
+  The caller supplies audit attribution through `opts`.
   """
   def retry_pending_sandbox_reset(%Sandbox{} = sandbox, opts \\ []) do
     if Repo.in_transaction?() do
@@ -3845,7 +3858,7 @@ defmodule Fountain.Conversations do
 
         %Sandbox{mode: "persistent", status: status, reset_requested_at: at} = current
         when status in ["ready", "suspended"] and not is_nil(at) ->
-          with {:ok, completed} <- finish_sandbox_reset(current) do
+          with {:ok, %Sandbox{} = completed} <- finish_sandbox_reset(current) do
             opts =
               opts
               |> Keyword.put_new(:reason, "reset_reconciled")
@@ -3879,7 +3892,10 @@ defmodule Fountain.Conversations do
           })
 
         pid ->
-          GenServer.cast(pid, {:machine_gone, "reset", reason, message})
+          GenServer.cast(
+            pid,
+            {:sandbox_reset, completed.id, reason, Keyword.get(opts, :by, "owner"), message}
+          )
       end
     end)
 
@@ -3934,11 +3950,29 @@ defmodule Fountain.Conversations do
 
     case Managoat.Sandbox.destroy(handle) do
       :ok ->
-        update_sandbox(sandbox, %{status: "terminated"})
+        # The pre-provider read cannot elect the finalizer: another request
+        # may finish while this one waits for the provider. Re-check under
+        # update_sandbox's row lock, preserving its usage and queue accounting.
+        case update_sandbox_if(
+               sandbox,
+               %{status: "terminated"},
+               &pending_reset_matches(&1, sandbox)
+             ) do
+          {:error, :reset_already_completed} -> {:ok, :skipped}
+          result -> result
+        end
 
       {:error, _} ->
         {:error, :sandbox_reset_pending}
     end
+  end
+
+  defp pending_reset_matches(current, expected) do
+    if current.status in ["ready", "suspended"] and
+         current.reset_requested_at == expected.reset_requested_at and
+         not is_nil(current.reset_requested_at),
+       do: :ok,
+       else: {:error, :reset_already_completed}
   end
 
   # What each transcript on a reset home is told. The tail is the same every

@@ -172,7 +172,8 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert {:ok, ^fake} = ConversationServer.await_registered(ctx.a.id)
 
     assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
-    assert_receive {:cast, {:machine_gone, "reset", "home_reset", message}}, 1_000
+    assert_receive {:cast, {:sandbox_reset, sandbox_id, "home_reset", "owner", message}}, 1_000
+    assert sandbox_id == ctx.home.id
     assert message =~ "reset by its owner"
 
     # The server records the event on A's transcript itself; the reset does
