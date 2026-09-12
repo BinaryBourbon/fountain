@@ -124,6 +124,21 @@ The [generated reference](/api/docs) defines required scopes and refusals.
 
 ## Rate limiting
 
+The resource API uses fixed one-minute windows, independently on each server
+replica:
+
+- Each authenticated API key has a 600-request allowance.
+- Failed authentication has a separate 600-request allowance per client address.
+- A coarse ceiling allows 6,000 total attempts per client address before
+  authentication. It includes failed authentication and requests over a key's
+  quota. Exhausting it blocks every key at that address until its window resets.
+
+Each key retains its individual allowance behind a shared ingress. All keys
+count toward the coarse ceiling. Forwarded client addresses are accepted only from configured
+`TRUSTED_PROXIES`; a direct caller cannot choose an address through headers.
+These counters are per replica, so distributing requests across replicas can
+multiply an allowance. Individual operations can impose additional limits.
+
 Honor `Retry-After` when a request is rate limited. Avoid immediate retry
 loops. A lost response to a mutation does not prove that the mutation failed;
 reconcile the resource before you repeat an operation that could spend money.

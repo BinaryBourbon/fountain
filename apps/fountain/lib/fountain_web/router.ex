@@ -21,21 +21,14 @@ defmodule FountainWeb.Router do
   # plugs would be one forgotten line away from an unauthenticated endpoint.
   pipeline :api do
     plug FountainWeb.Plugs.PutApiSpec, module: FountainWeb.ApiSpec
-    # RateLimit BEFORE TenantAPIAuth (#316): auth halts on failure, so with
-    # the old order the limiter only ever saw authenticated requests —
-    # unauthenticated callers got unlimited attempts, each costing a SHA-256
-    # plus an indexed api_keys lookup. This was the one auth surface without
-    # a pre-auth limit; session login, registration, password reset and
-    # POST /api/auth/token all have one.
-    plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 600
+    # A coarse pre-auth ceiling protects the lookup work (#316). It is ten
+    # key budgets, so one key using its allowance does not exhaust a shared
+    # ingress address (#1771). Every attempt counts toward this ceiling.
+    plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 6_000
+    # Refused authentication has its own 600/min address bucket inside auth;
+    # it cannot consume a valid key's allowance.
     plug FountainWeb.Plugs.TenantAPIAuth
-    # And AFTER it, per key (2026-09-07): the address bucket above cannot see
-    # one client's runaway loop when every app beside the server arrives
-    # through the same ingress address, and cannot stop it without stopping
-    # them all. 600 a minute per key per replica is ten a second — a
-    # transcript viewer polling `/events` once a second and holding a stream
-    # is well inside it; a client listing the account fourteen times a
-    # second (the 09-04 incident) is not.
+    # Authenticated clients keep independent 600/min budgets per replica.
     plug FountainWeb.Plugs.RateLimit, bucket: "api-key", max: 600, key: :api_key
     plug FountainWeb.Plugs.Audit
   end
