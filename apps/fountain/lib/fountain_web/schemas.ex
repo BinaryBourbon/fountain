@@ -1038,7 +1038,7 @@ defmodule FountainWeb.Schemas do
         model: %Schema{
           type: :string,
           description:
-            "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The " <>
+            "Canonical provider/model_id (e.g. anthropic/claude-sonnet-5). The " <>
               "provider must match the runtime — anthropic for claude, openai for " <>
               "codex, google for gemini; opencode accepts any of the three. Other " <>
               "providers are rejected: Fountain has no credentials to export for " <>

@@ -29,8 +29,8 @@ defmodule Fountain.RefusedModels do
   highest-stakes of the three.
 
   Shipped skill manifests and `/help` pages are scanned together by
-  `Fountain.InstructionModelsTest`. The remaining surface tracked on #1727 is
-  the OpenAPI field description.
+  `Fountain.InstructionModelsTest`. `FountainWeb.ApiSpecTest` scans the published
+  OpenAPI document, including descriptions that feed generated SDK types.
 
   ## Membership in the catalog is the stronger check
 
