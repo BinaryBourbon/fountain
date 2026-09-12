@@ -138,3 +138,33 @@ func TestFormatResultErrors(t *testing.T) {
 		t.Errorf("nil errors should fall back to generic message")
 	}
 }
+
+func TestApplyVarsPreserveLiteralValues(t *testing.T) {
+	cmd := newApplyCmd()
+	err := cmd.ParseFlags([]string{
+		"--var", "PAIRS=a=1,b=2",
+		"--var", "HOSTS=web1,web2",
+		"--var", `QUOTED="a,b"`,
+		"--var", "EMPTY=",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags, err := cmd.Flags().GetStringArray("var")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("b", "original")
+	want := buildApplyVars(nil)
+	for key, value := range map[string]string{
+		"PAIRS":  "a=1,b=2",
+		"HOSTS":  "web1,web2",
+		"QUOTED": `"a,b"`,
+		"EMPTY":  "",
+	} {
+		want[key] = value
+	}
+	if got := buildApplyVars(flags); !reflect.DeepEqual(got, want) {
+		t.Fatal("apply variables changed beyond the supplied literal KEY=VALUE pairs")
+	}
+}
