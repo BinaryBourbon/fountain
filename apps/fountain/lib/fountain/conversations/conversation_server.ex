@@ -372,22 +372,19 @@ defmodule Fountain.Conversations.ConversationServer do
   takes the `sandbox_id`, and its first prompt reattaches through the
   ordinary wake path — a new runtime session on the same disk.
 
-  `{:error, :busy}` while a turn is running; nothing is interrupted. With no
-  server alive the row alone is marked, the same as `terminate_conversation/2`.
+  `{:error, :busy}` while a turn runs on a **live** server; nothing is
+  interrupted. With no server alive that row is as likely an orphan (see
+  `Conversations.wake_for_interrupt/1`), so release proceeds. Unresolved
+  bounded execution answers `{:error, :execution_fenced}` either way: a
+  durable fact rather than an inference, and bounded (ADR 0046).
+
   Audited as `conversation.released` unless `audit: false`.
   """
   def release_conversation(conv_id, opts \\ []) do
     result =
       case whereis(conv_id) do
         nil ->
-          case Conversations._unsafe_get_conversation(conv_id) do
-            nil ->
-              {:error, :not_running}
-
-            conv ->
-              {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
-              :ok
-          end
+          Conversations._unsafe_release_conversation(conv_id, actor_alive?: false)
 
         pid ->
           call_server(pid, :release_conv)
@@ -1652,11 +1649,15 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:release_conv, _from, state) do
-    state = drop_connection(state, "released")
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
-    Output.publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
-    {:stop, :normal, :ok, %{state | handle: nil}}
+    case Conversations._unsafe_release_conversation(state.conversation_id) do
+      :ok ->
+        state = drop_connection(state, "released")
+        Output.publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
+        {:stop, :normal, :ok, %{state | handle: nil}}
+
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
   end
 
   # A notification for the revision this server already holds is a no-op: it
@@ -2411,8 +2412,7 @@ defmodule Fountain.Conversations.ConversationServer do
     state = %{state | current_turn: nil}
 
     # A bounded turn that never started still holds a journal and a transport.
-    # Closing here is the retirement intent, not a confirmed remote stop — the
-    # coordinator owns the confirmation.
+    # Closing is retirement intent, not a confirmed stop; the coordinator confirms.
     if state.turn_execution, do: close_bounded_connection(state), else: state
   end
 

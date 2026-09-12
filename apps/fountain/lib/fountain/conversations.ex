@@ -1193,6 +1193,23 @@ defmodule Fountain.Conversations do
     |> notify_parent_change()
   end
 
+  @doc "Terminate the owned conversation only when no turn or remote execution remains open."
+  def _unsafe_release_conversation(conversation_id, opts \\ []) do
+    # ownership: the lifecycle client/actor received an already-owned conversation.
+    ExecutionGuard._unsafe_release_parent(
+      conversation_id,
+      fn current ->
+        current |> Conversation.changeset(%{status: "terminated"}) |> Repo.update()
+      end,
+      opts
+    )
+    |> notify_parent_change()
+    |> case do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
   defp write_turn_parent(turn, mode, attrs) do
     # ownership: the calling actor/recovery path already owns this exact turn.
     result =

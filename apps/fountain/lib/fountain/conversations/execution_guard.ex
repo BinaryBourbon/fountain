@@ -117,6 +117,40 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
+  @doc "Release only a durably idle parent; refusal never retires or interrupts execution."
+  def _unsafe_release_parent(conversation_id, writer, opts \\ []) do
+    transaction(fn ->
+      conv = lock_parent(conversation_id) || Repo.rollback(:not_running)
+
+      # A `running` turn row is evidence of a live turn only when there is a
+      # server to run it. Without one it is as likely an orphan — a deploy, a
+      # Horde rebalance or a plain `{:stop, :normal, _}` left it behind, which
+      # `wake_for_interrupt/1` spells out — and release is what an owner
+      # reaches for in exactly that state. Refusing there took away a release
+      # that always worked. The caller says whether a server is alive.
+      if Keyword.get(opts, :actor_alive?, true) do
+        running? =
+          Repo.exists?(
+            from t in Turn, where: t.conversation_id == ^conversation_id and t.status == "running"
+          )
+
+        if running?, do: Repo.rollback(:busy)
+      end
+
+      # The durable fence is unconditional. An unresolved bounded execution
+      # means a remote command may still be running, and releasing would drop
+      # the row that says so. This one has an age rather than being permanent
+      # — `_unsafe_retire_unresolved/2` writes it off — so the refusal is
+      # bounded, unlike the running-turn check it used to sit beside.
+      if open_execution?(conversation_id), do: Repo.rollback(:execution_fenced)
+
+      case writer.(conv) do
+        {:ok, updated} -> {%{applied: true, conversation: updated}, nil, nil}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
   @doc "Find the immutable journal for an already-owned actor's turn."
   def _unsafe_for_turn(turn_id), do: Repo.get_by(TurnExecution, turn_id: turn_id)
 
