@@ -6,12 +6,13 @@ defmodule Fountain.PrincipalKeyExpiryTest do
 
   test "a legacy writer's principal key with no expiry receives 30 days" do
     user = insert_verified_user()
+    earliest = database_deadline()
     {:ok, {key, raw}} = Accounts.create_api_key(user.id, "legacy", scopes: ["principal"])
 
     # The old issuer did not send an expiry or request that generated value
     # back. Authentication and management read the persisted deadline.
     persisted = Repo.reload!(key)
-    assert_deadline(persisted)
+    assert_deadline(persisted, earliest)
     assert {:ok, _, authenticated} = Accounts.authenticate_api_key(raw)
     assert authenticated.expires_at == persisted.expires_at
   end
@@ -35,15 +36,18 @@ defmodule Fountain.PrincipalKeyExpiryTest do
     user = insert_verified_user()
     {:ok, {key, _}} = Accounts.create_api_key(user.id, "changed")
 
+    earliest = database_deadline()
+
     from(k in ApiKey, where: k.id == ^key.id)
     |> Repo.update_all(set: [scopes: ["principal"]])
 
-    assert_deadline(Repo.reload!(key))
+    assert_deadline(Repo.reload!(key), earliest)
+    earliest = database_deadline()
 
     from(k in ApiKey, where: k.id == ^key.id)
     |> Repo.update_all(set: [expires_at: nil])
 
-    assert_deadline(Repo.reload!(key))
+    assert_deadline(Repo.reload!(key), earliest)
   end
 
   test "ordinary key use does not extend an expired principal credential" do
@@ -58,9 +62,30 @@ defmodule Fountain.PrincipalKeyExpiryTest do
     assert {:error, :expired} = Accounts.authenticate_api_key(raw)
   end
 
-  defp assert_deadline(key) do
+  test "a legacy write gets its full window even in an older transaction" do
+    user = insert_verified_user()
+    # Advance beyond the transaction's timestamp(0) second. This is the clock
+    # behavior under test, not a wait for an asynchronous side effect.
+    Repo.query!("SELECT pg_sleep(1.1)")
+    earliest = database_deadline()
+    {:ok, {key, _}} = Accounts.create_api_key(user.id, "delayed", scopes: ["principal"])
+
+    assert_deadline(Repo.reload!(key), earliest)
+  end
+
+  defp database_deadline do
+    %{rows: [[deadline]]} =
+      Repo.query!("""
+      SELECT date_trunc('second', clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '30 days'
+      """)
+
+    DateTime.from_naive!(deadline, "Etc/UTC")
+  end
+
+  defp assert_deadline(key, earliest) do
+    latest = database_deadline()
     assert %DateTime{} = key.expires_at
-    remaining = DateTime.diff(key.expires_at, DateTime.utc_now(), :second)
-    assert remaining in (30 * 86_400 - 5)..(30 * 86_400)
+    assert DateTime.compare(key.expires_at, earliest) in [:eq, :gt]
+    assert DateTime.compare(key.expires_at, latest) in [:eq, :lt]
   end
 end
