@@ -329,6 +329,37 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
+  @doc "Serialize transcript writes with retirement; the callback must contain only database work."
+  def _unsafe_write_event(conv_id, turn_id, writer) do
+    case turn_id && Repo.get_by(TurnExecution, turn_id: turn_id) do
+      nil ->
+        {:ok, writer.()}
+
+      execution ->
+        with_execution(execution.id, fn current ->
+          now = DateTime.utc_now()
+
+          cond do
+            current.conversation_id != conv_id or not current_binding?(current) ->
+              {nil, nil, nil}
+
+            current.state != "active" ->
+              {nil, nil, nil}
+
+            DateTime.compare(now, current.deadline_at) != :lt ->
+              {_decision, changed, event} = expire(current, now)
+              {nil, changed, event}
+
+            not match?(%Turn{status: "running"}, Repo.get(Turn, current.turn_id)) ->
+              {nil, nil, nil}
+
+            true ->
+              {writer.(), nil, nil}
+          end
+        end)
+    end
+  end
+
   @doc """
   Serialize the existing turn writer with deadline and termination state.
 
@@ -365,19 +396,22 @@ defmodule Fountain.Conversations.ExecutionGuard do
 
           row = decision.turn || Repo.rollback(:turn_missing)
 
-          protected =
-            if decision.execution.state == "active",
-              do: [],
-              else: [:status, :exit_code, :ended_at, :pending_permission, :limit_reason]
+          # Once retired, a stale actor cannot rewrite its prompt, selection,
+          # reply or permission state. The winning terminal transition may
+          # retain its exit code; delayed usage has its own once-only writer.
+          allowed =
+            cond do
+              decision.execution.state == "active" ->
+                attrs
 
-          protected =
-            if Map.get(decision, :terminal_changed, false),
-              do: List.delete(protected, :exit_code),
-              else: protected
+              Map.get(decision, :terminal_changed, false) ->
+                Map.take(attrs, [:exit_code, "exit_code"])
 
-          protected = protected ++ Enum.map(protected, &Atom.to_string/1)
+              true ->
+                %{}
+            end
 
-          case writer.(row, Map.drop(attrs, protected)) do
+          case writer.(row, allowed) do
             {:ok, result} -> {result, changed, event}
             {:error, reason} -> Repo.rollback(reason)
           end
@@ -436,10 +470,13 @@ defmodule Fountain.Conversations.ExecutionGuard do
   end
 
   @doc "Serialize a terminal stage with expiration; reuse an existing deadline event."
-  def _unsafe_terminal_stage(conv_id, turn_id, writer) do
-    case Repo.get_by(TurnExecution, conversation_id: conv_id, turn_id: turn_id) do
+  def _unsafe_terminal_stage(conv_id, turn_id, status, writer) do
+    case Repo.get_by(TurnExecution, turn_id: turn_id) do
       nil ->
         {:ok, {:new, writer.()}}
+
+      execution when execution.conversation_id != conv_id ->
+        {:ok, {:existing, nil}}
 
       execution ->
         with_execution(execution.id, fn current ->
@@ -450,22 +487,44 @@ defmodule Fountain.Conversations.ExecutionGuard do
               do: expire(current, now),
               else: {%{execution: current, turn: lock_turn(current.turn_id)}, nil, nil}
 
-          result =
-            if is_nil(decision.turn) || decision.execution.deadline_event_id ||
-                 (decision.turn && decision.turn.limit_reason == "wall_time_limit") do
-              id = decision.execution.deadline_event_id
-
-              stored =
-                if id,
-                  do: Repo.get_by(LogEvent, id: id, conversation_id: conv_id, turn_id: turn_id)
-
-              {:existing, stored}
-            else
-              {:new, writer.()}
-            end
+          result = terminal_event(decision, conv_id, turn_id, status, writer)
 
           {result, changed, event}
         end)
+    end
+  end
+
+  defp terminal_event(decision, conv_id, turn_id, status, writer) do
+    execution = decision.execution
+    turn = decision.turn
+
+    cond do
+      execution.conversation_id != conv_id or is_nil(turn) ->
+        {:existing, nil}
+
+      execution.deadline_event_id || turn.limit_reason == "wall_time_limit" ->
+        stored =
+          if execution.deadline_event_id,
+            do:
+              Repo.get_by(LogEvent,
+                id: execution.deadline_event_id,
+                conversation_id: conv_id,
+                turn_id: turn_id
+              )
+
+        {:existing, stored}
+
+      not current_binding?(execution) ->
+        {:existing, nil}
+
+      Map.get(
+        %{"done" => "completed", "failed" => "failed", "interrupted" => "interrupted"},
+        status
+      ) != turn.status ->
+        {:existing, nil}
+
+      true ->
+        {:new, writer.()}
     end
   end
 
