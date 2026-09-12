@@ -1293,6 +1293,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/conversations/{conversation_id}/reapply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reapply a conversation's Agent, Environment and Vault
+         * @description Applies a selection to the machine this conversation already runs on, so its files stay where the agent left them. Variables, the system prompt, skills and MCP configuration are rewritten, and the next prompt reads them. An omitted field keeps its current selection; null clears the Environment override or the Vault; an empty object reapplies what is already selected.
+         *
+         *     Refused with 409 `conversation_busy` while a turn runs, 409 `rebuild_required` when the selection would need the machine built again (the `field` says which one forced it), 503 while the machine is still being built, and 410 once the conversation has ended.
+         */
+        post: operations["FountainWeb.ConversationController.reapply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/conversations/{conversation_id}/requests/{request_id}": {
         parameters: {
             query?: never;
@@ -3768,6 +3790,27 @@ export interface components {
         /** ConversationListResponse */
         ConversationListResponse: {
             data: components["schemas"]["Conversation"][];
+        };
+        /**
+         * ConversationReapplyRequest
+         * @description A selection of Agent, Environment and Vault to apply to the machine an existing conversation already runs on. An omitted field keeps its current selection. An explicit null clears the Environment override or the Vault. An empty object reapplies the current selection.
+         */
+        ConversationReapplyRequest: {
+            /**
+             * Format: uuid
+             * @description Agent to use; omitted keeps the current Agent.
+             */
+            agent_id?: string;
+            /**
+             * Format: uuid
+             * @description Environment override to use; null returns to the selected Agent's Environment.
+             */
+            environment_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Vault to use; null detaches the current Vault.
+             */
+            vault_id?: string | null;
         };
         /** ConversationResponse */
         ConversationResponse: {
@@ -11143,6 +11186,114 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConversationController.reapply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Configuration selection */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConversationReapplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Reapplied conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Sprite keys may not reapply a conversation */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conversation or selected resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No acceptable representation */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NegotiationError"];
+                };
+            };
+            /** @description The conversation has a running turn, or the selection needs the machine built again */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conversation has ended */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Selection is not allowed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The machine is still being built */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
