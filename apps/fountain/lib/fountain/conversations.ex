@@ -3806,7 +3806,9 @@ defmodule Fountain.Conversations do
   works, and account deletion still completes. Reaping is the supported way
   out of an unconfirmed reset; it terminates the row and releases the quota
   slot, and whatever the provider did or did not do with the machine is then
-  the operator's to check. There is no automatic reconciliation.
+  the operator's to check. Pending resets also get durable deletion retries
+  from `SandboxResetReconciler`; automatic retries retain capacity until the
+  provider confirms deletion.
 
   Two audit rows, not one: `sandbox.reset_requested` when the fence commits,
   and `sandbox.reset` only when the provider confirms the destroy.

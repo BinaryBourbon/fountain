@@ -57,9 +57,14 @@ A reset blocks new turns before it calls the provider. It releases capacity
 only after the provider confirms deletion. A timeout or lost request keeps
 the reset fence and quota reservation. Another reset returns
 `409 sandbox_reset_pending`, and so does an attach or a wake. None of them
-send a second delete. Automatic reconciliation is not implemented.
+send a second delete. Every five minutes, Fountain finds pending resets and
+queues a separate retry for each machine. Failed deletes retry with backoff;
+a provider without credentials waits until it is enabled again. The fence
+and capacity reservation stay in place until deletion is confirmed. A long
+outage remains eligible for later retries even after a retry job exhausts its
+attempts.
 
-To clear an unconfirmed reset, an operator reaps the sandbox from the admin
+For a manual override, an operator reaps the sandbox from the admin
 sandbox list. That terminates the row and releases the quota slot. The
 machine at the provider is then the operator's to check, because Fountain
 has no evidence that the delete completed. Do not use a reap as a routine
