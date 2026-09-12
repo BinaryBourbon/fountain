@@ -150,7 +150,7 @@ Integration surfaces already inspected:
 | --- | --- |
 | `TurnMachine.open` and autonomous starts | Atomically reserve authorized limits and register before any provider work. |
 | `ConversationServer.run_turn` and warm reuse | Preserve the deadline and connection identity; gate every prompt before writing it. |
-| `TurnMachine.start_acp_peer` | Route the writer through a supervised transport that captures trusted session metadata outside the actor mailbox. |
+| `TurnMachine.start_acp_peer` | Implemented for Sprites (`ExecutionTransport`): spawn intent before I/O, stdin closed until identity binds, every write rechecking the journal. Other providers refuse. |
 | `ConversationServer.interrupt_turn` | Persist cancellation before blocking I/O; drive confirmed remote termination independently. |
 | `wake_conversation`, `Rehydrator`, Horde starts | Honor open journal entries before reconnecting or replacing execution. |
 | Interrupted provisioning and parent deletion | Preserve original ownership/incarnation and unresolved obligations through teardown or replacement. |
@@ -160,6 +160,32 @@ Journal retention after confirmed cleanup and account deletion also needs an
 explicit policy. Uncertainty must never be erased by transcript deletion — but
 it must not be permanent either, which is what the ageing exit above settles.
 The cutoff itself is the supervisor's to choose and is not fixed here.
+
+### A successful reply is not evidence the command stopped
+
+Every bounded connection owes remote cleanup, a successful turn included, so a
+completed turn's journal row lands in `ready` rather than `completed`. A runtime
+that answered correctly can still hold background work — the out-of-turn
+`session_info_update` that produced phantom follow-up turns is the same shape —
+and a warm connection carries whatever SDK allowance its previous prompt left.
+A bounded turn therefore never inherits a warm process: `prior_connection/1`
+refuses any reuse.
+
+The corollary is that the fence reaches the happy path, which is why the ageing
+exit above is load-bearing rather than a corner case: a turn that answered
+correctly, whose cleanup is then lost, would otherwise fence its conversation
+and its machine as surely as a timeout. Ageing it out leaves the turn's own
+outcome alone; it only gives up on the cleanup.
+
+### Bounded turns are a Sprites-only capability
+
+`ExecutionTransport` refuses every provider but Sprites, and admission rolls
+back `:provider_not_supported` to match. Binding a provider-issued session id
+from trusted control metadata is a per-adapter capability, and only the Sprites
+adapter has it; without it there is nothing to terminate by name. E2B, Daytona
+and self-hosted runners (ADR 0018, ADR 0022) therefore cannot carry a bounded
+turn, and they get a refusal at admission rather than a silently unbounded one.
+A provider joins in the PR that teaches its adapter to report session identity.
 
 ### What the public surface does and does not yet promise
 

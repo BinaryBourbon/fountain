@@ -105,27 +105,72 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
     assert deadline == c.deadline
   end
 
-  test "early completion prevents a stale deadline from killing a reused connection", c do
+  test "successful replies retire background work before a fresh successor", c do
     bind(c)
 
-    assert {:ok, %{turn: %{status: "completed"}}} =
+    assert {:ok, %{execution: %{state: "ready"}, turn: %{status: "completed"}}} =
              ExecutionGuard._unsafe_complete(c.execution.id, "completed", now: c.now)
 
     successor = insert_turn(c.conversation, status: "running")
+    next_connection = Ecto.UUID.generate()
+
+    assert {:error, :execution_fenced} =
+             ExecutionGuard._unsafe_register(successor.id, next_connection, c.deadline)
+
+    assert {:ok, %{permitted: true, execution: attempt}} =
+             ExecutionGuard._unsafe_claim_termination(c.execution.id)
+
+    assert {:ok, _} =
+             ExecutionGuard._unsafe_record_termination(attempt.id, attempt.attempt_id, :ok)
+
+    assert {:error, :connection_retired} =
+             ExecutionGuard._unsafe_register(successor.id, c.connection, c.deadline)
 
     assert {:ok, next} =
-             ExecutionGuard._unsafe_register(
-               successor.id,
-               c.connection,
-               DateTime.add(c.deadline, 60)
-             )
+             ExecutionGuard._unsafe_register(successor.id, next_connection, c.deadline)
 
-    assert {:ok, %{execution: %{state: "completed"}, turn: %{status: "completed"}}} =
+    assert {:ok, %{execution: %{state: "stopped"}, turn: %{status: "completed"}}} =
              ExecutionGuard._unsafe_expire(c.execution.id, now: DateTime.add(c.deadline, 1))
 
     assert {:error, :not_ready} = ExecutionGuard._unsafe_claim_termination(c.execution.id)
     assert Repo.get!(TurnExecution, next.id).state == "active"
     assert Repo.get!(Turn, successor.id).status == "running"
+  end
+
+  test "writes require a known identity, current connection and unfinished turn", c do
+    assert {:error, :identity_unconfirmed} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
+
+    bind(c)
+
+    assert {:error, :stale_connection} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, Ecto.UUID.generate())
+
+    assert {:ok, %{permitted: true}} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
+
+    ExecutionGuard._unsafe_complete(c.execution.id, "completed")
+
+    assert {:error, :execution_fenced} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
+  end
+
+  test "an overdue write expires the turn without granting provider I/O", c do
+    bind(c)
+
+    assert {:ok, %{permitted: false, turn: %{limit_reason: "wall_time_limit"}}} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection, now: c.deadline)
+
+    assert Repo.get!(TurnExecution, c.execution.id).deadline_event_id
+  end
+
+  test "a changed sandbox cannot receive a write under the original journal", c do
+    bind(c)
+    replacement = insert_sandbox(user_id: c.user.id, status: "ready")
+    c.conversation |> change(sandbox_id: replacement.id) |> Repo.update!()
+
+    assert {:error, :ownership_changed} =
+             ExecutionGuard._unsafe_authorize_write(c.execution.id, c.connection)
   end
 
   test "completion exactly at the deadline is failure and retains partial usage", c do
@@ -538,12 +583,52 @@ defmodule Fountain.Conversations.ExecutionGuardTest do
                )
     end
 
-    test "a completed or stopped row is never touched by the sweep", c do
+    test "a resolved row is never touched by the sweep", c do
+      bind(c)
+
+      # Since this PR every bounded connection owes remote cleanup, a
+      # successful reply included, so a completed turn lands in `ready` rather
+      # than `completed` — the sweep must not confuse "still owed" with
+      # "unresolvable", so drive it all the way to a confirmed stop.
+      {:ok, _} = ExecutionGuard._unsafe_complete(c.execution.id, "completed", now: c.now)
+      assert Repo.get!(TurnExecution, c.execution.id).state == "ready"
+
+      {:ok, %{execution: attempt}} = ExecutionGuard._unsafe_claim_termination(c.execution.id)
+
+      {:ok, _} =
+        ExecutionGuard._unsafe_record_termination(c.execution.id, attempt.attempt_id, :ok)
+
+      assert Repo.get!(TurnExecution, c.execution.id).state == "stopped"
+      assert ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1)) == []
+      assert Repo.get!(TurnExecution, c.execution.id).state == "stopped"
+    end
+
+    test "a successful turn whose cleanup never confirms still ages out", c do
+      # The corollary of this PR's change: the fence now reaches the happy path.
+      # A turn that answered correctly, whose remote cleanup is then lost, would
+      # otherwise fence its conversation and its machine as surely as a timeout.
       bind(c)
       {:ok, _} = ExecutionGuard._unsafe_complete(c.execution.id, "completed", now: c.now)
-      assert Repo.get!(TurnExecution, c.execution.id).state == "completed"
-      assert ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1)) == []
-      assert Repo.get!(TurnExecution, c.execution.id).state == "completed"
+      {:ok, %{execution: attempt}} = ExecutionGuard._unsafe_claim_termination(c.execution.id)
+
+      {:ok, _} =
+        ExecutionGuard._unsafe_record_termination(
+          c.execution.id,
+          attempt.attempt_id,
+          {:error, :timeout}
+        )
+
+      assert Repo.get!(Turn, c.turn.id).status == "completed"
+      assert ExecutionGuard._unsafe_fenced?(c.conversation.id)
+
+      assert [{:ok, retired}] =
+               ExecutionGuard._unsafe_retire_unresolved(DateTime.add(DateTime.utc_now(), 1))
+
+      assert retired.state == "stopped"
+      assert retired.last_error == "termination_unconfirmed"
+      refute ExecutionGuard._unsafe_fenced?(c.conversation.id)
+      # The turn's own outcome is untouched: it did succeed.
+      assert Repo.get!(Turn, c.turn.id).status == "completed"
     end
   end
 end
