@@ -3736,7 +3736,9 @@ defmodule Fountain.Conversations do
   Reuses the reset fence so every existing reuse path refuses the machine,
   retaining capacity until retirement completes. A new fence records
   `sandbox.teardown_requested` after commit; repeats preserve its timestamp.
-  Refuses an enclosing transaction. `opts` carries actor, request_ip and reason.
+  Refuses an enclosing transaction. `opts` carries actor, request_ip, reason and
+  `:metadata` — extra keys merged into the event, for a caller whose own delete
+  is about to nilify `user_id` on both the event and the sandbox it names.
 
   With a terminating_conversation_id, first lock and verify that conversation's
   current attachment and owner. A persistent home or another live conversation
@@ -3756,10 +3758,14 @@ defmodule Fountain.Conversations do
             resource_id: fenced.id,
             actor: Keyword.get(opts, :actor, "self"),
             request_ip: Keyword.get(opts, :request_ip),
-            metadata: %{
-              "reason" => Keyword.get(opts, :reason, "teardown"),
-              "provider" => fenced.provider
-            }
+            metadata:
+              Map.merge(
+                %{
+                  "reason" => Keyword.get(opts, :reason, "teardown"),
+                  "provider" => fenced.provider
+                },
+                Keyword.get(opts, :metadata, %{})
+              )
           })
 
           {:ok, fenced}

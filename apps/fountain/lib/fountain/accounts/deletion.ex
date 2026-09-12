@@ -16,7 +16,10 @@ defmodule Fountain.Accounts.Deletion do
      cascade takes `conversations` with it, and after that nothing links a
      sandbox to the user who was paying for it. Failures here are logged rather
      than fatal: `SandboxReaper` reconciles anything missed on its next run,
-     which is exactly the case it exists for.
+     which is exactly the case it exists for. An enclosing transaction is the
+     one thing that refuses, and it refuses before any teardown starts
+     (`delete_user/2`); a single machine's fence being refused mid-run is
+     logged and the run carries on.
 
   2. **Record the audit event.** Before the delete, and carrying the email and
      user id in `metadata` — `audit_events.user_id` is `SET NULL` on delete, so
@@ -184,20 +187,39 @@ defmodule Fountain.Accounts.Deletion do
     else
       opts = Keyword.put_new(opts, :reason, "compute_stopped")
 
+      # `audit_events.user_id` and `sandboxes.user_id` are both nilified by the
+      # delete that follows, so an event carrying only the column would survive
+      # as an anonymous row pointing at an anonymous sandbox. Denormalise the
+      # tenant into the metadata, as `account.deleted` already does (step 2).
+      opts = Keyword.put_new(opts, :metadata, %{"user_id" => user_id})
+
       with :ok <- fence_sprites(user_id, opts) do
         do_destroy_sprites(user_id, opts)
       end
     end
   end
 
+  # A refused fence is logged and the run continues, because the alternative
+  # strands the row it refused on: a halt here leaves `reset_requested_at` set
+  # on a `ready` sandbox whose account is still there, and every `SandboxReaper`
+  # pass filters that row out — `release_stuck_sandboxes/0` and
+  # `sweep_abandoned_sandboxes/0` both require `is_nil(reset_requested_at)`, the
+  # dead-sprite pass wants a terminal status, and the untracked sweep counts the
+  # sprite as known. It would keep burning a `Quotas.active_sandboxes/0` slot
+  # and the fleet ceiling with nothing left able to reclaim it. ADR 0009
+  # decision 2 makes sprite teardown best-effort for this reason, and #1767
+  # asks that failed cleanup stay recoverable by reconciliation.
   defp fence_sprites(user_id, opts) do
     # ownership: live_sandboxes/1 scopes every row to this caller-owned user_id.
     user_id
     |> live_sandboxes()
-    |> Enum.reduce_while(:ok, fn sandbox, :ok ->
+    |> Enum.each(fn sandbox ->
       case Conversations._unsafe_fence_sandbox_for_teardown(sandbox, opts) do
-        {:ok, _} -> {:cont, :ok}
-        {:error, _} = error -> {:halt, error}
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("account deletion: fencing #{sandbox.id} refused: #{inspect(reason)}")
       end
     end)
   end
@@ -233,8 +255,9 @@ defmodule Fountain.Accounts.Deletion do
         {:ok, _retired} ->
           {:cont, count}
 
-        {:error, _} = error ->
-          {:halt, error}
+        {:error, reason} ->
+          Logger.warning("account deletion: late fence refused: #{inspect(reason)}")
+          {:cont, count}
       end
     end)
   end

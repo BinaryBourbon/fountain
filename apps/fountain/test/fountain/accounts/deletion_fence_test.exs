@@ -4,6 +4,7 @@ defmodule Fountain.Accounts.DeletionFenceTest do
 
   alias Fountain.Accounts.{Deletion, User}
   alias Fountain.{Audit, Conversations, Principals}
+  import Ecto.Query, only: [where: 3]
   alias Fountain.Conversations.ConversationServer
 
   setup do
@@ -80,19 +81,24 @@ defmodule Fountain.Accounts.DeletionFenceTest do
     assert length(events(ctx.user.id)) == 2
   end
 
-  test "a refused fence retains the account and stops before actor or provider work", ctx do
-    expect(Conversations, :_unsafe_fence_sandbox_for_teardown, fn _, _ ->
+  test "a refused fence is logged and the account is still deleted", ctx do
+    # Halting here would strand this row: `reset_requested_at` set on a `ready`
+    # sandbox whose account survives is invisible to every SandboxReaper pass
+    # and keeps burning a quota slot forever. ADR 0009 decision 2 keeps sprite
+    # teardown best-effort for exactly this reason.
+    stub(Conversations, :_unsafe_fence_sandbox_for_teardown, fn _, _ ->
       {:error, :fixture_refusal}
     end)
 
-    reject(ConversationServer, :terminate_conversation, 2)
-    reject(Managoat.Sandbox.Sprites, :destroy, 1)
-    assert {:error, :fixture_refusal} = Deletion.delete_user(ctx.user)
-    assert Repo.get(User, ctx.user.id)
-    assert Repo.reload!(ctx.sandbox).status == "ready"
-    refute Repo.reload!(ctx.sandbox).reset_requested_at
-    assert events(ctx.user.id) == []
-    assert Audit.list_for_user(ctx.user.id, action_prefix: "account.deleted") == []
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:ok, %{sprites_destroyed: 0}} = Deletion.delete_user(ctx.user)
+      end)
+
+    assert log =~ "fencing #{ctx.sandbox.id} refused"
+    assert log =~ ":fixture_refusal"
+    refute Repo.get(User, ctx.user.id)
+    assert deleted_event(ctx.user.id)
   end
 
   test "principal cleanup forwards the closing caller's attribution", ctx do
@@ -164,15 +170,44 @@ defmodule Fountain.Accounts.DeletionFenceTest do
       :ok
     end)
 
-    assert {:error, :late_fence_refused} = Deletion.delete_user(ctx.user)
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:ok, %{sprites_destroyed: 1}} = Deletion.delete_user(ctx.user)
+      end)
+
+    # The refusal is recorded and skipped; the machine that did fence is still
+    # destroyed, and the account still goes.
+    assert log =~ "late fence refused"
+    assert log =~ ":late_fence_refused"
     assert_received {:late_sandbox, late_id}
     late = Repo.get!(Conversations.Sandbox, late_id)
     late_name = late.sprite_name
     refute_received {:destroyed, ^late_name}
     refute late.reset_requested_at
     assert late.status == "ready"
-    assert Repo.get(User, ctx.user.id)
-    assert Audit.list_for_user(ctx.user.id, action_prefix: "account.deleted") == []
+    original_name = ctx.sandbox.sprite_name
+    assert_received {:destroyed, ^original_name}
+    refute Repo.get(User, ctx.user.id)
+    assert deleted_event(ctx.user.id)
+  end
+
+  test "the teardown event still names the tenant after the delete nilifies the column", ctx do
+    expect(Managoat.Sandbox.Sprites, :destroy, fn _ -> :ok end)
+
+    assert {:ok, _} = Deletion.delete_user(ctx.user)
+    refute Repo.get(User, ctx.user.id)
+
+    # `audit_events.user_id` and `sandboxes.user_id` are both nilified by the
+    # delete, so the column cannot answer whose machine this was. The metadata
+    # can, the same way `account.deleted` carries email and user id (#1977).
+    event =
+      Fountain.Audit.Event
+      |> where([e], e.action == "sandbox.teardown_requested")
+      |> Repo.one!()
+
+    assert is_nil(event.user_id)
+    assert event.metadata["user_id"] == ctx.user.id
+    assert event.metadata["reason"] == "account_deleted"
   end
 
   defp admit(ctx, capacity) do
@@ -185,4 +220,14 @@ defmodule Fountain.Accounts.DeletionFenceTest do
 
   defp events(user_id),
     do: Audit.list_for_user(user_id, action_prefix: "sandbox.teardown_requested")
+
+  # After the delete, `audit_events.user_id` is nil, so `list_for_user/2` can no
+  # longer find the row. The tenant only survives in the denormalised metadata,
+  # which is the whole point of recording it there.
+  defp deleted_event(user_id) do
+    Fountain.Audit.Event
+    |> where([e], e.action == "account.deleted")
+    |> Repo.all()
+    |> Enum.find(&(&1.metadata["user_id"] == user_id))
+  end
 end
