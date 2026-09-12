@@ -1730,8 +1730,12 @@ defmodule Fountain.Conversations do
 
   `capacity` is `Managoat.Runtimes.ACP.concurrency/1`. All runtimes take the
   per-sandbox advisory lock and verify that the conversation still belongs
-  to this nonterminal sandbox. An integer capacity also limits concurrent
-  turns; `:unbounded` skips only that capacity check. Saved execution allowances
+  to this nonterminal sandbox. The conversation row stays locked through the
+  insert: an earlier reassignment refuses this sandbox, while a later forced
+  reassignment can move a conversation whose turn was already admitted. This
+  ordering does not make arbitrary reassignment writers check for running turns.
+  An integer capacity also limits concurrent turns; `:unbounded` skips only that
+  capacity check. Saved execution allowances
   are checked under row locks; no runtime control is supported yet, so any
   nonempty allowance refuses the turn. Refusal writes no turn.
   Usage is recorded after the transaction commits, never inside it.
