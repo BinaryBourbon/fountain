@@ -4332,6 +4332,7 @@ export interface components {
             /**
              * @description Per-dependency result. `ok` or `error`, with no further detail.
              * @example {
+             *       "broker_listener": "ok",
              *       "database": "ok"
              *     }
              */

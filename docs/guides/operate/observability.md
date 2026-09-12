@@ -165,11 +165,11 @@ balancer are different decisions.
 | | |
 |---|---|
 | `GET /health` | Always 200 while the app runs. It checks nothing. Point a **restart** check here. If it read the database, one Postgres blip would restart each container at once, and that does not fix Postgres. |
-| `GET /health/ready` | 200 when this instance can serve, and 503 when it cannot reach its database. Point your **load balancer** and your deploy gates here. |
+| `GET /health/ready` | 200 when this instance can serve. 503 when it cannot reach its database, or when its egress broker listener is down. The broker check applies only when you set `BROKER_LISTEN_PORT`. Point your **load balancer** and your deploy gates here. |
 
 ```bash
 curl -sS localhost:4000/health/ready
-# {"checks":{"database":"ok"},"status":"ok"}
+# {"status":"ok","checks":{"broker_listener":"ok","database":"ok"}}
 ```
 
 Both are public, and neither asks for authentication. Each reports `ok` or
