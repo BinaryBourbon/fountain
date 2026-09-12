@@ -19,10 +19,14 @@ OWNED_FILES = {
                    ".github/workflows/sdk-release-gate.yml"},
     "swift": {"docs/swift-sdk.md", "Package.swift", "Package.resolved", ".swift-format"},
 }
+# Only test trees go here, never a whole app. `ee/lib/fountain_web/` must keep
+# fanning out: it can move the OpenAPI document, which every SDK is generated
+# against.
 UNRELATED_PREFIXES = (
     "docs/", "decisions/", "assets/", "apps/fountain/assets/",
     "apps/fountain/lib/fountain_web/live/", "apps/fountain/lib/fountain_web/components/",
     "apps/fountain/test/", "apps/fountain_buzz/test/", "apps/fountain_support/test/",
+    "ee/test/",
 )
 UNRELATED_FILES = {
     "apps/fountain/lib/fountain/telemetry.ex", "apps/fountain/lib/fountain/telemetry_tick.ex",
