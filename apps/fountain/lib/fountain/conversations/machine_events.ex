@@ -56,23 +56,41 @@ defmodule Fountain.Conversations.MachineEvents do
 
   def reset(state, _sandbox_id, _reason, _by, _message, _drop), do: {:noreply, state}
 
+  # Handle a notification for this actor's sandbox; ignore another sandbox's.
   # The server supplies its connection/turn teardown callbacks. Keeping the
   # transcript handling here leaves the actor's mailbox clauses small.
-  def gone(state, {event, reason, message}, interrupt, drop) do
+  #
+  # Cleanup runs before the guarded context transition, outside its
+  # transaction. A moved or terminal conversation, or a newer running turn,
+  # keeps its state and emits no sandbox event. The obsolete actor still stops
+  # after cleanup, because its handle is already gone with the machine.
+  def gone(
+        %{sandbox_id: sandbox_id} = state,
+        sandbox_id,
+        {event, reason, message},
+        interrupt,
+        drop
+      )
+      when is_binary(sandbox_id) do
     state = if state.current_turn, do: interrupt.(state), else: state
     state = drop.(state, event)
 
-    # ownership: the calling ConversationServer established this holder at init.
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
+    # Ownership: the actor supplies the sandbox whose local handle it closed.
+    case Conversations._unsafe_finish_machine_gone(state.conversation_id, sandbox_id) do
+      :ok ->
+        Output.publish_stage(state.conversation_id, "sandbox", "done", %{
+          event: event,
+          reason: reason,
+          by: "another_conversation",
+          message: message
+        })
 
-    Output.publish_stage(state.conversation_id, "sandbox", "done", %{
-      event: event,
-      reason: reason,
-      by: "another_conversation",
-      message: message
-    })
+      :noop ->
+        :ok
+    end
 
     {:stop, :normal, %{state | handle: nil}}
   end
+
+  def gone(state, _sandbox_id, _notification, _interrupt, _drop), do: {:noreply, state}
 end

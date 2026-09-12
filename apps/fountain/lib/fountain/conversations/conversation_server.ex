@@ -1495,8 +1495,20 @@ defmodule Fountain.Conversations.ConversationServer do
     MachineEvents.reset(state, sandbox_id, reason, by, message, &drop_connection/2)
   end
 
-  def handle_cast({:machine_gone, event, reason, message}, state) do
-    MachineEvents.gone(state, {event, reason, message}, &interrupt_turn/1, &drop_connection/2)
+  # Compatibility for senders deployed before the sandbox-qualified message.
+  # Roll out this receiver before migrating senders; the old tuple cannot
+  # distinguish an obsolete sandbox notification from one for this actor.
+  def handle_cast({:machine_gone, event, reason, message}, state),
+    do: handle_cast({:machine_gone, state.sandbox_id, event, reason, message}, state)
+
+  def handle_cast({:machine_gone, sandbox_id, event, reason, message}, state) do
+    MachineEvents.gone(
+      state,
+      sandbox_id,
+      {event, reason, message},
+      &interrupt_turn/1,
+      &drop_connection/2
+    )
   end
 
   # Catch-all for the same reason as the handle_call one above (#315).
