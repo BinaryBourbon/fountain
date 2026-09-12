@@ -533,6 +533,9 @@ defmodule Fountain.Conversations.ConversationServer do
       # Stream tracer for parsing Claude's stream-json stdout into OTel
       # child spans and events. nil for non-Claude runtimes.
       stream_tracer: nil,
+      # The `session_gone` detail this turn has already been restarted for
+      # (#1667), or nil. `TurnMachine` reads it to refuse a second restart.
+      turn_session_retry: nil,
       # The ACP peer driving the in-flight turn, when the agent has opted in
       # (0014 gate 2). nil on the legacy path, which is the default. Monitored
       # rather than linked: a protocol bug must fail a turn, not take down a
@@ -2231,7 +2234,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # revision, so the turn is not opened, the connection is dropped and the
   # server rebuilds from the row before delivering the prompt (#1565).
   defp kick_turn(state, prompt, agent, images) do
-    state = touch_activity(state)
+    # A new turn has not been restarted (#1667), whatever the last one did.
+    state = touch_activity(%{state | turn_session_retry: nil})
 
     case TurnMachine.open(
            state.conversation_id,
@@ -2342,7 +2346,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     TurnMachine.fail_before_start(turn, state.conversation_id, what, detail, exit_code)
 
-    state = %{state | current_turn: nil}
+    state = %{state | current_turn: nil, turn_session_retry: nil}
 
     # A bounded turn that never started still holds a journal and a transport.
     # Closing is retirement intent, not a confirmed stop; the coordinator confirms.
@@ -2440,6 +2444,9 @@ defmodule Fountain.Conversations.ConversationServer do
   defp apply_effect(state, {:forget_runtime_session, reason, detail}),
     do: TurnMachine.forget_turn_session(state, reason, detail)
 
+  defp apply_effect(state, {:restart_session, detail}),
+    do: restart_session(state, detail)
+
   defp apply_effect(state, {:ask_permission, request_id, tool, options}),
     do: Pending.ask(state, request_id, tool, options)
 
@@ -2480,6 +2487,49 @@ defmodule Fountain.Conversations.ConversationServer do
         state = drop_connection(state, "peer_refused_reuse")
         run_fresh_turn(state, conv, turn, prompt, TurnMachine.agent_for(conv), images, true)
     end
+  end
+
+  # The failed resume never prompted. Keep the initialized peer, remote
+  # command and admitted execution so its original deadline and fences hold.
+  defp restart_session(%{current_turn: nil} = state, _detail), do: state
+
+  defp restart_session(state, detail) do
+    case TurnMachine.try_forget_turn_session(state, "session_gone", detail) do
+      {:ok, state} ->
+        restart_current_session(state, detail)
+
+      {:error, state} ->
+        abandon_session_restart(state)
+    end
+  end
+
+  defp abandon_session_restart(%{turn_execution: %{}} = state), do: retire_bounded_turn(state)
+
+  defp abandon_session_restart(state) do
+    state
+    |> TurnMachine.into_state(TurnMachine.abandon_fenced(TurnMachine.from_state(state)))
+    |> drop_connection("restart_fenced")
+  end
+
+  defp restart_current_session(state, detail) do
+    case restart_acp_peer(state.acp_peer) do
+      :ok ->
+        TurnMachine.into_state(
+          state,
+          TurnMachine.note_session_restart(TurnMachine.from_state(state), detail)
+        )
+
+      {:error, reason} ->
+        drive_turn(state, {:failed, reason})
+    end
+  end
+
+  defp restart_acp_peer(nil), do: {:error, :acp_peer_unavailable}
+
+  defp restart_acp_peer(peer) do
+    Managoat.ACP.Peer.restart_session(peer)
+  catch
+    :exit, _ -> {:error, :acp_peer_unavailable}
   end
 
   # Close the connection (`Connection.close/3`). An autonomous turn still open

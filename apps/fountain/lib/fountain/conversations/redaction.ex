@@ -192,7 +192,8 @@ defmodule Fountain.Conversations.Redaction do
         runner_replay: replay(state.runner_replay),
         tenant_key: secret(state.tenant_key),
         inference_credentials: secrets(state.inference_credentials),
-        callback_token: secret(state.callback_token)
+        callback_token: secret(state.callback_token),
+        turn_session_retry: secret(state.turn_session_retry)
     }
   end
 

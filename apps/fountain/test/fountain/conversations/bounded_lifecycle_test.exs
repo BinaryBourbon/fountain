@@ -211,6 +211,104 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
     assert Repo.aggregate(Turn, :count) == 1
   end
 
+  test "missing resume recovers under the same journal, command and deadline", c do
+    c = with_missing_session(c)
+    {pid, transport, ref, execution} = start_bounded(c)
+    {new_id, original} = recover_missing_session(pid, transport, ref)
+    assert_same_execution(pid, execution, original)
+
+    reply(transport, ref, new_id, %{"sessionId" => "fresh-session", "models" => %{}})
+    %{"id" => model_id, "method" => "session/set_model"} = next_write()
+    reply(transport, ref, model_id, %{})
+    %{"id" => prompt_id, "method" => "session/prompt", "params" => params} = next_write()
+    assert params["sessionId"] == "fresh-session"
+    assert params["prompt"] == [%{"type" => "text", "text" => "review"}]
+    assert_same_execution(pid, execution, original)
+
+    reply(transport, ref, prompt_id, %{"stopReason" => "end_turn"})
+    wait_idle(pid)
+    assert Repo.get!(Turn, execution.turn_id).status == "completed"
+    assert Repo.get!(TurnExecution, execution.id).state == "ready"
+    assert {:error, :execution_fenced} = GenServer.call(pid, {:send_prompt, "again", []})
+    assert Repo.aggregate(Turn, :count) == 1
+    assert Repo.aggregate(TurnExecution, :count) == 1
+    assert turn_stages(c.conv.id) == ["started", "done"]
+    refute_receive {:spawn_argv, _}
+    refute_receive {:wrote, %{"method" => "session/prompt"}}
+  end
+
+  test "the original deadline fences a recovered session before its prompt", c do
+    c = with_missing_session(c)
+    {pid, transport, ref, execution} = start_bounded(c)
+    {new_id, original} = recover_missing_session(pid, transport, ref)
+    assert_same_execution(pid, execution, original)
+
+    Repo.get!(TurnExecution, execution.id)
+    |> Ecto.Changeset.change(deadline_at: DateTime.add(DateTime.utc_now(), -1))
+    |> Repo.update!()
+
+    reply(transport, ref, new_id, %{"sessionId" => "fresh-session", "models" => %{}})
+    wait_idle(pid)
+    refute_receive {:wrote, %{"method" => "session/prompt"}}
+    refute_receive {:spawn_argv, _}
+    assert Repo.get!(TurnExecution, execution.id).state == "ready"
+    assert Repo.get!(Turn, execution.turn_id).status in ["failed", "interrupted"]
+    assert {:error, :execution_fenced} = GenServer.call(pid, {:send_prompt, "again", []})
+    assert Repo.aggregate(Turn, :count) == 1
+  end
+
+  defp with_missing_session(c) do
+    {:ok, conv} = Conversations.update_conversation(c.conv, %{runtime_session_id: "gone-session"})
+    %{c | conv: conv}
+  end
+
+  defp recover_missing_session(pid, transport, ref) do
+    assert_receive {:spawn_argv, _}
+    %{"id" => init_id, "method" => "initialize"} = next_write()
+    reply(transport, ref, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
+    %{"id" => load_id, "method" => "session/load"} = next_write()
+    original = :sys.get_state(pid)
+
+    send(
+      transport,
+      {:stdout, %{ref: ref},
+       Jason.encode!(%{
+         jsonrpc: "2.0",
+         id: load_id,
+         error: %{code: -32_002, message: "Resource not found"}
+       }) <> "\n"}
+    )
+
+    %{"id" => new_id, "method" => "session/new", "params" => params} = next_write()
+    assert new_id > load_id
+    assert get_in(params, ["_meta", "claudeCode", "options", "maxTurns"]) == 2
+    {new_id, original}
+  end
+
+  defp assert_same_execution(pid, execution, original) do
+    state = :sys.get_state(pid)
+    journal = Repo.get!(TurnExecution, execution.id)
+    assert state.current_turn.id == execution.turn_id
+    assert state.acp_peer == original.acp_peer
+    assert state.current_command == original.current_command
+    assert state.current_turn_span == original.current_turn_span
+    assert state.turn_metrics == original.turn_metrics
+    assert state.execution_transport == original.execution_transport
+    assert journal.deadline_at == execution.deadline_at
+    assert journal.execution_limits == execution.execution_limits
+    assert journal.connection_id == execution.connection_id
+    assert journal.provider_session_id == "live-fixture"
+    assert journal.spawn_submitted_at == execution.spawn_submitted_at
+    assert journal.state == "active"
+  end
+
+  defp turn_stages(conversation_id) do
+    conversation_id
+    |> Conversations._unsafe_list_log_events()
+    |> Enum.filter(&(&1.kind == "stage" and &1.stage == "turn"))
+    |> Enum.map(& &1.state)
+  end
+
   test "a broker refresh cannot discard the newly admitted journal", c do
     stub(Fountain.Conversations.Egress, :refresh_before_turn, fn state -> {state, true} end)
     {pid, _transport, _ref, execution} = start_bounded(c)

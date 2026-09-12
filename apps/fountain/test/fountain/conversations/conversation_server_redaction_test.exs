@@ -30,6 +30,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
   @inference_value "sk-ant-byo-credential-315"
   @callback_value "fnt_callback_key_315"
   @sprites_token "sprites-platform-token-315"
+  @retry_detail "runtime-error-with-secret-session-detail-1913"
   @brokered_value "ghp-brokered-github-token-1690"
   @broker_token "broker-session-token-1690"
   @env_credential_value "sk-ant-env-credential-1690"
@@ -106,7 +107,8 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
           turn_execution: %TurnExecution{last_error: @execution_secret},
           tenant_key: @dek_value,
           inference_credentials: %{"anthropic" => @inference_value},
-          callback_token: @callback_value
+          callback_token: @callback_value,
+          turn_session_retry: @retry_detail
       }
     end)
 
@@ -120,6 +122,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     refute rendered =~ @inference_value
     refute rendered =~ @callback_value
     refute rendered =~ @sprites_token
+    refute rendered =~ @retry_detail
     # #1690.
     refute rendered =~ @brokered_value
     refute rendered =~ @broker_token
@@ -332,7 +335,8 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
       turn_execution: %TurnExecution{last_error: @sentinel},
       tenant_key: @sentinel,
       inference_credentials: %{"sentinel" => @sentinel},
-      callback_token: @sentinel
+      callback_token: @sentinel,
+      turn_session_retry: @sentinel
     }
   end
 

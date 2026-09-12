@@ -27,6 +27,8 @@ defmodule Fountain.Conversations.TurnMachine do
     * `{:forget_runtime_session, reason, detail}` — clear it again, when the
       runtime says the session it names is not there (#778's remedy, reached
       by the failure rather than by a wake);
+    * `{:restart_session, detail}` — open a fresh session on the same peer
+      before its original prompt and images are sent (#1667);
     * `{:ask_permission, request_id, tool, options}` — the held request:
       its row, its stage, its timeout (the pending family, #1375);
     * `:detach_permission` — the turn is ending `waiting` and its request
@@ -76,6 +78,7 @@ defmodule Fountain.Conversations.TurnMachine do
           | :arm_autonomous_quiet
           | {:session_id, String.t()}
           | {:forget_runtime_session, String.t(), String.t()}
+          | {:restart_session, String.t()}
           | {:ask_permission, term(), String.t(), list()}
           | :detach_permission
           | {:finish, String.t(), map(), map()}
@@ -87,7 +90,8 @@ defmodule Fountain.Conversations.TurnMachine do
           span: term() | nil,
           metrics: map() | nil,
           tracer: term() | nil,
-          replay_dedup: MapSet.t()
+          replay_dedup: MapSet.t(),
+          session_retry: String.t() | nil
         }
 
   defstruct conversation_id: nil,
@@ -95,7 +99,12 @@ defmodule Fountain.Conversations.TurnMachine do
             span: nil,
             metrics: nil,
             tracer: nil,
-            replay_dedup: MapSet.new()
+            replay_dedup: MapSet.new(),
+            # The detail of the `session_gone` this turn has already been
+            # restarted for (#1667), or nil. One restart per turn: the machine
+            # itself refuses a second, so a fresh session that is also gone
+            # fails the turn the way it always did rather than looping.
+            session_retry: nil
 
   # ── the server boundary ───────────────────────────────────────────────────
 
@@ -108,7 +117,8 @@ defmodule Fountain.Conversations.TurnMachine do
       span: state.current_turn_span,
       metrics: state.turn_metrics,
       tracer: state.stream_tracer,
-      replay_dedup: state.replay_dedup
+      replay_dedup: state.replay_dedup,
+      session_retry: state.turn_session_retry
     }
   end
 
@@ -121,7 +131,8 @@ defmodule Fountain.Conversations.TurnMachine do
         current_turn_span: turn.span,
         turn_metrics: turn.metrics,
         stream_tracer: turn.tracer,
-        replay_dedup: turn.replay_dedup
+        replay_dedup: turn.replay_dedup,
+        turn_session_retry: turn.session_retry
     }
   end
 
@@ -507,10 +518,17 @@ defmodule Fountain.Conversations.TurnMachine do
   # so nothing upstream reads as broken: the turns fail, the client is told a
   # turn ended, and the track looks merely quiet.
   #
-  # Clearing the id makes the next turn `:run` → `session/new`: the same
+  # Clearing the id makes the turn `:run` → `session/new`: the same
   # conversation, transcript and title, a new runtime session. The agent's
   # in-context memory is lost — but it was already unreachable, which is the
   # same trade #778 made and for the same reason.
+  #
+  # #1667: recover once before the model receives the prompt. The peer
+  # retains the original input and initializes a new session on the same
+  # remote command. Keeping that command also retains the admitted execution,
+  # its immutable identity, deadline and write fences. The turn's span and
+  # measurements stay open; `note_session_restart/2` records the lost context.
+  # `session_retry` prevents another recovery within this turn.
   #
   # Read out of the error's sentence rather than off a field, as the two
   # clauses above are and for the same reason: no runtime marks this kind.
@@ -521,28 +539,7 @@ defmodule Fountain.Conversations.TurnMachine do
   def handle(%__MODULE__{} = turn, {:failed, {:acp_error, tag, error}}, _ctx)
       when tag in [:resume_session, :load_session] do
     if session_gone?(error) do
-      detail = acp_detail(error)
-
-      Logger.warning(
-        "conv #{turn.conversation_id}: runtime session is gone (#{tag}): #{detail}; " <>
-          "clearing it so the next turn starts a new one"
-      )
-
-      message = session_gone_message(detail)
-
-      finish =
-        if turn.row do
-          [
-            {:finish, "failed", %{"error" => message, "acp.session_gone" => true},
-             %{reason: message}}
-          ]
-        else
-          []
-        end
-
-      {turn,
-       [{:forget_runtime_session, "session_gone", detail}] ++
-         finish ++ [{:drop_connection, "failed"}]}
+      session_gone(turn, tag, acp_detail(error))
     else
       handle_failed(turn, {:acp_error, tag, error})
     end
@@ -551,6 +548,44 @@ defmodule Fountain.Conversations.TurnMachine do
   # A failed peer is not reusable: end the turn it was driving (if any) and
   # drop the connection, so the next prompt spawns a fresh adapter.
   def handle(%__MODULE__{} = turn, {:failed, reason}, _ctx), do: handle_failed(turn, reason)
+
+  defp session_gone(%__MODULE__{} = turn, tag, detail) do
+    forget = {:forget_runtime_session, "session_gone", detail}
+
+    cond do
+      is_nil(turn.row) ->
+        # A peer that failed to resume with no turn open: nothing was asked,
+        # so there is nothing to replay and nothing to fail.
+        log_session_gone(turn, tag, detail, "clearing it so the next turn starts a new one")
+        {turn, [forget, {:drop_connection, "failed"}]}
+
+      is_nil(turn.session_retry) ->
+        log_session_gone(turn, tag, detail, "clearing it and running this turn on a new one")
+
+        {%{turn | session_retry: detail}, [{:restart_session, detail}]}
+
+      true ->
+        # The fresh session is gone too. Something is wrong that a third
+        # attempt will not fix, so this is the failure #1657 shipped, said in
+        # full, once.
+        log_session_gone(turn, tag, detail, "already restarted once; failing the turn")
+        message = session_gone_message(detail)
+
+        {turn,
+         [
+           forget,
+           {:finish, "failed", %{"error" => message, "acp.session_gone" => true},
+            %{reason: message}},
+           {:drop_connection, "failed"}
+         ]}
+    end
+  end
+
+  defp log_session_gone(turn, tag, detail, what_next) do
+    Logger.warning(
+      "conv #{turn.conversation_id}: runtime session is gone (#{tag}): #{detail}; #{what_next}"
+    )
+  end
 
   defp handle_failed(%__MODULE__{} = turn, reason) do
     Logger.error("conv #{turn.conversation_id}: acp peer failed: #{inspect(reason)}")
@@ -656,7 +691,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
     {:ok, _} = Conversations._unsafe_idle_after_turn(row)
 
-    %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
+    %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
   end
 
   defp waiting?("waiting", %{pending_permission: %{"request_id" => _}}), do: true
@@ -708,7 +743,34 @@ defmodule Fountain.Conversations.TurnMachine do
 
     {:ok, _} = Conversations._unsafe_idle_after_turn(turn.row)
 
-    %{turn | row: nil, span: nil, metrics: nil, tracer: nil}
+    %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
+  end
+
+  @doc "Release local measurements for a fenced worker without changing its persisted turn."
+  @spec abandon_fenced(t()) :: t()
+  def abandon_fenced(%__MODULE__{} = turn) do
+    finalize_tracer(turn.tracer)
+    end_span(turn.span, :error, %{"outcome" => "execution_fenced"})
+    %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
+  end
+
+  @doc "Records session recovery while preserving the admitted turn's measurements."
+  @spec note_session_restart(t(), String.t()) :: t()
+  def note_session_restart(%__MODULE__{} = turn, detail) do
+    publish_stage(turn.conversation_id, "session", "done", %{
+      event: "restarted",
+      reason: "session_gone",
+      detail: detail,
+      turn_id: turn.row && turn.row.id,
+      message: session_restarted_message(detail)
+    })
+
+    stamp_span(turn.span, %{
+      "acp.session_gone" => true,
+      "acp.session_restarted" => true
+    })
+
+    turn
   end
 
   @doc "Start one turn's measurements with the provider of the computer it runs on."
@@ -1474,21 +1536,9 @@ defmodule Fountain.Conversations.TurnMachine do
   def accept_runtime_session(state, _id), do: state
 
   @doc "Clear a worker's lost session through the same generation fence as session reports."
-  def forget_turn_session(%{current_turn: %{} = turn} = state, reason, detail) do
-    case Conversations._unsafe_set_turn_session(turn, nil) do
-      {:ok, %{applied: true}} ->
-        publish_stage(state.conversation_id, "session", "done", %{
-          turn_id: turn.id,
-          event: "reset",
-          reason: reason,
-          detail: detail
-        })
-
-        %{state | runtime_session_id: nil}
-
-      _ ->
-        state
-    end
+  def forget_turn_session(%{current_turn: %{}} = state, reason, detail) do
+    {_result, state} = try_forget_turn_session(state, reason, detail)
+    state
   end
 
   def forget_turn_session(%{runtime_session_id: nil} = state, _reason, _detail), do: state
@@ -1506,6 +1556,24 @@ defmodule Fountain.Conversations.TurnMachine do
 
       _ ->
         state
+    end
+  end
+
+  @doc "Clear a current turn's session, retaining the fence result for recovery."
+  def try_forget_turn_session(%{current_turn: %{} = turn} = state, reason, detail) do
+    case Conversations._unsafe_set_turn_session(turn, nil) do
+      {:ok, %{applied: true}} ->
+        publish_stage(state.conversation_id, "session", "done", %{
+          turn_id: turn.id,
+          event: "reset",
+          reason: reason,
+          detail: detail
+        })
+
+        {:ok, %{state | runtime_session_id: nil}}
+
+      _ ->
+        {:error, state}
     end
   end
 
@@ -1580,6 +1648,21 @@ defmodule Fountain.Conversations.TurnMachine do
     "The runtime session for this conversation is no longer on its sandbox: #{String.trim(detail)} " <>
       "Send your prompt again — the next turn starts a fresh session on this same conversation. " <>
       "Its history is kept, but the agent will not remember the turns before this one."
+  end
+
+  @doc """
+  What a tenant is told when the session went and the turn was restarted on
+  a fresh one (#1667).
+
+  The prompt needs no mention: it is running. What is left is the one thing
+  they would otherwise discover by watching the agent answer as though the
+  turns before it had not happened.
+  """
+  @spec session_restarted_message(String.t()) :: String.t()
+  def session_restarted_message(detail) do
+    "The agent's memory was lost. Your prompt is running on a fresh session on this same " <>
+      "conversation. Its history is kept, but the agent does not remember the turns " <>
+      "before this one. The runtime reported: #{String.trim(detail)}"
   end
 
   # The provider's own sentence is the useful half, and it usually names the

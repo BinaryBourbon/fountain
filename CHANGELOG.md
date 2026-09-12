@@ -303,6 +303,11 @@ upgrade, is in
 
 ### Fixed
 
+- A prompt automatically continues once on a fresh session when the runtime's
+  saved session is missing. The transcript announces the lost agent memory;
+  the conversation history, original turn and execution deadline are preserved
+  (#1667).
+
 - Bounded execution transports recheck their absolute deadline before retiring
   a turn. A timer that wakes early no longer interrupts a valid turn or hides
   its eventual wall-time-limit outcome.
