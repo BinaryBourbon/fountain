@@ -39,9 +39,14 @@ when the merged tree is the tested tree.
 Two constraints shaped the design more than the volume did:
 
 - **The organization is on the free plan: 20 concurrent GitHub-hosted jobs.**
-  One full CI run is 19 of them. A burst of ten agent-opened PRs on 2026-09-10
-  produced a run whose jobs waited 29 minutes before starting and then finished
-  in 7. Runner concurrency, not test time, is what this repository runs out of.
+  One full CI run was 19 of them when this was decided. A burst of ten
+  agent-opened PRs on 2026-09-10 produced a run whose jobs waited 29 minutes
+  before starting and then finished in 7. Runner concurrency, not test time, is
+  what this repository runs out of. (Since #1413 split the SDK job per language
+  and added three runtime matrices, a full mixed PR is 26 jobs and a merge group
+  27 — a single run now exceeds the ceiling on its own, which strengthens rather
+  than changes the sizing below. `scripts/ci/require-checks.py` carries the
+  current count.)
 - **72% of open PRs are stacked** — 31 of 43 target another PR's branch rather
   than main. GitHub only queues a PR based on the protected branch.
 

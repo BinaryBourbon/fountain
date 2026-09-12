@@ -43,11 +43,20 @@ class SDKChangesTest(unittest.TestCase):
                  "apps/fountain/lib/fountain_web/live/dashboard_live/index.ex",
                  "apps/fountain/lib/fountain_web/components/core_components.ex",
                  "apps/fountain/lib/fountain/telemetry_tick.ex",
-                 "apps/fountain/test/fountain/agents_test.exs"]
+                 "apps/fountain/test/fountain/agents_test.exs",
+                 "ee/test/fountain/credits_enforcement_test.exs"]
         self.assertEqual(classify(paths), set())
         self.assertEqual(classify(paths + ["sdk/python/test.py", "sdk/swift/README.md"]),
                          {"python", "swift"})
         self.assertEqual(classify(["docs/sdk.md"]), {"typescript"})
+
+    def test_ee_lib_fans_out_but_ee_tests_do_not(self):
+        # ee/lib/fountain_web/ can move the OpenAPI document, so it must select
+        # every SDK. Only ee/test/ is unrelated.
+        self.assertEqual(classify(["ee/test/fountain/credits_test.exs"]), set())
+        self.assertEqual(classify(["ee/lib/fountain_web/controllers/billing_controller.ex"]),
+                         LANGUAGES)
+        self.assertEqual(classify(["ee/lib/fountain/credits.ex"]), LANGUAGES)
 
     def test_empty_and_ambiguous_paths_select_all(self):
         self.assertEqual(classify([]), LANGUAGES)
