@@ -387,14 +387,27 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
-  @doc "Retire an orphan's execution before recovery writes, in parent/journal/turn lock order."
-  def _unsafe_recover_turn(%Turn{} = observed, writer) do
+  @doc """
+  Retire an orphan's execution before recovery writes, in parent/journal/turn lock order.
+
+  `:expected_sandbox_id` is the recovering actor's own binding. `cleanup_binding?/1`
+  already refuses a bounded turn whose journal names a sandbox the parent no
+  longer points at, but an unbounded turn has no journal row and nothing else
+  records which machine was driving it. An actor that supplies the option and
+  finds the locked parent reassigned recovers nothing: the rollback happens
+  before `retire_orphan/2`, so a stale actor writes neither the turn nor the
+  journal. Supplying `nil` is an expectation of "no sandbox", not an absent one;
+  omitting the key entirely is what the system reaper does, because it is
+  recovering on nobody's behalf.
+  """
+  def _unsafe_recover_turn(%Turn{} = observed, writer, opts \\ []) do
     transaction(fn ->
       conv = lock_parent(observed.conversation_id) || Repo.rollback(:not_found)
       execution = lock_execution_by_turn(observed.id)
       turn = lock_turn(observed.id) || Repo.rollback(:turn_missing)
       if turn.conversation_id != conv.id, do: Repo.rollback(:ownership_changed)
 
+      if rebound?(opts, conv), do: Repo.rollback(:ownership_changed)
       if execution && not cleanup_binding?(execution), do: Repo.rollback(:ownership_changed)
       running? = turn.status == "running"
       {turn, changed, event} = retire_orphan(execution, turn)
@@ -958,6 +971,13 @@ defmodule Fountain.Conversations.ExecutionGuard do
   # must still prove its tenant/name/provider binding; a surviving conversation
   # must also remain bound to it. Missing or changed sandbox identity stays
   # uncertain. Reset cannot reuse this row while its journal remains open.
+  defp rebound?(opts, conv) do
+    case Keyword.fetch(opts, :expected_sandbox_id) do
+      {:ok, expected} -> expected != conv.sandbox_id
+      :error -> false
+    end
+  end
+
   defp cleanup_binding?(execution) do
     sandbox_matches =
       Repo.exists?(
