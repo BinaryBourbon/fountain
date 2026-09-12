@@ -80,15 +80,49 @@ defmodule Fountain.Agents.ModelCatalog do
   # to users. `Managoat.Runtimes.Claude.prepare_sandbox/3` warms that cache
   # at provisioning (managoat_runtimes 0.3.4), and Fable 5.1 additionally
   # needs the CLI at 2.1.255 or later, which the 0.75.1 adapter pin bundles
-  # (managoat_runtimes 0.3.3). Check both when this entry misbehaves.
+  # (managoat_runtimes 0.3.3).
+  #
+  # ## And the accepted set also varies by credential type
+  #
+  # The warm-up only populates on an API key. Measured in production on
+  # 2026-09-11, same commit and pods, a fresh sandbox each time, one variable
+  # changed:
+  #
+  #   * `ANTHROPIC_API_KEY` (a tenant's own, or the platform key a tenant with
+  #     no anthropic credential falls back to): the cache warms in a couple of
+  #     seconds and the turn selects `claude-fable-5-1[1m]`.
+  #   * `CLAUDE_CODE_OAUTH_TOKEN` (a Claude.ai subscription): the fetch never
+  #     populates `additionalModelOptionsCache`, the warm-up polls out its 30s
+  #     bound and logs "claude model list did not warm", and the turn fails at
+  #     `session/set_config_option` with "Invalid value for config option
+  #     model" — the #1669 refusal exactly.
+  #
+  # Egress is not the cause: `cachedGrowthBookFeatures` comes back from the
+  # server on the failing path, so the sandbox reached Anthropic and only the
+  # additional-models fetch came back empty. `Claude.default_env/2` prefers
+  # OAuth whenever it is set, so a tenant holding a subscription token always
+  # takes the failing path.
+  #
+  # **This entry is therefore knowingly suggested to accounts it cannot serve.**
+  # `@catalog` is one global list, so `GET /api/catalog` offers Fable to every
+  # account while only the API-key path resolves it. That is a deliberate
+  # choice, not an oversight: the id is live and correct for the platform-key
+  # majority, and it is listed rather than hidden from them. A Fable refusal
+  # reported by a tenant with their own Claude subscription is this, and is
+  # expected until the warm-up populates on that path.
+  #
+  # Check all three when this entry misbehaves: the provider, the adapter pin,
+  # and which credential the conversation ran on (the `broker` log event names
+  # the keys).
   @catalog %{
     # `claude-fable-5-1`: added 2026-09-06 (#1659) from the published id with
     # no adapter check, removed 2026-09-07 (#1669) after two refused turns,
     # re-added 2026-09-07 on the 0.75.1 adapter pin with the cache warm-up
     # above, verified with a real turn ("Reply with the single word OK" →
-    # `stopReason: end_turn`, confirmed model `claude-fable-5-1[1m]`). The
-    # 2026-09-06 refusals were the cold-cache case, not a version the
-    # provider does not serve. `claude-fable-5` is refused by 0.75.1 even
+    # `stopReason: end_turn`, confirmed model `claude-fable-5-1[1m]`) — on an
+    # API-key credential. It is refused on the OAuth path, knowingly; see the
+    # credential-type note above `@catalog`. The 2026-09-06 refusals were the
+    # cold-cache case, not a version the provider does not serve. `claude-fable-5` is refused by 0.75.1 even
     # warm — the org's additional list carries 5.1 only — and stays out.
     #
     # `claude-opus-4-8`, `claude-opus-4-7` and `claude-sonnet-4-6` were removed
