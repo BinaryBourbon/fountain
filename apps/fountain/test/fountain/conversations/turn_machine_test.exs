@@ -499,6 +499,17 @@ defmodule Fountain.Conversations.TurnMachineTest do
       end
     end
 
+    test "a successor admitted mid-completion keeps the conversation running", ctx do
+      Conversations.update_conversation(ctx.conv, %{status: "running"})
+      successor = insert_turn(ctx.conv, status: "running")
+
+      TurnMachine.finish(ctx.machine, "completed", %{}, %{})
+
+      assert Fountain.Repo.reload!(ctx.row).status == "completed"
+      assert Fountain.Repo.reload!(ctx.conv).status == "running"
+      assert Fountain.Repo.reload!(successor).status == "running"
+    end
+
     test "completion materializes a reply and activates the account", ctx do
       insert_log_event(ctx.conv, turn_id: ctx.row.id, stream: "acp", data: @update_line)
       TurnMachine.finish(ctx.machine, "completed", %{}, %{})

@@ -2278,8 +2278,18 @@ defmodule Fountain.Conversations do
             |> maybe_put_reply_text(current)
 
           updated = Repo.update!(changeset)
-          idle = conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
-          {updated, idle, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
+
+          # A successor admitted while this actor was ending its turn keeps the
+          # conversation running. `_unsafe_idle_after_turn/1` refused this
+          # through `latest_turn?`, and that refusal has to survive the move to
+          # a writer of our own; the parent lock above is the same one turn
+          # admission takes, so nothing can be admitted between the two reads.
+          conv =
+            if Repo.exists?(newer_running_turn_query(turn.conversation_id, turn.id)),
+              do: conv,
+              else: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
+
+          {updated, conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
         else
           _ -> :noop
         end
@@ -2294,6 +2304,12 @@ defmodule Fountain.Conversations do
         broadcast_sidebar_update(conv.user_id)
         {:ok, updated}
     end
+  end
+
+  defp newer_running_turn_query(conversation_id, turn_id) do
+    from(t in Turn,
+      where: t.conversation_id == ^conversation_id and t.id != ^turn_id and t.status == "running"
+    )
   end
 
   @doc """
