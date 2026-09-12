@@ -65,7 +65,7 @@ jobs:
   verify:
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75 # Step caps total 71 minutes, including setup and both uploads.
     environment: deployed-${{ inputs.target || 'production' }}
     env:
       SUITE_TARGET: ${{ inputs.target || 'production' }}
@@ -82,17 +82,21 @@ jobs:
       FOUNTAIN_RECEIVER_ADMIN_KEY: ${{ secrets.FOUNTAIN_RECEIVER_ADMIN_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        timeout-minutes: 2
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 2
         with:
           node-version: 24
       - name: Start scheduled monitor
+        timeout-minutes: 1
         if: github.event_name == 'schedule'
         env:
           SUITE_MONITOR_URL: ${{ secrets[github.event.schedule == '43 4 * * 6' && 'SUITE_MATRIX_MONITOR_URL' || 'SUITE_MONITOR_URL'] }}
         run: node deployed/monitor.mjs in_progress
       - name: Configure deployment observer
+        timeout-minutes: 2
         if: inputs.mode == 'rollout'
         env:
           SUITE_KUBECONFIG: ${{ secrets.SUITE_KUBECONFIG }}
@@ -108,14 +112,17 @@ jobs:
           kubectl version --client
       - name: Verify public ingress and clean fixtures
         id: suite
+        timeout-minutes: 52
         run: node deployed/ci.mjs
       - name: Finish scheduled monitor
+        timeout-minutes: 1
         if: always() && github.event_name == 'schedule'
         env:
           SUITE_MONITOR_URL: ${{ secrets[github.event.schedule == '43 4 * * 6' && 'SUITE_MATRIX_MONITOR_URL' || 'SUITE_MONITOR_URL'] }}
           MONITOR_STATUS: ${{ steps.suite.outcome == 'success' && 'ok' || 'error' }}
         run: node deployed/monitor.mjs "$MONITOR_STATUS"
       - name: Retain redacted evidence and cleanup manifests
+        timeout-minutes: 2
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -123,6 +130,26 @@ jobs:
           path: ${{ runner.temp }}/deployed-${{ github.run_id }}-${{ github.run_attempt }}/results/
           retention-days: 30
           if-no-files-found: warn
+      - name: Retry interrupted or failed fixture cleanup
+        id: cleanup
+        if: always() && (steps.suite.outcome == 'failure' || steps.suite.outcome == 'cancelled')
+        timeout-minutes: 6 # Two minutes admitting work, then cleanup and receiver finalizers.
+        run: |
+          root="$RUNNER_TEMP/deployed-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          node deployed/cleanup-replay.mjs --allow-empty --config "$root/target.json" \
+            --results "$root/results" --out "$root/cleanup-replay"
+      - name: Retain cleanup retry evidence and updated manifests
+        timeout-minutes: 2
+        if: always() && steps.cleanup.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployed-cleanup-${{ env.SUITE_TARGET }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/deployed-${{ github.run_id }}-${{ github.run_attempt }}/results/
+            ${{ runner.temp }}/deployed-${{ github.run_id }}-${{ github.run_attempt }}/cleanup-replay/
+          retention-days: 30
+          if-no-files-found: warn
       - name: Remove deployment credentials
+        timeout-minutes: 1
         if: always()
         run: rm -f "$RUNNER_TEMP/suite-kubeconfig"
