@@ -730,10 +730,18 @@ defmodule Fountain.Accounts do
         key
         |> Ecto.Changeset.change(revoked_at: DateTime.utc_now() |> DateTime.truncate(:second))
         |> Repo.update()
-        |> audited_account("api_key.revoked", "api_key", opts, fn revoked ->
-          %{"name" => revoked.name, "key_prefix" => revoked.key_prefix}
-        end)
+        |> case do
+          {:ok, revoked} -> record_api_key_revoked(revoked, opts)
+          error -> error
+        end
     end
+  end
+
+  @doc "Audit a committed key revocation outside the transaction that changed it."
+  def record_api_key_revoked(%ApiKey{} = key, opts \\ []) do
+    audited_account({:ok, key}, "api_key.revoked", "api_key", opts, fn revoked ->
+      %{"name" => revoked.name, "key_prefix" => revoked.key_prefix}
+    end)
   end
 
   @doc """
