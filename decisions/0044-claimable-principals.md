@@ -130,7 +130,19 @@ abandoning what it already has.
    alone. It records the new key and replaced key ids in the owner's audit
    trail after commit. Claimed credentials expire 30 days after each issuance,
    independently of the anonymous grant deadline. The owner's API keys page
-   can replace them before or after expiry.
+   can replace them before or after expiry. Existing active principal keys
+   with no expiry get a 30-day renewal window when migrated. A database
+   trigger permanently enforces a finite expiry when a writer inserts a
+   principal key or updates its scope/expiry without supplying a deadline.
+   It supplies 30 days from the write's wall-clock time, including for older
+   writers during rollout. Explicit deadlines and keys without principal
+   scope are unaffected. Issuers must still set and return their deadline
+   explicitly: an insert without `RETURNING expires_at` does not see the
+   trigger's generated value in its returned struct. Intentionally permitting
+   non-expiring principal credentials would require changing this database
+   policy. Trigger installation commits before the legacy backfill, with
+   bounded lock and statement timeouts on both migrations. Rolling back
+   retains deadlines already assigned.
 
 **The API is four routes**, all behind `:require_full_scope`:
 `POST /api/claimable-users`, `GET /api/claimable-users/:id`,
