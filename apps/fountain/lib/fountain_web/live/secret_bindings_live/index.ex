@@ -6,7 +6,10 @@ defmodule FountainWeb.SecretBindingsLive.Index do
   Only for accounts the broker is on for: the nav link is hidden otherwise,
   and a direct visit is sent to `/account`. The page never sees a value —
   it lists the names of the secrets the account holds anywhere, and the
-  bindings on each name.
+  bindings on each name. The `connections` rollout flag decides whether a
+  credential can be sent anywhere new from here. With it off the page still
+  lists the bindings, still disables one and still unbinds it; the form is
+  gone, and so is the button that would enable a disabled binding (#1693).
   """
 
   use FountainWeb, :live_view
@@ -20,11 +23,15 @@ defmodule FountainWeb.SecretBindingsLive.Index do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
 
-    if Fountain.Connections.enabled_for?(user.id) do
+    # Open for any brokered account. A binding that is attaching a credential
+    # right now has to be visible and removable whatever the rollout flag
+    # says; `may_bind?` is the flag, and it gates only the form (#1693).
+    if Fountain.Connections.manageable_for?(user.id) do
       {:ok,
        socket
        |> assign(:page_title, "Credential bindings")
        |> assign(:user_id, user.id)
+       |> assign(:may_bind?, Fountain.Connections.enabled_for?(user.id))
        |> assign(:proxy_host, Broker.proxy_host())
        |> assign(:presets, Catalog.presets())
        |> assign(:form_version, 0)
@@ -40,10 +47,33 @@ defmodule FountainWeb.SecretBindingsLive.Index do
 
   # ── events ───────────────────────────────────────────────────────────────
 
+  # The events that make a new binding, refused in one place for an account
+  # without the rollout flag. The template hides the form; a hidden form is
+  # not a gate. `delete` is not here: it takes a binding away, and that is
+  # exactly what must keep working.
+  #
+  # `toggle` is not here either, and not because it is safe: it writes
+  # `enabled: not enabled`, so its name says nothing about which way it goes.
+  # Disabling is the soft off switch; enabling starts a credential flowing to
+  # a host it was not flowing to, which is the same act the API's `update`
+  # needs the flag for. A name cannot tell the two apart, so the direction of
+  # the write is gated instead, in `handle_event("toggle", ...)` below.
+  @binding_new ~w(draft pick_key preset save)
+
+  @impl true
+  def handle_event(event, _params, %{assigns: %{may_bind?: false}} = socket)
+      when event in @binding_new do
+    {:noreply,
+     put_flash(
+       socket,
+       :error,
+       "New bindings are off for this account. You can still disable or unbind the ones you have."
+     )}
+  end
+
   # Keeps the form's shape in step with the auth type and the preset pick,
   # so only the fields of the chosen type are shown and submitted — the
   # broker rejects a stale field from a previous choice.
-  @impl true
   def handle_event("draft", %{"binding" => attrs}, socket) do
     draft =
       Map.merge(
@@ -122,20 +152,27 @@ defmodule FountainWeb.SecretBindingsLive.Index do
     end
   end
 
+  # Which way this one goes decides which gate it is under: disabling a binding
+  # is the off switch and stays open, enabling one attaches a credential to a
+  # host again and needs the flag (#1693).
   def handle_event("toggle", %{"id" => id}, socket) do
-    with %Binding{} = binding <- SecretBindings.get_binding(id, socket.assigns.user_id),
-         {:ok, updated} <-
-           SecretBindings.update_binding(
-             binding,
-             %{"enabled" => not binding.enabled},
-             FountainWeb.Audited.attribution(socket)
-           ) do
-      word = if updated.enabled, do: "enabled", else: "disabled"
+    binding = SecretBindings.get_binding(id, socket.assigns.user_id)
 
-      {:noreply,
-       socket |> reload() |> put_flash(:info, "#{updated.key} → #{updated.host} #{word}")}
-    else
-      _ -> {:noreply, put_flash(socket, :error, "Binding not found")}
+    cond do
+      is_nil(binding) ->
+        {:noreply, put_flash(socket, :error, "Binding not found")}
+
+      not binding.enabled and not socket.assigns.may_bind? ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "New bindings are off for this account, and enabling this one would make it " <>
+             "attach #{binding.key} to #{binding.host} again."
+         )}
+
+      true ->
+        flip(socket, binding)
     end
   end
 
@@ -153,6 +190,23 @@ defmodule FountainWeb.SecretBindingsLive.Index do
   end
 
   # ── helpers ──────────────────────────────────────────────────────────────
+
+  defp flip(socket, %Binding{} = binding) do
+    case SecretBindings.update_binding(
+           binding,
+           %{"enabled" => not binding.enabled},
+           FountainWeb.Audited.attribution(socket)
+         ) do
+      {:ok, updated} ->
+        word = if updated.enabled, do: "enabled", else: "disabled"
+
+        {:noreply,
+         socket |> reload() |> put_flash(:info, "#{updated.key} → #{updated.host} #{word}")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Binding not found")}
+    end
+  end
 
   defp reload(socket) do
     user_id = socket.assigns.user_id
@@ -296,7 +350,11 @@ defmodule FountainWeb.SecretBindingsLive.Index do
                   <span :if={!b.enabled} class="text-zinc-500">disabled</span>
                 </td>
                 <td class="px-3 py-2 text-right whitespace-nowrap space-x-2">
-                  <.btn_secondary phx-click="toggle" phx-value-id={b.id}>
+                  <.btn_secondary
+                    :if={b.enabled or @may_bind?}
+                    phx-click="toggle"
+                    phx-value-id={b.id}
+                  >
                     {if b.enabled, do: "Disable", else: "Enable"}
                   </.btn_secondary>
                   <.btn_danger phx-click="delete" phx-value-id={b.id} data-confirm="Unbind?">
@@ -309,7 +367,7 @@ defmodule FountainWeb.SecretBindingsLive.Index do
         </div>
       </section>
 
-      <section :if={@unbound_keys != []} class="space-y-2">
+      <section :if={@may_bind? and @unbound_keys != []} class="space-y-2">
         <h2 class="text-lg font-medium">Secrets with no binding</h2>
         <p class="text-sm text-[var(--color-text-secondary)]">
           These reach the sandbox in the clear. Bind the ones that are credentials for a host.
@@ -329,7 +387,12 @@ defmodule FountainWeb.SecretBindingsLive.Index do
         </div>
       </section>
 
-      <section class="space-y-3">
+      <section :if={!@may_bind?} data-role="bind-disabled" class="text-sm text-amber-900">
+        New bindings are off for this account. The bindings above keep attaching their
+        secrets, and you can disable or unbind any of them.
+      </section>
+
+      <section :if={@may_bind?} class="space-y-3">
         <h2 class="text-lg font-medium">Bind a secret to a host</h2>
         <div class="flex flex-wrap gap-1 items-center text-xs">
           <span class="text-[var(--color-text-secondary)] mr-1">Start from a known service:</span>

@@ -21,21 +21,14 @@ defmodule FountainWeb.Router do
   # plugs would be one forgotten line away from an unauthenticated endpoint.
   pipeline :api do
     plug FountainWeb.Plugs.PutApiSpec, module: FountainWeb.ApiSpec
-    # RateLimit BEFORE TenantAPIAuth (#316): auth halts on failure, so with
-    # the old order the limiter only ever saw authenticated requests —
-    # unauthenticated callers got unlimited attempts, each costing a SHA-256
-    # plus an indexed api_keys lookup. This was the one auth surface without
-    # a pre-auth limit; session login, registration, password reset and
-    # POST /api/auth/token all have one.
-    plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 600
+    # A coarse pre-auth ceiling protects the lookup work (#316). It is ten
+    # key budgets, so one key using its allowance does not exhaust a shared
+    # ingress address (#1771). Every attempt counts toward this ceiling.
+    plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 6_000
+    # Refused authentication has its own 600/min address bucket inside auth;
+    # it cannot consume a valid key's allowance.
     plug FountainWeb.Plugs.TenantAPIAuth
-    # And AFTER it, per key (2026-09-07): the address bucket above cannot see
-    # one client's runaway loop when every app beside the server arrives
-    # through the same ingress address, and cannot stop it without stopping
-    # them all. 600 a minute per key per replica is ten a second — a
-    # transcript viewer polling `/events` once a second and holding a stream
-    # is well inside it; a client listing the account fourteen times a
-    # second (the 09-04 incident) is not.
+    # Authenticated clients keep independent 600/min budgets per replica.
     plug FountainWeb.Plugs.RateLimit, bucket: "api-key", max: 600, key: :api_key
     plug FountainWeb.Plugs.Audit
   end
@@ -332,6 +325,18 @@ defmodule FountainWeb.Router do
     post "/revoke", OAuthTokenController, :revoke
   end
 
+  # OAuth clients an account registers for itself (#1125). Full scope because
+  # a client is a standing path to a full-scope key after consent.
+  scope "/api/oauth", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/clients", OAuthClientController, :index
+    post "/clients", OAuthClientController, :create
+    get "/clients/:id", OAuthClientController, :show
+    patch "/clients/:id", OAuthClientController, :update
+    delete "/clients/:id", OAuthClientController, :delete
+  end
+
   # Key management is scope-gated: the per-conversation token a sprite holds
   # must not be able to mint a second key that survives conversation teardown.
   scope "/api/auth", FountainWeb do
@@ -421,7 +426,8 @@ defmodule FountainWeb.Router do
     get "/egress", ConversationController, :egress, as: :conversation_egress
   end
 
-  # A sandbox's disk, read-only (ADR 0039): a listing, a file, `git diff`.
+  # A sandbox's disk, read-only (ADR 0039): a listing, a file, `git status`
+  # and `git diff`.
   # Full scope for the same reason as the egress log: a sandbox's own
   # `sprite` token must not read another sandbox of the tenant, whose disk
   # was built from a different vault.
@@ -431,6 +437,11 @@ defmodule FountainWeb.Router do
     get "/files", SandboxFilesController, :index, as: :sandbox_files
     get "/file", SandboxFilesController, :show, as: :sandbox_file
     get "/diff", SandboxFilesController, :diff, as: :sandbox_diff
+
+    # `git-status`, not `status`: a sandbox already has a `status` of its own
+    # (`ready`, `suspended`), and that is what a caller reading the route
+    # would expect back from it.
+    get "/git-status", SandboxFilesController, :git_status, as: :sandbox_git_status
   end
 
   # The daemon's socket skips content negotiation like the SSE routes do: a
@@ -526,6 +537,13 @@ defmodule FountainWeb.Router do
     end
 
     resources "/agents", AgentController, except: [:new, :edit]
+
+    # The bounded sandbox-capacity queue (ADR 0042). Read and cancel only:
+    # work enters it through `POST /api/conversations` with `queue: true`, or
+    # through a teammate schedule's own cron firing.
+    get "/sandbox-queue", SandboxQueueController, :index
+    get "/sandbox-queue/:id", SandboxQueueController, :show
+    delete "/sandbox-queue/:id", SandboxQueueController, :delete
     # Config history (ADR 0029, #1051): read-only. Rollback stays a console action.
     get "/agents/:id/versions", AgentVersionController, :index
     get "/agents/:id/versions/:version", AgentVersionController, :show
@@ -581,6 +599,7 @@ defmodule FountainWeb.Router do
 
     resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt
+      post "/reapply", ConversationController, :reapply, as: :reapply
       post "/interrupt", ConversationController, :interrupt, as: :interrupt
       post "/terminate", ConversationController, :terminate, as: :terminate
       get "/turns", ConversationController, :turns, as: :turns
@@ -761,6 +780,9 @@ defmodule FountainWeb.Router do
 
       # ── Self-hosted runners (ADR 0022) ─────────────────────────────────────────────────────
       live "/account/runners", RunnersLive.Index, :index
+
+      # ── OAuth apps the account registered for itself (#1125) ───────────────────────────────
+      live "/account/oauth-apps", OAuthClientsLive.Index, :index
 
       # ── Secret bindings at the egress broker (ADR 0019 gate 1b) ────────────────────────────
       live "/account/bindings", SecretBindingsLive.Index, :index

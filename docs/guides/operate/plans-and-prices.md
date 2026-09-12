@@ -91,9 +91,20 @@ whole deployment stops at `SANDBOX_FLEET_CEILING` (20). Set that to what your
 sandbox provider plan allows.
 
 The two limits behave differently. Fountain refuses the next start for a
-tenant at their cap, and tells the caller to terminate a conversation or top
-up. Fountain refuses the next start for everyone when the fleet is full, and
-tells the caller to try again in a minute.
+tenant at their cap, and tells the caller to terminate a conversation or add
+credit. Fountain refuses the next start for everyone when the fleet is full,
+and tells the caller to try again in a minute.
+
+Both limits feed the same bounded queue. A fresh API start can set
+`queue: true`. Fountain then answers `202` and lets the request wait. A
+teammate schedule uses the queue on every cron firing. Other callers keep the
+immediate `429` or `503` answer.
+
+Each tenant holds ten requests. A request waits one hour. Set these bounds
+with `SANDBOX_QUEUE_MAX_DEPTH` and `SANDBOX_QUEUE_MAX_WAIT_SECONDS`. At the
+depth bound Fountain refuses the request. After the wait bound Fountain
+expires it. The queue delays the cap. It never raises the cap, and a start
+must pass the credit gate again when it runs.
 
 ## Give someone free credit
 

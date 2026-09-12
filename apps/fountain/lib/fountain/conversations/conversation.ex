@@ -29,6 +29,10 @@ defmodule Fountain.Conversations.Conversation do
   schema "conversations" do
     field :runtime, :string
     field :status, :string, default: "pending"
+    # Counts committed selections (#1565). Turn admission checks it against
+    # the revision the live server loaded, so a server that missed the refresh
+    # notification cannot start a turn on settings it has not read.
+    field :configuration_revision, :integer, default: 0
     field :runtime_session_id, :string
     field :source, :string, default: "api"
     field :parent_conversation_id, :binary_id

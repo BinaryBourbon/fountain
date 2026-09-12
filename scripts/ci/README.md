@@ -52,7 +52,7 @@ out `check_response_timeout_minutes` and ejects it, with no red job anywhere to
 explain why. `test_every_event_the_workflow_triggers_on_is_a_plan` in
 `test_gate.py` keeps the workflow and `gate.py` from drifting apart later.
 
-Three CI events now exist, and `gate.py`'s `PROBES` table is the authority on
+Four CI events now exist, and `gate.py`'s `PROBES` table is the authority on
 what each one owes:
 
 | Event | Probes that run | What the plan means |
@@ -60,6 +60,7 @@ what each one owes:
 | `pull_request` | `changes` | Classify the diff; docs-only skips the Elixir suite |
 | `merge_group` | `changes` + `already-tested` | Classify the group, and skip it outright when its tree is one a PR run already tested |
 | `push` | `already-tested` | Main reuses the queue run (or a PR run) that tested this tree |
+| `workflow_dispatch` | `changes` | Run the complete plan, without diff-based skips or tree reuse |
 
 The queue run and main's push both look for the `tested-tree` artifact, so a
 queued merge normally costs one full run, not two: the queue runs the suite,
@@ -70,12 +71,89 @@ tested it.
 
 ### Sizing
 
-`MERGE_QUEUE` in `require-checks.py` carries the reasoning for each value. The
-binding constraint is the free plan's 20 concurrent GitHub-hosted jobs against
-a full CI run's 19, which is why the queue builds one group at a time and buys
-its throughput by batching up to five PRs into that one group instead.
-Revisit `max_entries_to_build` when the concurrency ceiling changes, not
-before.
+`MERGE_QUEUE` in `require-checks.py` explains the queue settings. A full mixed
+PR runs 26 jobs; a full merge group runs 27 because both probes run. The
+documented limit is 20 concurrent runners. The queue builds one group at a
+time and batches up to five PRs. Revisit
+`max_entries_to_build` when the concurrency limit changes.
+
+## SDK jobs
+
+The Elixir, Python and TypeScript SDKs run in `elixir-sdk`, `python-sdk` and
+`typescript-sdk`. The Go CLI, Hermes plugin and deployed-runner checks run in
+`cli-plugins`. The Swift job (`swift-sdk`) runs on Linux and
+macOS. Each reads the committed contract; `release-and-contract` checks its
+generation.
+The Elixir job owns its toolchain, cache, formatting, compilation, tests, docs,
+package dry run, contract and conformance checks. It tests Elixir 1.15.8
+with OTP 26.2.5.21 and Elixir 1.19.2 with OTP 28.3. Formatting uses 1.19.2
+because formatter output differs between versions; all remaining checks run
+on both pairs. The Python job owns its
+tests, compilation, contract and conformance checks on Python 3.9 and 3.13.
+Both legs also build an sdist and wheel, install the wheel in a fresh virtual
+environment and run the SDK regression suite against that installed package.
+This replaces the full source-tree test run; separate contract and conformance
+steps retain their focused diagnostics.
+The verifier checks the type marker, package version and every SDK import path.
+These cover the package minimum and newest declared runtime. Both legs must
+pass; a failure does not cancel the other leg. The TypeScript job owns
+installation, type checks, tests, builds, browser bundling, contract and
+conformance checks on Node 20.19.0 and 24. The minimum runtime runs compiled
+JavaScript from the same test sources in a temporary fixture tree. Node 24
+retains native TypeScript tests. Both legs build the SDK and browser bundle.
+They also pack and install the npm artifact in a temporary consumer project.
+That project typechecks against the published declarations and exercises the
+Node and browser entry points with a fake fetch implementation. It also bundles
+that consumer for a browser, checking the package export conditions.
+These three extracted jobs lint fixtures before their
+tests. Swift retains its separate conformance test step.
+`CI required` requires every selected SDK job. A failed, cancelled or
+unexpectedly skipped job fails the gate. Main runs all SDKs unless a verified
+tested tree authorizes reuse. Manual workflow dispatch always selects every
+SDK and the full server plan, including prose checks. Both gates reject a
+manual classification that attempts to skip part of that plan.
+
+`SDK checks` reports the SDK result even when docs-only classification or a
+previously tested tree skips every SDK leg. It validates the same probe
+outputs as the full gate and rejects missing, failed or unexpectedly skipped
+jobs. `CI required` depends on this aggregate. Only the full gate publishes
+`tested-tree` evidence; passing the SDK gate cannot authorize reuse of a tree.
+
+Register a new job in
+`gate.py`'s `FULL_JOBS` and the workflow gate's `needs` list together. For an
+SDK job, also update `SDK_JOBS` and the `sdk-checks` dependencies. Run
+`test_gate.py` and `test_sdk_gate.py` to verify their agreement and every
+supported event plan.
+
+## SDK path classification
+
+`changes` reports four `sdk_<language>` outputs from `sdk_changes.py`, using
+its existing PR merge base or merge-group base. Each SDK job consumes its
+own output. The two gates independently validate the selection and exact job
+results. Missing or malformed outputs fail both gates; only explicit `false`
+lets a job skip.
+
+The classifier selects an SDK for its directory, documentation page or
+registered release tooling. Shared contract and conformance files select all
+SDKs. So do API implementation, build configuration and unregistered paths.
+An explicit allowlist selects none for unrelated docs, console UI, server
+tests and telemetry. Mixed changes select the union of their SDKs. SDK docs
+select their language even on the server docs-only path.
+
+The release job installs TypeScript dependencies and checks generated types
+only when TypeScript is selected. Server wire-contract generation and its
+freshness check remain required on every full server plan. Shared contract
+changes select all SDKs, including that generated-type check.
+
+Invalid bases, failed or empty diffs, malformed paths and undecodable names
+select every SDK. The NUL-delimited Git diff disables rename detection, so a
+move out of an SDK still selects its former owner. Outputs contain only fixed
+keys and boolean values.
+
+Register a new language in `LANGUAGES` and `OWNED_FILES`, expose its workflow
+output, and add routing fixtures in `test_sdk_changes.py`. Register SDK docs
+and checked snippets before the unrelated-docs allowlist. Keep contract
+triggers outside that allowlist; uncertainty must select every SDK.
 
 ## Refresh partition timings
 

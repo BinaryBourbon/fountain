@@ -35,8 +35,20 @@ defmodule FountainWeb.GmailMcpControllerTest do
     })
   end
 
-  test "the rollout flag refuses Gmail even when the broker is on", ctx do
+  # The gate here is the broker, like every other runtime path (#1693). The
+  # rollout flag decides who may connect an account; a connection that exists
+  # keeps working, and the console keeps the door that revokes it.
+  test "the rollout flag going off leaves a connection the agent names working", ctx do
     Application.put_env(:fountain, :feature_flag_overrides, %{"connections" => false})
+
+    body =
+      rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/list") |> json_response(200)
+
+    assert [_ | _] = body["result"]["tools"]
+  end
+
+  test "the broker off refuses Gmail", ctx do
+    Application.put_env(:fountain, :broker_tenants, [])
     response = rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/list", %{})
     assert response.status == 403
   end

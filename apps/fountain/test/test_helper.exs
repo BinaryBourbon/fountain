@@ -77,6 +77,10 @@ Mimic.copy(Stripe.Checkout.Session)
 
 Mimic.copy(Fountain.Conversations)
 Mimic.copy(Fountain.Conversations.ExecutionAllowance)
+Mimic.copy(Fountain.Conversations.ExecutionLimits)
+Mimic.copy(Fountain.Conversations.Egress)
+Mimic.copy(Fountain.Conversations.Lifecycle)
+Mimic.copy(Fountain.Workers.WebhookDelivery)
 Mimic.copy(Fountain.Conversations.ConversationServer)
 Mimic.copy(Fountain.Conversations.TitleGenerator)
 Mimic.copy(Fountain.Conversations.Provisioning)
@@ -91,6 +95,7 @@ Mimic.copy(Fountain.Health)
 Mimic.copy(FountainWeb.OAuth)
 Mimic.copy(Fountain.Mailer)
 Mimic.copy(Fountain.InferenceCredentials)
+Mimic.copy(Fountain.Workers.SandboxQueueDrainer)
 
 # ─── The schema guard (#1427) ────────────────────────────────────────────────
 #

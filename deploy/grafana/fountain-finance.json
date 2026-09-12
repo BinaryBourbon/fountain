@@ -850,7 +850,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(increase(fountain_email_delivery_count{namespace=\"$namespace\", outcome=\"error\"}[1h])) or vector(0)) + (sum(increase(fountain_email_delivery_exception_count{namespace=\"$namespace\"}[1h])) or vector(0))"
+          "expr": "(sum(increase(fountain_email_delivery_count{namespace=\"$namespace\", outcome=\"error\"}[1h])) or vector(0)) + (sum(increase(fountain_email_delivery_exception{namespace=\"$namespace\"}[1h])) or vector(0))"
         }
       ]
     },

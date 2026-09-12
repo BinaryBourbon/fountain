@@ -50,9 +50,9 @@ message.
 | `SPRITES_TIMEOUT_MS` | `30000` | — | Bounds each HTTP call to the Sprites API. A long command, such as a package install or a clone, sets its own timeout for that call. Boot refuses a value that is not positive. |
 | `SANDBOX_PROVIDER` | `sprites` | — | Which backend a new sandbox runs on. One of `sprites`, `e2b`, `daytona` and `runner`. A hosted provider turns on when its credential is there. Boot refuses an explicit default whose credential is absent. A sandbox that already exists stays on the provider Fountain made it on. |
 | `SANDBOX_RUNNERS_ENABLED` | `true` | — | A [self-hosted runner](integrations/runners.md) needs no credential. A `false` hides the `runner` provider, and refuses a `fountain runner` connection. |
-| `BROKER_LISTEN_PORT` | — | — | A port number, for example `14322`. This turns on credential brokerage (ADR 0019): Fountain runs the egress proxy itself, from the `managoat_broker` library, on this port on every replica. Each conversation's proxy session goes in the `broker_sessions` table, so any replica can serve a sandbox. Set it, and boot also requires `BROKER_PROXY_URL`. Point your ingress at this port. The proxy speaks plain HTTP, and TLS towards the sandbox is the job of the ingress. Blank turns brokerage off, and each conversation provisions as before. Fountain brokers the tenants in `BROKER_TENANTS` only. |
+| `BROKER_LISTEN_PORT` | — | With `BROKER_TENANTS`. | A port number, for example `14322`. This turns on credential brokerage (ADR 0019): Fountain runs the egress proxy itself, from the `managoat_broker` library, on this port on every replica. Each conversation's proxy session goes in the `broker_sessions` table, so any replica can serve a sandbox. Set it, and boot also requires `BROKER_PROXY_URL`. Point your ingress at this port. The proxy speaks plain HTTP, and TLS towards the sandbox is the job of the ingress. Blank turns brokerage off, and each conversation provisions as before. Fountain brokers the tenants in `BROKER_TENANTS` only. |
 | `BROKER_PROXY_URL` | — | With `BROKER_LISTEN_PORT`. | The proxy address a sandbox dials, for example `https://broker.example.com:443`. It is not the same as the listen port when the sandboxes are on a different network from Fountain. Its host is the one host a brokered sandbox may reach. |
-| `BROKER_TENANTS` | — | — | A comma separated list of user ids, or `*` for every user. Fountain brokers the conversations of these users. All other users provision as before. Blank brokers nobody, so the listener stays inert until you name someone. A `*` on its own is the end state, after you widen the list one id at a time. A `*` inside a list is a boot error. This is the operator ratchet of ADR 0019, and it is not a tenant setting. |
+| `BROKER_TENANTS` | — | — | A comma separated list of user ids, or `*` for every user. Fountain brokers the conversations of these users. All other users provision as before. Blank brokers nobody, so the listener stays inert until you name someone. A `*` on its own is the end state, after you widen the list one id at a time. A `*` inside a list is a boot error. This is the operator ratchet of ADR 0019, and it is not a tenant setting. Boot refuses a named tenant with no `BROKER_LISTEN_PORT`, because brokerage is then off for every tenant and their sandboxes hold plaintext credentials. |
 | `BROKER_SESSION_TTL_SECONDS` | `21600` | — | How long a proxy session token lives. Fountain mints a new one on each provision and each reattach, and again before a turn when the current one is near its end. Both backends accept 300 to 604800. |
 | `BROKER_LOG_RETENTION_HOURS` | `168` | — | How long the egress request log keeps a row. `GET /api/conversations/:id/egress` reads it, and `/admin/broker` sums it. A daily job deletes older rows. |
 | `BROKER_ALLOW_UNENFORCED` | `false` | — | A `true` lets a brokered conversation run on a provider that has no network policy, for example a self-hosted runner. The sandbox then holds placeholders and a proxy address, but nothing stops a process from a direct connection that avoids the proxy. For development only. |
@@ -161,6 +161,8 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `SANDBOX_QUEUE_MAX_DEPTH` | `10` | No. | The most sandbox requests one tenant holds at once. A request beyond it keeps the immediate capacity error. |
 | `SANDBOX_QUEUE_MAX_WAIT_SECONDS` | `3600` | No. | How long a sandbox request waits for capacity before Fountain expires it. |
 | `FOUNTAIN_EXECUTION_LIMITS` | `{}` | No. | JSON per-turn host ceiling: `wall_time_seconds`, `max_model_turns`, `max_estimated_cost_usd`. Each configured value must be positive; time and turns must be integers. Read at boot; invalid input refuses startup. Requests inherit the stricter host/account ceiling. Keep unset until runtime enforcement and later-turn/recovery checks are integrated: nonempty effective limits currently refuse launch with `422 execution_limits_unsupported`. This is not an aggregate spend cap. |
+| `FOUNTAIN_EXECUTION_DEADLINE_WORKER` | on when `FOUNTAIN_EXECUTION_LIMITS` gives a ceiling | No. | If this node runs the deadline coordinator. The coordinator polls `turn_executions`, so it stays off where no host ceiling applies. Set `true` if you give an account a ceiling but no host ceiling. Set `false` to stop the poll on any node. A change needs a restart. |
+| `FOUNTAIN_EXECUTION_DEADLINE_INTERVAL_MS` | `5000` | No. | The interval at which the coordinator looks for due deadlines. Each deadline is absolute and durable, so a larger value costs precision and not safety. |
 | `CREDIT_OPENING_CENTS` | `500` | No. | The credit a new account starts with, in cents. |
 | `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |
 | `TEAM_CONTACT_CEILING` | `10` | No. | The most teammate contacts one account may hold at once. |
@@ -423,15 +425,26 @@ When PostHog is unreachable, Fountain reuses the last answer it gave. With no
 answer at all, each flag reads off, so an outage never turns a feature on.
 Without PostHog you can force a flag on for each user.
 
+A flag over a feature that shipped is the exception. The `connections` flag
+reads on where you set no `POSTHOG_PROJECT_API_KEY`. A deployment with no flag
+service keeps the feature, and an upgrade does not take it away. Where you
+configure PostHog, the answer from PostHog decides.
+
 | Variable | Default | Required | Effect |
 |---|---|---|---|
 | `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key. That is the public `phc_…` token, and not a personal key. Unset, Fountain looks up no flag remotely. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
-| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms`, `connections` or `openai_compat`. It wins over PostHog. |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms` or `openai_compat`. It wins over PostHog. |
 
 For a hosted Connections rollout, leave the global override unset. Enable
 `connections` for the intended test accounts in PostHog, with evaluation
-runtime set to `all`. Enable the credential broker too.
+runtime set to `all`. Enable the credential broker too. The broker is the
+switch that decides which accounts get the feature.
+
+The flag holds only the doors that add a credential. Those doors connect an
+account, define a provider and attach a secret to a host. An account that loses
+the flag keeps what it has. The console and the API still list it, revoke it
+and delete it.
 
 ## Product analytics
 

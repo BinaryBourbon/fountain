@@ -202,6 +202,22 @@ defmodule Fountain.OAuth do
   end
 
   @doc """
+  The one redirect origin the consent response's `form-action` may name.
+
+  Derived from the request's validated `redirect_uri` rather than from the
+  registration, because a loopback client's port varies legally (RFC 8252):
+  a header naming the registered port would have Chrome block a redirect the
+  server had already approved.
+  """
+  @spec form_action_origins(String.t()) :: [String.t()]
+  def form_action_origins(redirect_uri) do
+    case Client.origin_of(redirect_uri) do
+      nil -> []
+      origin -> [origin]
+    end
+  end
+
+  @doc """
   Revoke the token (an API key) presented by an app that is signing out.
 
   Fountain's own, not the library's: the library never learns what a token
@@ -314,6 +330,35 @@ defmodule Fountain.OAuth do
     else
       client |> Repo.delete() |> audited("oauth_client.deleted", opts)
     end
+  end
+
+  @doc """
+  Whether an origin belongs to an operator or a tenant client.
+
+  CORS still requires a bearer key. This predicate grants no account access;
+  it only lets a browser present a key it already holds from an origin some
+  client registered.
+  """
+  @spec registered_origin?(term()) :: boolean()
+  def registered_origin?(origin) when is_binary(origin) do
+    case Client.origin_key(origin) do
+      nil -> false
+      key -> key in config_origin_keys() or Repo.exists?(origin_key_query(key))
+    end
+  end
+
+  def registered_origin?(_), do: false
+
+  defp origin_key_query(key) do
+    from c in Client, where: fragment("? @> ?", c.origin_keys, ^[key])
+  end
+
+  defp config_origin_keys do
+    config_clients()
+    |> Enum.flat_map(& &1.redirect_uris)
+    |> Client.origins_of()
+    |> Enum.map(&Client.origin_key/1)
+    |> Enum.reject(&is_nil/1)
   end
 
   defp client_count(user_id) do

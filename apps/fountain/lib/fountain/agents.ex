@@ -164,7 +164,10 @@ defmodule Fountain.Agents do
     result =
       if snapshot_needed?(changeset) do
         Repo.transaction(fn ->
-          with {:ok, updated} <- Repo.update(changeset),
+          # The caller may hold an older struct. RETURNING snapshots the
+          # persisted row, including fields changed by another edit, while
+          # this update holds the row lock through the version insert.
+          with {:ok, updated} <- Repo.update(changeset, returning: true),
                {:ok, _} <-
                  Repo.insert(version_changeset(updated, next_version_number(updated.id))) do
             updated

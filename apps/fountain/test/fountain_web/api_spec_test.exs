@@ -3,6 +3,15 @@ defmodule FountainWeb.ApiSpecTest do
 
   alias FountainWeb.ApiSpec
 
+  test "the published spec never recommends adapter-refused models" do
+    content = ApiSpec.spec() |> Jason.encode!()
+
+    for {model, observed} <- Fountain.RefusedModels.all() do
+      refute String.contains?(content, model),
+             "OpenAPI names #{model}, refused by the pinned adapter since #{observed}"
+    end
+  end
+
   # #403: the published spec described the pre-rename identity ("Agent on
   # Demand", the `aod` CLI) and an auth mechanism that no longer exists
   # (ADMIN_TOKEN). Pin the real identity and auth scheme.

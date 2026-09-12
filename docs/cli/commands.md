@@ -105,8 +105,8 @@ fountain apply [flags]
 Options:
 
 ```
-  -f, --file string   path to YAML file or directory
-      --var strings   extra variable for ${VAR} substitution (KEY=VAL, repeatable)
+  -f, --file string       path to YAML file or directory
+      --var stringArray   extra variable for ${VAR} substitution (KEY=VAL, repeatable)
 ```
 
 ## `fountain auth login`
@@ -315,6 +315,59 @@ Revoke an API key
 
 ```
 fountain keys revoke <id>
+```
+
+## `fountain oauth-client create`
+
+Register an OAuth app
+
+```
+fountain oauth-client create <name> [flags]
+```
+
+Options:
+
+```
+      --json                       output JSON
+      --redirect-uri stringArray   where the code is returned to; repeatable
+```
+
+## `fountain oauth-client delete`
+
+Unregister an OAuth app
+
+```
+fountain oauth-client delete <id>
+```
+
+## `fountain oauth-client list`
+
+List OAuth apps
+
+```
+fountain oauth-client list [flags]
+```
+
+Options:
+
+```
+      --json   output JSON
+```
+
+## `fountain oauth-client update`
+
+Rename an OAuth app or replace its redirect URIs
+
+```
+fountain oauth-client update <id> [flags]
+```
+
+Options:
+
+```
+      --json                       output JSON
+      --name string                new name
+      --redirect-uri stringArray   replaces every redirect URI; repeatable
 ```
 
 ## `fountain quickstart`
