@@ -88,6 +88,22 @@ defmodule Fountain.Conversations.ExecutionTransportTest do
     assert :ok = ExecutionTransport.write(pid, "initialize")
   end
 
+  test "an early deadline wake keeps the admitted command writable", c do
+    execution = register(c)
+    {pid, ref} = launch(execution, &identify/2)
+    assert {:ok, %Command{ref: ^ref}} = ExecutionTransport.await_ready(pid)
+
+    # A relative millisecond timer can arrive just before the absolute
+    # deadline. Deliver that wake deterministically instead of racing clocks.
+    send(pid, :deadline)
+    assert :sys.get_state(pid).phase == :ready
+    assert row(execution).state == "active"
+    assert Repo.get!(Turn, execution.turn_id).status == "running"
+
+    expect(Sandbox, :write_stdin, fn %Command{ref: ^ref}, "initialize" -> :ok end)
+    assert :ok = ExecutionTransport.write(pid, "initialize")
+  end
+
   test "stdout and another command's control metadata cannot bind identity", c do
     execution = register(c)
 
