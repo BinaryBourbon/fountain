@@ -31,6 +31,16 @@ upgrade, is in
   Connections off is the broker: an account is offered the feature only while
   `BROKER_TENANTS` names it.
 
+### Added
+
+- `POST /api/conversations/:id/reapply` re-selects a conversation's Agent,
+  Environment and Vault on the machine it is already running, keeping the
+  conversation, its transcript and the files on its disk. A selection that would
+  need the machine built again is refused, naming what forced it. Adds the
+  `configuration` webhook stage and three columns
+  (`conversations.configuration_revision`, `sandboxes.build_fingerprint`,
+  `sandboxes.applied_skills`) (#1565).
+
 ### Changed
 
 - **The claude runtime's ACP adapter moves to 0.75.1, and a fresh sandbox now
