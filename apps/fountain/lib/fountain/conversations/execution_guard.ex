@@ -19,6 +19,7 @@ defmodule Fountain.Conversations.ExecutionGuard do
 
   alias Fountain.{Audit, Repo}
   alias Fountain.Conversations.{Conversation, ExecutionLimits, Sandbox, Turn, TurnExecution}
+  alias Fountain.Conversations.{DeadlineEvents, LogEvent}
 
   @fenced ~w(awaiting_identity ready submitted uncertain)
   @terminal_turns ~w(completed failed interrupted)
@@ -275,6 +276,40 @@ defmodule Fountain.Conversations.ExecutionGuard do
     end)
   end
 
+  @doc "Serialize a terminal stage with expiration; reuse an existing deadline event."
+  def _unsafe_terminal_stage(conv_id, turn_id, writer) do
+    case Repo.get_by(TurnExecution, conversation_id: conv_id, turn_id: turn_id) do
+      nil ->
+        {:ok, {:new, writer.()}}
+
+      execution ->
+        with_execution(execution.id, fn current ->
+          now = DateTime.utc_now()
+
+          {decision, changed, event} =
+            if current.state == "active" and DateTime.compare(now, current.deadline_at) != :lt,
+              do: expire(current, now),
+              else: {%{execution: current, turn: lock_turn(current.turn_id)}, nil, nil}
+
+          result =
+            if is_nil(decision.turn) || decision.execution.deadline_event_id ||
+                 (decision.turn && decision.turn.limit_reason == "wall_time_limit") do
+              id = decision.execution.deadline_event_id
+
+              stored =
+                if id,
+                  do: Repo.get_by(LogEvent, id: id, conversation_id: conv_id, turn_id: turn_id)
+
+              {:existing, stored}
+            else
+              {:new, writer.()}
+            end
+
+          {result, changed, event}
+        end)
+    end
+  end
+
   @doc "Persist one provider-write attempt; never replay a submitted or uncertain attempt."
   def _unsafe_claim_termination(id, opts \\ []) do
     with_execution(id, fn execution ->
@@ -483,6 +518,11 @@ defmodule Fountain.Conversations.ExecutionGuard do
             ended_at: DateTime.truncate(now, :second),
             pending_permission: nil
           })
+
+        # ownership: expire holds the original journal, parent and turn locks;
+        # the event writer also checks the parent against the saved tenant.
+        event_id = DeadlineEvents._unsafe_record!(updated, turn)
+        updated = update!(updated, %{deadline_event_id: event_id})
 
         {%{execution: updated, turn: turn}, updated, "deadline_expired"}
     end
