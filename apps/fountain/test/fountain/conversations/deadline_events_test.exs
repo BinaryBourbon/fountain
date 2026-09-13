@@ -147,7 +147,13 @@ defmodule Fountain.Conversations.DeadlineEventsTest do
   test "late completion and interruption cannot replace or duplicate the deadline event", c do
     expire(c)
     original = event(c)
-    machine = %TurnMachine{conversation_id: c.conv.id, row: c.turn}
+
+    machine = %TurnMachine{
+      conversation_id: c.conv.id,
+      sandbox_id: c.conv.sandbox_id,
+      row: c.turn
+    }
+
     TurnMachine.finish(machine, "completed", %{}, %{stop_reason: "end_turn"})
     TurnMachine.mark_interrupted(machine)
     expire(c)
