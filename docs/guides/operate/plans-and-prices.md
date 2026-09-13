@@ -20,11 +20,18 @@ are no plans. Credits are the product.
 An unset price costs nothing. To turn one on is a price increase, and an
 explicit act.
 
-An hour of agent time is an hour with a prompt in flight. An agent that waits
-for a person spends nothing. Time on a self-hosted runner spends nothing,
+An hour of agent time is an hour with a prompt in flight on a platform-paid
+provider (Sprites, E2B or Daytona). Time on a self-hosted runner spends nothing,
 because Fountain pays nothing for that machine. Turn time adds up for each
 turn. Two conversations that each run for an hour on one sandbox spend two
 hours, on a sandbox that was busy for one.
+
+A [detached permission request](../../concepts/permissions.md#requests-that-outlive-a-turn)
+adds no turn time while it waits after its turn ends. An answer opens a new
+resume turn, and the expiry sweep opens the same turn when nobody answers.
+With billing enabled, Fountain prices each resume turn's duration at
+`CREDIT_TURN_HOUR_CENTS` per hour for platform-paid providers. A sequence of
+detached approvals therefore adds one resume turn per answer.
 
 ## The opening credit
 
