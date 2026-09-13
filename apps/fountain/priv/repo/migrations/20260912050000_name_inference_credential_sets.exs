@@ -29,7 +29,7 @@ defmodule Fountain.Repo.Migrations.NameInferenceCredentialSets do
     create unique_index(:inference_credentials, [:user_id, :name])
 
     # One default per account, enforced by the database rather than by a
-    # context that has to remember. `Fountain.InferenceCredentials.set_default/3`
+    # context that has to remember. `Fountain.InferenceCredentials.set_default/2`
     # clears the old flag and sets the new one in one transaction, so the
     # window this index would reject never opens in normal operation.
     create unique_index(:inference_credentials, [:user_id],

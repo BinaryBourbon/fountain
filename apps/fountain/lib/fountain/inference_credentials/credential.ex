@@ -35,7 +35,7 @@ defmodule Fountain.InferenceCredentials.Credential do
   schema "inference_credentials" do
     field :name, :string
     # Exactly one per account, enforced by a partial unique index. Writes go
-    # through `InferenceCredentials.set_default/3`, which moves the flag in
+    # through `InferenceCredentials.set_default/2`, which moves the flag in
     # one transaction.
     field :is_default, :boolean, default: false
 

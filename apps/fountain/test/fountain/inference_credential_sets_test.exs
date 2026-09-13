@@ -89,6 +89,66 @@ defmodule Fountain.InferenceCredentialSetsTest do
     end
   end
 
+  describe "rename_set/3" do
+    test "persists the new name and audits the previous and current names", %{user: user} do
+      {:ok, set} = InferenceCredentials.create_set(user.id, "Work")
+
+      assert {:ok, renamed} =
+               InferenceCredentials.rename_set(set, "Client projects",
+                 actor: "api_key:rename-test",
+                 request_ip: "192.0.2.1"
+               )
+
+      assert renamed.id == set.id
+      assert renamed.name == "Client projects"
+
+      assert [%Credential{id: id, name: "Client projects", is_default: true}] =
+               InferenceCredentials.list_sets(user.id)
+
+      assert id == set.id
+      assert InferenceCredentials.get_set(set.id, user.id).name == "Client projects"
+
+      assert [event] =
+               user.id
+               |> Fountain.Audit.list_recent_for_user()
+               |> Enum.filter(&(&1.action == "inference_credential_set.renamed"))
+
+      assert event.resource_type == "inference_credential_set"
+      assert event.resource_id == set.id
+      assert event.actor == "api_key:rename-test"
+      assert event.request_ip == "192.0.2.1"
+
+      assert event.metadata == %{
+               "name" => "Client projects",
+               "was" => "Work",
+               "now" => "Client projects"
+             }
+    end
+
+    test "a duplicate name returns a name error without changing persistence or audit", %{
+      user: user
+    } do
+      {:ok, work} = InferenceCredentials.create_set(user.id, "Work")
+      {:ok, personal} = InferenceCredentials.create_set(user.id, "Personal")
+      before = audit_count(user, "inference_credential_set.renamed")
+
+      assert {:error, changeset} = InferenceCredentials.rename_set(personal, work.name)
+      assert "already names a credential set on this account" in errors_on(changeset).name
+      assert InferenceCredentials.get_set(personal.id, user.id).name == "Personal"
+      assert InferenceCredentials.get_set(work.id, user.id).name == "Work"
+      assert audit_count(user, "inference_credential_set.renamed") == before
+    end
+
+    test "another account's name does not prevent a rename", %{user: user} do
+      other = insert_verified_user()
+      {:ok, _} = InferenceCredentials.create_set(other.id, "Personal")
+      {:ok, set} = InferenceCredentials.create_set(user.id, "Work")
+
+      assert {:ok, _} = InferenceCredentials.rename_set(set, "Personal")
+      assert InferenceCredentials.get_set(set.id, user.id).name == "Personal"
+    end
+  end
+
   describe "set_default/2" do
     setup %{user: user} do
       {:ok, first} = InferenceCredentials.create_set(user.id, "Work")

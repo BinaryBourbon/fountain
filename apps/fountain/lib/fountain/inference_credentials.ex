@@ -59,7 +59,7 @@ defmodule Fountain.InferenceCredentials do
 
   The first set an account gets is its default, whoever asks for it: an
   account with no default is an account nothing can read a credential for.
-  Every later one is not, until `set_default/3` says so.
+  Every later one is not, until `set_default/2` says so.
 
   Audited as `inference_credential_set.created`. `opts` carries
   `:actor` / `:request_ip`.
@@ -104,7 +104,7 @@ defmodule Fountain.InferenceCredentials do
 
   Refuses the default with `{:error, :is_default}`: something has to answer
   "which credential runs this account", and an account whose last set is gone
-  cannot. Promote another with `set_default/3` first, which for the last
+  cannot. Promote another with `set_default/2` first, which for the last
   remaining set means there is nothing to promote and the set stays. Audited
   as `inference_credential_set.deleted`.
   """
@@ -275,9 +275,8 @@ defmodule Fountain.InferenceCredentials do
   Returns `true` if the user has at least one provider set, in **any** of
   their credential sets.
 
-  Used by the onboarding wizard to gate the next step, and by the
-  conversation-start flow to give a clearer error than "auth failed
-  in the sprite."
+  Used by the dashboard onboarding checklist to report whether the account
+  has connected a provider.
 
   Any set rather than the default one: this answers "has this account
   connected a provider at all", and an account whose only key lives in a set
