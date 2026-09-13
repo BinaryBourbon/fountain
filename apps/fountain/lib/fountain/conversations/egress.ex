@@ -126,14 +126,15 @@ defmodule Fountain.Conversations.Egress do
   fail at the proxy with the provider's reason rather than silently here.
   """
   @spec refresh_platform_chatgpt(map(), map()) :: {map(), map(), boolean()}
-  def refresh_platform_chatgpt(inference_credentials, brokered) do
+  def refresh_platform_chatgpt(inference_credentials, brokered, source \\ nil) do
     key = Fountain.Conversations.CodexChatGPT.env_key()
     credential = Fountain.Conversations.CodexChatGPT.credential()
     old = Map.get(inference_credentials, credential)
 
     with true <- is_binary(old) and old != "",
          true <- Map.get(brokered, key) == old,
-         {:ok, fresh} when fresh != old <- Fountain.PlatformChatGPT.access_token() do
+         {:ok, fresh} when fresh != old <- Fountain.PlatformChatGPT.access_token(),
+         :ok <- validate_refreshed_source(source) do
       {Map.put(inference_credentials, credential, fresh), Map.put(brokered, key, fresh), true}
     else
       _ -> {inference_credentials, brokered, false}
@@ -240,6 +241,30 @@ defmodule Fountain.Conversations.Egress do
       {env_creds, Map.merge(inference_brokered, brokered), Map.merge(implicit, bindings)}
     else
       {inference_creds, brokered, bindings}
+    end
+  end
+
+  defp validate_refreshed_source(nil), do: :ok
+
+  defp validate_refreshed_source(source) do
+    # Refresh may wait for provider I/O. Recheck generation afterwards so a
+    # reconnect cannot replace this peer's pinned account through the broker.
+    case source.identity do
+      "platform:chatgpt:" <> id ->
+        import Ecto.Query
+
+        grant =
+          Fountain.Repo.one(
+            from a in Fountain.PlatformChatGPT.Account,
+              where:
+                a.id == ^id and is_nil(a.user_id) and a.generation == ^source.revision and
+                  a.status == "active"
+          )
+
+        if grant, do: :ok, else: {:error, :inference_source_changed}
+
+      _ ->
+        {:error, :inference_source_changed}
     end
   end
 
@@ -402,7 +427,11 @@ defmodule Fountain.Conversations.Egress do
     # on the server's own schedule, and the conversation's copy of the
     # credential is what the underlay below is built from.
     {inference_credentials, brokered, grant_rotated?} =
-      refresh_platform_chatgpt(state.inference_credentials, state.brokered)
+      refresh_platform_chatgpt(
+        state.inference_credentials,
+        state.brokered,
+        Map.get(state, :inference_source)
+      )
 
     state = %{state | inference_credentials: inference_credentials}
 
@@ -422,7 +451,10 @@ defmodule Fountain.Conversations.Egress do
     {brokered, tenant_keys, edited?} =
       refresh_tenant_secrets(
         state.tenant_keys,
-        tenant_secrets(state),
+        Fountain.Conversations.SpriteEnv.without_inference_inputs(
+          Map.get(state, :inference_model),
+          tenant_secrets(state)
+        ),
         brokered,
         state.broker_bindings,
         underlay

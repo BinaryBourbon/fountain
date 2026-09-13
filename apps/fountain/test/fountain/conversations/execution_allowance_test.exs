@@ -524,6 +524,11 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
           credit_balance_cents: 500
         })
 
+      Repo.insert!(%Fountain.Accounts.UserDataKey{
+        user_id: user.id,
+        wrapped_key: Fountain.Crypto.wrap_dek(Fountain.Crypto.generate_dek())
+      })
+
       env = Fountain.Factory.insert_env(user_id: user.id)
 
       agent =
@@ -636,6 +641,11 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
           sandbox_limit_override: 20
         })
 
+      Repo.insert!(%Fountain.Accounts.UserDataKey{
+        user_id: user.id,
+        wrapped_key: Fountain.Crypto.wrap_dek(Fountain.Crypto.generate_dek())
+      })
+
       env = Fountain.Factory.insert_env(user_id: user.id)
 
       agent =
@@ -739,6 +749,11 @@ defmodule Fountain.Conversations.ExecutionAllowanceRaceTest do
           credit_balance_cents: 500,
           sandbox_limit_override: 20
         })
+
+      Repo.insert!(%Fountain.Accounts.UserDataKey{
+        user_id: user.id,
+        wrapped_key: Fountain.Crypto.wrap_dek(Fountain.Crypto.generate_dek())
+      })
 
       env = Fountain.Factory.insert_env(user_id: user.id)
 

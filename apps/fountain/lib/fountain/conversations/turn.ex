@@ -59,6 +59,7 @@ defmodule Fountain.Conversations.Turn do
     # "inference" (and, on a platform turn, "model") — see
     # `inference_stamp_only?/1`.
     field :usage, :map
+    field :inference_source, :map
     # ACP selection evidence, distinct from the agent's saved configuration.
     field :model_selection, :map
     # The assistant's text for the turn — its events' `text` blocks, joined —
@@ -113,6 +114,7 @@ defmodule Fountain.Conversations.Turn do
       :turn_number,
       :prompt,
       :status,
+      :inference_source,
       :exit_code,
       :limit_reason,
       :started_at,

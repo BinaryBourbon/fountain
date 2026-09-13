@@ -454,14 +454,21 @@ defmodule Fountain.Conversations.TurnMachine do
         %{runtime_module: Managoat.Runtimes.Claude} = ctx
       ) do
     message =
-      if Map.get(ctx, :oauth_switched?, false) do
-        "Your organization has disabled Claude subscription (OAuth) access for Claude Code. " <>
-          "Switched to the Anthropic API key on this account for the rest of this " <>
-          "conversation — send your prompt again."
-      else
-        "Your organization has disabled Claude subscription (OAuth) access for Claude Code, " <>
-          "and no Anthropic API key is on file for this account. Add one in Settings, then " <>
-          "try again."
+      cond do
+        match?(%Source{identity: identity} when is_binary(identity), Map.get(ctx, :inference)) ->
+          "Your organization has disabled Claude subscription (OAuth) access for Claude Code. " <>
+            "This conversation remains bound to its selected credential. Start a new conversation " <>
+            "with an Anthropic API-key credential set, or restore subscription access."
+
+        Map.get(ctx, :oauth_switched?, false) ->
+          "Your organization has disabled Claude subscription (OAuth) access for Claude Code. " <>
+            "Switched to the Anthropic API key on this account for the rest of this " <>
+            "conversation — send your prompt again."
+
+        true ->
+          "Your organization has disabled Claude subscription (OAuth) access for Claude Code, " <>
+            "and no Anthropic API key is on file for this account. Add one in Settings, then " <>
+            "try again."
       end
 
     {turn,
@@ -960,14 +967,22 @@ defmodule Fountain.Conversations.TurnMachine do
   # The end-of-turn write merges its token figures over this (see
   # `Conversations._unsafe_record_turn_usage/2`), so a turn that does answer
   # its prompt ends with the same map it carried before #1685.
-  defp inference_stamp(%{usage: usage}, _ctx) when is_map(usage), do: %{}
+  defp inference_stamp(%{usage: usage} = row, ctx) when is_map(usage),
+    do: source_stamp(row, ctx)
 
-  defp inference_stamp(_row, ctx) do
+  defp inference_stamp(row, ctx) do
     case with_inference(%{}, ctx) do
-      stamp when map_size(stamp) > 0 -> %{usage: stamp}
-      _ -> %{}
+      stamp when map_size(stamp) > 0 -> Map.put(source_stamp(row, ctx), :usage, stamp)
+      _ -> source_stamp(row, ctx)
     end
   end
+
+  defp source_stamp(%{inference_source: source}, _) when is_map(source), do: %{}
+
+  defp source_stamp(_, %{inference: %Source{} = source}),
+    do: %{inference_source: Source.dump(source)}
+
+  defp source_stamp(_, _), do: %{}
 
   @spec record_usage(t(), map() | nil) :: :ok
   def record_usage(%__MODULE__{row: %{} = row}, %{} = usage) do
@@ -1067,13 +1082,19 @@ defmodule Fountain.Conversations.TurnMachine do
   # tenant's own key is never touched by it.
   @spec gate(String.t(), Source.t() | nil) :: :ok | {:error, term()}
   def gate(user_id, inference \\ nil) do
-    with :ok <- Fountain.Accounts.check_not_suspended(user_id),
+    with :ok <- validate_inference(user_id, inference),
+         :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id) do
       if Source.platform?(inference),
         do: Fountain.PlatformInference.check_ceiling(),
         else: :ok
     end
   end
+
+  defp validate_inference(user_id, %Source{identity: identity} = source) when is_binary(identity),
+    do: Fountain.InferenceCredentials.validate_source(user_id, source)
+
+  defp validate_inference(_, _), do: :ok
 
   # Whether this machine can take a turn from this conversation right now. An
   # unlocked read — the locked check is inside the turn insert
@@ -1103,19 +1124,44 @@ defmodule Fountain.Conversations.TurnMachine do
   same reason capacity is: there is no run to record, and the stage event says
   what happened.
   """
-  @spec open(String.t(), String.t(), String.t(), map() | nil, integer() | nil) ::
+  @spec open(
+          String.t(),
+          String.t(),
+          String.t(),
+          map() | nil,
+          integer() | nil,
+          Source.t() | nil | :unspecified
+        ) ::
           {:ok, Conversation.t(), Conversations.Turn.t()}
           | :at_capacity
           | :no_command
           | :configuration_changed
           | {:error, term()}
-  def open(conversation_id, sandbox_id, prompt, agent \\ nil, revision \\ nil) do
+  def open(
+        conversation_id,
+        sandbox_id,
+        prompt,
+        agent \\ nil,
+        revision \\ nil,
+        source \\ :unspecified
+      ) do
     conv = Conversations._unsafe_get_conversation!(conversation_id)
 
-    if runnable?(conv, agent),
-      do: open_turn(conv, sandbox_id, prompt, revision),
-      else: refuse_no_command(conv)
+    with :ok <- matching_model(source, agent, conv.runtime) do
+      if runnable?(conv, agent),
+        do: open_turn(conv, sandbox_id, prompt, revision, source),
+        else: refuse_no_command(conv)
+    end
   end
+
+  defp matching_model(%Source{identity: identity} = source, agent, runtime)
+       when is_binary(identity) do
+    if source.model == (agent && agent.model) and source.runtime == runtime,
+      do: :ok,
+      else: {:error, :inference_source_changed}
+  end
+
+  defp matching_model(_, _, _), do: :ok
 
   # `RuntimeDispatch.command/2` is total for every other runtime, so the only
   # question is whether the acp runtime's agent still carries one.
@@ -1137,7 +1183,7 @@ defmodule Fountain.Conversations.TurnMachine do
     :no_command
   end
 
-  defp open_turn(conv, sandbox_id, prompt, revision) do
+  defp open_turn(conv, sandbox_id, prompt, revision, source) do
     conversation_id = conv.id
     turn_number = Conversations._unsafe_next_turn_number(conversation_id)
 
@@ -1148,6 +1194,11 @@ defmodule Fountain.Conversations.TurnMachine do
       status: "running",
       started_at: now()
     }
+
+    attrs =
+      if source == :unspecified,
+        do: attrs,
+        else: Map.put(attrs, :inference_source, Source.dump(source))
 
     capacity = Fountain.RuntimeDispatch.concurrency(conv.runtime)
 

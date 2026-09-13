@@ -76,17 +76,24 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
       stub_happy_sprite()
       _ref = stub_turn_boundary()
 
-      # After `stub_happy_sprite/0`, which sets the case's own default of "no
-      # credentials at all" — a stub set before it is overwritten by it.
-      Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
-        {:ok, %{anthropic_api_key: "sk-ant-tenant-key"}}
-      end)
+      {:ok, set} =
+        Fountain.InferenceCredentials.put_credential(
+          user.id,
+          <<0::256>>,
+          :anthropic_api_key,
+          "sk-ant-tenant-key"
+        )
 
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 
       state = :sys.get_state(pid)
-      assert state.inference_source == Source.credential()
+
+      assert %Source{scope: :credential, kind: :anthropic_api_key, set_id: set_id} =
+               state.inference_source
+
+      assert set_id == set.id
+      assert state.inference_source.revision == set.revision
       assert state.env_credentials == %{anthropic_api_key: "sk-ant-tenant-key"}
     end
 
@@ -122,7 +129,9 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 
       state = :sys.get_state(pid)
-      assert state.inference_source == Source.tenant_secret()
+      assert %Source{scope: :tenant_secret, kind: :anthropic_api_key} = state.inference_source
+      assert state.env_credentials == %{anthropic_api_key: "sk-ant-from-the-vault"}
+      assert state.inference_source.identity =~ "vault:#{vault.id}:"
 
       # And so the turn is not billed as platform inference.
       assert TurnMachine.with_inference(%{"input" => 5}, TurnMachine.ctx(state)) ==
@@ -182,7 +191,15 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 
       state = :sys.get_state(pid)
-      assert state.inference_source == Source.platform()
+
+      assert %Source{
+               origin: :platform,
+               scope: :platform,
+               kind: :anthropic_api_key,
+               identity: "platform:environment:anthropic"
+             } = state.inference_source
+
+      assert is_binary(state.inference_source.revision)
       assert state.inference_model == "anthropic/claude-opus-5"
       assert state.env_credentials.anthropic_api_key == @platform_key
     end

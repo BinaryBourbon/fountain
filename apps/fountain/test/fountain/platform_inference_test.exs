@@ -93,8 +93,9 @@ defmodule Fountain.PlatformInferenceTest do
       assert PlatformInference.enabled?()
       assert PlatformInference.key_for("google") == {:ok, :gemini_api_key, "AIza-stored"}
 
-      assert InferenceCredentials.select("google/gemini-3.1-pro-preview", %{}) ==
-               {:ok, Source.platform(), %{gemini_api_key: "AIza-stored"}}
+      assert {:ok, %Source{origin: :platform, kind: :gemini_api_key},
+              %{gemini_api_key: "AIza-stored"}} =
+               InferenceCredentials.select("google/gemini-3.1-pro-preview", %{})
 
       :ok = PlatformInference.clear_key("google")
       refute PlatformInference.enabled?()
@@ -240,13 +241,11 @@ defmodule Fountain.PlatformInferenceTest do
                InferenceCredentials.select(nil, %{})
     end
 
-    test "an empty-string credential is not a credential" do
+    test "an empty explicit credential refuses rather than selecting the platform" do
       with_platform_key()
 
-      assert {:ok, %Source{origin: :platform}, creds} =
+      assert {:error, :inference_credential_unusable} =
                InferenceCredentials.select("anthropic/claude-opus-5", %{anthropic_api_key: ""})
-
-      assert creds.anthropic_api_key == "sk-platform"
     end
   end
 

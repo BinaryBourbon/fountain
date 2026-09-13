@@ -24,62 +24,74 @@ defmodule Fountain.Conversations.SpriteEnv do
   # held in GenServer state for the conversation lifetime; the DEK is used
   # for ad-hoc decryption (vaults, environments) and the credentials map
   # is passed to runtime modules via build_sprite_env.
-  @spec load_tenant_state(String.t()) :: {:ok, binary(), map()} | {:error, term()}
-  def load_tenant_state(user_id) when is_binary(user_id) do
+  @doc """
+  The credential set pinned in a conversation's source binding.
+
+  For a new selection, the launch override wins over the agent's set, then
+  the account default. Admission persists the resolved source; wake and
+  resume retain that binding even after the agent or account default changes.
+  A stored nil set ID means that selection had no credential set and stays nil.
+  """
+  @spec credential_set_id(map(), map() | nil) :: binary() | nil
+  def credential_set_id(conv, agent) do
+    case Map.get(conv, :inference_source) do
+      %{} = source -> source["set_id"]
+      _ -> Map.get(conv, :inference_credential_id) || (agent && agent.inference_credential_id)
+    end
+  end
+
+  def resolve_inference(conv, agent, env, vault) do
+    InferenceCredentials.with_source_lock(conv.user_id, fn ->
+      with {:ok, dek} <- Crypto.load_tenant_key(conv.user_id),
+           {:ok, source, creds} <-
+             InferenceCredentials.resolve(conv.user_id, agent && agent.model, conv.runtime,
+               credential_set_id: credential_set_id(conv, agent),
+               environment_id: env && env.id,
+               vault_id: vault && vault.id,
+               expected_source: Map.get(conv, :inference_source)
+             ),
+           :ok <- Fountain.Conversations.InferenceBinding.reserve(conv, source) do
+        {:ok, dek, source, creds}
+      end
+    end)
+  end
+
+  # Explicit IDs are tenant-scoped and must exist. Only nil asks for the
+  # account default; a missing or foreign named set never falls back to it.
+  @spec load_tenant_state(String.t(), binary() | nil) :: {:ok, binary(), map()} | {:error, term()}
+  def load_tenant_state(user_id, set_id \\ nil) when is_binary(user_id) do
     with {:ok, dek} <- Crypto.load_tenant_key(user_id),
-         {:ok, creds} <- InferenceCredentials.decrypted_for_user(user_id, dek) do
+         {:ok, creds} <- InferenceCredentials.decrypted_for(user_id, set_id, dek) do
       {:ok, dek, creds}
     end
   end
 
   @doc """
-  Whose inference key this conversation runs on, and the credentials to run
-  it with (#1388, ADR 0038 decision 3). The agent may be nil (a conversation
-  with none, or one whose agent was deleted), which needs no credential.
+  Resolve a source and its runtime credential inputs from already-loaded values.
 
-  `InferenceCredentials.select/2` is the rule; this is where a provision
-  applies it. The platform key comes back merged into the same map a tenant's
-  own key lives in, so everything downstream — the gate 3 broker split, the
-  runtime's `default_env/2`, the redaction register — is untouched by the
-  feature existing at all.
+  `runtime` falls back to the agent's runtime. `secrets` supplies actual
+  environment/vault values, normalized by the shared resolver. Same-kind
+  overrides win over credential rows, then runtime kind precedence selects
+  the auth input. Competing inputs are removed from the returned credentials.
 
-  The first element is a `Fountain.InferenceCredentials.Source` (ADR 0053
-  decision 2), which the server holds for the conversation's lifetime and the
-  turn's usage stamp is derived from.
-
-  `:no_credential` keeps the behaviour that predates platform keys: the
-  conversation provisions anyway, and the provider's own auth failure lands
-  on the transcript rather than a refusal invented here. Nothing served the
-  turn and the deployment is not paying for it, so the source is
-  `Source.missing/0` — `origin: :own`, exactly what this case resolved to
-  before the struct existed.
-
-  `runtime` is the conversation's own (`conv.runtime`), which is what the
-  sandbox is dispatched on and can differ from the agent's after an edit;
-  nil falls back to the agent's.
-
-  `secrets` is this conversation's merged environment and vault secrets, the
-  same map `merge_secrets/3` returns. Only its **keys** are read: a secret
-  named after a static credential overrides that credential in the sandbox,
-  so the conversation is running on the tenant's own key and must not be
-  billed as platform inference (ADR 0053 decision 5). The values stay where
-  they are — they already reach the sandbox through the secrets path, and
-  merging them into the credentials map would change which credential the
-  runtime picks. Default `%{}` keeps the old answer for a caller with no
-  secrets to hand over.
+  This value-only helper preserves the legacy missing-credential result;
+  production admission and provisioning use `resolve_inference/4` to persist
+  and validate the source identity and revision. Invalid supplied credentials
+  return an actionable error rather than selecting platform inference.
   """
   @spec select_inference(map() | nil, map(), String.t() | nil, map()) ::
-          {InferenceCredentials.Source.t(), map()}
+          {InferenceCredentials.Source.t(), map()} | {:error, term()}
   def select_inference(agent, own_creds, runtime \\ nil, secrets \\ %{}) do
     brokered? = Fountain.Broker.configured?()
     runtime = runtime || (agent && agent.runtime)
 
     case InferenceCredentials.select(agent && agent.model, own_creds, runtime,
            brokered: brokered?,
-           secret_keys: Map.keys(secrets)
+           overrides: secrets
          ) do
       {:ok, source, creds} -> {source, creds}
       {:error, :no_credential} -> {InferenceCredentials.Source.missing(), own_creds}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -125,6 +137,16 @@ defmodule Fountain.Conversations.SpriteEnv do
 
     env_credentials = Keyword.fetch!(opts, :env_credentials)
 
+    # Only the resolved kind reaches the selected provider's auth inputs.
+    # Its value has already passed through Egress, including broker custody.
+    auth_names =
+      (agent && Managoat.Runtimes.Model.provider(agent.model))
+      |> InferenceCredentials.credentials_for_provider()
+      |> Enum.flat_map(&Map.fetch!(InferenceCredentials.env_aliases(), &1))
+
+    plain = if env, do: Map.drop(env.env_vars || %{}, auth_names), else: %{}
+    secrets = Map.drop(secrets, auth_names)
+
     sprite_env =
       (runtime_module.default_env(agent, env_credentials) || []) ++
         Fountain.Conversations.CodexChatGPT.env(runtime_module, env_credentials) ++
@@ -135,10 +157,7 @@ defmodule Fountain.Conversations.SpriteEnv do
         otel_propagation_env() ++
         git_author_env() ++
         ca_defaults ++
-        if(env,
-          do: Enum.map(env.env_vars, fn {k, v} -> {to_string(k), to_string(v)} end),
-          else: []
-        ) ++
+        Enum.map(plain, fn {k, v} -> {to_string(k), to_string(v)} end) ++
         Enum.map(secrets, fn {k, v} -> {k, v} end) ++
         proxy
 
@@ -146,6 +165,16 @@ defmodule Fountain.Conversations.SpriteEnv do
     # very first step, and the secrets are already in the sprite by then.
     Fountain.Conversations.Redaction.put(conversation_id, sprite_env)
     sprite_env
+  end
+
+  def without_inference_inputs(model, inputs) do
+    names =
+      model
+      |> Managoat.Runtimes.Model.provider()
+      |> InferenceCredentials.credentials_for_provider()
+      |> Enum.flat_map(&Map.fetch!(InferenceCredentials.env_aliases(), &1))
+
+    Map.drop(inputs, names)
   end
 
   # The overridable half of the broker's pairs, and the half that is not.

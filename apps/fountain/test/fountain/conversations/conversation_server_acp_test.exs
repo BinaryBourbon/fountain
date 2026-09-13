@@ -23,9 +23,8 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   # process: every byte written to stdin arrives as `{:wrote, line}`, and the
   # command's ref is ours so tests can feed stdout back.
   #
-  # `credentials` overrides `stub_happy_sprite/1`'s empty
-  # `InferenceCredentials.decrypted_for_user/2` stub — set after, since
-  # `stub_happy_sprite/1` would otherwise clobber it back to `%{}`.
+  # Store real encrypted credentials under the harness DEK so selection and
+  # source revision checks exercise the same database rows as production.
   #
   # `runtime` matches `start_server/2`'s own default (`FakeRuntime`) so every
   # existing call site is unaffected; a test asserting on real runtime-module
@@ -35,9 +34,10 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   defp start_acp_turn(conv, credentials \\ %{}, runtime \\ Managoat.Runtimes.Testing.FakeRuntime) do
     stub_happy_sprite()
 
-    Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
-      {:ok, credentials}
-    end)
+    for {kind, value} <- credentials do
+      {:ok, _} =
+        Fountain.InferenceCredentials.put_credential(conv.user_id, <<0::256>>, kind, value)
+    end
 
     # Turn 1 fires title generation, which is a live HTTPS call to the model
     # provider. Every other test here leaves `credentials` empty, so it used to
@@ -169,7 +169,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {:ok, conv: conv, pid: pid, ref: ref}
     end
 
-    test "runs the pinned adapter rather than the claude CLI", %{pid: pid} do
+    test "runs the pinned adapter rather than the claude CLI" do
       # Spawned through `env` so the session carries its conversation tag on
       # its own command line (ADR 0023 gate 1); the adapter is argv[1].
       assert_receive {:spawned, "env", ["FOUNTAIN_CONVERSATION_ID=" <> _, bin | _], opts}
@@ -177,11 +177,11 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert opts[:stdin] == true
     end
 
-    test "writes initialize instead of the prompt", %{pid: pid} do
+    test "writes initialize instead of the prompt" do
       assert %{"method" => "initialize"} = next_write()
     end
 
-    test "does not close stdin at spawn — it is the return path for the session", %{pid: pid} do
+    test "does not close stdin at spawn — it is the return path for the session" do
       # The legacy path writes the prompt and closes immediately. Doing that here
       # hangs up on the agent mid-handshake: permission answers and
       # `session/cancel` both travel back up this pipe.
@@ -306,33 +306,20 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_1"
     end
 
-    test "a saved model change is applied on the existing connection", %{
+    test "a saved model change requires a fresh source selection", %{
       conv: conv,
       pid: pid,
       ref: ref
     } do
       prompt_id = drive_to_prompt(pid, ref)
       reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
-      peer = :sys.get_state(pid).acp_peer
+      source = Repo.reload!(conv).inference_source
       agent = Fountain.Agents._unsafe_get_agent(conv.agent_id)
       {:ok, _} = Fountain.Agents.update_agent(agent, %{model: "anthropic/claude-opus-4-6"})
-      assert :ok = GenServer.call(pid, {:send_prompt, "next", []})
-
-      assert %{
-               "method" => "session/set_model",
-               "id" => set_id,
-               "params" => %{"modelId" => "claude-opus-4-6", "sessionId" => "sess_1"}
-             } = next_write()
-
-      assert :sys.get_state(pid).acp_peer == peer
-      reply(pid, ref, set_id, %{"models" => %{"currentModelId" => "claude-opus-4-6"}})
-      %{"method" => "session/prompt", "id" => prompt_id} = next_write()
-      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
-      assert [first, second] = Conversations._unsafe_list_turns(conv.id)
+      assert {:error, :inference_source_changed} = GenServer.call(pid, {:send_prompt, "next", []})
+      assert [first] = Conversations._unsafe_list_turns(conv.id)
       assert first.status == "completed"
-      assert second.model_selection["effective_model"] == "claude-opus-4-6"
-      assert second.model_selection["source"] == "runtime"
-      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_1"
+      assert Repo.reload!(conv).inference_source == source
     end
 
     test "the response's usage lands on the turn and the conversation's sums (#827)", %{
@@ -873,7 +860,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       |> Enum.find(&(&1.kind == "stage" and &1.stage == "turn" and &1.state == "failed"))
     end
 
-    test "falls back to the api key for the rest of the conversation, when one is on file", %{
+    test "a bound subscription refuses silent API fallback even when a key is on file", %{
       conv: conv
     } do
       {pid, ref} =
@@ -895,25 +882,24 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert turn.status == "failed"
 
       stage = failed_turn_stage(conv.id)
-      assert stage.data =~ "Switched to the Anthropic API key"
+      assert stage.data =~ "remains bound to its selected credential"
 
-      # The conversation is usable again — the next turn spawns with the
-      # fallback credential, not the one the org already refused.
+      # A retry keeps the same source. Changing credential kind requires a
+      # new selection and cannot happen behind the turn's stored binding.
       assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
       assert_receive {:spawned, _cmd, _args, opts}
 
       env = Keyword.fetch!(opts, :env)
-      assert {"ANTHROPIC_API_KEY", "api-key"} in env
-      refute List.keymember?(env, "CLAUDE_CODE_OAUTH_TOKEN", 0)
+      refute List.keymember?(env, "ANTHROPIC_API_KEY", 0)
+      assert {"CLAUDE_CODE_OAUTH_TOKEN", "oauth-token"} in env
+      assert Repo.reload!(conv).inference_source["kind"] == "claude_code_oauth_token"
     end
 
-    test "the swapped-in api key is registered for output redaction", %{conv: conv} do
-      # Only `build_sprite_env/5` registers secrets with the redaction table,
-      # and the fallback never goes through it — so without an explicit
-      # registration the one credential this fix puts into the sandbox is the
-      # one credential that would print in plaintext into `log_events`. The
-      # refused OAuth token stays registered too: it is still in the sprite's
-      # `.env` on disk until a wake rewrites the file.
+    test "the selected subscription stays registered and the unselected key is never exported", %{
+      conv: conv
+    } do
+      # Only the selected credential is exported; it remains redacted even
+      # after a provider refusal. The unused API key never enters the peer.
       {pid, ref} =
         start_acp_turn(
           conv,
@@ -928,7 +914,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       oauth_error_reply(pid, ref, prompt_id)
 
       registered = Fountain.Conversations.Redaction.lookup(conv.id)
-      assert "api-key-long-enough" in registered
+      refute "api-key-long-enough" in registered
       assert "oauth-token-long-enough" in registered
     end
 
@@ -943,7 +929,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert turn.status == "failed"
 
       stage = failed_turn_stage(conv.id)
-      assert stage.data =~ "no Anthropic API key is on file"
+      assert stage.data =~ "Start a new conversation"
     end
   end
 

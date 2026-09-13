@@ -25,6 +25,7 @@ defmodule Fountain.Conversations.Sandbox do
   @type t :: %__MODULE__{}
 
   schema "sandboxes" do
+    field :codex_inference_source, :map
     # Provider-scoped sandbox identity: the name Fountain mints
     # (`fountain-<tenant-prefix>-<hex>`) and uses as the primary external ref.
     # The column name predates multiple providers and survives for API and

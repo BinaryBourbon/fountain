@@ -4,7 +4,30 @@ defmodule Fountain.Conversations.Reattachment do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{Connection, Output, Pending, TurnMachine}
+  alias Fountain.Conversations.{Connection, Output, Pending, Provisioning, TurnMachine}
+
+  @doc false
+  def prepare_source(handle, state, conv, agent, sprite_env) do
+    with :ok <-
+           Provisioning.write_env_file(
+             handle,
+             Fountain.Conversations.Identity.disk_env(sprite_env)
+           ) do
+      Fountain.Conversations.Reapply.mount_skills(handle, conv, agent)
+      runtime = conv.runtime || (agent && agent.runtime) || "claude"
+      Provisioning.write_instructions(handle, runtime, agent)
+
+      with :ok <- Fountain.Conversations.InferenceBinding.reserve(conv, state.inference_source) do
+        Provisioning.prepare_runtime_sprite(
+          handle,
+          runtime,
+          state.runtime_module,
+          agent,
+          sprite_env
+        )
+      end
+    end
+  end
 
   @replay_dedup_ttl_ms 10_000
 

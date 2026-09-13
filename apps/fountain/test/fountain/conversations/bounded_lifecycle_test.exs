@@ -328,6 +328,14 @@ defmodule Fountain.Conversations.BoundedLifecycleTest do
 
     save_allowance(conv.id, %{"wall_time_seconds" => 60})
 
+    {:ok, source, _} =
+      Fountain.InferenceCredentials.resolve(c.user.id, agent.model, agent.runtime)
+
+    Ecto.Changeset.change(c.sandbox,
+      codex_inference_source: Fountain.InferenceCredentials.Source.dump(source)
+    )
+    |> Repo.update!()
+
     {pid, _transport, _ref, execution} = start_bounded(%{c | conv: conv})
 
     assert_receive {:spawn_argv,

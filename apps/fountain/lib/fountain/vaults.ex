@@ -8,6 +8,7 @@ defmodule Fountain.Vaults do
   import Ecto.Query, only: [from: 2]
 
   alias Fountain.Audit
+  alias Fountain.InferenceCredentials
   alias Fountain.Repo
   alias Fountain.Vaults.{Vault, VaultSecret}
 
@@ -102,16 +103,23 @@ defmodule Fountain.Vaults do
   leave the same trail (#543).
   """
   def create_vault(attrs, opts \\ []) do
-    %Vault{}
-    |> Vault.changeset(attrs)
-    |> Repo.insert()
+    changeset = Vault.changeset(%Vault{}, attrs)
+
+    if changeset.valid? do
+      user_id = Ecto.Changeset.get_field(changeset, :user_id)
+      InferenceCredentials.with_source_lock(user_id, fn -> Repo.insert(changeset) end)
+    else
+      {:error, changeset}
+    end
     |> audited("vault.created", opts)
   end
 
   @doc "Update a vault. See `create_vault/2` for `opts`."
   def update_vault(%Vault{} = vault, attrs, opts \\ []) do
     changeset = Vault.changeset(vault, attrs)
-    result = Repo.update(changeset)
+
+    result =
+      InferenceCredentials.with_source_lock(vault.user_id, fn -> Repo.update(changeset) end)
 
     # See `Fountain.Environments.update_environment/3`: a save that moves
     # nothing records nothing (#1680).
@@ -151,7 +159,9 @@ defmodule Fountain.Vaults do
       {:error, :sandbox_mid_turn}
     else
       _ = Fountain.Conversations._unsafe_retire_orphaned_homes(homes, "vault_deleted", opts)
-      vault |> Repo.delete() |> audited("vault.deleted", opts)
+
+      InferenceCredentials.with_source_lock(vault.user_id, fn -> Repo.delete(vault) end)
+      |> audited("vault.deleted", opts)
     end
   end
 
@@ -185,17 +195,19 @@ defmodule Fountain.Vaults do
   """
   def upsert_secret(%Vault{} = vault, %{"key" => key} = attrs, dek, opts \\ [])
       when is_binary(dek) do
-    case _unsafe_get_secret(vault.id, key) do
-      nil ->
-        %VaultSecret{}
-        |> VaultSecret.changeset(Map.put(attrs, "vault_id", vault.id), dek)
-        |> Repo.insert()
+    InferenceCredentials.with_source_lock(vault.user_id, fn ->
+      case _unsafe_get_secret(vault.id, key) do
+        nil ->
+          %VaultSecret{}
+          |> VaultSecret.changeset(Map.put(attrs, "vault_id", vault.id), dek)
+          |> Repo.insert()
 
-      existing ->
-        existing
-        |> VaultSecret.changeset(attrs, dek)
-        |> Repo.update()
-    end
+        existing ->
+          existing
+          |> VaultSecret.changeset(attrs, dek)
+          |> Repo.update()
+      end
+    end)
     |> audited_secret(vault, key, "vault.secret.write", opts)
   end
 
@@ -215,8 +227,7 @@ defmodule Fountain.Vaults do
         if changeset.valid? and changeset.changes == %{} do
           {:ok, secret}
         else
-          changeset
-          |> Repo.update()
+          InferenceCredentials.with_source_lock(vault.user_id, fn -> Repo.update(changeset) end)
           |> audited_secret(vault, key, "vault.secret.update", opts)
         end
     end
@@ -229,8 +240,7 @@ defmodule Fountain.Vaults do
   `Fountain.Environments.delete_secret/3` for why.
   """
   def delete_secret(%Vault{} = vault, %VaultSecret{} = secret, opts \\ []) do
-    secret
-    |> Repo.delete()
+    InferenceCredentials.with_source_lock(vault.user_id, fn -> Repo.delete(secret) end)
     |> audited_secret(vault, secret.key, "vault.secret.delete", opts)
   end
 

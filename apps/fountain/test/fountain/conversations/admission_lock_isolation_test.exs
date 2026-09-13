@@ -85,6 +85,11 @@ defmodule Fountain.Conversations.AdmissionLockIsolationTest do
         credit_balance_cents: 500
       })
 
+    Repo.insert!(%Fountain.Accounts.UserDataKey{
+      user_id: user.id,
+      wrapped_key: Fountain.Crypto.wrap_dek(Fountain.Crypto.generate_dek())
+    })
+
     %{user: user, agent: insert_agent(user_id: user.id, runtime: "claude")}
   end
 
