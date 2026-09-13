@@ -52,16 +52,16 @@ defmodule Fountain.Conversations.Identity do
   # cross-conversation read of a credential that brokers another tenant's
   # vault. `Fountain.Broker.process_only_keys/0` names the variables.
   #
-  # The inference credential is per-conversation for the same reason (ADR 0053
-  # decision 4). Which credential runs a conversation is decided per
-  # conversation by `InferenceCredentials.select/4`, and a sandbox carries
-  # several of them (ADR 0023), so a value on the shared disk is a
-  # cross-conversation read of whichever conversation last provisioned.
-  # `InferenceCredentials.env_names/0` names the four; the managed ChatGPT
-  # grant is not among them and never reaches the env file at all.
-  @process_only [@tag_key, "FOUNTAIN_TOKEN", "TRACEPARENT"] ++
+  # Inference auth inputs are per-conversation (ADR 0053 decision 4),
+  # including tenant env/vault secrets with a supported name or alias.
+  # Unbrokered values are bearer material; broker placeholders are harmless
+  # fixed strings, but neither needs to persist in the shared env file.
+  # The managed ChatGPT path also emits a placeholder into the process env.
+  # Strip its reserved name defensively along with the static credentials.
+  # Runtime-owned auth files require separate isolation (decision 6).
+  @process_only [@tag_key, "FOUNTAIN_TOKEN", "TRACEPARENT", "CODEX_CHATGPT_ACCESS_TOKEN"] ++
                   Fountain.Broker.process_only_keys() ++
-                  Map.values(Fountain.InferenceCredentials.env_names())
+                  (Fountain.InferenceCredentials.env_aliases() |> Map.values() |> List.flatten())
 
   @tag_re ~r/(?:^|\s)FOUNTAIN_CONVERSATION_ID=([0-9a-fA-F-]{36})(?:\s|$)/
 
@@ -77,7 +77,7 @@ defmodule Fountain.Conversations.Identity do
 
   @doc """
   The subset of a sprite env that belongs on the machine's disk: everything
-  except the per-conversation identity.
+  except the per-conversation identity and inference auth inputs.
   """
   @spec disk_env([{String.t(), String.t()}]) :: [{String.t(), String.t()}]
   def disk_env(sprite_env) when is_list(sprite_env) do

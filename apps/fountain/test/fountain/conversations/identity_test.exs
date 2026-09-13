@@ -2,7 +2,6 @@ defmodule Fountain.Conversations.IdentityTest do
   use ExUnit.Case, async: true
 
   alias Fountain.Conversations.Identity
-  alias Fountain.InferenceCredentials
   alias Managoat.Sandbox.Session
 
   @conv "0b0f6e1a-4d4c-4c1a-9a2b-3c4d5e6f7a8b"
@@ -26,25 +25,20 @@ defmodule Fountain.Conversations.IdentityTest do
              ]
     end
 
-    # ADR 0053 decision 4. Which credential runs a conversation is a
-    # per-conversation decision and a sandbox carries several conversations
-    # (ADR 0023), so a value in the shared file is a cross-conversation read
-    # of whichever one provisioned last. A tenant secret of the same name is
-    # not the credential and is not stripped: it belongs to the environment
-    # or vault, which is what the file is for, and it is the same for every
-    # conversation that attaches them.
-    test "keeps every inference credential off the disk" do
-      env =
-        Enum.map(InferenceCredentials.env_names(), fn {_cred, name} -> {name, "value-#{name}"} end)
+    # Filtering is by name, so credentials supplied through an environment
+    # or vault receive the same process-only treatment as credential sets.
+    test "keeps canonical and runtime alias inference names off the disk" do
+      names = ~w(ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY
+                 GEMINI_API_KEY GOOGLE_GENERATIVE_AI_API_KEY)
+      env = Enum.map(names, &{&1, "value-#{&1}"})
 
       assert Identity.disk_env(env) == []
     end
 
-    test "the managed ChatGPT grant is not one of them: it never reaches the env list" do
-      # ADR 0052 decision 6 keeps `CODEX_CHATGPT_ACCESS_TOKEN` out of
-      # configuration entirely, so `disk_env/1` has no opinion about it and
-      # must not grow one here by accident.
-      refute "CODEX_CHATGPT_ACCESS_TOKEN" in Identity.process_only_keys()
+    test "keeps managed ChatGPT token inputs and broker placeholders off disk" do
+      for value <- ["managed-bearer", Fountain.Broker.placeholder("CODEX_CHATGPT_ACCESS_TOKEN")] do
+        assert Identity.disk_env([{"CODEX_CHATGPT_ACCESS_TOKEN", value}]) == []
+      end
     end
 
     test "an empty env stays empty" do

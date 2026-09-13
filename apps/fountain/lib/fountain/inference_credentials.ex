@@ -203,6 +203,22 @@ defmodule Fountain.InferenceCredentials do
   def env_names, do: @env_names
 
   @doc """
+  Every supported runtime name for each static credential, canonical name first.
+
+  OpenCode's Google adapter exports `GOOGLE_GENERATIVE_AI_API_KEY` for the
+  same credential Gemini exports as `GEMINI_API_KEY`. Selection and shared
+  env-file filtering use this inventory; `env_names/0` names broker bindings.
+  Managed ChatGPT tokens are reserved configuration, not static aliases.
+  """
+  @spec env_aliases() :: %{atom() => [String.t()]}
+  def env_aliases do
+    Map.new(@env_names, fn
+      {:gemini_api_key, name} -> {:gemini_api_key, [name, "GOOGLE_GENERATIVE_AI_API_KEY"]}
+      {credential, name} -> {credential, [name]}
+    end)
+  end
+
+  @doc """
   The credentials that let a model's provider run: a model `provider/id`
   names a provider; any one of these credentials serves it. Unknown
   providers (a local model, a gateway) need none — Fountain cannot know.
