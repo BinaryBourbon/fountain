@@ -286,6 +286,13 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
+
+      - name: Mix lock backport preserves port reuse and cross-VM exclusion
+        if: ${{ matrix.partition == 1 }}
+        run: elixir scripts/ci/mix-lock-backport-test.exs
+
       - name: Timing collection preserves ExUnit execution
         if: ${{ matrix.partition == 1 }}
         run: elixir scripts/ci/timing-formatter-test.exs
@@ -448,6 +455,9 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
+
       - name: Download coverage exports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -531,6 +541,9 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
 
       # Job-scoped keys — see the note in `test`.
       - name: Restore deps cache
@@ -651,6 +664,9 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
 
       # Job-scoped keys — see the note in `test`.
       - name: Restore deps cache
@@ -1375,6 +1391,9 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
+
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
@@ -1733,6 +1752,9 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
 
       # Shares the `test` job's cache keys on purpose. The warning against
       # sharing a key (see the `test` job) is about two jobs racing to save

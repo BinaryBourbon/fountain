@@ -223,3 +223,53 @@ The `Alert rules` workflow runs `scripts/test-alerts.py` with Prometheus
 replica aggregation, failure thresholds, counter resets, absent series, low
 traffic, and first-output alert hold time. Run the same command locally
 after changing `deploy/k8s/prometheusrule.yaml`.
+
+## Pinned Mix lock backport
+
+Core CI jobs on Elixir 1.19.2 install the exact upstream
+[Mix lock fix #15765](https://github.com/elixir-lang/elixir/pull/15765)
+before invoking Mix. The patch is Apache 2.0 (see
+[mix-lock-15765.patch.license](mix-lock-15765.patch.license)).
+
+Pinned Mix leaves its first `port_P` file hard-linked to `lock_0` after
+unlocking. If the OS reassigns that port to the next listener, recreating
+`port_P` overwrites `lock_0` with the current process's port. Mix then probes
+its own listener and waits for itself indefinitely. The regression reproduces
+this with real TCP sockets by asking the allocator to reuse its first port.
+The backport also handles reassignment after an owner crashes and retains
+mutual exclusion between separate OS processes.
+
+This is a concrete mechanism consistent with #1997's wait on PID 2770 after
+compiling the core app. The historical log did not capture lock files or
+stacks, so it cannot establish that exact interleaving. Keep the diagnostic
+reporter to distinguish any future stall.
+
+`scripts/ci/mix-lock-backport.sh` verifies Elixir 1.19.2 and the original
+source SHA256, applies the unchanged upstream patch to a temporary copy,
+verifies the resulting SHA256, and compiles an isolated ebin. It edits no
+installed toolchain and fetches nothing. `--install` exports `ERL_AFLAGS`
+through `GITHUB_ENV`, preserving existing flags. An Erlang bootstrap explicitly
+loads the patched module before Elixir starts: adding `-pa` alone is
+insufficient because Elixir later prepends its own Mix path. A module-origin
+check and the cross-VM regression verify that the fix reaches child VMs.
+
+For isolated local verification, wrap a command with the same script:
+
+```sh
+scripts/ci/mix-lock-backport.sh elixir scripts/ci/mix-lock-backport-test.exs
+scripts/ci/mix-lock-backport.sh mix ecto.create --quiet
+```
+
+Use a dedicated build tree with no concurrent unpatched Mix process. Upstream
+changed the lock namespace to `mix_lock_v2_user`, so patched and unpatched VMs
+do not coordinate on a shared build directory. The local wrapper removes its
+temporary ebin when the command exits; it is intended for finite verification
+commands. CI's installation persists for the whole job, including nested Mix
+commands and release checks. The separate SDK matrix retains its toolchains.
+
+**Retirement:** remove the wrapper, patch and CI installation steps when the
+pinned Elixir release contains #15765 and these regressions pass against its
+native module. As checked on 2026-09-13, neither 1.19.6 nor 1.20.4 contains the
+fix; a patch-version bump alone does not address this race. Version and source
+fingerprint guards intentionally fail when the toolchain changes, requiring
+that review rather than silently patching a different implementation.
