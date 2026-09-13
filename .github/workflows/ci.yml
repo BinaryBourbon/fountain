@@ -290,6 +290,10 @@ jobs:
         if: ${{ matrix.partition == 1 }}
         run: elixir scripts/ci/timing-formatter-test.exs
 
+      - name: Mix stall diagnostics capture lock holders and waiters
+        if: ${{ matrix.partition == 1 }}
+        run: elixir scripts/ci/mix-diagnostics-test.exs
+
       # Cache keys carry the job name. `test` and `checks` build different
       # trees — this one only ever compiles :test, while `checks` additionally
       # builds :dev for dialyzer and :prod for the release — and a shared key
@@ -355,7 +359,13 @@ jobs:
           exit 1
 
       - name: Set up database
-        run: mix ecto.create --quiet && mix ecto.migrate --quiet
+        # #1997 stalled inside Mix before tests began. Capture the live lock
+        # holders and process tree before the unchanged job timeout cancels it.
+        env:
+          MIX_DIAGNOSTICS: "1"
+        run: |
+          elixir -r scripts/ci/mix-diagnostics.exs -S mix ecto.create --quiet
+          elixir -r scripts/ci/mix-diagnostics.exs -S mix ecto.migrate --quiet
 
       # Coverage instrumentation is free here — measured at 128.8s with cover
       # against 128.6s without, on the same machine. Running the suite bare on

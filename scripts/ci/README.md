@@ -11,6 +11,24 @@ older pending validation or wait behind an unrelated run. Superseded PR runs
 still cancel. Image builds retain the built-ancestor diff, which includes all
 image-affecting changes since the last built ancestor.
 
+## Database setup stalls
+
+The partition jobs load `mix-diagnostics.exs` before running database setup.
+After each minute, it prints the VM's OS PID, Mix stack traces, lock holders
+and an OS process tree. This captures a stalled compiler before the job's
+existing timeout cancels it (#1997). It does not retry commands, disable
+locking or change timeouts. A setup that finishes within a minute adds no
+diagnostic output.
+
+Process messages, dictionary values, environment variables and command
+arguments are omitted. Compare the PID in Mix's lock-wait message with the
+reported VM PID and process tree to distinguish a second VM from a wait
+inside the same VM. Reproduce locally with the same build cache and command:
+
+```sh
+MIX_DIAGNOSTICS=1 MIX_ENV=test elixir -r scripts/ci/mix-diagnostics.exs -S mix ecto.migrate --quiet
+```
+
 ## Activate required checks after merging
 
 The repository ruleset is external state, so opening this PR does not change
