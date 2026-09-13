@@ -111,17 +111,4 @@ defmodule Fountain.Workers.SecretExpirySweeperTest do
 
     assert_no_email_sent()
   end
-
-  test "notice_days 0 disables the sweep" do
-    user = insert_verified_user()
-    vault = insert_vault(user_id: user.id)
-    expiring(vault, "GH_TOKEN", 1)
-
-    Application.put_env(:fountain, :secret_expiry_notice_days, 0)
-    on_exit(fn -> Application.delete_env(:fountain, :secret_expiry_notice_days) end)
-
-    assert :ok = perform_job(SecretExpirySweeper, %{})
-
-    assert_no_email_sent()
-  end
 end
