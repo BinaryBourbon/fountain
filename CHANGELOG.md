@@ -24,6 +24,10 @@ upgrade, is in
   conversation. Requests with only the legacy header are treated as API calls
   with no parent.
 
+- `BILLING_ENABLED` is no longer supported. Set `CREDITS_ENABLED=true` to
+  enable credits. With only the old variable set, credits remain off by default.
+  The hosted home-cloud deployment already uses `CREDITS_ENABLED`.
+
 - **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
   PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
   took the feature away from every deployment that configures no flag service,

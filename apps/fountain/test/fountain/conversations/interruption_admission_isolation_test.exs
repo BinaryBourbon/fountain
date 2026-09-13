@@ -3,9 +3,10 @@ defmodule Fountain.Conversations.InterruptionAdmissionIsolationTest do
 
   alias Fountain.Conversations
 
-  for capacity <- [1, :unbounded] do
-    @tag capacity: capacity
-    test "a newer #{inspect(capacity)} turn keeps the interrupted conversation running", ctx do
+  for capacity <- [1, :unbounded], ending <- [:interrupt, :machine_gone] do
+    @tag capacity: capacity, ending: ending
+    test "a newer #{inspect(capacity)} turn keeps the conversation running after #{ending}",
+         ctx do
       Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn ->
         user = insert_verified_user()
         sandbox = insert_sandbox(user_id: user.id, status: "ready")
@@ -39,7 +40,14 @@ defmodule Fountain.Conversations.InterruptionAdmissionIsolationTest do
           ending =
             independent(fn ->
               # Ownership: finish the interrupt after its peer has stopped.
-              Conversations._unsafe_idle_interrupted_turn(turn)
+              case ctx.ending do
+                # `_unsafe_idle_interrupted_turn/1` takes no sandbox_id: #2000
+                # moved that fence into the process, since the two interrupt
+                # halves are one synchronous body and a stale actor cannot
+                # reach the second.
+                :interrupt -> Conversations._unsafe_idle_interrupted_turn(turn)
+                :machine_gone -> Conversations._unsafe_finish_machine_gone(conv.id, sandbox.id)
+              end
             end)
 
           try do

@@ -516,29 +516,10 @@ config :sentry,
 # themselves out of their own instance. The hosted deployment is the one that
 # opts in (its overlay sets CREDITS_ENABLED=true explicitly).
 #
-# BILLING_ENABLED was the name until #1144; it is read as an alias for one
-# release, with a warning, so a deployment can flip at its own pace.
-#
 # Skipped in :test — the suite pins the gate on in config/test.exs and
 # toggles it per-test through the application env, independent of whatever
 # CREDITS_ENABLED happens to be in the developer's shell or .env.
-credits_enabled? =
-  case {System.get_env("CREDITS_ENABLED"), System.get_env("BILLING_ENABLED")} do
-    {nil, nil} ->
-      false
-
-    {nil, legacy} ->
-      IO.puts(:stderr, """
-
-      WARNING: BILLING_ENABLED is deprecated; set CREDITS_ENABLED=#{legacy} instead.
-      The alias will be removed in a later release.
-      """)
-
-      legacy != "false"
-
-    {value, _} ->
-      value != "false"
-  end
+credits_enabled? = System.get_env("CREDITS_ENABLED", "false") != "false"
 
 if config_env() != :test do
   config :fountain, :credits_enabled, credits_enabled?
