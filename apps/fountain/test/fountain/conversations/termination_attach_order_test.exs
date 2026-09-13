@@ -135,7 +135,7 @@ defmodule Fountain.Conversations.TerminationAttachOrderTest do
 
   def after_query(_, _, %{query: query}, {worker, owner, handler, role}) do
     target? =
-      query =~ ~s(FROM "sandboxes") and (role == :termination or query =~ "FOR SHARE")
+      query =~ ~s(FROM "sandboxes") and (role == :termination or query =~ "FOR NO KEY UPDATE")
 
     if self() == worker and target? do
       :telemetry.detach(handler)

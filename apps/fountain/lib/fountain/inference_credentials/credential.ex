@@ -34,6 +34,7 @@ defmodule Fountain.InferenceCredentials.Credential do
   @type t :: %__MODULE__{}
   schema "inference_credentials" do
     field :name, :string
+    field :revision, Ecto.UUID, read_after_writes: true
     # Exactly one per account, enforced by a partial unique index. Writes go
     # through `InferenceCredentials.set_default/2`, which moves the flag in
     # one transaction.

@@ -51,7 +51,8 @@ defmodule Fountain.InferenceCredentials do
   @doc "One credential set of an account by id, or `nil`. Tenant-scoped."
   @spec get_set(binary(), binary()) :: Credential.t() | nil
   def get_set(id, user_id) when is_binary(id) and is_binary(user_id) do
-    Repo.get_by(Credential, id: id, user_id: user_id)
+    if match?({:ok, _}, Ecto.UUID.dump(id)),
+      do: Repo.get_by(Credential, id: id, user_id: user_id)
   end
 
   @doc """
@@ -194,8 +195,34 @@ defmodule Fountain.InferenceCredentials do
   """
   @spec decrypted_for_user(binary(), binary()) ::
           {:ok, %{atom() => String.t()}} | {:error, :decrypt_failed}
-  def decrypted_for_user(user_id, dek) when is_binary(user_id) and is_binary(dek) do
-    case get_for_user(user_id) do
+  def decrypted_for_user(user_id, dek) when is_binary(user_id) and is_binary(dek),
+    do: decrypted_for_set(get_for_user(user_id), dek)
+
+  @doc """
+  The same map for a named set (ADR 0053 decision 3), or for a `set_id` of
+  `nil`, which is the account's default set.
+
+  An explicit set ID must resolve through the tenant-scoped `get_set/2`.
+  Missing and foreign IDs return `{:error, :inference_credential_not_found}`;
+  they never select the account default. Existing conversations recover their
+  persisted source binding before choosing which set ID to read.
+  """
+  @spec decrypted_for(binary(), binary() | nil, binary()) ::
+          {:ok, %{atom() => String.t()}} | {:error, :decrypt_failed}
+  def decrypted_for(user_id, nil, dek), do: decrypted_for_user(user_id, dek)
+
+  def decrypted_for(user_id, set_id, dek) when is_binary(set_id) do
+    case get_set(set_id, user_id) do
+      nil -> {:error, :inference_credential_not_found}
+      %Credential{} = set -> decrypted_for_set(set, dek)
+    end
+  end
+
+  @doc "The decrypted map of one loaded set, or `%{}` for `nil`."
+  @spec decrypted_for_set(Credential.t() | nil, binary()) ::
+          {:ok, %{atom() => String.t()}} | {:error, :decrypt_failed}
+  def decrypted_for_set(cred, dek) when is_binary(dek) do
+    case cred do
       nil ->
         {:ok, %{}}
 
@@ -229,12 +256,43 @@ defmodule Fountain.InferenceCredentials do
   `opts` carries `:actor` / `:request_ip`, from
   `FountainWeb.Audited.attribution/2` on a web surface.
 
-  Returns `{:ok, credential}` (the updated row) or `{:error, changeset}`.
+  An internal `:authorize` callback may take an ownership lock and return
+  `:ok` or `{:error, reason}`. It runs in the credential write transaction;
+  the audit event is recorded only after that transaction commits.
+
+  Returns `{:ok, credential}` (the updated row) or `{:error, reason}`.
   """
   @spec put_credential(binary(), binary(), atom(), String.t() | nil, keyword()) ::
           {:ok, Credential.t()} | {:error, Ecto.Changeset.t()}
   def put_credential(user_id, dek, provider, value, opts \\ [])
       when is_binary(user_id) and is_binary(dek) and provider in @providers do
+    set =
+      get_for_user(user_id) ||
+        %Credential{user_id: user_id, name: Credential.default_name(), is_default: true}
+
+    write_credential(set, dek, provider, value, opts)
+  end
+
+  @doc """
+  The same write, into a named set (ADR 0053 decision 1).
+
+  `set` is a loaded row, which means the caller has already fetched it through
+  the tenant-scoped `get_set/2` — this function does no scoping of its own and
+  must not be handed a row from anywhere else.
+
+  Audited as `inference_credential.write` or `.delete`, like the default-set
+  write, with the set's id and name in the metadata. Which set a credential
+  landed in is the question the trail could not answer before there was more
+  than one, and the provider alone stops being enough the moment there is.
+  """
+  @spec put_credential_in(Credential.t(), binary(), atom(), String.t() | nil, keyword()) ::
+          {:ok, Credential.t()} | {:error, Ecto.Changeset.t()}
+  def put_credential_in(%Credential{} = set, dek, provider, value, opts \\ [])
+      when is_binary(dek) and provider in @providers do
+    write_credential(set, dek, provider, value, opts)
+  end
+
+  defp write_credential(%Credential{} = set, dek, provider, value, opts) do
     ct_field = ciphertext_field(provider)
 
     ciphertext =
@@ -244,24 +302,41 @@ defmodule Fountain.InferenceCredentials do
         plain when is_binary(plain) -> Crypto.encrypt(plain, dek)
       end
 
-    existing =
-      get_for_user(user_id) ||
-        %Credential{user_id: user_id, name: Credential.default_name(), is_default: true}
-
     attrs =
-      %{user_id: user_id, name: existing.name, is_default: existing.is_default}
+      %{user_id: set.user_id, name: set.name, is_default: set.is_default}
       |> Map.put(ct_field, ciphertext)
 
-    existing
-    |> Credential.changeset(attrs)
-    |> Repo.insert_or_update()
-    |> audited(user_id, provider, ciphertext, opts)
+    # Principals takes its ownership row lock here, in the same transaction
+    # as the write. Audit remains outside so a failed trail insert cannot
+    # roll back the credential transaction (ADR 0013).
+    result =
+      Repo.transaction(fn ->
+        lock_source(set.user_id)
+
+        case Keyword.get(opts, :authorize) do
+          nil ->
+            :ok
+
+          authorize ->
+            case authorize.() do
+              :ok -> :ok
+              {:error, reason} -> Repo.rollback(reason)
+            end
+        end
+
+        case set |> Credential.changeset(attrs) |> Repo.insert_or_update() do
+          {:ok, credential} -> credential
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+
+    audited(result, set.user_id, provider, ciphertext, opts)
   end
 
   # The provider name is the whole payload. The credential must never reach a
   # second table — the same rule the secret-write events follow, and the
   # reason those record a key and not a value.
-  defp audited({:ok, _cred} = ok, user_id, provider, ciphertext, opts) do
+  defp audited({:ok, %Credential{} = set} = ok, user_id, provider, ciphertext, opts) do
     action =
       if is_nil(ciphertext), do: "inference_credential.delete", else: "inference_credential.write"
 
@@ -272,7 +347,19 @@ defmodule Fountain.InferenceCredentials do
       resource_id: Atom.to_string(provider),
       actor: Keyword.get(opts, :actor, "self"),
       request_ip: Keyword.get(opts, :request_ip),
-      metadata: %{"provider" => Atom.to_string(provider)}
+      # Which set it landed in, by id and name. The provider alone answered
+      # "what changed" while an account held one row; with several it does
+      # not, and a trail that cannot say which key moved cannot explain the
+      # turn that ran on it. Still no value, and still no ciphertext.
+      # Merged over the caller's, so a surface acting for somebody else can
+      # name who asked (`Principals.put_inference_credential/5`) without this
+      # function knowing about it.
+      metadata:
+        Map.merge(Keyword.get(opts, :metadata, %{}), %{
+          "provider" => Atom.to_string(provider),
+          "set_id" => set.id,
+          "set" => set.name
+        })
     })
 
     ok
@@ -416,9 +503,16 @@ defmodule Fountain.InferenceCredentials do
   that would do. The onboarding wizard asks only for Anthropic; this is how
   the agent form and the API ask for the rest the first time a model needs
   them, rather than failing inside the sandbox.
+
+  `opts` may name a `:credential_set_id`, the set this question is being
+  asked about (ADR 0053 decision 3). Without one it is the account's default
+  set, which is the only set that existed when every caller of this was
+  written. A missing or foreign explicit set reports every credential absent;
+  it never reports credentials from the account default or another tenant.
   """
-  @spec missing_for_model(binary(), String.t() | nil) :: nil | {String.t(), [atom()]}
-  def missing_for_model(user_id, model) when is_binary(user_id) do
+  @spec missing_for_model(binary(), String.t() | nil, keyword()) ::
+          nil | {String.t(), [atom()]}
+  def missing_for_model(user_id, model, opts \\ []) when is_binary(user_id) do
     provider = Managoat.Runtimes.Model.provider(model)
 
     case credentials_for_provider(provider) do
@@ -426,8 +520,17 @@ defmodule Fountain.InferenceCredentials do
         nil
 
       accepted ->
-        status = status_for_user(user_id)
+        status = status_for(user_id, Keyword.get(opts, :credential_set_id))
         if Enum.any?(accepted, &Map.get(status, &1, false)), do: nil, else: {provider, accepted}
+    end
+  end
+
+  defp status_for(user_id, nil), do: status_for_user(user_id)
+
+  defp status_for(user_id, set_id) do
+    case get_set(set_id, user_id) do
+      nil -> status_for_set(nil)
+      set -> status_for_set(set)
     end
   end
 
@@ -446,7 +549,7 @@ defmodule Fountain.InferenceCredentials do
   """
   @spec has_own?(binary(), String.t() | nil, keyword()) :: boolean()
   def has_own?(user_id, model, opts \\ []) when is_binary(user_id) do
-    case missing_for_model(user_id, model) do
+    case missing_for_model(user_id, model, opts) do
       nil -> true
       {_provider, accepted} -> shadowed?(accepted, secret_keys(user_id, opts))
     end
@@ -499,106 +602,87 @@ defmodule Fountain.InferenceCredentials do
   end
 
   @doc """
-  Which credential a conversation on `model` runs on (#1388, ADR 0038
-  decision 3). **This is the whole selection rule**, and it is one function so
-  that the two paths a credential reaches a sandbox by cannot disagree.
+  Select the credential kind the runtime will actually use.
 
-    * `{:ok, %Source{origin: :own}, creds}` — the tenant has a credential the
-      model's provider accepts, or the provider needs none. `creds` is what
-      came in, untouched. The source's `scope` says which of the two it was.
-    * `{:ok, %Source{origin: :platform}, creds}` — the tenant has none and
-      this deployment holds a platform key for that provider. `creds` is what
-      came in with the platform key merged in under the provider's credential,
-      so everything downstream — the broker split, the runtime's
-      `default_env/2`, the redaction register — treats it as exactly what it
-      is: a credential for that provider.
-    * `{:error, :no_credential}` — neither. The caller keeps today's
-      behaviour, which is to provision anyway and let the runtime report the
-      provider's own auth failure on the transcript.
+  Tenant values override the selected set's value for the same kind, with
+  supported aliases normalized before runtime precedence is applied. Claude
+  prefers OAuth; OpenCode's Anthropic path accepts only an API key. Conflicting
+  alias values or unusable supplied credentials return an error. The returned
+  credentials exclude competing auth inputs for the selected provider and
+  preserve unrelated credentials.
 
-  **The tenant's credential always wins**, and there is no per-agent toggle:
-  a tenant who has supplied a key is never quietly run on Fountain's, whatever
-  their balance says. The tenant's other credentials survive the merge, so an
-  agent with an `openai` model on an account that holds only an Anthropic key
-  still exports that key for whatever else the sandbox does with it.
+  `opts` accepts actual `:overrides` values, or legacy presence-only
+  `:secret_keys`. `:brokered` controls platform ChatGPT eligibility and
+  `:refresh` controls provider refresh I/O. Platform policy applies only when
+  no tenant credential is selected for this runtime/provider.
 
-  `own_creds` is the decrypted map `decrypted_for_user/2` returns; over it
-  this is a pure function, and testable without a tenant. The platform half
-  is one read.
-
-  `runtime` is the agent's (ADR 0047): for provider `openai` with no tenant
-  credential, a `codex` agent takes the deployment's ChatGPT grant
-  (`Fountain.PlatformChatGPT`) when it is active, under
-  `:codex_chatgpt_access_token`, before the platform `OPENAI_API_KEY`. The
-  grant is codex's own client speaking to its own backend; opencode against
-  an `openai/` model keeps needing a key. The origin is `:platform` either
-  way, so the ledger prices the turn and the daily ceiling counts it.
-
-  `opts` carries `:secret_keys` (ADR 0053 decision 5), the environment
-  variable names this conversation's environment and vault define. A tenant
-  secret named after a static credential **wins in the sandbox** — `Egress`
-  says so at the gate-3 split and `docs/concepts/secrets.md` publishes it —
-  so a conversation that has one is running on the tenant's own credential
-  and must not be selected `:platform`, priced against their credits or
-  counted against the deployment's daily ceiling. Before this was read, a
-  tenant using the documented override paid for platform inference they never
-  used. Presence is all that is read: the value already reaches the sandbox
-  through the secrets path, and putting it in `creds` as well would change
-  which credential the runtime picks.
-
-  A credential row is reported ahead of a secret when an account has both.
-  Both are `origin: :own`, so nothing about billing turns on the order; the
-  scope answers "why was this not platform-paid", and the row is the more
-  specific answer because it is what Fountain itself exports.
-
-  `opts` also carries `:brokered`, whether the conversation's credentials go
-  through the egress broker (`Fountain.Broker.configured?/0`), default
-  `true`. The grant is offered to brokered conversations only: unbrokered,
-  the access token itself would land in the sandbox file, and the whole
-  point of the grant is that a sandbox holds a placeholder. The platform
-  API key has no such rule, as before. `:refresh` (default `true`) is
-  whether a stale grant is refreshed on the way out; a caller that only
-  asks whether a credential exists passes `false` and never waits on the
-  auth server.
+  The returned `Source` describes origin, scope and kind. Production callers
+  use `resolve/4` for tenant-scoped loading, durable identity/revision metadata,
+  and expected-source validation. That resolver performs no provider I/O.
   """
   @spec select(String.t() | nil, %{atom() => String.t()}, String.t() | nil, keyword()) ::
           {:ok, Source.t(), %{atom() => String.t()}}
-          | {:error, :no_credential}
+          | {:error,
+             :no_credential | :inference_credential_unusable | :inference_credential_conflict}
   def select(model, own_creds, runtime \\ nil, opts \\ []) when is_map(own_creds) do
-    provider = Managoat.Runtimes.Model.provider(model)
-    accepted = credentials_for_provider(provider)
+    Fountain.InferenceCredentials.Resolver.select(model, own_creds, runtime, opts)
+  end
 
-    cond do
-      accepted == [] ->
-        {:ok, Source.none(), own_creds}
+  def resolve(user_id, model, runtime, opts \\ []),
+    do: Fountain.InferenceCredentials.Resolver.resolve(user_id, model, runtime, opts)
 
-      Enum.any?(accepted, &present?(own_creds, &1)) ->
-        {:ok, Source.credential(), own_creds}
+  @doc "Serialize source reads with credential/configuration writes, without holding locks over runtime I/O."
+  def with_source_lock(user_id, fun) when is_function(fun, 0) do
+    Repo.transaction(fn ->
+      lock_source(user_id)
 
-      shadowed?(accepted, Keyword.get(opts, :secret_keys, [])) ->
-        {:ok, Source.tenant_secret(), own_creds}
-
-      true ->
-        case platform_credential(provider, runtime, Keyword.get(opts, :brokered, true), opts) do
-          {:ok, credential, key} -> {:ok, Source.platform(), Map.put(own_creds, credential, key)}
-          :none -> {:error, :no_credential}
-        end
+      case fun.() do
+        {:error, reason} -> Repo.rollback(reason)
+        result -> result
+      end
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  # The subscription first for codex, then the platform key (ADR 0047
-  # decision 6). A grant that is revoked, expired or fails to refresh is
-  # `:none` here and the key takes over — at the next conversation, not
-  # within a turn.
-  defp platform_credential("openai", "codex", true, opts) do
-    case Fountain.PlatformChatGPT.credential(refresh: Keyword.get(opts, :refresh, true)) do
-      {:ok, token} -> {:ok, :codex_chatgpt_access_token, token}
-      :none -> Fountain.PlatformInference.key_for("openai")
+  def lock_source(user_id) do
+    Repo.query!("SELECT pg_advisory_xact_lock_shared(hashtextextended('inference:platform', 0))")
+
+    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["inference:" <> user_id])
+
+    :ok
+  end
+
+  def lock_platform_source do
+    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended('inference:platform', 0))")
+    :ok
+  end
+
+  def with_platform_source_lock(fun) do
+    case Repo.transaction(fn ->
+           lock_platform_source()
+           fun.()
+         end) do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp platform_credential(provider, _runtime, _brokered?, _opts),
-    do: Fountain.PlatformInference.key_for(provider)
+  def validate_source(user_id, %Source{} = source) do
+    opts = [
+      credential_set_id: source.set_id,
+      environment_id: source.environment_id,
+      vault_id: source.vault_id,
+      expected_source: Source.dump(source)
+    ]
+
+    case resolve(user_id, source.model, source.runtime, opts) do
+      {:ok, _, _} -> :ok
+      {:error, _} -> {:error, :inference_source_changed}
+    end
+  end
 
   # Whether one of the credentials this provider accepts is defined as a
   # tenant secret for this conversation. Names only; the values stay where
@@ -607,13 +691,6 @@ defmodule Fountain.InferenceCredentials do
   defp shadowed?(accepted, secret_keys) do
     names = MapSet.new(secret_keys, &to_string/1)
     Enum.any?(accepted, &MapSet.member?(names, Map.fetch!(@env_names, &1)))
-  end
-
-  defp present?(creds, credential) do
-    case Map.get(creds, credential) do
-      value when is_binary(value) and value != "" -> true
-      _ -> false
-    end
   end
 
   @doc """
@@ -654,29 +731,5 @@ defmodule Fountain.InferenceCredentials do
       {:ok, plain} -> {:ok, plain}
       :error -> :error
     end
-  end
-
-  @doc "Serialize source reads with credential/configuration writes, without holding locks over runtime I/O."
-  def with_source_lock(user_id, fun) when is_function(fun, 0) do
-    Repo.transaction(fn ->
-      lock_source(user_id)
-
-      case fun.() do
-        {:error, reason} -> Repo.rollback(reason)
-        result -> result
-      end
-    end)
-    |> case do
-      {:ok, result} -> result
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  def lock_source(user_id) do
-    Repo.query!("SELECT pg_advisory_xact_lock_shared(hashtextextended('inference:platform', 0))")
-
-    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["inference:" <> user_id])
-
-    :ok
   end
 end

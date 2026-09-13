@@ -103,17 +103,14 @@ defmodule Fountain.Conversations.SpriteEnvInferenceTest do
       assert {%Source{origin: :own, scope: :tenant_secret}, creds} =
                SpriteEnv.select_inference(agent_on(user, @anthropic), %{}, nil, secrets)
 
-      # Presence only: the value already reaches the sandbox through the
-      # secrets path, and merging it here would change which credential the
-      # runtime exports.
-      assert creds == %{}
+      assert creds == %{anthropic_api_key: "sk-from-the-vault"}
     end
 
     test "an OAuth token by name counts for anthropic too", %{user: user} do
       Application.put_env(:fountain, :platform_anthropic_api_key, "sk-platform")
       secrets = %{"CLAUDE_CODE_OAUTH_TOKEN" => "oauth-from-the-vault"}
 
-      assert {%Source{scope: :tenant_secret}, %{}} =
+      assert {%Source{scope: :tenant_secret}, %{claude_code_oauth_token: "oauth-from-the-vault"}} =
                SpriteEnv.select_inference(agent_on(user, @anthropic), %{}, nil, secrets)
     end
 
@@ -128,15 +125,17 @@ defmodule Fountain.Conversations.SpriteEnvInferenceTest do
     test "with no platform key it is still :own rather than :missing", %{user: user} do
       secrets = %{"ANTHROPIC_API_KEY" => "sk-from-the-vault"}
 
-      assert {%Source{origin: :own, scope: :tenant_secret}, %{}} =
+      assert {%Source{origin: :own, scope: :tenant_secret},
+              %{anthropic_api_key: "sk-from-the-vault"}} =
                SpriteEnv.select_inference(agent_on(user, @anthropic), %{}, nil, secrets)
     end
 
-    test "a credential row is reported ahead of a secret when both exist", %{user: user} do
+    test "a secret overrides the same kind and its source is reported", %{user: user} do
       own = %{anthropic_api_key: "sk-row"}
       secrets = %{"ANTHROPIC_API_KEY" => "sk-from-the-vault"}
 
-      assert {%Source{origin: :own, scope: :credential}, ^own} =
+      assert {%Source{origin: :own, scope: :tenant_secret},
+              %{anthropic_api_key: "sk-from-the-vault"}} =
                SpriteEnv.select_inference(agent_on(user, @anthropic), own, nil, secrets)
     end
   end

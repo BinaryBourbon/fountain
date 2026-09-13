@@ -24,8 +24,12 @@ defmodule Fountain.Conversations do
   }
 
   alias Fountain.Conversations.Reapply
+  alias Fountain.Conversations.SpriteEnv
   alias Fountain.Conversations.{ExecutionAllowance, ExecutionGuard, ExecutionLimits}
   alias Fountain.Conversations.Lifecycle
+  alias Fountain.InferenceCredentials
+  alias Fountain.InferenceCredentials.Source
+  alias Fountain.Conversations.InferenceBinding
   alias Fountain.PermissionPolicy
   alias Fountain.Repo
 
@@ -1788,6 +1792,12 @@ defmodule Fountain.Conversations do
 
     result =
       Repo.transaction(fn ->
+        user_id =
+          Repo.one(from c in Conversation, where: c.id == ^conv_id, select: c.user_id) ||
+            Repo.rollback(:sandbox_unavailable)
+
+        :ok = InferenceCredentials.lock_source(user_id)
+
         Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
           @sandbox_lock_namespace,
           :erlang.phash2(sandbox_id)
@@ -1800,9 +1810,34 @@ defmodule Fountain.Conversations do
           Repo.one(
             from c in Conversation,
               where: c.id == ^conv_id,
-              select: %{id: c.id, configuration_revision: c.configuration_revision},
+              select: %{
+                id: c.id,
+                user_id: c.user_id,
+                configuration_revision: c.configuration_revision,
+                inference_source: c.inference_source
+              },
               lock: "FOR UPDATE"
           ) || Repo.rollback(:sandbox_unavailable)
+
+        if conv.user_id != user_id, do: Repo.rollback(:sandbox_unavailable)
+
+        # A serving actor must agree with the persisted binding. Hold the source
+        # lock through insertion so replacement cannot race turn admission.
+        if Map.has_key?(attrs, :inference_source) and
+             attrs.inference_source != conv.inference_source do
+          Repo.rollback(:inference_source_changed)
+        end
+
+        if source = Source.load(conv.inference_source) do
+          with :ok <- InferenceCredentials.validate_source(user_id, source),
+               :ok <- Fountain.PlatformInference.gate_source(source) do
+            :ok
+          else
+            {:error, reason} -> Repo.rollback(reason)
+          end
+        end
+
+        attrs = Map.put(attrs, :inference_source, conv.inference_source)
 
         # The server passes the revision it loaded. A reapply committed since
         # then means this turn would run against settings the server has not
@@ -3174,15 +3209,17 @@ defmodule Fountain.Conversations do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
-      case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id) do
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         set_id = nil do
+      case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id, set_id) do
         %Conversation{} = conv ->
           if fresh_requested?(attrs) do
             with {:ok, fresh} <-
                    start_conversation(attrs, Keyword.put(opts, :rotate_from, conv.id)),
                  do: {:ok, fresh, :created}
           else
-            with :ok <- _unsafe_check_saved_execution_allowance(conv.id),
+            with :ok <- check_saved_inference(conv, agent),
+                 :ok <- _unsafe_check_saved_execution_allowance(conv.id),
                  :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
                  {:ok, conv} <- resume_labels(conv, attrs["labels"], opts),
                  do: {:ok, conv, :resumed}
@@ -3381,7 +3418,7 @@ defmodule Fountain.Conversations do
   # disk wakes back up with the workspace on it.
   @doc """
   The conversation a channel binding resumes, resolved exactly as
-  `start_or_resume_conversation/2` resolves it (same vault/environment key),
+  `start_or_resume_conversation/2` resolves it (same vault/environment/set selection),
   without opening one when there is none. For a request that must land on an
   existing conversation or fail — a tool answer on the bridge (#1202) — where
   opening a sandbox for a thread that has no parked call would be the wrong
@@ -3394,8 +3431,9 @@ defmodule Fountain.Conversations do
       when is_binary(channel_id) and channel_id != "" do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
-      find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id)
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         set_id = nil do
+      find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id, set_id)
     else
       _ -> nil
     end
@@ -3403,7 +3441,7 @@ defmodule Fountain.Conversations do
 
   def channel_conversation(_attrs), do: nil
 
-  defp find_channel_conversation(user_id, agent_id, vault_id, env_id, channel_id) do
+  defp find_channel_conversation(user_id, agent_id, vault_id, env_id, channel_id, set_id) do
     from(c in Conversation,
       join: s in assoc(c, :sandbox),
       where:
@@ -3415,8 +3453,16 @@ defmodule Fountain.Conversations do
     )
     |> where_vault(vault_id)
     |> where_environment(env_id)
+    |> where_credential_set(set_id)
     |> Repo.one()
   end
+
+  # An explicit set is part of a channel selection. An omitted set resumes
+  # the channel's durable source, even after the account's default changes.
+  defp where_credential_set(query, nil), do: query
+
+  defp where_credential_set(query, id),
+    do: from(c in query, where: c.inference_credential_id == ^id)
 
   defp where_vault(query, nil), do: from(c in query, where: is_nil(c.vault_id))
   defp where_vault(query, vault_id), do: from(c in query, where: c.vault_id == ^vault_id)
@@ -3466,6 +3512,7 @@ defmodule Fountain.Conversations do
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         cred_set_id = nil,
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
          {:ok, api_access} <- resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
          :ok <- check_sandbox_api_name(api_access, attrs["sprite_name"]),
@@ -3473,14 +3520,8 @@ defmodule Fountain.Conversations do
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
-         # Whose inference key would run this (#1388): refused only when it
-         # would be Fountain's and the deployment has spent its day. A door
-         # with no platform key configured runs no query here.
-         :ok <-
-           Fountain.PlatformInference.gate(user_id, agent.model, agent.runtime,
-             environment_id: env_id || agent.environment_id,
-             vault_id: vault_id
-           ),
+         {:ok, inference_source} <-
+           resolve_admission_inference(user_id, agent, env_id, vault_id, cred_set_id),
          # A persistent launch lands on the identity's home when there is one
          # (ADR 0023 gate 6): `{:home, sandbox}` leaves the `with` and attaches
          # below. Only when there is none does a machine get provisioned, and
@@ -3508,6 +3549,8 @@ defmodule Fountain.Conversations do
                agent_version_id: Agents._unsafe_current_version_id(agent.id),
                vault_id: vault_id,
                environment_id: env_id,
+               inference_credential_id: inference_source.set_id,
+               inference_source: Source.dump(inference_source),
                user_id: user_id,
                runtime: agent.runtime,
                status: "pending",
@@ -3716,6 +3759,10 @@ defmodule Fountain.Conversations do
   # trade, but a slow credit posting starts here.
   defp reserve_initial_conversation(sandbox_attrs, conversation_attrs, request, opts) do
     Repo.transaction(fn ->
+      # Set/secret mutations take this same tenant lock. Take it before the
+      # fleet reservation so a source edit cannot stall every tenant's launch.
+      :ok = InferenceCredentials.lock_source(conversation_attrs.user_id)
+
       Repo.one(
         from u in Fountain.Accounts.User,
           where: u.id == ^conversation_attrs.user_id,
@@ -3742,6 +3789,7 @@ defmodule Fountain.Conversations do
                {:ok, sandbox} <- create_sandbox(sandbox_attrs),
                {:ok, conv} <-
                  insert_conversation_row(Map.put(conversation_attrs, :sandbox_id, sandbox.id)),
+               :ok <- reserve_inference(conv),
                {:ok, allowance} <-
                  conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
             {:ok, {sandbox, conv, allowance}}
@@ -4460,18 +4508,13 @@ defmodule Fountain.Conversations do
          {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         cred_set_id = nil,
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_spend(user_id),
-         # Whose inference key would run this (#1388): refused only when it
-         # would be Fountain's and the deployment has spent its day. A door
-         # with no platform key configured runs no query here.
-         :ok <-
-           Fountain.PlatformInference.gate(user_id, agent.model, agent.runtime,
-             environment_id: env_id || agent.environment_id,
-             vault_id: vault_id
-           ),
+         {:ok, inference_source} <-
+           resolve_admission_inference(user_id, agent, env_id, vault_id, cred_set_id),
          %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
          :ok <- check_sandbox_api_attach(sandbox, attrs["sandbox_api_access"]),
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
@@ -4485,6 +4528,8 @@ defmodule Fountain.Conversations do
                agent_version_id: Agents._unsafe_current_version_id(agent.id),
                vault_id: vault_id,
                environment_id: env_id,
+               inference_credential_id: inference_source.set_id,
+               inference_source: Source.dump(inference_source),
                user_id: user_id,
                runtime: agent.runtime,
                status: "idle",
@@ -4531,6 +4576,7 @@ defmodule Fountain.Conversations do
   defp create_attached_conversation(attrs, request, opts) do
     result =
       Repo.transaction(fn ->
+        :ok = InferenceCredentials.lock_source(attrs.user_id)
         # Deliberately unlocked. `users` is the row every credit posting takes
         # `FOR UPDATE` (`Credits.insert_and_move/3` holds it across a ledger
         # insert, lot consumption and the balance move), so locking it here
@@ -4559,12 +4605,13 @@ defmodule Fountain.Conversations do
           Repo.one(
             from s in Sandbox,
               where: s.id == ^attrs.sandbox_id and s.user_id == ^attrs.user_id,
-              lock: "FOR SHARE"
+              lock: "FOR NO KEY UPDATE"
           ) || Repo.rollback(:not_found)
 
         with :ok <- check_attachable(sandbox, agent, attrs.vault_id, attrs.environment_id),
              {:ok, limits} <- resolve_admission_limits(attrs.user_id, request),
              {:ok, conv} <- insert_conversation_row(attrs),
+             :ok <- reserve_inference(conv),
              {:ok, allowance} <-
                conv.id |> ExecutionAllowance.new_changeset(limits) |> Repo.insert() do
           {conv, allowance}
@@ -4873,6 +4920,38 @@ defmodule Fountain.Conversations do
 
   defp check_environment_allowed(id, %Agents.Agent{allowed_environment_ids: allowed}) do
     if id in allowed, do: :ok, else: {:error, :environment_not_allowed}
+  end
+
+  defp resolve_admission_inference(user_id, agent, env_id, vault_id, set_id) do
+    with {:ok, source, _credentials} <-
+           InferenceCredentials.resolve(user_id, agent.model, agent.runtime,
+             environment_id: env_id || agent.environment_id,
+             vault_id: vault_id,
+             credential_set_id:
+               SpriteEnv.credential_set_id(%{inference_credential_id: set_id}, agent),
+             refresh: false
+           ),
+         :ok <- Fountain.PlatformInference.gate_source(source) do
+      {:ok, source}
+    end
+  end
+
+  defp reserve_inference(conv) do
+    InferenceBinding.reserve(conv, Source.load(conv.inference_source))
+  end
+
+  defp check_saved_inference(conv, agent) do
+    with {:ok, source, _credentials} <-
+           InferenceCredentials.resolve(conv.user_id, agent.model, conv.runtime,
+             environment_id: conv.environment_id || agent.environment_id,
+             vault_id: conv.vault_id,
+             credential_set_id: SpriteEnv.credential_set_id(conv, agent),
+             expected_source: conv.inference_source,
+             refresh: false
+           ),
+         :ok <- Fountain.PlatformInference.gate_source(source) do
+      InferenceBinding.reserve(conv, source)
+    end
   end
 
   @doc """
@@ -5376,17 +5455,7 @@ defmodule Fountain.Conversations do
           # backstop; this one makes the refusal synchronous at the API door.
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
                :ok <- Fountain.Billing.check_spend(conv.user_id),
-               # Whose inference key would run this (#1388): refused only when it
-               # would be Fountain's and the deployment has spent its day. A door
-               # with no platform key configured runs no query here.
-               :ok <-
-                 Fountain.PlatformInference.gate(
-                   conv.user_id,
-                   agent.model,
-                   conv.runtime,
-                   environment_id: conv.environment_id || agent.environment_id,
-                   vault_id: conv.vault_id
-                 ),
+               :ok <- check_saved_inference(conv, agent),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
             case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
               {:error, {:already_started, winner_pid}} ->
@@ -5687,17 +5756,7 @@ defmodule Fountain.Conversations do
 
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_spend(conv.user_id),
-         # Whose inference key would run this (#1388): refused only when it
-         # would be Fountain's and the deployment has spent its day. A door
-         # with no platform key configured runs no query here.
-         :ok <-
-           Fountain.PlatformInference.gate(
-             conv.user_id,
-             agent.model,
-             conv.runtime,
-             environment_id: conv.environment_id || agent.environment_id,
-             vault_id: conv.vault_id
-           ),
+         :ok <- check_saved_inference(conv, agent),
          # A fresh sandbox is a fresh placement decision — re-resolve from
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.

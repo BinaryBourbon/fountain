@@ -20,6 +20,7 @@ defmodule Fountain.PlatformInference.Key do
   @type t :: %__MODULE__{}
   schema "platform_inference_keys" do
     field :ciphertext, :binary
+    field :revision, Ecto.UUID, read_after_writes: true
 
     belongs_to :updated_by, Fountain.Accounts.User, foreign_key: :updated_by_user_id
 

@@ -673,19 +673,21 @@ defmodule Fountain.Conversations.ConversationServer do
 
     vault = if conv.vault_id, do: Vaults._unsafe_get_vault(conv.vault_id)
 
-    case SpriteEnv.load_tenant_state(conv.user_id) do
-      {:ok, dek, own_creds} ->
+    case SpriteEnv.resolve_inference(conv, agent, env, vault) do
+      {:ok, dek, inference_source, inference_creds} ->
         # Before the selection: a tenant secret named after a credential wins
         # in the sandbox, so it decides the source too (ADR 0053 decision 5).
         tenant_secrets = SpriteEnv.merge_secrets(env, vault, dek)
 
-        {inference_source, inference_creds} =
-          SpriteEnv.select_inference(agent, own_creds, conv.runtime, tenant_secrets)
-
         bindings = Egress.bindings(conv.user_id)
 
         {merged, bindings, connection_keys} =
-          Egress.add_connection_secrets(conv.user_id, tenant_secrets, bindings, agent)
+          Egress.add_connection_secrets(
+            conv.user_id,
+            SpriteEnv.without_inference_inputs(agent && agent.model, tenant_secrets),
+            bindings,
+            agent
+          )
 
         {secrets, brokered} = Egress.split_brokered(merged, bindings)
 
@@ -733,7 +735,10 @@ defmodule Fountain.Conversations.ConversationServer do
           reason: "tenant_credential_load_failed: #{inspect(reason)}"
         })
 
-        {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
+        if sandbox.status in ["pending", "starting"] do
+          {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
+        end
+
         Conversations.update_conversation(conv, %{status: "failed"})
         {:stop, :normal, state}
     end
@@ -899,7 +904,7 @@ defmodule Fountain.Conversations.ConversationServer do
              _ = Provisioning.write_instructions(handle, runtime, agent),
              # The file is the machine's; the conversation's identity travels as
              # process env on every spawn (`Fountain.Conversations.Identity`).
-             _ =
+             :ok <-
                Fountain.Conversations.Provisioning.write_env_file(
                  handle,
                  Fountain.Conversations.Identity.disk_env(sprite_env)
@@ -914,6 +919,7 @@ defmodule Fountain.Conversations.ConversationServer do
                  state.conversation_id,
                  Egress.brokered?()
                ),
+             :ok <- Fountain.Conversations.InferenceBinding.reserve(conv, state.inference_source),
              :ok <-
                Provisioning.prepare_runtime_sprite(
                  handle,
@@ -1105,78 +1111,55 @@ defmodule Fountain.Conversations.ConversationServer do
         {:error, reason} -> Logger.warning("broker CA install on wake: #{inspect(reason)}")
       end
 
-      # Refresh the .env file in case secrets/env_vars were edited
-      # between the original provision and this reattach.
-      # The file is the machine's; the conversation's identity travels as
-      # process env on every spawn (`Fountain.Conversations.Identity`).
-      Fountain.Conversations.Provisioning.write_env_file(
-        handle,
-        Fountain.Conversations.Identity.disk_env(sprite_env)
-      )
+      with :ok <- Reattachment.prepare_source(handle, state, conv, agent, sprite_env) do
+        # Validate even a cached ready row: retirement may have won while the
+        # provider was waking. Only a suspended wake resets the lifetime clock.
+        attrs =
+          if sandbox.status == "suspended" do
+            %{
+              status: "ready",
+              last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            }
+          else
+            %{status: "ready"}
+          end
 
-      # An agent's skills reach the existing computer on its next wake too,
-      # and a skill it no longer names is taken off the disk (#1565).
-      Reapply.mount_skills(handle, conv, agent)
+        case Conversations.update_sandbox(sandbox, attrs) do
+          {:ok, sandbox} ->
+            new_state = %{
+              state
+              | handle: handle,
+                sprite_env: sprite_env,
+                sandbox_started_at: Lifecycle.clock_start(sandbox)
+            }
 
-      # Same for the agent's system prompt: an edit reaches the existing
-      # computer on its next wake (#848).
-      runtime = conv.runtime || (agent && agent.runtime) || "claude"
-      Provisioning.write_instructions(handle, runtime, agent)
+            new_state = Reattachment.reattach_running_turn(%{new_state | current_turn: nil})
 
-      # The credential path can change between provision and wake (ADR 0047:
-      # a grant connected, revoked or disconnected in between), and codex's
-      # auth.json is written at provisioning. Re-prepare so the file matches
-      # this spawn; best effort, like the rest of the wake.
-      case Provisioning.prepare_runtime_sprite(
-             handle,
-             runtime,
-             state.runtime_module,
-             agent,
-             sprite_env
-           ) do
-        :ok -> :ok
-        {:error, reason} -> Logger.warning("runtime prepare on wake: #{inspect(reason)}")
-      end
+            new_state =
+              Reattachment.finish_runner_reconnect(
+                new_state,
+                if(new_state.current_turn, do: "reattached", else: "turn_ended")
+              )
 
-      # Validate even a cached ready row: retirement may have won while the
-      # provider was waking. Only a suspended wake resets the lifetime clock.
-      attrs =
-        if sandbox.status == "suspended" do
-          %{
-            status: "ready",
-            last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-          }
-        else
-          %{status: "ready"}
+            {:noreply, new_state}
+
+          {:error, reason} when retired_or_resetting(reason) ->
+            # Wake owns this connection's credentials, not the existing disk or
+            # another connection's session. Never destroy the machine here.
+            Egress.release_prepared({:ok, state})
+            {:stop, :normal, state}
+
+          error ->
+            raise MatchError, term: error
         end
+      else
+        {:error, reason} ->
+          Output.publish_stage(state.conversation_id, "reattach", "failed", %{
+            reason: inspect(reason)
+          })
 
-      case Conversations.update_sandbox(sandbox, attrs) do
-        {:ok, sandbox} ->
-          new_state = %{
-            state
-            | handle: handle,
-              sprite_env: sprite_env,
-              sandbox_started_at: Lifecycle.clock_start(sandbox)
-          }
-
-          new_state = Reattachment.reattach_running_turn(%{new_state | current_turn: nil})
-
-          new_state =
-            Reattachment.finish_runner_reconnect(
-              new_state,
-              if(new_state.current_turn, do: "reattached", else: "turn_ended")
-            )
-
-          {:noreply, new_state}
-
-        {:error, reason} when retired_or_resetting(reason) ->
-          # Wake owns this connection's credentials, not the existing disk or
-          # another connection's session. Never destroy the machine here.
           Egress.release_prepared({:ok, state})
           {:stop, :normal, state}
-
-        error ->
-          raise MatchError, term: error
       end
     else
       {:error, :not_found} ->
@@ -1625,6 +1608,19 @@ defmodule Fountain.Conversations.ConversationServer do
   # replaces the refused token in the sprite env and the broker session for
   # the rest of this server's life. Whether a key was there to swap in is
   # what the machine's message turns on.
+  defp handle_execution_info(
+         {:acp, ref, {:failed, {:oauth_org_not_allowed, _detail}} = payload},
+         %{
+           current_command_ref: ref,
+           runtime_module: Managoat.Runtimes.Claude,
+           inference_source: %{identity: identity}
+         } = state
+       )
+       when is_binary(identity) do
+    # A bound peer cannot switch credential kind behind its persisted source.
+    {:noreply, drive_turn(state, payload, oauth_switched?: false)}
+  end
+
   defp handle_execution_info(
          {:acp, ref, {:failed, {:oauth_org_not_allowed, detail}} = payload},
          %{current_command_ref: ref, runtime_module: Managoat.Runtimes.Claude} = state
@@ -2133,7 +2129,8 @@ defmodule Fountain.Conversations.ConversationServer do
            state.sandbox_id,
            prompt,
            agent,
-           state.configuration_revision
+           state.configuration_revision,
+           state.inference_source
          ) do
       {:ok, conv, turn} ->
         {:noreply, run_turn(state, conv, turn, prompt, agent, images)}

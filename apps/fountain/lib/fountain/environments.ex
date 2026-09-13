@@ -6,6 +6,7 @@ defmodule Fountain.Environments do
   alias Fountain.Agents.Agent
   alias Fountain.Audit
   alias Fountain.Environments.{Environment, Secret}
+  alias Fountain.InferenceCredentials
   alias Fountain.Repo
 
   # ── environments ──────────────────────────────────────────────────────────
@@ -120,9 +121,14 @@ defmodule Fountain.Environments do
   manifest apply all leave the same trail (#543).
   """
   def create_environment(attrs, opts \\ []) do
-    %Environment{}
-    |> Environment.changeset(attrs)
-    |> Repo.insert()
+    changeset = Environment.changeset(%Environment{}, attrs)
+
+    if changeset.valid? do
+      user_id = Ecto.Changeset.get_field(changeset, :user_id)
+      InferenceCredentials.with_source_lock(user_id, fn -> Repo.insert(changeset) end)
+    else
+      {:error, changeset}
+    end
     |> audited("environment.created", opts)
   end
 
@@ -137,7 +143,7 @@ defmodule Fountain.Environments do
   """
   def update_environment(%Environment{} = env, attrs, opts \\ []) do
     changeset = Environment.changeset(env, attrs)
-    result = Repo.update(changeset)
+    result = InferenceCredentials.with_source_lock(env.user_id, fn -> Repo.update(changeset) end)
 
     # A save that moves nothing is not a change, and records nothing
     # (CLAUDE.md, "Only record what happened"). `Repo.update` already skips
@@ -177,7 +183,9 @@ defmodule Fountain.Environments do
       {:error, :sandbox_mid_turn}
     else
       _ = Fountain.Conversations._unsafe_retire_orphaned_homes(homes, "environment_deleted", opts)
-      env |> Repo.delete() |> audited("environment.deleted", opts)
+
+      InferenceCredentials.with_source_lock(env.user_id, fn -> Repo.delete(env) end)
+      |> audited("environment.deleted", opts)
     end
   end
 
@@ -217,17 +225,19 @@ defmodule Fountain.Environments do
   """
   def upsert_secret(%Environment{} = env, %{"key" => key} = attrs, dek, opts \\ [])
       when is_binary(dek) do
-    case _unsafe_get_secret(env.id, key) do
-      nil ->
-        %Secret{}
-        |> Secret.changeset(Map.put(attrs, "environment_id", env.id), dek)
-        |> Repo.insert()
+    InferenceCredentials.with_source_lock(env.user_id, fn ->
+      case _unsafe_get_secret(env.id, key) do
+        nil ->
+          %Secret{}
+          |> Secret.changeset(Map.put(attrs, "environment_id", env.id), dek)
+          |> Repo.insert()
 
-      existing ->
-        existing
-        |> Secret.changeset(attrs, dek)
-        |> Repo.update()
-    end
+        existing ->
+          existing
+          |> Secret.changeset(attrs, dek)
+          |> Repo.update()
+      end
+    end)
     |> audited_secret(env, key, "environment.secret.write", opts)
   end
 
@@ -239,8 +249,7 @@ defmodule Fountain.Environments do
   second query — and every call site already has the environment in hand.
   """
   def delete_secret(%Environment{} = env, %Secret{} = secret, opts \\ []) do
-    secret
-    |> Repo.delete()
+    InferenceCredentials.with_source_lock(env.user_id, fn -> Repo.delete(secret) end)
     |> audited_secret(env, secret.key, "environment.secret.delete", opts)
   end
 

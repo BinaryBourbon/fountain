@@ -203,9 +203,11 @@ defmodule Fountain.PlatformInference do
       }
 
       result =
-        (row || %Key{})
-        |> Key.changeset(attrs, providers())
-        |> Repo.insert_or_update()
+        Fountain.InferenceCredentials.with_platform_source_lock(fn ->
+          (Repo.get(Key, provider) || %Key{})
+          |> Key.changeset(attrs, providers())
+          |> Repo.insert_or_update()
+        end)
 
       case result do
         {:ok, _} = ok ->
@@ -239,7 +241,7 @@ defmodule Fountain.PlatformInference do
         :ok
 
       %Key{} = key ->
-        Repo.delete!(key)
+        Fountain.InferenceCredentials.with_platform_source_lock(fn -> Repo.delete!(key) end)
 
         Audit.record_admin(%{
           actor_user_id: Keyword.get(opts, :actor_user_id),
@@ -318,42 +320,28 @@ defmodule Fountain.PlatformInference do
   end
 
   @doc """
-  The door check, at every place a conversation begins: `:ok`, or
-  `{:error, :platform_inference_unavailable}`.
+  Gate the resolved inference source against the deployment's daily ceiling.
 
-  Three questions, cheapest first, so a deployment with no platform key
-  costs one primary-key read and nothing else:
+  `opts` accepts the launch's `:environment_id`, `:vault_id`, and
+  `:credential_set_id`. The shared runtime-aware resolver reads that selection
+  and its overrides, so the gate and provisioning agree on whose credential
+  serves the run. A tenant source passes without consuming the platform
+  ceiling; a platform source checks it. Invalid explicit selections fail.
 
-    1. does this deployment hold a key for the model's provider?
-    2. would this user actually take it — that is, do they have none of their
-       own for that provider?
-    3. has the deployment spent its day?
-
-  Only a "yes" to all three refuses.
-
-  `runtime` is the agent's: a codex agent on an `openai` model may run on the
-  deployment's ChatGPT grant instead of a key (ADR 0047), which the ceiling
-  counts the same way.
-
-  `opts` names this launch's `:environment_id` and `:vault_id` so question 2
-  asks what the provision will answer. A secret of theirs named after a
-  credential serves the conversation instead of the platform key (ADR 0053
-  decision 5), so without them this door refused a tenant running on their
-  own key once the deployment had spent its day. The extra read happens only
-  when the first question already said yes and the account holds no row, so
-  a deployment with no platform key still costs nothing here.
+  Admission can pass an already-resolved source to `gate_source/1` and persist
+  that same snapshot for provisioning and later turns.
   """
   @spec gate(binary(), String.t() | nil, String.t() | nil, keyword()) ::
-          :ok | {:error, :platform_inference_unavailable}
+          :ok | {:error, term()}
   def gate(user_id, model, runtime \\ nil, opts \\ []) when is_binary(user_id) do
-    provider = Managoat.Runtimes.Model.provider(model)
-
-    if serves?(provider, runtime, Fountain.Broker.configured?()) and
-         not Fountain.InferenceCredentials.has_own?(user_id, model, opts) do
-      check_ceiling()
-    else
-      :ok
+    case Fountain.InferenceCredentials.resolve(user_id, model, runtime, opts) do
+      {:ok, source, _creds} -> gate_source(source)
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  def gate_source(source) do
+    if Fountain.InferenceCredentials.Source.platform?(source), do: check_ceiling(), else: :ok
   end
 
   @doc """

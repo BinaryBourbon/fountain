@@ -119,7 +119,7 @@ defmodule Fountain.Accounts.Deletion do
       }
     })
 
-    case Repo.delete(user) do
+    case Fountain.InferenceCredentials.with_source_lock(user.id, fn -> Repo.delete(user) end) do
       {:ok, _} ->
         Logger.info("account deleted: #{user.id} (#{sprites} sprite(s) destroyed)")
 

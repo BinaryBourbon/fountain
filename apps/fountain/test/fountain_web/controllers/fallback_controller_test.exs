@@ -34,6 +34,21 @@ defmodule FountainWeb.FallbackControllerTest do
     end
   end
 
+  test "inference source refusals carry stable codes and an actionable message", %{conn: conn} do
+    for {reason, status, advice} <- [
+          {:inference_source_changed, 409, "start a new conversation"},
+          {:inference_credential_unusable, 422, "select another set"},
+          {:inference_credential_conflict, 422, "keep one credential source"},
+          {:codex_inference_conflict, 409, "fresh sandbox"}
+        ] do
+      body =
+        conn |> FountainWeb.FallbackController.call({:error, reason}) |> json_response(status)
+
+      assert body["error"] == Atom.to_string(reason)
+      assert body["message"] =~ advice
+    end
+  end
+
   describe "{:error, %Ecto.Changeset{}} → 422" do
     test "POST /api/agents with missing required fields returns 422 with errors body", %{
       conn: conn

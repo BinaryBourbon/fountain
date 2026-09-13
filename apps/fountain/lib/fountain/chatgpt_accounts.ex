@@ -478,6 +478,8 @@ defmodule Fountain.ChatGPTAccounts do
   def platform_disconnect(opts \\ []) do
     {:ok, deleted} =
       Repo.transaction(fn ->
+        Fountain.InferenceCredentials.lock_platform_source()
+
         case locked_platform_row() do
           nil -> nil
           row -> Repo.delete!(row)
@@ -507,6 +509,8 @@ defmodule Fountain.ChatGPTAccounts do
   defp store(attrs, method, actor_user_id) do
     result =
       Repo.transaction(fn ->
+        Fountain.InferenceCredentials.lock_platform_source()
+
         case (locked_platform_row() || %Account{})
              |> Account.connect_changeset(attrs)
              |> Repo.insert_or_update() do
@@ -676,8 +680,9 @@ defmodule Fountain.ChatGPTAccounts do
     sets = attrs |> Map.put(:updated_at, now()) |> Enum.to_list()
 
     {n, _} =
-      current_query(current)
-      |> Repo.update_all(set: sets, inc: [lock_version: 1])
+      Fountain.InferenceCredentials.with_platform_source_lock(fn ->
+        current_query(current) |> Repo.update_all(set: sets, inc: [lock_version: 1])
+      end)
 
     case n do
       1 -> refreshed_result(current, access)
@@ -801,11 +806,13 @@ defmodule Fountain.ChatGPTAccounts do
 
   defp mark_revoked(row, code) do
     {count, _} =
-      current_query(row)
-      |> Repo.update_all(
-        set: [status: "revoked", revoked_reason: code, updated_at: now()],
-        inc: [lock_version: 1]
-      )
+      Fountain.InferenceCredentials.with_platform_source_lock(fn ->
+        current_query(row)
+        |> Repo.update_all(
+          set: [status: "revoked", revoked_reason: code, updated_at: now()],
+          inc: [lock_version: 1]
+        )
+      end)
 
     if count == 1 do
       :ok
@@ -835,8 +842,10 @@ defmodule Fountain.ChatGPTAccounts do
   # wrong answer the fence exists to prevent.
   defp mark_expired(row) do
     {count, _} =
-      current_query(row)
-      |> Repo.update_all(set: [status: "expired", updated_at: now()], inc: [lock_version: 1])
+      Fountain.InferenceCredentials.with_platform_source_lock(fn ->
+        current_query(row)
+        |> Repo.update_all(set: [status: "expired", updated_at: now()], inc: [lock_version: 1])
+      end)
 
     if count == 1 do
       Audit.record_admin(%{

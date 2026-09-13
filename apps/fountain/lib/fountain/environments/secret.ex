@@ -9,6 +9,7 @@ defmodule Fountain.Environments.Secret do
   @foreign_key_type :binary_id
 
   schema "secrets" do
+    field :inference_revision, Ecto.UUID, read_after_writes: true
     field :key, :string
     field :value_ciphertext, :binary
     field :value, :string, virtual: true, redact: true

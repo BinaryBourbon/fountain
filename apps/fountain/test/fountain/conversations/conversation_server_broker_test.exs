@@ -439,9 +439,13 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub_happy_sprite()
       _ref = stub_turn_boundary()
 
-      Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
-        {:ok, %{claude_code_oauth_token: "sk-ant-oat01-realtoken"}}
-      end)
+      {:ok, _} =
+        Fountain.InferenceCredentials.put_credential(
+          user.id,
+          <<0::256>>,
+          :claude_code_oauth_token,
+          "sk-ant-oat01-realtoken"
+        )
 
       stub(Fountain.Broker, :preflight, fn -> :ok end)
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
