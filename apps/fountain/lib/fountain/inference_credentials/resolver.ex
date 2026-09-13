@@ -29,7 +29,7 @@ defmodule Fountain.InferenceCredentials.Resolver do
                  override_entries: overrides,
                  refresh: false,
                  allow_missing: true,
-                 brokered: Fountain.Broker.enabled_for?(user_id)
+                 brokered: Fountain.Broker.configured?()
                )
              ),
            :ok <-
