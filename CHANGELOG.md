@@ -23,6 +23,10 @@ upgrade, is in
   The Render and Fly platform fallbacks still work. A production instance
   with only `FOUNTAIN_DOMAIN` set now refuses to boot.
 
+- `BILLING_ENABLED` is no longer supported. Set `CREDITS_ENABLED=true` to
+  enable credits. With only the old variable set, credits remain off by default.
+  The hosted home-cloud deployment already uses `CREDITS_ENABLED`.
+
 - **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
   PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
   took the feature away from every deployment that configures no flag service,
