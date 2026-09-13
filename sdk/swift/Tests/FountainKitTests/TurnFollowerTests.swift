@@ -51,18 +51,19 @@ import Testing
     }
   }
 
-  @Test func acpChunksConcatenateStdoutParagraphs() {
+  @Test(arguments: ["acp", "stdout"])
+  func outputRowsJoinWithoutStreamSpecificSeparators(stream: String) {
     var follower = TurnFollower(turnNumber: 1)
     _ = follower.apply(stage("started"))
-    _ = follower.apply(output(#"{"kind":"text","body":"Hel"}"#))
-    _ = follower.apply(output(#"{"kind":"text","body":"lo"}"#))
+    let events =
+      follower.apply(output(#"{"kind":"text","body":"Hel"}"#, stream: stream))
+      + follower.apply(output(#"{"kind":"text","body":"lo"}"#, stream: stream))
+    let text = events.compactMap { event -> String? in
+      if case .text(let chunk) = event { return chunk }
+      return nil
+    }
+    #expect(text == ["Hel", "lo"])
     #expect(follower.text == "Hello")
-
-    var legacy = TurnFollower(turnNumber: 1)
-    _ = legacy.apply(stage("started"))
-    _ = legacy.apply(output(#"{"kind":"text","body":"one"}"#, stream: "stdout"))
-    _ = legacy.apply(output(#"{"kind":"text","body":"two"}"#, stream: "stdout"))
-    #expect(legacy.text == "one\n\ntwo")
   }
 
   @Test func textAfterToolStartsNewParagraph() {

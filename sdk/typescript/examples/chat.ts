@@ -148,7 +148,7 @@ try {
   const conversation = fountain.resume(conversationId);
   const [turns, events] = await Promise.all([
     conversation.turns(),
-    conversation.history({ streams: ["acp", "stdout"] }),
+    conversation.history({ streams: ["acp"] }),
   ]);
   await conversation.markRead();
 
