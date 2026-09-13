@@ -171,6 +171,10 @@ fountain conv delete <id>
 
 You can repeat `-i` and `--image`. Each one takes a local file path.
 
+Conversation output uses ACP. Setup and provisioning diagnostics and stderr
+remain visible. Historical vendor stdout has no formatted transcript.
+Its stored `data` remains available through `GET /api/conversations/:id/events`.
+
 ## Sandboxes
 
 A sandbox is the computer a conversation runs on. One persistent sandbox can

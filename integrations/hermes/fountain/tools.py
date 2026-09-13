@@ -305,7 +305,7 @@ class FountainTools:
                     st["reason"] = meta.get("reason")
             return
 
-        if kind != "output":
+        if kind != "output" or ev.get("stream") != "acp":
             return
         turn_id = ev.get("turn_id")
         if st["turn_id"] and turn_id and turn_id != st["turn_id"]:
@@ -314,17 +314,14 @@ class FountainTools:
             # Output from before our turn started (history of an older turn).
             return
         blocks = ev.get("blocks") or []
-        # ACP streams text as chunks of one message, so chunks join with
-        # nothing; a legacy stdout row is a whole message, so rows join as
-        # paragraphs. Either way, text that follows a tool call (or any other
-        # non-text block) is a new message and gets a paragraph break.
-        acp = ev.get("stream") == "acp"
+        # ACP text chunks join into one message. A tool call or other
+        # non-text block separates the next message with a paragraph break.
         for block in blocks:
             bkind = block.get("kind")
             if bkind == "text":
                 body = block.get("body") or ""
                 if body:
-                    if st["text"] and (not acp or st.get("break_before_text")) and not st["text"][-1].endswith("\n"):
+                    if st["text"] and st.get("break_before_text") and not st["text"][-1].endswith("\n"):
                         st["text"].append("\n\n")
                     st["text"].append(body)
                     st["break_before_text"] = False

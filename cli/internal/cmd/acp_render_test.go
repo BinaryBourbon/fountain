@@ -107,26 +107,31 @@ func TestGarbageOnTheACPStreamIsSkipped(t *testing.T) {
 	}
 }
 
-// The other streams must keep behaving exactly as they did — stderr in red,
-// provisioning output raw, stream-json parsed.
-func TestOtherStreamsAreUnchanged(t *testing.T) {
+// Diagnostics remain visible even though vendor transcripts are retired.
+func TestDiagnosticsAreUnchanged(t *testing.T) {
 	stderr := formatOutput(map[string]any{"kind": "output", "stream": "stderr", "data": "boom"})
-	if !strings.Contains(stderr, "boom") || !strings.Contains(stderr, "\x1b[31m") {
+	if stderr != "\x1b[31mboom\x1b[0m" {
 		t.Errorf("stderr rendering changed: %q", stderr)
 	}
 
 	setup := formatOutput(map[string]any{
 		"kind": "output", "stream": "stdout", "stage": "setup", "data": "installing",
 	})
-	if !strings.Contains(setup, "installing") {
+	if setup != "installing\n" {
 		t.Errorf("setup output rendering changed: %q", setup)
 	}
+}
 
-	legacy := formatOutput(map[string]any{
-		"kind": "output", "stream": "stdout", "stage": "turn",
-		"data": `{"type":"assistant","message":{"content":[{"type":"text","text":"legacy"}]}}`,
-	})
-	if !strings.Contains(legacy, "legacy") {
-		t.Errorf("stream-json rendering changed: %q", legacy)
+func TestHistoricalVendorOutputIsNotInterpreted(t *testing.T) {
+	for _, stage := range []string{"", "turn"} {
+		for _, raw := range []string{
+			`{"type":"assistant","message":{"content":[{"type":"text","text":"legacy"}]}}`,
+			`{"type":"result","result":"legacy result"}`,
+			`{"type":"system","subtype":"code_change_published","url":"https://example.com/pr/42"}`,
+		} {
+			if got := formatOutput(map[string]any{"stream": "stdout", "stage": stage, "data": raw}); got != "" {
+				t.Errorf("historical stdout rendered with stage %q: %q", stage, got)
+			}
+		}
 	}
 }

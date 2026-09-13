@@ -993,3 +993,15 @@ available as raw log event data; this change does not delete stored events.
 
 This supersedes the retention prerequisite in the implementation notes above.
 New runtimes still integrate through ACP at the sandbox boundary.
+
+### Client transcript rendering aligned (2026-09-13)
+
+The CLI now interprets ACP output only. It no longer parses historical vendor
+stdout or its system notices. Setup and provisioning diagnostics still print
+as raw text, and stderr still prints in red. Hermes joins ACP chunks and no
+longer treats legacy stdout blocks as separate paragraphs.
+
+This follows the server's ACP-only Blocks contract. Historical rows remain
+accessible in `data` through `GET /api/conversations/:id/events`, including
+when `blocks=true` is requested. These clients require ACP conversations for
+structured transcript output; older vendor transcripts remain raw data.

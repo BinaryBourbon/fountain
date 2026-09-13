@@ -203,7 +203,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual(out["output"], "smoke ok\n\nThe kernel is Linux.")
             self.assertEqual(out["tools_used"], ["Terminal"])
 
-    def test_legacy_stdout_text_blocks_are_paragraphs(self):
+    def test_raw_history_is_available_without_entering_the_acp_reply(self):
         with FakeFountain() as fake:
             st = fake.state
             clock = FakeClock()
@@ -214,14 +214,22 @@ class RunTests(unittest.TestCase):
                     turn = st.turns["c-1"][0]
                     st.set_status("c-1", "running")
                     st.stage("c-1", "started", 1, turn["id"])
-                    st.text("c-1", turn["id"], "first message", stream="stdout")
-                    st.text("c-1", turn["id"], "second message", stream="stdout")
+                    st.add_event("c-1", stream="stdout", turn_id=turn["id"],
+                                 data='{"type":"assistant","message":{"content":[]}}')
+                    st.add_event("c-1", stream="stderr", turn_id=turn["id"], data="diagnostic")
+                    # Even an older server's interpreted stdout blocks are ignored.
+                    st.text("c-1", turn["id"], "old parsed output", stream="stdout")
+                    st.text("c-1", turn["id"], "current ")
+                    st.text("c-1", turn["id"], "reply")
                     st.stage("c-1", "done", 1, turn["id"], exit_code=0)
                     st.set_status("c-1", "idle")
 
             clock.on_tick = on_tick
             out = json.loads(tools.run({"agent": "reviewer", "prompt": "x"}))
-            self.assertEqual(out["output"], "first message\n\nsecond message")
+            self.assertEqual(out["output"], "current reply")
+            events, _, _ = FountainClient(fake.base_url, TOKEN).events("c-1")
+            raw = [ev["data"] for ev in events if ev.get("stream") in ("stdout", "stderr")]
+            self.assertEqual(raw[:2], ['{"type":"assistant","message":{"content":[]}}', "diagnostic"])
 
     def test_timeout_returns_partial_and_wait_resumes_from_the_cursor(self):
         with FakeFountain() as fake:
