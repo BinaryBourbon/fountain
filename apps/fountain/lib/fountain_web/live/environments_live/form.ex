@@ -360,7 +360,14 @@ defmodule FountainWeb.EnvironmentsLive.Form do
         phx-submit="submit"
         class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
       >
-        <.input id="env_name" name="env[name]" label="Name" value={@form["name"]} autofocus required />
+        <.form_field
+          id="env_name"
+          name="env[name]"
+          label="Name"
+          value={@form["name"]}
+          autofocus
+          required
+        />
         <.error_msg field="name" errors={@errors} />
 
         <%!-- Packages --%>
@@ -409,7 +416,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           <.error_msg field="packages" errors={@errors} />
         </div>
 
-        <.input
+        <.form_field
           id="setup_script"
           name="env[setup_script]"
           type="textarea"
@@ -494,14 +501,14 @@ defmodule FountainWeb.EnvironmentsLive.Form do
                 Remove
               </button>
             </div>
-            <.input
+            <.form_field
               id={"repo_#{i}_url"}
               name={"env[repositories][#{i}][url]"}
               label="URL"
               value={repo["url"] || ""}
               placeholder="https://github.com/owner/repo"
             />
-            <.input
+            <.form_field
               id={"repo_#{i}_mount_path"}
               name={"env[repositories][#{i}][mount_path]"}
               label="Mount path"
@@ -509,14 +516,14 @@ defmodule FountainWeb.EnvironmentsLive.Form do
               placeholder="/workspace/repo"
             />
             <div class="grid grid-cols-2 gap-2">
-              <.input
+              <.form_field
                 id={"repo_#{i}_secret_key"}
                 name={"env[repositories][#{i}][secret_key]"}
                 label="Secret key (optional)"
                 value={repo["secret_key"] || ""}
                 placeholder="GITHUB_TOKEN"
               />
-              <.input
+              <.form_field
                 id={"repo_#{i}_ref"}
                 name={"env[repositories][#{i}][ref]"}
                 label="Ref / branch (optional)"
@@ -563,7 +570,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
               </option>
             </select>
           </div>
-          <.input
+          <.form_field
             id="networking_config_json"
             name="env[networking_config_json]"
             type="textarea"
@@ -576,9 +583,9 @@ defmodule FountainWeb.EnvironmentsLive.Form do
         <.error_msg field="networking_config_json" errors={@errors} />
 
         <div class="flex gap-2">
-          <.btn type="submit" phx-disable-with="Saving…">Save</.btn>
+          <.button type="submit" phx-disable-with="Saving…">Save</.button>
           <.link navigate={~p"/environments"}>
-            <.btn_secondary>Cancel</.btn_secondary>
+            <.button variant="secondary">Cancel</.button>
           </.link>
         </div>
       </form>
@@ -603,9 +610,14 @@ defmodule FountainWeb.EnvironmentsLive.Form do
                 &bull;&bull;&bull;&bull;&bull;&bull;&bull;
               </td>
               <td class="py-2 text-right">
-                <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">
+                <.button
+                  variant="danger"
+                  phx-click="delete_secret"
+                  phx-value-id={s.id}
+                  data-confirm="Delete?"
+                >
                   Delete
-                </.btn_danger>
+                </.button>
               </td>
             </tr>
           </tbody>
@@ -633,7 +645,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
             placeholder="value"
             class="flex-[2] rounded border border-zinc-300 px-3 py-2 text-sm font-mono"
           />
-          <.btn type="submit">Add secret</.btn>
+          <.button type="submit">Add secret</.button>
         </form>
       </section>
     </div>

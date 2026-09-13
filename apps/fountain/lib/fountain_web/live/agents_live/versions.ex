@@ -98,7 +98,7 @@ defmodule FountainWeb.AgentsLive.Versions do
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">History — {@agent.name}</h1>
         <.link navigate={~p"/agents/#{@agent.id}/edit"}>
-          <.btn_secondary>Back to agent</.btn_secondary>
+          <.button variant="secondary">Back to agent</.button>
         </.link>
       </div>
 
@@ -122,14 +122,15 @@ defmodule FountainWeb.AgentsLive.Versions do
               {Calendar.strftime(version.inserted_at, "%Y-%m-%d %H:%M UTC")}
             </span>
           </div>
-          <.btn_secondary
+          <.button
             :if={not current?(@versions, version.version)}
+            variant="secondary"
             phx-click="rollback"
             phx-value-version={version.version}
             data-confirm={"Apply version #{version.version}'s config as a new edit?"}
           >
             Roll back to this
-          </.btn_secondary>
+          </.button>
         </div>
 
         <div :if={previous == nil} class="text-sm text-zinc-500">

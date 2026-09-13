@@ -741,17 +741,24 @@ defmodule FountainWeb.AgentsLive.Form do
         phx-submit="submit"
         class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
       >
-        <.input id="name" name="agent[name]" label="Name" value={@form["name"]} autofocus required />
+        <.form_field
+          id="name"
+          name="agent[name]"
+          label="Name"
+          value={@form["name"]}
+          autofocus
+          required
+        />
         <.error_msg field="name" errors={@errors} />
 
-        <.input
+        <.form_field
           id="description"
           name="agent[description]"
           label="Description"
           value={@form["description"]}
         />
 
-        <.input
+        <.form_field
           id="system"
           name="agent[system]"
           type="textarea"
@@ -773,7 +780,7 @@ defmodule FountainWeb.AgentsLive.Form do
               </option>
             </select>
           </div>
-          <.input
+          <.form_field
             id="model"
             name="agent[model]"
             label="Model"
@@ -789,7 +796,7 @@ defmodule FountainWeb.AgentsLive.Form do
         </div>
         <.error_msg field="model" errors={@errors} />
         <div :if={command_runtime?(@form["runtime"])} class="space-y-1">
-          <.input
+          <.form_field
             id="runtime_command"
             name="agent[runtime_command]"
             label="Command"
@@ -1170,14 +1177,14 @@ defmodule FountainWeb.AgentsLive.Form do
             <input type="hidden" name={"agent[skills][#{i}][type]"} value={skill["type"]} />
 
             <div :if={skill["type"] == "github"} class="grid grid-cols-2 gap-2">
-              <.input
+              <.form_field
                 id={"skill_#{i}_source"}
                 name={"agent[skills][#{i}][source]"}
                 label="Source (owner/repo)"
                 value={skill["source"] || ""}
                 placeholder="anthropics/skills"
               />
-              <.input
+              <.form_field
                 id={"skill_#{i}_name"}
                 name={"agent[skills][#{i}][name]"}
                 label="Name (optional)"
@@ -1187,14 +1194,14 @@ defmodule FountainWeb.AgentsLive.Form do
             </div>
 
             <div :if={skill["type"] == "inline"} class="space-y-2">
-              <.input
+              <.form_field
                 id={"skill_#{i}_inline_name"}
                 name={"agent[skills][#{i}][name]"}
                 label="Name"
                 value={skill["name"] || ""}
                 placeholder="my-skill"
               />
-              <.input
+              <.form_field
                 id={"skill_#{i}_content"}
                 name={"agent[skills][#{i}][content]"}
                 type="textarea"
@@ -1261,7 +1268,7 @@ defmodule FountainWeb.AgentsLive.Form do
               </button>
             </div>
 
-            <.input
+            <.form_field
               id={"mcp_#{i}_name"}
               name={"agent[mcp_servers][#{i}][name]"}
               label="Server name"
@@ -1313,7 +1320,7 @@ defmodule FountainWeb.AgentsLive.Form do
                 </option>
               </select>
             </div>
-            <.input
+            <.form_field
               :if={server["kind"] == "connection"}
               id={"mcp_#{i}_url"}
               name={"agent[mcp_servers][#{i}][url]"}
@@ -1333,7 +1340,7 @@ defmodule FountainWeb.AgentsLive.Form do
               <code class="font-mono">{Jason.encode!(server["raw"])}</code>
             </div>
 
-            <.input
+            <.form_field
               :if={server["kind"] in [nil, "stdio"]}
               id={"mcp_#{i}_command"}
               name={"agent[mcp_servers][#{i}][command]"}
@@ -1341,7 +1348,7 @@ defmodule FountainWeb.AgentsLive.Form do
               value={server["command"] || ""}
               placeholder="npx"
             />
-            <.input
+            <.form_field
               :if={server["kind"] in [nil, "stdio"]}
               id={"mcp_#{i}_args"}
               name={"agent[mcp_servers][#{i}][args]"}
@@ -1409,9 +1416,9 @@ defmodule FountainWeb.AgentsLive.Form do
         </div>
 
         <div class="flex gap-2">
-          <.btn type="submit" phx-disable-with="Saving\u2026">Save</.btn>
+          <.button type="submit" phx-disable-with="Saving\u2026">Save</.button>
           <.link navigate={~p"/agents"}>
-            <.btn_secondary>Cancel</.btn_secondary>
+            <.button variant="secondary">Cancel</.button>
           </.link>
         </div>
       </form>

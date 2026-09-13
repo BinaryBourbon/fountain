@@ -77,86 +77,6 @@ defmodule FountainWeb.CoreComponents do
     do:
       "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
 
-  # ── Legacy aliases (kept for backward-compat) ─────────────────────────────
-
-  attr :type, :string, default: "button"
-  attr :class, :string, default: ""
-
-  attr :rest, :global,
-    include: ~w(disabled form name value phx-click phx-disable-with phx-value-id data-confirm)
-
-  slot :inner_block, required: true
-
-  def btn(assigns) do
-    ~H"""
-    <button
-      type={@type}
-      class={[
-        "inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-        "bg-[var(--color-brand)] text-[var(--color-brand-text)] hover:bg-[var(--color-brand-hover)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]",
-        "disabled:opacity-50",
-        @class
-      ]}
-      {@rest}
-    >
-      {render_slot(@inner_block)}
-    </button>
-    """
-  end
-
-  attr :type, :string, default: "button"
-  attr :class, :string, default: ""
-
-  attr :rest, :global,
-    include: ~w(disabled form name value phx-click phx-disable-with phx-value-id data-confirm)
-
-  slot :inner_block, required: true
-
-  def btn_secondary(assigns) do
-    ~H"""
-    <button
-      type={@type}
-      class={[
-        "inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-        "bg-[var(--color-bg-2)] text-[var(--color-text-primary)] hover:bg-[var(--color-bg-3)]",
-        "border border-[var(--color-border)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]",
-        "disabled:opacity-50",
-        @class
-      ]}
-      {@rest}
-    >
-      {render_slot(@inner_block)}
-    </button>
-    """
-  end
-
-  attr :class, :string, default: ""
-
-  attr :rest, :global,
-    include: ~w(disabled form name value phx-click phx-disable-with phx-value-id data-confirm)
-
-  slot :inner_block, required: true
-
-  def btn_danger(assigns) do
-    ~H"""
-    <button
-      type="button"
-      class={[
-        "inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-        "bg-[var(--color-error)] text-white hover:opacity-90",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]",
-        "disabled:opacity-50",
-        @class
-      ]}
-      {@rest}
-    >
-      {render_slot(@inner_block)}
-    </button>
-    """
-  end
-
   # ────────────────────────────────────────────────────────────────────────────
   # badge/1
   # Renders both status vocabularies (#401 — the old comment labelled the
@@ -213,10 +133,6 @@ defmodule FountainWeb.CoreComponents do
   defp badge_dot_class("terminated"), do: "bg-[var(--status-terminated-text)]"
   defp badge_dot_class("failed"), do: "bg-[var(--status-failed-text)]"
   defp badge_dot_class(_), do: "bg-[var(--color-text-muted)]"
-
-  # Legacy alias
-  attr :status, :string, required: true
-  def status_badge(assigns), do: badge(assigns)
 
   # ────────────────────────────────────────────────────────────────────────────
   # label_chips/1 (#1637)
@@ -577,7 +493,7 @@ defmodule FountainWeb.CoreComponents do
   attr :class, :string, default: ""
 
   attr :rest, :global,
-    include: ~w(autofocus required disabled readonly rows cols min max step pattern phx-hook)
+    include: ~w(autofocus required disabled readonly rows cols min max step pattern phx-hook list)
 
   def form_field(assigns) do
     ~H"""
@@ -625,50 +541,6 @@ defmodule FountainWeb.CoreComponents do
       <p :for={error <- @errors} class="text-xs text-[var(--color-error)]" role="alert">
         {error}
       </p>
-    </div>
-    """
-  end
-
-  # ── Legacy input alias ───────────────────────────────────────────────────────
-
-  attr :id, :string, required: true
-  attr :name, :string, required: true
-  attr :label, :string, default: nil
-  attr :type, :string, default: "text"
-  attr :value, :string, default: ""
-  attr :placeholder, :string, default: nil
-  # `list` is an <input>-specific attribute, not one of Phoenix's HTML globals,
-  # so it has to be opted in for a datalist to attach.
-  attr :rest, :global, include: ~w(autofocus required disabled rows pattern phx-hook list)
-
-  def input(assigns) do
-    ~H"""
-    <div class="space-y-1">
-      <label
-        :if={@label}
-        for={@id}
-        class="block text-sm font-medium text-[var(--color-text-primary)]"
-      >
-        {@label}
-      </label>
-      <input
-        :if={@type != "textarea"}
-        type={@type}
-        name={@name}
-        id={@id}
-        value={@value}
-        placeholder={@placeholder}
-        class="block w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)]"
-        {@rest}
-      />
-      <textarea
-        :if={@type == "textarea"}
-        name={@name}
-        id={@id}
-        placeholder={@placeholder}
-        class="block w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-1)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)]"
-        {@rest}
-      >{@value}</textarea>
     </div>
     """
   end

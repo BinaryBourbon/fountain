@@ -621,65 +621,65 @@ defmodule FountainWeb.ConnectionsLive.Index do
           </ul>
           <input type="hidden" name="provider[kind]" value={@provider_form["kind"]} />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <.input
+            <.form_field
               name="provider[name]"
               label="Name"
               value={@provider_form["name"]}
               id="provider_name"
             />
-            <.input
+            <.form_field
               name="provider[slug]"
               label="Slug"
               value={@provider_form["slug"]}
               id="provider_slug"
               placeholder="github"
             />
-            <.input
+            <.form_field
               :if={@provider_form["kind"] == "oauth2"}
               name="provider[authorize_url]"
               label="Authorize URL"
               value={@provider_form["authorize_url"]}
               id="provider_authorize_url"
             />
-            <.input
+            <.form_field
               :if={@provider_form["kind"] == "oauth2"}
               name="provider[token_url]"
               label="Token URL"
               value={@provider_form["token_url"]}
               id="provider_token_url"
             />
-            <.input
+            <.form_field
               name="provider[revoke_url]"
               label="Revoke URL (optional)"
               value={@provider_form["revoke_url"]}
               id="provider_revoke_url"
             />
-            <.input
+            <.form_field
               name="provider[userinfo_url]"
               label="Userinfo URL (optional)"
               value={@provider_form["userinfo_url"]}
               id="provider_userinfo_url"
             />
-            <.input
+            <.form_field
               name="provider[account_label_path]"
               label="Account name path in userinfo"
               value={@provider_form["account_label_path"]}
               id="provider_account_label_path"
               placeholder="email"
             />
-            <.input
+            <.form_field
               name="provider[scopes]"
               label="Scopes (space-separated)"
               value={@provider_form["scopes"]}
               id="provider_scopes"
             />
-            <.input
+            <.form_field
               name="provider[client_id]"
               label="Client id"
               value={@provider_form["client_id"]}
               id="provider_client_id"
             />
-            <.input
+            <.form_field
               name="provider[client_secret]"
               type="password"
               label={
@@ -728,14 +728,14 @@ defmodule FountainWeb.ConnectionsLive.Index do
                 <option value="false" selected={@provider_form["pkce"] == "false"}>Off</option>
               </select>
             </div>
-            <.input
+            <.form_field
               name="provider[env_key]"
               label="Env var (blank derives from the slug)"
               value={@provider_form["env_key"]}
               id="provider_env_key"
               placeholder="GITHUB_ACCESS_TOKEN"
             />
-            <.input
+            <.form_field
               name="provider[token_hosts]"
               label="Token hosts (space-separated)"
               value={@provider_form["token_hosts"]}
