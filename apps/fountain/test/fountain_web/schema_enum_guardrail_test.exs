@@ -123,6 +123,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.EnvironmentUpdate, "networking_type"} => {Environment, :networking},
     {FountainWeb.Schemas.Export, "status"} => {Export, :statuses},
     {FountainWeb.Schemas.InferenceCredentialStatus, "provider"} => {Credential, :providers},
+    {FountainWeb.Schemas.InferenceCredentialSet, "providers.[]"} => {Credential, :providers},
     {FountainWeb.Schemas.LogEvent, "kind"} => {LogEvent, :kinds},
     {FountainWeb.Schemas.LogEvent, "state"} => {LogEvent, :states},
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
@@ -163,6 +164,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # Enums with no domain list behind them. Each entry needs a reason: the
   # point of the list is that adding to it is a deliberate act.
   @api_local %{
+    {FountainWeb.Schemas.CredentialSetDeletionError, "error"} =>
+      "Fixed HTTP refusal code for deleting the default credential set; not a domain list",
+    {FountainWeb.Schemas.CredentialSetDeletionError, "reason"} =>
+      "Fixed deletion refusal reason rendered by InferenceCredentialSetController",
     {FountainWeb.Schemas.UsageAccounting, "completeness"} =>
       "Adapter claim validated by Managoat.ACP.Usage; the library exposes no enum accessor",
     {FountainWeb.Schemas.Turn, "model_selection.status"} =>
