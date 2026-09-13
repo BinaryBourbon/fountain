@@ -3283,17 +3283,34 @@ defmodule Fountain.Conversations do
   defp resume_channel(conv, agent, attrs, opts) do
     result =
       InferenceCredentials.with_source_lock(conv.user_id, fn ->
-        # Source writers and other admissions use this lock too. Re-read a
-        # legacy row so a concurrent resume cannot replace its new binding.
-        with %Conversation{} = conv <-
-               get_conversation(conv.id, conv.user_id) || {:error, :not_found},
-             :ok <- _unsafe_check_saved_execution_allowance(conv.id),
-             :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
-             {:ok, source} <- resolve_saved_inference(conv, agent),
-             {:ok, conv, audit} <- resume_labels(conv, attrs["labels"], opts),
-             :ok <- InferenceBinding.reserve(conv, source) do
-          {:ok, {Repo.reload!(conv), audit}}
-        end
+        with_sandbox_lock(conv.sandbox_id, fn ->
+          # Match turn admission and teardown: sandbox advisory lock, then
+          # conversation row, then allowance. Taking the allowance first lets
+          # narrowing hold the conversation while waiting on our allowance,
+          # deadlocking the later label/source write. Codex reservation takes
+          # the sandbox row only after this conversation lock too.
+          current =
+            Repo.one(
+              from c in Conversation,
+                where: c.id == ^conv.id and c.user_id == ^conv.user_id,
+                lock: "FOR UPDATE",
+                preload: [:sandbox, :agent, :vault, :agent_version]
+            )
+
+          with %Conversation{} = current <- current || {:error, :not_found},
+               :ok <-
+                 if(current.sandbox_id == conv.sandbox_id,
+                   do: :ok,
+                   else: {:error, :provisioning}
+                 ),
+               :ok <- _unsafe_check_saved_execution_allowance(current.id),
+               :ok <- check_sandbox_api_resume(current, attrs["sandbox_api_access"]),
+               {:ok, source} <- resolve_saved_inference(current, agent),
+               {:ok, current, audit} <- resume_labels(current, attrs["labels"], opts),
+               :ok <- InferenceBinding.reserve(current, source) do
+            {:ok, {Repo.reload!(current), audit}}
+          end
+        end)
       end)
 
     with {:ok, {conv, audit}} <- result do
