@@ -85,6 +85,49 @@ defmodule FountainWeb.SavedAllowanceChannelTest do
     end
   end
 
+  test "a rejected label mutation does not bind a legacy channel", ctx do
+    conv = bound(ctx, "bad-labels")
+    before = Repo.reload!(conv)
+    assert is_nil(before.inference_source)
+
+    assert {:error, _} =
+             Conversations.start_or_resume_conversation(
+               Map.put(attrs(ctx, "bad-labels"), "labels", %{"bad" => ["not a string"]})
+             )
+
+    assert Repo.reload!(conv) == before
+  end
+
+  test "a successful channel label audit runs after its binding transaction", ctx do
+    conv = bound(ctx, "label-audit")
+    owner = self()
+
+    expect(Fountain.Audit, :record, fn %{action: "conversation.labels_set"} ->
+      send(owner, {:audit_transaction, Repo.in_transaction?()})
+      assert Repo.reload!(conv).labels == %{"result" => "ready"}
+      assert is_map(Repo.reload!(conv).inference_source)
+      {:ok, nil}
+    end)
+
+    assert {:ok, _, :resumed} =
+             Conversations.start_or_resume_conversation(
+               Map.put(attrs(ctx, "label-audit"), "labels", %{"result" => "ready"})
+             )
+
+    assert_received {:audit_transaction, false}
+  end
+
+  test "a successful legacy resume returns its committed source binding", ctx do
+    conv = bound(ctx, "bind-success")
+    assert is_nil(conv.inference_source)
+
+    assert {:ok, resumed, :resumed} =
+             Conversations.start_or_resume_conversation(attrs(ctx, "bind-success"))
+
+    assert is_map(resumed.inference_source)
+    assert Repo.reload!(conv).inference_source == resumed.inference_source
+  end
+
   test "a suspended binding is refused and remains available for read-only lookup", ctx do
     conv = bound(ctx, "parked")
     conv.sandbox |> Ecto.Changeset.change(status: "suspended") |> Repo.update!()

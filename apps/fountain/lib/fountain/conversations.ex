@@ -1121,26 +1121,31 @@ defmodule Fountain.Conversations do
   """
   @spec _unsafe_merge_labels(Conversation.t(), term(), keyword()) ::
           {:ok, Conversation.t()} | {:error, Ecto.Changeset.t()}
-  def _unsafe_merge_labels(conv, labels, opts \\ [])
+  def _unsafe_merge_labels(conv, labels, opts \\ []) do
+    with {:ok, updated, audit} <- merge_labels(conv, labels) do
+      audit_labels(updated, audit, opts)
+      {:ok, updated}
+    end
+  end
 
-  def _unsafe_merge_labels(%Conversation{} = conv, labels, opts) when is_map(labels) do
+  defp merge_labels(%Conversation{} = conv, labels) when is_map(labels) do
     current = conv.labels || %{}
     merged = Labels.merge(current, labels)
 
     cond do
-      merged == current -> {:ok, conv}
-      true -> write_labels(conv, current, labels, merged, opts)
+      merged == current -> {:ok, conv, nil}
+      true -> write_labels(conv, current, labels, merged)
     end
   end
 
   # Anything that is not a map is a validation failure with the same shape a
   # broken limit produces, so a caller reads one answer whichever door it
   # came through.
-  def _unsafe_merge_labels(%Conversation{} = conv, labels, _opts) do
+  defp merge_labels(%Conversation{} = conv, labels) do
     {:error, label_refusal(conv, Labels.check(labels))}
   end
 
-  defp write_labels(conv, current, labels, merged, opts) do
+  defp write_labels(conv, current, labels, merged) do
     case Labels.check_merge(current, labels) do
       :ok ->
         {written, removed} = Labels.changed_keys(current, labels)
@@ -1148,15 +1153,20 @@ defmodule Fountain.Conversations do
         conv
         |> Conversation.changeset(%{labels: merged})
         |> Repo.update()
-        |> tap(fn
-          {:ok, updated} -> record_labels_set(updated, written, removed, merged, opts)
-          _ -> :ok
-        end)
+        |> case do
+          {:ok, updated} -> {:ok, updated, {written, removed, merged}}
+          error -> error
+        end
 
       refusal ->
         {:error, label_refusal(conv, refusal)}
     end
   end
+
+  defp audit_labels(_conv, nil, _opts), do: :ok
+
+  defp audit_labels(conv, {written, removed, merged}, opts),
+    do: record_labels_set(conv, written, removed, merged, opts)
 
   defp record_labels_set(conv, written, removed, merged, opts) do
     Audit.record(%{
@@ -1311,16 +1321,18 @@ defmodule Fountain.Conversations do
   def reapply_conversation(%Conversation{} = conv, attrs \\ %{}, opts \\ [])
       when is_map(attrs) do
     with {:ok, {previous, updated}} <-
-           with_sandbox_lock(conv.sandbox_id, fn ->
-             # Ownership was established by the caller. Re-read under the lock
-             # so concurrent reapplications preserve each other's omitted
-             # fields rather than each writing from a stale copy.
-             current =
-               Repo.one!(from c in Conversation, where: c.id == ^conv.id, lock: "FOR UPDATE")
+           InferenceCredentials.with_source_lock(conv.user_id, fn ->
+             with_sandbox_lock(conv.sandbox_id, fn ->
+               # Ownership was established by the caller. Re-read under the lock
+               # so concurrent reapplications preserve each other's omitted
+               # fields rather than each writing from a stale copy.
+               current =
+                 Repo.one!(from c in Conversation, where: c.id == ^conv.id, lock: "FOR UPDATE")
 
-             if current.sandbox_id == conv.sandbox_id,
-               do: do_reapply_conversation(current, attrs),
-               else: {:error, :provisioning}
+               if current.sandbox_id == conv.sandbox_id,
+                 do: do_reapply_conversation(current, attrs),
+                 else: {:error, :provisioning}
+             end)
            end) do
       metadata = reapply_metadata(previous, updated)
 
@@ -1427,6 +1439,8 @@ defmodule Fountain.Conversations do
            resolve_environment_id(environment_selection, conv.user_id, agent),
          {:ok, _permission_policy} <- resolve_permission_policy(conv.permission_policy, agent),
          :ok <- assert_applicable_in_place(conv, agent, environment_id, vault_id),
+         {:ok, inference_source} <-
+           resolve_reapplied_inference(conv, agent, environment_id, vault_id),
          {:ok, updated} <-
            write_reapplied_configuration(conv,
              agent_id: agent.id,
@@ -1435,12 +1449,45 @@ defmodule Fountain.Conversations do
              vault_id: vault_id,
              environment_id: environment_id,
              runtime: agent.runtime,
+             inference_source: Source.dump(inference_source),
              configuration_revision: conv.configuration_revision + 1
            ),
-         :ok <- Reapply.update_identity(conv, agent, environment_id, vault_id) do
+         :ok <- Reapply.update_identity(conv, agent, environment_id, vault_id),
+         :ok <- reserve_reapplied_inference(updated, inference_source) do
       {:ok, {conv, updated}}
     end
   end
+
+  # Reapply may change configuration context while retaining the admitted
+  # credential. Compare the proposed context with the same pinned source; a
+  # different credential still requires a new conversation. Historical turns
+  # keep their original source snapshots.
+  defp resolve_reapplied_inference(%{inference_source: nil}, _agent, _env_id, _vault_id),
+    do: {:ok, nil}
+
+  defp resolve_reapplied_inference(conv, agent, env_id, vault_id) do
+    expected =
+      Map.merge(conv.inference_source, %{
+        "model" => agent.model,
+        "runtime" => agent.runtime,
+        "environment_id" => env_id || agent.environment_id,
+        "vault_id" => vault_id
+      })
+
+    with {:ok, source, _credentials} <-
+           InferenceCredentials.resolve(conv.user_id, agent.model, agent.runtime,
+             environment_id: env_id || agent.environment_id,
+             vault_id: vault_id,
+             expected_source: expected,
+             refresh: false
+           ),
+         :ok <- Fountain.PlatformInference.gate_source(source) do
+      {:ok, source}
+    end
+  end
+
+  defp reserve_reapplied_inference(_conv, nil), do: :ok
+  defp reserve_reapplied_inference(conv, source), do: InferenceBinding.reserve(conv, source)
 
   # An omitted key keeps what the row already says; a key present with an
   # explicit nil clears it. Both spellings are accepted because the API hands
@@ -3211,6 +3258,7 @@ defmodule Fountain.Conversations do
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
       set_id = nil
+
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id, set_id) do
         %Conversation{} = conv ->
           if fresh_requested?(attrs) do
@@ -3218,10 +3266,7 @@ defmodule Fountain.Conversations do
                    start_conversation(attrs, Keyword.put(opts, :rotate_from, conv.id)),
                  do: {:ok, fresh, :created}
           else
-            with :ok <- check_saved_inference(conv, agent),
-                 :ok <- _unsafe_check_saved_execution_allowance(conv.id),
-                 :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
-                 {:ok, conv} <- resume_labels(conv, attrs["labels"], opts),
+            with {:ok, conv} <- resume_channel(conv, agent, attrs, opts),
                  do: {:ok, conv, :resumed}
           end
 
@@ -3233,6 +3278,28 @@ defmodule Fountain.Conversations do
 
   def start_or_resume_conversation(attrs, opts) do
     with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
+  end
+
+  defp resume_channel(conv, agent, attrs, opts) do
+    result =
+      InferenceCredentials.with_source_lock(conv.user_id, fn ->
+        # Source writers and other admissions use this lock too. Re-read a
+        # legacy row so a concurrent resume cannot replace its new binding.
+        with %Conversation{} = conv <-
+               get_conversation(conv.id, conv.user_id) || {:error, :not_found},
+             :ok <- _unsafe_check_saved_execution_allowance(conv.id),
+             :ok <- check_sandbox_api_resume(conv, attrs["sandbox_api_access"]),
+             {:ok, source} <- resolve_saved_inference(conv, agent),
+             {:ok, conv, audit} <- resume_labels(conv, attrs["labels"], opts),
+             :ok <- InferenceBinding.reserve(conv, source) do
+          {:ok, {Repo.reload!(conv), audit}}
+        end
+      end)
+
+    with {:ok, {conv, audit}} <- result do
+      audit_labels(conv, audit, opts)
+      {:ok, conv}
+    end
   end
 
   # No runtime has integrated end-to-end enforcement yet. Refuse a requested
@@ -3266,15 +3333,16 @@ defmodule Fountain.Conversations do
   # the request are merged into it rather than dropped (#1637). A caller that
   # sends none changes nothing, and the resume stays the silent path it was.
   #
-  # Through `set_conversation_labels/4` rather than the writer beneath it:
-  # this runs on `POST /api/conversations`, which a sandbox's own token may
-  # call, and a resume names an *existing* conversation. Writing here
-  # directly would let a sprite minted for one conversation relabel any other
-  # of the tenant's by resuming its channel.
-  defp resume_labels(%Conversation{} = conv, nil, _opts), do: {:ok, conv}
+  # The same scoped ownership rule as set_conversation_labels/4, applied to
+  # the row resume_channel read under admission's source lock. Keep the audit
+  # outside that transaction so a failed audit cannot undo a successful resume.
+  defp resume_labels(%Conversation{} = conv, nil, _opts), do: {:ok, conv, nil}
 
-  defp resume_labels(%Conversation{} = conv, labels, opts),
-    do: set_conversation_labels(conv.id, conv.user_id, labels, opts)
+  defp resume_labels(%Conversation{} = conv, labels, opts) do
+    if sandbox_owns?(conv, Keyword.get(opts, :sandbox_key_id)),
+      do: merge_labels(conv, labels),
+      else: {:error, :sprite_may_not_label_another_conversation}
+  end
 
   # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
   # request may send a string. Anything else is not a request.
@@ -4941,6 +5009,10 @@ defmodule Fountain.Conversations do
   end
 
   defp check_saved_inference(conv, agent) do
+    with {:ok, _source} <- resolve_saved_inference(conv, agent), do: :ok
+  end
+
+  defp resolve_saved_inference(conv, agent) do
     with {:ok, source, _credentials} <-
            InferenceCredentials.resolve(conv.user_id, agent.model, conv.runtime,
              environment_id: conv.environment_id || agent.environment_id,
@@ -4950,7 +5022,7 @@ defmodule Fountain.Conversations do
              refresh: false
            ),
          :ok <- Fountain.PlatformInference.gate_source(source) do
-      InferenceBinding.reserve(conv, source)
+      {:ok, source}
     end
   end
 

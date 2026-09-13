@@ -29,7 +29,9 @@ defmodule Fountain.Credits.ChatGPTInferenceTest do
   test "a grant-only turn is debited once and counted in daily spend; own credentials are not" do
     model = "openai/gpt-6-astra"
     {:ok, source, _} = InferenceCredentials.select(model, %{}, "codex", refresh: false)
-    assert source == Source.platform()
+
+    assert %Source{origin: :platform, scope: :platform, kind: :codex_chatgpt_access_token} =
+             source
 
     usage =
       TurnMachine.with_inference(%{"input" => 1_000_000, "output" => 0}, %{
