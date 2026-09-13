@@ -3209,8 +3209,8 @@ defmodule Fountain.Conversations do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
-         set_id = nil do
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
+      set_id = nil
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id, set_id) do
         %Conversation{} = conv ->
           if fresh_requested?(attrs) do
@@ -3431,8 +3431,8 @@ defmodule Fountain.Conversations do
       when is_binary(channel_id) and channel_id != "" do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
-         set_id = nil do
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
+      set_id = nil
       find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id, set_id)
     else
       _ -> nil
