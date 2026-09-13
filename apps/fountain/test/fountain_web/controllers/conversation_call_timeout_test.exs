@@ -14,8 +14,15 @@ defmodule FountainWeb.ConversationCallTimeoutTest do
   # return value, not an exit.
 
   setup %{conn: conn} do
+    previous_timeout = Application.fetch_env(:fountain, :conversation_call_timeout_ms)
     Application.put_env(:fountain, :conversation_call_timeout_ms, 150)
-    on_exit(fn -> Application.delete_env(:fountain, :conversation_call_timeout_ms) end)
+
+    on_exit(fn ->
+      case previous_timeout do
+        {:ok, value} -> Application.put_env(:fountain, :conversation_call_timeout_ms, value)
+        :error -> Application.delete_env(:fountain, :conversation_call_timeout_ms)
+      end
+    end)
 
     user = insert_verified_user()
     {_key_record, raw_key} = insert_api_key(user)
@@ -23,17 +30,17 @@ defmodule FountainWeb.ConversationCallTimeoutTest do
 
     # The shape of a server whose mailbox is blocked by provisioning:
     # registered under the conversation id, never answering calls.
-    test_pid = self()
-
     stuck =
-      spawn(fn ->
-        Horde.Registry.register(Fountain.ConversationRegistry, conv.id, nil)
-        send(test_pid, :registered)
-        Process.sleep(:infinity)
-      end)
+      start_supervised!(
+        {Task,
+         fn ->
+           {:ok, _} = Horde.Registry.register(Fountain.ConversationRegistry, conv.id, nil)
+           Process.sleep(:infinity)
+         end}
+      )
 
-    assert_receive :registered, 2_000
-    on_exit(fn -> Process.exit(stuck, :kill) end)
+    # Wait for the lookup used by the public calls, not a registration message.
+    assert {:ok, ^stuck} = ConversationServer.await_registered(conv.id, 2_000)
 
     {:ok, conn: authed_with_key(conn, raw_key), user: user, conv: conv}
   end
