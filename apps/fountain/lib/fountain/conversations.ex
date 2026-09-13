@@ -3256,9 +3256,9 @@ defmodule Fountain.Conversations do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          :ok <- check_execution_limits(user_id, attrs["execution_limits"]),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
-      set_id = nil
-
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         {:ok, set_id} <-
+           resolve_inference_credential_id(attrs["inference_credential_id"], user_id, agent) do
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id, set_id) do
         %Conversation{} = conv ->
           if fresh_requested?(attrs) do
@@ -3516,8 +3516,9 @@ defmodule Fountain.Conversations do
       when is_binary(channel_id) and channel_id != "" do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
-         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
-      set_id = nil
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         {:ok, set_id} <-
+           resolve_inference_credential_id(attrs["inference_credential_id"], user_id, agent) do
       find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id, set_id)
     else
       _ -> nil
@@ -3545,6 +3546,9 @@ defmodule Fountain.Conversations do
   # An explicit set is part of a channel selection. An omitted set resumes
   # the channel's durable source, even after the account's default changes.
   defp where_credential_set(query, nil), do: query
+
+  defp where_credential_set(query, id),
+    do: from(c in query, where: c.inference_credential_id == ^id)
 
   defp where_vault(query, nil), do: from(c in query, where: is_nil(c.vault_id))
   defp where_vault(query, vault_id), do: from(c in query, where: c.vault_id == ^vault_id)
@@ -3594,7 +3598,8 @@ defmodule Fountain.Conversations do
          {:ok, runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
-         cred_set_id = nil,
+         {:ok, cred_set_id} <-
+           resolve_inference_credential_id(attrs["inference_credential_id"], user_id, agent),
          {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
          {:ok, api_access} <- resolve_sandbox_api_access(attrs["sandbox_api_access"], mode),
          :ok <- check_sandbox_api_name(api_access, attrs["sprite_name"]),
@@ -4590,7 +4595,8 @@ defmodule Fountain.Conversations do
          {:ok, _runtime_module} <- Fountain.RuntimeDispatch.for_agent(agent),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
-         cred_set_id = nil,
+         {:ok, cred_set_id} <-
+           resolve_inference_credential_id(attrs["inference_credential_id"], user_id, agent),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
@@ -5038,6 +5044,47 @@ defmodule Fountain.Conversations do
          :ok <- Fountain.PlatformInference.gate_source(source) do
       {:ok, source}
     end
+  end
+
+  # A per-launch credential-set override (ADR 0053 decision 3): the
+  # conversation provisions on this set instead of the agent's, and stays
+  # pinned to it across wakes. Resolved exactly like the environment -- a
+  # scoped fetch, so a foreign id reads as not found and cannot be probed,
+  # behind the agent's allowlist.
+  #
+  # Not part of the home identity tuple (ADR 0053 decision 6, and why
+  # `_unsafe_find_home/4` is not given one): two conversations differing only
+  # in credential set share a machine, because the credential reaches the
+  # runtime as process env. InferenceBinding additionally reserves compatible
+  # Codex auth state before any shared auth-file write.
+  defp resolve_inference_credential_id(nil, _user_id, _agent), do: {:ok, nil}
+  defp resolve_inference_credential_id("", _user_id, _agent), do: {:ok, nil}
+
+  defp resolve_inference_credential_id(id, user_id, agent)
+       when is_binary(id) and is_binary(user_id) do
+    with :ok <- check_credential_set_allowed(id, agent) do
+      case Fountain.InferenceCredentials.get_set(id, user_id) do
+        nil -> {:error, :inference_credential_not_found}
+        set -> {:ok, set.id}
+      end
+    end
+  end
+
+  defp resolve_inference_credential_id(_id, _user_id, _agent),
+    do: {:error, :inference_credential_not_found}
+
+  # Same three-way shape as the vault and environment allowlists, and the same
+  # deliberate nil default: a caller who can attach a vault can already
+  # override `ANTHROPIC_API_KEY` outright, so a stricter default here would
+  # guard nothing (#783 made this argument for the environment). Naming the
+  # agent's own set is not an override, so it passes regardless of the list.
+  defp check_credential_set_allowed(_id, %Agents.Agent{allowed_inference_credential_ids: nil}),
+    do: :ok
+
+  defp check_credential_set_allowed(id, %Agents.Agent{inference_credential_id: id}), do: :ok
+
+  defp check_credential_set_allowed(id, %Agents.Agent{allowed_inference_credential_ids: allowed}) do
+    if id in allowed, do: :ok, else: {:error, :inference_credential_not_allowed}
   end
 
   @doc """
