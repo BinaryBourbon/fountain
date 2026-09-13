@@ -6,9 +6,9 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
 
   Tracker #1369 refactors the server by subtraction: each sub-issue moves a
   function family into a module under `Fountain.Conversations.*` and lowers
-  `@pin` to the file's new length in the same PR. The pin is the file's line
-  count on `main` at the last move, so a change that makes the file longer
-  fails here and has to say why.
+  `@pin` to the file's new length in the PR that lands on `main` (see below
+  for a stack). The pin is the file's line count on `main` at the last move,
+  so a change that makes the file longer fails here and has to say why.
 
   The shape is the docs-style allowlist that only shrinks (#911): the number
   is not a target, it is a record of where the file is, and the only edit it
@@ -18,8 +18,9 @@ defmodule Fountain.Conversations.ConversationServerSizeTest do
   a number measured against a branch is stale the moment any link below it
   grows the file, which is what review rounds do. #1565 lowered it mid-stack to
   the tip's exact length, left zero headroom, and went red two rounds later
-  when a fix four PRs down added lines. Land the shrink first, then lower the
-  pin in a follow-up, when the number has stopped moving.
+  when a fix four PRs down added lines. That lowering was backed out before
+  merge. Land the shrink first, then lower the pin in a follow-up, when the
+  number has stopped moving.
 
   That is what this pin is mid-way through. #1749 and #1751 each lowered it
   to their own tip's exact length while the #1766/#1767 campaign was in
