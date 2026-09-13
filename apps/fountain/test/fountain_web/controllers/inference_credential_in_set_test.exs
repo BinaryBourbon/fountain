@@ -54,6 +54,32 @@ defmodule FountainWeb.InferenceCredentialInSetTest do
       assert is_nil(value_in(default, :anthropic_api_key))
     end
 
+    test "a set deleted during provider validation returns 404 and does not recreate it", %{
+      conn: conn,
+      key: key,
+      user: user,
+      second: second
+    } do
+      stub(Req, :get, fn _url, _opts ->
+        assert {:ok, _} = InferenceCredentials.delete_set(second)
+        {:ok, %Req.Response{status: 200}}
+      end)
+
+      assert conn
+             |> authed_with_key(key)
+             |> put_json(credential_path(second, "anthropic_api_key"), %{
+               "value" => "sk-after-delete"
+             })
+             |> json_response(404)
+
+      assert InferenceCredentials.get_set(second.id, user.id) == nil
+
+      refute Enum.any?(
+               Fountain.Audit.list_recent_for_user(user.id),
+               &(&1.action == "inference_credential.write")
+             )
+    end
+
     test "never returns the value", %{conn: conn, key: key, second: second} do
       ping_ok()
 
@@ -144,6 +170,65 @@ defmodule FountainWeb.InferenceCredentialInSetTest do
 
       assert is_nil(value_in(second, :anthropic_api_key))
       assert value_in(default, :anthropic_api_key) == "sk-d"
+    end
+
+    test "a clear uses the current credential after its initial set lookup", %{
+      conn: conn,
+      key: key,
+      user: user,
+      second: second
+    } do
+      {:ok, dek} = Crypto.load_tenant_key(user.id)
+
+      expect(Crypto, :load_tenant_key, fn id ->
+        assert id == user.id
+
+        assert {:ok, _} =
+                 InferenceCredentials.put_credential_in(
+                   second,
+                   dek,
+                   :anthropic_api_key,
+                   "interleaved-key"
+                 )
+
+        {:ok, dek}
+      end)
+
+      assert conn
+             |> authed_with_key(key)
+             |> delete(credential_path(second, "anthropic_api_key"))
+             |> response(204)
+
+      assert is_nil(InferenceCredentials.get_set(second.id, user.id).anthropic_api_key_ciphertext)
+
+      assert Enum.any?(
+               Fountain.Audit.list_recent_for_user(user.id),
+               &(&1.action == "inference_credential.delete")
+             )
+    end
+
+    test "a set deleted after the clear lookup returns 404 without a false audit", %{
+      conn: conn,
+      key: key,
+      user: user,
+      second: second
+    } do
+      {:ok, dek} = Crypto.load_tenant_key(user.id)
+
+      expect(Crypto, :load_tenant_key, fn _id ->
+        assert {:ok, _} = InferenceCredentials.delete_set(second)
+        {:ok, dek}
+      end)
+
+      assert conn
+             |> authed_with_key(key)
+             |> delete(credential_path(second, "anthropic_api_key"))
+             |> json_response(404)
+
+      refute Enum.any?(
+               Fountain.Audit.list_recent_for_user(user.id),
+               &(&1.action == "inference_credential.delete")
+             )
     end
 
     test "another tenant's set is 404", %{conn: conn, key: key} do
