@@ -28,6 +28,13 @@ job on macOS reads it straight from the checkout.
 verifier in its own language that reads both files and fails, naming itself and
 the scenario, when the two disagree.
 
+`swift.json` claims the union of operations used by the `Fountain` and
+`FountainKit` products in the `Fountain` Swift package. Its schema and enum
+claims cover the original `Fountain` layer. `FountainKitContractTests` invokes
+the typed client's resource methods through a recording transport and checks
+their requests against the operation claims and the committed API contract.
+Add an inventory case there when adding a typed resource method.
+
 ## Rebuilding
 
 ```bash
