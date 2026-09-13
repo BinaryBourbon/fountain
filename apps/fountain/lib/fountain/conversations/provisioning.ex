@@ -61,7 +61,7 @@ defmodule Fountain.Conversations.Provisioning do
   Written with mode 600, and `chmod 600` again after the write as defense
   in depth — other sandbox users (if any) must not be able to read tokens.
   """
-  def write_env_file(_handle, sprite_env) when sprite_env in [nil, []], do: :ok
+  def write_env_file(handle, nil), do: write_env_file(handle, [])
 
   def write_env_file(handle, sprite_env) do
     body = render_env_file(sprite_env)
