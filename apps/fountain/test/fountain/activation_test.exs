@@ -5,7 +5,7 @@ defmodule Fountain.ActivationTest do
   alias Fountain.Conversations
 
   # One ACP `agent_message_chunk`: the shape a runtime writes assistant text
-  # in, and what `Blocks.assistant_text/2` parses `reply_text` out of.
+  # in, and what `Blocks.assistant_text/1` parses `reply_text` out of.
   defp acp_text(text) do
     Jason.encode!(%{
       "jsonrpc" => "2.0",

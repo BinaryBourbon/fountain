@@ -139,9 +139,9 @@ A team UI wants both. One long-lived connection for the roster, and a read of
 the open thread's feed. `blocks` keeps the second one from a parser of your
 own.
 
-The server folds each runtime's dialect into `text`, `thinking`, `tool_use`,
-`tool_result`, `init`, `result`, `error` and `raw`. So your renderer handles
-eight kinds, and not four vendor formats.
+The server parses ACP events into blocks for text, thinking, tool calls,
+results, errors, and permission requests. Your renderer consumes those blocks
+across every supported runtime.
 
 ## Where the multi-tenancy is
 

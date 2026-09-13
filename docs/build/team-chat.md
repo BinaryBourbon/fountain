@@ -247,11 +247,10 @@ function fold(blocks: Block[]): Part[] {
 Those two functions are the whole transcript renderer. They fit on a screen
 because of `blocks`.
 
-The log feed holds whatever dialect the runtime speaks. That is ACP
-`session/update` notifications for `claude`, `codex` and `opencode`, and plain
-stdout for the rest. `?blocks=true`, which `history()` sets for you, parses
-that on the server into `text`, `thinking`, `tool_use`, `tool_result`, `init`,
-`result`, `error` and `raw`.
+The log feed stores ACP messages from every supported runtime.
+`history()` requests `?blocks=true` to parse ACP events on the server.
+The transcript blocks carry text, tool calls, results, and permission requests. Other streams remain raw event data and produce no blocks.
+Historical vendor stdout formats are no longer parsed.
 
 Before that existed, fountain-team shipped a 200-line port of Fountain's own
 ACP parser. Do not repeat that.

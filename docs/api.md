@@ -312,8 +312,8 @@ interruption, termination, history, images, and event streams.
 
 Use history for a durable transcript and SSE for live delivery. Persist the
 event cursor so a reconnect can resume after the last event processed.
-Request structured blocks to render runtime output; clients should not
-parse each runtime's native dialect.
+Request structured blocks to render ACP output. Historical vendor stdout
+formats are no longer parsed; those events remain available as raw data.
 
 ### Wait for capacity
 

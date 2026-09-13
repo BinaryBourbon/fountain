@@ -2657,15 +2657,11 @@ defmodule Fountain.Conversations do
 
   @doc """
   The assistant's text for `turn`, from its events through the same parse
-  the transcript uses (`Blocks.assistant_text/2`); nil when there is none.
-  Reads the conversation's runtime for the legacy dialects. Without tenant
-  scope: the caller holds the turn.
+  the transcript uses (`Blocks.assistant_text/1`); nil when there is none.
+  Without tenant scope: the caller holds the turn.
   """
   def _unsafe_turn_reply_text(%Turn{} = turn) do
-    runtime =
-      Repo.one(from c in Conversation, where: c.id == ^turn.conversation_id, select: c.runtime)
-
-    case turn.id |> _unsafe_list_turn_log_events() |> Blocks.assistant_text(runtime) do
+    case turn.id |> _unsafe_list_turn_log_events() |> Blocks.assistant_text() do
       "" -> nil
       text -> text
     end
@@ -2948,14 +2944,14 @@ defmodule Fountain.Conversations do
 
   @doc """
   Durable events after a user's cursor, including conversations that have finished.
-  Returns at most 500 rows in id order, with each conversation's runtime for blocks.
+  Returns at most 500 rows in id order.
   """
   def list_user_log_events(user_id, after_id) when is_binary(user_id) do
     user_log_events_query(user_id)
     |> where([e], e.id > ^after_id)
     |> order_by([e], asc: e.id)
     |> limit(500)
-    |> select([e, c], {e, c.runtime})
+    |> select([e], e)
     |> Repo.all()
   end
 
