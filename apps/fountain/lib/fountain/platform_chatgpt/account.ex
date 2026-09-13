@@ -11,6 +11,17 @@ defmodule Fountain.PlatformChatGPT.Account do
   `"workspace_token"` is a static Business/Enterprise access token with no
   refresh token, which lapses on its admin-set expiry.
 
+  Reconnect changes `generation`. Normal refresh retains the generation and
+  increments `lock_version`, as do terminal lifecycle writes. These fields
+  fence stale writes; broker authorization is not yet generation-aware.
+
+  `connect_changeset/2` is the only changeset here, because it is the only
+  write that starts a new lifecycle. Refresh, revocation and expiry are
+  fenced `update_all` statements in `Fountain.PlatformChatGPT`, conditioned
+  on the generation and version the caller read. A changeset for one of them
+  would write on the primary key alone and so would skip the fence, which is
+  why the three that used to exist were removed rather than left unused.
+
   There is no plaintext column and no `_unsafe_` reader: the deployment owns
   this, not a tenant, and the only writers are the admin surface and the
   refresher.
@@ -28,6 +39,8 @@ defmodule Fountain.PlatformChatGPT.Account do
   @type t :: %__MODULE__{}
   schema "platform_chatgpt_account" do
     field :user_id, :binary_id
+    field :generation, Ecto.UUID, autogenerate: true
+    field :lock_version, :integer, default: 1
     field :kind, :string
     field :refresh_token_ciphertext, :binary
     field :access_token_ciphertext, :binary
@@ -65,38 +78,15 @@ defmodule Fountain.PlatformChatGPT.Account do
     ])
     |> put_change(:status, "active")
     |> put_change(:revoked_reason, nil)
+    |> put_change(:generation, Ecto.UUID.generate())
+    |> version_existing()
     |> validate_required([:kind, :access_token_ciphertext, :last_refreshed_at])
     |> validate_inclusion(:kind, @kinds)
     |> unique_constraint(:user_id, name: :platform_chatgpt_account_platform_row)
   end
 
-  @doc "A refresh rotated the tokens; the claims are updated when the response carried an id_token."
-  def refresh_changeset(account, attrs) do
-    account
-    |> cast(attrs, [
-      :refresh_token_ciphertext,
-      :access_token_ciphertext,
-      :id_claims,
-      :account_id,
-      :account_email,
-      :plan_type,
-      :access_expires_at,
-      :last_refreshed_at
-    ])
-    |> validate_required([:access_token_ciphertext, :last_refreshed_at])
-  end
+  defp version_existing(%{data: %{__meta__: %{state: :loaded}}} = changeset),
+    do: optimistic_lock(changeset, :lock_version)
 
-  @doc "The auth server refused the refresh token; the reason is its error code."
-  def revoke_changeset(account, reason) when is_binary(reason) do
-    account
-    |> change(status: "revoked", revoked_reason: reason)
-    |> validate_inclusion(:status, @statuses)
-  end
-
-  @doc "A token with no refresh token lapsed."
-  def expire_changeset(account) do
-    account
-    |> change(status: "expired")
-    |> validate_inclusion(:status, @statuses)
-  end
+  defp version_existing(changeset), do: changeset
 end

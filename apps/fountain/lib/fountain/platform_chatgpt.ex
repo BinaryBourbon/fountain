@@ -117,8 +117,10 @@ defmodule Fountain.PlatformChatGPT do
   # the row goes `expired`.
   defp expire_or_serve(row) do
     if lapsed?(row) do
-      _ = mark_expired(row)
-      {:error, :expired}
+      case mark_expired(row) do
+        :ok -> {:error, :expired}
+        :stale -> current_result(row)
+      end
     else
       decrypt(row.access_token_ciphertext)
     end
@@ -265,13 +267,19 @@ defmodule Fountain.PlatformChatGPT do
   """
   @spec disconnect(keyword()) :: :ok
   def disconnect(opts \\ []) do
-    case platform_row() do
+    {:ok, deleted} =
+      Repo.transaction(fn ->
+        case locked_platform_row() do
+          nil -> nil
+          row -> Repo.delete!(row)
+        end
+      end)
+
+    case deleted do
       nil ->
         :ok
 
       %Account{} = row ->
-        Repo.delete!(row)
-
         Audit.record_admin(%{
           actor_user_id: Keyword.get(opts, :actor_user_id),
           event_type: "admin.platform_chatgpt.disconnected",
@@ -282,11 +290,21 @@ defmodule Fountain.PlatformChatGPT do
     end
   end
 
+  # `locked_platform_row/0` holds `FOR UPDATE` for the whole transaction, so
+  # the optimistic lock in `connect_changeset/2` cannot lose a race; it is
+  # there to advance `lock_version` on a reconnect, not to detect one. Two
+  # concurrent connects onto an empty table meet
+  # `platform_chatgpt_account_platform_row` instead and one is refused.
   defp store(attrs, method, actor_user_id) do
     result =
-      (platform_row() || %Account{})
-      |> Account.connect_changeset(attrs)
-      |> Repo.insert_or_update()
+      Repo.transaction(fn ->
+        case (locked_platform_row() || %Account{})
+             |> Account.connect_changeset(attrs)
+             |> Repo.insert_or_update() do
+          {:ok, account} -> account
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
 
     case result do
       {:ok, account} ->
@@ -341,9 +359,9 @@ defmodule Fountain.PlatformChatGPT do
   # by nothing else: one at a time on this node, no database lock and no
   # connection held across the HTTP round-trip. The row is re-read here
   # because a queued caller may find the refresh already done, and the
-  # write is a compare-and-swap on the refresh token this read started
-  # from, so a node that lost the race to another serves the winner's token
-  # rather than overwriting it.
+  # write checks the generation, version and active state this read started
+  # from. A losing refresher may serve a winner from the same generation,
+  # but cannot overwrite or serve a replacement account.
   def refresh_serialized(mode) do
     case platform_row() do
       nil ->
@@ -376,8 +394,10 @@ defmodule Fountain.PlatformChatGPT do
           swap_in(current, refresh_attrs(fresh), access)
 
         {:error, {:terminal, code}} ->
-          _ = mark_revoked(current, code)
-          {:error, :revoked}
+          case mark_revoked(current, code) do
+            :ok -> {:error, :revoked}
+            :stale -> current_result(current)
+          end
 
         {:error, reason} ->
           Logger.warning(
@@ -389,24 +409,47 @@ defmodule Fountain.PlatformChatGPT do
     end
   end
 
-  # Written only over the refresh token the read started from. Zero rows
-  # means another node rotated first: its tokens are the live ones, and the
-  # chain this node minted is simply never used.
+  # Refresh and terminal writes share a fence. A reconnect may reuse the
+  # same refresh token, and a refresh need not rotate it, so ciphertext alone
+  # is not a lifecycle version. Never serve a replacement generation here:
+  # the caller may already have pinned the old provider account metadata.
   defp swap_in(current, attrs, access) do
     sets = attrs |> Map.put(:updated_at, now()) |> Enum.to_list()
 
     {n, _} =
-      from(a in Account,
-        where:
-          a.id == ^current.id and a.refresh_token_ciphertext == ^current.refresh_token_ciphertext
-      )
-      |> Repo.update_all(set: sets)
+      current_query(current)
+      |> Repo.update_all(set: sets, inc: [lock_version: 1])
 
-    case {n, platform_row()} do
-      {1, _} -> {:ok, access}
-      {0, %Account{status: "active"} = winner} -> decrypt(winner.access_token_ciphertext)
-      {0, %Account{status: status}} -> {:error, String.to_existing_atom(status)}
-      {0, nil} -> {:error, :not_connected}
+    case n do
+      1 -> {:ok, access}
+      0 -> current_result(current)
+    end
+  end
+
+  defp current_query(row) do
+    from(a in Account,
+      where:
+        is_nil(a.user_id) and a.id == ^row.id and a.generation == ^row.generation and
+          a.lock_version == ^row.lock_version and a.status == "active"
+    )
+  end
+
+  defp current_result(previous) do
+    case platform_row() do
+      nil ->
+        {:error, :not_connected}
+
+      %Account{id: id, generation: generation} = current
+      when id == previous.id and generation == previous.generation ->
+        case current.status do
+          "active" -> decrypt(current.access_token_ciphertext)
+          "revoked" -> {:error, :revoked}
+          "expired" -> {:error, :expired}
+          other -> {:error, {:unknown_status, other}}
+        end
+
+      %Account{} ->
+        {:error, :stale_grant}
     end
   end
 
@@ -441,8 +484,22 @@ defmodule Fountain.PlatformChatGPT do
   end
 
   defp mark_revoked(row, code) do
-    result = row |> Account.revoke_changeset(code) |> Repo.update()
+    {count, _} =
+      current_query(row)
+      |> Repo.update_all(
+        set: [status: "revoked", revoked_reason: code, updated_at: now()],
+        inc: [lock_version: 1]
+      )
 
+    if count == 1 do
+      record_revocation(row, code)
+      :ok
+    else
+      :stale
+    end
+  end
+
+  defp record_revocation(row, code) do
     Audit.record_admin(%{
       actor_user_id: nil,
       event_type: "admin.platform_chatgpt.revoked",
@@ -453,23 +510,37 @@ defmodule Fountain.PlatformChatGPT do
       "platform chatgpt: the auth server refused the refresh token (#{code}); " <>
         "codex conversations fall back to PLATFORM_OPENAI_API_KEY. Reconnect at /admin/inference."
     )
-
-    result
   end
 
+  # `:stale` is narrow here in a way it is not on the refresh path: nothing
+  # blocks between the read in `access_token/0` and this write, so only a
+  # reconnect landing inside those microseconds loses the fence. It is still
+  # routed through `current_result/1` rather than assumed away, because
+  # reporting `:expired` for a grant that is now active is the same class of
+  # wrong answer the fence exists to prevent.
   defp mark_expired(row) do
-    result = row |> Account.expire_changeset() |> Repo.update()
+    {count, _} =
+      current_query(row)
+      |> Repo.update_all(set: [status: "expired", updated_at: now()], inc: [lock_version: 1])
 
-    Audit.record_admin(%{
-      actor_user_id: nil,
-      event_type: "admin.platform_chatgpt.expired",
-      metadata: %{"actor" => @system_actor, "kind" => row.kind, "account_id" => row.account_id}
-    })
+    if count == 1 do
+      Audit.record_admin(%{
+        actor_user_id: nil,
+        event_type: "admin.platform_chatgpt.expired",
+        metadata: %{"actor" => @system_actor, "kind" => row.kind, "account_id" => row.account_id}
+      })
 
-    result
+      :ok
+    else
+      :stale
+    end
   end
 
   # ── helpers ──────────────────────────────────────────────────────────────
+
+  defp locked_platform_row do
+    Repo.one(from(a in Account, where: is_nil(a.user_id), lock: "FOR UPDATE"))
+  end
 
   defp platform_row(preload \\ []) do
     from(a in Account, where: is_nil(a.user_id))
