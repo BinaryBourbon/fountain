@@ -139,7 +139,7 @@ A team UI wants both. One long-lived connection for the roster, and a read of
 the open thread's feed. `blocks` keeps the second one from a parser of your
 own.
 
-The server parses ACP events into blocks for text, thinking, tool calls,
+The server parses ACP events into blocks for text, thoughts, tool calls,
 results, errors, and permission requests. Your renderer consumes those blocks
 across every supported runtime.
 
