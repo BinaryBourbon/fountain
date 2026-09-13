@@ -5851,21 +5851,21 @@ defmodule Fountain.Conversations do
             {env_id, vault_id} == identity
           end)
 
-        follow_cotenants(Enum.map(following, &elem(&1, 0)), new_sandbox.id)
-        strand_cotenants(Enum.map(on_their_own, &elem(&1, 0)))
+        follow_cotenants(Enum.map(following, &elem(&1, 0)), old_sandbox_id, new_sandbox.id)
+        strand_cotenants(Enum.map(on_their_own, &elem(&1, 0)), old_sandbox_id)
         :ok
     end
   end
 
-  defp follow_cotenants([], _new_sandbox_id), do: :ok
+  defp follow_cotenants([], _old_sandbox_id, _new_sandbox_id), do: :ok
 
-  defp follow_cotenants(ids, new_sandbox_id) do
+  defp follow_cotenants(ids, old_sandbox_id, new_sandbox_id) do
     message =
       "The sandbox this conversation was on is gone; it moved to a fresh one together " <>
         "with the conversations that shared it. The transcript is kept, but the agent " <>
         "starts a new session and will not remember the earlier turns."
 
-    tell_cotenants(ids, "replaced", message)
+    tell_cotenants(ids, old_sandbox_id, "replaced", message)
 
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
@@ -5883,16 +5883,16 @@ defmodule Fountain.Conversations do
     end)
   end
 
-  defp strand_cotenants([]), do: :ok
+  defp strand_cotenants([], _old_sandbox_id), do: :ok
 
-  defp strand_cotenants(ids) do
+  defp strand_cotenants(ids, old_sandbox_id) do
     message =
       "The sandbox this conversation was on is gone. It named a different environment " <>
         "or vault from the conversation that replaced the machine, so it did not follow " <>
         "onto that one; its next prompt builds a machine from what it declares. The " <>
         "transcript is kept, and the agent starts a new session."
 
-    tell_cotenants(ids, "reset", message)
+    tell_cotenants(ids, old_sandbox_id, "reset", message)
 
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
@@ -5912,11 +5912,11 @@ defmodule Fountain.Conversations do
     end)
   end
 
-  defp tell_cotenants(ids, event, message) do
+  defp tell_cotenants(ids, sandbox_id, event, message) do
     Enum.each(ids, fn id ->
       case ConversationServer.whereis(id) do
         nil -> :ok
-        pid -> GenServer.cast(pid, {:machine_gone, event, "sprite_gone", message})
+        pid -> GenServer.cast(pid, {:machine_gone, sandbox_id, event, "sprite_gone", message})
       end
     end)
   end
