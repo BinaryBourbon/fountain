@@ -71,15 +71,7 @@ defmodule Fountain.Umbrella.MixProject do
   defp deps do
     [
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      # Pinned to master: 1.4.7 (the latest hex release) does not know OTP 28's
-      # :exact_compare warning class and its formatter crashes on it. This ref
-      # is the commit that added OTP 28 support (jeremyjh/dialyxir#591) — drop
-      # back to a hex requirement at the first release that includes it.
-      {:dialyxir,
-       github: "jeremyjh/dialyxir",
-       ref: "3553678f4d69281ac6db61034bcf35bcb30cfd78",
-       only: [:dev, :test],
-       runtime: false}
+      {:dialyxir, "~> 1.4.8", only: [:dev, :test], runtime: false}
     ]
   end
 
