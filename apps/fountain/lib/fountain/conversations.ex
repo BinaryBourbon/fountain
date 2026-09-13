@@ -2205,11 +2205,9 @@ defmodule Fountain.Conversations do
   @doc """
   Update a turn's row. When the update ends the turn — its status becomes
   `completed`, `failed` or `interrupted` — the assistant's text for the
-  turn is materialised into `reply_text` in the same write (#826): every
-  turn ending goes through here, from the ConversationServer's six endings
-  to the orphan sweep, so search coverage is by construction rather than
-  by each ending remembering. A turn that already carries a `reply_text`
-  keeps it.
+  turn is materialised into `reply_text` in the same write (#826). Conditional
+  completion and orphan reconciliation also materialize the reply in their
+  transactions. A turn that already carries a `reply_text` keeps it.
 
   The same write is where activation is decided (ADR 0038): a turn that ends
   carrying a reply is handed to `Fountain.Activation.turn_replied/1`, which
@@ -2238,6 +2236,81 @@ defmodule Fountain.Conversations do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  @doc """
+  Complete a running turn only on the actor's current sandbox binding.
+
+  Lock the conversation before the turn, and commit its idle status with the
+  turn's result. A moved or terminal conversation, or a turn already ended by
+  another actor, is a no-op. Reply materialization shares that transaction;
+  activation and sidebar publication run after it commits.
+
+  The parent only idles under the two conditions `_unsafe_idle_after_turn/1`
+  idled under: `ExecutionGuard.latest_turn?/2` and a `running` parent. The
+  journal's own condition is not carried here — see the known gap on
+  `Fountain.Conversations.TurnMachine.finish/4`.
+
+  `"interrupted"` is a terminal status this writer accepts, because a bounded
+  turn that its journal retires comes back through the same ending
+  (`BoundedTurn.retire/2` hands `finish/4` the persisted status, ADR 0046).
+  The two-phase interrupt the server drives itself is a different write, and
+  it keeps the conversation running until the peer has stopped.
+  """
+  def _unsafe_complete_turn(%Turn{} = turn, sandbox_id, status)
+      when status in ["completed", "failed", "interrupted"] do
+    {:ok, result} =
+      Repo.transaction(fn ->
+        conversation_query =
+          from(c in Conversation, where: c.id == ^turn.conversation_id, lock: "FOR UPDATE")
+
+        turn_query =
+          from(t in Turn,
+            where: t.id == ^turn.id and t.conversation_id == ^turn.conversation_id,
+            lock: "FOR UPDATE"
+          )
+
+        with %Conversation{} = conv <- Repo.one(conversation_query),
+             true <- conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"],
+             %Turn{status: "running"} = current <- Repo.one(turn_query) do
+          changeset =
+            current
+            |> Turn.changeset(%{
+              status: status,
+              ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
+            |> maybe_put_reply_text(current)
+
+          updated = Repo.update!(changeset)
+
+          # The two preconditions `_unsafe_idle_after_turn/1` idled under, kept
+          # exactly (`ExecutionGuard.parent_write_allowed?/4`, mode `:idle`):
+          # this turn is the conversation's newest generation, and the parent
+          # is `running`. A successor admitted while this actor was ending its
+          # turn therefore keeps the conversation running, and an abandoned
+          # older turn cannot stop this one from idling it. The parent lock
+          # above is the same one turn admission takes, so nothing can be
+          # admitted between this read and the write.
+          conv =
+            if conv.status == "running" and ExecutionGuard.latest_turn?(conv.id, turn.id),
+              do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+              else: conv
+
+          {updated, conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
+        else
+          _ -> :noop
+        end
+      end)
+
+    case result do
+      :noop ->
+        :noop
+
+      {updated, conv, reply_materialized?} ->
+        if reply_materialized?, do: Fountain.Activation.turn_replied(updated)
+        broadcast_sidebar_update(conv.user_id)
+        {:ok, updated}
     end
   end
 

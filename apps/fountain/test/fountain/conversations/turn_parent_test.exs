@@ -28,7 +28,8 @@ defmodule Fountain.Conversations.TurnParentTest do
     %{conv: conv, turn: turn, execution: execution, sandbox: sandbox}
   end
 
-  defp machine(c), do: %TurnMachine{conversation_id: c.conv.id, row: c.turn}
+  defp machine(c),
+    do: %TurnMachine{conversation_id: c.conv.id, sandbox_id: c.conv.sandbox_id, row: c.turn}
 
   defp actor(c),
     do: %{
@@ -51,12 +52,52 @@ defmodule Fountain.Conversations.TurnParentTest do
     {next, execution}
   end
 
-  test "stale completion cannot idle a successor admitted after cancellation", c do
+  # Named for the mechanism that actually refuses this write. `successor/1`
+  # cancels before it admits, so the stale actor's turn is already
+  # `interrupted` when its completion lands and the writer refuses on the
+  # turn's own status, before any parent decision is reached. The refusal that
+  # depends on the successor existing is the `latest_turn?` pair below.
+  test "a completion whose turn another actor already ended writes nothing", c do
     {next, execution} = successor(c)
+    assert Repo.get!(Turn, c.turn.id).status == "interrupted"
+
     TurnMachine.finish(machine(c), "completed", %{}, %{})
+
+    assert Repo.get!(Turn, c.turn.id).status == "interrupted"
     assert Repo.get!(Conversation, c.conv.id).status == "running"
     assert Repo.get!(Turn, next.id).status == "running"
     assert Repo.get!(TurnExecution, execution.id).state == "active"
+  end
+
+  test "a superseded turn cannot idle the parent once its successor has ended too", c do
+    insert_turn(c.conv,
+      status: "completed",
+      ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    )
+
+    TurnMachine.finish(machine(c), "completed", %{}, %{})
+
+    assert Repo.get!(Turn, c.turn.id).status == "completed"
+    assert Repo.get!(Conversation, c.conv.id).status == "running"
+  end
+
+  test "an abandoned older turn cannot stop the newest one idling the parent", c do
+    newest = insert_turn(c.conv, status: "running")
+
+    TurnMachine.finish(%{machine(c) | row: newest}, "completed", %{}, %{})
+
+    assert Repo.get!(Turn, c.turn.id).status == "running"
+    assert Repo.get!(Turn, newest.id).status == "completed"
+    assert Repo.get!(Conversation, c.conv.id).status == "idle"
+  end
+
+  test "a completion cannot idle a parent that is not running", c do
+    c.conv |> Ecto.Changeset.change(status: "pending") |> Repo.update!()
+
+    TurnMachine.finish(machine(c), "completed", %{}, %{})
+
+    assert Repo.get!(Turn, c.turn.id).status == "completed"
+    assert Repo.get!(Conversation, c.conv.id).status == "pending"
   end
 
   test "the interrupt's delayed second half cannot idle a successor", c do

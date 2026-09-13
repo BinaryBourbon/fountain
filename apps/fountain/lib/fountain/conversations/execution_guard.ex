@@ -429,7 +429,19 @@ defmodule Fountain.Conversations.ExecutionGuard do
     {decision.turn, changed, event}
   end
 
-  defp latest_turn?(conv_id, turn_id) do
+  @doc """
+  Is this turn the conversation's newest generation?
+
+  The predicate every parent write is gated on: a turn that is not the highest
+  `turn_number` on its conversation has been superseded, so its ending says
+  nothing about whether the conversation is still working. It is deliberately
+  ordered on `turn_number` rather than asking whether some other turn is
+  `running` — an abandoned older turn left `running` must not stop the current
+  generation from idling its parent, and a superseded turn must not idle it
+  even when nothing else is running. Callers hold the parent lock, so admission
+  cannot land between this read and the write it guards.
+  """
+  def latest_turn?(conv_id, turn_id) do
     Repo.one(
       from t in Turn,
         where: t.conversation_id == ^conv_id,
