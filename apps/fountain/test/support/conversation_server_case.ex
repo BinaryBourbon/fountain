@@ -33,11 +33,8 @@ defmodule Fountain.ConversationServerCase do
       # async ones have finished.
       setup :set_mimic_global
 
-      # The server also needs to reach the sandbox from its own process.
-      setup do
-        Ecto.Adapters.SQL.Sandbox.mode(Fountain.Repo, {:shared, self()})
-        :ok
-      end
+      # DataCase shares the connection through a separate owner that survives
+      # until on_exit. Keep that owner while ExUnit stops supervised servers.
     end
   end
 
@@ -118,8 +115,9 @@ defmodule Fountain.ConversationServerCase do
   @doc """
   Start a real ConversationServer for `conv` and wait for it to settle.
 
-  Started outside Horde and unlinked, so a server that legitimately stops —
-  which the failure paths do — doesn't take the test process with it.
+  Started outside Horde under ExUnit's supervisor, so a server that legitimately
+  stops doesn't take the test process with it. ExUnit stops any surviving server
+  before DataCase releases the SQL Sandbox owner, including on a failed test.
   """
   def start_server(conv, opts \\ []) do
     runtime = Keyword.get(opts, :runtime, Managoat.Runtimes.Testing.FakeRuntime)
@@ -131,7 +129,13 @@ defmodule Fountain.ConversationServerCase do
       runtime_module: runtime
     ]
 
-    {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
+    pid =
+      ExUnit.Callbacks.start_supervised!(%{
+        id: make_ref(),
+        start: {GenServer, :start_link, [Fountain.Conversations.ConversationServer, args]},
+        restart: :temporary
+      })
+
     ref = Process.monitor(pid)
 
     # The prompt is delivered out of band, exactly as production does it: it is
@@ -153,10 +157,12 @@ defmodule Fountain.ConversationServerCase do
     end
 
     # handle_continue(:provision) runs before any call is answered, so a
-    # synchronous call is enough to know provisioning has finished.
+    # synchronous call is enough to know provisioning has finished. Let ExUnit's
+    # test timeout bound a hung provision: the default five-second system-call
+    # timeout mislabeled a slow, live server as :stopped (#1702).
     settled =
       try do
-        _ = :sys.get_state(pid)
+        _ = :sys.get_state(pid, :infinity)
         :alive
       catch
         :exit, _ -> :stopped

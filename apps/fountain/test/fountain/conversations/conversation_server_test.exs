@@ -51,6 +51,28 @@ defmodule Fountain.Conversations.ConversationServerTest do
   end
 
   describe "provisioning — happy path" do
+    test "a provision outlasting the system-call timeout is still alive", %{conv: conv} do
+      handle = stub_happy_sprite()
+
+      Mimic.stub(Managoat.Sandbox.Sprites, :create, fn _name, _opts ->
+        # Deliberately cross :sys.get_state/1's five-second timeout. This
+        # reproduces #1702 without relying on scheduler load to delay startup.
+        Process.send_after(self(), :finish_create, 5_100)
+        receive do: (:finish_create -> {:ok, handle})
+      end)
+
+      {pid, _ref, settled} = start_server(conv)
+
+      try do
+        assert settled == :alive
+        assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"
+      after
+        # Also drain the old helper's timed-out, still-provisioning server when
+        # running this regression against the parent commit.
+        GenServer.stop(pid, :normal, :infinity)
+      end
+    end
+
     test "drives the sandbox to ready", %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()
 
@@ -1216,6 +1238,20 @@ defmodule Fountain.Conversations.ConversationServerTest do
   end
 
   describe "teardown" do
+    test "the harness stops a surviving server before releasing its database owner", %{conv: conv} do
+      stub_happy_sprite()
+      {pid, _ref, :alive} = start_server(conv)
+      key_id = Conversations._unsafe_get_conversation!(conv.id).callback_api_key_id
+      refute Repo.get!(Accounts.ApiKey, key_id).revoked_at
+
+      # ExUnit stops supervised children before on_exit callbacks; DataCase's
+      # separate owner stays alive until its later callback releases the DB.
+      on_exit(fn ->
+        refute Process.alive?(pid)
+        assert Repo.get!(Accounts.ApiKey, key_id).revoked_at
+      end)
+    end
+
     test "revokes the sprite's callback key when the server stops", %{conv: conv} do
       stub_happy_sprite()
 
