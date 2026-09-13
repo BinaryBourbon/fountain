@@ -86,6 +86,33 @@ account.
 
 Each refusal is a `403` with `"reason": "insufficient_scope"`.
 
+## Set its inference credential
+
+Use the current owner's full-scope key to write a provider credential to the
+principal's default set. Before claim, the application account owns this
+operation. After claim, only the claiming account owns it; the original
+application loses credential-write access.
+
+```bash
+curl -sX PUT https://your-fountain/api/claimable-users/0f1e…/inference-credentials/openai_api_key \
+  -H "Authorization: Bearer $CURRENT_OWNER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"value": "provider-key"}'
+```
+
+Use `DELETE` on the same path to clear that provider. Both return `204` on
+success. The path names the grant's `id`, not its `principal_id`. Provider
+names are `anthropic_api_key`, `claude_code_oauth_token`, `openai_api_key` and
+`gemini_api_key`. Fountain stores the value under the principal's own tenant
+key and records the acting account in the principal's audit trail. These
+routes do not ping the provider; validate credentials where your app collects
+them.
+
+An unclaimed grant must still be before `expires_at`. Once claimed, its
+original anonymous expiry no longer limits these writes. Expired or released
+grants refuse writes, and an unrelated account receives `404`. The
+`principal`-scoped key itself cannot use these routes and receives `403`.
+
 ## Claim it
 
 The visitor makes an account, or signs in to one they already have. Your app

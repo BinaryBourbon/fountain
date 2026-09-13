@@ -84,7 +84,9 @@ The merge happens once, at spawn. Edit either one afterwards and the edit does
 not reach a sandbox that already runs. A brokered secret is the exception.
 Before each turn, Fountain reads the environment and the vault again and
 gives the broker the new value. A rotated `GITHUB_TOKEN` in a vault works on
-the next turn of a conversation that already runs. The section
+the next turn of a conversation that already runs. Inference credentials
+have a separate source binding: replacing the selected value requires a new
+selection before another turn, even when that value came from a vault. The section
 [Bindings, when the broker is on](#bindings-when-the-broker-is-on) says which
 secrets the broker holds.
 
@@ -111,13 +113,92 @@ The proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, their lower case twins and
 `NO_PROXY`) always win in the environment an agent runs in. The broker is
 where Fountain attaches credentials to egress and makes a record of it.
 
-The four proxy URL names have one exception, and it is in `/home/sprite/.env`
-only. The broker's value for those four carries the conversation's session
-token, so Fountain keeps it out of that shared file. Your `env_vars` entry is
-then the only assignment left in the file. A `setup_script` that does
-`source .env` picks it up for the rest of that script. This does not open a
-path out. A brokered sandbox can reach the broker host and no other, so a
-different proxy name there costs you your own egress.
+Fountain keeps the four proxy URL names out of `/home/sprite/.env` because
+the broker address contains a conversation's session token. This filter
+applies to every assignment with one of those names, including your own
+`env_vars` or secrets. The process still receives the broker's proxy values.
+
+Inference auth inputs also stay out of that shared file. This includes
+`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`,
+`GEMINI_API_KEY` and OpenCode's Google alias,
+`GOOGLE_GENERATIVE_AI_API_KEY`. The rule applies whether a value comes from a
+credential set, the platform, an environment or a vault. The reserved managed
+name `CODEX_CHATGPT_ACCESS_TOKEN` is filtered too, including when its value is
+a broker placeholder.
+
+Fountain passes auth inputs to each process through its environment. The
+`setup_script` receives them too. A later shell cannot recover these values
+with `source .env`; use the environment inherited by the script. Filtering
+this file does not isolate processes from each other or remove runtime-owned
+auth files such as Codex's `auth.json`.
+
+## Credential sets
+
+Your provider keys live in a **credential set**. An account can have no sets
+until it creates one or writes its first provider credential. A write through
+the original default-credential route creates a set called Default when none
+exists. If you create a named set first, that becomes the default instead.
+Existing credential rows become Default sets on upgrade.
+
+A set holds up to four values: an Anthropic key, a Claude OAuth token, an
+OpenAI key and a Gemini key. Most accounts never need a second set.
+
+Make a second set when you hold a second subscription. A set carries a name
+you choose. Exactly one set is the default, and the default is what Fountain
+reads unless something names another.
+
+Three rules follow from that.
+
+- The first set you have is the default.
+- You cannot delete the default. Promote another set first.
+- You cannot demote a set. Promote a different one instead.
+
+An agent names the set its conversations run on. Leave it unset and the agent
+runs on the default. A launch can name a different set, and the agent's
+`allowed_inference_credential_ids` scopes which one. That list works like
+`allowed_vault_ids`: `null` allows any set the account owns, `[]` forbids a
+different set, and a list of IDs is an allowlist. The agent's own selection
+remains allowed.
+
+A tenant environment or vault secret can override a static credential of the
+same kind. Vault wins over environment; supported aliases resolve to the
+same kind. Conflicting alias values within one layer are refused. The
+runtime then selects the kind it supports: Claude prefers its OAuth token,
+while OpenCode's Anthropic provider uses an API key. Billing follows the
+resolved source. Managed ChatGPT inputs remain reserved, including static
+tokens on the managed path.
+
+Each conversation binds its resolved source, revision, selected set, model,
+runtime, environment and vault. Each turn records the source that served it.
+A changed default applies to new selections. Wake and resume check the bound
+source; a replaced, deleted or unusable source is refused rather than silently
+replaced with a different set or platform key. Start a new conversation with
+an eligible selection when the existing binding can no longer be used.
+
+An explicit configuration reapply can change the model, environment or vault
+while retaining the same credential identity and revision. The configuration
+and binding update together; earlier turns keep their recorded sources.
+A reapply that would change the credential is refused before either changes.
+
+For a credential supplied through plain environment `env_vars`, the revision
+covers the whole map. Any edit to that map invalidates the bound source,
+including a change to an unrelated variable. Secret rows have individual
+revisions, so this broader check applies only to plain `env_vars`.
+
+The set is not part of sandbox identity, so choosing another set does not
+itself create another workspace. This is not unrestricted sharing. Codex
+currently shares a mutable auth directory, so admission binds that machine to
+one source identity and revision before auth preparation. The binding lasts
+for the sandbox's lifetime, including after all its conversations terminate
+or are deleted. A different Codex source needs a new sandbox; resetting an
+existing sandbox does not clear this binding. An existing machine without a
+provable source binding must also be replaced before it can use a new source.
+Separate per-peer Codex auth directories and managed user ChatGPT execution
+remain unbuilt. Use separate principals when different customers need
+isolation.
+
+Set the whole thing up at `/account/inference-credentials`, or over the API
+under `/api/account/inference-credential-sets`.
 
 ## Hop 4: substitution, then the process
 
@@ -140,8 +221,9 @@ each attempt. The alternative is a config you fix one name at a time.
 
 ## What the chain does not do
 
-**No rotation.** Nothing expires a value, and nothing tells an agent that a
-value went stale.
+**No automatic static-key rotation.** Fountain does not replace provider keys
+for you. A source check can refuse a changed inference credential, but it does
+not renew that credential with its provider.
 
 **No revocation of a live process.** Remove a vault from an agent's allowlist,
 and no later conversation can attach it. A sandbox that already runs keeps what

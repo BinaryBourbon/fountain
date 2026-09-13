@@ -1,20 +1,55 @@
 ---
 type: ADR
 title: "An account holds several inference credential sets"
-description: "Proposed, none built: inference_credentials becomes one row per named set, an agent names its default and a launch may override it, selection returns a source identity, and a tenant secret shadowing a static credential resolves that source instead of silently overriding it."
+description: "Proposed; the #2018 stack implements named sets, source resolution and durable bindings, process-only inputs, and current-owner principal writes. Codex uses an interim machine-lifetime source binding; per-peer auth isolation and managed user execution remain unbuilt."
 tags: [inference, billing, security, conversations, accounts]
 status: draft
 adr: "0053"
 adr_status: "Proposed"
 date: 2026-09-12
-generated: { by: human:jhgaylor, at: 2026-09-12T00:00:00-04:00 }
+generated: { by: "process:codex", at: 2026-09-13T05:33:12-04:00 }
 stale_after: 2026-10-12
 ---
 
 # 0053 — An account holds several inference credential sets
 
-**Status:** Proposed; none of the behavior below is built. Checked against
-`main` at `653af872` on 2026-09-12. Tracker #2018.
+**Status:** Proposed. Implementation inventory for the #2018 PR stack on
+2026-09-13; this is not acceptance of the ADR or evidence of deployment.
+
+The stack implements named/default credential rows, agent selection and
+launch allowlists, account API/OpenAPI and console management, and
+current-owner principal credential writes. Its resolver identifies static
+set or environment/vault credentials, including runtime aliases, and carries
+the selected source into admission, provisioning and billing. Conversations
+persist source identity/revision and the selected set, model, runtime,
+environment and vault; turns snapshot the binding. Wake and resume validate
+that binding instead of silently selecting today's default. Replaced,
+deleted or unusable explicit sources are refused.
+
+Process-only inference inputs include environment/vault overrides and runtime
+aliases. Existing-file cleanup is part of the binding repair. Codex uses an
+interim atomic machine binding before auth preparation. The sandbox retains
+its Codex source identity/revision after conversation termination or deletion;
+a different source requires a new sandbox. There is no proven reset path
+that clears this binding. Existing machines without a provable binding are
+not eligible for a new source. Separate per-peer auth directories required
+by decision 6 remain unbuilt. This guard restricts admission while mutable
+auth state remains shared.
+
+Plain `env_vars` sources currently use the environment's whole-map revision,
+so an unrelated plain-variable edit conservatively invalidates that source.
+Before multi-source admission is enabled, every serving node must use the
+new source-before-row mutation lock order. Migration triggers preserve the
+revision checks but cannot make older writers' lock ordering safe. This is a
+rollout constraint, not evidence that a mixed-version fleet is compatible.
+
+The managed execution and user-linking work in ADR 0052 remains unbuilt:
+durable broker authorization, issuance/update fences, legacy connection
+drain, protected activation, user subscription selection and acceptance
+across link/turn/refresh/restart/disconnect are not completed by this stack.
+The requirements and release checks below still apply. A successful source
+review or test run does not establish rollout, cleanup of a deployed fleet,
+or managed-path activation.
 
 Extends [0008](0008-byo-inference-credentials.md) (one credential row per
 tenant) and [0038](0038-onboarding-first-reply.md) decision 3 (platform keys
@@ -96,6 +131,24 @@ broker's implicit binding to the provider host still attaches. ADR 0052
 decision 6 has already set the direction that managed credential material is
 not ordinary configuration, and a set is the static half of the same idea.
 
+Three rules follow from "exactly one default", and each of them is a refusal
+rather than a silent correction:
+
+- **The first set an account gets is its default**, whoever asked for it. An
+  account with no default is an account nothing can read a credential for.
+- **The default cannot be deleted.** Promote another first. For an account
+  with one set there is nothing to promote and the set stays.
+- **A set cannot be demoted**, only replaced. There is no state the partial
+  index can hold for "no default", so an API asked for one is refused rather
+  than ignored: a client that believes it demoted a set should find out at
+  the call, not at the next conversation.
+
+"Has this account connected a provider at all" — the onboarding step and the
+dashboard — asks **every** set. An account whose only key lives in a set they
+made for one agent has connected one, and putting the nag back in front of
+them would be wrong. Everything else that reads without being told which set
+reads the default.
+
 ### 2. Selection returns a source, not an atom
 
 `select/4` returns `{:ok, %InferenceCredentials.Source{}, creds}` instead of
@@ -104,7 +157,8 @@ not ordinary configuration, and a set is the static half of the same idea.
 and `scope`, which says where the value came from: `:credential` an
 `inference_credentials` row, `:tenant_secret` an environment or vault secret
 (decision 5), `:platform` a platform key or the deployment's ChatGPT grant,
-`:none` a provider that needs no credential. It threads through
+`:none` a provider that needs no credential, `:missing` a provider that needs
+one where neither the tenant nor the deployment has it. It threads through
 `SpriteEnv.select_inference/3`, `ConversationServer` state and the
 `TurnMachine` context, and the usage stamp is derived from it rather than
 from a bare atom.
