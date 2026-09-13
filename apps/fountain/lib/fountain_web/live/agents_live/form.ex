@@ -21,9 +21,12 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:user_id, user_id)
      |> assign(
        :missing_credential,
-       InferenceCredentials.missing_for_model(user_id, credential_model(agent))
+       InferenceCredentials.missing_for_model(user_id, credential_model(agent),
+         credential_set_id: agent.inference_credential_id
+       )
      )
      |> assign(:credential_message, nil)
+     |> assign(:credential_sets, InferenceCredentials.list_sets(user_id))
      |> assign(:envs, envs)
      |> assign(:sandbox_providers, Fountain.SandboxProviders.enabled_providers())
      |> assign(:action, action)
@@ -64,6 +67,7 @@ defmodule FountainWeb.AgentsLive.Form do
       "sandbox_provider" => a.sandbox_provider || "",
       "sandbox_mode" => a.sandbox_mode || "ephemeral",
       "environment_id" => a.environment_id || "",
+      "inference_credential_id" => a.inference_credential_id || "",
       "permission_default" => Permissions.verdict_for(a.permission_policy, nil),
       "permission_kinds" => permission_kind_form(a.permission_policy)
     }
@@ -237,6 +241,13 @@ defmodule FountainWeb.AgentsLive.Form do
     end
   end
 
+  defp selected_credential_id(form) do
+    case form["inference_credential_id"] do
+      id when id in [nil, ""] -> nil
+      id -> id
+    end
+  end
+
   @impl true
   def handle_event("validate", %{"agent" => params}, socket) do
     skills = extract_skills_from_params(params, socket.assigns.skills)
@@ -253,7 +264,10 @@ defmodule FountainWeb.AgentsLive.Form do
        # clear the card in the same render, and the box may still hold the
        # value it had a moment ago (#1634).
        if(model_required?(params["runtime"]),
-         do: InferenceCredentials.missing_for_model(socket.assigns.user_id, params["model"]),
+         do:
+           InferenceCredentials.missing_for_model(socket.assigns.user_id, params["model"],
+             credential_set_id: selected_credential_id(params)
+           ),
          else: nil
        )
      )}
@@ -265,7 +279,12 @@ defmodule FountainWeb.AgentsLive.Form do
   def handle_event("save_credential", %{"provider" => provider_str, "value" => value}, socket) do
     provider = String.to_existing_atom(provider_str)
 
-    case FountainWeb.InferenceCredentialSave.save(socket, provider, value) do
+    case FountainWeb.InferenceCredentialSave.save(
+           socket,
+           provider,
+           value,
+           selected_credential_id(socket.assigns.form)
+         ) do
       {:ok, msg} ->
         {:noreply,
          socket
@@ -274,7 +293,8 @@ defmodule FountainWeb.AgentsLive.Form do
            :missing_credential,
            InferenceCredentials.missing_for_model(
              socket.assigns.user_id,
-             socket.assigns.form["model"]
+             socket.assigns.form["model"],
+             credential_set_id: selected_credential_id(socket.assigns.form)
            )
          )}
 
@@ -437,6 +457,7 @@ defmodule FountainWeb.AgentsLive.Form do
         |> Map.put("user_id", socket.assigns.user_id)
         |> Map.put("runtime_command", runtime_command_param(params))
         |> nil_if_blank("environment_id")
+        |> nil_if_blank("inference_credential_id")
         |> nil_if_blank("sandbox_provider")
         |> nil_if_blank("runtime_command")
         # Blank means "no model", which is a legal state on the acp runtime
@@ -880,6 +901,34 @@ defmodule FountainWeb.AgentsLive.Form do
             env_id={@form["environment_id"]}
             envs={@envs}
           />
+        </div>
+
+        <input
+          :if={length(@credential_sets) <= 1}
+          type="hidden"
+          name="agent[inference_credential_id]"
+          value={@form["inference_credential_id"]}
+        />
+        <div :if={length(@credential_sets) > 1} class="space-y-1">
+          <label class="block text-sm font-medium text-zinc-700">Inference credentials</label>
+          <select
+            name="agent[inference_credential_id]"
+            class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">— account default —</option>
+            <option
+              :for={set <- @credential_sets}
+              value={set.id}
+              selected={@form["inference_credential_id"] == set.id}
+            >
+              {set.name}
+            </option>
+          </select>
+          <p class="text-xs text-zinc-500">
+            Which of your provider keys this agent's conversations run on. Leave it on the
+            account default unless you keep more than one subscription. A launch can name a
+            different set; the allowlist that bounds which one is on the API.
+          </p>
         </div>
 
         <%!-- Permissions (#939): what answers before the agent runs a tool. --%>
