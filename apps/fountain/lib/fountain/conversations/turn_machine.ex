@@ -732,9 +732,9 @@ defmodule Fountain.Conversations.TurnMachine do
   closing it writes nothing.
 
   This half leaves the parent `running` on purpose, so the peer stops under a
-  conversation that still says it is working. Nothing but the second half can
-  clear that, because a retired turn is invisible to every recovery sweep, so
-  the second half rechecks the generation rather than this actor's binding
+  conversation that still says it is working. Turn recovery skips retired
+  turns, so this pair must finish its own parent cleanup. The second half
+  rechecks the generation rather than this actor's binding
   (`Conversations._unsafe_idle_interrupted_turn/1`). A successor admitted
   while the peer was stopping is what keeps the conversation running.
   """
@@ -768,8 +768,8 @@ defmodule Fountain.Conversations.TurnMachine do
       emit_completed(turn, "interrupted")
       # Ownership: mark_interrupted verified this actor's binding and retired
       # the turn under it. This half releases the parent that half left
-      # running, and is the only writer that can — see its docstring for why
-      # it rechecks the generation rather than the binding.
+      # running. See its docstring for the caller requirement and why it
+      # rechecks the generation rather than the binding.
       Conversations._unsafe_idle_interrupted_turn(turn.row)
     end
 

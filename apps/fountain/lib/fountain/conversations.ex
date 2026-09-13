@@ -2334,57 +2334,43 @@ defmodule Fountain.Conversations do
   @doc """
   Release the conversation `TurnMachine.mark_interrupted/1` left running.
 
-  The second half of the two-phase interrupt. The first half retired the turn
-  and deliberately left the parent `running` so the peer could stop under it,
-  which makes this the **only** writer that will ever idle it: a turn that is
-  no longer `running` is invisible to `AutonomousTurnReaper.sweep_stuck_turns/0`,
-  and `ExecutionGuard._unsafe_recover_turn/3` returns `:noop` for one, so the
-  recovery backstop every other fence in #1767 leans on does not cover this
-  state. Refusing to write here is therefore not "leave it to the next
-  writer"; it is a conversation left `running` with nothing running under it,
-  and no sweep that will ever notice.
+  Caller requirement: call only from `TurnMachine.close_interrupted/1` after
+  its matching `mark_interrupted/1` successfully retired the turn. The public
+  `_unsafe_` helper does not enforce this requirement for another caller.
 
-  That is the whole harm, and it is worth being exact about its edges, because
-  two larger claims about it are false. `_unsafe_sandbox_busy_elsewhere?/4`
-  does **not** read the parent's status — it queries co-tenant `turns` rows and
-  conversation `updated_at` — so a stuck parent does not by itself hold a
-  shared machine to `SANDBOX_MAX_LIFETIME_HOURS`. And the obvious producer,
-  `follow_cotenants/2`, largely rescues itself: it casts `:machine_gone`
-  *before* its `update_all`, and `MachineEvents.gone/4` idles a `running`
-  parent unconditionally. The state is still reachable — a cross-pod co-tenant
-  that Horde's `whereis` misses gets the rebind and no cast — but that is a
-  narrower window than "any sprite replacement".
+  The binding check belongs to that successful mark: `_unsafe_interrupt_turn/2`
+  checks the actor's sandbox binding under the parent lock, and only success
+  sets `interrupted?`. `close_interrupted/1` calls this helper only when that
+  flag is true. Neither `from_state/1` nor `into_state/2` carries the flag, so
+  it cannot survive a mailbox round-trip. `ConversationServer.interrupt_turn/1`
+  runs both halves synchronously, separated only by `stop_acp_peer/1`, whose
+  `GenServer.stop/3` has a one-second timeout. The server's `sandbox_id` is set
+  at init and never changed. An actor already stale at the mark cannot reach
+  this write; a rebind after a successful mark can still reach it.
 
-  Two conditions gate the write, the same two `_unsafe_complete_turn/3`
-  applies: `ExecutionGuard.latest_turn?/2` and a `running` parent. A turn
-  superseded while the peer was stopping keeps the conversation running; an
-  abandoned older turn left `running` does not stop this one idling it. The
-  lock matches turn admission, so a concurrent admission cannot slip between
-  this read and the write.
+  This half deliberately takes no `sandbox_id` and does not repeat the binding
+  check. It writes no turn result. Under the parent and turn locks, it requires
+  a `running` parent, an `interrupted` turn and `ExecutionGuard.latest_turn?/2`.
+  A successor admitted while the peer was stopping prevents the idle write;
+  an older turn left `running` does not. Admission inserts its turn and sets
+  the parent `running` in the same transaction under the same parent lock, so
+  it cannot slip between this check and the write.
 
-  Deliberately **no sandbox-binding condition**, unlike every other #1767
-  fence. The binding is still checked — but by the process rather than the
-  query, and more tightly: `interrupted?` appears in neither `from_state/1`
-  nor `into_state/2`, so it cannot survive a mailbox round-trip, and the two
-  halves are one synchronous body separated only by `stop_acp_peer/1`, a
-  bounded one-second `GenServer.stop`. `state.sandbox_id` is written once at
-  init. A stale actor therefore cannot reach here at all, whereas an SQL
-  binding check *would* refuse the legitimate rebind-between-halves case and
-  strand the parent. Note the cost of that reasoning: it holds because of this
-  one caller's shape, and nothing enforces that a second caller keeps it.
+  Rechecking the binding here could leave the parent `running` after the
+  first half retired its last running turn. `AutonomousTurnReaper.sweep_stuck_turns/0`
+  selects running turns, and `ExecutionGuard._unsafe_recover_turn/3` returns
+  `:noop` for a retired turn, so those recovery paths cannot repair that state.
+  Other paths can idle the parent: `MachineEvents.gone/4` and the lifecycle's
+  park and reclaim paths do so when they run.
 
-  The actor's sandbox binding is deliberately **not** a third condition, which
-  is why this takes no `sandbox_id`. `_unsafe_complete_turn/3` and
-  `_unsafe_fence_sandbox_for_teardown/2` fence on the binding because they
-  write a *result*, and a stale actor must not overwrite the owner's. This
-  writes no turn row at all. Its only write releases a `running` status that
-  this actor itself set moments ago and that nothing else can clear, and it
-  writes it only when the locked parent proves there is no work: the turn is
-  terminal and `latest_turn?/2` says no successor has been admitted. A
-  conversation can be rebound under a live server without any actor
-  changing — `follow_cotenants/2` moves every co-tenant of a replaced sprite
-  with one unlocked `update_all` (ADR 0023 gate 5) — so a binding condition
-  here would strand exactly the conversations that shared a machine.
+  `follow_cotenants/2` sends `:machine_gone` before rebinding with `update_all`,
+  so a server that receives the cast has `gone/4`'s cleanup as a backstop.
+  `tell_cotenants/3` skips the cast when `ConversationServer.whereis/1` misses,
+  including a cross-pod registry miss, while the rebind still applies. The
+  parent can then remain `running` until another cleanup path runs.
+  `_unsafe_sandbox_busy_elsewhere?/4` reads co-tenant turns and `updated_at`
+  for conversations without turns, not the parent's status; a stuck parent
+  alone does not keep the shared sandbox busy or extend its billing lifetime.
 
   Known gap: a turn no longer `interrupted` writes nothing, and nothing
   overwrites a terminal turn today, so that arm has no live producer (#2054

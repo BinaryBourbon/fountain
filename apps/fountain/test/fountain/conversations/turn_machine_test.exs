@@ -616,10 +616,6 @@ defmodule Fountain.Conversations.TurnMachineTest do
         assert marked.interrupted?
 
         case ctx.between do
-          :reassigned ->
-            replacement = insert_sandbox(user_id: ctx.user.id)
-            Conversations.update_conversation(ctx.conv, %{sandbox_id: replacement.id})
-
           :terminated ->
             Conversations.update_conversation(ctx.conv, %{status: "terminated"})
 
@@ -643,14 +639,10 @@ defmodule Fountain.Conversations.TurnMachineTest do
       end
     end
 
-    # The first half retires the turn, which puts the conversation beyond every
-    # recovery sweep: `AutonomousTurnReaper` selects `status == "running"` turns
-    # and `ExecutionGuard._unsafe_recover_turn/3` no-ops on a retired one. So
-    # the second half must release the parent it left running even when the
-    # binding moved under it — `follow_cotenants/2` rebinds every co-tenant of
-    # a replaced sprite with one unlocked `update_all`, with no actor change at
-    # all (ADR 0023 gate 5). Fencing this write on the binding stranded exactly
-    # those conversations `running` with nothing running under them.
+    # The first half retires the turn, so turn recovery cannot idle its parent.
+    # A rebind can arrive while the peer stops. The matching second half must
+    # still finish cleanup when this remains the latest turn, without relying
+    # on a later machine-gone cast or lifecycle cleanup to idle the parent.
     test "a rebind between the interrupt halves still releases the parent", ctx do
       Conversations.update_conversation(ctx.conv, %{status: "running"})
       marked = TurnMachine.mark_interrupted(ctx.machine)
