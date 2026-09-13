@@ -242,7 +242,7 @@ def _maybe_json(raw: bytes) -> Any:
 def _describe_http_error(status: int, parsed: Any, url: str) -> str:
     detail = ""
     if isinstance(parsed, dict):
-        err = parsed.get("error") or parsed.get("errors") or parsed.get("message")
+        err = parsed.get("errors") or parsed.get("error") or parsed.get("message")
         if err:
             detail = err if isinstance(err, str) else json.dumps(err)
     elif isinstance(parsed, str) and parsed.strip():
