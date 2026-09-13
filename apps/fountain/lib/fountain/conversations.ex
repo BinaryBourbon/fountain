@@ -2247,6 +2247,11 @@ defmodule Fountain.Conversations do
   another actor, is a no-op. Reply materialization shares that transaction;
   activation and sidebar publication run after it commits.
 
+  The parent only idles under the two conditions `_unsafe_idle_after_turn/1`
+  idled under: `ExecutionGuard.latest_turn?/2` and a `running` parent. The
+  journal's own condition is not carried here — see the known gap on
+  `Fountain.Conversations.TurnMachine.finish/4`.
+
   `"interrupted"` is a terminal status this writer accepts, because a bounded
   turn that its journal retires comes back through the same ending
   (`BoundedTurn.retire/2` hands `finish/4` the persisted status, ADR 0046).
@@ -2279,15 +2284,18 @@ defmodule Fountain.Conversations do
 
           updated = Repo.update!(changeset)
 
-          # A successor admitted while this actor was ending its turn keeps the
-          # conversation running. `_unsafe_idle_after_turn/1` refused this
-          # through `latest_turn?`, and that refusal has to survive the move to
-          # a writer of our own; the parent lock above is the same one turn
-          # admission takes, so nothing can be admitted between the two reads.
+          # The two preconditions `_unsafe_idle_after_turn/1` idled under, kept
+          # exactly (`ExecutionGuard.parent_write_allowed?/4`, mode `:idle`):
+          # this turn is the conversation's newest generation, and the parent
+          # is `running`. A successor admitted while this actor was ending its
+          # turn therefore keeps the conversation running, and an abandoned
+          # older turn cannot stop this one from idling it. The parent lock
+          # above is the same one turn admission takes, so nothing can be
+          # admitted between this read and the write.
           conv =
-            if Repo.exists?(newer_running_turn_query(turn.conversation_id, turn.id)),
-              do: conv,
-              else: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
+            if conv.status == "running" and ExecutionGuard.latest_turn?(conv.id, turn.id),
+              do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+              else: conv
 
           {updated, conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
         else
@@ -2304,12 +2312,6 @@ defmodule Fountain.Conversations do
         broadcast_sidebar_update(conv.user_id)
         {:ok, updated}
     end
-  end
-
-  defp newer_running_turn_query(conversation_id, turn_id) do
-    from(t in Turn,
-      where: t.conversation_id == ^conversation_id and t.id != ^turn_id and t.status == "running"
-    )
   end
 
   @doc """
