@@ -142,6 +142,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
         :if={@principals != []}
         id="renew-principal-key"
         phx-submit="renew_principal_key"
+        phx-hook="ConfirmSubmit"
         data-confirm="Replace this principal's key? Its current key will stop working."
         class="space-y-3 rounded border border-[var(--color-border)] p-4"
       >

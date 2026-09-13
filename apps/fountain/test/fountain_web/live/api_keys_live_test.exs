@@ -42,7 +42,7 @@ defmodule FountainWeb.ApiKeysLiveTest do
 
     assert has_element?(
              view,
-             ~s(#renew-principal-key[data-confirm="Replace this principal's key? Its current key will stop working."])
+             ~s(#renew-principal-key[phx-hook="ConfirmSubmit"][data-confirm="Replace this principal's key? Its current key will stop working."])
            )
 
     view
