@@ -2306,7 +2306,7 @@ defmodule Fountain.Conversations do
           # admitted between this read and the write.
           #
           # The interrupt path passes `idle?: false` and idles later, through
-          # `_unsafe_idle_interrupted_turn/2`, which asks the same two
+          # `_unsafe_idle_interrupted_turn/1`, which asks the same two
           # questions once the peer has stopped.
           updated_conv =
             if idle? and conv.status == "running" and
@@ -2332,25 +2332,44 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
-  Idle the interrupted turn's conversation after its peer has stopped.
+  Release the conversation `TurnMachine.mark_interrupted/1` left running.
 
-  The second half of the interrupt `TurnMachine.mark_interrupted/1` began.
-  That half deliberately left the parent `running` so the peer could stop
-  under it, which makes this the only writer that will idle it. Recheck the
-  actor's binding and the interrupted turn under the parent lock, then apply
-  the same two idle preconditions `_unsafe_complete_turn/3` applies:
-  `ExecutionGuard.latest_turn?/2` and a `running` parent. A turn superseded
-  while the peer was stopping keeps the conversation running; an abandoned
-  older turn left `running` does not stop this one idling it. The lock
-  matches turn admission, so a concurrent admission cannot slip between this
-  check and the idle write. No turn row is changed here.
+  The second half of the two-phase interrupt. The first half retired the turn
+  and deliberately left the parent `running` so the peer could stop under it,
+  which makes this the **only** writer that will ever idle it: a turn that is
+  no longer `running` is invisible to `AutonomousTurnReaper.sweep_stuck_turns/0`,
+  and `ExecutionGuard._unsafe_recover_turn/3` returns `:noop` for one, so the
+  recovery backstop every other fence in #1767 leans on does not cover this
+  state. Refusing to write here is therefore not "leave it to the next
+  writer"; it is a conversation stuck `running` with nothing running under it,
+  and `_unsafe_sandbox_busy_elsewhere?/4` reads that parent, so a shared
+  machine bills to `SANDBOX_MAX_LIFETIME_HOURS`.
 
-  Known gap: this refuses to write when the parent has been rebound to
-  another sandbox, and when the turn is no longer `interrupted`. Neither
-  leaves a `running` parent that nothing else will idle — see
-  `Fountain.Conversations.TurnMachine.close_interrupted/1`.
+  Two conditions gate the write, the same two `_unsafe_complete_turn/3`
+  applies: `ExecutionGuard.latest_turn?/2` and a `running` parent. A turn
+  superseded while the peer was stopping keeps the conversation running; an
+  abandoned older turn left `running` does not stop this one idling it. The
+  lock matches turn admission, so a concurrent admission cannot slip between
+  this read and the write.
+
+  The actor's sandbox binding is deliberately **not** a third condition, which
+  is why this takes no `sandbox_id`. `_unsafe_complete_turn/3` and
+  `_unsafe_fence_sandbox_for_teardown/2` fence on the binding because they
+  write a *result*, and a stale actor must not overwrite the owner's. This
+  writes no turn row at all. Its only write releases a `running` status that
+  this actor itself set moments ago and that nothing else can clear, and it
+  writes it only when the locked parent proves there is no work: the turn is
+  terminal and `latest_turn?/2` says no successor has been admitted. A
+  conversation can be rebound under a live server without any actor
+  changing — `follow_cotenants/2` moves every co-tenant of a replaced sprite
+  with one unlocked `update_all` (ADR 0023 gate 5) — so a binding condition
+  here would strand exactly the conversations that shared a machine.
+
+  Known gap: a turn no longer `interrupted` writes nothing, and nothing
+  overwrites a terminal turn today, so that arm has no live producer (#2054
+  gap 2).
   """
-  def _unsafe_idle_interrupted_turn(%Turn{} = turn, sandbox_id) do
+  def _unsafe_idle_interrupted_turn(%Turn{} = turn) do
     {:ok, result} =
       Repo.transaction(fn ->
         conversation_query =
@@ -2362,10 +2381,9 @@ defmodule Fountain.Conversations do
             lock: "FOR UPDATE"
           )
 
-        with %Conversation{} = conv <- Repo.one(conversation_query),
-             true <- conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"],
+        with %Conversation{status: "running"} = conv <- Repo.one(conversation_query),
              %Turn{status: "interrupted"} <- Repo.one(turn_query),
-             true <- conv.status == "running" and ExecutionGuard.latest_turn?(conv.id, turn.id) do
+             true <- ExecutionGuard.latest_turn?(conv.id, turn.id) do
           conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
         else
           _ -> :noop

@@ -728,8 +728,15 @@ defmodule Fountain.Conversations.TurnMachine do
   The interrupt's first half: the row `interrupted`, the stage, the tracer
   closed. The server stops the peer between the halves, as it always did,
   then `close_interrupted/1` ends the span, emits the metric and conditionally
-  idles the conversation. A stale mark emits neither a stage nor a metric;
-  reassignment or a newer running turn between halves prevents the idle write.
+  idles the conversation. A stale mark emits neither a stage nor a metric, and
+  closing it writes nothing.
+
+  This half leaves the parent `running` on purpose, so the peer stops under a
+  conversation that still says it is working. Nothing but the second half can
+  clear that, because a retired turn is invisible to every recovery sweep, so
+  the second half rechecks the generation rather than this actor's binding
+  (`Conversations._unsafe_idle_interrupted_turn/1`). A successor admitted
+  while the peer was stopping is what keeps the conversation running.
   """
   @spec mark_interrupted(t()) :: t()
   def mark_interrupted(%__MODULE__{} = turn) do
@@ -759,8 +766,11 @@ defmodule Fountain.Conversations.TurnMachine do
 
     if turn.interrupted? do
       emit_completed(turn, "interrupted")
-      # Ownership: mark_interrupted verified this actor; recheck after peer shutdown.
-      Conversations._unsafe_idle_interrupted_turn(turn.row, turn.sandbox_id)
+      # Ownership: mark_interrupted verified this actor's binding and retired
+      # the turn under it. This half releases the parent that half left
+      # running, and is the only writer that can — see its docstring for why
+      # it rechecks the generation rather than the binding.
+      Conversations._unsafe_idle_interrupted_turn(turn.row)
     end
 
     %{

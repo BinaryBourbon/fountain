@@ -607,7 +607,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
       end
     end
 
-    for change <- [:reassigned, :terminated, :new_turn, :deleted] do
+    for change <- [:terminated, :new_turn, :deleted] do
       @tag between: change
       test "#{change} between interrupt halves keeps the newer conversation state", ctx do
         attach_telemetry([[:fountain, :turn, :completed]])
@@ -641,6 +641,78 @@ defmodule Fountain.Conversations.TurnMachineTest do
         assert_receive {:telemetry, [:fountain, :turn, :completed], _, %{status: "interrupted"}}
         refute_receive {:telemetry, [:fountain, :turn, :completed], _, _}, 50
       end
+    end
+
+    # The first half retires the turn, which puts the conversation beyond every
+    # recovery sweep: `AutonomousTurnReaper` selects `status == "running"` turns
+    # and `ExecutionGuard._unsafe_recover_turn/3` no-ops on a retired one. So
+    # the second half must release the parent it left running even when the
+    # binding moved under it — `follow_cotenants/2` rebinds every co-tenant of
+    # a replaced sprite with one unlocked `update_all`, with no actor change at
+    # all (ADR 0023 gate 5). Fencing this write on the binding stranded exactly
+    # those conversations `running` with nothing running under them.
+    test "a rebind between the interrupt halves still releases the parent", ctx do
+      Conversations.update_conversation(ctx.conv, %{status: "running"})
+      marked = TurnMachine.mark_interrupted(ctx.machine)
+      assert marked.interrupted?
+      assert Fountain.Repo.reload!(ctx.conv).status == "running"
+
+      replacement = insert_sandbox(user_id: ctx.user.id)
+      Conversations.update_conversation(ctx.conv, %{sandbox_id: replacement.id})
+
+      TurnMachine.close_interrupted(marked)
+
+      assert Fountain.Repo.reload!(ctx.conv).status == "idle"
+      assert Fountain.Repo.reload!(ctx.conv).sandbox_id == replacement.id
+      assert Fountain.Repo.reload!(ctx.row).status == "interrupted"
+    end
+
+    # The predicate is `latest_turn?/2`, not "no other turn is running". An
+    # older turn abandoned `running` — which the stale-actor arm of
+    # `_unsafe_interrupt_turn/2` manufactures — must not pin the parent.
+    test "an abandoned older turn does not stop the interrupt idling the parent", ctx do
+      abandoned = insert_turn(ctx.conv, status: "running", started_at: DateTime.utc_now())
+      newest = insert_turn(ctx.conv, status: "running", started_at: DateTime.utc_now())
+      assert abandoned.turn_number < newest.turn_number
+      Conversations.update_conversation(ctx.conv, %{status: "running"})
+
+      machine = %{ctx.machine | row: newest}
+
+      machine |> TurnMachine.mark_interrupted() |> TurnMachine.close_interrupted()
+
+      assert Fountain.Repo.reload!(ctx.conv).status == "idle"
+      assert Fountain.Repo.reload!(abandoned).status == "running"
+    end
+
+    # `_unsafe_idle_interrupted_turn/1` idles a `running` parent, nothing else.
+    # A `pending` conversation completing an interrupt was going `idle` here.
+    for status <- ["pending", "idle"] do
+      @tag parent: status
+      test "the interrupt leaves a #{status} conversation alone", ctx do
+        marked = TurnMachine.mark_interrupted(%{ctx.machine | row: ctx.row})
+
+        ctx.conv
+        |> Ecto.Changeset.change(status: ctx.parent)
+        |> Fountain.Repo.update!()
+
+        TurnMachine.close_interrupted(marked)
+
+        assert Fountain.Repo.reload!(ctx.conv).status == ctx.parent
+      end
+    end
+
+    # Ours to release means ours: a turn another writer moved off `interrupted`
+    # is no longer the one this half retired, so it writes nothing.
+    test "a turn moved off interrupted between the halves is not released", ctx do
+      Conversations.update_conversation(ctx.conv, %{status: "running"})
+      marked = TurnMachine.mark_interrupted(ctx.machine)
+      assert marked.interrupted?
+
+      ctx.row |> Ecto.Changeset.change(status: "completed") |> Fountain.Repo.update!()
+
+      TurnMachine.close_interrupted(marked)
+
+      assert Fountain.Repo.reload!(ctx.conv).status == "running"
     end
   end
 

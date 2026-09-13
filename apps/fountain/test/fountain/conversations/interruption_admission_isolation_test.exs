@@ -39,7 +39,7 @@ defmodule Fountain.Conversations.InterruptionAdmissionIsolationTest do
           ending =
             independent(fn ->
               # Ownership: finish the interrupt after its peer has stopped.
-              Conversations._unsafe_idle_interrupted_turn(turn, sandbox.id)
+              Conversations._unsafe_idle_interrupted_turn(turn)
             end)
 
           try do
