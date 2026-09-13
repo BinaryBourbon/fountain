@@ -19,7 +19,7 @@
     },
     {
       "operations": ["* /api/claimable-users*"],
-      "reason": "Claimable principals (ADR 0044). A trusted application opens and claims these with its own full-scope key; the credential that comes back is an ordinary API key, so an SDK's job starts after this point and every endpoint it already models is what the principal then uses. Paddock is the first caller and reaches these four over plain HTTP."
+      "reason": "Claimable principal lifecycle and owner-authenticated credential management (ADRs 0044 and 0053). Applications open grants with their full-scope key; visitors claim with their own account key. The principal credential then uses the modeled resource API. Current-owner inference credential PUT/DELETE operations also use plain HTTP; principal-scoped keys cannot call them."
     },
     {
       "operations": ["* /api/oauth/clients*"],

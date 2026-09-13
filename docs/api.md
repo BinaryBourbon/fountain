@@ -107,9 +107,44 @@ Inference credentials pay the model provider. Fountain credits pay for
 Fountain's hosted work. Configure both when the selected runtime needs them.
 A configured credential does not imply that a provider will accept it.
 
-See [Vaults](concepts/vault.md) and the account credential operations in the
-[generated reference](/api/docs). Read responses describe credential state;
-secret values remain write-only.
+Store provider keys in named [credential sets](concepts/secrets.md#credential-sets).
+The first set an account creates is its default. An account with no sets gets
+a Default set on its first provider write through the original account route.
+Existing credential rows become Default sets on upgrade. A set can hold
+`anthropic_api_key`, `claude_code_oauth_token`, `openai_api_key` and
+`gemini_api_key`. Values remain write-only; read responses report which
+providers are set.
+
+These routes require a full-scope account key.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/account/inference-credential-sets` | List sets, default first and then by name. |
+| `POST /api/account/inference-credential-sets` | Create an empty set with a `name`. |
+| `PATCH /api/account/inference-credential-sets/:id` | Rename with `name`, or promote with `is_default: true`. |
+| `DELETE /api/account/inference-credential-sets/:id` | Delete a non-default set. Promote another first to delete the current default. |
+| `PUT /api/account/inference-credential-sets/:id/credentials/:provider` | Set one provider with `{"value": "..."}`. |
+| `DELETE /api/account/inference-credential-sets/:id/credentials/:provider` | Clear one provider in that set. |
+
+Names must be unique within the account. Omitting a PATCH field leaves it
+unchanged; `is_default: false` is refused. The original
+`GET /api/account/inference-credentials` and
+`PUT` or `DELETE /api/account/inference-credentials/:provider` routes operate
+on the default set.
+
+Set `inference_credential_id` on an agent to choose its default, or on
+`POST /api/conversations` to request a launch override. The agent's
+`allowed_inference_credential_ids` bounds that override. `null` permits any
+set the account owns, `[]` forbids a different set, and a non-empty list
+permits those IDs. The agent's own selection remains allowed. Omit the
+selection to use the agent's set, then the account default. A foreign,
+deleted or unusable explicit source is refused instead of selecting another.
+
+The resolved source is bound to the conversation and recorded for each turn.
+Changing the account default applies to new selections. Wake and resume do
+not silently switch an existing conversation to another credential after a
+replacement or deletion. See the [sharing constraints](concepts/secrets.md#credential-sets)
+and the [generated reference](/api/docs) for response schemas and refusals.
 
 ## Claimable principals
 
@@ -122,10 +157,26 @@ idempotency key to reconcile a lost create or claim response. A repeated
 request can return a fresh credential, so keep the latest successful result.
 The [generated reference](/api/docs) defines required scopes and refusals.
 
+### Set a principal's provider credential
+
+Use `PUT /api/claimable-users/:id/inference-credentials/:provider` with
+`{"value": "..."}` to write a provider credential to the principal's default
+set. Use `DELETE` on the same path to clear it. Here `:id` is the claim grant
+ID returned by `POST /api/claimable-users`, not the principal's tenant ID.
+Both operations return `204` on success, and encrypt under the principal's
+own tenant key. They do not validate the value with the provider.
+
+These writes require the current owner's full-scope key. Before claim, that
+is the application account that opened the principal. After claim, it is the
+account that claimed it; the original application loses credential-write
+access. A `principal`-scoped key gains no account-write permission. Use
+[principals](build/anonymous-visitors.md) for customer isolation; multiple
+sets on one account do not create separate tenants.
+
 ## Rate limiting
 
 The resource API uses fixed one-minute windows, independently on each server
-replica:
+replica.
 
 - Each authenticated API key has a 600-request allowance.
 - Failed authentication has a separate 600-request allowance per client address.
