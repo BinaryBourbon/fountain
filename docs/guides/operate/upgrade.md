@@ -111,24 +111,6 @@ Sandbox adapters send ACP protocol messages, not these internal peer events.
 The cross-node termination and sandbox-loss compatibility handlers remain
 in place. Their removal is still tracked in
 [issue #2099](https://github.com/managoat/fountain/issues/2099).
-A future removal requires this upgrade order.
-
-1. Upgrade every cluster node to a bridge build containing both changes below.
-2. Wait for the rollout to finish and for all old nodes and conversation owners
-   to exit. Check every connected node, including workers outside the web deployment.
-3. Record the running image revisions and completed rollout before removing
-   the handlers. Do not infer this state from the source branch alone.
-4. Deploy the removal build only after that evidence establishes the floor.
-   Do not mix that build with nodes older than the bridge.
-
-| Bridge requirement | First commit on main | Supported message |
-|---|---|---|
-| Termination attribution | `aecaf345` (#1981) | `{:terminate_conv, opts}` with actor and request IP |
-| Sandbox-loss identity | `da27fb2c` (#2007) | `{:machine_gone, sandbox_id, event, reason, message}` |
-
-Use a bridge build that contains both commits. No completed production rollout
-or actor drain has been verified for this cleanup. The existing fallback and
-receivers therefore remain until that operational gate is satisfied.
 
 ## Match the CLI to the server
 
