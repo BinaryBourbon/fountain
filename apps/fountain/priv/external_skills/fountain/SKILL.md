@@ -41,9 +41,8 @@ Mint a key with `fountain auth login` (writes `~/.fountain/credentials`) or
 `fountain keys create` (prints raw key for scripting / CI). API keys carry the
 full blast radius of the owning user — treat them like passwords.
 
-> **Common mistake**: hitting `$FOUNTAIN_BASE_URL/conversations` returns 302
-> (the bare path redirects a browser to the conversations app). The API path
-> is `$FOUNTAIN_BASE_URL/api/conversations`.
+> **Use the API path**: `$FOUNTAIN_BASE_URL/api/conversations`. The retired
+> browser path `$FOUNTAIN_BASE_URL/conversations` returns 404.
 
 ## The CLI is usually the right call
 
@@ -293,7 +292,7 @@ Errors:
 
 ## Important
 
-- **Use `/api/...`** — the bare `/conversations`, `/agents`, etc. are browser routes that 302 (to the login page, or out to the app that replaced the page).
+- **Use `/api/...`.** The retired browser `/conversations` path returns 404. Browser console paths such as `/agents` require a session, not an API key.
 - **`wait=false` for gather** — without it your `curl --max-time 5` sits idle for the full timeout. With it, the SSE stream closes the moment the replay drains.
 - **Parallelize spawn / poll / gather** with `xargs -P` — one provision takes ~5–15s, no reason to do them sequentially.
 - **Costs add up.** Every conversation provisions a real sandbox. Terminate when you're done if you don't need the sandbox to persist.

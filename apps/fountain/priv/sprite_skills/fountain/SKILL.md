@@ -10,9 +10,8 @@ reachable at `$FOUNTAIN_BASE_URL` (under **`/api`**) with bearer
 `$FOUNTAIN_TOKEN`. From here you can spawn *more* Fountain conversations —
 each runs in its own fresh Sprite.
 
-> **Common mistake**: hitting `$FOUNTAIN_BASE_URL/conversations` returns 302
-> (the bare path redirects a browser to the conversations app). The right URL
-> is `$FOUNTAIN_BASE_URL/api/conversations`.
+> **Use the API path**: `$FOUNTAIN_BASE_URL/api/conversations`. The retired
+> browser path `$FOUNTAIN_BASE_URL/conversations` returns 404.
 
 ## The two patterns you'll use
 
@@ -245,5 +244,5 @@ spawned_ids+=("$CONV")
 - **Don't recurse forever.** Spawned agents have the same skill. Cap depth with a `MAX_DEPTH` you check before spawning.
 - **Costs add up.** Every conversation provisions a real sandbox. Terminate promptly.
 - **Re-read `$FOUNTAIN_TOKEN` from env on each call.** It's a per-conversation key scoped to this conversation's owner, not a long-lived admin token. Fountain rotates it on every fresh provision and every reattach (e.g. after a deploy or BEAM restart), revoking the previous value. If a request returns 401 with `"reason": "api_key_revoked"`, your cached copy is stale — re-source `$FOUNTAIN_TOKEN` from the environment before retrying. Don't leak it outside the sprite.
-- **API path is `/api/...`.** The bare `/conversations` redirects (302 → /login) for non-browser requests.
+- **API path is `/api/...`.** The retired browser `/conversations` path returns 404.
 - **Provenance is automatic.** `FOUNTAIN_CONVERSATION_ID` is always present in your sprite's environment. Every `POST /api/conversations` call that includes `X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID` records this conversation as the parent, letting the operator reconstruct the full spawn chain.

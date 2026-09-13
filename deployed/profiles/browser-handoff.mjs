@@ -17,6 +17,11 @@ export function verifyOAuthDenialRequest(rawUrl, baseUrl, appUrl) {
   return url.searchParams.get('state');
 }
 
+export function conversationAppUrl(catalog, pinnedUrl, conversationId) {
+  ensure(catalog.data?.apps?.conversations === pinnedUrl, 'Configured Conversations app does not match the pinned app URL');
+  return pinnedUrl + `#/c/${conversationId}`;
+}
+
 export async function browserHandoff(ctx, page, evidence, agent, key, appGuard) {
   const app = ctx.config.browser.conversations;
   const appOrigin = new URL(app.lock.url).origin;
@@ -44,8 +49,10 @@ export async function browserHandoff(ctx, page, evidence, agent, key, appGuard) 
   });
 
   async function handoff() {
-    await page.goto(`${ctx.config.base_url}/conversations/${conversation.id}`);
-    await page.waitForURL(app.lock.url + `#/c/${conversation.id}`);
+    const { body: catalog } = await ctx.client.request('GET', '/api/catalog', { expected: 200 });
+    const url = conversationAppUrl(catalog, app.lock.url, conversation.id);
+    await page.goto(url);
+    await page.waitForURL(url);
     appGuard.verify();
   }
 

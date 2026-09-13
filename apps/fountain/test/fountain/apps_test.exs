@@ -1,8 +1,8 @@
 defmodule Fountain.AppsTest do
   @moduledoc """
   The one place that knows where the browser apps live (#866). Every link
-  that leaves the console — an email, a forwarded support report, a retired
-  route's redirect — reads it from here, so they cannot drift apart.
+  that leaves the console or a forwarded support report reads it from here,
+  so they cannot drift apart.
   """
 
   use ExUnit.Case, async: false
