@@ -145,6 +145,19 @@ defmodule Fountain.Principals do
     |> Repo.all()
   end
 
+  @doc "Owned principal IDs and their application names, oldest first."
+  @spec list_owned_details(binary()) :: [%{id: binary(), application_id: String.t() | nil}]
+  def list_owned_details(owner_user_id) when is_binary(owner_user_id) do
+    from(o in Owner,
+      left_join: c in ClaimableUser,
+      on: c.user_id == o.principal_user_id,
+      where: o.owner_user_id == ^owner_user_id,
+      order_by: [asc: o.inserted_at],
+      select: %{id: o.principal_user_id, application_id: c.application_id}
+    )
+    |> Repo.all()
+  end
+
   @doc """
   Whose ledger funds work done as `subject` (ADR 0044 decision 4).
 
