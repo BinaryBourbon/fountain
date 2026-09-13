@@ -498,7 +498,9 @@ defmodule FountainWeb.ConversationController do
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
     responses: [
       bad_request: {"Invalid request", "application/json", Schemas.Error},
-      conflict: {"Conflicting state", "application/json", Schemas.Error},
+      conflict:
+        {"Conflicting state, changed inference source, or incompatible Codex sandbox credential",
+         "application/json", Schemas.Error},
       service_unavailable: {"Sandbox or fleet unavailable", "application/json", Schemas.Error},
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       accepted:
