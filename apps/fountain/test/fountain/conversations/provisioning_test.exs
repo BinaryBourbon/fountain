@@ -630,6 +630,23 @@ defmodule Fountain.Conversations.ProvisioningTest do
       end)
     end
 
+    test "empty process-filtered env overwrites any credential left in the shared file" do
+      handle = sandbox_handle("s")
+      stub(Sprites, :filesystem, fn _sprite, _root -> :fake_fs end)
+
+      expect(Sprites.Filesystem, :write, 2, fn :fake_fs, _path, body, _opts ->
+        assert body == "\n"
+        :ok
+      end)
+
+      stub_chmod_exec()
+
+      only_credentials = Fountain.Conversations.Identity.disk_env([{"OPENAI_API_KEY", "old-key"}])
+      assert only_credentials == []
+      assert :ok = Provisioning.write_env_file(handle, only_credentials)
+      assert :ok = Provisioning.write_env_file(handle, nil)
+    end
+
     test "write_env_file survives one transport failure on the file write" do
       {:ok, counter} = Agent.start_link(fn -> 0 end)
       handle = sandbox_handle("s")

@@ -10,7 +10,6 @@ defmodule Fountain.Conversations.IdentityTest do
   describe "disk_env/1" do
     test "strips the per-conversation identity and keeps everything else" do
       env = [
-        {"ANTHROPIC_API_KEY", "sk-1"},
         {"FOUNTAIN_BASE_URL", "https://f.example"},
         {"FOUNTAIN_TOKEN", "fk_secret"},
         {"FOUNTAIN_CONVERSATION_ID", @conv},
@@ -20,11 +19,26 @@ defmodule Fountain.Conversations.IdentityTest do
       ]
 
       assert Identity.disk_env(env) == [
-               {"ANTHROPIC_API_KEY", "sk-1"},
                {"FOUNTAIN_BASE_URL", "https://f.example"},
                {"SANDBOX_URL", "https://sb.example"},
                {"GITHUB_TOKEN", "ghp_x"}
              ]
+    end
+
+    # Filtering is by name, so credentials supplied through an environment
+    # or vault receive the same process-only treatment as credential sets.
+    test "keeps canonical and runtime alias inference names off the disk" do
+      names = ~w(ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY
+                 GEMINI_API_KEY GOOGLE_GENERATIVE_AI_API_KEY)
+      env = Enum.map(names, &{&1, "value-#{&1}"})
+
+      assert Identity.disk_env(env) == []
+    end
+
+    test "keeps managed ChatGPT token inputs and broker placeholders off disk" do
+      for value <- ["managed-bearer", Fountain.Broker.placeholder("CODEX_CHATGPT_ACCESS_TOKEN")] do
+        assert Identity.disk_env([{"CODEX_CHATGPT_ACCESS_TOKEN", value}]) == []
+      end
     end
 
     test "an empty env stays empty" do

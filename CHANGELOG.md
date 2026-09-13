@@ -33,6 +33,19 @@ upgrade, is in
   enable credits. With only the old variable set, credits remain off by default.
   The hosted home-cloud deployment already uses `CREDITS_ENABLED`.
 
+- **The inference credential no longer reaches `/home/sprite/.env`** (ADR 0053
+  decision 4, #2018). A sandbox carries several conversations and each can run
+  on a different credential, so a value in that shared file would be whichever
+  conversation provisioned last. Every process still receives the credential
+  through its own environment, the `setup_script` included. What stops working
+  is `source .env` in a **later** shell as a way to recover a provider key: a
+  script that re-reads the file for `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`
+  finds nothing there now. This also applies when these names are supplied
+  as environment or vault secrets, not just through a credential set. Read
+  them from the script's own environment instead. The proxy variables have
+  worked this way since the broker landed.
+
 - **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
   PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
   took the feature away from every deployment that configures no flag service,

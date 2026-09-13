@@ -31,9 +31,22 @@ defmodule Fountain.InferenceCredentialsEnvNamesTest do
     end
   end
 
+  test "runtime aliases retain the canonical broker name first" do
+    assert InferenceCredentials.env_aliases() == %{
+             anthropic_api_key: ["ANTHROPIC_API_KEY"],
+             claude_code_oauth_token: ["CLAUDE_CODE_OAUTH_TOKEN"],
+             openai_api_key: ["OPENAI_API_KEY"],
+             gemini_api_key: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]
+           }
+
+    for {credential, [canonical | _]} <- InferenceCredentials.env_aliases() do
+      assert InferenceCredentials.env_names()[credential] == canonical
+    end
+  end
+
   # ADR 0052 decision 6: configuration may neither name the managed grant nor
   # embed its placeholder, so it is not a credential a tenant secret can
-  # shadow. Reserve what rotates, resolve what is static.
+  # shadow. Protect managed credentials; resolve ordinary tenant overrides.
   test "the managed ChatGPT grant is not one of them" do
     names = InferenceCredentials.env_names()
 

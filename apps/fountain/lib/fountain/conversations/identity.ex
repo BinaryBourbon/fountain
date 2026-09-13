@@ -20,9 +20,11 @@ defmodule Fountain.Conversations.Identity do
       pairs before the env file is written; the same pairs still reach every
       spawn through `env:`, so the agent's tools inherit them exactly as
       before. What a `source .env` in a setup script loses is the callback
-      token, which it had no business holding — the file is for environment
-      and vault values, which are the same for every conversation on the
-      machine.
+      token and the inference credential, neither of which the file had any
+      business holding — it is for environment and vault values, which are
+      the same for every conversation on the machine. Both still reach the
+      setup script itself: `Provisioning.run_setup_script/4` execs with
+      `env: sprite_env`, the whole list.
 
     * **A session inherits its conversation.** `tag_command/3` wraps the spawn as
       `env FOUNTAIN_CONVERSATION_ID=<id> <cmd> <args…>`. The process gets the
@@ -49,7 +51,17 @@ defmodule Fountain.Conversations.Identity do
   # 0019 §5), so it is per-conversation too: on disk it would be a
   # cross-conversation read of a credential that brokers another tenant's
   # vault. `Fountain.Broker.process_only_keys/0` names the variables.
-  @process_only [@tag_key, "FOUNTAIN_TOKEN", "TRACEPARENT"] ++ Fountain.Broker.process_only_keys()
+  #
+  # Inference auth inputs are per-conversation (ADR 0053 decision 4),
+  # including tenant env/vault secrets with a supported name or alias.
+  # Unbrokered values are bearer material; broker placeholders are harmless
+  # fixed strings, but neither needs to persist in the shared env file.
+  # The managed ChatGPT path also emits a placeholder into the process env.
+  # Strip its reserved name defensively along with the static credentials.
+  # Runtime-owned auth files require separate isolation (decision 6).
+  @process_only [@tag_key, "FOUNTAIN_TOKEN", "TRACEPARENT", "CODEX_CHATGPT_ACCESS_TOKEN"] ++
+                  Fountain.Broker.process_only_keys() ++
+                  (Fountain.InferenceCredentials.env_aliases() |> Map.values() |> List.flatten())
 
   @tag_re ~r/(?:^|\s)FOUNTAIN_CONVERSATION_ID=([0-9a-fA-F-]{36})(?:\s|$)/
 
@@ -65,7 +77,7 @@ defmodule Fountain.Conversations.Identity do
 
   @doc """
   The subset of a sprite env that belongs on the machine's disk: everything
-  except the per-conversation identity.
+  except the per-conversation identity and inference auth inputs.
   """
   @spec disk_env([{String.t(), String.t()}]) :: [{String.t(), String.t()}]
   def disk_env(sprite_env) when is_list(sprite_env) do
