@@ -14,6 +14,7 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
   use Mimic
 
   alias Fountain.Conversations
+  alias Fountain.Conversations.ConversationServer
   alias Fountain.Conversations.Lifecycle
   alias Managoat.Sandbox.Handle
 
@@ -330,23 +331,26 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
 
       # A plain process standing in for the co-tenant's server: `whereis/1`
       # only asks the registry, and a cast is a message.
-      {:ok, stand_in} =
-        Task.start_link(fn ->
-          {:ok, _} = Horde.Registry.register(Fountain.ConversationRegistry, other.id, nil)
-          send(test, :registered)
+      stand_in =
+        start_supervised!(
+          {Task,
+           fn ->
+             {:ok, _} = Horde.Registry.register(Fountain.ConversationRegistry, other.id, nil)
 
-          receive do
-            msg -> send(test, {:cotenant, msg})
-          end
-        end)
+             receive do
+               msg -> send(test, {:cotenant, msg})
+             end
+           end}
+        )
 
-      assert_receive :registered
+      # Registration can precede lookup visibility in Horde. Wait for the
+      # lookup that stop_cotenants/5 depends on, with a bounded deadline.
+      assert {:ok, ^stand_in} = ConversationServer.await_registered(other.id, 2_000)
 
       assert Lifecycle.stop_cotenants(ctx.sandbox.id, ctx.conv.id, "suspended", "idle", "why") ==
                :ok
 
       assert_receive {:cotenant, {:"$gen_cast", {:machine_gone, "suspended", "idle", "why"}}}
-      assert is_pid(stand_in)
     end
 
     test "a co-tenant with no live server is not an error", ctx do
