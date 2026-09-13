@@ -125,6 +125,49 @@ defmodule Fountain.InferenceCredentialSetsTest do
              }
     end
 
+    test "stale renames update the current name and audit its actual predecessor", %{user: user} do
+      {:ok, stale} = InferenceCredentials.create_set(user.id, "Work")
+      {:ok, _} = InferenceCredentials.rename_set(stale, "Personal")
+      assert {:ok, %{name: "Work"}} = InferenceCredentials.rename_set(stale, "Work")
+      assert InferenceCredentials.get_set(stale.id, user.id).name == "Work"
+      {:ok, _} = InferenceCredentials.rename_set(stale, "Personal")
+      assert {:ok, %{name: "Client"}} = InferenceCredentials.rename_set(stale, "Client")
+
+      events =
+        user.id
+        |> Fountain.Audit.list_recent_for_user()
+        |> Enum.filter(&(&1.action == "inference_credential_set.renamed"))
+
+      assert Enum.any?(
+               events,
+               &(&1.metadata == %{"name" => "Work", "was" => "Personal", "now" => "Work"})
+             )
+
+      assert Enum.any?(
+               events,
+               &(&1.metadata == %{"name" => "Client", "was" => "Personal", "now" => "Client"})
+             )
+
+      before = length(events)
+      assert {:ok, %{name: "Client"}} = InferenceCredentials.rename_set(stale, "Client")
+      assert audit_count(user, "inference_credential_set.renamed") == before
+    end
+
+    test "deleted and foreign tenant rows refuse stale renames without audit", %{user: user} do
+      {:ok, _} = InferenceCredentials.create_set(user.id, "Default")
+      {:ok, stale} = InferenceCredentials.create_set(user.id, "Work")
+      {:ok, _} = InferenceCredentials.delete_set(stale)
+      assert {:error, :not_found} = InferenceCredentials.rename_set(stale, "Missing")
+      other = insert_verified_user()
+      {:ok, foreign} = InferenceCredentials.create_set(other.id, "Foreign")
+
+      assert {:error, :not_found} =
+               InferenceCredentials.rename_set(%{foreign | user_id: user.id}, "Stolen")
+
+      assert InferenceCredentials.get_set(foreign.id, other.id).name == "Foreign"
+      assert audit_count(user, "inference_credential_set.renamed") == 0
+    end
+
     test "a duplicate name returns a name error without changing persistence or audit", %{
       user: user
     } do

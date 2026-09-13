@@ -88,17 +88,38 @@ defmodule Fountain.InferenceCredentials do
   explain a later event that names it.
   """
   @spec rename_set(Credential.t(), String.t(), keyword()) ::
-          {:ok, Credential.t()} | {:error, Ecto.Changeset.t()}
+          {:ok, Credential.t()} | {:error, :not_found | Ecto.Changeset.t()}
   def rename_set(%Credential{} = set, name, opts \\ []) do
-    was = set.name
+    result =
+      with_source_lock(set.user_id, fn ->
+        case get_set(set.id, set.user_id) do
+          nil ->
+            {:error, :not_found}
 
-    set
-    |> Credential.changeset(%{name: name})
-    |> Repo.update()
-    |> audited_set(
-      "inference_credential_set.renamed",
-      Keyword.put(opts, :metadata, %{"was" => was, "now" => name})
-    )
+          current ->
+            changeset = Credential.changeset(current, %{name: name})
+
+            case Repo.update(changeset) do
+              {:ok, updated} -> {:renamed, updated, current.name}
+              error -> error
+            end
+        end
+      end)
+
+    case result do
+      {:renamed, %{name: name} = current, name} ->
+        {:ok, current}
+
+      {:renamed, updated, was} ->
+        audited_set(
+          {:ok, updated},
+          "inference_credential_set.renamed",
+          Keyword.put(opts, :metadata, %{"was" => was, "now" => updated.name})
+        )
+
+      error ->
+        error
+    end
   end
 
   @doc """
