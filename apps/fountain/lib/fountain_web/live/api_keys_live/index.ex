@@ -15,7 +15,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
      |> assign(:page_title, "API keys")
      |> assign(:user_id, user.id)
      |> assign(:keys, keys)
-     |> assign(:principals, Principals.list_owned(user.id))
+     |> assign(:principals, Principals.list_owned_details(user.id))
      |> assign(:new_key, nil)}
   end
 
@@ -142,6 +142,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
         :if={@principals != []}
         id="renew-principal-key"
         phx-submit="renew_principal_key"
+        data-confirm="Replace this principal's key? Its current key will stop working."
         class="space-y-3 rounded border border-[var(--color-border)] p-4"
       >
         <label for="principal-id" class="block font-medium">Replace a principal key</label>
@@ -154,7 +155,9 @@ defmodule FountainWeb.ApiKeysLive.Index do
           name="principal_id"
           class="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-1)] p-2 text-sm"
         >
-          <option :for={id <- @principals} value={id}>{id}</option>
+          <option :for={principal <- @principals} value={principal.id}>
+            {principal_label(principal)}
+          </option>
         </select>
         <.button
           type="submit"
@@ -221,6 +224,12 @@ defmodule FountainWeb.ApiKeysLive.Index do
     </div>
     """
   end
+
+  defp principal_label(%{id: id, application_id: application_id})
+       when is_binary(application_id) and application_id != "",
+       do: "#{application_id} (#{id})"
+
+  defp principal_label(%{id: id}), do: id
 
   defp format_date(nil), do: ""
   defp format_date(dt), do: Calendar.strftime(dt, "%Y-%m-%d")

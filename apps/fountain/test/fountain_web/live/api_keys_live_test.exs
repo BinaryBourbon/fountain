@@ -33,7 +33,17 @@ defmodule FountainWeb.ApiKeysLiveTest do
     {:ok, _, key} = Accounts.authenticate_api_key(claimed.api_key)
     {:ok, _} = Accounts.revoke_managed_api_key(owner.id, key.id)
     {:ok, view, _html} = conn |> login_user(owner) |> live(~p"/api-keys")
-    assert has_element?(view, "#renew-principal-key option[value='#{claimed.claimable.user_id}']")
+
+    assert has_element?(
+             view,
+             "#renew-principal-key option[value='#{claimed.claimable.user_id}']",
+             "renew-console (#{claimed.claimable.user_id})"
+           )
+
+    assert has_element?(
+             view,
+             ~s(#renew-principal-key[data-confirm="Replace this principal's key? Its current key will stop working."])
+           )
 
     view
     |> form("#renew-principal-key", principal_id: claimed.claimable.user_id)
@@ -73,6 +83,44 @@ defmodule FountainWeb.ApiKeysLiveTest do
     end
 
     assert {:ok, _, _} = Accounts.authenticate_api_key(claimed.api_key)
+  end
+
+  test "principal picker keeps unnamed owned principals and excludes another owner's names", %{
+    conn: conn
+  } do
+    owner = insert_verified_user()
+    other_owner = insert_verified_user()
+    app = insert_verified_user()
+    {:ok, principal} = Accounts.create_principal_user()
+
+    %Fountain.Principals.Owner{}
+    |> Fountain.Principals.Owner.changeset(%{
+      owner_user_id: owner.id,
+      principal_user_id: principal.id
+    })
+    |> Fountain.Repo.insert!()
+
+    {:ok, opened} =
+      Fountain.Principals.create_claimable(app, %{"application_id" => "another-owners-app"})
+
+    {:ok, claimed} =
+      Fountain.Principals.claim(opened.claimable.id, opened.claim_token, other_owner)
+
+    {:ok, view, html} = conn |> login_user(owner) |> live(~p"/api-keys")
+
+    label =
+      view
+      |> element("#renew-principal-key option[value='#{principal.id}']")
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.text()
+      |> String.trim()
+
+    assert label == principal.id
+
+    refute has_element?(view, "#renew-principal-key option[value='#{claimed.claimable.user_id}']")
+    refute html =~ "another-owners-app"
+    assert Fountain.Principals.list_owned(owner.id) == [principal.id]
   end
 
   describe "ApiKeysLive.Index — rendering" do
