@@ -1,5 +1,10 @@
 import Config
 
+# Fixture password hashes share the dirty CPU schedulers with MDEx and Lumis.
+# Production-cost hashes can starve the docs guardrails past their timeout
+# (#1701). Keep real hashing and verification at bcrypt's recommended test cost.
+config :bcrypt_elixir, :log_rounds, 4
+
 config :fountain, Fountain.Repo,
   url:
     System.get_env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fountain_test"),
