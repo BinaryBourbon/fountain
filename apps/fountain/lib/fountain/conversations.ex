@@ -3546,9 +3546,6 @@ defmodule Fountain.Conversations do
   # the channel's durable source, even after the account's default changes.
   defp where_credential_set(query, nil), do: query
 
-  defp where_credential_set(query, id),
-    do: from(c in query, where: c.inference_credential_id == ^id)
-
   defp where_vault(query, nil), do: from(c in query, where: is_nil(c.vault_id))
   defp where_vault(query, vault_id), do: from(c in query, where: c.vault_id == ^vault_id)
 
