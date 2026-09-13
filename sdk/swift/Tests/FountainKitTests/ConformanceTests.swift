@@ -108,6 +108,32 @@ struct ConformanceTests {
   }
 
   @Test(.timeLimit(.minutes(1)))
+  func cancellingWithoutADeadlineDoesNotFetchFinalStatus() async throws {
+    let scenario = try timeoutScenarioWithoutOutput()
+    let transport = ScriptedTransport(exchanges: scenario.http, holdQuietTail: true)
+    let client = FountainClient(config: scenario.config, transport: transport)
+    var run: Run? = try await client.run(
+      "hello", agent: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    weak var following = run
+
+    // Wait for consume() to enter the held-open stream before cancelling.
+    for try await event in try #require(run).events {
+      if case .turnStart = event { break }
+    }
+    try #require(run).cancel()
+    do {
+      _ = try await #require(run).value()
+      Issue.record("cancelling must settle the Run with cancellation")
+    } catch is CancellationError {}
+    run = nil
+
+    // cancel() settles value() immediately. The follower still owns the Run
+    // until it exits, so wait for release before checking its last request.
+    while following != nil { await Task.yield() }
+    #expect(transport.unmatched.isEmpty)
+  }
+
+  @Test(.timeLimit(.minutes(1)))
   func publicClientDeadlineDoesNotWaitForOutput() async throws {
     var scenario = try ConformanceSuite.scenario(
       named: "run-timeout-raises-and-keeps-partial-text")

@@ -155,6 +155,9 @@ public final class Run: @unchecked Sendable {
     emit(.conversation(conversation, url: url))
     do {
       try await withDeadline()
+      // AsyncThrowingStream may finish normally when its task is cancelled.
+      // Do not turn that shutdown into a successful final-status request.
+      try Task.checkCancellation()
       let (ended, died) = read { ($0, failureReason) }
       // Re-read for the conversation's own status; the turn's outcome
       // is already known, so a failure here is not worth the run.
