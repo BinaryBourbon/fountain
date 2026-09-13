@@ -2341,9 +2341,19 @@ defmodule Fountain.Conversations do
   and `ExecutionGuard._unsafe_recover_turn/3` returns `:noop` for one, so the
   recovery backstop every other fence in #1767 leans on does not cover this
   state. Refusing to write here is therefore not "leave it to the next
-  writer"; it is a conversation stuck `running` with nothing running under it,
-  and `_unsafe_sandbox_busy_elsewhere?/4` reads that parent, so a shared
-  machine bills to `SANDBOX_MAX_LIFETIME_HOURS`.
+  writer"; it is a conversation left `running` with nothing running under it,
+  and no sweep that will ever notice.
+
+  That is the whole harm, and it is worth being exact about its edges, because
+  two larger claims about it are false. `_unsafe_sandbox_busy_elsewhere?/4`
+  does **not** read the parent's status — it queries co-tenant `turns` rows and
+  conversation `updated_at` — so a stuck parent does not by itself hold a
+  shared machine to `SANDBOX_MAX_LIFETIME_HOURS`. And the obvious producer,
+  `follow_cotenants/2`, largely rescues itself: it casts `:machine_gone`
+  *before* its `update_all`, and `MachineEvents.gone/4` idles a `running`
+  parent unconditionally. The state is still reachable — a cross-pod co-tenant
+  that Horde's `whereis` misses gets the rebind and no cast — but that is a
+  narrower window than "any sprite replacement".
 
   Two conditions gate the write, the same two `_unsafe_complete_turn/3`
   applies: `ExecutionGuard.latest_turn?/2` and a `running` parent. A turn
@@ -2351,6 +2361,17 @@ defmodule Fountain.Conversations do
   abandoned older turn left `running` does not stop this one idling it. The
   lock matches turn admission, so a concurrent admission cannot slip between
   this read and the write.
+
+  Deliberately **no sandbox-binding condition**, unlike every other #1767
+  fence. The binding is still checked — but by the process rather than the
+  query, and more tightly: `interrupted?` appears in neither `from_state/1`
+  nor `into_state/2`, so it cannot survive a mailbox round-trip, and the two
+  halves are one synchronous body separated only by `stop_acp_peer/1`, a
+  bounded one-second `GenServer.stop`. `state.sandbox_id` is written once at
+  init. A stale actor therefore cannot reach here at all, whereas an SQL
+  binding check *would* refuse the legitimate rebind-between-halves case and
+  strand the parent. Note the cost of that reasoning: it holds because of this
+  one caller's shape, and nothing enforces that a second caller keeps it.
 
   The actor's sandbox binding is deliberately **not** a third condition, which
   is why this takes no `sandbox_id`. `_unsafe_complete_turn/3` and
