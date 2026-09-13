@@ -38,19 +38,10 @@ cp "$source_path" "$patched_source"
 check_hash "$patched_source" 532d4926744fcf543f1d0959a81a78d49d4b9ed0ea200541d05f13fcbe56f2e3
 # Elixir prepends its own Mix path during boot, after Erlang processes -pa.
 # Preload the patched module before Elixir starts; subsequent Mix path changes
-# cannot replace an already loaded module. This bootstrap uses only Erlang
-# runtime modules, since Elixir itself has not started yet.
-cat > "$patch_dir/boot.ex" <<'BOOT'
-defmodule Fountain.CI.MixLockBoot do
-  def start do
-    path = :filename.join(:filename.dirname(:code.which(__MODULE__)), ~c"Elixir.Mix.Sync.Lock")
-    {:module, Mix.Sync.Lock} = :code.load_abs(path)
-    :ok
-  end
-end
-BOOT
-elixirc --ignore-module-conflict --warnings-as-errors -o "$patch_dir/ebin" "$patched_source" "$patch_dir/boot.ex"
-export ERL_AFLAGS="${ERL_AFLAGS:+$ERL_AFLAGS }-pa $patch_dir/ebin -s Elixir.Fountain.CI.MixLockBoot"
+# cannot replace an already loaded module. Evaluate the load directly: embedded
+# release boot disables autoloading, so a custom -s bootstrap cannot start there.
+elixirc --ignore-module-conflict --warnings-as-errors -o "$patch_dir/ebin" "$patched_source"
+export ERL_AFLAGS="${ERL_AFLAGS:+$ERL_AFLAGS }-eval '{module,_}=code:load_abs(\"$patch_dir/ebin/Elixir.Mix.Sync.Lock\").'"
 
 # Verify code-path precedence before trusting it for the real command.
 elixir -e '

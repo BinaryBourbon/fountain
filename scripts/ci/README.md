@@ -248,10 +248,12 @@ reporter to distinguish any future stall.
 source SHA256, applies the unchanged upstream patch to a temporary copy,
 verifies the resulting SHA256, and compiles an isolated ebin. It edits no
 installed toolchain and fetches nothing. `--install` exports `ERL_AFLAGS`
-through `GITHUB_ENV`, preserving existing flags. An Erlang bootstrap explicitly
+through `GITHUB_ENV`, preserving existing flags. An Erlang `-eval` explicitly
 loads the patched module before Elixir starts: adding `-pa` alone is
 insufficient because Elixir later prepends its own Mix path. A module-origin
 check and the cross-VM regression verify that the fix reaches child VMs.
+The preload also runs under embedded release boot, which disables autoloading
+and cannot start a custom `-s` bootstrap module from an added code path.
 
 For isolated local verification, wrap a command with the same script:
 

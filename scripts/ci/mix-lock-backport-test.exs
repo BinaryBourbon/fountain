@@ -172,6 +172,32 @@ defmodule Fountain.CI.MixLockBackportTest do
     end
   end
 
+  test "inherited preload flags also allow embedded release boot" do
+    executable = System.find_executable("erl") |> String.to_charlist()
+
+    child =
+      Port.open({:spawn_executable, executable}, [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        {:line, 4096},
+        args: [
+          "-mode",
+          "embedded",
+          "-noshell",
+          "-eval",
+          "io:format(\"embedded started~n\"), halt()."
+        ]
+      ])
+
+    try do
+      assert_receive {^child, {:data, {:eol, "embedded started"}}}, 5_000
+      assert_receive {^child, {:exit_status, 0}}, 5_000
+    after
+      close(child)
+    end
+  end
+
   defp child(code) do
     executable = System.find_executable("elixir") |> String.to_charlist()
 
