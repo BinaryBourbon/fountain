@@ -373,14 +373,6 @@ config :fountain, :sandbox_default_provider, sandbox_default_provider
 #                 inside every sprite.
 #   :phx_host   — bare host. Used for the endpoint url and check_origin.
 #
-# `FOUNTAIN_DOMAIN` was used verbatim for both, and every shipped example sets
-# it bare (render.yaml, fly.toml, k8s/deployment.yaml), so :public_url came out
-# schemeless — "fountain.example.com/users/confirm/<token>" is not a link, and
-# a schemeless FOUNTAIN_BASE_URL is not resolvable by the in-sprite client.
-#
-# PUBLIC_URL and PHX_HOST are the explicit replacements. FOUNTAIN_DOMAIN still
-# works and is normalised into whichever shape is being asked for, so existing
-# deployments keep booting and get correct links without an env change.
 default_scheme = if env == :prod, do: "https", else: "http"
 
 # RENDER_EXTERNAL_URL and FLY_APP_NAME are the two entries nobody sets by
@@ -417,7 +409,6 @@ fly_public_url =
 public_url_env =
   [
     System.get_env("PUBLIC_URL"),
-    System.get_env("FOUNTAIN_DOMAIN"),
     System.get_env("RENDER_EXTERNAL_URL"),
     fly_public_url
   ]

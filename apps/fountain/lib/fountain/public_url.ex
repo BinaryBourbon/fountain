@@ -8,10 +8,8 @@ defmodule Fountain.PublicUrl do
       and reset emails, `llms.txt`) and for `FOUNTAIN_BASE_URL` inside sprites
     * a bare host for the endpoint `:url` and `check_origin`
 
-  `FOUNTAIN_DOMAIN` historically supplied both, and every shipped example sets
-  it bare, so the absolute form came out schemeless. `PUBLIC_URL` / `PHX_HOST`
-  are the explicit replacements; the functions here accept either spelling so
-  existing deployments keep working.
+  `PUBLIC_URL` supplies the absolute base URL. `PHX_HOST` overrides the
+  endpoint host when it differs from the host derived from that URL.
 
   Called from `config/runtime.exs`, so everything in here must be pure and must
   not depend on any application having been started.
