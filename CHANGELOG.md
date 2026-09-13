@@ -314,7 +314,11 @@ upgrade, is in
 
 - Sandbox `/diff` returns 422 when Git fails after repository discovery,
   instead of reporting an empty diff. Intentional byte-cap truncation still
-  succeeds (#1904).
+  succeeds (#1904). It also returns `422 not_a_repository` when Git discovers
+  a repository above the sandbox's allowed roots, instead of returning that
+  repository's diff. This includes self-hosted runners inside a home directory
+  that is a dotfiles repository. The `repo_root` string now passes through
+  secret redaction; the response shape is unchanged (#1596, #1905).
 
 - **A reset refused by a bounded execution says so** (ADR 0046). Deleting a
   sandbox while a bounded turn still owed a remote stop answered `422` with an
