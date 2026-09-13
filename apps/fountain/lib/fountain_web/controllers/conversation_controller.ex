@@ -494,8 +494,7 @@ defmodule FountainWeb.ConversationController do
         "`labels` (#1637) are stamped on the new conversation; with `channel_id`, a resume " <>
         "merges them into the conversation it hands back, and a sandbox callback token " <>
         "resuming a conversation it was not minted for is refused with 403. " <>
-        "Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. " <>
-        "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
+        "Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one.",
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
     responses: [
       bad_request: {"Invalid request", "application/json", Schemas.Error},
@@ -534,9 +533,7 @@ defmodule FountainWeb.ConversationController do
   end
 
   defp create_with_images(conn, params, user, images) do
-    parent_header =
-      List.first(get_req_header(conn, "x-fountain-parent-conversation-id")) ||
-        List.first(get_req_header(conn, "x-aod-parent-conversation-id"))
+    parent_header = List.first(get_req_header(conn, "x-fountain-parent-conversation-id"))
 
     {source, parent_id} = infer_provenance(parent_header)
 
@@ -783,8 +780,7 @@ defmodule FountainWeb.ConversationController do
 
   @doc """
   Infer the conversation's `source` and `parent_conversation_id` from
-  the `X-Fountain-Parent-Conversation-Id` (or legacy `X-AoD-Parent-Conversation-Id`)
-  header value (or `nil` if absent).
+  the `X-Fountain-Parent-Conversation-Id` header value (or `nil` if absent).
 
   Pure function so the inference logic can be unit-tested without
   going through the full `Conversations.start_conversation/1` pipeline

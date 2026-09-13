@@ -18,6 +18,12 @@ upgrade, is in
 
 ### Upgrade notes
 
+- `POST /api/conversations` no longer reads the legacy
+  `X-AoD-Parent-Conversation-Id` header. Use
+  `X-Fountain-Parent-Conversation-Id` to record agent provenance and the parent
+  conversation. Requests with only the legacy header are treated as API calls
+  with no parent.
+
 - `FOUNTAIN_DOMAIN` is no longer read. Set `PUBLIC_URL` to the absolute URL
   of your instance, and set `PHX_HOST` only if the endpoint host differs.
   The Render and Fly platform fallbacks still work. A production instance

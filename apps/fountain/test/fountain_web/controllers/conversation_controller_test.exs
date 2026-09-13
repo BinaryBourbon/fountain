@@ -1594,7 +1594,7 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "POST /api/conversations — parent conversation header" do
-    test "returns 201 when x-fountain-parent-conversation-id header is set", %{
+    test "records agent provenance from the Fountain parent header", %{
       conn: conn,
       user: user,
       raw_key: raw_key
@@ -1612,7 +1612,33 @@ defmodule FountainWeb.ConversationControllerTest do
         |> put_req_header("x-fountain-parent-conversation-id", parent_conv.id)
         |> post_json("/api/conversations", %{"agent_id" => agent.id})
 
-      assert json_response(conn, 201)
+      data = json_response(conn, 201)["data"]
+      assert data["source"] == "agent"
+      assert data["parent_conversation_id"] == parent_conv.id
+    end
+
+    test "ignores the legacy parent header", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+      parent_conv = insert_conversation(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      data =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("x-aod-parent-conversation-id", parent_conv.id)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+        |> json_response(201)
+        |> Map.fetch!("data")
+
+      assert data["source"] == "api"
+      assert is_nil(data["parent_conversation_id"])
     end
 
     test "returns 404 when the header is not a conversation id (#1679)", %{

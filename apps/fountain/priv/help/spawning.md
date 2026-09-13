@@ -8,8 +8,6 @@ Every conversation gets three env vars in its sprite:
 
 Plus the bundled **`fountain` skill** mounted under `~/.claude/skills/fountain/` (or the runtime equivalent). With those pieces, any agent inside a sprite can call back to the API and spawn more conversations.
 
-> Legacy `AOD_*` env vars and `X-AoD-Parent-Conversation-Id` are no longer injected. The Fountain API still accepts the legacy header on `POST /api/conversations` so sprites provisioned before the rename keep working until they terminate.
-
 ## Patterns the agent will use
 
 ### Fan out
