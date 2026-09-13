@@ -227,8 +227,13 @@ func TestDialGuestRejectsASocketThatDoesNotSpeakVsock(t *testing.T) {
 		if err != nil {
 			return
 		}
+		defer func() { _ = conn.Close() }()
+		// Consume CONNECT before replying so the close cannot race the
+		// client's write and hide the malformed-reply diagnostic.
+		if _, err := bufio.NewReader(conn).ReadString('\n'); err != nil {
+			return
+		}
 		_, _ = conn.Write([]byte("NO\n"))
-		_ = conn.Close()
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
