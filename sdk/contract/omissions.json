@@ -2,10 +2,6 @@
   "$comment": "Operations of the API that no SDK's hand-written layer models, and why. `scripts/sdk-contract/build.py --check` fails on an operation that is neither claimed by a manifest nor matched here, and on an entry here that matches nothing the API still serves. So this file is the record of a decision, not a place to make a failure go away: a new endpoint stops CI until somebody either wires it into a client or writes one line about why no client needs it. Patterns are fnmatch globs over `METHOD /path`, with the path exactly as the OpenAPI document templates it.",
   "omit": [
     {
-      "operations": ["* /api/admin/*"],
-      "reason": "The operator console's own surface. It is behind require_admin and has one client, the console; no SDK models it (ADR 0013)."
-    },
-    {
       "operations": [
         "POST /api/auth/register",
         "POST /api/auth/token",
@@ -17,12 +13,9 @@
         "POST /api/auth/reset",
         "POST /api/auth/password",
         "POST /api/auth/device",
-        "POST /api/auth/device/token",
-        "GET /api/auth/api-keys",
-        "POST /api/auth/api-keys",
-        "DELETE /api/auth/api-keys/{id}"
+        "POST /api/auth/device/token"
       ],
-      "reason": "Account bootstrap and key minting. An SDK is constructed with a key it already holds; the flows that produce one belong to the console and to `fountain auth login` (#1305). Only GET /api/auth/me is modelled, because a client wants to know whose key it has."
+      "reason": "Account bootstrap. These sign-in and account recovery flows belong to the console and to `fountain auth login` (#1305). FountainKit models API key management after authentication."
     },
     {
       "operations": ["* /api/claimable-users*"],
@@ -33,8 +26,8 @@
       "reason": "Self-service OAuth client registration (#1125, ADR 0021). A person registers an app once, in the console or with `fountain oauth-client`, and then puts the returned client_id in the app. An SDK caller's work starts after that point, with the API key the flow mints, and every endpoint a client then calls is already modelled."
     },
     {
-      "operations": ["POST /api/oauth/token", "POST /api/oauth/revoke"],
-      "reason": "Sign in with Fountain. The browser apps run the code+PKCE dance themselves against these two, and the token they get IS an API key, so the SDK starts after this point."
+      "operations": ["POST /api/oauth/token"],
+      "reason": "Sign in with Fountain. The browser apps exchange the code+PKCE themselves; the SDK starts with the API key that flow mints. FountainKit models revocation for sign-out."
     },
     {
       "operations": ["* /api/account/*", "DELETE /api/account"],
@@ -53,16 +46,12 @@
       "reason": "Egress broker bindings (ADR 0019). Configuration of where a credential lives, set once per account; the run-time effect is invisible to a client."
     },
     {
-      "operations": ["* /api/runners*"],
-      "reason": "Self-hosted runner registration and the daemon's WebSocket (ADR 0022). The `fountain runner` daemon is the only client, and its socket is not JSON over HTTP."
+      "operations": ["GET /api/runners/ws"],
+      "reason": "The self-hosted runner daemon's WebSocket (ADR 0022). Its socket is not JSON over HTTP. FountainKit models runner listing and deletion."
     },
     {
       "operations": ["* /api/buzz/agents*"],
       "reason": "The Buzz gateway's own provisioning surface (ADR 0020). Buzz calls it; no general client does."
-    },
-    {
-      "operations": ["POST /api/apply"],
-      "reason": "Bulk upsert of a compiled fountain.yml. The CLI compiles the manifest and calls this; an SDK caller creates the resources it wants directly."
     },
     {
       "operations": ["POST /api/agui/{agent_id}"],
@@ -73,33 +62,26 @@
       "reason": "The OpenAI-compatible gateway. Its clients are OpenAI SDKs by definition — that is the whole point of the shape."
     },
     {
-      "operations": ["GET /api/audit", "GET /api/support/reports", "GET /api/support/reports/{id}", "POST /api/support/reports"],
-      "reason": "Read-only console surfaces: the tenant's audit trail and the support inbox. No agent run touches them."
+      "operations": ["GET /api/support/reports", "GET /api/support/reports/{id}", "POST /api/support/reports"],
+      "reason": "The support inbox and report submission. No SDK models this console surface; FountainKit models the tenant's audit trail separately."
     },
     {
       "operations": [
-        "GET /api/agents/{id}/avatar",
         "PUT /api/agents/{id}/avatar",
         "DELETE /api/agents/{id}/avatar",
         "POST /api/avatars/generate"
       ],
-      "reason": "Avatar upload and generation. Image bytes for the console's own presentation, not part of any client's wire."
-    },
-    {
-      "operations": ["GET /api/agents/{id}/versions", "GET /api/agents/{id}/versions/{version}"],
-      "reason": "Agent version history, a console read. A conversation pins its version server-side, so a client never selects one."
+      "reason": "Avatar upload and generation belong to the console. FountainKit models fetching the image bytes."
     },
     {
       "operations": [
-        "GET /api/connections/providers",
         "GET /api/conversations/{conversation_id}/egress",
-        "GET /api/conversations/{conversation_id}/turns/{turn_id}/images/{position}",
         "GET /api/secret-bindings/presets",
         "POST /api/team/{agent_id}/contact",
         "PATCH /api/team/{agent_id}/contact",
         "DELETE /api/team/{agent_id}/contact"
       ],
-      "reason": "Console-facing reads and the rented teammate contact (ADR 0030 decision 4). Each needs a UI around it — a connect button, an egress panel, an image, a phone number a person pays for — rather than a verb on a client."
+      "reason": "Console-facing reads and the rented teammate contact (ADR 0030 decision 4). No SDK models these operations. FountainKit separately models connection providers and turn images."
     },
     {
       "operations": ["GET /health", "GET /health/ready"],

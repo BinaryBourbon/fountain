@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -107,6 +109,19 @@ class SettingsTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_validation_errors_keep_field_details(self):
+        body = {"error": "validation_failed", "errors": {"prompt": ["can't be blank"]}}
+        response = urllib.error.HTTPError(
+            "https://fountain.test/api/conversations", 422, "rejected", {},
+            io.BytesIO(json.dumps(body).encode()),
+        )
+        with mock.patch("urllib.request.urlopen", side_effect=response):
+            with self.assertRaises(FountainError) as caught:
+                FountainClient("https://fountain.test", TOKEN).create_conversation("a-1", "")
+        self.assertEqual(caught.exception.status, 422)
+        self.assertEqual(caught.exception.body, body)
+        self.assertIn('"prompt": ["can\'t be blank"]', str(caught.exception))
+
     def test_agent_resolution(self):
         with FakeFountain() as fake:
             c = FountainClient(fake.base_url, TOKEN)

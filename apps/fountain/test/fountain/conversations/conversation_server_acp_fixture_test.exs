@@ -106,7 +106,7 @@ defmodule Fountain.Conversations.ConversationServerAcpFixtureTest do
     conv_id
     |> Conversations._unsafe_list_log_events()
     |> Enum.filter(&(&1.stream == "acp"))
-    |> Enum.flat_map(&Blocks.for_event(&1, "acp"))
+    |> Enum.flat_map(&Blocks.for_event/1)
   end
 
   describe "a real ACP program, driven to completion" do

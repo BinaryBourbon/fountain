@@ -2,13 +2,12 @@ defmodule Fountain.Conversations.Output do
   @moduledoc """
   What the sandbox says, on its way to the transcript (#1377).
 
-  Three rules live here: the durable log budget (#331) and the truncation
-  marker that says it is spent, the replay skip a reattach needs, and the
-  stage events that mark the same stream. `Redaction` is the guard on the
+  The durable log budget (#331), its truncation marker, and the stage events
+  that mark the same stream live here. `Redaction` is the guard on the
   single writer (`Conversations.log!/1`) and stays where it is; this module
   decides what is written at all, not what a written row may say.
 
-  `from_state/1` reads the three server fields into an `%Output{}` and
+  `from_state/1` reads the two server fields into an `%Output{}` and
   `into_state/2` writes them back; the server's state does not change shape.
   Every function takes what it reads — the conversation, the turn the output
   belongs to and the owner whose sidebar moves, gathered by `ctx/1` — and
@@ -21,8 +20,7 @@ defmodule Fountain.Conversations.Output do
 
   @type t :: %__MODULE__{
           bytes: non_neg_integer() | nil,
-          capped: boolean(),
-          replay_skip: %{String.t() => non_neg_integer()}
+          capped: boolean()
         }
 
   @type ctx :: %{
@@ -31,7 +29,7 @@ defmodule Fountain.Conversations.Output do
           user_id: String.t() | nil
         }
 
-  defstruct bytes: nil, capped: false, replay_skip: %{}
+  defstruct bytes: nil, capped: false
 
   # ── the server boundary ───────────────────────────────────────────────────
 
@@ -40,8 +38,7 @@ defmodule Fountain.Conversations.Output do
   def from_state(state) do
     %__MODULE__{
       bytes: state.output_bytes,
-      capped: state.output_capped,
-      replay_skip: state.replay_skip
+      capped: state.output_capped
     }
   end
 
@@ -51,8 +48,7 @@ defmodule Fountain.Conversations.Output do
     %{
       state
       | output_bytes: output.bytes,
-        output_capped: output.capped,
-        replay_skip: output.replay_skip
+        output_capped: output.capped
     }
   end
 
@@ -179,35 +175,6 @@ defmodule Fountain.Conversations.Output do
     :ok
   end
 
-  # ── the reattach replay skip ──────────────────────────────────────────────
-
-  @doc """
-  Drop replayed bytes before persisting.
-
-  After reattach, sprites replays the session's buffered output up to where
-  it left off, then live-tails. We pre-loaded the byte count we'd already
-  persisted for the in-flight turn into `replay_skip[stream]`; consume that
-  many bytes off the front of incoming data, then start logging the remainder
-  normally.
-  """
-  @spec log_with_replay_skip(t(), ctx(), String.t(), binary()) :: t()
-  def log_with_replay_skip(%__MODULE__{} = output, ctx, stream, data) do
-    skip = Map.get(output.replay_skip, stream, 0)
-    size = byte_size(data)
-
-    cond do
-      skip == 0 ->
-        log(output, ctx, stream, data)
-
-      skip >= size ->
-        put_in(output.replay_skip[stream], skip - size)
-
-      true ->
-        output = log(output, ctx, stream, binary_part(data, skip, size - skip))
-        put_in(output.replay_skip[stream], 0)
-    end
-  end
-
   # ── stage events ──────────────────────────────────────────────────────────
 
   @doc """
@@ -221,30 +188,4 @@ defmodule Fountain.Conversations.Output do
   def publish_stage(conv_id, stage, status, meta \\ %{}) do
     Conversations.publish_stage(conv_id, stage, status, meta)
   end
-
-  # ── images into the sandbox ───────────────────────────────────────────────
-
-  @doc """
-  Write each image to a temp path in the sprite filesystem and return a list
-  of `{path, media_type}` tuples for passing to the runtime.
-  """
-  @spec write_image_temp_files(term(), String.t(), list()) :: [{String.t(), String.t()}]
-  def write_image_temp_files(_handle, _turn_id, []), do: []
-
-  def write_image_temp_files(handle, turn_id, images) do
-    images
-    |> Enum.with_index()
-    |> Enum.map(fn {%{media_type: mt, data: data}, idx} ->
-      ext = media_type_to_ext(mt)
-      path = "/tmp/aod_turn_#{turn_id}_#{idx}.#{ext}"
-      Managoat.Sandbox.write_file(handle, path, data)
-      {path, mt}
-    end)
-  end
-
-  defp media_type_to_ext("image/png"), do: "png"
-  defp media_type_to_ext("image/jpeg"), do: "jpeg"
-  defp media_type_to_ext("image/gif"), do: "gif"
-  defp media_type_to_ext("image/webp"), do: "webp"
-  defp media_type_to_ext(_), do: "bin"
 end

@@ -11,6 +11,18 @@ server releases.
 
 ---
 
+## [1.32.0] - 2026-09-13
+
+### Removed
+
+- Legacy stdout row paragraph separators when assembling run text. Text now joins as ACP chunks on every stream, with paragraph breaks after tool calls preserved. Historical stdout rows no longer receive automatic blank lines.
+
+## [1.31.1] - 2026-09-13
+
+### Fixed
+
+- Classify `sandbox_unavailable` as `NotReadyError`, preserving the server's `Retry-After` delay for callers retrying a refused sandbox binding (#2049).
+
 ## [1.31.0] — 2026-09-11
 
 ### Added

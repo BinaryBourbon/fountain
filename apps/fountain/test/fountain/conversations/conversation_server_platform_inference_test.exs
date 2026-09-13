@@ -225,6 +225,7 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
 
       machine = %TurnMachine{
         conversation_id: conv.id,
+        sandbox_id: conv.sandbox_id,
         row: row,
         metrics:
           TurnMachine.start_metrics("claude", :sprites, System.monotonic_time(:millisecond))
@@ -260,7 +261,7 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
       other = insert_turn(conv, status: "running")
       {_m, []} = select_model(%{m | row: other}, platform_ctx())
 
-      TurnMachine.fail_before_start(other, conv.id, "spawn", "boom", 1)
+      TurnMachine.fail_before_start(other, conv.id, conv.sandbox_id, "boom")
 
       assert stored(other).status == "failed"
       assert stored(other).usage["inference"] == "platform"

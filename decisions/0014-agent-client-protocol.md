@@ -982,3 +982,14 @@ session ids are worth that, and gate 3 is where the bet is settled.
   parsers or the permission gap — and building it first would mean a second
   copy of those parsers in Go. Split out as
   [0015](0015-fountain-as-an-acp-agent.md), sequenced after this.
+
+### Historical stdout rendering retired (2026-09-13)
+
+The frozen Claude, Codex, OpenCode, and Gemini stdout parsers have been removed.
+We no longer require pre-ACP conversations to render, so removal does not wait
+for every historical row to age out of retention. Only ACP events produce
+structured transcript blocks and assistant reply text. Other streams remain
+available as raw log event data; this change does not delete stored events.
+
+This supersedes the retention prerequisite in the implementation notes above.
+New runtimes still integrate through ACP at the sandbox boundary.

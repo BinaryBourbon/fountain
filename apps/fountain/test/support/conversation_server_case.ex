@@ -33,11 +33,8 @@ defmodule Fountain.ConversationServerCase do
       # async ones have finished.
       setup :set_mimic_global
 
-      # The server also needs to reach the sandbox from its own process.
-      setup do
-        Ecto.Adapters.SQL.Sandbox.mode(Fountain.Repo, {:shared, self()})
-        :ok
-      end
+      # DataCase shares the connection through a separate owner that survives
+      # until on_exit. Keep that owner while ExUnit stops supervised servers.
     end
   end
 
@@ -69,8 +66,7 @@ defmodule Fountain.ConversationServerCase do
     # A turn's spawn fails cleanly unless the test stubs it — mirroring the
     # pre-facade behavior where spawning against the fake sprite errored and
     # the turn was marked failed. Tests exercising turns re-stub spawn (and
-    # write_stdin/close_stdin where their turn writes; the #603 tests rely on
-    # the adapter's REAL write path, so those stay unstubbed here).
+    # write_stdin/close_stdin where their turn writes).
     Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _handle, _cmd, _args, _opts ->
       {:error, {:unavailable, :spawn_not_stubbed}}
     end)
@@ -118,8 +114,9 @@ defmodule Fountain.ConversationServerCase do
   @doc """
   Start a real ConversationServer for `conv` and wait for it to settle.
 
-  Started outside Horde and unlinked, so a server that legitimately stops —
-  which the failure paths do — doesn't take the test process with it.
+  Started outside Horde under ExUnit's supervisor, so a server that legitimately
+  stops doesn't take the test process with it. ExUnit stops any surviving server
+  before DataCase releases the SQL Sandbox owner, including on a failed test.
   """
   def start_server(conv, opts \\ []) do
     runtime = Keyword.get(opts, :runtime, Managoat.Runtimes.Testing.FakeRuntime)
@@ -131,7 +128,13 @@ defmodule Fountain.ConversationServerCase do
       runtime_module: runtime
     ]
 
-    {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
+    pid =
+      ExUnit.Callbacks.start_supervised!(%{
+        id: make_ref(),
+        start: {GenServer, :start_link, [Fountain.Conversations.ConversationServer, args]},
+        restart: :temporary
+      })
+
     ref = Process.monitor(pid)
 
     # The prompt is delivered out of band, exactly as production does it: it is
@@ -153,10 +156,12 @@ defmodule Fountain.ConversationServerCase do
     end
 
     # handle_continue(:provision) runs before any call is answered, so a
-    # synchronous call is enough to know provisioning has finished.
+    # synchronous call is enough to know provisioning has finished. Let ExUnit's
+    # test timeout bound a hung provision: the default five-second system-call
+    # timeout mislabeled a slow, live server as :stopped (#1702).
     settled =
       try do
-        _ = :sys.get_state(pid)
+        _ = :sys.get_state(pid, :infinity)
         :alive
       catch
         :exit, _ -> :stopped
@@ -172,5 +177,105 @@ defmodule Fountain.ConversationServerCase do
     after
       timeout -> raise "expected the ConversationServer to stop, but it is still running"
     end
+  end
+end
+
+defmodule Fountain.ConversationServerCase.ACP do
+  @moduledoc "Sandbox transport and ACP protocol helpers for ConversationServer tests."
+
+  import ExUnit.Assertions
+
+  @doc "Wire the sandbox ACP transport to the test process and return its command ref."
+  def stub_acp_transport do
+    test = self()
+    ref = make_ref()
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
+      send(test, {:spawned, cmd, args, opts})
+      {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
+    end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c ->
+      send(test, :stdin_closed)
+      :ok
+    end)
+
+    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, data ->
+      send(test, {:wrote, IO.iodata_to_binary(data)})
+      :ok
+    end)
+
+    ref
+  end
+
+  # The default covers a write on an open connection. A turn that had to spawn
+  # a fresh adapter first waits on `prepare_acp_adapter/3` before its peer says
+  # anything, which can outrun a second on a loaded runner — those call sites
+  # pass their own.
+  def next_write(timeout \\ 1_000) do
+    assert_receive {:wrote, line}, timeout
+    Jason.decode!(line)
+  end
+
+  def reply(pid, ref, id, result) do
+    line = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "result" => result}) <> "\n"
+    send(pid, {:stdout, %{ref: ref}, line})
+    settle(pid)
+  end
+
+  # A message crosses three mailboxes: the server takes the stdout chunk and
+  # casts it to the peer, the peer acts and reports back, and the server acts on
+  # the report. Syncing only the server would assert against a state one hop
+  # behind, which is what made these tests pass alone and fail together.
+  #
+  # The peer is stopped by the server the moment it reports `{:done, _}`, so
+  # between reading `acp_peer` and syncing on it the peer may already be gone
+  # (a `noproc` exit from `:sys.get_state/1`, seen in CI on 2026-08-17). That
+  # is the state we wanted anyway — the report was handled — so a dead peer
+  # is not a failure here.
+  def settle(pid) do
+    peer = :sys.get_state(pid).acp_peer
+
+    if is_pid(peer) do
+      try do
+        _ = :sys.get_state(peer)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
+    _ = :sys.get_state(pid)
+    :ok
+  end
+
+  def notify(pid, ref, update) do
+    line =
+      Jason.encode!(%{
+        "jsonrpc" => "2.0",
+        "method" => "session/update",
+        "params" => %{"sessionId" => "sess_1", "update" => update}
+      }) <> "\n"
+
+    send(pid, {:stdout, %{ref: ref}, line})
+    settle(pid)
+  end
+
+  # initialize → session/new → session/prompt, returning the prompt's id so a
+  # test can answer it.
+  def drive_to_prompt(pid, ref) do
+    %{"id" => init_id, "method" => "initialize"} = next_write()
+
+    reply(pid, ref, init_id, %{
+      "agentCapabilities" => %{"loadSession" => true, "sessionCapabilities" => %{"resume" => %{}}}
+    })
+
+    %{"id" => new_id, "method" => "session/new"} = next_write()
+    reply(pid, ref, new_id, %{"sessionId" => "sess_1", "models" => %{}})
+    %{"id" => set_id, "method" => "session/set_model"} = next_write()
+    reply(pid, ref, set_id, %{})
+
+    %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+    settle(pid)
+    prompt_id
   end
 end

@@ -207,11 +207,15 @@ defmodule Fountain.SandboxFiles do
          {:ok, absolute} <- resolve_path(sandbox, path),
          {:ok, output} <- run(sandbox, list_script(), [absolute]) do
       entries = parse_entries(output)
+      values = secret_values(sandbox)
 
       {:ok,
        %{
-         path: absolute,
-         entries: Enum.take(entries, @max_entries),
+         path: to_text(redact_with(values, absolute)),
+         entries:
+           entries
+           |> Enum.take(@max_entries)
+           |> Enum.map(fn entry -> %{entry | name: to_text(redact_with(values, entry.name))} end),
          truncated: length(entries) > @max_entries
        }}
     end

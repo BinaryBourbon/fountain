@@ -2245,7 +2245,8 @@ defmodule Fountain.Conversations do
   Lock the conversation before the turn, and commit its idle status with the
   turn's result. A moved or terminal conversation, or a turn already ended by
   another actor, is a no-op. Reply materialization shares that transaction;
-  activation and sidebar publication run after it commits.
+  activation and sidebar publication run after it commits. The optional
+  `:exit_code` is persisted atomically with the result.
 
   The parent only idles under the two conditions `_unsafe_idle_after_turn/1`
   idled under: `ExecutionGuard.latest_turn?/2` and a `running` parent. The
@@ -2258,8 +2259,20 @@ defmodule Fountain.Conversations do
   The two-phase interrupt the server drives itself is a different write, and
   it keeps the conversation running until the peer has stopped.
   """
-  def _unsafe_complete_turn(%Turn{} = turn, sandbox_id, status)
+  def _unsafe_complete_turn(%Turn{} = turn, sandbox_id, status, opts \\ [])
       when status in ["completed", "failed", "interrupted"] do
+    end_running_turn(turn, sandbox_id, status, true, Map.new(Keyword.take(opts, [:exit_code])))
+  end
+
+  @doc """
+  Mark an actor-owned turn interrupted while retaining the conversation's
+  status until the peer has stopped. Uses the same binding and terminal guards
+  as completion, with reply activation after commit.
+  """
+  def _unsafe_interrupt_turn(%Turn{} = turn, sandbox_id),
+    do: end_running_turn(turn, sandbox_id, "interrupted", false)
+
+  defp end_running_turn(turn, sandbox_id, status, idle?, attrs \\ %{}) do
     {:ok, result} =
       Repo.transaction(fn ->
         conversation_query =
@@ -2276,10 +2289,12 @@ defmodule Fountain.Conversations do
              %Turn{status: "running"} = current <- Repo.one(turn_query) do
           changeset =
             current
-            |> Turn.changeset(%{
-              status: status,
-              ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
-            })
+            |> Turn.changeset(
+              Map.merge(attrs, %{
+                status: status,
+                ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
+              })
+            )
             |> maybe_put_reply_text(current)
 
           updated = Repo.update!(changeset)
@@ -2292,12 +2307,17 @@ defmodule Fountain.Conversations do
           # older turn cannot stop this one from idling it. The parent lock
           # above is the same one turn admission takes, so nothing can be
           # admitted between this read and the write.
-          conv =
-            if conv.status == "running" and ExecutionGuard.latest_turn?(conv.id, turn.id),
-              do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
-              else: conv
+          #
+          # The interrupt path passes `idle?: false` and idles later, through
+          # `_unsafe_idle_interrupted_turn/1`, which asks the same two
+          # questions once the peer has stopped.
+          updated_conv =
+            if idle? and conv.status == "running" and
+                 ExecutionGuard.latest_turn?(conv.id, turn.id),
+               do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+               else: conv
 
-          {updated, conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
+          {updated, updated_conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
         else
           _ -> :noop
         end
@@ -2309,8 +2329,162 @@ defmodule Fountain.Conversations do
 
       {updated, conv, reply_materialized?} ->
         if reply_materialized?, do: Fountain.Activation.turn_replied(updated)
-        broadcast_sidebar_update(conv.user_id)
+        if idle?, do: broadcast_sidebar_update(conv.user_id)
         {:ok, updated}
+    end
+  end
+
+  @doc """
+  Release the conversation `TurnMachine.mark_interrupted/1` left running.
+
+  Caller requirement: call only from `TurnMachine.close_interrupted/1` after
+  its matching `mark_interrupted/1` successfully retired the turn. The public
+  `_unsafe_` helper does not enforce this requirement for another caller.
+
+  The binding check belongs to that successful mark: `_unsafe_interrupt_turn/2`
+  checks the actor's sandbox binding under the parent lock, and only success
+  sets `interrupted?`. `close_interrupted/1` calls this helper only when that
+  flag is true. Neither `from_state/1` nor `into_state/2` carries the flag, so
+  it cannot survive a mailbox round-trip. `ConversationServer.interrupt_turn/1`
+  runs both halves synchronously, separated only by `stop_acp_peer/1`, whose
+  `GenServer.stop/3` has a one-second timeout. The server's `sandbox_id` is set
+  at init and never changed. An actor already stale at the mark cannot reach
+  this write; a rebind after a successful mark can still reach it.
+
+  This half deliberately takes no `sandbox_id` and does not repeat the binding
+  check. It writes no turn result. Under the parent and turn locks, it requires
+  a `running` parent, an `interrupted` turn and `ExecutionGuard.latest_turn?/2`.
+  A successor admitted while the peer was stopping prevents the idle write;
+  an older turn left `running` does not. Admission inserts its turn and sets
+  the parent `running` in the same transaction under the same parent lock, so
+  it cannot slip between this check and the write.
+
+  Rechecking the binding here could leave the parent `running` after the
+  first half retired its last running turn. `AutonomousTurnReaper.sweep_stuck_turns/0`
+  selects running turns, and `ExecutionGuard._unsafe_recover_turn/3` returns
+  `:noop` for a retired turn, so those recovery paths cannot repair that state.
+  Other paths can idle the parent: `MachineEvents.gone/5` and the lifecycle's
+  park and reclaim paths do so when they run.
+
+  `follow_cotenants/2` sends `:machine_gone` before rebinding with `update_all`,
+  so a server that receives the cast has `gone/5`'s cleanup as a backstop.
+  `gone/5` ignores a notification naming another sandbox and
+  `_unsafe_finish_machine_gone/2` answers `:noop` for a moved conversation
+  (#2006), but its idle write is deliberately not conditioned on the binding,
+  so a parent left `running` with no running turn is still released. The
+  backstop this paragraph relies on therefore survives the rebind.
+  `tell_cotenants/3` skips the cast when `ConversationServer.whereis/1` misses,
+  including a cross-pod registry miss, while the rebind still applies. The
+  parent can then remain `running` until another cleanup path runs.
+  `_unsafe_sandbox_busy_elsewhere?/4` reads co-tenant turns and `updated_at`
+  for conversations without turns, not the parent's status; a stuck parent
+  alone does not keep the shared sandbox busy or extend its billing lifetime.
+
+  Known gap: a turn no longer `interrupted` writes nothing, and nothing
+  overwrites a terminal turn today, so that arm has no live producer (#2054
+  gap 2).
+  """
+  def _unsafe_idle_interrupted_turn(%Turn{} = turn) do
+    {:ok, result} =
+      Repo.transaction(fn ->
+        conversation_query =
+          from(c in Conversation, where: c.id == ^turn.conversation_id, lock: "FOR UPDATE")
+
+        turn_query =
+          from(t in Turn,
+            where: t.id == ^turn.id and t.conversation_id == ^turn.conversation_id,
+            lock: "FOR UPDATE"
+          )
+
+        with %Conversation{status: "running"} = conv <- Repo.one(conversation_query),
+             %Turn{status: "interrupted"} <- Repo.one(turn_query),
+             true <- ExecutionGuard.latest_turn?(conv.id, turn.id) do
+          conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
+        else
+          _ -> :noop
+        end
+      end)
+
+    case result do
+      %Conversation{} = conv ->
+        broadcast_sidebar_update(conv.user_id)
+        :ok
+
+      :noop ->
+        :noop
+    end
+  end
+
+  @doc """
+  Finish an actor's machine-gone notification, and release a stranded parent.
+
+  Lock the parent through the running-turn check and any idle write, as
+  admission does. A deleted conversation or a newer running turn makes this a
+  no-op. `:ok` says the notification is this actor's to narrate: the binding
+  still names the sandbox it closed and the conversation is not terminal. A
+  moved or terminal conversation answers `:noop`, so an obsolete actor emits no
+  sandbox event. Publication happens after commit, and this function performs
+  no provider or actor I/O.
+
+  The idle write is not conditioned on the binding, and that is deliberate.
+  Under the parent lock a `running` conversation with no running turn is not a
+  legitimate transient: admission inserts the running turn and sets the parent
+  `running` in one transaction under this same lock (`_unsafe_create_turn_on_sandbox/3`),
+  and the two other writers of `running` (`Reattachment` and `Connection`) both
+  have their running turn in hand. So that pair is a stuck row, and the sweeps
+  cannot repair it — `AutonomousTurnReaper.sweep_stuck_turns/0` and
+  `ExecutionGuard._unsafe_recover_turn/3` both select a running turn, and there
+  is none. `_unsafe_idle_interrupted_turn/1` declines to recheck the binding for
+  exactly this reason and names this function as its backstop (#2000); a
+  refusal here would strand the parent with nothing left to release it.
+  Releasing it is a repair, not an act of the stale actor, so it still answers
+  `:noop` and publishes nothing.
+  """
+  def _unsafe_finish_machine_gone(conversation_id, sandbox_id) do
+    {:ok, result} =
+      Repo.transaction(fn ->
+        conversation_query =
+          from(c in Conversation, where: c.id == ^conversation_id, lock: "FOR UPDATE")
+
+        running_query =
+          from(t in Turn, where: t.conversation_id == ^conversation_id and t.status == "running")
+
+        with %Conversation{} = conv <- Repo.one(conversation_query),
+             false <- Repo.exists?(running_query) do
+          # A terminal conversation is never `running`, so this decides the
+          # answer, never the write.
+          current? = conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"]
+
+          cond do
+            conv.status == "running" ->
+              idled = conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
+              if current?, do: {:updated, idled}, else: {:released, idled}
+
+            current? ->
+              :unchanged
+
+            true ->
+              :noop
+          end
+        else
+          _ -> :noop
+        end
+      end)
+
+    case result do
+      {:updated, conv} ->
+        broadcast_sidebar_update(conv.user_id)
+        :ok
+
+      {:released, conv} ->
+        broadcast_sidebar_update(conv.user_id)
+        :noop
+
+      :unchanged ->
+        :ok
+
+      :noop ->
+        :noop
     end
   end
 
@@ -2561,15 +2735,11 @@ defmodule Fountain.Conversations do
 
   @doc """
   The assistant's text for `turn`, from its events through the same parse
-  the transcript uses (`Blocks.assistant_text/2`); nil when there is none.
-  Reads the conversation's runtime for the legacy dialects. Without tenant
-  scope: the caller holds the turn.
+  the transcript uses (`Blocks.assistant_text/1`); nil when there is none.
+  Without tenant scope: the caller holds the turn.
   """
   def _unsafe_turn_reply_text(%Turn{} = turn) do
-    runtime =
-      Repo.one(from c in Conversation, where: c.id == ^turn.conversation_id, select: c.runtime)
-
-    case turn.id |> _unsafe_list_turn_log_events() |> Blocks.assistant_text(runtime) do
+    case turn.id |> _unsafe_list_turn_log_events() |> Blocks.assistant_text() do
       "" -> nil
       text -> text
     end
@@ -2852,14 +3022,14 @@ defmodule Fountain.Conversations do
 
   @doc """
   Durable events after a user's cursor, including conversations that have finished.
-  Returns at most 500 rows in id order, with each conversation's runtime for blocks.
+  Returns at most 500 rows in id order.
   """
   def list_user_log_events(user_id, after_id) when is_binary(user_id) do
     user_log_events_query(user_id)
     |> where([e], e.id > ^after_id)
     |> order_by([e], asc: e.id)
     |> limit(500)
-    |> select([e, c], {e, c.runtime})
+    |> select([e], e)
     |> Repo.all()
   end
 
@@ -2929,25 +3099,6 @@ defmodule Fountain.Conversations do
     do: s in streams
 
   def event_in_streams?(_ev, _streams), do: false
-
-  @doc """
-  Sum the byte sizes of persisted output events for a turn, by stream.
-  Used by ConversationServer on reattach to know how many bytes of
-  replayed output to skip before persisting fresh, post-disconnect data.
-  """
-  def _unsafe_output_bytes_by_stream(conversation_id, turn_id) do
-    from(e in LogEvent,
-      where:
-        e.conversation_id == ^conversation_id and
-          e.turn_id == ^turn_id and
-          e.kind == "output" and
-          not is_nil(e.stream),
-      group_by: e.stream,
-      select: {e.stream, fragment("COALESCE(SUM(LENGTH(?)), 0)", e.data)}
-    )
-    |> Repo.all()
-    |> Map.new()
-  end
 
   @doc """
   The most recent persisted output lines of one stream for a turn, as a set.
@@ -5681,21 +5832,21 @@ defmodule Fountain.Conversations do
             {env_id, vault_id} == identity
           end)
 
-        follow_cotenants(Enum.map(following, &elem(&1, 0)), new_sandbox.id)
-        strand_cotenants(Enum.map(on_their_own, &elem(&1, 0)))
+        follow_cotenants(Enum.map(following, &elem(&1, 0)), old_sandbox_id, new_sandbox.id)
+        strand_cotenants(Enum.map(on_their_own, &elem(&1, 0)), old_sandbox_id)
         :ok
     end
   end
 
-  defp follow_cotenants([], _new_sandbox_id), do: :ok
+  defp follow_cotenants([], _old_sandbox_id, _new_sandbox_id), do: :ok
 
-  defp follow_cotenants(ids, new_sandbox_id) do
+  defp follow_cotenants(ids, old_sandbox_id, new_sandbox_id) do
     message =
       "The sandbox this conversation was on is gone; it moved to a fresh one together " <>
         "with the conversations that shared it. The transcript is kept, but the agent " <>
         "starts a new session and will not remember the earlier turns."
 
-    tell_cotenants(ids, "replaced", message)
+    tell_cotenants(ids, old_sandbox_id, "replaced", message)
 
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
@@ -5713,16 +5864,16 @@ defmodule Fountain.Conversations do
     end)
   end
 
-  defp strand_cotenants([]), do: :ok
+  defp strand_cotenants([], _old_sandbox_id), do: :ok
 
-  defp strand_cotenants(ids) do
+  defp strand_cotenants(ids, old_sandbox_id) do
     message =
       "The sandbox this conversation was on is gone. It named a different environment " <>
         "or vault from the conversation that replaced the machine, so it did not follow " <>
         "onto that one; its next prompt builds a machine from what it declares. The " <>
         "transcript is kept, and the agent starts a new session."
 
-    tell_cotenants(ids, "reset", message)
+    tell_cotenants(ids, old_sandbox_id, "reset", message)
 
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
@@ -5742,11 +5893,11 @@ defmodule Fountain.Conversations do
     end)
   end
 
-  defp tell_cotenants(ids, event, message) do
+  defp tell_cotenants(ids, sandbox_id, event, message) do
     Enum.each(ids, fn id ->
       case ConversationServer.whereis(id) do
         nil -> :ok
-        pid -> GenServer.cast(pid, {:machine_gone, event, "sprite_gone", message})
+        pid -> GenServer.cast(pid, {:machine_gone, sandbox_id, event, "sprite_gone", message})
       end
     end)
   end

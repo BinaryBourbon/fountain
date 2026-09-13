@@ -73,7 +73,7 @@ CONV=$(curl -sH "$AUTH" -H 'Content-Type: application/json' \
 #    - page /events?blocks=true&after=N until has_more is false
 #    - keep only events whose turn_id is *your* turn's
 #    - keep only `text` blocks; `tool_use` is not the answer, `thinking` is not either
-#    - join acp chunks with nothing, stdout rows with a blank line,
+#    - join ACP chunks without an added separator,
 #      and start a new paragraph after any tool call
 #    - stop on stage/turn/done — or failed, or interrupted
 #    - and when the connection drops mid-turn, resume from the last event id

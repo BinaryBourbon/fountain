@@ -1,0 +1,6 @@
+SPDX-FileCopyrightText: 2021 The Elixir Team
+SPDX-License-Identifier: Apache-2.0
+
+Exact patch from https://github.com/elixir-lang/elixir/pull/15765
+Merged as b703302cd1fc91dd1b2df51659daf9b8d6053776.
+The Apache 2.0 license text is included at ../../cli/LICENSE.

@@ -1,19 +1,17 @@
 defmodule Fountain.Conversations.OutputTest do
   @moduledoc """
   What the sandbox says on its way to the transcript (#1377), driven without
-  a server: the durable budget (#331) and its one marker, the reattach replay
-  skip, the two broadcasts and the stage door.
+  a server: the durable budget (#331) and its one marker, the two broadcasts
+  and the stage door.
 
   The budget is exercised against the real default rather than by writing
   `:log_output_byte_budget`: the value is global, this file is async, and a
   value already loaded into an `%Output{}` reaches the same branch.
   """
   use Fountain.DataCase, async: true
-  use Mimic
 
   alias Fountain.Conversations
   alias Fountain.Conversations.Output
-  alias Managoat.Sandbox.Handle
 
   @budget 50_000_000
 
@@ -37,10 +35,10 @@ defmodule Fountain.Conversations.OutputTest do
   end
 
   describe "the server boundary" do
-    test "from_state/1 and into_state/2 round-trip the three fields" do
-      state = %{output_bytes: 7, output_capped: false, replay_skip: %{"stdout" => 3}, other: 1}
+    test "from_state/1 and into_state/2 round-trip the two fields" do
+      state = %{output_bytes: 7, output_capped: false, other: 1}
 
-      assert %Output{bytes: 7, capped: false, replay_skip: %{"stdout" => 3}} =
+      assert %Output{bytes: 7, capped: false} =
                out = Output.from_state(state)
 
       assert Output.into_state(state, %{out | capped: true}) == %{state | output_capped: true}
@@ -129,40 +127,6 @@ defmodule Fountain.Conversations.OutputTest do
     end
   end
 
-  describe "log_with_replay_skip/4" do
-    test "logs everything when nothing is being replayed", %{ctx: ctx} do
-      assert %Output{bytes: 2, replay_skip: %{}} =
-               Output.log_with_replay_skip(%Output{bytes: 0}, ctx, "stdout", "ab")
-
-      assert [{"stdout", "ab", _, _}] = outputs(ctx.conversation_id)
-    end
-
-    test "drops a chunk wholly inside the replayed tail", %{ctx: ctx} do
-      out = %Output{bytes: 0, replay_skip: %{"stdout" => 5}}
-
-      assert %Output{bytes: 0, replay_skip: %{"stdout" => 2}} =
-               Output.log_with_replay_skip(out, ctx, "stdout", "abc")
-
-      assert outputs(ctx.conversation_id) == []
-    end
-
-    test "logs the remainder of the chunk the replay ends inside", %{ctx: ctx} do
-      out = %Output{bytes: 0, replay_skip: %{"stdout" => 2}}
-
-      assert %Output{bytes: 3, replay_skip: %{"stdout" => 0}} =
-               Output.log_with_replay_skip(out, ctx, "stdout", "abcde")
-
-      assert [{"stdout", "cde", _, _}] = outputs(ctx.conversation_id)
-    end
-
-    test "the skip is per stream", %{ctx: ctx} do
-      out = %Output{bytes: 0, replay_skip: %{"stdout" => 5}}
-
-      assert %Output{bytes: 2} = Output.log_with_replay_skip(out, ctx, "stderr", "ab")
-      assert [{"stderr", "ab", _, _}] = outputs(ctx.conversation_id)
-    end
-  end
-
   describe "publish_stage/4" do
     test "puts a stage row on the same transcript", %{conv: conv} do
       Output.publish_stage(conv.id, "turn", "started", %{turn_number: 1})
@@ -177,37 +141,6 @@ defmodule Fountain.Conversations.OutputTest do
       assert event.stage == "turn"
       assert event.state == "started"
       assert Jason.decode!(event.data) == %{"turn_number" => 1}
-    end
-  end
-
-  describe "write_image_temp_files/3" do
-    test "writes nothing for no images" do
-      assert Output.write_image_temp_files(%Handle{provider: :sprites, name: "s"}, "t1", []) == []
-    end
-
-    test "writes each image and returns its path and media type" do
-      test = self()
-
-      Mimic.stub(Managoat.Sandbox, :write_file, fn _handle, path, data ->
-        send(test, {:wrote, path, data})
-        :ok
-      end)
-
-      images = [
-        %{media_type: "image/png", data: "one"},
-        %{media_type: "image/tiff", data: "two"}
-      ]
-
-      assert [{png, "image/png"}, {bin, "image/tiff"}] =
-               Output.write_image_temp_files(%Handle{provider: :sprites, name: "s"}, "t1", images)
-
-      # The extension comes from the media type, and an unknown one is `.bin`
-      # rather than a guess the runtime would refuse to open.
-      assert png == "/tmp/aod_turn_t1_0.png"
-      assert bin == "/tmp/aod_turn_t1_1.bin"
-
-      assert_receive {:wrote, "/tmp/aod_turn_t1_0.png", "one"}
-      assert_receive {:wrote, "/tmp/aod_turn_t1_1.bin", "two"}
     end
   end
 end

@@ -54,8 +54,6 @@ defmodule Fountain.AsyncGlobalConfigGuardrailTest do
     "apps/fountain/test/fountain/webhooks_test.exs",
     # :retention_days — read only by the pruner under test.
     "apps/fountain/test/fountain/workers/retention_pruner_test.exs",
-    # :secret_expiry_notice_days — read only by the sweeper under test.
-    "apps/fountain/test/fountain/workers/secret_expiry_sweeper_test.exs",
     # :callback_key_ttl_seconds — read when a callback key is minted.
     "apps/fountain/test/fountain_web/api_key_scope_test.exs",
     # :buzz_cli_bin — read only by the buzz paths under test.

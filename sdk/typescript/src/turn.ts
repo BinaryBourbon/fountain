@@ -16,10 +16,7 @@ const TERMINAL_TURN_STATES = new Set(["done", "failed", "interrupted"]);
  *   - text that follows a tool call is a new message, so it gets a paragraph
  *     break — the rule that stops a transcript reading as one run-on sentence.
  *
- * The joining rules are ported from the Hermes plugin, which learned them
- * against real runtimes: ACP streams one message as chunks that join with
- * nothing, while a legacy stdout row is a whole message and joins as a
- * paragraph.
+ * ACP streams one message as chunks that join without an added separator.
  */
 export class TurnFollower {
   readonly turnNumber: number;
@@ -94,22 +91,21 @@ export class TurnFollower {
     // Output from before our turn opened is the tail of an older one.
     if (!this.started && !this.turnId) return [];
 
-    const acp = event.stream === "acp";
     const out: RunEvent[] = [];
 
     for (const block of event.blocks ?? []) {
       out.push({ type: "block", block, event });
-      out.push(...this.applyBlock(block, acp));
+      out.push(...this.applyBlock(block));
     }
     return out;
   }
 
-  private applyBlock(block: Block, acp: boolean): RunEvent[] {
+  private applyBlock(block: Block): RunEvent[] {
     const body = block.body ?? "";
 
     if (block.kind === "text") {
       if (!body) return [];
-      const prefix = this.paragraphBreak(acp);
+      const prefix = this.paragraphBreak();
       if (prefix) this.chunks.push(prefix);
       this.chunks.push(body);
       this.breakBeforeText = false;
@@ -157,11 +153,11 @@ export class TurnFollower {
 
   /**
    * ACP chunks are pieces of one message and join with nothing; anything after
-   * a tool call is a new message. A legacy row is a whole message either way.
+   * a tool call is a new message.
    */
-  private paragraphBreak(acp: boolean): string {
+  private paragraphBreak(): string {
     if (!this.chunks.length) return "";
-    if (acp && !this.breakBeforeText) return "";
+    if (!this.breakBeforeText) return "";
     const last = this.chunks[this.chunks.length - 1] ?? "";
     return last.endsWith("\n") ? "" : "\n\n";
   }

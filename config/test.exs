@@ -1,5 +1,10 @@
 import Config
 
+# Fixture password hashes share the dirty CPU schedulers with MDEx and Lumis.
+# Production-cost hashes can starve the docs guardrails past their timeout
+# (#1701). Keep real hashing and verification at bcrypt's recommended test cost.
+config :bcrypt_elixir, :log_rounds, 4
+
 config :fountain, Fountain.Repo,
   url:
     System.get_env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fountain_test"),
@@ -151,7 +156,6 @@ config :fountain, :connections_req_options, plug: {Req.Test, Fountain.Connection
 config :fountain, :platform_chatgpt_req_options, plug: {Req.Test, Fountain.PlatformChatGPT.OAuth}
 # Discovery and the OAuth client refuse private hosts; the Req.Test stub
 # answers for any host, so the resolution check is off here (#1186).
-config :fountain, :connections_allow_private_hosts, true
 config :managoat_mcp_auth, :req_options, plug: {Req.Test, Fountain.Connections.OAuth}
 config :managoat_mcp_auth, :allow_private_hosts, true
 config :fountain, :gmail_req_options, plug: {Req.Test, Fountain.Connections.Gmail}

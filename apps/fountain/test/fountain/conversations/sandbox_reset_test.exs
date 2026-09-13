@@ -416,6 +416,47 @@ defmodule Fountain.Conversations.SandboxResetTest do
     assert Conversations._unsafe_get_conversation!(ctx.b.id).sandbox_id == woken.sandbox_id
   end
 
+  for follows? <- [true, false] do
+    @tag follows?: follows?
+    test "a #{if follows?, do: "following", else: "stranded"} co-tenant is told which old sandbox was lost",
+         ctx do
+      unless ctx.follows? do
+        other_env = insert_env(user_id: ctx.user.id)
+        {:ok, _} = Conversations.update_conversation(ctx.b, %{environment_id: other_env.id})
+      end
+
+      stub(Managoat.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+      assert {:ok, _} = Conversations.reset_sandbox(ctx.home)
+      owner = self()
+
+      actor =
+        spawn(fn ->
+          {:ok, _} = Horde.Registry.register(Fountain.ConversationRegistry, ctx.b.id, nil)
+          send(owner, {:registered, self()})
+
+          receive do
+            {:"$gen_cast", message} -> send(owner, {:cotenant_cast, message})
+          end
+        end)
+
+      on_exit(fn -> if Process.alive?(actor), do: Process.exit(actor, :kill) end)
+      assert_receive {:registered, ^actor}
+      assert {:ok, ^actor} = ConversationServer.await_registered(ctx.b.id)
+      assert {:ok, woken} = Conversations.wake_conversation(ctx.a.id)
+      old_id = ctx.home.id
+      expected_event = if(ctx.follows?, do: "replaced", else: "reset")
+
+      assert_receive {:cotenant_cast,
+                      {:machine_gone, ^old_id, ^expected_event, "sprite_gone", message}}
+
+      assert is_binary(message)
+      refute woken.sandbox_id == old_id
+
+      assert Repo.reload!(ctx.b).sandbox_id ==
+               if(ctx.follows?, do: woken.sandbox_id, else: old_id)
+    end
+  end
+
   # #1636: co-tenants normally share one identity, because attaching to a
   # machine requires the same agent, environment and vault. Rebinding a
   # teammate moves one conversation's environment while its co-tenants keep

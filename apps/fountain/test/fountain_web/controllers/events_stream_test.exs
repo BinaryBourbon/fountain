@@ -339,6 +339,14 @@ defmodule FountainWeb.EventsStreamTest do
         )
 
       insert_log_event(conv, %{kind: "output", stream: "acp", data: acp_text("hi")})
+
+      legacy =
+        Jason.encode!(%{
+          "type" => "assistant",
+          "message" => %{"content" => [%{"type" => "text", "text" => "old style"}]}
+        })
+
+      insert_log_event(conv, %{kind: "output", stream: "stdout", data: legacy})
       insert_log_event(conv, %{kind: "stage", stream: "", stage: "turn", state: "done"})
 
       body =
@@ -347,7 +355,11 @@ defmodule FountainWeb.EventsStreamTest do
         |> get("/api/conversations/#{conv.id}/events?blocks=true")
         |> json_response(200)
 
-      assert [%{"blocks" => [%{"kind" => "text", "body" => "hi"}]}, %{"blocks" => []}] =
+      assert [
+               %{"blocks" => [%{"kind" => "text", "body" => "hi"}]},
+               %{"blocks" => [], "data" => ^legacy, "stream" => "stdout"},
+               %{"blocks" => []}
+             ] =
                body["data"]
 
       # Without the flag the field is absent, so existing clients see the same rows.

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/managoat/fountain/cli/api"
@@ -166,5 +167,26 @@ func printOAuthClient(a oauthClient) {
 	fmt.Printf("name:          %s\n", a.Name)
 	fmt.Printf("mode:          %s\n", mode(a))
 	fmt.Printf("redirect_uris: %s\n", strings.Join(a.RedirectURIs, "\n               "))
-	fmt.Printf("origins:       %s\n", strings.Join(a.Origins, ", "))
+	origins := strings.Join(a.Origins, ", ")
+	for _, uri := range a.RedirectURIs {
+		if oauthClientLoopbackURI(uri) {
+			origins += " (loopback: any port)"
+			break
+		}
+	}
+	fmt.Printf("origins:       %s\n", origins)
+}
+
+// Mirrors Fountain.OAuth.Client.loopback?/1 in apps/fountain/lib/fountain/oauth/client.ex.
+func oauthClientLoopbackURI(uri string) bool {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
 }

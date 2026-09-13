@@ -173,8 +173,13 @@ defmodule Fountain.AuditGuardrailTest do
   @deliberately_silent %{
     "Conversations._unsafe_finish_conversation_termination/2" =>
       "internal conditional status write; terminate_conversation/2 audits the successful action once",
-    "Conversations._unsafe_complete_turn/3" =>
+    "Conversations._unsafe_complete_turn/4" =>
       "conditional per-turn bookkeeping; the turn stage records completion outside its transaction",
+    "Conversations._unsafe_interrupt_turn/2 and _unsafe_idle_interrupted_turn/1" =>
+      "conditional interrupt bookkeeping; its turn stage and public lifecycle action carry the trail",
+    "Conversations._unsafe_finish_machine_gone/2" =>
+      "conditional actor bookkeeping; the sandbox stage records a current notification, and " <>
+        "releasing a parent the rebind stranded repairs machine state rather than tenant state",
     "ConversationServer per-turn state" => "high-volume machine state; log_events covers it",
     "Accounts.touch_api_key/1" => "a last-used stamp on every authenticated request",
     "Runners.touch/1 and reconnects" =>

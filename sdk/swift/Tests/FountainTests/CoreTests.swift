@@ -63,6 +63,23 @@ import Testing
     })
 }
 
+@Test(arguments: ["acp", "stdout"])
+func outputRowsJoinWithoutStreamSpecificSeparators(stream: String) {
+  let follower = TurnFollower(turnNumber: 1, turnID: "t1")
+  let events = ["Hel", "lo"].flatMap { body in
+    follower.apply([
+      "kind": "output", "stream": .string(stream), "turn_id": "t1",
+      "blocks": [["kind": "text", "body": .string(body)]],
+    ])
+  }
+  let text = events.compactMap { event -> String? in
+    if case .text(let chunk) = event { return chunk }
+    return nil
+  }
+  #expect(text == ["Hel", "lo"])
+  #expect(follower.text == "Hello")
+}
+
 @Test func anUnparseableBaseURLThrowsAndNamesWhereItCameFrom() throws {
   // A base URL without a scheme used to fall back to the hosted Fountain, which
   // put the caller's API key on a host they never named.

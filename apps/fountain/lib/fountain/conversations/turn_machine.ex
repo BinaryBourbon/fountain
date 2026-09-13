@@ -89,6 +89,7 @@ defmodule Fountain.Conversations.TurnMachine do
   @type t :: %__MODULE__{
           conversation_id: String.t() | nil,
           sandbox_id: String.t() | nil,
+          interrupted?: boolean(),
           row: Conversations.Turn.t() | nil,
           span: term() | nil,
           metrics: map() | nil,
@@ -99,6 +100,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
   defstruct conversation_id: nil,
             sandbox_id: nil,
+            interrupted?: false,
             row: nil,
             span: nil,
             metrics: nil,
@@ -333,9 +335,8 @@ defmodule Fountain.Conversations.TurnMachine do
      ]}
   end
 
-  # `session/new` chose an id. Persisted immediately, exactly as the legacy path
-  # persists one before spawning: it is what the next turn resumes by, and a
-  # server restart between here and the end of the turn must not lose it.
+  # Persist the id chosen by `session/new` immediately: the next turn resumes
+  # by it, and a server restart before this turn ends must not lose it.
   def handle(%__MODULE__{} = turn, {:session, id}, _ctx), do: {turn, [{:session_id, id}]}
 
   # The peer wrote `session/prompt` under this JSON-RPC id. Persisted at once:
@@ -366,9 +367,8 @@ defmodule Fountain.Conversations.TurnMachine do
     {turn, []}
   end
 
-  # The number gate 2 exists to produce: what a turn pays for `initialize` plus
-  # resumption, which the legacy path does not pay at all. Emitted per turn so
-  # the cost of a disposable sandbox is measurable rather than argued about.
+  # What a turn pays for `initialize` plus resumption. Emitted per turn so
+  # the cost of starting an adapter can be measured against the turn total.
   #
   # Also stamped on the turn's OTel span, because the comparison that decides
   # the gate is against *this same turn's* total — a handshake figure in an
@@ -727,36 +727,61 @@ defmodule Fountain.Conversations.TurnMachine do
   @doc """
   The interrupt's first half: the row `interrupted`, the stage, the tracer
   closed. The server stops the peer between the halves, as it always did,
-  then `close_interrupted/1` ends the span, emits the metric and sets the
-  conversation idle.
+  then `close_interrupted/1` ends the span, emits the metric and conditionally
+  idles the conversation. A stale mark emits neither a stage nor a metric, and
+  closing it writes nothing.
+
+  This half leaves the parent `running` on purpose, so the peer stops under a
+  conversation that still says it is working. Turn recovery skips retired
+  turns, so this pair must finish its own parent cleanup. The second half
+  rechecks the generation rather than this actor's binding
+  (`Conversations._unsafe_idle_interrupted_turn/1`). A successor admitted
+  while the peer was stopping is what keeps the conversation running.
   """
   @spec mark_interrupted(t()) :: t()
   def mark_interrupted(%__MODULE__{} = turn) do
-    {:ok, _turn} =
-      Conversations._unsafe_update_turn(turn.row, %{
-        status: "interrupted",
-        ended_at: now()
-      })
+    # Ownership: the actor's binding is checked with the parent and turn locked.
+    applied? =
+      case Conversations._unsafe_interrupt_turn(turn.row, turn.sandbox_id) do
+        {:ok, _} ->
+          publish_stage(turn.conversation_id, "turn", "interrupted", %{
+            turn_id: turn.row.id,
+            turn_number: turn.row.turn_number
+          })
 
-    publish_stage(turn.conversation_id, "turn", "interrupted", %{
-      turn_id: turn.row.id,
-      turn_number: turn.row.turn_number
-    })
+          true
 
-    # Finalize stream tracer: close any tool spans still open (abandoned calls).
+        :noop ->
+          false
+      end
+
+    # Finalize local spans even when another actor owns the persisted result.
     finalize_tracer(turn.tracer)
-    turn
+    %{turn | interrupted?: applied?}
   end
 
   @spec close_interrupted(t()) :: t()
   def close_interrupted(%__MODULE__{} = turn) do
     end_span(turn.span, :error, %{"outcome" => "interrupted"})
 
-    emit_completed(turn, "interrupted")
+    if turn.interrupted? do
+      emit_completed(turn, "interrupted")
+      # Ownership: mark_interrupted verified this actor's binding and retired
+      # the turn under it. This half releases the parent that half left
+      # running. See its docstring for the caller requirement and why it
+      # rechecks the generation rather than the binding.
+      Conversations._unsafe_idle_interrupted_turn(turn.row)
+    end
 
-    {:ok, _} = Conversations._unsafe_idle_after_turn(turn.row)
-
-    %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
+    %{
+      turn
+      | row: nil,
+        span: nil,
+        metrics: nil,
+        tracer: nil,
+        session_retry: nil,
+        interrupted?: false
+    }
   end
 
   @doc "Release local measurements for a fenced worker without changing its persisted turn."
@@ -836,11 +861,8 @@ defmodule Fountain.Conversations.TurnMachine do
   # One-shot per turn: the first stdout chunk wins and the flag is set,
   # so the whole rest of a streaming turn costs one map update.
   #
-  # First *bytes*, not first parsed token. Only Claude emits structured
-  # stream-json; measuring bytes keeps this identical for codex, gemini
-  # and opencode. It does mean a runtime that greets on stdout before
-  # calling a model reports its own startup — which is still the number
-  # the user is waiting on.
+  # First bytes, not first parsed token. Measuring bytes keeps this identical
+  # across runtimes, including the ACP handshake before a model is called.
   @spec maybe_emit_first_output(t()) :: t()
   def maybe_emit_first_output(%__MODULE__{metrics: %{first_output?: false} = metrics} = turn) do
     Fountain.Telemetry.event(
@@ -1023,8 +1045,7 @@ defmodule Fountain.Conversations.TurnMachine do
     OpenTelemetry.Tracer.end_span()
   end
 
-  # Called on every way a turn can end; ACP turns are the only ones that
-  # trace, so nil is the legacy case.
+  # Called on every way a turn can end; a reattached turn may have no tracer.
   @spec finalize_tracer(term() | nil) :: :ok | term()
   def finalize_tracer(nil), do: :ok
   def finalize_tracer(tracer), do: Managoat.ACP.Tracer.finalize(tracer)
@@ -1231,69 +1252,20 @@ defmodule Fountain.Conversations.TurnMachine do
   end
 
   @doc """
-  What to spawn. 0014: a supported runtime spawns an ACP adapter instead of
-  the CLI, and everything about the turn — the prompt, the images, the
-  session id, the mode — travels over the protocol rather than in argv, so
-  `build_command/5` is not consulted at all on this path. There is no opt-in
-  left to check: gate 4 deleted the legacy spawn path for claude, codex and
-  opencode along with the per-agent flag, so `acp?` is a property of
-  `conv.runtime` alone.
+  The ACP adapter command and its working directory inside the sandbox.
 
-  The `else` branch is now **unreachable in production**. It survived for
-  gemini until #659 put it on ACP and #941 deleted its `build_command/5`;
-  no runtime module implements that callback any more, and `for_runtime/1`
-  refuses a name that has no module, so a conversation whose runtime lacks
-  an ACP adapter cannot start in the first place. It is kept because the
-  turn machinery it leads to — the log budget, stdin handling, exit codes —
-  is shared, and `Managoat.Runtimes.Testing.FakeRuntime` still drives it here.
-
-  Returns `{cmd, args, build_opts}`; `build_opts` may carry `stdin?`
-  (codex embeds the prompt in argv and returns false), `tty?` (codex wants
-  a PTY so `isatty(0)` is true), `dir` (a workspace with a local .git) and
-  `prompt_suffix` (image references for a runtime that cannot take images
-  as flags).
-
-  On the acp runtime the argv is the agent's own `runtime_command` (#1634),
-  and the match below is total because `open/4` refuses a turn that has none.
+  Prompts, images and runtime session control travel over ACP. For a custom
+  ACP runtime, `open/4` has already required the agent's `runtime_command`.
   """
-  @spec command(
-          boolean(),
-          Conversation.t(),
-          map() | nil,
-          String.t(),
-          atom(),
-          String.t(),
-          keyword()
-        ) :: {String.t(), [String.t()], keyword()}
-  def command(acp?, conv, agent, prompt, mode, runtime_session_id, opts) do
-    if acp? do
-      {c, a} = Fountain.RuntimeDispatch.command(conv.runtime, agent)
-      # The ACP `cwd` is validated in band by the agent CLI against the real
-      # filesystem, so it must be the path a process inside the sandbox sees
-      # — identity on hosted providers, the mapped directory on a runner
-      # (ADR 0022).
-      acp_cwd =
-        Managoat.Sandbox.host_path(
-          Keyword.fetch!(opts, :handle),
-          Fountain.RuntimeDispatch.cwd(conv.runtime)
-        )
+  @spec command(Conversation.t(), map() | nil, Managoat.Sandbox.Handle.t()) ::
+          {String.t(), [String.t()], String.t()}
+  def command(conv, agent, handle) do
+    {cmd, args} = Fountain.RuntimeDispatch.command(conv.runtime, agent)
 
-      {c, a, stdin?: true, dir: acp_cwd}
-    else
-      Keyword.fetch!(opts, :runtime_module).build_command(agent, prompt, mode, runtime_session_id,
-        images: Keyword.get(opts, :image_paths, [])
-      )
-    end
-  end
-
-  # The legacy stdin dance, unchanged and lifted out so the ACP branch above
-  # reads as one condition rather than a nested `if`.
-  @spec write_prompt_and_close(Managoat.Sandbox.Command.t(), String.t()) :: :ok | {:error, term()}
-  def write_prompt_and_close(command, payload) do
-    case Managoat.Sandbox.write_stdin(command, payload) do
-      :ok -> Managoat.Sandbox.close_stdin(command)
-      {:error, reason} -> {:error, reason}
-    end
+    # The agent validates ACP cwd against the filesystem inside the sandbox:
+    # hosted providers use the same path, runners map it (ADR 0022).
+    cwd = Managoat.Sandbox.host_path(handle, Fountain.RuntimeDispatch.cwd(conv.runtime))
+    {cmd, args, cwd}
   end
 
   @doc "Start the peer for a fresh ACP turn, owned by the caller; returns it with its monitor."
@@ -1375,125 +1347,44 @@ defmodule Fountain.Conversations.TurnMachine do
   def agent_for(conv), do: conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)
 
   @doc """
-  A turn that never got as far as running: either the spawn itself failed,
-  or the runtime exited before the prompt reached its stdin (#603). Both
-  leave nothing running, so both end the same way — the turn `failed` with
+  A turn whose adapter failed to spawn ends `failed` with
   the reason, a `turn`/`failed` stage event, and the conversation back to
-  "idle".
+  "idle". A reassigned or terminal conversation, or an already-ended turn,
+  preserves its persisted result and emits no failure stage.
 
-  `exit_code` is what the runtime managed to say before it went (#608); the
-  spawn-failure path has none, since there was never a process. `detail` is
-  `failure_detail/2`'s sentence, which the server logs first and then
-  persists the runtime's parting words against the turn they explain,
-  before calling this.
+  There is no exit code because no process started. `detail` is the failure
+  sentence the server logs before calling this.
 
   Called only from inside the server's spawn `try` block, which restores the
   caller's previous current-span in its `after`; the span this ends is the
   turn span opened a few lines above the call.
   """
-  @spec fail_before_start(
-          Conversations.Turn.t(),
-          String.t(),
-          String.t(),
-          String.t(),
-          integer() | nil
-        ) ::
-          :ok
-  def fail_before_start(turn, conversation_id, what, detail, exit_code) do
-    {:ok, _} =
-      Conversations._unsafe_update_turn(turn, %{
-        status: "failed",
-        exit_code: exit_code,
-        ended_at: now()
-      })
+  @spec fail_before_start(Conversations.Turn.t(), String.t(), String.t() | nil, String.t()) :: :ok
+  def fail_before_start(turn, conversation_id, sandbox_id, detail) do
+    # The server owns this turn and supplies its captured sandbox binding.
+    case Conversations._unsafe_complete_turn(turn, sandbox_id, "failed", exit_code: nil) do
+      {:ok, _} ->
+        publish_stage(conversation_id, "turn", "failed", %{
+          turn_id: turn.id,
+          reason: detail,
+          exit_code: nil
+        })
 
-    publish_stage(conversation_id, "turn", "failed", %{
-      turn_id: turn.id,
-      reason: detail,
-      exit_code: exit_code
-    })
-
-    # The conversation was set to "running" just before the spawn attempt;
-    # without this it stays "running" in the API and UI until some later turn
-    # completes, even though nothing is executing. The :exit and :interrupt
-    # handlers both do the same reset.
-    {:ok, _} = Conversations._unsafe_idle_after_turn(turn)
+      # The conversation was set to "running" just before the spawn attempt;
+      # `_unsafe_complete_turn/4` idles it in the same transaction as the
+      # turn's result. A refused write leaves both alone: the conversation
+      # belongs to whichever actor the parent now points at.
+      :noop ->
+        :ok
+    end
 
     # The turn never started; close the span we just opened so it doesn't leak.
-    if exit_code, do: OpenTelemetry.Tracer.set_attribute("exit_code", exit_code)
-    OpenTelemetry.Tracer.set_status(OpenTelemetry.status(:error, "#{what}: #{detail}"))
+    OpenTelemetry.Tracer.set_status(OpenTelemetry.status(:error, "spawn failed: #{detail}"))
 
     # No-arg: end_span/1 takes a timestamp, not a span. turn_span is the
     # current span here (kick_turn made it current), which is what no-arg ends.
     OpenTelemetry.Tracer.end_span()
     :ok
-  end
-
-  @doc "The reason as it is reported everywhere: inspected, with the exit code appended when there is one."
-  @spec failure_detail(term(), integer() | nil) :: String.t()
-  def failure_detail(reason, exit_code), do: "#{inspect(reason)}#{exit_detail(exit_code)}"
-
-  # Appended to the reason everywhere it is reported. `:command_exited` stays
-  # in front of it: it is what downstream consumers (fountain-ops' e2e gate
-  # among them) match on, and it is still true — this only says why.
-  defp exit_detail(nil), do: ""
-  defp exit_detail(code), do: " (runtime exited #{code})"
-
-  # How long to wait for an exit that is, on this path, already queued.
-  @drain_timeout_ms 50
-
-  # Collect what a command said before it stopped: `{exit_code, output}`,
-  # with a nil code if no exit arrives.
-  #
-  # The adapter sends the owner `{:exit, %{ref: ref}, code}` — behind
-  # any `{:stdout, …}` / `{:stderr, …}` the runtime produced first — and only
-  # *then* stops. So when a stdin write comes back `{:error, :command_exited}`
-  # it is because that already happened, and those messages are in this
-  # server's mailbox as we handle the failure.
-  #
-  # They have nowhere to land on their own: `current_command_ref` is assigned
-  # only on the success branch, so every handler guard misses and the
-  # catch-all drops them silently (#608). Receive them here instead, while we
-  # still have the ref and a turn to attribute them to. The triggers for this
-  # path — a bad flag, a missing binary, an OOM kill, an immediate non-zero
-  # exit — are exactly the ones where the code is the whole diagnosis, and
-  # for a runtime that prints `invalid api key` and exits 1, that line is the
-  # answer.
-  #
-  # The deadline is absolute rather than per-message: a `receive` timeout
-  # restarts on every match, and this runs inside a GenServer callback.
-  #
-  # The other terminal frame ends the drain too, with a nil code. Since
-  # `managoat_sandbox` 0.2.0 a transport that closes with no exit frame
-  # arrives as `{:error, ref, :closed_before_exit}` rather than a fabricated
-  # `{:exit, ref, 0}`, and that frame is just as stranded as the output
-  # around it: `current_command_ref` is unset on this path, so leaving it in
-  # the mailbox costs the full deadline and then drops it (#608 again). The
-  # code stays nil because nobody measured one — a nil reads as "no exit
-  # code" everywhere it is reported, which is exactly the truth here.
-  @spec drain_exited_command(reference()) :: {integer() | nil, [{String.t(), binary()}]}
-  def drain_exited_command(ref) do
-    drain_exited_command(ref, System.monotonic_time(:millisecond) + @drain_timeout_ms, [])
-  end
-
-  defp drain_exited_command(ref, deadline, output) do
-    timeout = max(deadline - System.monotonic_time(:millisecond), 0)
-
-    receive do
-      {:exit, %{ref: ^ref}, code} ->
-        {code, Enum.reverse(output)}
-
-      {:error, %{ref: ^ref}, _reason} ->
-        {nil, Enum.reverse(output)}
-
-      {:stdout, %{ref: ^ref}, data} ->
-        drain_exited_command(ref, deadline, [{"stdout", data} | output])
-
-      {:stderr, %{ref: ^ref}, data} ->
-        drain_exited_command(ref, deadline, [{"stderr", data} | output])
-    after
-      timeout -> {nil, Enum.reverse(output)}
-    end
   end
 
   @fresh_sandbox_detail "the previous runtime session lived on a sandbox that no longer exists"

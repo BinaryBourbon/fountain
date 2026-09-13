@@ -65,6 +65,9 @@ Mimic.copy(Horde.DynamicSupervisor)
 # server, which is what stops that test racing a loaded runner (#921).
 Mimic.copy(Horde.Registry)
 Mimic.copy(Req)
+# Team stream tests observe real chunks and hold readiness frames until their
+# publishers are done, before the controller starts its short idle timeout.
+Mimic.copy(Plug.Adapters.Test.Conn)
 
 # Stripe modules — needed by billing tests and webhook controller tests.
 # Billing itself is copied so the webhook controller's :retry/500 arm can be
@@ -84,11 +87,13 @@ Mimic.copy(Fountain.Workers.WebhookDelivery)
 Mimic.copy(Fountain.Conversations.ConversationServer)
 Mimic.copy(Fountain.Conversations.TitleGenerator)
 Mimic.copy(Fountain.Conversations.Provisioning)
+Mimic.copy(Fountain.Conversations.ProvisionWatchdog)
 Mimic.copy(Fountain.Broker)
 Mimic.copy(Fountain.SandboxSkills)
 Mimic.copy(Fountain.RuntimeDispatch)
 Mimic.copy(Fountain.Accounts)
 Mimic.copy(Fountain.Audit)
+Mimic.copy(Oban)
 Mimic.copy(Fountain.Activation)
 Mimic.copy(Fountain.Crypto)
 Mimic.copy(Fountain.Health)

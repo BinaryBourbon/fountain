@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Upgrade notes
 
+- `FOUNTAIN_DOMAIN` is no longer read. Set `PUBLIC_URL` to the absolute URL
+  of your instance, and set `PHX_HOST` only if the endpoint host differs.
+  The Render and Fly platform fallbacks still work. A production instance
+  with only `FOUNTAIN_DOMAIN` set now refuses to boot.
+
+- `BILLING_ENABLED` is no longer supported. Set `CREDITS_ENABLED=true` to
+  enable credits. With only the old variable set, credits remain off by default.
+  The hosted home-cloud deployment already uses `CREDITS_ENABLED`.
+
 - **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
   PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
   took the feature away from every deployment that configures no flag service,
@@ -58,6 +67,10 @@ upgrade, is in
   `BROKER_LISTEN_PORT` off switch (#2056) and the `BROKER_ALLOW_UNENFORCED`
   arm that decides whether a self-hosted runner can host a brokered
   conversation (#2057); both are open decisions, named in the ADR.
+
+- Removed the unused non-ACP turn execution path and its CLI prompt, image
+  file, and byte-replay helpers. Conversation lifecycle tests now use ACP,
+  which all supported runtimes already use.
 
 - **`sprite_name` on `POST /api/conversations` is now a suffix, not the whole
   machine name.** The server keeps the `fountain-<account>-` prefix every
@@ -330,7 +343,11 @@ upgrade, is in
 
 - Sandbox `/diff` returns 422 when Git fails after repository discovery,
   instead of reporting an empty diff. Intentional byte-cap truncation still
-  succeeds (#1904).
+  succeeds (#1904). It also returns `422 not_a_repository` when Git discovers
+  a repository above the sandbox's allowed roots, instead of returning that
+  repository's diff. This includes self-hosted runners inside a home directory
+  that is a dotfiles repository. The `repo_root` string now passes through
+  secret redaction; the response shape is unchanged (#1596, #1905).
 
 - **A reset refused by a bounded execution says so** (ADR 0046). Deleting a
   sandbox while a bounded turn still owed a remote stop answered `422` with an

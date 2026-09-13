@@ -286,9 +286,20 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
+
+      - name: Mix lock backport preserves port reuse and cross-VM exclusion
+        if: ${{ matrix.partition == 1 }}
+        run: elixir scripts/ci/mix-lock-backport-test.exs
+
       - name: Timing collection preserves ExUnit execution
         if: ${{ matrix.partition == 1 }}
         run: elixir scripts/ci/timing-formatter-test.exs
+
+      - name: Mix stall diagnostics capture lock holders and waiters
+        if: ${{ matrix.partition == 1 }}
+        run: elixir scripts/ci/mix-diagnostics-test.exs
 
       # Cache keys carry the job name. `test` and `checks` build different
       # trees — this one only ever compiles :test, while `checks` additionally
@@ -355,7 +366,13 @@ jobs:
           exit 1
 
       - name: Set up database
-        run: mix ecto.create --quiet && mix ecto.migrate --quiet
+        # #1997 stalled inside Mix before tests began. Capture the live lock
+        # holders and process tree before the unchanged job timeout cancels it.
+        env:
+          MIX_DIAGNOSTICS: "1"
+        run: |
+          elixir -r scripts/ci/mix-diagnostics.exs -S mix ecto.create --quiet
+          elixir -r scripts/ci/mix-diagnostics.exs -S mix ecto.migrate --quiet
 
       # Coverage instrumentation is free here — measured at 128.8s with cover
       # against 128.6s without, on the same machine. Running the suite bare on
@@ -437,6 +454,9 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
 
       - name: Download coverage exports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -521,6 +541,9 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
 
       # Job-scoped keys — see the note in `test`.
       - name: Restore deps cache
@@ -641,6 +664,9 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
 
       # Job-scoped keys — see the note in `test`.
       - name: Restore deps cache
@@ -1365,6 +1391,9 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
+
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
@@ -1723,6 +1752,9 @@ jobs:
         with:
           elixir-version: "1.19.2"
           otp-version: "28.3"
+
+      - name: Backport the pinned Mix lock fix
+        run: scripts/ci/mix-lock-backport.sh --install
 
       # Shares the `test` job's cache keys on purpose. The warning against
       # sharing a key (see the `test` job) is about two jobs racing to save
