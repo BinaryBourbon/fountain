@@ -175,6 +175,11 @@ source; a replaced, deleted or unusable source is refused rather than silently
 replaced with a different set or platform key. Start a new conversation with
 an eligible selection when the existing binding can no longer be used.
 
+An explicit configuration reapply can change the model, environment or vault
+while retaining the same credential identity and revision. The configuration
+and binding update together; earlier turns keep their recorded sources.
+A reapply that would change the credential is refused before either changes.
+
 For a credential supplied through plain environment `env_vars`, the revision
 covers the whole map. Any edit to that map invalidates the bound source,
 including a change to an unrelated variable. Secret rows have individual

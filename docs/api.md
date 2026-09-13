@@ -485,6 +485,12 @@ An empty body reapplies the current selection. A field that the body does not
 name keeps its selection. A field with a `null` value clears the Environment
 override or the Vault.
 
+Reapply retains the bound credential's identity and revision. Compatible
+configuration and binding changes commit together, without changing earlier
+turn snapshots. A target that would change the credential returns
+`409 inference_source_changed` before changing the configuration or machine
+identity. See [credential sets](concepts/secrets.md#credential-sets).
+
 ```bash
 curl --fail-with-body \
   -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
