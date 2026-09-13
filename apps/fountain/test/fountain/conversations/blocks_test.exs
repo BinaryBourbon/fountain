@@ -11,7 +11,7 @@ defmodule Fountain.Conversations.BlocksTest do
     })
   end
 
-  test "an acp row parses through ACP.Blocks whatever the runtime" do
+  test "an acp row parses through ACP.Blocks" do
     ev = %{
       kind: "output",
       stream: "acp",
@@ -22,26 +22,61 @@ defmodule Fountain.Conversations.BlocksTest do
         })
     }
 
-    assert [%{kind: :text, body: "hi"}] = Blocks.for_event(ev, "gemini")
+    assert [%{kind: :text, body: "hi"}] = Blocks.for_event(ev)
   end
 
-  test "a stdout row parses through the runtime's legacy dialect" do
-    ev = %{
-      kind: "output",
-      stream: "stdout",
-      data:
-        Jason.encode!(%{
-          "type" => "assistant",
-          "message" => %{"content" => [%{"type" => "text", "text" => "old style"}]}
-        })
-    }
+  test "non-ACP streams do not produce blocks" do
+    legacy =
+      Jason.encode!(%{
+        "type" => "assistant",
+        "message" => %{"content" => [%{"type" => "text", "text" => "old style"}]}
+      })
 
-    assert [%{kind: :text, body: "old style"}] = Blocks.for_event(ev, "claude")
-    assert [%{kind: :raw}] = Blocks.for_event(ev, "unknown-runtime")
+    for stream <- ["stdout", "stderr", nil], data <- [legacy, "diagnostic output", text("ACP")] do
+      assert [] = Blocks.for_event(%{kind: "output", stream: stream, data: data})
+    end
+  end
+
+  test "assistant text includes only ACP output text, joined and trimmed" do
+    events = [
+      %{
+        kind: "output",
+        stream: "stdout",
+        data:
+          Jason.encode!(%{
+            "type" => "assistant",
+            "message" => %{"content" => [%{"type" => "text", "text" => "old output"}]}
+          })
+      },
+      %{kind: "output", stream: "acp", data: text("  hello") <> "\n" <> text(" world  ")},
+      %{kind: "output", stream: "stderr", data: text("diagnostic")},
+      %{kind: "stage", stream: "acp", data: text("stage")},
+      %{
+        kind: "output",
+        stream: "acp",
+        data:
+          acp(%{
+            "sessionUpdate" => "agent_thought_chunk",
+            "content" => %{"type" => "text", "text" => "thinking"}
+          })
+      },
+      %{kind: "output", stream: "acp", data: nil}
+    ]
+
+    assert Blocks.assistant_text(events) == "hello world"
+    assert Blocks.assistant_text([hd(events)]) == ""
+    assert Blocks.assistant_text([]) == ""
+  end
+
+  defp text(body) do
+    acp(%{
+      "sessionUpdate" => "agent_message_chunk",
+      "content" => %{"type" => "text", "text" => body}
+    })
   end
 
   test "no data, no blocks" do
-    assert [] = Blocks.for_event(%{kind: "stage", stream: nil, data: nil}, "claude")
+    assert [] = Blocks.for_event(%{kind: "stage", stream: nil, data: nil})
   end
 
   test "to_json stringifies the kind and renames error?" do
@@ -63,7 +98,7 @@ defmodule Fountain.Conversations.BlocksTest do
         })
     }
 
-    for b <- Blocks.for_event(ev, "claude") do
+    for b <- Blocks.for_event(ev) do
       assert Atom.to_string(b.kind) in Blocks.kinds()
     end
   end

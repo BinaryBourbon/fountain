@@ -59,7 +59,7 @@ defmodule Fountain.Conversations.LogEventCommitOrderTest do
             assert later.id > early.id
 
             events = Conversations.list_user_log_events(user.id, 0)
-            ids = Enum.map(events, fn {event, _runtime} -> event.id end)
+            ids = Enum.map(events, & &1.id)
 
             if outcome == :commit do
               assert held_result == {:ok, early}
@@ -69,7 +69,7 @@ defmodule Fountain.Conversations.LogEventCommitOrderTest do
               assert ids == [later.id]
             end
 
-            assert [{remaining, _}] = Conversations.list_user_log_events(user.id, early.id)
+            assert [remaining] = Conversations.list_user_log_events(user.id, early.id)
             assert remaining.id == later.id
           after
             Task.shutdown(unrelated, :brutal_kill)

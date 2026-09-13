@@ -183,7 +183,7 @@ defmodule Fountain.Conversations.ConversationServerAcpRuntimeTest do
       events = Conversations._unsafe_list_log_events(conv.id)
       acp_events = Enum.filter(events, &(&1.stream == "acp"))
 
-      blocks = Enum.flat_map(acp_events, &Fountain.Conversations.Blocks.for_event(&1, "acp"))
+      blocks = Enum.flat_map(acp_events, &Fountain.Conversations.Blocks.for_event/1)
       assert Enum.any?(blocks, &(&1.kind == :tool_use and &1.name == "lifecycle apply"))
       assert Enum.any?(blocks, &(&1.kind == :tool_result and &1.tool_id == "t1"))
       assert Enum.any?(blocks, &(&1.kind == :text and &1.body =~ "converged"))
@@ -292,7 +292,7 @@ defmodule Fountain.Conversations.ConversationServerAcpRuntimeTest do
         conv.id
         |> Conversations._unsafe_list_log_events()
         |> Enum.filter(&(&1.stream == "acp"))
-        |> Enum.flat_map(&Fountain.Conversations.Blocks.for_event(&1, "acp"))
+        |> Enum.flat_map(&Fountain.Conversations.Blocks.for_event/1)
 
       assert block = Enum.find(blocks, &(&1.kind == :permission_request))
       assert block.name == "lifecycle apply"

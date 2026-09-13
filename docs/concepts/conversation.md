@@ -63,7 +63,8 @@ packages, repositories or setup script needs one too.
 
 Log events stream in real time over
 `GET /api/conversations/:id/stream`. Add `?blocks=true` and the server parses
-the runtime dialect, so a client never has to.
+ACP events into transcript blocks. Other streams remain available as raw
+event data. Historical vendor stdout formats no longer produce blocks.
 
 ## The sandbox does not live forever, and that is two rules
 

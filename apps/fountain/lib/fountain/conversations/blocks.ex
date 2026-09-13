@@ -3,12 +3,9 @@ defmodule Fountain.Conversations.Blocks do
   A log event's `data`, as the structured blocks a client renders — the one
   seam between what the runtime wrote and what a transcript shows.
 
-  Keyed on the event's *stream*, not the conversation's runtime: the `acp`
-  stream is parsed by `Managoat.ACP.Blocks`, the legacy `stdout`
-  dialects by `Fountain.Runtimes.LegacyBlocks` for the runtime that wrote
-  them. The per-agent ACP flag can flip between turns, and the turns before
-  it flipped must keep rendering through the parser that produced them
-  (0014, #642).
+  Only the `acp` stream produces structured blocks, parsed by
+  `Managoat.ACP.Blocks`. Other streams remain available as raw event data;
+  historical vendor stdout dialects are no longer supported.
 
   This used to live in the web UI's transcript component. It moved here so the
   API can serve blocks too (`?blocks=true` on `/events` and the streams) and a
@@ -37,42 +34,31 @@ defmodule Fountain.Conversations.Blocks do
   because the two arrive as separate events.
   """
 
-  alias Fountain.Runtimes.LegacyBlocks
-
   @kinds ~w(text thinking tool_use tool_result init result error raw permission_request)
 
   @doc "Every `kind` a block can have — the wire enum."
   def kinds, do: @kinds
 
-  @doc "The blocks one log event's data holds, for `runtime`'s dialect when it is a legacy stdout row."
-  @spec for_event(map(), String.t() | nil) :: [map()]
-  def for_event(%{stream: "acp", data: data}, _runtime) when is_binary(data) do
+  @doc "The structured blocks in an ACP event; other streams produce no blocks."
+  @spec for_event(map()) :: [map()]
+  def for_event(%{stream: "acp", data: data}) when is_binary(data) do
     data
     |> String.split("\n", trim: true)
     |> Enum.flat_map(&Managoat.ACP.Blocks.from_line/1)
   end
 
-  def for_event(%{data: data}, runtime) when is_binary(data) do
-    data
-    |> String.split("\n", trim: true)
-    |> Enum.flat_map(&LegacyBlocks.from_line(&1, runtime))
-  end
-
-  def for_event(_, _), do: []
+  def for_event(_), do: []
 
   @doc """
   The assistant's text across `events` — every `:text` block of each output
-  event, joined, trimmed — for `runtime`'s dialect on legacy rows. What a
-  chat bubble shows for a turn's reply, what the roster previews, and what
+  ACP event, joined and trimmed. What a chat bubble shows for a turn's reply, what the roster previews, and what
   `Fountain.Search` indexes (`turns.reply_text`). `""` when there is none.
   """
-  @spec assistant_text([map()], String.t() | nil) :: String.t()
-  def assistant_text(events, runtime) do
+  @spec assistant_text([map()]) :: String.t()
+  def assistant_text(events) do
     events
-    |> Enum.filter(
-      &(&1.kind == "output" and &1.stream in ["stdout", "acp"] and is_binary(&1.data))
-    )
-    |> Enum.flat_map(&for_event(&1, runtime))
+    |> Enum.filter(&(&1.kind == "output"))
+    |> Enum.flat_map(&for_event/1)
     |> Enum.flat_map(fn
       %{kind: :text, body: t} when is_binary(t) -> [t]
       _ -> []

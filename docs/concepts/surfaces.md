@@ -66,7 +66,7 @@ API_CORS_ORIGINS=https://fountain-conversations.demo.managoat.com
 conversation, and `/api` then holds everything a client needs. Anybody who
 builds their own client stands level with the first-party one. `?blocks=true`
 on the event streams exists for exactly this reason. The server parses the
-runtime dialect, so no client writes that code again.
+ACP events into transcript blocks, so clients share one representation.
 
 That last point is the real argument. A console that could do what the API
 could not would quietly make the API second-class.

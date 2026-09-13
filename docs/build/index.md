@@ -78,7 +78,7 @@ bearer token.
 | Which connectors you offer. | Encrypts the tokens, injects them at spawn, and redacts them from the output. |
 | Your own sign-in, or none. | Accounts, API keys, OAuth, isolation for each user, quota, audit. |
 | What a routine is for. | Runs it on a cron. |
-| How a thread must look. | Parses each runtime's dialect into blocks that you can render. |
+| How a thread must look. | Parses ACP events into blocks that you can render. |
 
 One of those two columns has an on-call rotation.
 

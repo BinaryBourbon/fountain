@@ -1778,7 +1778,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
         conv.id
         |> Conversations._unsafe_list_log_events()
         |> Enum.filter(&(&1.stream == "acp"))
-        |> Enum.flat_map(&Fountain.Conversations.Blocks.for_event(&1, "claude"))
+        |> Enum.flat_map(&Fountain.Conversations.Blocks.for_event/1)
 
       assert block = Enum.find(blocks, &(&1.kind == :permission_request))
       assert block.request_id == request_id

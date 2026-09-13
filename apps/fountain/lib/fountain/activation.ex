@@ -12,7 +12,7 @@ defmodule Fountain.Activation do
   A reply is a `turns` row whose `reply_text` is a non-empty string.
   `Conversations._unsafe_update_turn/2` materialises that column from the
   turn's events when the turn ends, through the same parse the transcript
-  uses (`Conversations.Blocks.assistant_text/2`, which trims and returns `""`
+  uses (`Conversations.Blocks.assistant_text/1`, which trims and returns `""`
   when the agent said nothing), so "the agent answered" needs no second
   definition here. A conversation that provisioned a sandbox, ran, and
   produced no assistant text is not an activation.

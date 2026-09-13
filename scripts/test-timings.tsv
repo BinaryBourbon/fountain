@@ -139,7 +139,6 @@ apps/fountain/test/fountain/release_without_pubsub_test.exs	491
 apps/fountain/test/fountain/runners/placement_test.exs	1016
 apps/fountain/test/fountain/runners_test.exs	3236
 apps/fountain/test/fountain/runtime_config_test.exs	515
-apps/fountain/test/fountain/runtimes/legacy_blocks_test.exs	0
 apps/fountain/test/fountain/sandbox_bounds_config_test.exs	90
 apps/fountain/test/fountain/sandbox_files_test.exs	5463
 apps/fountain/test/fountain/sandbox_providers_test.exs	0
