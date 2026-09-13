@@ -549,37 +549,20 @@ func formatOutput(data map[string]any) string {
 		}
 		return b.String()
 	}
-	// Only turn output is runtime stream-JSON. The setup script and the
-	// provisioning stages (packages, network, clone) log raw text under
-	// their own stage — formatStreamJSONLine returns "" for anything that
-	// is not JSON, so a failing `apt install` or `git clone` produced zero
-	// visible output. Rows predating stage stamping have no stage and are
-	// turn output.
+	// Setup and provisioning stages log raw diagnostics. Historical vendor
+	// stdout has no transcript renderer; its data remains in the events API.
 	if stage, _ := data["stage"].(string); stage != "" && stage != "turn" {
 		if strings.HasSuffix(raw, "\n") {
 			return raw
 		}
 		return raw + "\n"
 	}
-	var b strings.Builder
-	for _, line := range strings.Split(raw, "\n") {
-		if line == "" {
-			continue
-		}
-		b.WriteString(formatStreamJSONLine(line))
-	}
-	return b.String()
+	return ""
 }
 
-// formatStreamJSONLine renders a single line from the assistant/user/result
-// JSON Lines stream. Mirrors conv.ex's format_stream_json_line/1.
-// formatACPLine renders one stored `session/update` for a human.
-//
-// This is not the dialect parser ADR 0015 forbids in `cli/`: ACP is the
-// protocol every supported runtime now speaks, not a vendor's format, and the
-// alternative is a CLI that shows nothing. The rendering deliberately matches
-// the stream-json path above — assistant text plain, tool calls in cyan — so
-// a gemini conversation and a claude one read the same in a terminal.
+// formatACPLine renders one stored `session/update` for a human: assistant
+// text plain, thinking dimmed, and tool calls in cyan. ACP is the protocol
+// every supported runtime speaks; vendor stdout dialects are not interpreted.
 func formatACPLine(line string) string {
 	var msg struct {
 		Method string `json:"method"`
@@ -637,96 +620,4 @@ func acpContentText(update map[string]any) string {
 	}
 	text, _ := content["text"].(string)
 	return text
-}
-
-func formatStreamJSONLine(line string) string {
-	var msg map[string]any
-	if json.Unmarshal([]byte(line), &msg) != nil {
-		return ""
-	}
-	t, _ := msg["type"].(string)
-	switch t {
-	case "system":
-		return formatSystemEvent(msg)
-
-	case "assistant":
-		message, _ := msg["message"].(map[string]any)
-		content, _ := message["content"].([]any)
-		var b strings.Builder
-		for _, item := range content {
-			c, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			ct, _ := c["type"].(string)
-			switch ct {
-			case "text":
-				if text, ok := c["text"].(string); ok {
-					b.WriteString(text)
-				}
-			case "tool_use":
-				name, _ := c["name"].(string)
-				input := c["input"]
-				inputJSON, _ := json.Marshal(input)
-				b.WriteString("\n\x1b[36m[")
-				b.WriteString(name)
-				b.WriteString("]\x1b[0m ")
-				b.Write(inputJSON)
-				b.WriteString("\n")
-			}
-		}
-		return b.String()
-
-	case "user":
-		message, _ := msg["message"].(map[string]any)
-		contentArr, _ := message["content"].([]any)
-		if len(contentArr) > 0 {
-			c, ok := contentArr[0].(map[string]any)
-			if ok {
-				if text, ok := c["content"].(string); ok {
-					return "\n\x1b[2m→ " + output.Truncate(text, 200) + "\x1b[0m\n"
-				}
-			}
-		}
-	case "result":
-		if r, ok := msg["result"].(string); ok {
-			return "\n\x1b[32m✓ " + r + "\x1b[0m\n"
-		}
-	}
-	return ""
-}
-
-// System notices are useful progress, not turn failures. Unknown subtypes
-// stay visible without dumping their payload into the terminal.
-func formatSystemEvent(msg map[string]any) string {
-	field := func(key string) string {
-		value, _ := msg[key].(string)
-		return strings.Join(strings.Fields(value), " ")
-	}
-	subtype := field("subtype")
-	if subtype != "code_change_published" {
-		if subtype == "" {
-			subtype = "notice"
-		}
-		return "\n\x1b[2m▸ system: " + subtype + "\x1b[0m\n"
-	}
-	label := "published"
-	if provider := field("provider"); provider != "" {
-		label += ": " + provider
-		if provider == "github" {
-			label += " pull request"
-		}
-	}
-	reference := field("repo")
-	if identifier := field("identifier"); identifier != "" {
-		reference += "#" + identifier
-	}
-	if reference != "" {
-		label += " " + reference
-	}
-	result := "\n▸ " + label + "\n"
-	if url := field("url"); url != "" {
-		result += "  " + url + "\n"
-	}
-	return result
 }
