@@ -164,6 +164,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # Enums with no domain list behind them. Each entry needs a reason: the
   # point of the list is that adding to it is a deliberate act.
   @api_local %{
+    {FountainWeb.Schemas.CredentialSetDeletionError, "error"} =>
+      "Fixed HTTP refusal code for deleting the default credential set; not a domain list",
+    {FountainWeb.Schemas.CredentialSetDeletionError, "reason"} =>
+      "Fixed deletion refusal reason rendered by InferenceCredentialSetController",
     {FountainWeb.Schemas.UsageAccounting, "completeness"} =>
       "Adapter claim validated by Managoat.ACP.Usage; the library exposes no enum accessor",
     {FountainWeb.Schemas.Turn, "model_selection.status"} =>
