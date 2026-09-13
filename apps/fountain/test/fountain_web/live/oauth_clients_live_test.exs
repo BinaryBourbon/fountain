@@ -36,7 +36,7 @@ defmodule FountainWeb.OAuthClientsLiveTest do
     assert html =~ "In development"
     # A loopback redirect was registered, so the card must not imply that
     # :5173 is the only origin CORS will admit.
-    assert html =~ "any port"
+    assert html =~ "(loopback: any port)"
   end
 
   test "shows the validation error rather than saving", %{conn: conn} do

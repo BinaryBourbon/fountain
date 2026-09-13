@@ -122,7 +122,7 @@ defmodule FountainWeb.OAuthClientsLive.Index do
     origins = Enum.join(Client.origins_of(redirect_uris), ", ")
 
     if Enum.any?(redirect_uris, &loopback_uri?/1),
-      do: origins <> " (and a loopback origin on any port)",
+      do: origins <> " (loopback: any port)",
       else: origins
   end
 
