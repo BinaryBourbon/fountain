@@ -134,6 +134,79 @@ defmodule Fountain.Principals do
     |> Repo.one()
   end
 
+  @doc """
+  Write or clear one provider credential on a principal, as the account
+  behind it (ADR 0053 decision 7).
+
+  A principal is a first-class tenant with its own credential rows, and a
+  `principal`-scoped key cannot write account state -- so without this an
+  application could open a principal for a customer and then have no way to
+  put that customer's inference key on it. That gap is what kept a business
+  managing several end customers on one shared account instead of one
+  principal each.
+
+  `viewer_id` must own an active principal: the opening application while
+  unclaimed, or the claiming account after claim. The grant row is locked
+  through the credential mutation, serializing it with claim and closure.
+  Former owners and closed or elapsed grants get `:not_found`, like strangers.
+  The principal's own credential gains nothing from this route.
+
+  The value is encrypted under the **principal's** DEK and lands in the
+  principal's default credential set, because it is the principal's
+  credential; the owner is only who asked. The trail is the principal's too,
+  with the acting account named in the metadata.
+  """
+  @spec put_inference_credential(binary(), binary(), atom(), String.t() | nil, keyword()) ::
+          {:ok, Fountain.InferenceCredentials.Credential.t()}
+          | {:error, :not_found | :tenant_key_unavailable | Ecto.Changeset.t()}
+  def put_inference_credential(id, viewer_id, provider, value, opts \\ [])
+      when is_binary(id) and is_binary(viewer_id) do
+    with {:ok, _} <- Ecto.UUID.dump(id),
+         %ClaimableUser{user_id: principal_id} <- get_claimable_for(id, viewer_id) || :none,
+         {:ok, dek} <- load_principal_key(principal_id) do
+      Fountain.InferenceCredentials.put_credential(
+        principal_id,
+        dek,
+        provider,
+        value,
+        opts
+        |> Keyword.update(
+          :metadata,
+          %{"by_account" => viewer_id},
+          &Map.put(&1, "by_account", viewer_id)
+        )
+        |> Keyword.put(:authorize, fn -> authorize_credential_write(id, viewer_id) end)
+      )
+    else
+      :none -> {:error, :not_found}
+      :error -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp authorize_credential_write(id, viewer_id) do
+    # Scope by the current owner before taking the same row lock as claim,
+    # release and expiry. PostgreSQL rechecks this predicate after a wait.
+    current =
+      from(c in ClaimableUser,
+        where: c.id == ^id,
+        where:
+          (c.status == "unclaimed" and c.application_user_id == ^viewer_id) or
+            (c.status == "claimed" and c.claimed_by_user_id == ^viewer_id),
+        lock: "FOR UPDATE"
+      )
+      |> Repo.one()
+
+    if current && ClaimableUser.usable?(current), do: :ok, else: {:error, :not_found}
+  end
+
+  defp load_principal_key(principal_id) do
+    case Fountain.Crypto.load_tenant_key(principal_id) do
+      {:ok, dek} -> {:ok, dek}
+      {:error, _reason} -> {:error, :tenant_key_unavailable}
+    end
+  end
+
   @doc "Every principal `owner_user_id` holds, oldest first."
   @spec list_owned(binary()) :: [binary()]
   def list_owned(owner_user_id) when is_binary(owner_user_id) do
