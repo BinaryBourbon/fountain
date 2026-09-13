@@ -99,9 +99,9 @@ original headers. OAuth denial permits one callback with the expected state;
 query parameters and state never enter the evidence trace. Debug source maps
 are excluded from the fixture.
 
-The journey provisions a conversation with the UI-created agent, follows
-Fountain's `/conversations/:id` redirect, checks the app's PKCE authorization
-request, and denies consent. It then signs in through the app's supported key
+The journey provisions a conversation with the UI-created agent, verifies
+`catalog.apps.conversations` against the pinned app URL, and opens its `#/c/:id`
+deep link directly. It checks the app's PKCE authorization request and denies consent. It then signs in through the app's supported key
 entry flow using the run-owned UI key. Both artifact prompts are sent through
 the composer. Public turn/history/file checks independently require exactly
 two accepted turns, tool use, exact nonce bytes, and full/cursor replay. The

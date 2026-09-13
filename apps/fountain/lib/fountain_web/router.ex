@@ -723,21 +723,6 @@ defmodule FountainWeb.Router do
     get "/connections/:provider/start", ConnectionsController, :start
     get "/connections/:provider/callback", ConnectionsController, :callback
 
-    # ── The pages that moved out (#867) ───────────────────────────────────────
-    # Conversations and the team roster are their own apps on the API now, and
-    # onboarding is the dashboard's own first-run guidance. These paths are in
-    # sent emails, filed issues, agents' skills and bookmarks, so they redirect
-    # rather than 404. `/conversations/new` is declared before `/:id` or "new"
-    # reads as a conversation id.
-    get "/conversations", MovedController, :conversations
-    get "/conversations/new", MovedController, :new_conversation
-    get "/conversations/:id", MovedController, :conversation
-    get "/conversations/:id/:logs", MovedController, :conversation
-    get "/team", MovedController, :team
-    get "/team/:agent_id", MovedController, :team
-    get "/onboarding", MovedController, :onboarding
-    get "/onboarding/:step", MovedController, :onboarding
-
     # ── The console ───────────────────────────────────────────────────────────
     # What Fountain's own UI is for: the account, its keys and credentials, and
     # the three primitives a conversation runs on. No billing gate — an

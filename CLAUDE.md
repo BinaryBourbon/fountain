@@ -311,9 +311,11 @@ on `/api`, on their own origins with their own OAuth clients:
 (`CONVERSATIONS_APP_URL` / `TEAM_APP_URL`, defaulting to the hosted builds;
 `""` means this deployment has none). Anything that links a human to a
 transcript — the console, an email, a forwarded support report, `/api/catalog`
-— reads it from there. The old paths redirect (`FountainWeb.MovedController`)
-rather than 404, and `/onboarding*` goes to the dashboard, whose checklist
-replaced the wizard.
+— reads it from there. Retired browser `/conversations*`, `/team*` and
+`/onboarding*` URLs return the normal 404 response (#2105). Current links use
+the configured apps or `/dashboard`; the separate `/api/account/onboarding`
+API remains available. The retirement boundary and bookmark migration are in
+`docs/concepts/surfaces.md`.
 
 **Building a conversation-facing feature? It goes in the app, not here.** The
 server's job is to serve it: `?blocks=true` on `/events` and the streams means

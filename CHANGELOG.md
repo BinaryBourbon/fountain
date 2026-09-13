@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Upgrade notes
 
+- **Retired browser URLs now return 404** (#2105). Starting with the release
+  containing this change, hosted and self-hosted servers no longer redirect
+  `/conversations*`, `/team*` or `/onboarding*`. Update bookmarks, saved skill
+  instructions and support links to the configured Conversations or Team app;
+  use `/dashboard` for the old onboarding pages. Links in historical emails
+  need the same migration. See [Retired browser URLs](https://managoat.com/docs/concepts/surfaces#retired-browser-urls)
+  for the destination map and deployments with no app. The separate
+  `/api/account/onboarding` API remains available.
+
 - `fountain apply` now requires Fountain server v0.3.0 or later (#2098).
   The fallback for servers without `POST /api/apply` is removed. If the
   endpoint returns 404, the CLI fails before individual resource requests

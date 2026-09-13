@@ -29,7 +29,7 @@ noted.
 - **Permission requests**: never synthesise an option the agent did not offer (the server 422s `unknown_option`); first answer wins so a 409 `permission_request_resolved` is normal; read the `outcome` field, not `state` — `state` is `done` for a deny too. Log events are immutable, so the resolution arrives as a separate `request` stage event paired on `request_id`. "Always allow" (claude-agent-acp) is a rule for the exact command line, in the sandbox, and dies with it.
 - Parse markdown to React elements, never HTML; agent output is untrusted.
 - An `<img src>` at `/api/agents/:id/avatar` or a turn image is a 401 — fetch with the bearer, `URL.createObjectURL`, revoke later.
-- Older Fountains have no `catalog.apps`; a transcript deep-link is `<apps.conversations>/#/c/<id>` with the `/conversations/:id` redirect as fallback.
+- Read `catalog.apps.conversations` for transcript links and append `#/c/<id>` to its trailing slash. A null app URL means no transcript app is configured; omit the link. The retired `/conversations/:id` browser path returns 404 and is not a fallback.
 
 ## Errors
 

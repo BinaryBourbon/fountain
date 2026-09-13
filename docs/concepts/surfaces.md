@@ -35,17 +35,36 @@ The first two replaced in-app LiveViews, and the console links to them.
 Workbench replaced no page, so the console does not link it. All three take
 your server URL as input.
 
-Six paths now redirect, and they do not 404.
-They are `/conversations`, `/conversations/new`, `/conversations/:id`,
-`/conversations/:id/logs`, `/team` and `/team/:agent_id`.
+## Retired browser URLs
 
-Links to them sit in sent emails, in filed support issues, in agents' skills
-and in people's bookmarks.
+The release that contains #2105 removes the old browser redirects. From that
+release onward, the paths below return the normal 404 response on hosted and
+self-hosted deployments. This also applies to signed-in readers and deployments
+with no external app configured.
 
-`/onboarding` goes to the dashboard, whose checklist replaced the wizard.
+Use the app URLs from `GET /api/catalog` or the console's app links.
+`CONVERSATIONS_APP_URL` and `TEAM_APP_URL` select those destinations.
+Replace old bookmarks, support links and links in saved agent instructions
+with the destination below. For a link in an old email, copy its
+conversation or agent ID into the new destination.
 
-The redirect is a 302 and not a 301, and that is deliberate. A browser caches a
-permanent redirect past any later change of mind.
+| Retired path | Destination |
+|---|---|
+| `/conversations` | Conversations app base URL. |
+| `/conversations/new` | Conversations app base URL plus `#/new`. |
+| `/conversations/:id` | Conversations app base URL plus `#/c/:id`. |
+| `/conversations/:id/logs` | Conversations app base URL plus `#/c/:id/logs`. |
+| `/team` | Team app base URL. |
+| `/team/:agent_id` | Team app base URL plus `#/team/:agent_id`. |
+| `/onboarding` and `/onboarding/:step` | `/dashboard` on the Fountain server. |
+
+Keep one slash between the app base URL and `#`. The hosted app defaults work
+with a self-hosted server when its CORS configuration admits their origins.
+If an app URL is empty, the console omits that app's links. Open `/dashboard`
+and use the API or CLI for conversations on that deployment.
+
+The separate `/api/account/onboarding` API remains available. This retirement
+changes browser URLs only; the conversation and team APIs remain under `/api`.
 
 ## Why divide them
 
@@ -97,8 +116,8 @@ are static files with no backend of their own.
 access. Yours would have the same.
 
 **Not permanent for the console.** The console keeps whatever a person needs
-that is not a conversation. That boundary can move, and the redirects exist so
-that it can move and break no link.
+that is not a conversation. That boundary can move; release notes describe
+any URL changes.
 
 ## Where to go next
 

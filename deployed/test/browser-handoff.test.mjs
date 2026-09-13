@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { performTurn } from '../lib/execution.mjs';
 import { Redactor } from '../lib/http.mjs';
 import { validateBrowser } from '../lib/browser-config.mjs';
-import { verifyBrowserCors, verifyOAuthDenialRequest } from '../profiles/browser-handoff.mjs';
+import { conversationAppUrl, verifyBrowserCors, verifyOAuthDenialRequest } from '../profiles/browser-handoff.mjs';
 
 test('handoff configuration requires distinct pinned origins, explicit authentication and prompt/resource budgets', () => {
   const env = { EMAIL: 'dedicated@example.test', PASSWORD: 'test-password' };
@@ -22,6 +22,15 @@ test('handoff configuration requires distinct pinned origins, explicit authentic
     [c => { c.limits.run_ms = 120000; }, /time for provision/],
   ]) {
     const copy = structuredClone(config); change(copy); assert.throws(() => validateBrowser(copy, env), error);
+  }
+});
+
+test('transcript handoff uses the catalog app directly and rejects absent or mismatched configuration', () => {
+  const app = 'https://app.example.test/conversations/';
+  const catalog = { data: { apps: { conversations: app } } };
+  assert.equal(conversationAppUrl(catalog, app, 'c1'), 'https://app.example.test/conversations/#/c/c1');
+  for (const conversations of [null, undefined, '', 'https://elsewhere.test/', 'https://fountain.example.test/conversations/']) {
+    assert.throws(() => conversationAppUrl({ data: { apps: { conversations } } }, app, 'c1'), /pinned app URL/);
   }
 });
 

@@ -19,8 +19,7 @@ defmodule Fountain.Apps do
   A deployment that would rather host its own copy points `CONVERSATIONS_APP_URL`
   and `TEAM_APP_URL` at it (and admits *that* origin instead). Setting either
   to an empty string says "this deployment has no such app": the console stops
-  linking to it, and the retired in-app routes redirect to the dashboard
-  rather than off-site.
+  linking to it. Retired browser URLs return the normal 404 response.
   """
 
   @conversations "https://fountain-conversations.demo.managoat.com/"
