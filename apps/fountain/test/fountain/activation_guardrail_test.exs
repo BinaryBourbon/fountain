@@ -86,6 +86,75 @@ defmodule Fountain.ActivationGuardrailTest do
            ]
   end
 
+  test "function-level exception sections do not hide a writer in the main body" do
+    for {section, handler} <- [
+          {"rescue", "_error -> :ok"},
+          {"catch", ":throw, _reason -> :ok"},
+          {"after", ":ok"},
+          {"else", "_value -> :ok"}
+        ] do
+      source = """
+      defmodule Example do
+        def finish(turn, text) do
+          turn |> Turn.changeset(%{reply_text: text}) |> Repo.update!()
+        #{section}
+          #{handler}
+        end
+      end
+      """
+
+      assert source |> functions() |> writers() |> violations(%{}) == [
+               {{Example, :finish, 2}, :missing_activation}
+             ],
+             "A function-level #{section} hid the main-body reply writer"
+    end
+  end
+
+  test "reply writes inside function-level exception sections are discovered" do
+    for {section, pattern} <- [
+          {"rescue", "_error ->"},
+          {"catch", ":throw, _reason ->"},
+          {"after", ""},
+          {"else", "_value ->"}
+        ] do
+      source = """
+      defmodule Example do
+        defp finish(turn, text) do
+          :ok
+        #{section}
+          #{pattern} turn |> Turn.changeset(%{reply_text: text}) |> Repo.update!()
+        end
+      end
+      """
+
+      assert source |> functions() |> writers() |> violations(%{}) == [
+               {{Example, :finish, 2}, :missing_activation}
+             ],
+             "The reply writer inside function-level #{section} was skipped"
+    end
+  end
+
+  test "an instrumented clause does not cover an uninstrumented rescued clause of the same MFA" do
+    source = """
+    defmodule Example do
+      def finish(:live, turn, text) do
+        updated = turn |> Turn.changeset(%{reply_text: text}) |> Repo.update!()
+        Fountain.Activation.turn_replied(updated)
+      end
+
+      def finish(:repair, turn, text) do
+        turn |> Turn.changeset(%{reply_text: text}) |> Repo.update!()
+      rescue
+        error -> {:error, error}
+      end
+    end
+    """
+
+    assert source |> functions() |> writers() |> violations(%{}) == [
+             {{Example, :finish, 3}, :missing_activation}
+           ]
+  end
+
   test "exclusions need a reason, must name a discovered writer, and must still be silent" do
     silent = {{Example, :repair, 0}, false}
     covered = {{Example, :live, 1}, true}
@@ -128,7 +197,9 @@ defmodule Fountain.ActivationGuardrailTest do
         expression -> [expression]
       end
 
-    for {kind, _, [head, [do: body]]} <- expressions, kind in [:def, :defp] do
+    for {kind, _, [head, sections]} <- expressions,
+        kind in [:def, :defp],
+        is_list(sections) do
       head =
         case head do
           {:when, _, [head | _]} -> head
@@ -136,7 +207,9 @@ defmodule Fountain.ActivationGuardrailTest do
         end
 
       {name, _, args} = head
-      {{module, name, length(args || [])}, body}
+      # Function-level rescue/catch/else/after are siblings of :do. Keep all
+      # executable sections so neither the main body nor a handler is skipped.
+      {{module, name, length(args || [])}, sections}
     end
   end
 
