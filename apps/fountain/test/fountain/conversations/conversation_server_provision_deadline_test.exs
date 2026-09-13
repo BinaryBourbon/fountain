@@ -7,24 +7,90 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
   # failed/failed transitions as the normal provision-failure path.
   use Fountain.ConversationServerCase
 
+  alias Fountain.Conversations.ProvisionWatchdog
+
   setup do
-    Application.put_env(:fountain, :provision_deadline_ms, 300)
-    on_exit(fn -> Application.delete_env(:fountain, :provision_deadline_ms) end)
+    test_pid = self()
+
+    # Keep the production deadline. Capture the real watchdog so each test can
+    # deliver its timer message after the state under test has been reached.
+    Mimic.stub(ProvisionWatchdog, :start, fn conv_id, sandbox_id ->
+      pid = Mimic.call_original(ProvisionWatchdog, :start, [conv_id, sandbox_id])
+      send(test_pid, {:watchdog_started, self(), pid})
+      pid
+    end)
+
     :ok
   end
 
-  defp wait_until(fun, tries \\ 50) do
-    cond do
-      fun.() ->
-        :ok
+  defp stall_provision do
+    test_pid = self()
 
-      tries == 0 ->
-        flunk("condition never became true")
+    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
+      send(test_pid, {:provision_stalled, self()})
+      Process.sleep(:infinity)
+    end)
+  end
 
-      true ->
-        Process.sleep(100)
-        wait_until(fun, tries - 1)
-    end
+  defp start_provision_server(conv) do
+    args = [
+      conversation_id: conv.id,
+      sandbox_id: conv.sandbox_id,
+      runtime_module: Managoat.Runtimes.Testing.FakeRuntime
+    ]
+
+    # A failed readiness assertion must not leave a stuck server and its
+    # watchdog behind after the SQL Sandbox owner exits. Stay outside Horde
+    # so the tests control restarts explicitly.
+    start_supervised!(%{
+      id: make_ref(),
+      start: {GenServer, :start_link, [ConversationServer, args]},
+      restart: :temporary,
+      shutdown: :brutal_kill
+    })
+  end
+
+  defp expire_watchdog(server) do
+    assert_receive {:watchdog_started, ^server, watchdog}, 5_000
+    ref = Process.monitor(watchdog)
+    send(watchdog, :provision_deadline)
+    assert_receive {:DOWN, ^ref, :process, ^watchdog, :normal}, 5_000
+  end
+
+  test "the configured timer expires a pending provision" do
+    previous = Application.fetch_env(:fountain, :provision_deadline_ms)
+    Application.put_env(:fountain, :provision_deadline_ms, 0)
+
+    on_exit(fn ->
+      case previous do
+        {:ok, value} -> Application.put_env(:fountain, :provision_deadline_ms, value)
+        :error -> Application.delete_env(:fountain, :provision_deadline_ms)
+      end
+    end)
+
+    user = insert_verified_user()
+    conv = insert_conversation(user_id: user.id)
+
+    # The pending rows already exist, so an immediate timer has no provisioning
+    # work to race. The other tests exercise the real server's transitions.
+    pid =
+      start_supervised!(
+        {Task,
+         fn ->
+           receive do
+             :start_watchdog -> ProvisionWatchdog.start(conv.id, conv.sandbox_id)
+           end
+
+           Process.sleep(:infinity)
+         end}
+      )
+
+    ref = Process.monitor(pid)
+    send(pid, :start_watchdog)
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 5_000
+    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "failed"
+    assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
   end
 
   test "a hung provision is killed at the deadline and its rows are failed" do
@@ -32,30 +98,22 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
 
     # Stall provisioning indefinitely — the shape of a step that hangs
     # without raising (e.g. a stream that stops yielding chunks).
-    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
-      Process.sleep(:infinity)
-    end)
+    stall_provision()
 
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
-    args = [
-      conversation_id: conv.id,
-      sandbox_id: conv.sandbox_id,
-      runtime_module: Managoat.Runtimes.Testing.FakeRuntime
-    ]
-
-    {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
+    pid = start_provision_server(conv)
     ref = Process.monitor(pid)
+    assert_receive {:provision_stalled, ^pid}, 5_000
+    expire_watchdog(pid)
 
     # The watchdog must kill the stuck server…
     assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 5_000
 
     # …and then free the quota slot by failing the rows.
-    wait_until(fn ->
-      Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "failed"
-    end)
+    assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "failed"
 
     assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
   end
@@ -69,9 +127,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     # what makes any restart stop at the terminal-status guard.
     stub_happy_sprite()
 
-    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
-      Process.sleep(:infinity)
-    end)
+    stall_provision()
 
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")
@@ -86,14 +142,10 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
       :ok
     end)
 
-    args = [
-      conversation_id: conv.id,
-      sandbox_id: conv.sandbox_id,
-      runtime_module: Managoat.Runtimes.Testing.FakeRuntime
-    ]
-
-    {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
+    pid = start_provision_server(conv)
     ref = Process.monitor(pid)
+    assert_receive {:provision_stalled, ^pid}, 5_000
+    expire_watchdog(pid)
 
     assert_receive {:status_at_termination, "failed"}, 5_000
     assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 5_000
@@ -109,22 +161,16 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
       {:ok, handle}
     end)
 
-    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
-      Process.sleep(:infinity)
-    end)
+    stall_provision()
 
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
-    args = [
-      conversation_id: conv.id,
-      sandbox_id: conv.sandbox_id,
-      runtime_module: Managoat.Runtimes.Testing.FakeRuntime
-    ]
-
-    {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
+    pid = start_provision_server(conv)
     ref = Process.monitor(pid)
+    assert_receive {:provision_stalled, ^pid}, 5_000
+    expire_watchdog(pid)
 
     assert_receive :sprite_created, 5_000
     assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 5_000
@@ -132,7 +178,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     # What Horde's transient restart does after the watchdog fires: start a
     # fresh server on the same conversation, immediately. It must read the
     # terminal row and stop — never create a second sprite.
-    {:ok, pid2} = GenServer.start(Fountain.Conversations.ConversationServer, args)
+    pid2 = start_provision_server(conv)
     ref2 = Process.monitor(pid2)
 
     assert_receive {:DOWN, ^ref2, :process, ^pid2, :normal}, 5_000
@@ -145,10 +191,14 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
-    {pid, _ref, :alive} = start_server(conv)
+    pid = start_provision_server(conv)
+    # handle_continue runs before this call. The ExUnit timeout bounds a
+    # genuinely stuck provision; successful setup has no short call deadline.
+    :sys.get_state(pid, :infinity)
 
-    # Outlive the deadline, then confirm the watchdog did not fire.
-    Process.sleep(600)
+    # Provisioning has finished; now deliver the same
+    # deadline message as the timer and wait until its row check has completed.
+    expire_watchdog(pid)
     assert Process.alive?(pid)
     assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).status == "ready"
 
