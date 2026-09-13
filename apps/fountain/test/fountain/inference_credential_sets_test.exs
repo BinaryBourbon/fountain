@@ -223,6 +223,32 @@ defmodule Fountain.InferenceCredentialSetsTest do
     end
   end
 
+  describe "default decisions use the current row" do
+    test "a stale non-default struct cannot delete the newly promoted default", %{user: user} do
+      {:ok, _first} = InferenceCredentials.create_set(user.id, "First")
+      {:ok, second} = InferenceCredentials.create_set(user.id, "Second")
+      assert {:ok, _} = InferenceCredentials.set_default(second)
+
+      assert {:error, :is_default} = InferenceCredentials.delete_set(second)
+      assert InferenceCredentials.get_for_user(user.id).id == second.id
+      assert length(InferenceCredentials.list_sets(user.id)) == 2
+    end
+
+    test "a stale default struct can promote itself again or be deleted after demotion", %{
+      user: user
+    } do
+      {:ok, first} = InferenceCredentials.create_set(user.id, "First")
+      {:ok, second} = InferenceCredentials.create_set(user.id, "Second")
+      assert {:ok, _} = InferenceCredentials.set_default(second)
+      assert {:ok, _} = InferenceCredentials.set_default(first)
+      assert InferenceCredentials.get_for_user(user.id).id == first.id
+
+      assert {:ok, _} = InferenceCredentials.set_default(second)
+      assert {:ok, _} = InferenceCredentials.delete_set(first)
+      assert InferenceCredentials.get_for_user(user.id).id == second.id
+    end
+  end
+
   describe "has_any_credential?/1 across sets" do
     # The onboarding nag and the dashboard read this. Asking only the default
     # set would put the nag back in front of an account whose only key lives

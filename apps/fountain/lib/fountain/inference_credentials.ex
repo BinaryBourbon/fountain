@@ -67,15 +67,17 @@ defmodule Fountain.InferenceCredentials do
   @spec create_set(binary(), String.t(), keyword()) ::
           {:ok, Credential.t()} | {:error, Ecto.Changeset.t()}
   def create_set(user_id, name, opts \\ []) when is_binary(user_id) do
-    attrs = %{
-      user_id: user_id,
-      name: name,
-      is_default: is_nil(get_for_user(user_id))
-    }
+    with_source_lock(user_id, fn ->
+      attrs = %{
+        user_id: user_id,
+        name: name,
+        is_default: is_nil(get_for_user(user_id))
+      }
 
-    %Credential{}
-    |> Credential.changeset(attrs)
-    |> Repo.insert()
+      %Credential{}
+      |> Credential.changeset(attrs)
+      |> Repo.insert()
+    end)
     |> audited_set("inference_credential_set.created", opts)
   end
 
@@ -109,13 +111,16 @@ defmodule Fountain.InferenceCredentials do
   as `inference_credential_set.deleted`.
   """
   @spec delete_set(Credential.t(), keyword()) ::
-          {:ok, Credential.t()} | {:error, :is_default | Ecto.Changeset.t()}
-  def delete_set(set, opts \\ [])
-
-  def delete_set(%Credential{is_default: true}, _opts), do: {:error, :is_default}
-
-  def delete_set(%Credential{} = set, opts) do
-    set |> Repo.delete() |> audited_set("inference_credential_set.deleted", opts)
+          {:ok, Credential.t()} | {:error, :is_default | :not_found | Ecto.Changeset.t()}
+  def delete_set(%Credential{} = set, opts \\ []) do
+    with_source_lock(set.user_id, fn ->
+      case get_set(set.id, set.user_id) do
+        nil -> {:error, :not_found}
+        %Credential{is_default: true} -> {:error, :is_default}
+        current -> Repo.delete(current)
+      end
+    end)
+    |> audited_set("inference_credential_set.deleted", opts)
   end
 
   @doc """
@@ -131,29 +136,31 @@ defmodule Fountain.InferenceCredentials do
   """
   @spec set_default(Credential.t(), keyword()) ::
           {:ok, Credential.t()} | {:error, term()}
-  def set_default(set, opts \\ [])
-
-  def set_default(%Credential{is_default: true} = set, _opts), do: {:ok, set}
-
-  def set_default(%Credential{} = set, opts) do
+  def set_default(%Credential{} = set, opts \\ []) do
     result =
-      Repo.transaction(fn ->
-        from(c in Credential, where: c.user_id == ^set.user_id and c.is_default)
-        |> Repo.update_all(set: [is_default: false])
+      with_source_lock(set.user_id, fn ->
+        case get_set(set.id, set.user_id) do
+          nil ->
+            {:error, :not_found}
 
-        set
-        |> Ecto.Changeset.change(is_default: true)
-        |> Repo.update()
-        |> case do
-          {:ok, updated} -> updated
-          {:error, changeset} -> Repo.rollback(changeset)
+          %Credential{is_default: true} = current ->
+            {:unchanged, current}
+
+          current ->
+            from(c in Credential, where: c.user_id == ^set.user_id and c.is_default)
+            |> Repo.update_all(set: [is_default: false])
+
+            current
+            |> Ecto.Changeset.change(is_default: true)
+            |> Repo.update()
         end
       end)
 
-    # Outside the transaction: `Audit.record/1` is best-effort by rescuing,
-    # and a rescue does not survive a transaction — a failed audit insert
-    # would abort the enclosing one and take the change with it (ADR 0013).
-    audited_set(result, "inference_credential_set.default_changed", opts)
+    # Audit after the transaction; an already-default request is a no-op.
+    case result do
+      {:unchanged, current} -> {:ok, current}
+      changed -> audited_set(changed, "inference_credential_set.default_changed", opts)
+    end
   end
 
   @doc """
@@ -626,5 +633,29 @@ defmodule Fountain.InferenceCredentials do
       {:ok, plain} -> {:ok, plain}
       :error -> :error
     end
+  end
+
+  @doc "Serialize source reads with credential/configuration writes, without holding locks over runtime I/O."
+  def with_source_lock(user_id, fun) when is_function(fun, 0) do
+    Repo.transaction(fn ->
+      lock_source(user_id)
+
+      case fun.() do
+        {:error, reason} -> Repo.rollback(reason)
+        result -> result
+      end
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def lock_source(user_id) do
+    Repo.query!("SELECT pg_advisory_xact_lock_shared(hashtextextended('inference:platform', 0))")
+
+    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["inference:" <> user_id])
+
+    :ok
   end
 end
