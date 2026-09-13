@@ -78,13 +78,13 @@ defmodule FountainWeb.TeamPresenter do
   def preview(%{last_turn: %{status: status}}) when status in ["pending", "running"],
     do: :typing
 
-  def preview(%{last_turn: turn, conversation: conv}) do
+  def preview(%{last_turn: turn}) do
     # Ownership: `turn` belongs to a conversation from the tenant-scoped
     # Team.list_teammates that built this entry.
     reply =
       turn.id
       |> Conversations._unsafe_list_turn_log_events()
-      |> Blocks.assistant_text(conv.runtime)
+      |> Blocks.assistant_text()
 
     if reply == "", do: {:you, turn.prompt}, else: {:them, reply}
   end

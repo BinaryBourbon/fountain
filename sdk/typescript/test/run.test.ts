@@ -145,17 +145,20 @@ describe("run", () => {
     assert.equal(run.text, "mine");
   });
 
-  test("a stdout runtime joins rows as paragraphs, acp joins chunks", async () => {
+  test("output rows join as chunks without stream-specific separators", async () => {
     fake.onTurn = (conversation, turnNumber) => {
       fake.scriptTurn(conversation.id, {
         turnNumber,
         turnId: "t1",
-        text: ["first line", "second line"],
+        text: ["first ", "line"],
         stream: "stdout",
       });
     };
-    const legacy = await client().run("go", { agent: "reposage" });
-    assert.equal(legacy.text, "first line\n\nsecond line");
+    const run = client().run("go", { agent: "reposage" });
+    const chunks: string[] = [];
+    for await (const chunk of run.textStream) chunks.push(chunk);
+    assert.deepEqual(chunks, ["first ", "line"]);
+    assert.equal((await run).text, "first line");
   });
 
   test("text after a tool call starts a new paragraph", async () => {

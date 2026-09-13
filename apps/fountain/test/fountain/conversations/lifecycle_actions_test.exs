@@ -350,7 +350,10 @@ defmodule Fountain.Conversations.LifecycleActionsTest do
       assert Lifecycle.stop_cotenants(ctx.sandbox.id, ctx.conv.id, "suspended", "idle", "why") ==
                :ok
 
-      assert_receive {:cotenant, {:"$gen_cast", {:machine_gone, "suspended", "idle", "why"}}}
+      sandbox_id = ctx.sandbox.id
+
+      assert_receive {:cotenant,
+                      {:"$gen_cast", {:machine_gone, ^sandbox_id, "suspended", "idle", "why"}}}
     end
 
     test "a co-tenant with no live server is not an error", ctx do

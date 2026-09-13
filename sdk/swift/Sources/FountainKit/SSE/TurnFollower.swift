@@ -96,20 +96,19 @@ public struct TurnFollower: Sendable {
     // Tail of an older turn arriving before ours starts.
     if !started && turnID == nil { return [] }
 
-    let acp = event.stream == .acp
     var events: [TurnEvent] = []
     for block in event.blocks ?? [] {
       events.append(.block(block, event: event))
-      events.append(contentsOf: apply(block: block, acp: acp))
+      events.append(contentsOf: apply(block: block))
     }
     return events
   }
 
-  private mutating func apply(block: Block, acp: Bool) -> [TurnEvent] {
+  private mutating func apply(block: Block) -> [TurnEvent] {
     switch block.kind {
     case .text:
       guard let body = block.body, !body.isEmpty else { return [] }
-      let prefix = paragraphBreak(acp: acp)
+      let prefix = paragraphBreak()
       chunks.append(prefix + body)
       breakBeforeText = false
       return [.text(prefix + body)]
@@ -146,12 +145,11 @@ public struct TurnFollower: Sendable {
     }
   }
 
-  /// ACP chunks are pieces of one message and join with nothing; legacy
-  /// stdout rows are whole messages and join as paragraphs; text after a
-  /// tool call always starts a new paragraph.
-  private func paragraphBreak(acp: Bool) -> String {
+  /// ACP chunks are pieces of one message and join with nothing; text after
+  /// a tool call starts a new paragraph.
+  private func paragraphBreak() -> String {
     guard let last = chunks.last else { return "" }
-    if acp && !breakBeforeText { return "" }
+    if !breakBeforeText { return "" }
     return last.hasSuffix("\n") ? "" : "\n\n"
   }
 }

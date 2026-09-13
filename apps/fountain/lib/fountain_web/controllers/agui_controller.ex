@@ -333,7 +333,6 @@ defmodule FountainWeb.AguiController do
     state = %{
       conn: conn,
       conv_id: conv.id,
-      runtime: conv.runtime,
       thread_id: thread_id,
       run_id: run_id,
       last_id: since,
@@ -454,7 +453,7 @@ defmodule FountainWeb.AguiController do
   defp handle_event(%{turn_id: turn_id} = state, %LogEvent{kind: "output", turn_id: turn_id} = ev)
        when is_binary(turn_id) do
     ev
-    |> Blocks.for_event(state.runtime)
+    |> Blocks.for_event()
     |> Enum.reduce_while({:ok, state}, fn block, {:ok, state} ->
       case apply_block(state, block) do
         {:ok, state} -> {:cont, {:ok, state}}

@@ -90,7 +90,7 @@ defmodule FountainWeb.EventsController do
         do: last_event_id,
         else: Conversations.latest_user_log_event_id(user_id)
 
-    followed = follow(user_id, %{})
+    followed = follow(user_id, MapSet.new())
 
     conn =
       conn
@@ -126,7 +126,7 @@ defmodule FountainWeb.EventsController do
     end
   end
 
-  # conversation_id → runtime for every conversation still worth following.
+  # Conversation IDs still worth following.
   # Finished ones publish nothing; a conversation that finishes while
   # followed simply goes quiet. Never unsubscribed — the process ends with
   # the request.
@@ -135,11 +135,11 @@ defmodule FountainWeb.EventsController do
     |> Conversations.list_conversations()
     |> Enum.reject(&(&1.status in ["terminated", "failed"]))
     |> Enum.reduce(followed, fn conv, acc ->
-      unless Map.has_key?(acc, conv.id) do
+      unless MapSet.member?(acc, conv.id) do
         Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conv.id}")
       end
 
-      Map.put(acc, conv.id, conv.runtime)
+      MapSet.put(acc, conv.id)
     end)
   end
 
@@ -150,13 +150,12 @@ defmodule FountainWeb.EventsController do
     events = Conversations.list_user_log_events(state.user_id, state.last_id)
 
     result =
-      Enum.reduce_while(events, {:ok, conn, state.last_id}, fn {ev, runtime},
-                                                               {:ok, acc, last_id} ->
+      Enum.reduce_while(events, {:ok, conn, state.last_id}, fn ev, {:ok, acc, last_id} ->
         # Advance over filtered rows too: otherwise a busy excluded stream is
         # scanned again on every notification until a matching row arrives.
         result =
           if Conversations.event_in_streams?(ev, state.streams),
-            do: write_event(acc, ev, runtime, state),
+            do: write_event(acc, ev, state),
             else: {:ok, acc}
 
         case result do
@@ -218,9 +217,7 @@ defmodule FountainWeb.EventsController do
     end
   end
 
-  defp write_event(conn, %LogEvent{} = ev, runtime, state) do
-    runtime = if state.blocks?, do: runtime
-
+  defp write_event(conn, %LogEvent{} = ev, state) do
     payload =
       %{
         conversation_id: ev.conversation_id,
@@ -233,7 +230,7 @@ defmodule FountainWeb.EventsController do
         turn_id: ev.turn_id,
         ts: ev.inserted_at
       }
-      |> FountainWeb.ConversationJSON.put_blocks(ev, runtime)
+      |> FountainWeb.ConversationJSON.put_blocks(ev, state.blocks?)
       |> Jason.encode!()
 
     Plug.Conn.chunk(conn, "id: #{ev.id}\nevent: #{ev.kind}\ndata: #{payload}\n\n")

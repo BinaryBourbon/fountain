@@ -110,8 +110,8 @@ fountain/                  umbrella root
                                (Peer), Protocol, Permissions, Blocks, Usage,
                                Tracer and the ScriptedAgent behind a writer
                                callback; the provisioning half is
-                               managoat_runtimes (below); LegacyBlocks and
-                               Conversations.Blocks stay here
+                               managoat_runtimes (below);
+                               Conversations.Blocks stays here
         managoat_sandbox       Managoat.Sandbox, the sandbox behaviour, the
                                Sprites/E2B/Daytona adapters, Retry, the Fake
                                and the conformance case; the "which providers
@@ -150,7 +150,7 @@ fountain/                  umbrella root
                                skill content (Fountain.SandboxSkills), the
                                permission-ask timeout read
                                (Conversations.Lifecycle.ask_timeout_ms/0),
-                               LegacyBlocks and InferenceCredentials stay here
+                               and InferenceCredentials stay here
   ee/                      credits, Stripe and the credit emails (welcome,
     lib/fountain/          credits-low/exhausted, rent-due), compiled into the
     lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is

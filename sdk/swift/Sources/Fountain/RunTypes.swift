@@ -98,21 +98,20 @@ final class TurnFollower {
     let eventTurnID = event["turn_id"]?.stringValue
     if let turnID, let eventTurnID, eventTurnID != turnID { return [] }
     if !started && turnID == nil { return [] }
-    let acp = event["stream"]?.stringValue == "acp"
     var output: [RunEvent] = []
     for block in event["blocks"]?.arrayValue?.compactMap(\.objectValue) ?? [] {
       output.append(.block(block: block, event: event))
-      output.append(contentsOf: applyBlock(block, acp: acp))
+      output.append(contentsOf: applyBlock(block))
     }
     return output
   }
 
-  private func applyBlock(_ block: JSONObject, acp: Bool) -> [RunEvent] {
+  private func applyBlock(_ block: JSONObject) -> [RunEvent] {
     let body = block["body"]?.stringValue ?? ""
     switch block["kind"]?.stringValue {
     case "text":
       guard !body.isEmpty else { return [] }
-      let prefix = paragraphBreak(acp: acp)
+      let prefix = paragraphBreak()
       chunks.append(prefix + body)
       breakBeforeText = false
       return [.text(prefix + body)]
@@ -144,9 +143,9 @@ final class TurnFollower {
     }
   }
 
-  private func paragraphBreak(acp: Bool) -> String {
+  private func paragraphBreak() -> String {
     guard !chunks.isEmpty else { return "" }
-    if acp && !breakBeforeText { return "" }
+    if !breakBeforeText { return "" }
     return chunks.last?.hasSuffix("\n") == true ? "" : "\n\n"
   }
 }

@@ -76,6 +76,24 @@ defmodule Fountain.SearchTest do
       assert running.reply_text == nil
     end
 
+    test "historical stdout is not materialised as reply text", %{conv: conv} do
+      turn = insert_turn(conv, prompt: "old", status: "completed")
+
+      insert_log_event(conv, %{
+        turn_id: turn.id,
+        stream: "stdout",
+        data:
+          Jason.encode!(%{
+            "type" => "assistant",
+            "message" => %{"content" => [%{"type" => "text", "text" => "historical reply"}]}
+          })
+      })
+
+      assert Conversations._unsafe_turn_reply_text(turn) == nil
+      assert Conversations._unsafe_backfill_reply_texts() == 0
+      assert Repo.reload!(turn).reply_text == nil
+    end
+
     test "the backfill fills ended turns that have none, once", %{conv: conv} do
       turn = insert_turn(conv, prompt: "old", status: "completed")
       insert_log_event(conv, %{turn_id: turn.id, stream: "acp", data: acp_text("from before")})

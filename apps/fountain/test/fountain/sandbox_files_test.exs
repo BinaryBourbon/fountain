@@ -163,6 +163,112 @@ defmodule Fountain.SandboxFilesTest do
                SandboxFiles.list(ctx.sandbox, nil)
     end
 
+    test "redacts environment, vault and live conversation values from names and the path", ctx do
+      {:ok, dek} = Crypto.load_tenant_key(ctx.user.id)
+      env = insert_env(user_id: ctx.user.id)
+      vault = insert_vault(user_id: ctx.user.id)
+
+      {:ok, _} =
+        Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => "sk-env-secret"}, dek)
+
+      {:ok, _} =
+        Fountain.Vaults.upsert_secret(
+          vault,
+          %{"key" => "TOKEN", "value" => "sk-vault-secret"},
+          dek
+        )
+
+      sandbox =
+        insert_sandbox(
+          user_id: ctx.user.id,
+          status: "ready",
+          environment_id: env.id,
+          vault_id: vault.id,
+          agent_id: ctx.agent.id
+        )
+
+      conv =
+        insert_conversation(
+          user_id: ctx.user.id,
+          agent: ctx.agent,
+          sandbox: sandbox,
+          status: "running"
+        )
+
+      Fountain.Conversations.Redaction.put(conv.id, [{"CALLBACK_TOKEN", "sk-live-secret"}])
+      on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
+
+      expect_script(fn _, _, args ->
+        assert args == [@home <> "/sk-env-secret/sk-vault-secret/sk-live-secret"]
+
+        {:ok,
+         "file\t12\tz-sk-env-secret.txt\0directory\t\tsk-vault-secret\0" <>
+           "symlink\t\tsk-live-secret\0file\t3\tplain.txt\0", 0}
+      end)
+
+      assert {:ok,
+              %{
+                path: @home <> "/[REDACTED]/[REDACTED]/[REDACTED]",
+                truncated: false,
+                entries: [
+                  %{name: "[REDACTED]", type: "directory", size: nil},
+                  %{name: "plain.txt", type: "file", size: 3},
+                  %{name: "[REDACTED]", type: "symlink", size: nil},
+                  %{name: "z-[REDACTED].txt", type: "file", size: 12}
+                ]
+              }} = SandboxFiles.list(sandbox, "sk-env-secret/sk-vault-secret/sk-live-secret")
+    end
+
+    test "redacts a name's original bytes before recoding invalid UTF-8 for JSON", ctx do
+      conv =
+        insert_conversation(
+          user_id: ctx.user.id,
+          agent: ctx.agent,
+          sandbox: ctx.sandbox,
+          status: "running"
+        )
+
+      Fountain.Conversations.Redaction.put(conv.id, [{"TOKEN", "sk-live-café"}])
+      on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
+
+      expect_script(fn _, _, _ ->
+        {:ok, <<"file\t1\tcaf", 0xE9, "-sk-live-café.txt\0file\t2\t日本語.txt\0">>, 0}
+      end)
+
+      assert {:ok, %{entries: entries} = listing} = SandboxFiles.list(ctx.sandbox, nil)
+      assert Enum.map(entries, & &1.name) == ["café-[REDACTED].txt", "日本語.txt"]
+      assert {:ok, _} = Jason.encode(listing)
+    end
+
+    test "redaction preserves the entry cap, ordering and duplicate display names", ctx do
+      conv =
+        insert_conversation(
+          user_id: ctx.user.id,
+          agent: ctx.agent,
+          sandbox: ctx.sandbox,
+          status: "running"
+        )
+
+      Fountain.Conversations.Redaction.put(conv.id, [{"A", "aaaaaaaa"}, {"Z", "zzzzzzzz"}])
+      on_exit(fn -> Fountain.Conversations.Redaction.delete(conv.id) end)
+
+      for {count, truncated} <- [{1_998, false}, {1_999, true}] do
+        records = for i <- 1..count, do: "file\t1\tf#{i}.txt\0"
+
+        expect_script(fn _, _, _ ->
+          {:ok, "directory\t\tzzzzzzzz\0file\t2\taaaaaaaa\0" <> IO.iodata_to_binary(records), 0}
+        end)
+
+        assert {:ok, %{entries: entries, truncated: ^truncated}} =
+                 SandboxFiles.list(ctx.sandbox, nil)
+
+        assert length(entries) == 2_000
+
+        assert [%{name: "[REDACTED]", type: "directory"}, %{name: "[REDACTED]", type: "file"} | _] =
+                 entries
+      end
+    end
+
     test "the script's exit codes become the caller's errors", ctx do
       expect_script(fn _, _, _ -> {:ok, "", 3} end)
       assert {:error, :path_not_found} = SandboxFiles.list(ctx.sandbox, "missing")

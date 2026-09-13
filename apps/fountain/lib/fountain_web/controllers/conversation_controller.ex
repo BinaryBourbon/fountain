@@ -436,11 +436,11 @@ defmodule FountainWeb.ConversationController do
       nil ->
         {:error, :not_found}
 
-      conv ->
+      _conv ->
         limit = parse_limit(params["limit"])
         after_id = parse_after(params["after"])
         streams = parse_streams_param(params["streams"])
-        blocks_runtime = if parse_bool_param(params["blocks"], false), do: conv.runtime
+        blocks? = parse_bool_param(params["blocks"], false)
 
         # Ownership: established by the scoped get_conversation above.
         # One extra row decides has_more without a second count query.
@@ -456,7 +456,7 @@ defmodule FountainWeb.ConversationController do
           events: page,
           has_more: has_more?,
           limit: limit,
-          blocks_runtime: blocks_runtime
+          blocks?: blocks?
         )
     end
   end
@@ -1046,7 +1046,7 @@ defmodule FountainWeb.ConversationController do
       nil ->
         {:error, :not_found}
 
-      conv ->
+      _conv ->
         last_event_id =
           conn
           |> get_req_header("last-event-id")
@@ -1055,7 +1055,7 @@ defmodule FountainWeb.ConversationController do
 
         streams = parse_streams_param(params["streams"])
         wait? = parse_bool_param(params["wait"], true)
-        blocks_runtime = if parse_bool_param(params["blocks"], false), do: conv.runtime
+        blocks? = parse_bool_param(params["blocks"], false)
 
         if wait? do
           Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{id}")
@@ -1085,11 +1085,11 @@ defmodule FountainWeb.ConversationController do
           |> send_chunked(200)
 
         # Replay buffered events the client missed.
-        {status, conn, last_id} = replay(conn, id, last_event_id, streams, blocks_runtime)
+        {status, conn, last_id} = replay(conn, id, last_event_id, streams, blocks?)
 
         if wait? and status == :ok do
           Process.send_after(self(), :heartbeat, heartbeat_ms())
-          sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime)
+          sse_loop(conn, last_id, streams, monitor_ref, blocks?)
         else
           # `?wait=false` → close immediately after replay. Useful when
           # the caller already knows the conversation is finished and
@@ -1134,12 +1134,12 @@ defmodule FountainWeb.ConversationController do
   # closed tab, an EventSource reconnect against a long backlog), not an
   # error. This used to `throw` the chunk error with no catch anywhere in
   # the module, producing a crash report and a Sentry event per disconnect.
-  defp replay(conn, conv_id, after_id, streams, blocks_runtime) do
+  defp replay(conn, conv_id, after_id, streams, blocks?) do
     # Ownership: only called from stream/2, after its scoped get_conversation.
     conv_id
     |> Conversations._unsafe_list_log_events(after_id, streams: streams)
     |> Enum.reduce_while({:ok, conn, after_id}, fn ev, {:ok, acc_conn, last_id} ->
-      case write_event(acc_conn, ev, blocks_runtime) do
+      case write_event(acc_conn, ev, blocks?) do
         {:ok, c} -> {:cont, {:ok, c, ev.id}}
         {:error, _} -> {:halt, {:closed, acc_conn, last_id}}
       end
@@ -1152,28 +1152,28 @@ defmodule FountainWeb.ConversationController do
   # live events and no replayed ones.
   defp event_in_streams?(ev, streams), do: Conversations.event_in_streams?(ev, streams)
 
-  defp sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime) do
+  defp sse_loop(conn, last_id, streams, monitor_ref, blocks?) do
     receive do
       {:log_event, %LogEvent{id: ev_id} = ev} when ev_id > last_id ->
         cond do
           not event_in_streams?(ev, streams) ->
-            sse_loop(conn, ev_id, streams, monitor_ref, blocks_runtime)
+            sse_loop(conn, ev_id, streams, monitor_ref, blocks?)
 
           true ->
-            case write_event(conn, ev, blocks_runtime) do
-              {:ok, conn} -> sse_loop(conn, ev_id, streams, monitor_ref, blocks_runtime)
+            case write_event(conn, ev, blocks?) do
+              {:ok, conn} -> sse_loop(conn, ev_id, streams, monitor_ref, blocks?)
               {:error, _} -> conn
             end
         end
 
       {:log_event, _stale} ->
-        sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime)
+        sse_loop(conn, last_id, streams, monitor_ref, blocks?)
 
       :heartbeat ->
         case Plug.Conn.chunk(conn, ": heartbeat\n\n") do
           {:ok, conn} ->
             Process.send_after(self(), :heartbeat, heartbeat_ms())
-            sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime)
+            sse_loop(conn, last_id, streams, monitor_ref, blocks?)
 
           {:error, _} ->
             conn
@@ -1227,9 +1227,8 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
-  # `blocks_runtime` nil means no blocks; a runtime string means "add the
-  # server-parsed blocks for this event, for that runtime's legacy dialect".
-  defp write_event(conn, %LogEvent{} = ev, blocks_runtime) do
+  # Add server-parsed ACP blocks when requested.
+  defp write_event(conn, %LogEvent{} = ev, blocks?) do
     payload =
       %{
         kind: ev.kind,
@@ -1240,7 +1239,7 @@ defmodule FountainWeb.ConversationController do
         turn_id: ev.turn_id,
         ts: ev.inserted_at
       }
-      |> FountainWeb.ConversationJSON.put_blocks(ev, blocks_runtime)
+      |> FountainWeb.ConversationJSON.put_blocks(ev, blocks?)
       |> Jason.encode!()
 
     chunk = "id: #{ev.id}\nevent: #{ev.kind}\ndata: #{payload}\n\n"

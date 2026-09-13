@@ -24,6 +24,11 @@ upgrade, is in
   conversation. Requests with only the legacy header are treated as API calls
   with no parent.
 
+- `FOUNTAIN_DOMAIN` is no longer read. Set `PUBLIC_URL` to the absolute URL
+  of your instance, and set `PHX_HOST` only if the endpoint host differs.
+  The Render and Fly platform fallbacks still work. A production instance
+  with only `FOUNTAIN_DOMAIN` set now refuses to boot.
+
 - `BILLING_ENABLED` is no longer supported. Set `CREDITS_ENABLED=true` to
   enable credits. With only the old variable set, credits remain off by default.
   The hosted home-cloud deployment already uses `CREDITS_ENABLED`.

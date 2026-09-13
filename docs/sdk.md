@@ -476,6 +476,6 @@ worked references below. They show how to follow a turn through the log feed.
 
 These references implement the rules that the TypeScript SDK implements. Keep
 your own turn's events, and no other. Keep the `text` blocks, and no other
-kind. Join the ACP chunks with nothing, and the legacy rows as paragraphs.
+kind. Join ACP chunks with nothing between them.
 Start a new paragraph after a tool call. Resume from the last event id when a
 connection drops mid-turn.

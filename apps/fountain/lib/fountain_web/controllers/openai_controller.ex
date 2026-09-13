@@ -388,7 +388,6 @@ defmodule FountainWeb.OpenAIController do
            open_or_resume(conn, agent, user, thread, tools, messages, answers) do
       state = %{
         conv_id: conv.id,
-        runtime: conv.runtime,
         model: agent.name,
         thread: thread,
         id: "chatcmpl-" <> Ecto.UUID.generate(),
@@ -924,7 +923,7 @@ defmodule FountainWeb.OpenAIController do
        )
        when is_binary(turn_id) do
     ev
-    |> Blocks.for_event(state.runtime)
+    |> Blocks.for_event()
     |> Enum.reduce_while({:cont, state, acc}, fn block, {:cont, state, acc} ->
       case piece(block) do
         nil -> {:cont, {:cont, state, acc}}
