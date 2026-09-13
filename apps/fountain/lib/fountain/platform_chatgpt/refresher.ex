@@ -45,6 +45,6 @@ defmodule Fountain.PlatformChatGPT.Refresher do
 
   @impl true
   def handle_call({:refresh, mode}, _from, state) do
-    {:reply, Fountain.PlatformChatGPT.refresh_serialized(mode), state}
+    {:reply, Fountain.ChatGPTAccounts.platform_refresh_serialized(mode), state}
   end
 end

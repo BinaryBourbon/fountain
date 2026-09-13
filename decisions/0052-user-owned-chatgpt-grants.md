@@ -82,7 +82,8 @@ require their existing credentials.
 ### 1. Explicit ownership and encryption
 
 Introduce `Fountain.ChatGPTAccounts` with separate user and platform entry
-points; retain `PlatformChatGPT` as an admin compatibility wrapper. User
+points. Admin callers use its `platform_*` functions directly; the initial
+`PlatformChatGPT` compatibility wrapper has been removed (#2100). User
 methods require authenticated `user_id` and scope their first query by it.
 Never interpret an absent user ID as a request for the platform account.
 
@@ -194,7 +195,7 @@ subscription later during provisioning.
 ### 5. Pin sandbox identity and invalidate access
 
 Use the selected grant to build Codex's placeholder `auth.json`; eliminate
-the global `PlatformChatGPT.sandbox_auth/0` lookup from the user path.
+the global `ChatGPTAccounts.platform_sandbox_auth/0` lookup from the user path.
 Refresh broker rules from that exact grant. Preserve the ChatGPT HTTP
 transport and ACP authentication behavior, subject to the new authorization
 and destination restrictions below. Existing broker behavior alone does

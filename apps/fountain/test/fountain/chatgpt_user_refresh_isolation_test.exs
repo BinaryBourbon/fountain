@@ -12,7 +12,6 @@ defmodule Fountain.ChatGPTUserRefreshIsolationTest do
   alias Fountain.ChatGPTAccounts
   alias Fountain.ChatGPTAccounts.{Cipher, Grant}
   alias Fountain.Crypto
-  alias Fountain.PlatformChatGPT
   alias Fountain.PlatformChatGPT.Account
   alias Fountain.Repo
 
@@ -94,7 +93,7 @@ defmodule Fountain.ChatGPTUserRefreshIsolationTest do
       second_holder = refresh(ctx.repo, second)
 
       platform_holder =
-        independent(ctx.repo, fn -> PlatformChatGPT.refresh_serialized(:if_stale) end)
+        independent(ctx.repo, fn -> ChatGPTAccounts.platform_refresh_serialized(:if_stale) end)
 
       try do
         assert_receive {:contending, waiter_pid, false}, 2_000

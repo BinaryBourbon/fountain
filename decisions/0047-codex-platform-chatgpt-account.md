@@ -176,7 +176,7 @@ now Fountain's, and using that same `auth.json` anywhere else will break both.
 
 ### 3. Fountain owns the refresh token and is the only thing that ever uses it
 
-`Fountain.PlatformChatGPT.access_token/0` refreshes when within the margin
+`Fountain.ChatGPTAccounts.platform_access_token/0` refreshes when within the margin
 of `exp`, through `Fountain.PlatformChatGPT.Refresher`, one process per
 node, so the deployment's many conversations queue on one round-trip
 holding no database connection (unlike `Connections`, whose per-row lock
@@ -269,7 +269,7 @@ shape is untouched.
 ### 5. Rotation reaches a running conversation through the broker, never through the sandbox
 
 `Egress.refresh_before_turn/1` gains one more source in `reread_secrets/1`:
-read `PlatformChatGPT.access_token/0`, swap it into
+read `ChatGPTAccounts.platform_access_token/0`, swap it into
 `brokered["CODEX_CHATGPT_ACCESS_TOKEN"]`, and let the existing
 changed-then-rewrite path through `Broker.refresh/4` carry it. The sandbox
 file never changes, the session token never changes, and an idle codex-acp

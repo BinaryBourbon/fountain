@@ -19,11 +19,11 @@ defmodule Fountain.PlatformChatGPTTest do
 
   alias Fountain.Audit.AdminEvent
   alias Fountain.Broker
+  alias Fountain.ChatGPTAccounts
   alias Fountain.Conversations.Egress
   alias Fountain.Crypto
   alias Fountain.InferenceCredentials
   alias Fountain.InferenceCredentials.Source
-  alias Fountain.PlatformChatGPT
   alias Fountain.PlatformChatGPT.Account
   alias Fountain.PlatformInference
   alias Fountain.Repo
@@ -55,13 +55,13 @@ defmodule Fountain.PlatformChatGPTTest do
     value
   end
 
-  describe "connect_from_auth_json/2" do
+  describe "platform_connect_from_auth_json/2" do
     test "stores the grant, the claims and nothing secret on the trail" do
       admin = insert_verified_user()
       access = access_token(3_600)
 
       assert {:ok, %Account{} = account} =
-               PlatformChatGPT.connect_from_auth_json(
+               ChatGPTAccounts.platform_connect_from_auth_json(
                  auth_json(%{access_token: access, refresh_token: "rt_secret"}),
                  actor_user_id: admin.id
                )
@@ -92,9 +92,11 @@ defmodule Fountain.PlatformChatGPTTest do
       refute inspect(event.metadata) =~ "rt_secret"
       refute inspect(event.metadata) =~ access
 
-      assert PlatformChatGPT.active?()
-      assert PlatformChatGPT.access_token() == {:ok, access}
-      assert %{status: "active", account_email: "admin@example.com"} = PlatformChatGPT.status()
+      assert ChatGPTAccounts.platform_active?()
+      assert ChatGPTAccounts.platform_access_token() == {:ok, access}
+
+      assert %{status: "active", account_email: "admin@example.com"} =
+               ChatGPTAccounts.platform_status()
     end
 
     test "a reconnect replaces the row rather than adding one" do
@@ -109,48 +111,50 @@ defmodule Fountain.PlatformChatGPTTest do
 
     test "refuses an API-key login, a file without a refresh token, and non-JSON" do
       assert {:error, :not_a_chatgpt_login} =
-               PlatformChatGPT.connect_from_auth_json(auth_json(%{auth_mode: "apiKey"}))
+               ChatGPTAccounts.platform_connect_from_auth_json(auth_json(%{auth_mode: "apiKey"}))
 
       assert {:error, :no_refresh_token} =
-               PlatformChatGPT.connect_from_auth_json(auth_json(%{refresh_token: ""}))
+               ChatGPTAccounts.platform_connect_from_auth_json(auth_json(%{refresh_token: ""}))
 
-      assert {:error, :invalid_auth_json} = PlatformChatGPT.connect_from_auth_json("not json")
-      assert {:error, :invalid_auth_json} = PlatformChatGPT.connect_from_auth_json("{}")
+      assert {:error, :invalid_auth_json} =
+               ChatGPTAccounts.platform_connect_from_auth_json("not json")
+
+      assert {:error, :invalid_auth_json} = ChatGPTAccounts.platform_connect_from_auth_json("{}")
 
       # No account id in the id_token: codex would have nothing to send.
       assert {:error, :invalid_id_token} =
-               PlatformChatGPT.connect_from_auth_json(
+               ChatGPTAccounts.platform_connect_from_auth_json(
                  auth_json(%{id_token: jwt(%{"email" => "x"})})
                )
 
-      refute PlatformChatGPT.active?()
+      refute ChatGPTAccounts.platform_active?()
       assert events("admin.platform_chatgpt.connected") == []
     end
   end
 
-  describe "access_token/0" do
+  describe "platform_access_token/0" do
     test "not connected, then served from the row without a refresh while fresh" do
-      assert PlatformChatGPT.access_token() == {:error, :not_connected}
-      assert PlatformChatGPT.credential() == :none
+      assert ChatGPTAccounts.platform_access_token() == {:error, :not_connected}
+      assert ChatGPTAccounts.platform_credential() == :none
 
       access = access_token(3_600)
       connect!(%{access_token: access})
-      assert PlatformChatGPT.access_token() == {:ok, access}
-      assert PlatformChatGPT.credential() == {:ok, access}
+      assert ChatGPTAccounts.platform_access_token() == {:ok, access}
+      assert ChatGPTAccounts.platform_credential() == {:ok, access}
     end
 
     test "credential(refresh: false) answers from the row and never dials out" do
       stale = access_token(60)
       connect!(%{access_token: stale})
       # No stub for /oauth/token: a refresh here would raise.
-      assert PlatformChatGPT.credential(refresh: false) == {:ok, stale}
+      assert ChatGPTAccounts.platform_credential(refresh: false) == {:ok, stale}
 
       assert {:ok, %Source{origin: :platform}, %{codex_chatgpt_access_token: ^stale}} =
                InferenceCredentials.select("openai/gpt-5.5-codex", %{}, "codex", refresh: false)
 
       stub_refusal()
-      assert PlatformChatGPT.access_token() == {:error, :revoked}
-      assert PlatformChatGPT.credential(refresh: false) == :none
+      assert ChatGPTAccounts.platform_access_token() == {:error, :revoked}
+      assert ChatGPTAccounts.platform_credential(refresh: false) == :none
     end
 
     test "refreshes within the margin, persists the rotated refresh token, then serves the new one" do
@@ -158,7 +162,7 @@ defmodule Fountain.PlatformChatGPTTest do
       new_access = access_token(7_200, %{"n" => 2})
       stub_refresh(%{access_token: new_access, refresh_token: "rt_rotated"})
 
-      assert PlatformChatGPT.access_token() == {:ok, new_access}
+      assert ChatGPTAccounts.platform_access_token() == {:ok, new_access}
 
       account = row()
       assert decrypt!(account.refresh_token_ciphertext) == "rt_rotated"
@@ -168,7 +172,7 @@ defmodule Fountain.PlatformChatGPTTest do
 
       # The second call is served from the row: a stub that only accepts the
       # original refresh token would answer `refresh_token_reused` otherwise.
-      assert PlatformChatGPT.access_token() == {:ok, new_access}
+      assert ChatGPTAccounts.platform_access_token() == {:ok, new_access}
       assert events("admin.platform_chatgpt.revoked") == []
     end
 
@@ -176,13 +180,13 @@ defmodule Fountain.PlatformChatGPTTest do
       connect!(%{access_token: access_token(60)})
       stub_refusal("refresh_token_reused")
 
-      assert PlatformChatGPT.access_token() == {:error, :revoked}
+      assert ChatGPTAccounts.platform_access_token() == {:error, :revoked}
       assert %Account{status: "revoked", revoked_reason: "refresh_token_reused"} = row()
-      assert PlatformChatGPT.credential() == :none
-      refute PlatformChatGPT.active?()
+      assert ChatGPTAccounts.platform_credential() == :none
+      refute ChatGPTAccounts.platform_active?()
 
       assert %{status: "revoked", revoked_reason: "refresh_token_reused"} =
-               PlatformChatGPT.status()
+               ChatGPTAccounts.platform_status()
 
       assert [event] = events("admin.platform_chatgpt.revoked")
       assert is_nil(event.actor_user_id)
@@ -190,20 +194,20 @@ defmodule Fountain.PlatformChatGPTTest do
       assert event.metadata["reason"] == "refresh_token_reused"
 
       # Revoked stays revoked: no second round-trip, no second event.
-      assert PlatformChatGPT.access_token() == {:error, :revoked}
+      assert ChatGPTAccounts.platform_access_token() == {:error, :revoked}
       assert length(events("admin.platform_chatgpt.revoked")) == 1
 
       # The sandbox file's claims are still served: the file holds a
       # placeholder, and a revoke landing mid-provision must not fail the
       # spawn whose token the broker already took.
-      assert {:ok, %{account_id: "acct_platform_1"}} = PlatformChatGPT.sandbox_auth()
+      assert {:ok, %{account_id: "acct_platform_1"}} = ChatGPTAccounts.platform_sandbox_auth()
     end
 
     test "a bare invalid_grant is terminal too" do
       connect!(%{access_token: access_token(60)})
       stub_auth(%{"/oauth/token" => fn _ -> {400, %{"error" => "invalid_grant"}} end})
 
-      assert PlatformChatGPT.access_token() == {:error, :revoked}
+      assert ChatGPTAccounts.platform_access_token() == {:error, :revoked}
       assert row().revoked_reason == "invalid_grant"
     end
 
@@ -212,7 +216,7 @@ defmodule Fountain.PlatformChatGPTTest do
       connect!(%{access_token: access, refresh_token: "rt_original"})
       stub_auth(%{"/oauth/token" => fn _ -> {503, %{"error" => "try_later"}} end})
 
-      assert {:error, {:token, 503, "try_later"}} = PlatformChatGPT.access_token()
+      assert {:error, {:token, 503, "try_later"}} = ChatGPTAccounts.platform_access_token()
 
       account = row()
       assert account.status == "active"
@@ -222,12 +226,14 @@ defmodule Fountain.PlatformChatGPTTest do
     end
   end
 
-  describe "connect_workspace_token/3" do
+  describe "platform_connect_workspace_token/3" do
     test "an opaque token with an admin-set expiry is served until it lapses, then expires" do
       admin = insert_verified_user()
 
       assert {:ok, account} =
-               PlatformChatGPT.connect_workspace_token("wst_opaque_token", ~D[2030-01-01],
+               ChatGPTAccounts.platform_connect_workspace_token(
+                 "wst_opaque_token",
+                 ~D[2030-01-01],
                  actor_user_id: admin.id,
                  account_id: "acct_ws"
                )
@@ -236,8 +242,8 @@ defmodule Fountain.PlatformChatGPTTest do
       assert is_nil(account.refresh_token_ciphertext)
       assert account.account_id == "acct_ws"
       assert account.access_expires_at == ~U[2030-01-01 23:59:59Z]
-      assert PlatformChatGPT.access_token() == {:ok, "wst_opaque_token"}
-      assert %{kind: "workspace_token", status: "active"} = PlatformChatGPT.status()
+      assert ChatGPTAccounts.platform_access_token() == {:ok, "wst_opaque_token"}
+      assert %{kind: "workspace_token", status: "active"} = ChatGPTAccounts.platform_status()
 
       assert [event] = events("admin.platform_chatgpt.connected")
       assert event.metadata["method"] == "workspace_token"
@@ -248,13 +254,13 @@ defmodule Fountain.PlatformChatGPTTest do
       |> Ecto.Changeset.change(access_expires_at: ~U[2020-01-01 00:00:00Z])
       |> Repo.update!()
 
-      assert PlatformChatGPT.access_token() == {:error, :expired}
+      assert ChatGPTAccounts.platform_access_token() == {:error, :expired}
       assert %Account{status: "expired"} = row()
       assert [expired] = events("admin.platform_chatgpt.expired")
       assert expired.metadata["actor"] == "system:platform_chatgpt"
-      assert PlatformChatGPT.access_token() == {:error, :expired}
+      assert ChatGPTAccounts.platform_access_token() == {:error, :expired}
       assert length(events("admin.platform_chatgpt.expired")) == 1
-      assert PlatformChatGPT.credential() == :none
+      assert ChatGPTAccounts.platform_credential() == :none
     end
 
     test "a JWT-shaped token supplies its own account id and expiry" do
@@ -263,60 +269,67 @@ defmodule Fountain.PlatformChatGPTTest do
           "https://api.openai.com/auth" => %{"chatgpt_account_id" => "acct_jwt"}
         })
 
-      assert {:ok, account} = PlatformChatGPT.connect_workspace_token(token, nil)
+      assert {:ok, account} = ChatGPTAccounts.platform_connect_workspace_token(token, nil)
       assert account.account_id == "acct_jwt"
       assert DateTime.diff(account.access_expires_at, DateTime.utc_now(), :second) > 3_000
     end
 
     test "an opaque token needs an account id: codex sends it on every request" do
-      assert {:error, :no_account_id} = PlatformChatGPT.connect_workspace_token("wst_opaque", nil)
+      assert {:error, :no_account_id} =
+               ChatGPTAccounts.platform_connect_workspace_token("wst_opaque", nil)
 
       assert {:error, :no_account_id} =
-               PlatformChatGPT.connect_workspace_token("wst_opaque", nil, account_id: "  ")
+               ChatGPTAccounts.platform_connect_workspace_token("wst_opaque", nil,
+                 account_id: "  "
+               )
 
-      refute PlatformChatGPT.active?()
-      assert PlatformChatGPT.sandbox_auth() == :none
+      refute ChatGPTAccounts.platform_active?()
+      assert ChatGPTAccounts.platform_sandbox_auth() == :none
 
       assert {:ok, _} =
-               PlatformChatGPT.connect_workspace_token("wst_opaque", nil, account_id: " acct_x ")
+               ChatGPTAccounts.platform_connect_workspace_token("wst_opaque", nil,
+                 account_id: " acct_x "
+               )
 
-      assert {:ok, %{account_id: "acct_x"}} = PlatformChatGPT.sandbox_auth()
+      assert {:ok, %{account_id: "acct_x"}} = ChatGPTAccounts.platform_sandbox_auth()
     end
 
     test "refuses a blank, a whitespace-bearing, or an oversized value" do
-      assert {:error, :invalid_token} = PlatformChatGPT.connect_workspace_token("", nil)
-      assert {:error, :invalid_token} = PlatformChatGPT.connect_workspace_token("a b", nil)
+      assert {:error, :invalid_token} = ChatGPTAccounts.platform_connect_workspace_token("", nil)
 
       assert {:error, :invalid_token} =
-               PlatformChatGPT.connect_workspace_token(String.duplicate("x", 9_000), nil)
+               ChatGPTAccounts.platform_connect_workspace_token("a b", nil)
 
-      refute PlatformChatGPT.active?()
+      assert {:error, :invalid_token} =
+               ChatGPTAccounts.platform_connect_workspace_token(String.duplicate("x", 9_000), nil)
+
+      refute ChatGPTAccounts.platform_active?()
     end
   end
 
-  describe "disconnect/1" do
+  describe "platform_disconnect/1" do
     test "removes the row and records once" do
       admin = insert_verified_user()
       connect!()
 
-      assert :ok = PlatformChatGPT.disconnect(actor_user_id: admin.id)
-      assert PlatformChatGPT.status() == :not_connected
+      assert :ok = ChatGPTAccounts.platform_disconnect(actor_user_id: admin.id)
+      assert ChatGPTAccounts.platform_status() == :not_connected
       assert Repo.all(Account) == []
 
-      assert :ok = PlatformChatGPT.disconnect(actor_user_id: admin.id)
+      assert :ok = ChatGPTAccounts.platform_disconnect(actor_user_id: admin.id)
       assert [event] = events("admin.platform_chatgpt.disconnected")
       assert event.actor_user_id == admin.id
       assert event.metadata["account_id"] == "acct_platform_1"
     end
   end
 
-  describe "sandbox_auth/0" do
+  describe "platform_sandbox_auth/0" do
     test "is the real account id and an unsigned id_token with the three claims and no email" do
-      assert PlatformChatGPT.sandbox_auth() == :none
+      assert ChatGPTAccounts.platform_sandbox_auth() == :none
       connect!()
 
       assert {:ok, %{account_id: "acct_platform_1", id_token: id_token}} =
-               PlatformChatGPT.sandbox_auth()
+               ChatGPTAccounts.platform_sandbox_auth()
 
       assert [header, payload, signature] = String.split(id_token, ".")
       assert signature != ""
@@ -338,20 +351,21 @@ defmodule Fountain.PlatformChatGPTTest do
     end
   end
 
-  describe "keepalive/0" do
+  describe "platform_keepalive/0" do
     test "skips when not connected, recently renewed, or a workspace token" do
-      assert PlatformChatGPT.keepalive() == {:ok, :skipped}
+      assert ChatGPTAccounts.platform_keepalive() == {:ok, :skipped}
 
       connect!()
-      assert PlatformChatGPT.keepalive() == {:ok, :skipped}
+      assert ChatGPTAccounts.platform_keepalive() == {:ok, :skipped}
 
-      {:ok, _} = PlatformChatGPT.connect_workspace_token("wst_static", nil, account_id: "acct_ws")
+      {:ok, _} =
+        ChatGPTAccounts.platform_connect_workspace_token("wst_static", nil, account_id: "acct_ws")
 
       row()
       |> Ecto.Changeset.change(last_refreshed_at: ~U[2020-01-01 00:00:00Z])
       |> Repo.update!()
 
-      assert PlatformChatGPT.keepalive() == {:ok, :skipped}
+      assert ChatGPTAccounts.platform_keepalive() == {:ok, :skipped}
     end
 
     test "renews a grant older than the keepalive window whatever the access token says" do
@@ -366,7 +380,7 @@ defmodule Fountain.PlatformChatGPTTest do
       )
       |> Repo.update!()
 
-      assert PlatformChatGPT.keepalive() == {:ok, :refreshed}
+      assert ChatGPTAccounts.platform_keepalive() == {:ok, :refreshed}
       account = row()
       assert decrypt!(account.refresh_token_ciphertext) == "rt_kept_alive"
       assert DateTime.diff(DateTime.utc_now(), account.last_refreshed_at, :second) < 60
@@ -383,7 +397,7 @@ defmodule Fountain.PlatformChatGPTTest do
       |> Ecto.Changeset.change(last_refreshed_at: ~U[2020-01-01 00:00:00Z])
       |> Repo.update!()
 
-      assert PlatformChatGPT.keepalive() == {:error, :revoked}
+      assert ChatGPTAccounts.platform_keepalive() == {:error, :revoked}
       assert row().revoked_reason == "refresh_token_invalidated"
       assert :ok = perform_job(Fountain.Workers.PlatformChatGPTKeepalive, %{})
     end

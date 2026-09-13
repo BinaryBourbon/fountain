@@ -26,7 +26,7 @@ defmodule Fountain.Conversations.CodexChatGPT do
   the file.
   """
 
-  alias Fountain.PlatformChatGPT
+  alias Fountain.ChatGPTAccounts
   alias Managoat.Runtimes.Layout
 
   @env_key "CODEX_CHATGPT_ACCESS_TOKEN"
@@ -86,7 +86,7 @@ defmodule Fountain.Conversations.CodexChatGPT do
       {{@env_key, value}, key}
       when is_binary(value) and value != "" and
              (is_nil(key) or elem(key, 1) in [nil, ""]) ->
-        case PlatformChatGPT.sandbox_auth() do
+        case ChatGPTAccounts.platform_sandbox_auth() do
           {:ok, auth} -> write(handle, auth_json(value, auth))
           :none -> {:error, :platform_chatgpt_not_connected}
         end

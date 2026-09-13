@@ -15,7 +15,7 @@ defmodule FountainWeb.AdminLive.Inference do
   the `admin.platform_inference_key.*` event; the page only says who asked.
 
   The "ChatGPT account (codex)" row (ADR 0047) is the same shape over
-  `Fountain.PlatformChatGPT`: paste, workspace token, device code and
+  `Fountain.ChatGPTAccounts`: paste, workspace token, device code and
   disconnect, each recorded by the context. The device flow runs in a
   supervised task and reports back as `{:platform_chatgpt_device, _}`.
   """
@@ -25,7 +25,7 @@ defmodule FountainWeb.AdminLive.Inference do
   import FountainWeb.AdminLive.Helpers
   import FountainWeb.AdminLive.Shell
 
-  alias Fountain.PlatformChatGPT
+  alias Fountain.ChatGPTAccounts
   alias Fountain.PlatformInference
 
   @impl true
@@ -73,7 +73,7 @@ defmodule FountainWeb.AdminLive.Inference do
   # ── the ChatGPT account for codex (ADR 0047) ─────────────────────────────
 
   def handle_event("chatgpt_paste", %{"auth_json" => json}, socket) do
-    case PlatformChatGPT.connect_from_auth_json(json,
+    case ChatGPTAccounts.platform_connect_from_auth_json(json,
            actor_user_id: socket.assigns.current_user.id
          ) do
       {:ok, account} ->
@@ -94,7 +94,7 @@ defmodule FountainWeb.AdminLive.Inference do
         _ -> nil
       end
 
-    case PlatformChatGPT.connect_workspace_token(value, expires_on,
+    case ChatGPTAccounts.platform_connect_workspace_token(value, expires_on,
            actor_user_id: socket.assigns.current_user.id,
            account_id: Map.get(params, "account_id")
          ) do
@@ -130,7 +130,7 @@ defmodule FountainWeb.AdminLive.Inference do
   end
 
   def handle_event("chatgpt_disconnect", _params, socket) do
-    :ok = PlatformChatGPT.disconnect(actor_user_id: socket.assigns.current_user.id)
+    :ok = ChatGPTAccounts.platform_disconnect(actor_user_id: socket.assigns.current_user.id)
 
     {:noreply,
      socket
@@ -178,7 +178,7 @@ defmodule FountainWeb.AdminLive.Inference do
      |> put_flash(:error, "Device sign-in failed: #{chatgpt_error(reason)}")}
   end
 
-  defp assign_chatgpt(socket), do: assign(socket, :chatgpt, PlatformChatGPT.status())
+  defp assign_chatgpt(socket), do: assign(socket, :chatgpt, ChatGPTAccounts.platform_status())
 
   defp chatgpt_error(:invalid_auth_json), do: "That is not an auth.json codex wrote"
 

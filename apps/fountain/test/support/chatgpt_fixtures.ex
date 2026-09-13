@@ -9,7 +9,7 @@ defmodule Fountain.ChatGPTFixtures do
   code base.
   """
 
-  alias Fountain.PlatformChatGPT
+  alias Fountain.ChatGPTAccounts
   alias Fountain.PlatformChatGPT.OAuth
 
   @auth_claim "https://api.openai.com/auth"
@@ -56,7 +56,7 @@ defmodule Fountain.ChatGPTFixtures do
   @doc "Connect the platform grant from a pasted file; returns the account."
   def connect!(opts \\ %{}) do
     {:ok, account} =
-      PlatformChatGPT.connect_from_auth_json(auth_json(opts),
+      ChatGPTAccounts.platform_connect_from_auth_json(auth_json(opts),
         actor_user_id: Map.get(opts, :actor_user_id)
       )
 

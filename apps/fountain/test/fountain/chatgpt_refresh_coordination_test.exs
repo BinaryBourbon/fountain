@@ -8,9 +8,9 @@ defmodule Fountain.ChatGPTRefreshCoordinationTest do
   import Fountain.ChatGPTFixtures
 
   alias Fountain.Audit.AdminEvent
+  alias Fountain.ChatGPTAccounts
   alias Fountain.ChatGPTAccounts.RefreshLock
   alias Fountain.Crypto
-  alias Fountain.PlatformChatGPT
   alias Fountain.PlatformChatGPT.Account
   alias Fountain.Repo
 
@@ -67,14 +67,17 @@ defmodule Fountain.ChatGPTRefreshCoordinationTest do
         end
       })
 
-      holder = independent(ctx.repo, fn -> PlatformChatGPT.refresh_serialized(unquote(mode)) end)
+      holder =
+        independent(ctx.repo, fn -> ChatGPTAccounts.platform_refresh_serialized(unquote(mode)) end)
 
       try do
         assert_receive {:upstream, holder_pid, holder_backend, "rt_original"}, 2_000
         assert holder_pid == holder.pid
 
         waiter =
-          independent(ctx.repo, fn -> PlatformChatGPT.refresh_serialized(unquote(mode)) end)
+          independent(ctx.repo, fn ->
+            ChatGPTAccounts.platform_refresh_serialized(unquote(mode))
+          end)
 
         try do
           assert_receive {:contending, waiter_pid, false}, 2_000
@@ -117,14 +120,15 @@ defmodule Fountain.ChatGPTRefreshCoordinationTest do
         end
       })
 
-      holder = independent(ctx.repo, fn -> PlatformChatGPT.refresh_serialized(:if_stale) end)
+      holder =
+        independent(ctx.repo, fn -> ChatGPTAccounts.platform_refresh_serialized(:if_stale) end)
 
       try do
         assert_receive :refreshing, 2_000
 
         case unquote(mutation) do
           :disconnect ->
-            assert :ok = PlatformChatGPT.disconnect()
+            assert :ok = ChatGPTAccounts.platform_disconnect()
 
           :reconnect ->
             replacement = connect!(%{account_id: ctx.account_id})
@@ -216,7 +220,7 @@ defmodule Fountain.ChatGPTRefreshCoordinationTest do
       {:error, :unavailable}
     end)
 
-    assert {:error, :revoked} = PlatformChatGPT.refresh_serialized(:if_stale)
+    assert {:error, :revoked} = ChatGPTAccounts.platform_refresh_serialized(:if_stale)
     assert Repo.get!(Account, account.id).status == "revoked"
   end
 
@@ -333,7 +337,7 @@ defmodule Fountain.ChatGPTRefreshCoordinationTest do
 
     try do
       started = System.monotonic_time(:millisecond)
-      assert {:error, {:token, _timeout}} = PlatformChatGPT.refresh_serialized(:if_stale)
+      assert {:error, {:token, _timeout}} = ChatGPTAccounts.platform_refresh_serialized(:if_stale)
       elapsed = System.monotonic_time(:millisecond) - started
       # Chunks arrive every 250ms, so `:receive_timeout` never fires and
       # `:request_timeout` is what ends this. Bound it by the thing that

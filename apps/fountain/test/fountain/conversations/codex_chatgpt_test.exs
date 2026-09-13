@@ -94,7 +94,7 @@ defmodule Fountain.Conversations.CodexChatGPTTest do
     assert {:error, {:codex_auth_mkdir, 1, "read-only"}} =
              CodexChatGPT.prepare_sandbox(@handle, "codex", [{"CODEX_CHATGPT_ACCESS_TOKEN", "p"}])
 
-    Fountain.PlatformChatGPT.disconnect()
+    Fountain.ChatGPTAccounts.platform_disconnect()
 
     assert {:error, :platform_chatgpt_not_connected} =
              CodexChatGPT.prepare_sandbox(@handle, "codex", [{"CODEX_CHATGPT_ACCESS_TOKEN", "p"}])
