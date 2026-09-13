@@ -6,6 +6,8 @@ defmodule FountainWeb.ClaimableUserController do
       GET    /api/claimable-users/:id        — reconcile
       POST   /api/claimable-users/:id/claim  — attach an owner
       DELETE /api/claimable-users/:id        — abandon it
+      PUT    /api/claimable-users/:id/inference-credentials/:provider — set a key
+      DELETE /api/claimable-users/:id/inference-credentials/:provider — clear a key
 
   Every route is full-scope. That is what keeps a principal out of its own
   grant surface: a `principal`-scoped key cannot open a second principal,
@@ -26,6 +28,8 @@ defmodule FountainWeb.ClaimableUserController do
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
+
+  @provider_strings Enum.map(Fountain.InferenceCredentials.Credential.providers(), &to_string/1)
 
   tags(["Claimable principals"])
 
@@ -200,6 +204,118 @@ defmodule FountainWeb.ClaimableUserController do
         {:error, :not_found}
     end
   end
+
+  operation(:put_inference_credential,
+    summary: "Set a provider credential on a principal",
+    description:
+      "Stores the credential encrypted under the principal's own tenant key. " <>
+        "A principal is a first-class tenant and a `principal`-scoped key cannot " <>
+        "write account state. Only the current owner may write: the opening " <>
+        "application before claim, and the claiming account afterward. Expired " <>
+        "and released grants refuse writes. The principal's own credential " <>
+        "gains nothing from this route.",
+    parameters: [
+      id: [in: :path, type: :string, required: true, description: "The grant's id."],
+      provider: [
+        in: :path,
+        type: %OpenApiSpex.Schema{type: :string, enum: @provider_strings},
+        required: true
+      ]
+    ],
+    request_body: {"Credential", "application/json", Schemas.InferenceCredentialRequest},
+    responses: [
+      no_content: "Stored",
+      unauthorized: {"Missing or invalid key", "application/json", Schemas.Error},
+      forbidden: {"Not a full-scope key", "application/json", Schemas.Error},
+      not_found: {"No such grant", "application/json", Schemas.Error},
+      unprocessable_entity: {"Blank value or unknown provider", "application/json", Schemas.Error}
+    ]
+  )
+
+  def put_inference_credential(conn, %{"id" => id, "provider" => provider_str} = params) do
+    value = params |> Map.get("value") |> to_trimmed_string()
+
+    with {:ok, provider} <- parse_provider(provider_str),
+         :ok <- reject_empty(value),
+         {:ok, _} <- write_principal_credential(conn, id, provider, value) do
+      send_resp(conn, :no_content, "")
+    else
+      {:error, :empty_value} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "value is required", reason: "empty_value"})
+
+      {:error, :unknown_provider} ->
+        unknown_provider(conn)
+
+      other ->
+        other
+    end
+  end
+
+  operation(:delete_inference_credential,
+    summary: "Clear a provider credential on a principal",
+    parameters: [
+      id: [in: :path, type: :string, required: true, description: "The grant's id."],
+      provider: [
+        in: :path,
+        type: %OpenApiSpex.Schema{type: :string, enum: @provider_strings},
+        required: true
+      ]
+    ],
+    responses: [
+      no_content: "Cleared",
+      unauthorized: {"Missing or invalid key", "application/json", Schemas.Error},
+      forbidden: {"Not a full-scope key", "application/json", Schemas.Error},
+      not_found: {"No such grant", "application/json", Schemas.Error},
+      unprocessable_entity: {"Unknown provider", "application/json", Schemas.Error}
+    ]
+  )
+
+  def delete_inference_credential(conn, %{"id" => id, "provider" => provider_str}) do
+    with {:ok, provider} <- parse_provider(provider_str),
+         {:ok, _} <- write_principal_credential(conn, id, provider, nil) do
+      send_resp(conn, :no_content, "")
+    else
+      {:error, :unknown_provider} -> unknown_provider(conn)
+      other -> other
+    end
+  end
+
+  defp unknown_provider(conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "unknown_provider"})
+  end
+
+  # No provider ping here, unlike the account's own route. The value belongs
+  # to somebody the operator is acting for, the principal may be short-lived,
+  # and a validation call would spend that customer's quota on a request they
+  # did not make. The application validated it wherever it collected it.
+  defp write_principal_credential(conn, id, provider, value) do
+    Principals.put_inference_credential(
+      id,
+      conn.assigns.current_user.id,
+      provider,
+      value,
+      Audited.attribution(conn)
+    )
+  end
+
+  # This controller does not cast through OpenApiSpex, so enforce the
+  # documented provider enum here before looking up or writing a grant.
+  defp parse_provider(provider_str) when provider_str in @provider_strings do
+    {:ok, String.to_existing_atom(provider_str)}
+  end
+
+  defp parse_provider(_), do: {:error, :unknown_provider}
+
+  defp reject_empty(""), do: {:error, :empty_value}
+  defp reject_empty(nil), do: {:error, :empty_value}
+  defp reject_empty(_), do: :ok
+
+  defp to_trimmed_string(value) when is_binary(value), do: String.trim(value)
+  defp to_trimmed_string(_), do: nil
 
   defp idempotency_key(conn) do
     case get_req_header(conn, "idempotency-key") do
