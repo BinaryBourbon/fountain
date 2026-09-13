@@ -79,7 +79,7 @@ defmodule FountainWeb.VaultsLive.Index do
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Vaults</h1>
         <.link navigate={~p"/vaults/new"}>
-          <.btn>+ New vault</.btn>
+          <.button>+ New vault</.button>
         </.link>
       </div>
 
@@ -171,7 +171,7 @@ defmodule FountainWeb.VaultsLive.Index do
             <td class="px-4 py-3 text-right">
               <div class="inline-flex gap-1">
                 <.link navigate={~p"/vaults/#{v.id}/edit"}>
-                  <.btn_secondary>Edit</.btn_secondary>
+                  <.button variant="secondary">Edit</.button>
                 </.link>
                 <button
                   class="px-2 py-1 rounded text-xs cursor-pointer bg-[var(--color-error-bg)] border border-[var(--color-error)] text-[var(--color-error-text)] hover:bg-[var(--color-error)] hover:text-white transition-colors"

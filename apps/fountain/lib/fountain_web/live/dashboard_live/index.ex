@@ -114,7 +114,7 @@ defmodule FountainWeb.DashboardLive.Index do
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Dashboard</h1>
         <a :if={@conversations_app} href={@conversations_app <> "#/new"}>
-          <.btn>Start a conversation ↗</.btn>
+          <.button>Start a conversation ↗</.button>
         </a>
       </div>
 

@@ -222,7 +222,7 @@ defmodule FountainWeb.VaultsLive.Form do
         phx-submit="submit"
         class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
       >
-        <.input
+        <.form_field
           id="vault_name"
           name="vault[name]"
           label="Name"
@@ -232,7 +232,7 @@ defmodule FountainWeb.VaultsLive.Form do
         />
         <.error_msg field="name" errors={@errors} />
 
-        <.input
+        <.form_field
           id="vault_description"
           name="vault[description]"
           type="textarea"
@@ -243,9 +243,9 @@ defmodule FountainWeb.VaultsLive.Form do
         />
 
         <div class="flex gap-2">
-          <.btn type="submit" phx-disable-with="Saving…">Save</.btn>
+          <.button type="submit" phx-disable-with="Saving…">Save</.button>
           <.link navigate={~p"/vaults"}>
-            <.btn_secondary>Cancel</.btn_secondary>
+            <.button variant="secondary">Cancel</.button>
           </.link>
         </div>
       </form>
@@ -291,13 +291,18 @@ defmodule FountainWeb.VaultsLive.Form do
                     value={if s.expires_at, do: DateTime.to_date(s.expires_at)}
                     class="rounded border border-zinc-300 px-2 py-1 text-sm"
                   />
-                  <.btn type="submit">Save expiry</.btn>
+                  <.button type="submit">Save expiry</.button>
                 </form>
               </td>
               <td class="py-2 text-right">
-                <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">
+                <.button
+                  variant="danger"
+                  phx-click="delete_secret"
+                  phx-value-id={s.id}
+                  data-confirm="Delete?"
+                >
                   Delete
-                </.btn_danger>
+                </.button>
               </td>
             </tr>
           </tbody>
@@ -336,7 +341,7 @@ defmodule FountainWeb.VaultsLive.Form do
             title="Expiry date (optional) — you get an email before it arrives"
             class="rounded border border-zinc-300 px-3 py-2 text-sm"
           />
-          <.btn type="submit">Add secret</.btn>
+          <.button type="submit">Add secret</.button>
         </form>
       </section>
     </div>

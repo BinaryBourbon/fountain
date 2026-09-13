@@ -350,16 +350,22 @@ defmodule FountainWeb.SecretBindingsLive.Index do
                   <span :if={!b.enabled} class="text-zinc-500">disabled</span>
                 </td>
                 <td class="px-3 py-2 text-right whitespace-nowrap space-x-2">
-                  <.btn_secondary
+                  <.button
                     :if={b.enabled or @may_bind?}
+                    variant="secondary"
                     phx-click="toggle"
                     phx-value-id={b.id}
                   >
                     {if b.enabled, do: "Disable", else: "Enable"}
-                  </.btn_secondary>
-                  <.btn_danger phx-click="delete" phx-value-id={b.id} data-confirm="Unbind?">
+                  </.button>
+                  <.button
+                    variant="danger"
+                    phx-click="delete"
+                    phx-value-id={b.id}
+                    data-confirm="Unbind?"
+                  >
                     Unbind
-                  </.btn_danger>
+                  </.button>
                 </td>
               </tr>
             </tbody>
@@ -528,7 +534,7 @@ defmodule FountainWeb.SecretBindingsLive.Index do
           </div>
 
           <div class="flex items-center gap-3">
-            <.btn type="submit">Bind</.btn>
+            <.button type="submit">Bind</.button>
             <span class="text-xs text-[var(--color-text-secondary)]">
               The secret's name is enough; its value stays where it is stored.
             </span>

@@ -220,7 +220,7 @@ defmodule FountainWeb.AgentsLive.Index do
         <div class="flex items-center justify-between">
           <h1 class="text-2xl font-semibold">Agents</h1>
           <.link href={~p"/agents/new"}>
-            <.btn>+ New agent</.btn>
+            <.button>+ New agent</.button>
           </.link>
         </div>
 
@@ -334,7 +334,7 @@ defmodule FountainWeb.AgentsLive.Index do
               <td class="px-4 py-3 text-right">
                 <div class="inline-flex gap-1">
                   <.link href={~p"/agents/#{a.id}/edit"}>
-                    <.btn_secondary>Edit</.btn_secondary>
+                    <.button variant="secondary">Edit</.button>
                   </.link>
                   <button
                     class="px-2 py-1 rounded text-xs cursor-pointer bg-[var(--color-error-bg)] border border-[var(--color-error)] text-[var(--color-error-text)] hover:bg-[var(--color-error)] hover:text-white transition-colors"
