@@ -5067,6 +5067,9 @@ defmodule Fountain.Conversations do
     end
   end
 
+  defp resolve_inference_credential_id(_id, _user_id, _agent),
+    do: {:error, :inference_credential_not_found}
+
   # Same three-way shape as the vault and environment allowlists, and the same
   # deliberate nil default: a caller who can attach a vault can already
   # override `ANTHROPIC_API_KEY` outright, so a stricter default here would
