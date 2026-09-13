@@ -161,6 +161,49 @@ defmodule FountainWeb.InferenceCredentialSetsLiveTest do
       assert InferenceCredentials.get_for_user(user.id).id == second.id
     end
 
+    for event <- ["rename_set", "make_default", "delete_set"] do
+      test "#{event} recovers a deleted selection and requires a new choice", %{
+        conn: conn,
+        user: user,
+        dek: dek,
+        second: second
+      } do
+        default = InferenceCredentials.get_for_user(user.id)
+        {:ok, view, _} = live(conn, @path)
+        view |> element("button[phx-value-id='#{second.id}']") |> render_click()
+        {:ok, _} = InferenceCredentials.delete_set(second)
+
+        html =
+          if unquote(event) == "rename_set" do
+            view |> element("form[phx-submit='rename_set']") |> render_submit(%{"name" => "Gone"})
+          else
+            view |> element("button[phx-click='#{unquote(event)}']") |> render_click()
+          end
+
+        assert html =~ "no longer available"
+        refute has_element?(view, "button[phx-value-id='#{second.id}']")
+        refute has_element?(view, "form[phx-submit='rename_set']")
+        assert has_element?(view, "button[phx-value-id='#{default.id}']")
+
+        reject(Req, :get, 2)
+
+        assert view
+               |> element("#credential-anthropic_api_key")
+               |> render_submit(%{"value" => "must-not-retarget"}) =~ "no longer available"
+
+        assert {:ok, %{anthropic_api_key: "sk-default"}} =
+                 InferenceCredentials.decrypted_for_user(user.id, dek)
+
+        view |> element("button[phx-value-id='#{default.id}']") |> render_click()
+
+        view
+        |> element("button[phx-click='clear'][phx-value-provider='anthropic_api_key']")
+        |> render_click()
+
+        assert {:ok, %{}} = InferenceCredentials.decrypted_for_user(user.id, dek)
+      end
+    end
+
     # The default cannot go, and the page says why rather than hiding the
     # button and leaving the reader to guess.
     test "the default offers no delete, and a non-default one does", %{

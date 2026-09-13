@@ -55,25 +55,27 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
     keep = select_id || (socket.assigns[:set] && socket.assigns.set.id)
     selected = Enum.find(sets, &(&1.id == keep)) || List.first(sets)
 
-    socket
-    |> assign(:sets, sets)
-    |> assign(:set, selected)
-    |> assign(:invalid_set_selection, false)
-    |> assign(:status, InferenceCredentials.status_for_set(selected))
+    if select_id && not Enum.any?(sets, &(&1.id == select_id)) do
+      unavailable_selection(socket)
+    else
+      socket
+      |> assign(:sets, sets)
+      |> assign(:set, selected)
+      |> assign(:invalid_set_selection, false)
+      |> assign(:status, InferenceCredentials.status_for_set(selected))
+    end
   end
 
   @impl true
+  def handle_event(event, _params, %{assigns: %{invalid_set_selection: true}} = socket)
+      when event in ["rename_set", "make_default", "delete_set", "save", "clear"] do
+    {:noreply, unavailable_selection(socket)}
+  end
+
   def handle_event("select_set", %{"id" => id}, socket) do
     case InferenceCredentials.get_set(id, socket.assigns.user_id) do
       nil ->
-        {:noreply,
-         socket
-         |> assign(:invalid_set_selection, true)
-         |> assign(
-           :set_message,
-           {:error,
-            "That credential set is no longer available. Choose another set before saving."}
-         )}
+        {:noreply, unavailable_selection(socket)}
 
       _set ->
         {:noreply,
@@ -113,6 +115,9 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
          |> assign(:set_message, {:info, "Renamed to #{set.name}."})
          |> load_sets(set.id)}
 
+      {:error, :not_found} ->
+        {:noreply, unavailable_selection(socket)}
+
       {:error, changeset} ->
         {:noreply, assign(socket, :set_message, {:error, set_error(changeset)})}
     end
@@ -129,6 +134,9 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
          |> assign(:set_message, {:info, "#{set.name} is now the default."})
          |> load_sets(set.id)}
 
+      {:error, :not_found} ->
+        {:noreply, unavailable_selection(socket)}
+
       {:error, _} ->
         {:noreply, assign(socket, :set_message, {:error, "Could not change the default."})}
     end
@@ -144,6 +152,9 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
          socket
          |> assign(:set_message, {:info, "Deleted #{set.name}."})
          |> load_sets()}
+
+      {:error, :not_found} ->
+        {:noreply, unavailable_selection(socket)}
 
       {:error, :is_default} ->
         {:noreply,
@@ -215,6 +226,9 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
              |> load_sets()
              |> put_provider_message(provider, :info, "Credential cleared.")}
 
+          {:error, :credential_set_unavailable} ->
+            {:noreply, unavailable_selection(socket)}
+
           {:error, _cs} ->
             {:noreply,
              put_provider_message(socket, provider, :error, "Could not clear credential.")}
@@ -240,13 +254,7 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
        |> put_provider_message(provider, :info, "Saved and validated.")}
     else
       {:error, :credential_set_unavailable} ->
-        {:noreply,
-         put_provider_message(
-           socket,
-           provider,
-           :error,
-           "That credential set is no longer available. Choose another set before saving."
-         )}
+        {:noreply, unavailable_selection(socket)}
 
       {:error, reason} ->
         {:noreply,
@@ -274,16 +282,34 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
     with %{} = set <-
            InferenceCredentials.get_set(socket.assigns.set.id, socket.assigns.user_id) ||
              {:error, :credential_set_unavailable} do
-      InferenceCredentials.put_credential_in(
-        set,
-        dek,
-        provider,
-        value,
-        FountainWeb.Audited.attribution(socket)
-      )
+      case InferenceCredentials.put_credential_in(
+             set,
+             dek,
+             provider,
+             value,
+             FountainWeb.Audited.attribution(socket)
+           ) do
+        {:error, :not_found} -> {:error, :credential_set_unavailable}
+        result -> result
+      end
     end
   rescue
     Ecto.StaleEntryError -> {:error, :credential_set_unavailable}
+  end
+
+  # Refresh the choices without adopting another set for a pending mutation.
+  # A later explicit selection (or creation) is what makes writes eligible again.
+  defp unavailable_selection(socket) do
+    socket
+    |> assign(:sets, InferenceCredentials.list_sets(socket.assigns.user_id))
+    |> assign(:set, nil)
+    |> assign(:invalid_set_selection, true)
+    |> assign(:status, InferenceCredentials.status_for_set(nil))
+    |> assign(:provider_messages, %{})
+    |> assign(
+      :set_message,
+      {:error, "That credential set is no longer available. Choose another set before saving."}
+    )
   end
 
   defp set_error(%Ecto.Changeset{} = changeset) do

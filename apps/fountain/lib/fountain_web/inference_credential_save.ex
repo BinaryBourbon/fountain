@@ -72,6 +72,14 @@ defmodule FountainWeb.InferenceCredentialSave do
         nil -> InferenceCredentials.put_credential(user_id, dek, provider, value, opts)
         set -> InferenceCredentials.put_credential_in(set, dek, provider, value, opts)
       end
+      |> case do
+        {:error, :not_found} ->
+          {:error,
+           "That credential set is no longer available. Choose another set before saving."}
+
+        result ->
+          result
+      end
     end
   rescue
     Ecto.StaleEntryError ->
