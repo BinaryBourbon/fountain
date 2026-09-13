@@ -2232,7 +2232,14 @@ defmodule Fountain.Conversations.ConversationServer do
         log_output(acc, stream, data)
       end)
 
-    TurnMachine.fail_before_start(turn, state.conversation_id, what, detail, exit_code)
+    TurnMachine.fail_before_start(
+      turn,
+      state.conversation_id,
+      state.sandbox_id,
+      what,
+      detail,
+      exit_code
+    )
 
     state = %{state | current_turn: nil, turn_session_retry: nil}
 
