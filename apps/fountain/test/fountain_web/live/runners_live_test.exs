@@ -14,21 +14,39 @@ defmodule FountainWeb.RunnersLiveTest do
       Runners.register(user.id, %{"name" => "mini", "os" => "darwin", "arch" => "arm64"})
 
     {:ok, daemon} = FakeDaemon.start(online.id, meta: %{user_id: user.id}, name: "mini")
-    on_exit(fn -> FakeDaemon.stop(daemon) end)
+    # The socket is a GenServer, so unlike a Task it does not inherit this
+    # async test's SQL Sandbox allowance through $callers.
+    Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, self(), daemon.socket)
+    socket_ref = Process.monitor(daemon.socket)
+    daemon_ref = Process.monitor(daemon.daemon)
 
-    conn = login_user(conn, user)
-    {:ok, lv, html} = live(conn, ~p"/account/runners")
+    try do
+      conn = login_user(conn, user)
+      {:ok, lv, html} = live(conn, ~p"/account/runners")
 
-    assert html =~ "laptop"
-    assert html =~ "lap.local"
-    assert html =~ "mini"
-    assert html =~ "darwin · arm64"
-    assert html =~ "online"
-    assert html =~ "fountain runner"
+      assert html =~ "laptop"
+      assert html =~ "lap.local"
+      assert html =~ "mini"
+      assert html =~ "darwin · arm64"
+      assert html =~ "online"
+      assert html =~ "fountain runner"
 
-    lv |> element("#runner-#{offline.id} button", "Forget") |> render_click()
-    refute Runners.get_runner(offline.id, user.id)
-    refute render(lv) =~ "lap.local"
+      lv |> element("#runner-#{offline.id} button", "Forget") |> render_click()
+      refute Runners.get_runner(offline.id, user.id)
+      refute render(lv) =~ "lap.local"
+
+      # A real heartbeat writes through the socket's sandbox allowance. Drain
+      # it before cleanup, without waiting for the periodic 20-second timer.
+      send(daemon.socket, :heartbeat)
+      :sys.get_state(daemon.socket)
+      assert Runners.get_runner(online.id, user.id).last_seen_at
+    after
+      # Stop from the process FakeDaemon.start linked to, while its SQL
+      # Sandbox access is still alive. on_exit runs in a different process.
+      FakeDaemon.stop(daemon)
+      assert_receive {:DOWN, ^socket_ref, :process, _, _}, 5_000
+      assert_receive {:DOWN, ^daemon_ref, :process, _, _}, 5_000
+    end
   end
 
   test "shows the empty state and the start instructions", %{conn: conn} do
