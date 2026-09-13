@@ -10,6 +10,8 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
   use Fountain.ConversationServerCase
 
+  import Fountain.ConversationServerCase.ACP
+
   alias Fountain.Conversations.Lifecycle
   alias Managoat.Runtimes.ACP
 
@@ -47,23 +49,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {:error, :stubbed_in_test}
     end)
 
-    test = self()
-    ref = make_ref()
-
-    Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
-      send(test, {:spawned, cmd, args, opts})
-      {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
-    end)
-
-    Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _c ->
-      send(test, :stdin_closed)
-      :ok
-    end)
-
-    Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _c, data ->
-      send(test, {:wrote, IO.iodata_to_binary(data)})
-      :ok
-    end)
+    ref = stub_acp_transport()
 
     {pid, _mon, :alive} = start_server(conv, initial_prompt: "first", runtime: runtime)
 
@@ -75,21 +61,6 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 
     {pid, ref}
-  end
-
-  # The default covers a write on an open connection. A turn that had to spawn
-  # a fresh adapter first waits on `prepare_acp_adapter/3` before its peer says
-  # anything, which can outrun a second on a loaded runner — those call sites
-  # pass their own.
-  defp next_write(timeout \\ 1_000) do
-    assert_receive {:wrote, line}, timeout
-    Jason.decode!(line)
-  end
-
-  defp reply(pid, ref, id, result) do
-    line = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "result" => result}) <> "\n"
-    send(pid, {:stdout, %{ref: ref}, line})
-    settle(pid)
   end
 
   # Recovery continues on the initialized peer and its original command.
@@ -117,60 +88,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     settle(pid)
   end
 
-  # A message crosses three mailboxes: the server takes the stdout chunk and
-  # casts it to the peer, the peer acts and reports back, and the server acts on
-  # the report. Syncing only the server would assert against a state one hop
-  # behind, which is what made these tests pass alone and fail together.
-  #
-  # The peer is stopped by the server the moment it reports `{:done, _}`, so
-  # between reading `acp_peer` and syncing on it the peer may already be gone
-  # (a `noproc` exit from `:sys.get_state/1`, seen in CI on 2026-08-17). That
-  # is the state we wanted anyway — the report was handled — so a dead peer
-  # is not a failure here.
-  defp settle(pid) do
-    peer = :sys.get_state(pid).acp_peer
-
-    if is_pid(peer) do
-      try do
-        _ = :sys.get_state(peer)
-      catch
-        :exit, _ -> :ok
-      end
-    end
-
-    _ = :sys.get_state(pid)
-    :ok
-  end
-
-  defp notify(pid, ref, update) do
-    line =
-      Jason.encode!(%{
-        "jsonrpc" => "2.0",
-        "method" => "session/update",
-        "params" => %{"sessionId" => "sess_1", "update" => update}
-      }) <> "\n"
-
-    send(pid, {:stdout, %{ref: ref}, line})
-    settle(pid)
-  end
-
   @caps %{"loadSession" => true, "sessionCapabilities" => %{"resume" => %{}}}
-
-  # initialize → session/new → session/prompt, returning the prompt's id so a
-  # test can answer it.
-  defp drive_to_prompt(pid, ref) do
-    %{"id" => init_id, "method" => "initialize"} = next_write()
-    reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
-
-    %{"id" => new_id, "method" => "session/new"} = next_write()
-    reply(pid, ref, new_id, %{"sessionId" => "sess_1", "models" => %{}})
-    %{"id" => set_id, "method" => "session/set_model"} = next_write()
-    reply(pid, ref, set_id, %{})
-
-    %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
-    settle(pid)
-    prompt_id
-  end
 
   describe "Claude model confirmation aliases (#1710)" do
     for {model, confirmed, accepted?} <- [
@@ -1481,11 +1399,30 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "look")
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
 
-      GenServer.call(
-        pid,
-        {:send_prompt, "and this", [%{media_type: "image/png", data: <<9, 9, 9>>}]}
-      )
+      first_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, first_id, %{"stopReason" => "end_turn"})
+      image_bytes = <<0, 9, 128, 255>>
 
+      assert :ok =
+               GenServer.call(
+                 pid,
+                 {:send_prompt, "and this", [%{media_type: "image/png", data: image_bytes}]}
+               )
+
+      %{"id" => model_id, "method" => "session/set_model"} = next_write()
+      reply(pid, ref, model_id, %{})
+
+      assert %{
+               "method" => "session/prompt",
+               "params" => %{
+                 "prompt" => [
+                   %{"type" => "text", "text" => "and this"},
+                   %{"type" => "image", "mimeType" => "image/png", "data" => encoded}
+                 ]
+               }
+             } = next_write()
+
+      assert Base.decode64!(encoded) == image_bytes
       settle(pid)
 
       refute_receive {:fs_write, "/tmp/aod_turn_" <> _}, 100

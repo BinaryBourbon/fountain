@@ -258,10 +258,9 @@ defmodule Fountain.Conversations.Reattachment do
     # ownership: the server's bound conversation and the running turn
     # `find_running_turn/1` read for it; no id here came from a request.
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    acp? = Fountain.RuntimeDispatch.acp_enabled?(conv.runtime)
 
     case Managoat.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
-      {:ok, idle_command} when acp? and is_nil(running_turn.acp_prompt_id) ->
+      {:ok, idle_command} when is_nil(running_turn.acp_prompt_id) ->
         # The previous peer died before it wrote `session/prompt` (or the turn
         # predates the column). The adapter is sitting idle in its handshake
         # with nothing to answer, and no peer can pick that up: the ids it
@@ -272,29 +271,12 @@ defmodule Fountain.Conversations.Reattachment do
         state
 
       {:ok, command} ->
-        # sprites replays the tail of the session's buffered output before
-        # live-tailing. On the legacy path, count the bytes we already
-        # persisted for this turn so the stdout/stderr handlers can drop the
-        # replayed prefix. On the ACP path the peer re-encodes protocol lines
-        # so byte counts do not line up; the replayed lines are matched by
-        # content instead (`replay_dedup`).
-        # ownership: as above — the bound conversation and its own running turn.
-        replay_skip =
-          if acp?,
-            do: %{},
-            else:
-              Conversations._unsafe_output_bytes_by_stream(
-                state.conversation_id,
-                running_turn.id
-              )
-
         Output.publish_stage(state.conversation_id, "reattach", "done", %{
           outcome: "session_attached",
           matched_by: matched_by,
           session_id: session.id,
           turn_id: running_turn.id,
           turn_number: running_turn.turn_number,
-          replay_skip_bytes: replay_skip,
           acp_prompt_id: running_turn.acp_prompt_id
         })
 
@@ -309,11 +291,10 @@ defmodule Fountain.Conversations.Reattachment do
           state
           | current_command: command,
             current_command_ref: command.ref,
-            current_turn: running_turn,
-            replay_skip: replay_skip
+            current_turn: running_turn
         }
 
-        if acp?, do: acp_peer(state, running_turn, conv), else: state
+        acp_peer(state, running_turn, conv)
 
       {:error, reason} ->
         Logger.warning("attach_session failed: #{inspect(reason)}")

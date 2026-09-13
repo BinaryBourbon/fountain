@@ -15,26 +15,15 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
   use Fountain.ConversationServerCase
 
+  import Fountain.ConversationServerCase.ACP
+
   alias Fountain.{Accounts, Environments}
   alias Fountain.Repo
-
-  # A runtime with no ACP adapter entry, which is the only way to reach the
-  # legacy turn pipeline since #659. Not a real runtime name on purpose: the
-  # four an agent may name all speak ACP now.
-  @legacy_runtime "retired-runtime"
 
   setup do
     user = insert_verified_user()
     env = insert_env(user_id: user.id)
 
-    # These tests drive the legacy (non-ACP) turn pipeline through FakeRuntime.
-    # gemini was the last runtime that still ran it, and #659 put gemini on ACP
-    # too — so **no runtime an agent may name is legacy any more**. The pipeline
-    # itself is still reachable (a conversation row whose runtime has no adapter
-    # entry, and the peer-died-mid-turn path in `handle_info({:stdout, …})`), so
-    # it stays covered here; the conversation's runtime carries no inclusion
-    # validation, which is what makes that expressible. The ACP turn pipeline
-    # has its own harness in conversation_server_acp_test.exs.
     agent = insert_agent(user_id: user.id, environment_id: env.id, runtime: "claude")
     sandbox = insert_sandbox(user_id: user.id, status: "pending")
 
@@ -42,7 +31,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       insert_conversation(
         user_id: user.id,
         agent: agent,
-        runtime: @legacy_runtime,
+        runtime: "claude",
         sandbox_id: sandbox.id,
         status: "pending"
       )
@@ -110,18 +99,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
     test "runs the first turn when a prompt is supplied", %{conv: conv} do
       stub_happy_sprite()
-      # The server reads command.ref, so the spawn result must be a command struct
-      # rather than a bare pid.
-      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: make_ref()}}
-      end)
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+      ref = stub_acp_transport()
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello there")
-
-      assert_received {:build_command, "hello there", _mode, _session, _opts}
+      prompt_id = drive_to_prompt(pid, ref)
+      assert :sys.get_state(pid).acp_peer
+      assert is_integer(prompt_id)
       assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.prompt == "hello there"
 
@@ -147,14 +130,9 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # so the registry genuinely cannot resolve them.
       stub_happy_sprite()
 
-      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: make_ref()}}
-      end)
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
-
+      ref = stub_acp_transport()
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "first prompt")
+      drive_to_prompt(pid, ref)
 
       # Guards the premise, not the fix: the harness must keep its servers
       # out of Horde, or the turn assertion below stops demonstrating
@@ -200,7 +178,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
         insert_conversation(
           user_id: user.id,
           agent: agent,
-          runtime: @legacy_runtime,
+          runtime: "claude",
           sandbox_id: sandbox.id,
           status: "pending"
         )
@@ -239,7 +217,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
         insert_conversation(
           user_id: user.id,
           agent_id: nil,
-          runtime: @legacy_runtime,
+          runtime: "claude",
           sandbox_id: sandbox.id,
           status: "pending"
         )
@@ -271,7 +249,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
         insert_conversation(
           user_id: user.id,
           agent: agent,
-          runtime: @legacy_runtime,
+          runtime: "claude",
           sandbox_id: sandbox.id,
           environment_id: override.id,
           status: "pending"
@@ -469,21 +447,9 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
 
     test "a completed turn lands in the scrape as turn/done", %{conv: conv} do
-      stub_happy_sprite()
-      cmd_ref = make_ref()
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: cmd_ref}}
-      end)
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
-
       before_body = scrape_body()
-
-      {pid, _mon, :alive} = start_server(conv, initial_prompt: "count me")
-      send(pid, {:exit, %{ref: cmd_ref}, 0})
-      _ = :sys.get_state(pid)
+      {pid, ref, prompt_id} = start_with_turn(conv, "count me")
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
       GenServer.stop(pid)
 
       after_body = scrape_body()
@@ -520,7 +486,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
         insert_conversation(
           user_id: user.id,
           agent: agent,
-          runtime: @legacy_runtime,
+          runtime: "claude",
           sandbox_id: sandbox.id,
           status: "pending"
         )
@@ -658,7 +624,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
         insert_conversation(
           user_id: user.id,
           agent: agent,
-          runtime: @legacy_runtime,
+          runtime: "claude",
           sandbox_id: sandbox.id,
           status: "pending"
         )
@@ -821,40 +787,32 @@ defmodule Fountain.Conversations.ConversationServerTest do
   end
 
   describe "turn lifecycle on a running server" do
-    defp start_with_turn(conv) do
+    defp start_with_turn(conv, prompt \\ "first") do
       stub_happy_sprite()
-      ref = make_ref()
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
-      end)
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
-
-      {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
-      {pid, ref}
+      ref = stub_acp_transport()
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: prompt)
+      {pid, ref, drive_to_prompt(pid, ref)}
     end
 
-    # The `turn`/`failed` stage event's meta, decoded. Stage events persist
-    # their meta as JSON in `data`.
-    defp turn_failed_meta(conv_id) do
+    # Stage events persist their metadata as JSON in `data`.
+    defp turn_stage_meta(conv_id, state) do
       conv_id
       |> Conversations._unsafe_list_log_events()
-      |> Enum.find(&(&1.kind == "stage" and &1.stage == "turn" and &1.state == "failed"))
+      |> Enum.find(&(&1.kind == "stage" and &1.stage == "turn" and &1.state == state))
       |> then(& &1.data)
       |> Jason.decode!()
     end
 
-    test "a completed command closes the turn and returns the conversation to idle", %{conv: conv} do
-      {pid, ref} = start_with_turn(conv)
+    test "an answered ACP prompt closes the turn and returns the conversation to idle", %{
+      conv: conv
+    } do
+      {pid, ref, prompt_id} = start_with_turn(conv)
 
-      send(pid, {:exit, %{ref: ref}, 0})
-      _ = :sys.get_state(pid)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
 
       assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.status == "completed"
-      assert turn.exit_code == 0
+      assert is_nil(turn.exit_code)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
 
       GenServer.stop(pid)
@@ -870,9 +828,8 @@ defmodule Fountain.Conversations.ConversationServerTest do
       end)
 
       # An ordinary conversation: the sidebar gets a title.
-      {pid, ref} = start_with_turn(conv)
-      send(pid, {:exit, %{ref: ref}, 0})
-      _ = :sys.get_state(pid)
+      {pid, ref, prompt_id} = start_with_turn(conv)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
       assert_receive {:title_requested, "first"}, 1_000
       GenServer.stop(pid)
 
@@ -890,16 +847,15 @@ defmodule Fountain.Conversations.ConversationServerTest do
           title: "Ada"
         )
 
-      {pid, ref} = start_with_turn(team_conv)
-      send(pid, {:exit, %{ref: ref}, 0})
-      _ = :sys.get_state(pid)
+      {pid, ref, prompt_id} = start_with_turn(team_conv)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
       refute_receive {:title_requested, _}, 300
       assert Conversations._unsafe_get_conversation!(team_conv.id).title == "Ada"
       GenServer.stop(pid)
     end
 
     test "a non-zero exit marks the turn failed but keeps the conversation usable", %{conv: conv} do
-      {pid, ref} = start_with_turn(conv)
+      {pid, ref, _prompt_id} = start_with_turn(conv)
 
       send(pid, {:exit, %{ref: ref}, 1})
       _ = :sys.get_state(pid)
@@ -1005,93 +961,80 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert Repo.reload!(turn).status == "running"
     end
 
-    test "a runtime that exits before the prompt is written fails the turn (#603)", %{conv: conv} do
-      # The real adapter write path against a real command process that stops
-      # :normal on the write, which is what Sprites.Command does the moment the
-      # runtime's exit frame arrives. Nothing about this path is stubbed.
-      #
-      # The GenServer.call inside the SDK write used to exit THIS server, and
-      # the supervisor's restart then found the sandbox already "ready", took
-      # the reattach branch, and orphaned the turn behind a list_sessions error
-      # that named nothing real. Against spritzer's one-shot exec that lost
-      # roughly half of all turns.
+    # The handshake succeeds; only the actual session/prompt write reaches a
+    # real Sprites.Command process that exits during GenServer.call. This
+    # exercises the SDK's safe-write boundary from the ACP writer process.
+    defp exit_on_prompt_write(conv, exit_code \\ nil) do
       stub_happy_sprite()
-      dead_on_write = spawn(fn -> receive(do: (_ -> exit(:normal))) end)
+      ref = stub_acp_transport()
+      test = self()
 
       Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        ref = make_ref()
+        owner = self()
+
+        command_pid =
+          spawn(fn ->
+            receive do
+              {:"$gen_call", _from, _request} ->
+                if exit_code do
+                  send(owner, {:stderr, %{ref: ref}, "invalid api key\n"})
+                  send(owner, {:exit, %{ref: ref}, exit_code})
+                end
+
+                exit(:normal)
+            end
+          end)
 
         {:ok,
          %Managoat.Sandbox.Command{
            provider: :sprites,
            ref: ref,
-           private: %Sprites.Command{ref: ref, pid: dead_on_write, tty_mode: false}
+           private: %Sprites.Command{ref: ref, pid: command_pid, tty_mode: false}
          }}
       end)
 
-      # :alive is the regression: the prompt is delivered before this returns.
-      {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello")
-      _ = :sys.get_state(pid)
+      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn command, data ->
+        line = IO.iodata_to_binary(data)
+        send(test, {:wrote, line})
 
+        if Jason.decode!(line)["method"] == "session/prompt" do
+          Mimic.call_original(Managoat.Sandbox.Sprites, :write_stdin, [command, data])
+        else
+          :ok
+        end
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
+      drive_to_prompt(pid, ref)
+      pid
+    end
+
+    test "a runtime that exits during the ACP prompt write fails the turn (#603)", %{conv: conv} do
+      pid = exit_on_prompt_write(conv)
+
+      assert Process.alive?(pid)
       assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.status == "failed"
       refute is_nil(turn.ended_at)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+      assert %{"reason" => reason} = turn_stage_meta(conv.id, "failed")
+      assert reason =~ "command_exited"
 
       GenServer.stop(pid)
     end
 
-    test "a runtime that exits before the prompt is written keeps its exit code (#608)", %{
+    test "a runtime that exits during the ACP prompt write keeps its diagnostics (#608)", %{
       conv: conv
     } do
-      # Same path as #603 above, but about what the failure *says*. A real
-      # Sprites.Command sends the owner its {:stderr, ...} and {:exit, ...}
-      # frames and only then stops — so by the time the write comes back
-      # {:error, :command_exited}, both are already in this server's mailbox.
-      #
-      # current_command_ref is never assigned on this path, so every
-      # handle_info guard misses them and the catch-all used to drop them
-      # silently: turns.exit_code stayed NULL and the operator was told
-      # ":command_exited" for an expired key, a renamed binary and an OOM
-      # kill alike.
-      stub_happy_sprite()
-      ref = make_ref()
+      pid = exit_on_prompt_write(conv, 1)
 
-      # Frames first, then stop :normal — the order the library guarantees,
-      # and the reason the messages beat the write's failure to the server.
-      exits_1_on_write =
-        spawn(fn ->
-          receive do
-            {:"$gen_call", {caller, _tag}, _request} ->
-              send(caller, {:stderr, %{ref: ref}, "invalid api key\n"})
-              send(caller, {:exit, %{ref: ref}, 1})
-              exit(:normal)
-          end
-        end)
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok,
-         %Managoat.Sandbox.Command{
-           provider: :sprites,
-           ref: ref,
-           private: %Sprites.Command{ref: ref, pid: exits_1_on_write, tty_mode: false}
-         }}
-      end)
-
-      {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
-      _ = :sys.get_state(pid)
-
+      assert Process.alive?(pid)
       assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.status == "failed"
       assert turn.exit_code == 1
+      assert %{"exit_code" => 1} = turn_stage_meta(conv.id, "done")
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
 
-      # The reason still leads with the mechanism — downstream gates match on
-      # `:command_exited` — and now carries the cause behind it.
-      assert %{"reason" => reason, "exit_code" => 1} = turn_failed_meta(conv.id)
-      assert reason =~ ":command_exited"
-      assert reason =~ "runtime exited 1"
-
-      # The runtime's last words, attributed to the turn they explain.
       events = Conversations._unsafe_list_log_events(conv.id)
       assert stderr = Enum.find(events, &(&1.stream == "stderr" and &1.data =~ "invalid api key"))
       assert stderr.turn_id == turn.id
@@ -1099,11 +1042,13 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
-    test "stdout is persisted as log events", %{conv: conv} do
-      {pid, ref} = start_with_turn(conv)
+    test "ACP agent output is persisted as log events", %{conv: conv} do
+      {pid, ref, _prompt_id} = start_with_turn(conv)
 
-      send(pid, {:stdout, %{ref: ref}, "hello from the sprite"})
-      _ = :sys.get_state(pid)
+      notify(pid, ref, %{
+        "sessionUpdate" => "agent_message_chunk",
+        "content" => %{"type" => "text", "text" => "hello from the sprite"}
+      })
 
       events = Conversations._unsafe_list_log_events(conv.id)
       assert Enum.any?(events, &(&1.data =~ "hello from the sprite"))
@@ -1119,7 +1064,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # current_command set, so the turn stayed "running" forever, every
       # prompt got {:error, :busy}, and both reclaim paths were suppressed —
       # the sprite billed until max_lifetime.
-      {pid, ref} = start_with_turn(conv)
+      {pid, ref, _prompt_id} = start_with_turn(conv)
 
       send(pid, {:error, %{ref: ref}, :closed})
       _ = :sys.get_state(pid)
@@ -1142,7 +1087,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # landed on the :exit handler and wrote a *completed* turn with exit
       # code 0 — a turn that never finished, recorded as a clean one, which
       # is the shape of managoat/fountain#880.
-      {pid, ref} = start_with_turn(conv)
+      {pid, ref, _prompt_id} = start_with_turn(conv)
 
       send(pid, {:error, %{ref: ref}, :closed_before_exit})
       _ = :sys.get_state(pid)
@@ -1156,7 +1101,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
 
     test "an error for a stale command ref does not touch the current turn", %{conv: conv} do
-      {pid, ref} = start_with_turn(conv)
+      {pid, ref, prompt_id} = start_with_turn(conv)
 
       send(pid, {:error, %{ref: make_ref()}, :closed})
       _ = :sys.get_state(pid)
@@ -1166,13 +1111,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert turn.status == "running"
       assert {:error, :busy} = GenServer.call(pid, {:send_prompt, "second", []})
 
-      send(pid, {:exit, %{ref: ref}, 0})
-      _ = :sys.get_state(pid)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
       GenServer.stop(pid)
     end
 
     test "prompting while a turn is running is refused rather than queued", %{conv: conv} do
-      {pid, _ref} = start_with_turn(conv)
+      {pid, _ref, _prompt_id} = start_with_turn(conv)
 
       # There is no queue, so a second prompt mid-turn must be rejected rather
       # than silently dropped or interleaved.
@@ -1182,9 +1126,8 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
 
     test "a prompt after the turn finishes starts a new turn", %{conv: conv} do
-      {pid, ref} = start_with_turn(conv)
-      send(pid, {:exit, %{ref: ref}, 0})
-      _ = :sys.get_state(pid)
+      {pid, ref, prompt_id} = start_with_turn(conv)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
 
       assert :ok = GenServer.call(pid, {:send_prompt, "second", []})
       assert length(Conversations._unsafe_list_turns(conv.id)) == 2
@@ -1322,17 +1265,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
 
     test "refuses while a turn is running and interrupts nothing", %{conv: conv, sandbox: sandbox} do
-      stub_happy_sprite()
-      ref = make_ref()
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
-        {:ok, %Managoat.Sandbox.Command{provider: :sprites, ref: ref}}
-      end)
-
-      Mimic.stub(Managoat.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
-      Mimic.stub(Managoat.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
-
-      {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
+      {pid, _ref, _prompt_id} = start_with_turn(conv)
 
       assert {:error, :busy} = GenServer.call(pid, :release_conv)
       assert Process.alive?(pid)

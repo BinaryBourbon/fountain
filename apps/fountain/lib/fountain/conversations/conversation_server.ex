@@ -531,14 +531,12 @@ defmodule Fountain.Conversations.ConversationServer do
       # turn row's timestamps because `now/0` truncates to the second,
       # which rounds a sub-second turn to a duration of zero.
       turn_metrics: nil,
-      # Stream tracer for parsing Claude's stream-json stdout into OTel
-      # child spans and events. nil for non-Claude runtimes.
+      # Stream tracer for ACP tool updates into OTel child spans and events.
       stream_tracer: nil,
       # The `session_gone` detail this turn has already been restarted for
       # (#1667), or nil. `TurnMachine` reads it to refuse a second restart.
       turn_session_retry: nil,
-      # The ACP peer driving the in-flight turn, when the agent has opted in
-      # (0014 gate 2). nil on the legacy path, which is the default. Monitored
+      # The ACP peer driving the adapter connection. Monitored
       # rather than linked: a protocol bug must fail a turn, not take down a
       # server that is holding a sprite handle and a tenant's secrets.
       acp_peer: nil,
@@ -557,9 +555,6 @@ defmodule Fountain.Conversations.ConversationServer do
       # `cycle_end` (#817) — an adapter too old to mark its origin must not
       # hold a turn open forever. nil outside an autonomous turn.
       autonomous_quiet: nil,
-      # Bytes of replayed output to drop on reattach, keyed by stream.
-      # Empty map outside a reattach window. See attempt_session_attach.
-      replay_skip: %{},
       # ACP reattach: the `acp` lines already persisted for the in-flight
       # turn, so the sprite's replayed tail is not written twice. Consumed as
       # matches arrive and cleared on a timer; empty outside a reattach
@@ -1561,16 +1556,14 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp handle_execution_info({:stdout, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
-    # Raw stdout only arrives here on the legacy path (or from an ACP turn
-    # whose peer died mid-turn). The tracer reads protocol lines from the
-    # peer's reports, never raw chunks — the dialect tracer that used to eat
-    # this stream went with the legacy claude path.
+    # Preserve adapter diagnostics when its peer is no longer available.
+    # The tracer only consumes protocol reports from a live peer.
     state = maybe_emit_first_output(state)
-    {:noreply, log_with_replay_skip(state, "stdout", data)}
+    {:noreply, log_output(state, "stdout", data)}
   end
 
   defp handle_execution_info({:stderr, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
-    {:noreply, log_with_replay_skip(state, "stderr", data)}
+    {:noreply, log_output(state, "stderr", data)}
   end
 
   # ── ACP peer reports (0014 gate 2) ────────────────────────────────────────
@@ -2182,7 +2175,7 @@ defmodule Fountain.Conversations.ConversationServer do
     {state, replaced?} = Egress.refresh_before_turn(state)
     # A bounded turn already discarded its old connection before registration
     # entered actor state. Refreshing credentials must not retire the NEW journal
-    # and accidentally route this turn through the legacy spawn branch.
+    # and accidentally route this turn through an unbounded spawn.
     state =
       if replaced? and is_nil(execution),
         do: drop_connection(state, "broker_session_replaced"),
@@ -2199,26 +2192,21 @@ defmodule Fountain.Conversations.ConversationServer do
     unless execution,
       do: TurnMachine.generate_title(conv, turn, prompt, state.inference_credentials)
 
-    # Keyed on the conversation's runtime, not the agent: a conversation
-    # outlives its agent (deletion nilifies agent_id), and for a supported
-    # runtime the legacy spawn path no longer exists to fall back to.
-    acp? = Fountain.RuntimeDispatch.acp_enabled?(conv.runtime)
-
     # An idle peer carries the next turn without spawn, handshake or resume
     # (#817). It applies the model before prompting; background tasks and
     # Codex session grants survive.
-    if is_nil(execution) and acp? and Connection.alive?(Connection.from_state(state)) do
+    if is_nil(execution) and Connection.alive?(Connection.from_state(state)) do
       resume_acp_connection(state, conv, turn, prompt, images)
     else
-      run_fresh_turn(state, conv, turn, prompt, agent, images, acp?)
+      run_fresh_turn(state, conv, turn, prompt, agent, images)
     end
   end
 
   # The launch itself lives in `TurnLaunch` (see its moduledoc): this module's
   # line count only ratchets down, and a pure launch given a state it does not
-  # own is the natural seam. `fail_turn_before_start/6` stays here because it
-  # writes through this actor's logger and owns `current_turn`.
-  defp run_fresh_turn(state, conv, turn, prompt, agent, images, acp?) do
+  # own is the natural seam. `fail_turn_before_start/3` logs the failure
+  # and retires this actor's bounded execution.
+  defp run_fresh_turn(state, conv, turn, prompt, agent, images) do
     TurnLaunch.run(
       state,
       conv,
@@ -2226,30 +2214,19 @@ defmodule Fountain.Conversations.ConversationServer do
       prompt,
       agent,
       images,
-      acp?,
-      &fail_turn_before_start(&1, &2, &3, &4, &5, &6)
+      &fail_turn_before_start/3
     )
   end
 
-  defp fail_turn_before_start(state, turn, reason, what, exit_code, output) do
-    detail = TurnMachine.failure_detail(reason, exit_code)
-    Logger.error("#{what}: #{detail}")
-
-    # current_turn is nil on this path — it is only assigned once the prompt
-    # is away — and persist_output reads it for the turn_id, so stand it up
-    # for the duration and clear it again before returning.
-    state =
-      Enum.reduce(output, %{state | current_turn: turn}, fn {stream, data}, acc ->
-        log_output(acc, stream, data)
-      end)
+  defp fail_turn_before_start(state, turn, reason) do
+    detail = inspect(reason)
+    Logger.error("spawn failed: #{detail}")
 
     TurnMachine.fail_before_start(
       turn,
       state.conversation_id,
       state.sandbox_id,
-      what,
-      detail,
-      exit_code
+      detail
     )
 
     state = %{state | current_turn: nil, turn_session_retry: nil}
@@ -2273,10 +2250,10 @@ defmodule Fountain.Conversations.ConversationServer do
     do: TurnMachine.emit_completed(TurnMachine.from_state(state), status)
 
   # Persistence for peer-relayed lines: the log budget, redaction and the
-  # legacy replay skip all live on this path; the tracer reads protocol lines
+  # replay deduplication all live on this path; the tracer reads protocol lines
   # from the peer's reports, never raw chunks.
   defp persist_acp_lines(state, stream, data) do
-    new_state = log_with_replay_skip(state, stream, data)
+    new_state = log_output(state, stream, data)
 
     # Each "acp" report is one session/update line; the tracer turns tool_call
     # / tool_call_update into child spans. Peer-relayed lines carry no byte
@@ -2391,7 +2368,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
       {:error, _reason} ->
         state = drop_connection(state, "peer_refused_reuse")
-        run_fresh_turn(state, conv, turn, prompt, TurnMachine.agent_for(conv), images, true)
+        run_fresh_turn(state, conv, turn, prompt, TurnMachine.agent_for(conv), images)
     end
   end
 
@@ -2522,14 +2499,6 @@ defmodule Fountain.Conversations.ConversationServer do
         state,
         Output.log(Output.from_state(state), Output.ctx(state), stream, data)
       )
-
-  # The same, minus the bytes a reattach is replaying: `Output.log_with_replay_skip/4`.
-  defp log_with_replay_skip(state, stream, data) do
-    Output.into_state(
-      state,
-      Output.log_with_replay_skip(Output.from_state(state), Output.ctx(state), stream, data)
-    )
-  end
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

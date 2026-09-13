@@ -281,7 +281,6 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     :runner_reconnect,
     :execution_transport,
     # Byte counts per stream, taken from rows already written. No content.
-    :replay_skip,
     # Parked caller-tool arguments (#1202) and the ACP lines already persisted
     # for the in-flight turn. Tenant content rather than credential material,
     # and what is in `replay_dedup` was read back from `log_events`, so it has
