@@ -292,12 +292,6 @@ defmodule Fountain.Conversations.TurnMachine do
     {turn, []}
   end
 
-  # Compatibility with older peers. The new peer itself stops before writing
-  # a prompt; a host-side reaction alone cannot prevent inference.
-  def handle(%__MODULE__{} = turn, {:model_rejected, requested, detail}, ctx) do
-    handle(turn, {:failed, {:model_selection_failed, requested, detail}}, ctx)
-  end
-
   def handle(%__MODULE__{} = turn, {:failed, {:model_selection_failed, requested, detail}}, _ctx) do
     message =
       "Could not select model #{requested}: #{detail}. No prompt was sent. " <>

@@ -4,7 +4,7 @@ defmodule Fountain.Conversations.ACPModelContractTest do
 
   The library has its own suite and this does not duplicate it. What it pins
   is the half Fountain depends on and cannot see: `apps/fountain/mix.exs`
-  allows `~> 0.2.3`, so **any** 0.2.x release resolves without a change here,
+  allows `~> 0.4.2`, so later 0.4.x releases resolve without a change here,
   and this behaviour is what decides whether a turn runs at all. Since #1640 a
   `session/set_model` disagreement fails the turn before a prompt is written,
   so the blast radius of getting it wrong is every turn on the affected

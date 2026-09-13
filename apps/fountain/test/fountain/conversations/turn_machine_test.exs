@@ -159,20 +159,25 @@ defmodule Fountain.Conversations.TurnMachineTest do
   end
 
   describe "handle/3 with a refused model" do
-    test "model_rejected fails the turn and persists selection evidence", %{
+    test "model selection failure persists evidence without an inference stamp", %{
       machine: m,
       conv: conv
     } do
       assert {updated, [{:finish, "failed", _, _}, {:drop_connection, "failed"}]} =
-               TurnMachine.handle(m, {:model_rejected, "gpt-9", "no such model"})
+               TurnMachine.handle(
+                 m,
+                 {:failed, {:model_selection_failed, "gpt-9", "no such model"}}
+               )
 
       assert updated.row.model_selection[:requested_model] == "gpt-9"
 
       assert [{"failed", %{"requested_model" => "gpt-9", "effective_model" => nil}}] =
                stages(conv.id, "model")
 
-      assert Fountain.Repo.get!(Conversations.Turn, m.row.id).model_selection["status"] ==
-               "failed"
+      saved = Fountain.Repo.get!(Conversations.Turn, m.row.id)
+      assert saved.model_selection["status"] == "failed"
+      assert saved.acp_prompt_id == nil
+      refute Map.has_key?(saved.usage || %{}, "inference")
     end
 
     test "selected model evidence comes from the peer", %{machine: m, conv: conv} do
