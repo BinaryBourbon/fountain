@@ -7,6 +7,8 @@ Notable changes to the Fountain Swift SDK follow
 
 ### Changed
 
+- Both Swift clients assemble text as ACP chunks. Removed the legacy stdout row paragraph separators; text after a tool call still starts a new paragraph.
+
 - `Agent.model` is `String?`. The `acp` runtime resolves no inference
   credential and reads no model, so the wire sends an explicit null there. A
   non-optional `model` threw `valueNotFound` on decode, and because a page is

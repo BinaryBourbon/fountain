@@ -11,6 +11,12 @@ server releases.
 
 ---
 
+## [1.32.0] - 2026-09-13
+
+### Removed
+
+- Legacy stdout row paragraph separators when assembling run text. Text now joins as ACP chunks on every stream, with paragraph breaks after tool calls preserved. Historical stdout rows no longer receive automatic blank lines.
+
 ## [1.31.1] - 2026-09-13
 
 ### Fixed
