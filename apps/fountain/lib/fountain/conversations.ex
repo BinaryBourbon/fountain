@@ -2363,11 +2363,16 @@ defmodule Fountain.Conversations do
   first half retired its last running turn. `AutonomousTurnReaper.sweep_stuck_turns/0`
   selects running turns, and `ExecutionGuard._unsafe_recover_turn/3` returns
   `:noop` for a retired turn, so those recovery paths cannot repair that state.
-  Other paths can idle the parent: `MachineEvents.gone/4` and the lifecycle's
+  Other paths can idle the parent: `MachineEvents.gone/5` and the lifecycle's
   park and reclaim paths do so when they run.
 
   `follow_cotenants/2` sends `:machine_gone` before rebinding with `update_all`,
-  so a server that receives the cast has `gone/4`'s cleanup as a backstop.
+  so a server that receives the cast has `gone/5`'s cleanup as a backstop.
+  `gone/5` ignores a notification naming another sandbox and
+  `_unsafe_finish_machine_gone/2` answers `:noop` for a moved conversation
+  (#2006), but its idle write is deliberately not conditioned on the binding,
+  so a parent left `running` with no running turn is still released. The
+  backstop this paragraph relies on therefore survives the rebind.
   `tell_cotenants/3` skips the cast when `ConversationServer.whereis/1` misses,
   including a cross-pod registry miss, while the rebind still applies. The
   parent can then remain `running` until another cleanup path runs.
@@ -2411,13 +2416,29 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
-  Finish an actor's machine-gone notification on its current binding.
+  Finish an actor's machine-gone notification, and release a stranded parent.
 
-  Lock the parent through the running-turn check and optional idle write, as
-  admission does. A moved, terminal or deleted conversation, or a newer running
-  turn, makes this a no-op. Only a running conversation changes status;
-  already-idle actors can still record the sandbox event. Publication happens
-  after commit, and this function performs no provider or actor I/O.
+  Lock the parent through the running-turn check and any idle write, as
+  admission does. A deleted conversation or a newer running turn makes this a
+  no-op. `:ok` says the notification is this actor's to narrate: the binding
+  still names the sandbox it closed and the conversation is not terminal. A
+  moved or terminal conversation answers `:noop`, so an obsolete actor emits no
+  sandbox event. Publication happens after commit, and this function performs
+  no provider or actor I/O.
+
+  The idle write is not conditioned on the binding, and that is deliberate.
+  Under the parent lock a `running` conversation with no running turn is not a
+  legitimate transient: admission inserts the running turn and sets the parent
+  `running` in one transaction under this same lock (`_unsafe_create_turn_on_sandbox/3`),
+  and the two other writers of `running` (`Reattachment` and `Connection`) both
+  have their running turn in hand. So that pair is a stuck row, and the sweeps
+  cannot repair it — `AutonomousTurnReaper.sweep_stuck_turns/0` and
+  `ExecutionGuard._unsafe_recover_turn/3` both select a running turn, and there
+  is none. `_unsafe_idle_interrupted_turn/1` declines to recheck the binding for
+  exactly this reason and names this function as its backstop (#2000); a
+  refusal here would strand the parent with nothing left to release it.
+  Releasing it is a repair, not an act of the stale actor, so it still answers
+  `:noop` and publishes nothing.
   """
   def _unsafe_finish_machine_gone(conversation_id, sandbox_id) do
     {:ok, result} =
@@ -2429,12 +2450,21 @@ defmodule Fountain.Conversations do
           from(t in Turn, where: t.conversation_id == ^conversation_id and t.status == "running")
 
         with %Conversation{} = conv <- Repo.one(conversation_query),
-             true <- conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"],
              false <- Repo.exists?(running_query) do
-          if conv.status == "running" do
-            {:updated, conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()}
-          else
-            :unchanged
+          # A terminal conversation is never `running`, so this decides the
+          # answer, never the write.
+          current? = conv.sandbox_id == sandbox_id and conv.status not in ["terminated", "failed"]
+
+          cond do
+            conv.status == "running" ->
+              idled = conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
+              if current?, do: {:updated, idled}, else: {:released, idled}
+
+            current? ->
+              :unchanged
+
+            true ->
+              :noop
           end
         else
           _ -> :noop
@@ -2445,6 +2475,10 @@ defmodule Fountain.Conversations do
       {:updated, conv} ->
         broadcast_sidebar_update(conv.user_id)
         :ok
+
+      {:released, conv} ->
+        broadcast_sidebar_update(conv.user_id)
+        :noop
 
       :unchanged ->
         :ok
