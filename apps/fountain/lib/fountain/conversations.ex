@@ -2260,6 +2260,18 @@ defmodule Fountain.Conversations do
   """
   def _unsafe_complete_turn(%Turn{} = turn, sandbox_id, status)
       when status in ["completed", "failed", "interrupted"] do
+    end_running_turn(turn, sandbox_id, status, true)
+  end
+
+  @doc """
+  Mark an actor-owned turn interrupted while retaining the conversation's
+  status until the peer has stopped. Uses the same binding and terminal guards
+  as completion, with reply activation after commit.
+  """
+  def _unsafe_interrupt_turn(%Turn{} = turn, sandbox_id),
+    do: end_running_turn(turn, sandbox_id, "interrupted", false)
+
+  defp end_running_turn(turn, sandbox_id, status, idle?) do
     {:ok, result} =
       Repo.transaction(fn ->
         conversation_query =
@@ -2292,12 +2304,17 @@ defmodule Fountain.Conversations do
           # older turn cannot stop this one from idling it. The parent lock
           # above is the same one turn admission takes, so nothing can be
           # admitted between this read and the write.
-          conv =
-            if conv.status == "running" and ExecutionGuard.latest_turn?(conv.id, turn.id),
-              do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
-              else: conv
+          #
+          # The interrupt path passes `idle?: false` and idles later, through
+          # `_unsafe_idle_interrupted_turn/1`, which asks the same two
+          # questions once the peer has stopped.
+          updated_conv =
+            if idle? and conv.status == "running" and
+                 ExecutionGuard.latest_turn?(conv.id, turn.id),
+               do: conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!(),
+               else: conv
 
-          {updated, conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
+          {updated, updated_conv, is_binary(Ecto.Changeset.get_change(changeset, :reply_text))}
         else
           _ -> :noop
         end
@@ -2309,8 +2326,84 @@ defmodule Fountain.Conversations do
 
       {updated, conv, reply_materialized?} ->
         if reply_materialized?, do: Fountain.Activation.turn_replied(updated)
-        broadcast_sidebar_update(conv.user_id)
+        if idle?, do: broadcast_sidebar_update(conv.user_id)
         {:ok, updated}
+    end
+  end
+
+  @doc """
+  Release the conversation `TurnMachine.mark_interrupted/1` left running.
+
+  Caller requirement: call only from `TurnMachine.close_interrupted/1` after
+  its matching `mark_interrupted/1` successfully retired the turn. The public
+  `_unsafe_` helper does not enforce this requirement for another caller.
+
+  The binding check belongs to that successful mark: `_unsafe_interrupt_turn/2`
+  checks the actor's sandbox binding under the parent lock, and only success
+  sets `interrupted?`. `close_interrupted/1` calls this helper only when that
+  flag is true. Neither `from_state/1` nor `into_state/2` carries the flag, so
+  it cannot survive a mailbox round-trip. `ConversationServer.interrupt_turn/1`
+  runs both halves synchronously, separated only by `stop_acp_peer/1`, whose
+  `GenServer.stop/3` has a one-second timeout. The server's `sandbox_id` is set
+  at init and never changed. An actor already stale at the mark cannot reach
+  this write; a rebind after a successful mark can still reach it.
+
+  This half deliberately takes no `sandbox_id` and does not repeat the binding
+  check. It writes no turn result. Under the parent and turn locks, it requires
+  a `running` parent, an `interrupted` turn and `ExecutionGuard.latest_turn?/2`.
+  A successor admitted while the peer was stopping prevents the idle write;
+  an older turn left `running` does not. Admission inserts its turn and sets
+  the parent `running` in the same transaction under the same parent lock, so
+  it cannot slip between this check and the write.
+
+  Rechecking the binding here could leave the parent `running` after the
+  first half retired its last running turn. `AutonomousTurnReaper.sweep_stuck_turns/0`
+  selects running turns, and `ExecutionGuard._unsafe_recover_turn/3` returns
+  `:noop` for a retired turn, so those recovery paths cannot repair that state.
+  Other paths can idle the parent: `MachineEvents.gone/4` and the lifecycle's
+  park and reclaim paths do so when they run.
+
+  `follow_cotenants/2` sends `:machine_gone` before rebinding with `update_all`,
+  so a server that receives the cast has `gone/4`'s cleanup as a backstop.
+  `tell_cotenants/3` skips the cast when `ConversationServer.whereis/1` misses,
+  including a cross-pod registry miss, while the rebind still applies. The
+  parent can then remain `running` until another cleanup path runs.
+  `_unsafe_sandbox_busy_elsewhere?/4` reads co-tenant turns and `updated_at`
+  for conversations without turns, not the parent's status; a stuck parent
+  alone does not keep the shared sandbox busy or extend its billing lifetime.
+
+  Known gap: a turn no longer `interrupted` writes nothing, and nothing
+  overwrites a terminal turn today, so that arm has no live producer (#2054
+  gap 2).
+  """
+  def _unsafe_idle_interrupted_turn(%Turn{} = turn) do
+    {:ok, result} =
+      Repo.transaction(fn ->
+        conversation_query =
+          from(c in Conversation, where: c.id == ^turn.conversation_id, lock: "FOR UPDATE")
+
+        turn_query =
+          from(t in Turn,
+            where: t.id == ^turn.id and t.conversation_id == ^turn.conversation_id,
+            lock: "FOR UPDATE"
+          )
+
+        with %Conversation{status: "running"} = conv <- Repo.one(conversation_query),
+             %Turn{status: "interrupted"} <- Repo.one(turn_query),
+             true <- ExecutionGuard.latest_turn?(conv.id, turn.id) do
+          conv |> Conversation.changeset(%{status: "idle"}) |> Repo.update!()
+        else
+          _ -> :noop
+        end
+      end)
+
+    case result do
+      %Conversation{} = conv ->
+        broadcast_sidebar_update(conv.user_id)
+        :ok
+
+      :noop ->
+        :noop
     end
   end
 

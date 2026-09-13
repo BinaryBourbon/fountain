@@ -89,6 +89,7 @@ defmodule Fountain.Conversations.TurnMachine do
   @type t :: %__MODULE__{
           conversation_id: String.t() | nil,
           sandbox_id: String.t() | nil,
+          interrupted?: boolean(),
           row: Conversations.Turn.t() | nil,
           span: term() | nil,
           metrics: map() | nil,
@@ -99,6 +100,7 @@ defmodule Fountain.Conversations.TurnMachine do
 
   defstruct conversation_id: nil,
             sandbox_id: nil,
+            interrupted?: false,
             row: nil,
             span: nil,
             metrics: nil,
@@ -727,36 +729,61 @@ defmodule Fountain.Conversations.TurnMachine do
   @doc """
   The interrupt's first half: the row `interrupted`, the stage, the tracer
   closed. The server stops the peer between the halves, as it always did,
-  then `close_interrupted/1` ends the span, emits the metric and sets the
-  conversation idle.
+  then `close_interrupted/1` ends the span, emits the metric and conditionally
+  idles the conversation. A stale mark emits neither a stage nor a metric, and
+  closing it writes nothing.
+
+  This half leaves the parent `running` on purpose, so the peer stops under a
+  conversation that still says it is working. Turn recovery skips retired
+  turns, so this pair must finish its own parent cleanup. The second half
+  rechecks the generation rather than this actor's binding
+  (`Conversations._unsafe_idle_interrupted_turn/1`). A successor admitted
+  while the peer was stopping is what keeps the conversation running.
   """
   @spec mark_interrupted(t()) :: t()
   def mark_interrupted(%__MODULE__{} = turn) do
-    {:ok, _turn} =
-      Conversations._unsafe_update_turn(turn.row, %{
-        status: "interrupted",
-        ended_at: now()
-      })
+    # Ownership: the actor's binding is checked with the parent and turn locked.
+    applied? =
+      case Conversations._unsafe_interrupt_turn(turn.row, turn.sandbox_id) do
+        {:ok, _} ->
+          publish_stage(turn.conversation_id, "turn", "interrupted", %{
+            turn_id: turn.row.id,
+            turn_number: turn.row.turn_number
+          })
 
-    publish_stage(turn.conversation_id, "turn", "interrupted", %{
-      turn_id: turn.row.id,
-      turn_number: turn.row.turn_number
-    })
+          true
 
-    # Finalize stream tracer: close any tool spans still open (abandoned calls).
+        :noop ->
+          false
+      end
+
+    # Finalize local spans even when another actor owns the persisted result.
     finalize_tracer(turn.tracer)
-    turn
+    %{turn | interrupted?: applied?}
   end
 
   @spec close_interrupted(t()) :: t()
   def close_interrupted(%__MODULE__{} = turn) do
     end_span(turn.span, :error, %{"outcome" => "interrupted"})
 
-    emit_completed(turn, "interrupted")
+    if turn.interrupted? do
+      emit_completed(turn, "interrupted")
+      # Ownership: mark_interrupted verified this actor's binding and retired
+      # the turn under it. This half releases the parent that half left
+      # running. See its docstring for the caller requirement and why it
+      # rechecks the generation rather than the binding.
+      Conversations._unsafe_idle_interrupted_turn(turn.row)
+    end
 
-    {:ok, _} = Conversations._unsafe_idle_after_turn(turn.row)
-
-    %{turn | row: nil, span: nil, metrics: nil, tracer: nil, session_retry: nil}
+    %{
+      turn
+      | row: nil,
+        span: nil,
+        metrics: nil,
+        tracer: nil,
+        session_retry: nil,
+        interrupted?: false
+    }
   end
 
   @doc "Release local measurements for a fenced worker without changing its persisted turn."
