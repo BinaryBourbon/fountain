@@ -102,7 +102,9 @@ defmodule Fountain.PlatformChatGPT.Tokens do
 
   @doc """
   The tokens out of an `auth.json` that `codex login` wrote on a laptop.
-  Only `auth_mode: "chatgpt"` with a non-empty refresh token is accepted:
+  Codex 0.93.0 is the supported producer floor: its login writer sets
+  `auth_mode` explicitly. Only `auth_mode: "chatgpt"` with a non-empty
+  refresh token is accepted:
   an `apiKey` file is a key, not a grant, and `chatgptAuthTokens` is what
   Fountain writes, not what it takes in.
   """
@@ -134,8 +136,6 @@ defmodule Fountain.PlatformChatGPT.Tokens do
     end
   end
 
-  # `auth_mode` is absent from older files, which were all ChatGPT logins.
-  defp chatgpt_mode(%{"auth_mode" => mode}) when mode in ["chatgpt", nil], do: :ok
-  defp chatgpt_mode(%{"auth_mode" => _other}), do: {:error, :not_a_chatgpt_login}
-  defp chatgpt_mode(_file), do: :ok
+  defp chatgpt_mode(%{"auth_mode" => "chatgpt"}), do: :ok
+  defp chatgpt_mode(_file), do: {:error, :not_a_chatgpt_login}
 end

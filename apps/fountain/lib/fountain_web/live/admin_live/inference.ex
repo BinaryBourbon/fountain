@@ -183,7 +183,9 @@ defmodule FountainWeb.AdminLive.Inference do
   defp chatgpt_error(:invalid_auth_json), do: "That is not an auth.json codex wrote"
 
   defp chatgpt_error(:not_a_chatgpt_login),
-    do: "That auth.json is an API-key login, not a ChatGPT sign-in"
+    do:
+      "That auth.json must explicitly set auth_mode to chatgpt. " <>
+        "Sign in again with Codex 0.93.0 or newer using file storage, then paste the new auth.json."
 
   defp chatgpt_error(:no_refresh_token), do: "That sign-in carries no refresh token"
   defp chatgpt_error(:invalid_id_token), do: "That sign-in carries no account id"
@@ -338,8 +340,11 @@ defmodule FountainWeb.AdminLive.Inference do
 
           <form phx-submit="chatgpt_paste" class="flex flex-wrap items-end gap-2">
             <label class="block text-xs text-zinc-500">
-              Paste auth.json from <code class="font-mono">CODEX_HOME=$(mktemp -d) codex login</code>
-              <textarea
+              Paste auth.json from a fresh Codex 0.93.0 or newer ChatGPT sign-in.
+              Use file storage as described in <a
+                href="/docs/configuration#the-chatgpt-account-for-the-codex-runtime"
+                class="link"
+              >the configuration guide</a>. <textarea
                 name="auth_json"
                 rows="3"
                 autocomplete="off"

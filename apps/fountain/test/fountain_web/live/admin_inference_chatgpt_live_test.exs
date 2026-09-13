@@ -104,12 +104,47 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
       html =
         render_submit(lv, "chatgpt_paste", %{"auth_json" => auth_json(%{auth_mode: "apiKey"})})
 
-      assert html =~ "API-key login, not a ChatGPT sign-in"
+      assert html =~ "must explicitly set auth_mode to chatgpt"
 
       html = render_submit(lv, "chatgpt_paste", %{"auth_json" => "nope"})
       assert html =~ "not an auth.json codex wrote"
       refute PlatformChatGPT.active?()
     end
+  end
+
+  test "paste rejects absent, null and unsupported modes with safe export guidance", %{
+    conn: conn,
+    admin: admin
+  } do
+    {:ok, lv, _} = open(conn, admin)
+    file = Jason.decode!(auth_json())
+
+    for rejected <- [
+          Map.delete(file, "auth_mode"),
+          Map.put(file, "auth_mode", nil),
+          Map.put(file, "auth_mode", "secret-unsupported-mode")
+        ] do
+      html = render_submit(lv, "chatgpt_paste", %{"auth_json" => Jason.encode!(rejected)})
+      assert html =~ "must explicitly set auth_mode to chatgpt"
+      assert html =~ "Codex 0.93.0 or newer using file storage"
+      assert html =~ "paste the new auth.json"
+
+      for secret <- ["secret-unsupported-mode" | Map.values(file["tokens"])] do
+        refute html =~ secret
+      end
+    end
+
+    for rejected <- [
+          ~s({"auth_mode":"chatgpt","tokens":null}),
+          ~s({"auth_mode":"apikey","OPENAI_API_KEY":"secret-api-key"})
+        ] do
+      html = render_submit(lv, "chatgpt_paste", %{"auth_json" => rejected})
+      assert html =~ "not an auth.json codex wrote"
+      refute html =~ "secret-api-key"
+    end
+
+    refute PlatformChatGPT.active?()
+    assert Repo.all(AdminEvent) == []
   end
 
   describe "workspace token" do
