@@ -96,14 +96,23 @@ defmodule Fountain.SelfHostSwitchesTest do
       assert cfg[:fountain][:credits_enabled] == true
     end
 
-    test "BILLING_ENABLED is read as an alias for one release, and CREDITS_ENABLED wins (#1144)" do
-      legacy =
-        read_prod_config(%{"BILLING_ENABLED" => "true", "STRIPE_WEBHOOK_SECRET" => "whsec_test"})
+    test "BILLING_ENABLED no longer enables credits" do
+      cfg = read_prod_config(%{"BILLING_ENABLED" => "true"})
+      assert cfg[:fountain][:credits_enabled] == false
+    end
 
-      assert legacy[:fountain][:credits_enabled] == true
+    test "CREDITS_ENABLED controls credits when the retired variable is also set" do
+      disabled = read_prod_config(%{"CREDITS_ENABLED" => "false", "BILLING_ENABLED" => "true"})
+      assert disabled[:fountain][:credits_enabled] == false
 
-      both = read_prod_config(%{"CREDITS_ENABLED" => "false", "BILLING_ENABLED" => "true"})
-      assert both[:fountain][:credits_enabled] == false
+      enabled =
+        read_prod_config(%{
+          "CREDITS_ENABLED" => "true",
+          "BILLING_ENABLED" => "false",
+          "STRIPE_WEBHOOK_SECRET" => "whsec_test"
+        })
+
+      assert enabled[:fountain][:credits_enabled] == true
     end
 
     test "REGISTRATION_ALLOWED_EMAIL_DOMAINS is split, trimmed and downcased" do
