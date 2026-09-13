@@ -238,14 +238,31 @@ Connect the account at `/admin/inference`. There are three ways in.
 - **A device code.** Fountain requests a code, shows the code and a link, and
   waits for your approval on the ChatGPT page. The account must permit
   device-code login in its ChatGPT security settings.
-- **A pasted `auth.json`.** Run `CODEX_HOME=$(mktemp -d) codex login` on a
-  laptop and paste the file it writes. This is the recipe OpenAI documents
-  for CI. After the paste, the file belongs to Fountain. Do not use it
-  anywhere else, or both copies stop.
+- **A pasted `auth.json`.** Use Codex 0.93.0 or newer on a laptop.
+  The file must contain `"auth_mode": "chatgpt"` and a refresh token.
+  Missing, null and other modes are refused. Follow the export steps below.
+  After the paste, the file belongs to Fountain. Do not use it anywhere
+  else, or both copies stop.
 - **A workspace access token.** A ChatGPT Business or Enterprise workspace
   can mint a static token in its admin console. Paste the token and its
   expiry date. This is the credential OpenAI sanctions for servers, so use it
   where you have one.
+
+For a fresh file export, run these commands and complete the ChatGPT sign-in.
+
+```bash
+FOUNTAIN_CODEX_HOME=$(mktemp -d)
+CODEX_HOME="$FOUNTAIN_CODEX_HOME" codex -c 'cli_auth_credentials_store="file"' login
+```
+
+Paste `auth.json` from that temporary directory into Fountain.
+For an older file, upgrade Codex and repeat these steps. Do not add a mode
+field to an old file. Stored Fountain grants continue to refresh without
+another import.
+
+The [Codex 0.93.0 login writer](https://github.com/openai/codex/blob/rust-v0.93.0/codex-rs/login/src/server.rs#L562)
+sets the explicit mode. This is the supported producer floor; Fountain
+checks the file format because `auth.json` contains no producer version.
 
 Fountain keeps the refresh token, encrypted under `MASTER_SECRETS_KEY`, and
 renews the access token itself. A sandbox never sees either token. The

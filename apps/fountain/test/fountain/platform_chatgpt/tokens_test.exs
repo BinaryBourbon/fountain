@@ -54,10 +54,6 @@ defmodule Fountain.PlatformChatGPT.TokensTest do
 
     assert is_binary(id)
 
-    # Older files carry no auth_mode; they were all ChatGPT logins.
-    legacy = auth_json() |> Jason.decode!() |> Map.delete("auth_mode") |> Jason.encode!()
-    assert {:ok, _} = Tokens.parse_auth_json(legacy)
-
     assert {:error, :not_a_chatgpt_login} =
              Tokens.parse_auth_json(auth_json(%{auth_mode: "apiKey"}))
 
@@ -67,5 +63,32 @@ defmodule Fountain.PlatformChatGPT.TokensTest do
     assert {:error, :no_refresh_token} = Tokens.parse_auth_json(auth_json(%{refresh_token: ""}))
     assert {:error, :invalid_auth_json} = Tokens.parse_auth_json(~s({"tokens": "nope"}))
     assert {:error, :invalid_auth_json} = Tokens.parse_auth_json(42)
+  end
+
+  test "parse_auth_json/1 requires explicit ChatGPT mode without disclosing file contents" do
+    file = Jason.decode!(auth_json())
+
+    for rejected <-
+          [Map.delete(file, "auth_mode")] ++
+            Enum.map(
+              [nil, "", "apikey", "apiKey", "chatgptAuthTokens", "secret-mode", 1, %{}],
+              fn mode ->
+                Map.put(file, "auth_mode", mode)
+              end
+            ) do
+      assert {:error, :not_a_chatgpt_login} =
+               Tokens.parse_auth_json(Jason.encode!(rejected))
+    end
+
+    for malformed <- [
+          "not json",
+          "[]",
+          "null",
+          "{}",
+          ~s({"auth_mode":"chatgpt","tokens":null}),
+          ~s({"auth_mode":"apikey","OPENAI_API_KEY":"secret-api-key"})
+        ] do
+      assert {:error, :invalid_auth_json} = Tokens.parse_auth_json(malformed)
+    end
   end
 end
