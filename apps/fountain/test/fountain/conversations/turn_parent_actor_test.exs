@@ -82,6 +82,13 @@ defmodule Fountain.Conversations.TurnParentActorTest do
 
     send(pid, :continue)
     assert %{current_turn: nil} = :sys.get_state(pid)
+    # Two guards refuse this write independently — the turn is already
+    # `interrupted`, and a successor holds the highest `turn_number` — so the
+    # parent assertion below survives either one alone. Asserting the old
+    # turn's own result too puts the turn-status guard on the hook by itself:
+    # drop it and the late `completed` lands here even though the parent is
+    # still correctly held `running` by `latest_turn?`.
+    assert Repo.get!(Turn, turn.id).status == "interrupted"
     assert Conversations._unsafe_get_conversation!(conv.id).status == "running"
     assert Repo.get!(Turn, next.id).status == "running"
     assert Repo.get!(TurnExecution, next_execution.id).state == "active"
