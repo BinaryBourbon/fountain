@@ -230,7 +230,9 @@ defmodule Fountain.Conversations.ExecutionTransportTest do
     execution = register(c)
     # Keep a real timer integration check: the task must expire on its own
     # after its transport dies, with enough headroom to observe it first.
-    {pid, ref} = launch(execution, fn _, _ -> receive do: (:never -> :ok) end, io_timeout_ms: 10_000)
+    {pid, ref} =
+      launch(execution, fn _, _ -> receive do: (:never -> :ok) end, io_timeout_ms: 10_000)
+
     assert_receive {:spawn, ^pid, ^ref, task}, 5_000
     task_ref = Process.monitor(task)
     Process.exit(pid, :kill)
