@@ -8,7 +8,6 @@ import (
 
 	"github.com/managoat/fountain/cli/api"
 	"github.com/managoat/fountain/cli/internal/manifest"
-	"github.com/managoat/fountain/cli/internal/output"
 	"github.com/managoat/fountain/cli/internal/secrets"
 	"github.com/managoat/fountain/cli/internal/substitution"
 	"github.com/spf13/cobra"
@@ -62,11 +61,9 @@ func runApply(cmd *cobra.Command, args []string) error {
 	results, err := postApply(c, buildApplyPayload(grouped))
 	if err != nil {
 		if api.StatusCode(err) == 404 {
-			// Server predates POST /api/apply — reconcile resource-by-resource.
-			legacyApply(c, grouped)
-			return nil
+			return fmt.Errorf("apply requires Fountain server v0.3.0 or later: POST /api/apply was not found; upgrade the server or check FOUNTAIN_BASE_URL: %w", err)
 		}
-		Fatalf("apply failed: %v", err)
+		return fmt.Errorf("apply failed: %w", err)
 	}
 
 	if renderApplyResults(results) {
@@ -146,9 +143,9 @@ var applyKindLabels = map[string]string{
 	"Agent":       "agent",
 }
 
-// renderApplyResults prints one line per resource in the same format the
-// per-resource loop used (`+` create, `~` update, `=` no change, `!` error to
-// stderr) and reports whether any resource or secret failed.
+// renderApplyResults prints one line per resource (`+` create, `~` update,
+// `=` no change, `!` error to stderr) and reports whether any resource or
+// secret failed.
 func renderApplyResults(results []applyResult) (anyFailed bool) {
 	for _, r := range results {
 		label := applyKindLabels[r.Kind]
@@ -193,49 +190,6 @@ func formatResultErrors(errs map[string]any) string {
 		parts = append(parts, fmt.Sprintf("%s: %v", k, errs[k]))
 	}
 	return strings.Join(parts, "; ")
-}
-
-// legacyApply is the pre-bulk reconciliation path: one GET+write per
-// resource and one POST per secret. Kept for servers without /api/apply.
-//
-// A server that has no /api/apply also has none of the kinds beyond the first
-// three, so those are reported rather than reconciled: the run failed to do
-// what the manifest asked.
-func legacyApply(c *api.Client, grouped map[string][]*manifest.Doc) {
-	envs, vaults, agents := grouped["Environment"], grouped["Vault"], grouped["Agent"]
-	envIDByName := map[string]string{}
-	anyFailed := false
-
-	for _, kind := range applyKindOrder[3:] {
-		for _, d := range grouped[kind] {
-			anyFailed = true
-			warnf("%s  !  %s: this server is too old to apply %s documents", strings.ToLower(kind), d.Name(), kind)
-		}
-	}
-
-	for _, d := range envs {
-		if envID, ok := applyEnvironment(c, d); ok {
-			envIDByName[d.Name()] = envID
-		} else {
-			anyFailed = true
-		}
-	}
-
-	for _, d := range vaults {
-		if !applyVault(c, d) {
-			anyFailed = true
-		}
-	}
-
-	for _, d := range agents {
-		if !applyAgent(c, d, envIDByName) {
-			anyFailed = true
-		}
-	}
-
-	if anyFailed {
-		os.Exit(1)
-	}
 }
 
 // ── grouping ───────────────────────────────────────────────────────────
@@ -424,171 +378,6 @@ func sortedKeys(m map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// ── reconciliation ─────────────────────────────────────────────────────
-
-func applyEnvironment(c *api.Client, d *manifest.Doc) (string, bool) {
-	name := requireName(d)
-	body, secretsMap := buildBody(d, name)
-
-	existing := fetchByName(c, "/environments", name)
-	var env map[string]any
-	if existing != nil {
-		id := output.ToString(existing["id"])
-		var resp struct {
-			Data map[string]any `json:"data"`
-		}
-		if err := c.Put("/environments/"+id, body, &resp); err != nil {
-			warnf("env  !  %s (update failed): %v", name, err)
-			return "", false
-		}
-		fmt.Printf("env  ~  %s\n", name)
-		env = resp.Data
-	} else {
-		var resp struct {
-			Data map[string]any `json:"data"`
-		}
-		if err := c.Post("/environments", body, &resp); err != nil {
-			warnf("env  !  %s (create failed): %v", name, err)
-			return "", false
-		}
-		fmt.Printf("env  +  %s\n", name)
-		env = resp.Data
-	}
-
-	envID := output.ToString(env["id"])
-	if envID == "" {
-		warnf("env  !  %s: missing id in response", name)
-		return "", false
-	}
-	upsertSecrets(c, "/environments/"+envID+"/secrets", name, secretsMap)
-	return envID, true
-}
-
-func applyVault(c *api.Client, d *manifest.Doc) bool {
-	name := requireName(d)
-	body, secretsMap := buildBody(d, name)
-
-	existing := fetchByName(c, "/vaults", name)
-	var v map[string]any
-	if existing != nil {
-		id := output.ToString(existing["id"])
-		var resp struct {
-			Data map[string]any `json:"data"`
-		}
-		if err := c.Put("/vaults/"+id, body, &resp); err != nil {
-			warnf("vault  !  %s (update failed): %v", name, err)
-			return false
-		}
-		fmt.Printf("vault  ~  %s\n", name)
-		v = resp.Data
-	} else {
-		var resp struct {
-			Data map[string]any `json:"data"`
-		}
-		if err := c.Post("/vaults", body, &resp); err != nil {
-			warnf("vault  !  %s (create failed): %v", name, err)
-			return false
-		}
-		fmt.Printf("vault  +  %s\n", name)
-		v = resp.Data
-	}
-
-	vaultID := output.ToString(v["id"])
-	if vaultID == "" {
-		warnf("vault  !  %s: missing id in response", name)
-		return false
-	}
-	upsertSecrets(c, "/vaults/"+vaultID+"/secrets", name, secretsMap)
-	return true
-}
-
-func applyAgent(c *api.Client, d *manifest.Doc, envIDByName map[string]string) bool {
-	name := requireName(d)
-	spec := cloneMap(d.Spec)
-
-	if envName, ok := spec["environment"].(string); ok && envName != "" {
-		if id, ok := envIDByName[envName]; ok {
-			delete(spec, "environment")
-			spec["environment_id"] = id
-		} else {
-			warnf("agent  ?  %s: environment '%s' not in this manifest, skipping reference", name, envName)
-			delete(spec, "environment")
-		}
-	} else {
-		delete(spec, "environment")
-	}
-
-	body := spec
-	body["name"] = name
-
-	existing := fetchByName(c, "/agents", name)
-	if existing != nil {
-		id := output.ToString(existing["id"])
-		if err := c.Put("/agents/"+id, body, nil); err != nil {
-			warnf("agent  !  %s (update failed): %v", name, err)
-			return false
-		}
-		fmt.Printf("agent  ~  %s\n", name)
-	} else {
-		if err := c.Post("/agents", body, nil); err != nil {
-			warnf("agent  !  %s (create failed): %v", name, err)
-			return false
-		}
-		fmt.Printf("agent  +  %s\n", name)
-	}
-	return true
-}
-
-// buildBody returns the request body for a resource (spec minus
-// `secrets`, with `name` set) and a separate map of secrets to upsert.
-//
-// Strips ownership fields (user_id, created_by) so a malicious or
-// careless manifest can't try to attribute resources to another tenant.
-// The server enforces this on its own, but defense-in-depth: don't
-// transmit fields the server is just going to drop.
-func buildBody(d *manifest.Doc, name string) (map[string]any, map[string]any) {
-	body := cloneMap(d.Spec)
-	secretsMap, _ := body["secrets"].(map[string]any)
-	delete(body, "secrets")
-	delete(body, "user_id")
-	delete(body, "created_by")
-	body["name"] = name
-	return body, secretsMap
-}
-
-func upsertSecrets(c *api.Client, path, resourceName string, m map[string]any) {
-	if len(m) == 0 {
-		return
-	}
-	for _, k := range sortedKeys(m) {
-		v := m[k]
-		body := map[string]string{
-			"key":   k,
-			"value": output.ToString(v),
-		}
-		if err := c.Post(path, body, nil); err != nil {
-			warnf("  secret  !  %s/%s: %v", resourceName, k, err)
-			continue
-		}
-		fmt.Printf("  secret  ~  %s/%s\n", resourceName, k)
-	}
-}
-
-func fetchByName(c *api.Client, collection, name string) map[string]any {
-	var resp struct {
-		Data []map[string]any `json:"data"`
-	}
-	if err := c.Get(collection, &resp); err != nil {
-		Fatalf("GET %s failed: %v", collection, err)
-	}
-	for _, row := range resp.Data {
-		if output.ToString(row["name"]) == name {
-			return row
-		}
-	}
-	return nil
 }
 
 func requireName(d *manifest.Doc) string {

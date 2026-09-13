@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Upgrade notes
 
+- `fountain apply` now requires Fountain server v0.3.0 or later (#2098).
+  The fallback for servers without `POST /api/apply` is removed. If the
+  endpoint returns 404, the CLI fails before individual resource requests
+  and asks you to upgrade the server or check `FOUNTAIN_BASE_URL`.
+
 - `POST /api/conversations` no longer reads the legacy
   `X-AoD-Parent-Conversation-Id` header. Use
   `X-Fountain-Parent-Conversation-Id` to record agent provenance and the parent
