@@ -62,8 +62,11 @@ defmodule Fountain.Conversations.MachineEvents do
   #
   # Cleanup runs before the guarded context transition, outside its
   # transaction. A moved or terminal conversation, or a newer running turn,
-  # keeps its state and emits no sandbox event. The obsolete actor still stops
-  # after cleanup, because its handle is already gone with the machine.
+  # emits no sandbox event. A moved one can still be released: this is the
+  # backstop `_unsafe_idle_interrupted_turn/1` names, so the write that idles a
+  # parent stranded `running` with no running turn survives the rebind, while
+  # the transcript event does not. The obsolete actor still stops after
+  # cleanup, because its handle is already gone with the machine.
   def gone(
         %{sandbox_id: sandbox_id} = state,
         sandbox_id,

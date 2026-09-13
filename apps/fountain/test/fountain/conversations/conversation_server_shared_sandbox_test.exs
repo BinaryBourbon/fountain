@@ -281,6 +281,29 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       end
     end
 
+    # `follow_cotenants/2` casts before it rebinds, so this actor's own
+    # notification lands on a row that has already moved. The transcript event
+    # is suppressed, but the parent must still be released: it is `running`
+    # with no running turn, and no sweep selects that pair (#2000).
+    test "a notification for a conversation rebound behind it still releases the parent" do
+      %{b: b, sandbox: sandbox, user: user} = shared_machine("claude")
+      replacement = insert_sandbox(user_id: user.id, status: "ready")
+      stub_happy_sprite()
+      stub_turn_boundary()
+      {pid, ref} = start(b)
+      # A lost completion left the parent running with no running turn.
+      {:ok, _} = Conversations.update_conversation(b, %{status: "running"})
+      {:ok, _} = Conversations.update_conversation(b, %{sandbox_id: replacement.id})
+
+      GenServer.cast(pid, {:machine_gone, sandbox.id, "suspended", "idle", "rebound"})
+      assert :normal = assert_stopped(ref)
+
+      released = Repo.reload!(b)
+      assert released.status == "idle"
+      assert released.sandbox_id == replacement.id
+      refute Enum.any?(sandbox_stages(b.id), &(&1["message"] == "rebound"))
+    end
+
     test "an obsolete notification leaves the replacement actor and its turn alone" do
       %{b: b, user: user} = shared_machine("claude")
       old = insert_sandbox(user_id: user.id, status: "terminated")

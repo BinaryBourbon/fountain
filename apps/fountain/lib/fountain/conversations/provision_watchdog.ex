@@ -38,11 +38,14 @@ defmodule Fountain.Conversations.ProvisionWatchdog do
 
     spawn(fn ->
       ref = Process.monitor(server)
+      timer = Process.send_after(self(), :provision_deadline, deadline_ms)
 
       receive do
-        {:DOWN, ^ref, :process, ^server, _reason} -> :ok
-      after
-        deadline_ms ->
+        {:DOWN, ^ref, :process, ^server, _reason} ->
+          Process.cancel_timer(timer)
+
+        :provision_deadline ->
+          Process.cancel_timer(timer)
           # ownership: the two ids are the ones the ConversationServer was
           # started with, and it established ownership of both at init. The
           # watchdog reads no row it was not handed.
