@@ -335,7 +335,7 @@ defmodule Fountain.InferenceCredentials do
 
   `runtime` is the agent's (ADR 0047): for provider `openai` with no tenant
   credential, a `codex` agent takes the deployment's ChatGPT grant
-  (`Fountain.PlatformChatGPT`) when it is active, under
+  (`Fountain.ChatGPTAccounts`) when it is active, under
   `:codex_chatgpt_access_token`, before the platform `OPENAI_API_KEY`. The
   grant is codex's own client speaking to its own backend; opencode against
   an `openai/` model keeps needing a key. The origin is `:platform` either
@@ -398,7 +398,7 @@ defmodule Fountain.InferenceCredentials do
   # `:none` here and the key takes over — at the next conversation, not
   # within a turn.
   defp platform_credential("openai", "codex", true, opts) do
-    case Fountain.PlatformChatGPT.credential(refresh: Keyword.get(opts, :refresh, true)) do
+    case Fountain.ChatGPTAccounts.platform_credential(refresh: Keyword.get(opts, :refresh, true)) do
       {:ok, token} -> {:ok, :codex_chatgpt_access_token, token}
       :none -> Fountain.PlatformInference.key_for("openai")
     end

@@ -20,7 +20,7 @@ defmodule Fountain.Workers.PlatformChatGPTKeepalive do
 
   @impl Oban.Worker
   def perform(_job) do
-    case Fountain.PlatformChatGPT.keepalive() do
+    case Fountain.ChatGPTAccounts.platform_keepalive() do
       {:ok, :refreshed} ->
         Logger.info("platform chatgpt: keepalive refreshed the grant")
         :ok

@@ -11,14 +11,14 @@ defmodule Fountain.PlatformChatGPT.Device do
     * `{:code, %{verification_url, user_code}}` — show these; the admin
       approves the code on the page.
     * `{:connected, status}` — the grant is stored;
-      `Fountain.PlatformChatGPT.status/0` is what came back.
+      `Fountain.ChatGPTAccounts.platform_status/0` is what came back.
     * `{:error, reason}` — the flow failed or the fifteen minutes ran out.
 
   Codex polls at the interval the server returns for at most fifteen
   minutes; so does this.
   """
 
-  alias Fountain.PlatformChatGPT
+  alias Fountain.ChatGPTAccounts
   alias Fountain.PlatformChatGPT.OAuth
 
   @poll_deadline_ms 15 * 60 * 1_000
@@ -45,10 +45,10 @@ defmodule Fountain.PlatformChatGPT.Device do
            ),
          {:ok, tokens} <- OAuth.device_exchange(grant),
          {:ok, _account} <-
-           PlatformChatGPT.connect_from_tokens(tokens, "device_code",
+           ChatGPTAccounts.platform_connect_from_tokens(tokens, "device_code",
              actor_user_id: actor_user_id
            ) do
-      send_to(notify, {:connected, PlatformChatGPT.status()})
+      send_to(notify, {:connected, ChatGPTAccounts.platform_status()})
     else
       {:error, reason} -> send_to(notify, {:error, reason})
     end

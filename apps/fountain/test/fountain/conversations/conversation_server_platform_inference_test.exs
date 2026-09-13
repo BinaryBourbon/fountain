@@ -344,7 +344,7 @@ defmodule Fountain.Conversations.ConversationServerPlatformInferenceTest do
         do: Application.delete_env(:fountain, key)
 
     Fountain.ChatGPTFixtures.connect!()
-    assert Fountain.PlatformChatGPT.active?()
+    assert Fountain.ChatGPTAccounts.platform_active?()
     refute Fountain.PlatformInference.enabled?()
     model = "openai/gpt-6-astra"
 

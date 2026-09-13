@@ -5,8 +5,8 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
   import Fountain.ChatGPTFixtures
 
   alias Fountain.Audit.AdminEvent
+  alias Fountain.ChatGPTAccounts
   alias Fountain.Crypto
-  alias Fountain.PlatformChatGPT
   alias Fountain.PlatformChatGPT.Account
 
   test "reconnect changes generation; refresh changes only the write version" do
@@ -15,7 +15,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
     assert {:ok, _} = Ecto.UUID.cast(first.generation)
     stub_refresh()
 
-    assert {:ok, _} = PlatformChatGPT.access_token()
+    assert {:ok, _} = ChatGPTAccounts.platform_access_token()
     refreshed = Repo.get!(Account, first.id)
     assert refreshed.generation == first.generation
     assert refreshed.lock_version == first.lock_version + 1
@@ -36,7 +36,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
       end
     })
 
-    assert {:error, :stale_grant} = PlatformChatGPT.access_token()
+    assert {:error, :stale_grant} = ChatGPTAccounts.platform_access_token()
     replacement = Repo.get!(Account, first.id)
     assert replacement.status == "active"
     assert replacement.account_id == "replacement"
@@ -55,7 +55,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
       end
     })
 
-    assert {:error, :stale_grant} = PlatformChatGPT.access_token()
+    assert {:error, :stale_grant} = ChatGPTAccounts.platform_access_token()
     current = Repo.get!(Account, first.id)
     assert {:ok, ^replacement_token} = Crypto.decrypt_platform(current.access_token_ciphertext)
     assert current.account_id == "replacement"
@@ -68,7 +68,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
 
       stub_auth(%{
         "/oauth/token" => fn _ ->
-          assert :ok = PlatformChatGPT.disconnect()
+          assert :ok = ChatGPTAccounts.platform_disconnect()
 
           case unquote(response) do
             :success -> {200, %{"access_token" => access_token(), "refresh_token" => "late"}}
@@ -77,7 +77,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
         end
       })
 
-      assert {:error, :not_connected} = PlatformChatGPT.access_token()
+      assert {:error, :not_connected} = ChatGPTAccounts.platform_access_token()
       refute Repo.get(Account, first.id)
       assert revoked_events() == []
       replacement = connect!()
@@ -89,7 +89,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
   test "terminal failure advances the write version without replacing the generation" do
     first = connect!(%{access_token: access_token(60)})
     stub_refusal()
-    assert {:error, :revoked} = PlatformChatGPT.access_token()
+    assert {:error, :revoked} = ChatGPTAccounts.platform_access_token()
     current = Repo.get!(Account, first.id)
     assert current.generation == first.generation
     assert current.lock_version == first.lock_version + 1
@@ -105,7 +105,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
         "/oauth/token" => fn _ ->
           case Agent.get_and_update(counter, &{&1, &1 + 1}) do
             0 ->
-              assert {:ok, ^winner} = PlatformChatGPT.refresh_serialized(:force)
+              assert {:ok, ^winner} = ChatGPTAccounts.platform_refresh_serialized(:force)
 
               case unquote(response) do
                 :success -> {200, %{"access_token" => access_token(7_200, %{"late" => true})}}
@@ -118,7 +118,7 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
         end
       })
 
-      assert {:ok, ^winner} = PlatformChatGPT.access_token()
+      assert {:ok, ^winner} = ChatGPTAccounts.platform_access_token()
       current = Repo.get!(Account, first.id)
       assert current.status == "active"
       assert current.generation == first.generation
@@ -131,13 +131,13 @@ defmodule Fountain.PlatformChatGPTLifecycleTest do
 
   test "expiry advances the write version without replacing the generation" do
     {:ok, first} =
-      PlatformChatGPT.connect_workspace_token("wst_static", nil, account_id: "acct_ws")
+      ChatGPTAccounts.platform_connect_workspace_token("wst_static", nil, account_id: "acct_ws")
 
     Repo.get!(Account, first.id)
     |> Ecto.Changeset.change(access_expires_at: seconds_from_now(-60))
     |> Repo.update!()
 
-    assert {:error, :expired} = PlatformChatGPT.access_token()
+    assert {:error, :expired} = ChatGPTAccounts.platform_access_token()
     current = Repo.get!(Account, first.id)
     assert current.status == "expired"
     assert current.generation == first.generation

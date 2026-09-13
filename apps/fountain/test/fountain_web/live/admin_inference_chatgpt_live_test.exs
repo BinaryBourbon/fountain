@@ -14,7 +14,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
 
   alias Fountain.Accounts
   alias Fountain.Audit.AdminEvent
-  alias Fountain.PlatformChatGPT
+  alias Fountain.ChatGPTAccounts
   alias Fountain.Repo
 
   setup do
@@ -61,7 +61,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
     test "revoked names the reason", %{conn: conn, admin: admin} do
       connect!(%{access_token: access_token(1)})
       stub_refusal("refresh_token_expired")
-      assert {:error, :revoked} = PlatformChatGPT.access_token()
+      assert {:error, :revoked} = ChatGPTAccounts.platform_access_token()
 
       {:ok, _lv, html} = open(conn, admin)
       assert html =~ "Sign-in lost"
@@ -71,9 +71,11 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
 
     test "expired", %{conn: conn, admin: admin} do
       {:ok, _} =
-        PlatformChatGPT.connect_workspace_token("wst_x", ~D[2020-01-01], account_id: "acct_ws")
+        ChatGPTAccounts.platform_connect_workspace_token("wst_x", ~D[2020-01-01],
+          account_id: "acct_ws"
+        )
 
-      assert {:error, :expired} = PlatformChatGPT.access_token()
+      assert {:error, :expired} = ChatGPTAccounts.platform_access_token()
 
       {:ok, _lv, html} = open(conn, admin)
       assert html =~ "The token expired"
@@ -108,7 +110,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
 
       html = render_submit(lv, "chatgpt_paste", %{"auth_json" => "nope"})
       assert html =~ "not an auth.json codex wrote"
-      refute PlatformChatGPT.active?()
+      refute ChatGPTAccounts.platform_active?()
     end
   end
 
@@ -129,7 +131,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
       refute html =~ "wst_workspace"
 
       assert %{kind: "workspace_token", access_expires_at: ~U[2031-06-30 23:59:59Z]} =
-               PlatformChatGPT.status()
+               ChatGPTAccounts.platform_status()
     end
 
     test "refuses a token with spaces", %{conn: conn, admin: admin} do
@@ -147,7 +149,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
       html = render_click(lv, "chatgpt_disconnect", %{})
       assert html =~ "ChatGPT account disconnected"
       assert html =~ "not connected"
-      assert PlatformChatGPT.status() == :not_connected
+      assert ChatGPTAccounts.platform_status() == :not_connected
 
       assert [_] =
                Repo.all(
@@ -191,7 +193,9 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
       assert eventually(fn -> render(lv) =~ "Connected as" end)
       html = render(lv)
       assert html =~ "device@example.com"
-      assert %{status: "active", account_email: "device@example.com"} = PlatformChatGPT.status()
+
+      assert %{status: "active", account_email: "device@example.com"} =
+               ChatGPTAccounts.platform_status()
 
       assert [event] =
                Repo.all(
@@ -233,7 +237,7 @@ defmodule FountainWeb.AdminInferenceChatGPTLiveTest do
       assert eventually(fn -> render(lv) =~ "WXYZ-9876" end)
       assert render(lv) =~ "codex/device"
       assert eventually(fn -> render(lv) =~ "Device sign-in failed" end)
-      refute PlatformChatGPT.active?()
+      refute ChatGPTAccounts.platform_active?()
     end
   end
 end

@@ -133,7 +133,7 @@ defmodule Fountain.Conversations.Egress do
 
     with true <- is_binary(old) and old != "",
          true <- Map.get(brokered, key) == old,
-         {:ok, fresh} when fresh != old <- Fountain.PlatformChatGPT.access_token() do
+         {:ok, fresh} when fresh != old <- Fountain.ChatGPTAccounts.platform_access_token() do
       {Map.put(inference_credentials, credential, fresh), Map.put(brokered, key, fresh), true}
     else
       _ -> {inference_credentials, brokered, false}

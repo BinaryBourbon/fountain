@@ -107,6 +107,35 @@ defmodule Fountain.ChatGPTAccountsTest do
     assert ChatGPTAccounts.status_for_user(owner.id) == :not_connected
   end
 
+  test "platform reads and admin mutations never select an owned grant" do
+    owner = insert_verified_user()
+    grant = user_grant(owner)
+
+    refute ChatGPTAccounts.platform_active?()
+    assert ChatGPTAccounts.platform_status() == :not_connected
+    assert ChatGPTAccounts.platform_credential() == :none
+    assert ChatGPTAccounts.platform_credential(refresh: false) == :none
+    assert ChatGPTAccounts.platform_access_token() == {:error, :not_connected}
+    assert ChatGPTAccounts.platform_sandbox_auth() == :none
+    assert ChatGPTAccounts.platform_keepalive() == {:ok, :skipped}
+    assert ChatGPTAccounts.platform_refresh_serialized(:if_stale) == {:error, :not_connected}
+    assert :ok = ChatGPTAccounts.platform_disconnect()
+    assert Repo.get!(Account, grant.id) == grant
+
+    assert {:ok, platform} =
+             ChatGPTAccounts.platform_connect_workspace_token("wst_platform", nil,
+               account_id: "acct-platform"
+             )
+
+    assert platform.user_id == nil
+    refute platform.id == grant.id
+    assert ChatGPTAccounts.platform_status().account_id == "acct-platform"
+    assert ChatGPTAccounts.platform_access_token() == {:ok, "wst_platform"}
+    assert :ok = ChatGPTAccounts.platform_disconnect()
+    assert Repo.get!(Account, grant.id) == grant
+    assert {:ok, %Grant{access_token: "user-access-token"}} = read(grant, owner)
+  end
+
   test "tenant tokens use the tenant DEK and cannot be swapped between fields or owners" do
     owner = insert_verified_user()
     other = insert_verified_user()

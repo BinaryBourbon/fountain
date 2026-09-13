@@ -367,7 +367,7 @@ defmodule Fountain.PlatformInference do
   def serves?(provider, runtime, brokered?) do
     key_for(provider) != :none or
       (brokered? and provider == "openai" and runtime == "codex" and
-         Fountain.PlatformChatGPT.active?())
+         Fountain.ChatGPTAccounts.platform_active?())
   end
 
   @doc """
