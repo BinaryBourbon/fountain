@@ -31,7 +31,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     user = insert_verified_user()
     # gemini used to be this test's way of reaching the legacy stdout handler.
     # Since #659 every shipped runtime speaks ACP, so output reaches the budget
-    # through the peer's line reports instead — same `log_with_replay_skip`,
+    # through the peer's line reports instead — same output logger,
     # different transport. See `persist_acp_lines/3`.
     agent = insert_agent(user_id: user.id, runtime: "claude")
     insert_conversation(user_id: user.id, agent_id: agent.id)

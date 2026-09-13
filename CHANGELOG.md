@@ -47,6 +47,10 @@ upgrade, is in
 
 ### Changed
 
+- Removed the unused non-ACP turn execution path and its CLI prompt, image
+  file, and byte-replay helpers. Conversation lifecycle tests now use ACP,
+  which all supported runtimes already use.
+
 - **`sprite_name` on `POST /api/conversations` is now a suffix, not the whole
   machine name.** The server keeps the `fountain-<account>-` prefix every
   generated name already carried, so a name a caller chooses lands in their own

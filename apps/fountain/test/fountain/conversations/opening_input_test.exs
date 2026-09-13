@@ -119,9 +119,9 @@ defmodule Fountain.Conversations.OpeningInputTest do
   # The gap the mocked delivery test leaves: `validate_initial/1` saying `:ok`
   # is only worth anything if the shape it accepts survives the consumers that
   # run after a sandbox has been paid for. `store_images/2` sits in
-  # `run_turn/6` before the ACP branch and turns an `{:error, changeset}` into
+  # `run_turn/6` before sending the ACP prompt and turns an `{:error, changeset}` into
   # a log line, but a key it cannot match raises out of the server instead.
-  test "the accepted shape survives every consumer that runs after provisioning", ctx do
+  test "the accepted shape survives image storage after provisioning", ctx do
     image = %{media_type: "image/png", data: <<0, 1, 2>>}
     assert :ok = PromptInput.validate_initial(%{"prompt" => "Review", "images" => [image]})
 
@@ -145,22 +145,10 @@ defmodule Fountain.Conversations.OpeningInputTest do
     assert {:ok, 1} = Conversations._unsafe_insert_turn_images(direct.id, [image])
     assert :ok = Fountain.Conversations.TurnMachine.store_images(stored, [image])
 
-    assert %{images: [%{media_type: "image/png", data: <<0, 1, 2>>}]} =
-             Repo.preload(stored, :images)
-
-    expect(Managoat.Sandbox.Sprites, :write_file, fn _h, _path, data, _opts ->
-      assert data == image.data
-      :ok
-    end)
-
-    assert [{path, "image/png"}] =
-             Fountain.Conversations.Output.write_image_temp_files(
-               %Managoat.Sandbox.Handle{provider: :sprites, name: "s"},
-               direct.id,
-               [image]
-             )
-
-    assert path =~ ".png"
+    for turn <- [direct, stored] do
+      assert %{images: [%{media_type: "image/png", data: <<0, 1, 2>>}]} =
+               Repo.preload(turn, :images)
+    end
   end
 
   @tag path: :attach

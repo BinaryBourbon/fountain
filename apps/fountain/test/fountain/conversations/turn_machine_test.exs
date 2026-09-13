@@ -773,21 +773,13 @@ defmodule Fountain.Conversations.TurnMachineTest do
       assert {:ok, {:continue, "keep"}} = TurnMachine.session_plan(row, "keep")
     end
 
-    test "command/7 is the ACP adapter with the sandbox's cwd, or the runtime's own argv",
+    test "command/3 returns the ACP adapter with the sandbox's cwd",
          %{conv: conv, agent: agent} do
       handle = %Managoat.Sandbox.Handle{provider: :sprites, name: "s"}
 
-      assert {cmd, _args, stdin?: true, dir: dir} =
-               TurnMachine.command(true, conv, agent, "hi", :run, "sid", handle: handle)
-
-      assert is_binary(cmd)
+      assert {cmd, args, dir} = TurnMachine.command(conv, agent, handle)
+      assert {cmd, args} == Fountain.RuntimeDispatch.command(conv.runtime, agent)
       assert dir == Managoat.Sandbox.host_path(handle, Managoat.Runtimes.ACP.cwd("claude"))
-
-      assert {"echo", ["hi"], _} =
-               TurnMachine.command(false, conv, agent, "hi", :run, "sid",
-                 handle: handle,
-                 runtime_module: Managoat.Runtimes.Testing.FakeRuntime
-               )
     end
 
     test "store_images/2 keeps a rejected image from taking the turn down", %{row: row} do
@@ -816,24 +808,21 @@ defmodule Fountain.Conversations.TurnMachineTest do
   end
 
   describe "a turn that never started" do
-    test "fail_before_start/6 fails the row with the detail, and idles a running conversation",
+    test "fail_before_start/4 fails the row with the detail, and idles a running conversation",
          %{conv: conv, row: row} do
       {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
-      detail = TurnMachine.failure_detail(:command_exited, 1)
-      assert detail == ":command_exited (runtime exited 1)"
+      detail = ":enoent"
 
       assert :ok =
                TurnMachine.fail_before_start(
                  row,
                  conv.id,
                  conv.sandbox_id,
-                 "prompt write failed",
-                 detail,
-                 1
+                 detail
                )
 
-      assert %{status: "failed", exit_code: 1} = Fountain.Repo.get!(Conversations.Turn, row.id)
-      assert [{"failed", %{"reason" => ^detail, "exit_code" => 1}}] = stages(conv.id, "turn")
+      assert %{status: "failed", exit_code: nil} = Fountain.Repo.get!(Conversations.Turn, row.id)
+      assert [{"failed", %{"reason" => ^detail, "exit_code" => nil}}] = stages(conv.id, "turn")
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
     end
 
@@ -845,9 +834,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
                  ctx.row,
                  ctx.conv.id,
                  ctx.conv.sandbox_id,
-                 "spawn",
-                 "boom",
-                 nil
+                 "boom"
                )
 
       assert %{status: "failed", exit_code: nil, reply_text: "hi", ended_at: %DateTime{}} =
@@ -894,9 +881,7 @@ defmodule Fountain.Conversations.TurnMachineTest do
                    ctx.row,
                    ctx.conv.id,
                    ctx.conv.sandbox_id,
-                   "spawn",
-                   "boom",
-                   1
+                   "boom"
                  )
 
         assert Fountain.Repo.get(Conversations.Turn, ctx.row.id) == persisted_turn
@@ -904,42 +889,6 @@ defmodule Fountain.Conversations.TurnMachineTest do
         assert stages(ctx.conv.id, "turn") == []
         refute Fountain.Repo.reload!(ctx.user).onboarding_completed_at
       end
-    end
-
-    test "failure_detail/2 without an exit code is the inspected reason alone" do
-      assert TurnMachine.failure_detail(:enoent, nil) == ":enoent"
-    end
-
-    test "drain_exited_command/1 collects what the runtime said before it exited" do
-      ref = make_ref()
-      send(self(), {:stdout, %{ref: ref}, "hello"})
-      send(self(), {:stderr, %{ref: ref}, "bad key"})
-      send(self(), {:exit, %{ref: ref}, 1})
-      send(self(), {:stdout, %{ref: make_ref()}, "another command"})
-
-      assert {1, [{"stdout", "hello"}, {"stderr", "bad key"}]} =
-               TurnMachine.drain_exited_command(ref)
-
-      assert_receive {:stdout, _, "another command"}
-    end
-
-    test "drain_exited_command/1 gives up after the deadline with what it has" do
-      ref = make_ref()
-      send(self(), {:stdout, %{ref: ref}, "partial"})
-      assert {nil, [{"stdout", "partial"}]} = TurnMachine.drain_exited_command(ref)
-    end
-
-    test "drain_exited_command/1 ends on the error frame with no exit code" do
-      # A transport that closed with no exit frame (managoat_sandbox 0.2.0
-      # reports `:closed_before_exit` where it used to fabricate an exit 0).
-      # The frame is as stranded as the output around it, so the drain takes
-      # it rather than paying the deadline and dropping it.
-      ref = make_ref()
-      send(self(), {:stdout, %{ref: ref}, "partial"})
-      send(self(), {:error, %{ref: ref}, :closed_before_exit})
-
-      assert {nil, [{"stdout", "partial"}]} = TurnMachine.drain_exited_command(ref)
-      refute_received {:error, %{ref: ^ref}, _}
     end
   end
 

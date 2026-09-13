@@ -28,13 +28,12 @@ defmodule Fountain.Conversations.PromptInput do
   only move the failure later and make it worse:
 
       Conversations._unsafe_insert_turn_images/2   fn {%{media_type: mt, data: data}, idx} -> ...
-      Output.write_image_temp_files/3              fn {%{media_type: mt, data: data}, idx} -> ...
 
   `TurnMachine.store_images/2` is on every runtime's path
-  (`ConversationServer.run_turn/6`, before the ACP branch) and handles an
+  (`ConversationServer.run_turn/6`, before sending the ACP prompt) and handles an
   `{:error, changeset}` by logging and continuing — but a key it cannot match
   raises `FunctionClauseError`, which is not an error tuple and which no `rescue`
-  on that path catches. A validator that said `:ok` to a shape those three cannot
+  on that path catches. A validator that said `:ok` to a shape these consumers cannot
   read would trade a free refusal for a crashed turn on a sandbox the tenant had
   already paid to provision, which is the opposite of the point of validating
   here at all.
