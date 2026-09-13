@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Upgrade notes
 
+- `FOUNTAIN_DOMAIN` is no longer read. Set `PUBLIC_URL` to the absolute URL
+  of your instance, and set `PHX_HOST` only if the endpoint host differs.
+  The Render and Fly platform fallbacks still work. A production instance
+  with only `FOUNTAIN_DOMAIN` set now refuses to boot.
+
 - **Connections needs no `FEATURE_FLAGS_ON` entry on a deployment without
   PostHog** (#1693). Gating Connections behind the `connections` flag (#1620)
   took the feature away from every deployment that configures no flag service,
