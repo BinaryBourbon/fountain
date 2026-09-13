@@ -324,12 +324,10 @@ defmodule FountainWeb.TeamStreamTest do
       end
     end
 
-    test "the runtime comes from the conversation that produced the event, not the request", %{
+    test "ACP blocks render across runtimes while historical stdout stays raw", %{
       user: user,
       raw_key: key
     } do
-      # The whole complication of this stream: it is multi-conversation, so
-      # there is no single runtime to parse against.
       claude = insert_agent(user_id: user.id, name: "Ada", runtime: "claude")
       other = insert_agent(user_id: user.id, name: "Linus", runtime: "codex")
       claude_conv = insert_teammate_conv(user, claude, %{runtime: "claude"})
@@ -340,7 +338,21 @@ defmodule FountainWeb.TeamStreamTest do
       publish(claude_conv, %{kind: "output", stream: "acp", data: acp_text("from-claude")})
       publish(other_conv, %{kind: "output", stream: "acp", data: acp_text("from-codex")})
 
+      legacy =
+        Jason.encode!(%{
+          "type" => "assistant",
+          "message" => %{"content" => [%{"type" => "text", "text" => "old-reply"}]}
+        })
+
+      publish(claude_conv, %{kind: "output", stream: "stdout", data: legacy})
+
       body = Task.await(task, 5_000).resp_body
+
+      [legacy_payload] =
+        Regex.run(~r/data: (\{[^\n]*old-reply[^\n]*\})/, body, capture: :all_but_first)
+
+      assert %{"blocks" => [], "data" => ^legacy, "stream" => "stdout"} =
+               Jason.decode!(legacy_payload)
 
       for text <- ["from-claude", "from-codex"] do
         [payload] =

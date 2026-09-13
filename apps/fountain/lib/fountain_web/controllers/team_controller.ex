@@ -433,8 +433,8 @@ defmodule FountainWeb.TeamController do
         "data) is sent when a team schedule is created, updated, deleted or fired " <>
         "(#825); the client re-lists `/api/team/schedules`. `Last-Event-ID` (a log event " <>
         "id) replays what was missed on each teammate's conversation. `?blocks=true` adds " <>
-        "server-parsed blocks, per event, for the runtime of the conversation that " <>
-        "produced it. Heartbeats every 15s; closes after 60s idle so the client reconnects.",
+        "server-parsed ACP blocks per event. Other streams produce no blocks. " <>
+        "Heartbeats every 15s; closes after 60s idle so the client reconnects.",
     parameters: [
       "Last-Event-ID": [
         in: :header,
@@ -457,9 +457,8 @@ defmodule FountainWeb.TeamController do
         description:
           "Add `blocks` to each event payload — its `data` parsed server-side into the " <>
             "structured blocks a transcript renders, as on " <>
-            "`/api/conversations/:id/stream?blocks=true`. The stream is " <>
-            "multi-conversation, so the runtime is taken per event from the " <>
-            "conversation that produced it. Defaults to false."
+            "`/api/conversations/:id/stream?blocks=true`. Only ACP output events " <>
+            "produce blocks. Defaults to false."
       ]
     ],
     responses: [
@@ -526,12 +525,9 @@ defmodule FountainWeb.TeamController do
   end
 
   # Subscribe to every teammate's conversation not yet followed. Returns the
-  # map conversation_id → `{agent_id, runtime}`: the agent id labels the event
-  # for the roster, and the runtime is what `?blocks=true` parses the event's
-  # data with. The runtime has to travel with the conversation rather than
-  # with the request, because this stream carries every teammate at once and
-  # they do not share one (#881). Topics are never unsubscribed: a removed
-  # teammate's conversation stops publishing.
+  # map conversation_id → agent_id so events can be routed to roster rows.
+  # Topics are never unsubscribed: a removed teammate's conversation stops
+  # publishing.
   defp follow_team(user_id, followed) do
     user_id
     |> Team.list_teammates()
@@ -540,7 +536,7 @@ defmodule FountainWeb.TeamController do
         Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conv.id}")
       end
 
-      Map.put(acc, conv.id, {agent.id, conv.runtime})
+      Map.put(acc, conv.id, agent.id)
     end)
   end
 
@@ -628,7 +624,7 @@ defmodule FountainWeb.TeamController do
   # Field-for-field the per-conversation stream's payload, plus the two ids a
   # client needs to route the event to a roster row.
   defp write_event(conn, %LogEvent{} = ev, state) do
-    {agent_id, runtime} = Map.get(state.followed, ev.conversation_id) || {nil, nil}
+    agent_id = Map.get(state.followed, ev.conversation_id)
 
     payload =
       %{
@@ -642,7 +638,7 @@ defmodule FountainWeb.TeamController do
         turn_id: ev.turn_id,
         ts: ev.inserted_at
       }
-      |> FountainWeb.ConversationJSON.put_blocks(ev, if(state.blocks?, do: runtime))
+      |> FountainWeb.ConversationJSON.put_blocks(ev, state.blocks?)
       |> Jason.encode!()
 
     Plug.Conn.chunk(conn, "id: #{ev.id}\nevent: #{ev.kind}\ndata: #{payload}\n\n")
