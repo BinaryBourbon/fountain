@@ -266,19 +266,15 @@ defmodule Fountain.InferenceCredentials do
           {:ok, Credential.t()} | {:error, Ecto.Changeset.t()}
   def put_credential(user_id, dek, provider, value, opts \\ [])
       when is_binary(user_id) and is_binary(dek) and provider in @providers do
-    set =
-      get_for_user(user_id) ||
-        %Credential{user_id: user_id, name: Credential.default_name(), is_default: true}
-
-    write_credential(set, dek, provider, value, opts)
+    write_credential(user_id, :default, dek, provider, value, opts)
   end
 
   @doc """
   The same write, into a named set (ADR 0053 decision 1).
 
-  `set` is a loaded row, which means the caller has already fetched it through
-  the tenant-scoped `get_set/2` — this function does no scoping of its own and
-  must not be handed a row from anywhere else.
+  `set` identifies a row already fetched through the tenant-scoped `get_set/2`.
+  The write reloads its current state by id and tenant inside the source lock;
+  a deleted row returns `{:error, :not_found}`.
 
   Audited as `inference_credential.write` or `.delete`, like the default-set
   write, with the set's id and name in the metadata. Which set a credential
@@ -286,13 +282,13 @@ defmodule Fountain.InferenceCredentials do
   than one, and the provider alone stops being enough the moment there is.
   """
   @spec put_credential_in(Credential.t(), binary(), atom(), String.t() | nil, keyword()) ::
-          {:ok, Credential.t()} | {:error, Ecto.Changeset.t()}
+          {:ok, Credential.t()} | {:error, :not_found | Ecto.Changeset.t()}
   def put_credential_in(%Credential{} = set, dek, provider, value, opts \\ [])
       when is_binary(dek) and provider in @providers do
-    write_credential(set, dek, provider, value, opts)
+    write_credential(set.user_id, set.id, dek, provider, value, opts)
   end
 
-  defp write_credential(%Credential{} = set, dek, provider, value, opts) do
+  defp write_credential(user_id, selection, dek, provider, value, opts) do
     ct_field = ciphertext_field(provider)
 
     ciphertext =
@@ -302,16 +298,12 @@ defmodule Fountain.InferenceCredentials do
         plain when is_binary(plain) -> Crypto.encrypt(plain, dek)
       end
 
-    attrs =
-      %{user_id: set.user_id, name: set.name, is_default: set.is_default}
-      |> Map.put(ct_field, ciphertext)
-
     # Principals takes its ownership row lock here, in the same transaction
     # as the write. Audit remains outside so a failed trail insert cannot
     # roll back the credential transaction (ADR 0013).
     result =
       Repo.transaction(fn ->
-        lock_source(set.user_id)
+        lock_source(user_id)
 
         case Keyword.get(opts, :authorize) do
           nil ->
@@ -324,13 +316,30 @@ defmodule Fountain.InferenceCredentials do
             end
         end
 
+        set =
+          case selection do
+            :default ->
+              get_for_user(user_id) ||
+                %Credential{user_id: user_id, name: Credential.default_name(), is_default: true}
+
+            id ->
+              get_set(id, user_id) || Repo.rollback(:not_found)
+          end
+
+        attrs =
+          Map.put(
+            %{user_id: user_id, name: set.name, is_default: set.is_default},
+            ct_field,
+            ciphertext
+          )
+
         case set |> Credential.changeset(attrs) |> Repo.insert_or_update() do
           {:ok, credential} -> credential
           {:error, changeset} -> Repo.rollback(changeset)
         end
       end)
 
-    audited(result, set.user_id, provider, ciphertext, opts)
+    audited(result, user_id, provider, ciphertext, opts)
   end
 
   # The provider name is the whole payload. The credential must never reach a
