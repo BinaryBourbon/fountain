@@ -308,30 +308,121 @@ defmodule FountainWeb.SseStreamTest do
       assert elapsed < 3_000, "the idle timeout did not fire (took #{elapsed}ms)"
     end
 
-    test "heartbeats hold the connection open past the idle timeout", %{
+    defmodule HeartbeatAdapter do
+      @moduledoc false
+
+      defdelegate send_chunked(state, status, headers), to: Plug.Adapters.Test.Conn
+      defdelegate get_peer_data(state), to: Plug.Adapters.Test.Conn
+      defdelegate get_sock_data(state), to: Plug.Adapters.Test.Conn
+      defdelegate get_ssl_data(state), to: Plug.Adapters.Test.Conn
+      defdelegate get_http_protocol(state), to: Plug.Adapters.Test.Conn
+      defdelegate read_req_body(state, opts), to: Plug.Adapters.Test.Conn
+      defdelegate send_resp(state, status, headers, body), to: Plug.Adapters.Test.Conn
+
+      def chunk(state, body) do
+        send(state.observer, {:heartbeat_chunk, self(), IO.iodata_to_binary(body)})
+
+        if Map.get(state, :pause, false) do
+          receive do
+            :continue_heartbeat -> :ok
+          after
+            5_000 -> raise "test did not acknowledge the heartbeat"
+          end
+        end
+
+        if state.remaining == 0 do
+          {:error, :closed}
+        else
+          Plug.Adapters.Test.Conn.chunk(%{state | remaining: state.remaining - 1}, body)
+        end
+      end
+    end
+
+    defmodule HeartbeatEndpoint do
+      @moduledoc false
+
+      defdelegate init(opts), to: FountainWeb.Endpoint
+
+      def call(conn, opts) do
+        {Plug.Adapters.Test.Conn, state} = conn.adapter
+        state = Map.merge(state, conn.private.heartbeat_adapter)
+        FountainWeb.Endpoint.call(%{conn | adapter: {HeartbeatAdapter, state}}, opts)
+      end
+    end
+
+    defp heartbeat_stream(key, conv, pause) do
+      parent = self()
+
+      Task.async(fn ->
+        if pause, do: send(self(), :heartbeat)
+
+        build_conn()
+        |> authed_with_key(key)
+        |> Plug.Conn.put_private(:heartbeat_adapter, %{
+          observer: parent,
+          remaining: 2,
+          pause: pause
+        })
+        |> Phoenix.ConnTest.dispatch(
+          HeartbeatEndpoint,
+          :get,
+          "/api/conversations/#{conv.id}/stream"
+        )
+      end)
+    end
+
+    test "heartbeats are written and rescheduled until the client disconnects", %{
       raw_key: key,
       conv: conv
     } do
-      # Worth being explicit about, because it is not what the constants
-      # suggest: every `:heartbeat` is a message, and a message restarts the
-      # `receive ... after` timer. With the production values — 15s heartbeat,
-      # 60s idle — the idle branch can therefore never fire while the client is
-      # still attached. The stream ends when `Plug.Conn.chunk/2` fails because
-      # the client went away, not on a timer.
-      #
-      # That matters for reading #196: the CLI's silent mid-turn exit was not
-      # the server hanging up after 60s of quiet, because the server does not
-      # do that.
-      fast_loop(50, 200)
+      # Observe actual heartbeat writes instead of racing a 200 ms idle window
+      # against a loaded scheduler. The quiet-stream test above covers expiry;
+      # here only a failed chunk can end the loop. A missing reschedule fails
+      # the bounded await, and the adapter closes after two successful writes.
+      fast_loop(1, :infinity)
+      task = heartbeat_stream(key, conv, false)
 
-      task = Task.async(fn -> stream(key, "/api/conversations/#{conv.id}/stream") end)
+      try do
+        conn = Task.await(task, 5_000)
+        pid = task.pid
 
-      # Well past the 200ms idle window. Still running means the heartbeats are
-      # being delivered, chunked and rescheduled.
-      Process.sleep(700)
-      assert Process.alive?(task.pid), "the loop exited despite heartbeats"
+        for _ <- 1..3 do
+          assert_receive {:heartbeat_chunk, ^pid, ": heartbeat\n\n"}
+        end
 
-      Task.shutdown(task, :brutal_kill)
+        assert conn.status == 200
+        assert conn.resp_body == String.duplicate(": heartbeat\n\n", 2)
+      after
+        Task.shutdown(task, :brutal_kill)
+      end
+    end
+
+    test "queued heartbeats keep the stream open even with a zero idle window", %{
+      raw_key: key,
+      conv: conv
+    } do
+      # Drive delivery explicitly here, independently of the real-timer test
+      # above. Zero makes every idle window expired already, so only consuming
+      # the queued heartbeat before considering idle expiry keeps it open.
+      fast_loop(60_000, 0)
+      task = heartbeat_stream(key, conv, true)
+
+      try do
+        pid = task.pid
+
+        for _ <- 1..3 do
+          assert_receive {:heartbeat_chunk, ^pid, ": heartbeat\n\n"}, 5_000
+          # Both sends come from this process, preserving mailbox order.
+          send(pid, :heartbeat)
+          send(pid, :continue_heartbeat)
+        end
+
+        conn = Task.await(task, 5_000)
+        assert conn.status == 200
+        assert conn.resp_body == String.duplicate(": heartbeat\n\n", 2)
+      after
+        Task.shutdown(task, :brutal_kill)
+      end
     end
   end
 
